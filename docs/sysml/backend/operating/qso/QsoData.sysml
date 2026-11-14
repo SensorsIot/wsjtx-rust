@@ -609,7 +609,7 @@ package WstxContact {
     dependency CL_039_05_to_FR_020 from 'CL-039-05' to 'FR-020';
     dependency CL_039_05_to_FR_007 from 'CL-039-05' to 'FR-007';
     requirement 'CL-039-07' {
-        doc /* Outstanding, issue #39/#42 later slices: filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; late-duplicate guard and false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Delivered: the free Tx slot finder (CL-039-09), contests (#63), the busy pause (CL-097-06) for a busy partner, and the CQ target filter (CL-097-02). The outstanding slices are not offered. */
+        doc /* Outstanding, issue #39/#42 later slices: filtered-out view toggle; freeze Band Activity on hover; per-mode watchdog values; false-decode heuristic; CQ-target prefer; stacked DXpedition replies. Delivered: the free Tx slot finder (CL-039-09), contests (#63), the busy pause (CL-097-06) for a busy partner, and the CQ target filter (CL-097-02). The outstanding slices are not offered. */
         attribute coverage : ImplementationState = ImplementationState::target;
     }
     dependency CL_039_07_to_FR_007 from 'CL-039-07' to 'FR-007';

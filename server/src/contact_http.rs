@@ -524,6 +524,7 @@ impl Station {
         // Automation's lock first, as its own step takes them.
         let repeat_exempt = self.automation.repeat_exempt();
         let automated = self.automation.busy_policy();
+        let contest = self.contest_dupes(state);
         let mut guard = self.lock();
         let inner = &mut *guard;
         inner.engine.repeat_exempt = repeat_exempt;
@@ -606,8 +607,8 @@ impl Station {
                 inner,
                 state,
                 now,
-                ctx.call.as_deref(),
-                ctx.locator.as_deref(),
+                (ctx.call.as_deref(), ctx.locator.as_deref()),
+                contest,
             );
         });
         Self::store_logs(inner, state);
@@ -699,26 +700,30 @@ impl Station {
     /// dropped (log_queue_full); an invalid record is never stored (log_invalid_field).
     /// A completed contact already logged at completion keeps that record (its dial, Tx
     /// offset and location of completion): Log QSO on it changes nothing.
+    /// CL-085-01 (#85): a contact that is the same station again after the newest QSO of
+    /// the log (the last pending record, else the last stored one; `contest` is the dupe
+    /// rule of a contest in force) is refused: no record, the outcome same_station_again,
+    /// and the engine counts no serial for it (CL-085-02, CL-085-03).
     fn collect_logs(
         inner: &mut Inner,
         state: &ProfileState,
         now: i64,
-        call: Option<&str>,
-        locator: Option<&str>,
+        (call, locator): (Option<&str>, Option<&str>),
+        contest: Option<crate::contest::Dupes>,
     ) {
-        let contacts = inner.engine.take_logs();
-        if contacts.is_empty() {
-            return;
-        }
-        let dial = confirmed_dial(&state.recording);
+        // The dial is read once, and only when a contact is due.
+        let mut dial: Option<Option<u64>> = None;
         let tx_hz = inner.engine.settings.tx_hz;
-        for (kind, c) in contacts {
-            let held = inner.unlogged.iter().any(|p| p.contact_id == c.id);
+        let mut any = false;
+        let (unlogged, log, retry_at) = (&mut inner.unlogged, &mut inner.log, &mut inner.retry_at);
+        inner.engine.hand_over(|kind, c| {
+            any = true;
+            let held = unlogged.iter().any(|p| p.contact_id == c.id);
             if kind == contact::LogKind::LogQso
                 && c.logged_on_completion
                 && (held || state.logbook.saved(&c.id))
             {
-                continue;
+                return contact::LogAnswer::Accepted;
             }
             let view = |error| LogView {
                 contact_id: c.id.clone(),
@@ -727,29 +732,54 @@ impl Station {
                 error,
             };
             let station = call.unwrap_or("");
-            let record = Self::record_of(&c, now, dial, tx_hz, station, locator).filter(|record| {
-                logbook::validate_record(record, station, locator.unwrap_or("")).is_ok()
-            });
-            let Some(record) = record else {
-                inner.log = Some(view(Some("log_invalid_field")));
-                continue;
+            let dial = *dial.get_or_insert_with(|| confirmed_dial(&state.recording));
+            let Some(record) = Self::record_of(c, now, dial, tx_hz, station, locator) else {
+                *log = Some(view(Some("log_invalid_field")));
+                return contact::LogAnswer::Accepted;
             };
-            inner.log = Some(view(None));
-            inner.unlogged.retain(|p| p.contact_id != record.contact_id);
-            if inner.unlogged.len() == LOG_PENDING_MAX
-                && let Some(dropped) = inner.unlogged.pop_front()
+            // The newest QSO of the log; this very contact (a repeated Log QSO) is no second QSO.
+            let newest = unlogged
+                .back()
+                .cloned()
+                .or_else(|| state.logbook.newest().ok().flatten())
+                .filter(|n| n.contact_id != record.contact_id);
+            if newest.is_some_and(|n| record.same_station_again(&n, contest)) {
+                *log = Some(view(Some("same_station_again")));
+                return contact::LogAnswer::Refused;
+            }
+            if logbook::validate_record(&record, station, locator.unwrap_or("")).is_err() {
+                *log = Some(view(Some("log_invalid_field")));
+                return contact::LogAnswer::Accepted;
+            }
+            *log = Some(view(None));
+            unlogged.retain(|p| p.contact_id != record.contact_id);
+            if unlogged.len() == LOG_PENDING_MAX
+                && let Some(dropped) = unlogged.pop_front()
             {
-                inner.log = Some(LogView {
+                *log = Some(LogView {
                     call: dropped.get("call").unwrap_or("").to_owned(),
                     contact_id: dropped.contact_id,
                     saved: false,
                     error: Some("log_queue_full"),
                 });
             }
-            inner.unlogged.push_back(record);
-            inner.retry_at = None;
+            unlogged.push_back(record);
+            *retry_at = None;
+            contact::LogAnswer::Accepted
+        });
+        if any {
+            inner.engine.revision += 1;
         }
-        inner.engine.revision += 1;
+    }
+    /// The dupe rule of the contest in force for CL-085-01: the active strategy is of class
+    /// contest (#53); None otherwise. Read before the station lock is taken.
+    fn contest_dupes(&self, state: &ProfileState) -> Option<crate::contest::Dupes> {
+        let config = self.strategy.config(state)?;
+        let s = config.active_strategy()?;
+        (s.class == strategy::Class::Contest)
+            .then(|| s.profile())
+            .flatten()
+            .map(|p| p.dupes)
     }
     /// Stores the pending records (now, or at the retry time after a failure) under the
     /// station's authorization lock. Only the first store of a contact id goes to the
@@ -1312,6 +1342,7 @@ impl Station {
     ) -> Result<(StatusCode, Value), Refusal> {
         let r = &state.recording;
         let (call, locator) = profile_facts(state);
+        let contest = self.contest_dupes(state);
         let mut guard = self.lock();
         let inner = &mut *guard;
         if let Some((_, prior, receipt)) =
@@ -1424,8 +1455,8 @@ impl Station {
                 inner,
                 state,
                 now,
-                ctx.call.as_deref(),
-                ctx.locator.as_deref(),
+                (ctx.call.as_deref(), ctx.locator.as_deref()),
+                contest,
             );
             Ok::<_, Refusal>(())
         })?;

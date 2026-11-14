@@ -142,7 +142,8 @@ package WstxQsoControl {
              contact of this boot was logged, else exactly {contact_id,call,outcome,error}
              of the latest attempt: outcome saved (stored, replaced or already stored)
              with error null, or unsaved with error storage_unavailable (pending, retried),
-             log_queue_full or log_invalid_field (not retried); watchdog exactly {tx_remaining_calls,
+             log_queue_full or log_invalid_field (not retried), or same_station_again (refused,
+             WstxLogbook::SameStationAgain; never retried); watchdog exactly {tx_remaining_calls,
              tx_expired,tune_remaining_seconds,busy_with,paused_calls}; tx_remaining_calls is the Tx
              watchdog's only (#97, #91: limit minus the counted repetitions, TxWatchdog), or null
              while the Tx watchdog does not bound the contact (a strategy or contest run's own

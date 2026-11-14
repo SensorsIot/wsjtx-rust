@@ -315,7 +315,7 @@ $('qso-suggest').addEventListener('click',async()=>{
 $('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:true},'Auto sequence'));
 // WstxLogbook::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
 // pane shows the latest outcome, and an open Logbook page lists a newly saved record.
-const logReasons={storage_unavailable:'storage unavailable · retrying',log_queue_full:'too many unsaved QSOs · the oldest was not logged',log_invalid_field:'the station profile is incomplete'};
+const logReasons={storage_unavailable:'storage unavailable · retrying',log_queue_full:'too many unsaved QSOs · the oldest was not logged',log_invalid_field:'the station profile is incomplete',same_station_again:'same station as the last log entry'};
 const LOGGED_NOTICE_MS=8000;
 function logShow(){
   const l=snap?.log,node=$('contact-logged');

@@ -1593,6 +1593,82 @@ fn worked_set_reports_worked_and_confirmed_per_entity_band_and_mode() {
 // Proves: CL-010-04; TC-011-002 #10 a log written before #10 (the former ImportAdi kept
 // unknown fields verbatim) whose QSL fields are invalid or repeated stays readable: those
 // stay unknown fields; a valid one becomes the record's confirmation.
+/// A QSO as DirectLog writes it (record_of): CALL, MODE (MFSK + SUBMODE FT4 for FT4), BAND and
+/// FREQ from the confirmed dial (absent when it is not confirmed), GRIDSQUARE.
+fn qso(call: &str, dial_hz: Option<u64>, ft4: bool, grid: Option<&str>) -> Record {
+    let mut r = Record {
+        contact_id: crate::profile::new_uuid().unwrap(),
+        ..Default::default()
+    };
+    r.set("call", call.into());
+    r.set("mode", if ft4 { "MFSK" } else { "FT8" }.into());
+    if ft4 {
+        r.set("submode", "FT4".into());
+    }
+    if let Some(hz) = dial_hz {
+        r.set("band", band_of_hz(hz).unwrap().into());
+        r.set("freq", format!("{}.{:06}", hz / 1_000_000, hz % 1_000_000));
+    }
+    if let Some(g) = grid {
+        r.set("gridsquare", g.into());
+    }
+    r
+}
+
+// Proves: CL-085-01; TC-085-002 (b)-(f), TC-085-004 (d). The terms of "the same station again"
+// after the newest QSO: CALL ignoring case (K1ABC/P is another station, L4), the band (BAND,
+// else the band of FREQ; unknown equals only unknown, L2) and the mode (FT8 and FT4 differ);
+// under a contest its dupe rule decides within that (band_grid: a rover from a new grid is no
+// dupe). Expected values are the hand-written table of CL-085-01, never candidate output.
+#[test]
+fn tc_085_002_terms_of_the_same_station_again() {
+    const M20: Option<u64> = Some(14_074_000);
+    const M40: Option<u64> = Some(7_074_000);
+    let k1 = qso("K1ABC", M20, false, Some("FN42"));
+    // (b) another band; (c) another mode on the same band; the same band and mode.
+    assert!(qso("K1ABC", M20, false, None).same_station_again(&k1, None));
+    assert!(!qso("K1ABC", M40, false, None).same_station_again(&k1, None));
+    assert!(!qso("K1ABC", M20, true, None).same_station_again(&k1, None));
+    let ft4 = qso("K1ABC", M20, true, None);
+    assert!(qso("K1ABC", M20, true, None).same_station_again(&ft4, None));
+    // (d) the newest record has FREQ and no BAND.
+    let mut freq_only = qso("K1ABC", None, false, None);
+    freq_only.set("freq", "14.074500".into());
+    assert!(qso("K1ABC", M20, false, None).same_station_again(&freq_only, None));
+    freq_only.set("freq", "7.074000".into());
+    assert!(!qso("K1ABC", M20, false, None).same_station_again(&freq_only, None));
+    // (e) "k1abc" is K1ABC; K1ABC/P after K1ABC is another station (L4).
+    let lower = qso("k1abc", M20, false, None);
+    assert!(qso("K1ABC", M20, false, None).same_station_again(&lower, None));
+    assert!(!qso("K1ABC/P", M20, false, None).same_station_again(&k1, None));
+    // (f) unknown band equals only unknown band (L2).
+    let unknown = qso("K1ABC", None, false, None);
+    assert!(qso("K1ABC", None, false, None).same_station_again(&unknown, None));
+    assert!(!qso("K1ABC", M20, false, None).same_station_again(&unknown, None));
+    assert!(!qso("K1ABC", None, false, None).same_station_again(&k1, None));
+    // Another station.
+    assert!(!qso("W1AW", M20, false, None).same_station_again(&k1, None));
+    // TC-085-004 (d): under band_grid K1ABC/R from FN43 after FN42 is no dupe (logged); from
+    // FN42 again, or without a grid on either side, it is a dupe (not logged).
+    use crate::contest::Dupes;
+    let rover = qso("K1ABC/R", Some(50_313_000), false, Some("FN42"));
+    let again = |grid: Option<&str>, rule| {
+        qso("K1ABC/R", Some(50_313_000), false, grid).same_station_again(&rover, Some(rule))
+    };
+    assert!(!again(Some("FN43"), Dupes::BandGrid));
+    assert!(again(Some("FN42"), Dupes::BandGrid));
+    assert!(again(Some("fn42ab"), Dupes::BandGrid));
+    assert!(again(None, Dupes::BandGrid));
+    // The other rules count the same call, band and mode as a dupe.
+    for rule in [Dupes::Band, Dupes::BandModeClass, Dupes::Call] {
+        assert!(again(Some("FN43"), rule), "{rule:?}");
+    }
+    // A contest decides only within the same station, band and mode.
+    assert!(
+        !qso("K1ABC/R", M20, false, Some("FN42")).same_station_again(&rover, Some(Dupes::Call))
+    );
+}
+
 #[test]
 fn stored_log_with_former_verbatim_qsl_fields_stays_readable() {
     let dir = Dir::new();

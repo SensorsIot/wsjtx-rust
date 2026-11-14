@@ -2,6 +2,9 @@ package WstxOperatingChain {
     private import ScalarValues::*;
     private import WstxRankingControl::RankedList;
     private import WstxQsoControl::QsoProgress;
+    private import WstxRequirements::'FR-011';
+    private import WstxRequirements::ImplementationState;
+    private import RequirementDerivation::*;
     port def RankedActivityPort { out item ranked : RankedList; }
     interface def RankedActivity {
         doc /* The ranked list, from ranking to auto. */
@@ -37,11 +40,34 @@ package WstxOperatingChain {
         in item answer : LogAnswer;
     }
     item def FinishedContact { doc /* The finished contact; the logged contact. */ }
-    item def LogAnswer { doc /* The log answers accepted or refused. */ }
+    enum def LogAnswerKind { enum accepted; enum refused; }
+    item def LogAnswer {
+        attribute kind : LogAnswerKind;
+        doc /* The log's answer to one finished contact: refused when
+             WstxLogbook::SameStationAgain refuses it, accepted for every other outcome (saved,
+             pending with storage_unavailable, log_queue_full, log_invalid_field). */
+    }
     interface def CompletedContact {
-        doc /* A finished contact, and the log's answer. */
+        doc /* A finished contact, and the log's answer; the hand-over and its order are
+             'CL-085-02'. */
         end producer : CompletedContactPort;
         end consumer : ~CompletedContactPort;
+    }
+    requirement 'CL-085-02' {
+        subject handover : CompletedContact;
+        doc /* qso hands each completed contact to the log once, at its completion or by Log
+             QSO. The log answers each one with accepted or refused: refused when CL-085-01
+             refuses it, accepted otherwise. The answer is given before qso counts the contest
+             serial for that contact. A refusal changes nothing else in the QSO: it completes,
+             transmission goes off with cause contactCompleted, and a Log QSO of a running QSO
+             still closes it (completed, Tx6). Details: WstxOperatingChain::LogAnswer,
+             WstxSpecialActivities::ContestSerialRule. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs";
+    }
+    #derivation connection {
+        end #original ::> 'FR-011';
+        end #derive ::> 'CL-085-02';
     }
     port def WorkedBeforePort { out item worked : WorkedSet; }
     item def WorkedSet { doc /* What has been worked. */ }

@@ -2034,9 +2034,11 @@ async fn tc_112_005_qso_logged_exchanges() {
         (A::Hound, Some("FN42"), None, None, "JN47AA", ("", "")),
         (A::None, Some("FN42"), None, None, "JN47AA", ("", "")),
     ];
-    for (activity, grid, sent, rcvd, locator, expected) in cases {
+    for (n, (activity, grid, sent, rcvd, locator, expected)) in cases.into_iter().enumerate() {
         f.state.store.lock().unwrap().document.locator = locator.into();
-        let c = contest_contact(activity, grid, sent, rcvd);
+        let mut c = contest_contact(activity, grid, sent, rcvd);
+        // #85 CL-085-01: another station each time, never the newest record's station again.
+        c.dx_call = Some(format!("K{n}ABC"));
         let id = c.id.clone();
         f.contact().fixture_log(c);
         f.tick();

@@ -868,6 +868,13 @@ pub enum LogKind {
     /// The operator's Log QSO.
     LogQso,
 }
+/// The log's answer to a completed contact handed to it (#85 WstxOperatingChain::LogAnswer).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogAnswer {
+    Accepted,
+    /// CL-085-01: the same station again; nothing is written.
+    Refused,
+}
 /// Station facts the engine reads at each command and step.
 #[derive(Clone, Debug, Default)]
 pub struct Ctx {
@@ -1010,8 +1017,9 @@ pub struct Engine {
     /// Test record: (period, Tx offset) of every started request, as submitted.
     #[cfg(test)]
     pub started_hz: Vec<(i64, u32)>,
-    /// Contacts due for the log (completed, or Log QSO), taken by the station.
-    to_log: Vec<(LogKind, Contact)>,
+    /// Contacts due for the log (completed, or Log QSO), handed over by the station; the
+    /// flag: this hand-over counts the contest serial when the log accepts it (CL-085-03).
+    to_log: Vec<(LogKind, Contact, bool)>,
     /// The last request target refused without a disarm, never resubmitted as is.
     refused_target: Option<(i64, String, u32)>,
     /// The last visible refusal or failure of a transmit outcome (snake_case).
@@ -1184,14 +1192,31 @@ impl Engine {
     fn is_hound(&self) -> bool {
         self.settings.activity == Activity::Hound
     }
-    /// The contacts due for the log since the last call (WstxLogbook::DirectLog).
+    /// The contacts due for the log since the last call (WstxLogbook::DirectLog), each
+    /// accepted (a log that refuses nothing).
+    #[cfg(test)]
     pub fn take_logs(&mut self) -> Vec<(LogKind, Contact)> {
-        std::mem::take(&mut self.to_log)
+        let mut taken = Vec::new();
+        self.hand_over(|kind, c| {
+            taken.push((kind, c.clone()));
+            LogAnswer::Accepted
+        });
+        taken
+    }
+    /// #85 WstxOperatingChain::CompletedContact: hands each contact due for the log to
+    /// `log`, once, oldest first. The contest serial counts for a first hand-over only when
+    /// the log answers accepted (CL-085-02, CL-085-03); a refusal changes nothing else.
+    pub fn hand_over(&mut self, mut log: impl FnMut(LogKind, &Contact) -> LogAnswer) {
+        for (kind, c, counts) in std::mem::take(&mut self.to_log) {
+            if log(kind, &c) == LogAnswer::Accepted && counts {
+                self.count_serial();
+            }
+        }
     }
     /// Test seam: a completed contact due for the log, as its completion queues it.
     #[cfg(test)]
     pub fn fixture_log(&mut self, c: Contact) {
-        self.to_log.push((LogKind::Completion, c));
+        self.to_log.push((LogKind::Completion, c, false));
     }
     /// The Tx offset domain: the transmitting contact's mode, else the station's.
     fn tx_max(&self, ctx: &Ctx) -> u32 {
@@ -1572,7 +1597,7 @@ impl Engine {
         let a = self.settings.activity;
         !self.is_hound() && (self.settings.tx1_skip || (a.contest_like() && a != Activity::EuVhf))
     }
-    /// ContestExchange: a contact handed to the log for the first time counts the serial.
+    /// ContestExchange: a contact the log accepts at its first hand-over counts the serial.
     fn count_serial(&mut self) {
         if self.settings.activity.contest_like() {
             self.settings.serial = self.settings.serial.saturating_add(1);
@@ -2290,15 +2315,14 @@ impl Engine {
                 if c.dx_call.is_none() {
                     return Err("no_contact");
                 }
+                // Its first hand-over counts the serial once the log accepts it (#85).
+                let counts = c.state.active() || !c.logged_on_completion;
                 if c.state.active() {
                     c.logged_on_completion = true;
                     self.complete(core.as_deref_mut(), ctx.now_utc_ms);
-                    self.count_serial();
-                } else if !c.logged_on_completion {
-                    self.count_serial();
                 }
                 let c = self.contact.as_ref().expect("checked");
-                self.to_log.push((LogKind::LogQso, c.clone()));
+                self.to_log.push((LogKind::LogQso, c.clone(), counts));
             }
         }
         // A human was seen (WstxQsoControl::TxWatchdog); automation is no operator (#39).
@@ -2325,8 +2349,7 @@ impl Engine {
             // has nothing to log.
             if !c.logged_on_completion && c.dx_call.is_some() {
                 c.logged_on_completion = true;
-                self.to_log.push((LogKind::Completion, c.clone()));
-                self.count_serial();
+                self.to_log.push((LogKind::Completion, c.clone(), true));
             }
         }
     }
