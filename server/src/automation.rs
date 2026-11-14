@@ -1934,7 +1934,7 @@ impl Owner {
                             .filter(|f| {
                                 f.from == *target
                                     && f.from != my
-                                    && !st.ignored.contains_key(&f.from)
+                                    && st.ignored_by(&f.from).is_none()
                                     && !st.greyed(f)
                                     && st.cq_like(f, true)
                             })

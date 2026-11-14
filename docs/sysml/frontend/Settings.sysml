@@ -84,8 +84,9 @@ package WstxSettings {
              control or a pointer action outside it. Exactly four sections
              (SettingsSection):
              General: station (display name, callsign, locator, continent, #42 the
-             ignore lists of WstxSettings::IgnoreListsDisplay: permanent calls, session expiry
-             minutes, the session list with remove controls; #42 the Alerts section of
+             ignore lists of WstxSettings::IgnoreListsDisplay: permanent entries of CL-042-02's
+             form, session expiry minutes, the session list with an add field and remove
+             controls; #42 the Alerts section of
              WstxSettings::AlertDisplay: Sound and Browser notification checkboxes, both off by
              default, and the alert history newest first with Clear; #39 the Most Wanted
              section of WstxSettings::MostWantedListDisplay: status with the date and source attribution, and one button Update Most Wanted), clock
@@ -442,10 +443,13 @@ package WstxSettings {
 
     attribute def IgnoreListsDisplay {
         doc /* Band Activity: the right-click menu offers "Ignore <call>" for a row with a
-             resolved sender (session list), "Stop ignoring <call>" when that call is on the
-             session list, and no ignore item for other rows. Settings > General: the permanent
-             list (calls separated by spaces or commas, saved on change with PUT /strategy), the
-             session expiry in minutes (saved on change), and the session list with each call's
+             resolved sender (it adds the exact call to the session list), "Stop ignoring
+             <call>" when that exact call is a session entry, and no ignore item for other
+             rows. A call ignored only by a pattern shows the pattern in its why text; the
+             pattern is removed in Settings. Settings > General: the permanent list (entries of
+             CL-042-02's form separated by spaces or commas, saved on change with PUT
+             /strategy), the session expiry in minutes (saved on change), and the session list
+             with an add field taking a call or a pattern (added on change) and each entry's
              remaining minutes and a remove control; the list is read again when the drawer
              opens. */
     }

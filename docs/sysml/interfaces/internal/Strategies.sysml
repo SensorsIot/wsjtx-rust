@@ -61,8 +61,8 @@ package WstxStrategies {
         doc /* Wire keys exactly continent (null: ContinentOfCall of my callsign, else one of
              the seven codes: my continent for the directed-CQ rule and region dx), active
              (null or the name of a listed or built-in strategy), strategies (0..16 Strategy),
-             ignore_calls (#42 the permanent ignore list: 0..100 unique calls of 1..13
-             A-Z 0-9 /, IgnoreLists), session_ignore_minutes (#42 the session list
+             ignore_calls (#42 the permanent ignore list: 0..100 unique entries of CL-042-02's
+             form, IgnoreLists), session_ignore_minutes (#42 the session list
              expiry, an integer 1..720, default 30) and the optional contest (#63,
              WstxStrategies::ContestSelection, never persisted). Persisted as strategy.json beside
              profile.json: {schema_version 4, profile_id, revision, configuration} (#97), written

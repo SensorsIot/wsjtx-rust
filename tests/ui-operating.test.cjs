@@ -3978,6 +3978,63 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   await page.waitForFunction(()=>!document.querySelector('#ignore-session li'));
   assert.deepEqual(errors,[]);
 });
+// Proves: CL-042-02, CL-042-06; TC-125-002 the Settings > General ignore lists take pattern
+// entries: the permanent list saves them with PUT /strategy, the session add field sends
+// POST /strategy/ignore with the pattern as call; the station's replies (snapshots, verdicts)
+// are hand-written fixtures, and the row loses its mark only through the station's new verdicts.
+test('TC-125-002 Pattern entries in the Settings ignore lists',{timeout:60000},async t=>{
+  let state,view;const puts=[],ignores=[],commands=[];let session=[];
+  const period='2026-10-27T12:00:00.0000000Z';
+  const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
+  const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
+  const records=[record(0,'CQ BY1AA OM89','BY1AA',1000,'CQ','OM89'),record(1,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
+  const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,value:['most_wanted'],callers_first:true,cq_when_no_target:false,repetitions:4,quiet_minutes:10,treat_73_as_cq:false,window:{kind:'all'}};
+  const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:2,configuration:{continent:null,active:'CQ',strategies:[strategy],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[]};
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period,complete:true}});
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:2,available_count:2,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base)}));
+    await contactCommands(p,commands);
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());puts.push(b);view={...view,revision:view.revision+1,configuration:b.configuration};}await route.fulfill({json:{...view,session_ignore:session}});});
+    await p.route('**/strategy/ignore',async route=>{const b=JSON.parse(route.request().postData());ignores.push(b);
+      session=b.ignore?[...session.filter(e=>e.call!==b.call),{call:b.call,band:'40m',remaining_s:1800}]:session.filter(e=>e.call!==b.call);
+      await route.fulfill({json:{...view,session_ignore:session}});});
+    await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());
+      const byIgnored=view.configuration.ignore_calls.includes('BY*');
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',verdicts:byIgnored?[{sequence:1,rank:0,grey:false}]:[{sequence:0,rank:0,grey:false},{sequence:1,rank:1,grey:false}]}});});
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest].ba-strategy').length===2,null,{timeout:25000});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.fill('#ignore-calls','by* */mm');await page.locator('#ignore-calls').blur();
+  await page.waitForFunction(()=>document.querySelector('#ignore-calls').value==='BY* */MM');
+  for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration.ignore_calls]),[[2,['BY*','*/MM']]]);
+  await page.waitForFunction(()=>!document.querySelector('#band-activity tr[data-sequence="0"]').classList.contains('ba-strategy'),null,{timeout:10000});
+  // The session list takes a pattern in its own add field.
+  await page.fill('#ignore-add','ja*');await page.locator('#ignore-add').blur();
+  for(let i=0;i<60&&!ignores.length;i++)await page.waitForTimeout(50);
+  assert.deepEqual(ignores,[{v:1,profile_id:view.profile_id,boot_id:view.boot_id,call:'JA*',ignore:true}]);
+  await page.locator('#ignore-session li').first().waitFor();
+  assert.deepEqual(await page.locator('#ignore-session li').evaluateAll(l=>l.map(x=>[x.querySelector('.ig-call').textContent,x.querySelector('.ig-left').textContent])),[['JA*','30 min']]);
+  assert.equal(await page.locator('#ignore-add').inputValue(),'','the field is empty after the add');
+  // A call ignored by a pattern only: the row menu offers Ignore, never Stop ignoring.
+  await page.locator('#settings-drawer .return-operate').click();
+  const row=page.locator('#band-activity tr[data-sequence="0"]');
+  await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
+  assert.deepEqual(await page.locator('#ba-menu button:not([hidden])').evaluateAll(b=>b.map(x=>x.textContent)),['Reply','Select','Set Rx here','Pounce BY1AA','Ignore BY1AA']);
+  await page.keyboard.press('Escape');
+  // The session pattern is removed in Settings.
+  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
+  await page.locator('#ignore-session button[aria-label="Stop ignoring JA*"]').click();
+  for(let i=0;i<60&&ignores.length<2;i++)await page.waitForTimeout(50);
+  assert.deepEqual(ignores[1],{v:1,profile_id:view.profile_id,boot_id:view.boot_id,call:'JA*',ignore:false});
+  await page.waitForFunction(()=>!document.querySelector('#ignore-session li'));
+  assert.deepEqual(errors,[]);
+});
 // Proves: CL-042-03; TC-042-005 Band Activity Pounce sends exactly the automation requests
 // written here (the station's automation replies are hand-written fixtures); the browser
 // never arms for the pounce; the QSO pane and the strategy element show the running pounce.
