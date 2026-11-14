@@ -87,6 +87,30 @@ class LostRefusalTests(unittest.TestCase):
         self.assertIn("expected message", problems[0])
 
 
+class RefusalExitTests(unittest.TestCase):
+    """A pin refusal is exit 1 exactly: the same refusal ending in another exit code fails its case."""
+    NAMES = ("pins: package file edited after the build", "pins: commit without pins", "pins: pins in another order")
+
+    def run_pin_case(self, script_text, name):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = os.path.join(tmp, "station-update.ps1")
+            with open(script, "w", encoding="utf-8") as f:
+                f.write(script_text)
+            root = os.path.join(tmp, "case")
+            os.makedirs(root)
+            return station_drill.run_case(root, script, next(c for c in station_drill.PIN_CASES if c[0] == name))
+
+    def test_pin_refusals_require_exit_1(self):
+        text = read(real_script())
+        line = "throw ('Refused: '+($refuse -join '; ')+'.')"
+        self.assertIn(line, text)
+        for name in self.NAMES:
+            with self.subTest(name):
+                self.assertEqual(self.run_pin_case(text, name)[0], [])
+                problems, out = self.run_pin_case(text.replace(line, "exit 3"), name)
+                self.assertTrue([p for p in problems if "not 1" in p], (problems, out))
+
+
 class DrillCaseTests(unittest.TestCase):
     """The drill's cases against the script in the tree, one group per test."""
 

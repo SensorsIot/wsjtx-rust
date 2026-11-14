@@ -609,6 +609,8 @@ def run_case(root, script, case):
         failing = ("refused", "busy", "radio", "binding refused")
         if outcome in failing and rc == 0:
             problems.append("exit 0")
+        if outcome in ("refused", "binding refused") and rc != 1:
+            problems.append(f"exit {rc}, not 1 (refused)")
         if outcome == "busy" and rc != 3:
             problems.append(f"exit {rc}, not 3 (busy)")
         if outcome == "radio" and rc != 6:
