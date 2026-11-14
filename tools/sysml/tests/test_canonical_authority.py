@@ -98,13 +98,16 @@ class CanonicalAuthorityTests(unittest.TestCase):
         for changed, message in (
             (MODEL.replace("verify 'FR-001'", "verify 'FR-999'"), "verification target"),
             (MODEL.replace("verify 'CL-003-01';", ""), "Nonreciprocal"),
-            (MODEL.replace("dependency checks from 'CL-003-01' to 'TC-001-001';", ""), "declared verification case"),
             (MODEL.replace("dependency owns from 'CL-003-01' to 'FR-001';", ""), "requirement ownership"),
         ):
             with self.subTest(message=message):
                 self.requirements.write_text(changed, encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, message):
                     self.check()
+        # CL-014-05: the verify statement alone links the clause; no dependency to the case is needed.
+        with self.subTest("no dependency to the case"):
+            self.requirements.write_text(MODEL.replace("dependency checks from 'CL-003-01' to 'TC-001-001';", ""), encoding="utf-8")
+            self.assertEqual(set(self.check()), REQUIRED)
 
     def test_actual_test_binding_is_required_for_delivered_case(self):
         source = self.root / "tests/case.cjs"

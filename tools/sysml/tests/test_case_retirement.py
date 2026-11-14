@@ -171,7 +171,7 @@ class RetirementFormTests(Fixture):
         with self.subTest("clause dependency"), self.refused("Invalid canonical clause dependency: CL-003-01 -> TC-001-002$"):
             self.write("Requirements.sysml", ENTRY.replace(CHECKS, CHECKS + "    dependency checksToo from 'CL-003-01' to 'TC-001-002';\n"))
             self.check()
-        with self.subTest("the clause's only case retired"), self.refused("Canonical clause lacks a declared verification case: CL-003-01$"):
+        with self.subTest("the clause's only case retired"), self.refused("Canonical clauses lack verification links: CL-003-01$"):
             self.write("Requirements.sysml", ENTRY.replace(CASE, "").replace(CHECKS, ""))
             self.write(FUNCTION_KEY, function(retire("TC-001-001")))
             self.check({"FR-001", "CL-003-01", "TC-001-001"})
@@ -288,7 +288,7 @@ class RetirementFormTests(Fixture):
         with self.subTest("clause dependency"), self.refused("Invalid canonical clause dependency: CL-003-01 -> TC-001-002$"):
             self.write("Requirements.sysml", ENTRY.replace(CHECKS, CHECKS + "    dependency checksToo from 'CL-003-01' to 'TC-001-002';\n"))
             self.check(REQUIRED)
-        with self.subTest("the clause's only case retired"), self.refused("Canonical clause lacks a declared verification case: CL-003-01$"):
+        with self.subTest("the clause's only case retired"), self.refused("Canonical clauses lack verification links: CL-003-01$"):
             self.write("Requirements.sysml", ENTRY.replace(CASE, "").replace(CHECKS, ""))
             self.write(FUNCTION_KEY, function(retire("TC-001-001")))
             self.check({"FR-001", "CL-003-01"})
