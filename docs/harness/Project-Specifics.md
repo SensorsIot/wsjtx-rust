@@ -539,14 +539,10 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
 - **CAT confirmation.** A new profile, and any change of its CAT setup, needs the operator's
   receive-only confirmation in the browser (Settings, "CAT receive-only confirmation");
   until then CAT stays closed. Agents never change the CAT endpoint during a simulator run.
-- **Emulator.** The IC-7300 emulator (`D:\Github\IC-7300 simulator`,
-  `simulator.py --serial COM5 --baud 115200`, an MCP server on stdin) owns COM5. It closes
-  its serial transport when the station closes COM4 and does not recover yet, so it is
-  started after the station is up, and a station restart is followed by an emulator
-  restart. `GET /radio` reads `ready` when CAT works.
-- **Special calls.** The band simulator generates standard calls only. Nonstandard and
-  compound calls (`/MM`, special-event calls) are played with WSJT-X's `ft4sim`/`ft8sim`
-  straight into the receive cable.
+- **Emulator and band simulator.** Operated as their own project describes it: the tester
+  skill `skills/wsjtx-simulator-testing/SKILL.md` and the handoff package of
+  SensorsIot/FT-8-Band-Simulator. Agents here do not change the simulator projects.
+  `GET /radio` reads `ready` when CAT works.
 - **Deploys.** A deploy writes the pinned launcher, so the station returns to `ic7300`;
   switch back to the simulator afterwards if the run continues.
 
