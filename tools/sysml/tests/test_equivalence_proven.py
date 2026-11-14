@@ -2,8 +2,9 @@
 
 The synthetic cases build commits of a small model in a temporary git repository and
 compare them with the real pinned Pilot; every expected line is written by hand from the
-edit. P5 reads the model of the pinned base commit of #204 by `git archive`, P6 the model of
-HEAD in a temporary repository.
+edit. Neither P5 nor P6 reads the model of HEAD. P5 reads the model before #204 (PINNED) by
+`git archive`; P6 checks out the merge of #204 (P6_BASE) in a temporary repository. The
+tools are those of the working tree.
 """
 import contextlib
 import importlib.util
@@ -27,6 +28,10 @@ spec.loader.exec_module(tool)
 CACHE = Path.home() / ".cache/wsjtx-rust/sysml-tools"
 # The pinned base commit of #204, whose model files equal those of its base.
 PINNED = "f80c243c9"
+# P6 needs #204's ModelBindings (TestLevel, TestLocation) and the old form of TC-007-002 and
+# TC-085-006 (before #205), so it has its own base: the merge of #204 into master. P5 checks
+# the mapping on the model before #204 and stays on PINNED.
+P6_BASE = "728289975"
 
 BINDINGS = """package ModelBindings {
     private import ScalarValues::*;
@@ -447,7 +452,7 @@ REAL_LINES = [
 
 
 class RealModelTests(unittest.TestCase):
-    # P6: TC-007-002 and TC-085-006 of HEAD converted by the five rules in a temporary repository
+    # P6: TC-007-002 and TC-085-006 of P6_BASE converted by the five rules in a temporary repository
     # Proves: CL-014-22; TC-DOC-020
     def test_p6_real_cases_converted_are_equivalent(self):
         status = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"], capture_output=True, text=True).stdout
@@ -458,7 +463,7 @@ class RealModelTests(unittest.TestCase):
                            check=True, capture_output=True, env=env)
             repository = Repository.__new__(Repository)
             repository.root = clone
-            base = tool.commit_of("HEAD")
+            base = tool.commit_of(P6_BASE)
             repository.git("checkout", "-q", "--detach", base)
             for path, changes in ((SCREEN, SCREEN_EDITS), (LOGBOOK, LOGBOOK_EDITS)):
                 file = clone / path
