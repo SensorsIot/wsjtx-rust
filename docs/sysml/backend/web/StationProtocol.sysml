@@ -39,6 +39,10 @@ package WstxStationProtocol {
     private import WstxStationLink::DisplayProfile;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     doc /* Canonical status, authentication and transport contract. Profile, recording,
          live receive and display extensions refine this shared boundary in WstxProfiles,
          WstxProfileRecordings, WstxRecordingReceive WstxRadioIO and WstxOperatingReceive. They do not create separate authentication
@@ -680,14 +684,14 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
     dependency transferOwner from transfer to WstxArchitecture::StationProcess::web;
     requirement 'CL-003-03' {
         doc /* The server MUST validate request structure, protocol version, command and message size in the contract's order. Rejected input MUST follow the defined error/close behavior; recoverable errors MUST leave the server available without exposing internal details. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs; client/app.js"; }
     }
     dependency CL_003_03_to_FR_021 from 'CL-003-03' to 'FR-021';
     requirement 'CL-003-06' {
         doc /* Application output buffering and active connections MUST have explicit bounds (WstxStationLink::Limits; design bounds, checked by review). A peer that stops answering (no Pong for more than 15 s) MUST be removed at the next heartbeat tick, without delaying another client's status requests (#80: the one liveness case that matters in normal operation, a browser that vanishes without closing). */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs; client/app.js"; }
     }
     dependency CL_003_06_to_FR_021 from 'CL-003-06' to 'FR-021';
     verification 'TC-021-005' {
@@ -720,12 +724,12 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              [protocol_tests.rs](../../../../server/src/protocol_tests.rs),
              `protocol_returns_specified_response_and_errors`. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-003-02';
             verify 'CL-003-03';
         }
-        attribute executable : String = "tests/communication.test.cjs; server/src/protocol_tests.rs";
+        @TestedBy { test = "tests/communication.test.cjs; server/src/protocol_tests.rs"; }
     }
     verification 'TC-021-008' {
         doc /* Dead peer removal
@@ -752,56 +756,52 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              [liveness rules](StationProtocol.sysml). Removing the Pong check (#70 mutation M8)
              must turn case 1 red. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-003-02';
             verify 'CL-003-06';
             verify 'FR-021';
         }
-        attribute executable : String = "server/src/liveness_tests.rs";
+        @TestedBy { test = "server/src/liveness_tests.rs"; }
     }
-    dependency CL_003_03_verified_by_TC_021_005 from 'CL-003-03' to 'TC-021-005';
-    dependency CL_003_06_verified_by_TC_021_008 from 'CL-003-06' to 'TC-021-008';
 
     // #51 An open page recovers after a station update (chosen defaults: WstxStationProtocol::PageUpdate).
     requirement 'CL-051-01' {
         doc /* The station identifies the browser client it serves with WstxStationProtocol::ClientBuild: the first 16 lower-case hex digits of the SHA-256 over its served client files in route order. The served page carries it as body data-build and every station.status reply carries it as data.build (data exactly {version, radio, build}). */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs"; }
     }
     dependency CL_051_01_to_FR_021 from 'CL-051-01' to 'FR-021';
-    dependency CL_051_01_verified_by_TC_051_001 from 'CL-051-01' to 'TC-051-001';
-    dependency CL_051_01_verified_by_TC_051_003 from 'CL-051-01' to 'TC-051-003';
     requirement 'CL-003-01' {
         doc /* The Rust server MUST serve the HTML/CSS/JavaScript operator client. The browser MUST visibly show server version, connection state and an unconfigured radio. Refresh status MUST request a fresh snapshot and update the displayed last-update time. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs; client/app.js"; }
     }
     dependency CL_003_01_to_FR_019 from 'CL-003-01' to 'FR-019';
     dependency CL_003_01_to_FR_021 from 'CL-003-01' to 'FR-021';
     requirement 'CL-003-02' {
         doc /* Each browser MUST use one versioned WebSocket connection for status requests and responses. The server MUST echo each request ID on the requesting connection and return authoritative version/radio state. Concurrent clients MUST remain independent. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs; client/app.js"; }
     }
     dependency CL_003_02_to_FR_021 from 'CL-003-02' to 'FR-021';
     requirement 'CL-003-07' {
         doc /* Remote access MUST use the contract's authenticated TLS path and exact Origin validation. The browser MUST offer token login, and invalid or oversized login requests MUST be refused. Insecure remote startup and invalid access settings MUST fail closed. Explicit loopback development MAY remain unauthenticated. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs; client/app.js"; }
     }
     dependency CL_003_07_to_FR_021 from 'CL-003-07' to 'FR-021';
     requirement 'CL-003-08' {
         doc /* Status MUST use initial/reconnection snapshots, explicit refresh requests and event-driven updates when state changes exist. The client MUST avoid constant status polling and tolerate protocol heartbeats between responses. The initial profile MUST carry no raw audio or spectrum stream and use no application payload codec or negotiated WebSocket compression. Bounded negotiated HTTP content coding is permitted only by12.1.1. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs; client/app.js"; }
     }
     dependency CL_003_08_to_FR_019 from 'CL-003-08' to 'FR-019';
     dependency CL_003_08_to_FR_021 from 'CL-003-08' to 'FR-021';
     requirement 'CL-005-03' {
         doc /* Profile lifecycle, revision, configuration and authenticated sessions MUST be independent, including one browser cookie store on one hostname with distinct TLS ports. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/profile.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/profile.rs; client/app.js"; }
     }
     dependency CL_005_03_to_FR_019 from 'CL-005-03' to 'FR-019';
     dependency CL_005_03_to_FR_021 from 'CL-005-03' to 'FR-021';
@@ -830,14 +830,14 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              `TC-021-006: real browser, two clients, desktop and mobile layout`.
              Screenshots are `test-results/station-desktop.png` and `test-results/station-mobile.png`. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-003-01';
             verify 'CL-003-04';
             verify 'FR-019';
             verify 'FR-021';
         }
-        attribute executable : String = "tests/communication.test.cjs";
+        @TestedBy { test = "tests/communication.test.cjs"; }
     }
     verification 'TC-021-009' {
         doc /* Remote access boundary
@@ -867,12 +867,12 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              [communication.test.cjs](../../../../tests/communication.test.cjs),
              `TC-021-009: TLS login, unauthorized/origin denial, plaintext refusal`. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-003-07';
             verify 'FR-021';
         }
-        attribute executable : String = "tests/communication.test.cjs";
+        @TestedBy { test = "tests/communication.test.cjs"; }
     }
     verification 'TC-022-004' {
         doc /* Multi-instance authentication in one browser profile
@@ -922,7 +922,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              process in bounded fixture subcases; no production clock/rate switch, status poll
              stream, relaxed deadline or omitted companion. Same-host cookie transport
              is explicitly observed; it is not proof against a hostile service on that hostname. */
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-005-03';
             verify 'CL-005-04';
@@ -930,7 +930,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
             verify 'FR-021';
             verify 'FR-022';
         }
-        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
+        @TestedBy { test = "tests/profiles.test.cjs; server/src/auth_tests.rs"; }
     }
     verification 'TC-009-005' {
         doc /* Coherent receive operating controls
@@ -1044,7 +1044,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              mode/band changes and Stop, with verified restoration. A quiet band is not fabricated
              as successful decoding; fixture proof and actual RF observations are labelled separately. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-003-08';
             verify 'CL-008-03';
@@ -1054,20 +1054,10 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        attribute executable : String = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs; server/tests/radio_control.rs; tests/contact.test.cjs; tests/recording.test.cjs; tests/ui-operating.test.cjs";
+        @TestedBy { test = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs; server/tests/radio_control.rs; tests/contact.test.cjs; tests/recording.test.cjs; tests/ui-operating.test.cjs"; }
     }
 
     // Reciprocal ownership is verification intent, not an execution verdict.
-    dependency CL_003_01_verified_by_TC_021_006 from 'CL-003-01' to 'TC-021-006';
-    dependency CL_003_02_verified_by_TC_021_005 from 'CL-003-02' to 'TC-021-005';
-    dependency CL_003_02_verified_by_TC_021_008 from 'CL-003-02' to 'TC-021-008';
-    dependency CL_003_07_verified_by_TC_021_009 from 'CL-003-07' to 'TC-021-009';
-    dependency CL_003_08_verified_by_TC_009_005 from 'CL-003-08' to 'TC-009-005';
-    dependency CL_003_08_verified_by_TC_021_007 from 'CL-003-08' to 'TC-021-007';
-    dependency CL_005_03_verified_by_TC_022_001 from 'CL-005-03' to 'TC-022-001';
-    dependency CL_005_03_verified_by_TC_022_003 from 'CL-005-03' to 'TC-022-003';
-    dependency CL_005_03_verified_by_TC_022_004 from 'CL-005-03' to 'TC-022-004';
-    dependency CL_005_03_verified_by_TC_022_005 from 'CL-005-03' to 'TC-022-005';
     requirement 'CL-022-02' {
         doc /* SelectedRadioId is a station-assigned random UUID persisted with the
              selected radio configuration, separate from profile UUID, COM endpoint,
@@ -1144,8 +1134,8 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              one in-flight effect per admitted request follows, under the existing
              cancellation/release rules. Every request admitted after the commit is
              refused, and the affected WS closes before its next message. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/authorization.rs; server/src/authorization_http.rs; server/src/recording_http.rs; server/src/main.rs"; }
     }
     dependency CL_022_02_to_FR_019 from 'CL-022-02' to 'FR-019';
     dependency CL_022_02_to_FR_021 from 'CL-022-02' to 'FR-021';
@@ -1175,13 +1165,12 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              '<port> in use by another program' (for example 'COM3 in use by another
              program'); other unavailable causes keep radio_unavailable. The Thin/Off
              accounted-traffic companion once planned here is retired (#80). */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/authorization_http.rs; client/recording.js; client/authorization.js; client/app.js"; }
     }
     dependency CL_022_05_to_FR_003 from 'CL-022-05' to 'FR-003';
     dependency CL_022_05_to_FR_010 from 'CL-022-05' to 'FR-010';
     dependency CL_022_05_to_FR_021 from 'CL-022-05' to 'FR-021';
-    dependency CL_022_02_verified_by_TC_022_006 from 'CL-022-02' to 'TC-022-006';
     // TC-022-007 retired (operator 2026-11-06, radio identity Add/Replace/Remove dropped, #22);
     // its revocation and configuration-edit cases moved to TC-022-006. The identity is not reused.
     verification 'TC-022-008' {
@@ -1206,15 +1195,12 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              server/src/auth_tests.rs (status GET405, wrong and missing Origin403
              before auth, strict body/media/size refusals, unknown transport401). */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs";
+        @Automation { run = AutomationState::implemented; }
+        @TestedBy { test = "tests/profiles.test.cjs; server/src/auth_tests.rs"; }
         objective {
             verify 'CL-022-05';
         }
     }
-    dependency CL_022_05_verified_by_TC_022_008 from 'CL-022-05' to 'TC-022-008';
-    dependency CL_022_02_verified_by_TC_022_010 from 'CL-022-02' to 'TC-022-010';
-    dependency CL_022_05_verified_by_TC_022_010 from 'CL-022-05' to 'TC-022-010';
     verification 'TC-051-001' {
         doc /* An open page reloads after a station update and receives again
              Setup: actual candidate server on a disposable profile and Chromium at 1366x768; browser storage theme day and waterfall speed 4; a WebSocket proxy (Playwright routeWebSocket) forwards every message and, after the restart, rewrites the build of one station.status to 0123456789abcdef, standing for the updated station. The communication suite computes the build independently (Node SHA-256 over the client files on disk).
@@ -1222,12 +1208,12 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              Expected: the page build is 16 hex digits and equals the status build of the unchanged station (no reload); after the restart exactly one reload, a new boot id, the receive snapshot of the new station accepted, theme day and speed 4 kept, the tab's session storage names the build; the second mismatch for the same build shows "Station updated · reload" with no second reload. The status envelope is {version 0.1.0, radio unconfigured, build}.
              loopback only. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-051-01';
             verify 'CL-051-02';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs; tests/communication.test.cjs; server/src/protocol_tests.rs";
+        @TestedBy { test = "tests/ui-operating.test.cjs; tests/communication.test.cjs; server/src/protocol_tests.rs"; }
     }
     verification 'TC-051-003' {
         doc /* Live update with the operating page open
@@ -1236,8 +1222,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              Expected: the page reloads by itself and the waterfall moves again within about 10 s of the station's restart; browser settings kept.
              run at CR acceptance with the operator. */
         @TestLevel { cost = 3; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
-        attribute method : String = "manual";
+        @Automation { run = AutomationState::planned; method = "manual"; }
         objective {
             verify 'CL-051-01';
             verify 'CL-051-02';
@@ -1247,8 +1232,8 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
     // #33 The station reports its own source commit, for the independent post-install probe.
     requirement 'CL-033-01' {
         doc /* Every response to GET / carries exactly one header x-wstx-source-commit: the 40 lower-case hex digits of the source commit the executable was built from (compile-time WSTX_SOURCE_COMMIT), or unknown when the build had none or a value of any other form. It needs no authentication; station.status and the served page body are unchanged. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs"; }
     }
     dependency CL_033_01_to_FR_021 from 'CL-033-01' to 'FR-021';
     verification 'TC-033-001' {
@@ -1258,17 +1243,16 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              Expected: exactly one x-wstx-source-commit header, equal to the test build's own WSTX_SOURCE_COMMIT when it is 40 lower-case hex and unknown otherwise; the valid commit is reported unchanged and every other value as unknown.
              no network. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-033-01';
         }
-        attribute executable : String = "server/src/protocol_tests.rs";
+        @TestedBy { test = "server/src/protocol_tests.rs"; }
     }
-    dependency CL_033_01_verified_by_TC_033_001 from 'CL-033-01' to 'TC-033-001';
     requirement 'CL-003-05' {
         doc /* The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model (WstxStationLink::ThinLinkBudget). Its traffic budgets are targets of normal operation that the operator judges from the station's link byte log, and its visible-response target is watched in the live check after each deploy (operator 2026-11-09) (WstxStationLink::LinkTrafficLog); no test asserts them (operator 2026-11-09, #80). The station MUST record that log: per period and client (an enrolled browser, an MCP client or local), the bytes each way in total and by message type, and the display profile of each of the client's sockets. Page and asset loading, reconnection, authorization recovery, CAT, selection changes, recording replay or import and log maintenance carry no link budget. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/main.rs; server/src/link_log.rs; server/src/mcp.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/main.rs; server/src/link_log.rs; server/src/mcp.rs; client/app.js"; }
     }
     dependency CL_003_05_to_FR_021 from 'CL-003-05' to 'FR-021';
     verification 'TC-080-001' {
@@ -1278,11 +1262,10 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              Expected (WstxStationLink::LinkTrafficLog): one JSON line per client with traffic at each period end, none for a client without traffic. bytes each way equals the TCP bytes the client's peers wrote and read in that period. Each type's count and bytes equal the peers' own counts by the log's rule: WebSocket frames header plus payload (mask included from the client); HTTP the request as written (request line, header fields, body) and the response as received minus the fields the HTTP server adds itself (date, and the content-length or transfer-encoding these routes leave unset) and minus chunk framing, re-serialized as HTTP/1.1 text; the same reconstruction for the HTTP/2 exchange. other = bytes - sum of types. estimate equals the hand calculation of the log's formula. The refused POST /receive/select is on the browser's line; the MCP client has its own line and the browser line holds no MCP bytes; (f) is on a local line on TLS. display lists each socket's profile (thin, then thin and off). FT4 lines are 7500 ms apart; the mode change gives (start, 5200, FT8), (change, until the next FT4 start, FT4), then 7500 ms FT4 lines; with no mode the lines say mode none and are 15000 ms apart. No line holds a cookie, token or proof. The file moves to link-traffic.1.log at its rotation size, replacing the older one. Nothing of the log reaches a socket or response. On the plaintext profile t is 0 and the client is local.
              no browser, link simulator or radio. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-003-05';
         }
-        attribute executable : String = "server/src/link_log_tests.rs";
+        @TestedBy { test = "server/src/link_log_tests.rs"; }
     }
-    dependency CL_003_05_verified_by_TC_080_001 from 'CL-003-05' to 'TC-080-001';
 }

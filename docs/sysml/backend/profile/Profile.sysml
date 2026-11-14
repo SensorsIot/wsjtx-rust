@@ -418,16 +418,10 @@ package WstxProfiles {
         }
         @TestedBy { test = "tests/profiles.test.cjs; server/src/profile_tests.rs"; }
     }
-    dependency CL_005_01_verified_by_TC_022_001 from 'CL-005-01' to 'TC-022-001';
-    dependency CL_005_04_verified_by_TC_022_002 from 'CL-005-04' to 'TC-022-002';
-    dependency CL_005_04_verified_by_TC_022_003 from 'CL-005-04' to 'TC-022-003';
-    dependency CL_005_04_verified_by_TC_022_004 from 'CL-005-04' to 'TC-022-004';
-    dependency CL_005_05_verified_by_TC_022_001 from 'CL-005-05' to 'TC-022-001';
-    dependency CL_005_05_verified_by_TC_022_002 from 'CL-005-05' to 'TC-022-002';
     requirement 'CL-005-02' {
         doc /* Stable identity, schema, validated settings, revision and acknowledged saves MUST survive process restart. The browser MUST identify the selected profile and permit the bounded edits below. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/profile.rs; client/app.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/profile.rs; client/app.js"; }
     }
     dependency CL_005_02_to_FR_001 from 'CL-005-02' to 'FR-001';
     dependency CL_005_02_to_FR_016 from 'CL-005-02' to 'FR-016';
@@ -435,8 +429,8 @@ package WstxProfiles {
     dependency CL_005_02_to_FR_022 from 'CL-005-02' to 'FR-022';
     requirement 'CL-008-01' {
         doc /* Persist independently selected audio and typed IC-7300 control intent through the existing profile revision/atomic-store boundary; settings never assert device availability. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs"; }
     }
     dependency CL_008_01_to_FR_001 from 'CL-008-01' to 'FR-001';
     dependency CL_008_01_to_FR_002 from 'CL-008-01' to 'FR-002';
@@ -448,13 +442,13 @@ package WstxProfiles {
              Channel0/normalization/finite-value rules, exact rational counts and block partition invariance within2e-5, group-delay alignment within one canonical frame, passband0.1dB/stopband60dB, bounded storage and no gap-crossing/fake silence. A contiguous flag within2 ms of the QPC timeline keeps one epoch and gap-free frames; beyond2 ms it is unknown loss; every unknown-loss epoch names its trigger. Canonical recordings unchanged. Cancel release<=250ms except explicit failed-close state; capture never invokes CAT.
              actual candidate modules and independent device/clock fixtures. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-008-01';
             verify 'CL-008-02';
             verify 'CL-008-03';
         }
-        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/tests/receive_integration.rs; server/tests/source_contract.rs; server/src/audio.rs";
+        @TestedBy { test = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/tests/receive_integration.rs; server/tests/source_contract.rs; server/src/audio.rs"; }
     }
     verification 'TC-009-001' {
         doc /* Typed radio control
@@ -462,15 +456,14 @@ package WstxProfiles {
              Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/in-flight exchange retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource.
              compiled control service and independent protocol/serial emulator. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; method = "manual"; }
         objective {
             verify 'CL-008-01';
             verify 'CL-008-03';
             verify 'CL-008-04';
             verify 'CL-008-06';
         }
-        attribute executable : String = "server/tests/radio_control.rs";
-        attribute method : String = "manual";
+        @TestedBy { test = "server/tests/radio_control.rs"; }
     }
     verification 'TC-022-001' {
         doc /* Variable independent servers and browser windows
@@ -537,7 +530,7 @@ package WstxProfiles {
              and complete separate plaintext plus protected-HTTPS validation coverage remain
              pending; the expanded case is partial, without discarding existing assertions. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-005-01';
             verify 'CL-005-02';
@@ -548,7 +541,7 @@ package WstxProfiles {
             verify 'FR-021';
             verify 'FR-022';
         }
-        attribute executable : String = "tests/profiles.test.cjs; server/src/profile_tests.rs";
+        @TestedBy { test = "tests/profiles.test.cjs; server/src/profile_tests.rs"; }
     }
     verification 'TC-022-005' {
         doc /* Status readiness independent of settings transport
@@ -577,29 +570,22 @@ package WstxProfiles {
              remains pending; the expanded case is partial, with every existing timing,
              held-response, count and stale-form assertion retained. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-005-02';
             verify 'CL-005-03';
             verify 'CL-006-04';
         }
-        attribute executable : String = "tests/profiles.test.cjs";
+        @TestedBy { test = "tests/profiles.test.cjs"; }
     }
-    dependency CL_005_02_verified_by_TC_022_001 from 'CL-005-02' to 'TC-022-001';
-    dependency CL_005_02_verified_by_TC_022_002 from 'CL-005-02' to 'TC-022-002';
-    dependency CL_005_02_verified_by_TC_022_005 from 'CL-005-02' to 'TC-022-005';
-    dependency CL_008_01_verified_by_TC_002_001 from 'CL-008-01' to 'TC-002-001';
-    dependency CL_008_01_verified_by_TC_009_001 from 'CL-008-01' to 'TC-009-001';
     requirement 'CL-044-05' {
         doc /* PUT /profile refuses an audio device that is not a WASAPI endpoint ID: settings.audio.input_device must be a capture endpoint ID {0.0.1.00000000}.{GUID} and settings.audio.output_device a render endpoint ID {0.0.0.00000000}.{GUID} (lower- or upper-case hex), else 400 audio_device_not_endpoint with the field; null stays allowed. At station start an existing profile whose device entry is not an endpoint ID is migrated: when exactly one active endpoint of that flow has exactly that friendly name, the entry is replaced by its ID and the profile saved (revision + 1); otherwise it is kept and the startup log names the field and the reason (not_found or ambiguous). Loading a profile never fails because of a device entry. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/profile.rs; server/src/main.rs; server/src/radio_control/setup.rs; server/src/audio/windows.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/profile.rs; server/src/main.rs; server/src/radio_control/setup.rs; server/src/audio/windows.rs"; }
     }
     dependency CL_044_05_to_FR_001 from 'CL-044-05' to 'FR-001';
     dependency CL_044_05_to_FR_002 from 'CL-044-05' to 'FR-002';
     dependency CL_044_05_to_FR_016 from 'CL-044-05' to 'FR-016';
-    dependency CL_044_05_verified_by_TC_044_002 from 'CL-044-05' to 'TC-044-002';
-    dependency CL_044_05_verified_by_TC_044_004 from 'CL-044-05' to 'TC-044-004';
     part def PersistedProfile {
         attribute configuration : WstxProfileAccess::ProfileDocument;
         doc /* Backend-owned saved configuration uses exactly the canonical profile schema.

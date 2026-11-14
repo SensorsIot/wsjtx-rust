@@ -8,10 +8,14 @@ package WstxQsoWire {
     private import WstxQsoControl::ContactAction;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     requirement 'CL-010-15' {
         doc /* Expose the contact operations only through the versioned WstxContact wire contract: exact routes, keys and byte caps, command_id idempotency, contact_revision, the ContactRefusal codes, the contact.state and station.tick events, and the stated Thin/Off byte budget, leaving StatusReply and the compressed-route allowlist unchanged. Details: WstxQsoControl::ContactWire, ContactCommand, CommandReceipt, ContactSnapshot, ContactStateEvent, StationTickEvent. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact_http.rs; server/src/logbook_http.rs; server/src/main.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/contact_http.rs; server/src/logbook_http.rs; server/src/main.rs"; }
     }
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
     dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
@@ -23,14 +27,12 @@ package WstxQsoWire {
              Expected: transmit.state and contact.state carry all fields first and then only what changed, shown with no GET /transmit and no GET /contact; an own command reads no GET /contact and a refusal shows its code; the next command goes with the receipt's revision; a stale safety revision is read at once and the CQ retried; nothing queued follows an abort; an older read never replaces a pushed change; a contact client loading after the first event has the state without a read; a Tune countdown alone at most once per 5 s below Detailed; receive.state carries the job and the audio, read again only for a new state, a refused event or a failed read; dialogue rows in order including a continuation at the same sequence.
              real browser/server, no link simulator; no radio. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/contact.test.cjs; server/src/contact_http_tests.rs; server/src/receive_http_tests.rs; tests/ui-operating.test.cjs";
+        @Automation { run = AutomationState::implemented; }
+        @TestedBy { test = "tests/contact.test.cjs; server/src/contact_http_tests.rs; server/src/receive_http_tests.rs; tests/ui-operating.test.cjs"; }
         objective {
             verify 'CL-010-15';
         }
     }
-    dependency CL_010_15_verified_by_TC_007_004 from 'CL-010-15' to 'TC-007-004';
-    dependency CL_010_15_verified_by_TC_007_005 from 'CL-010-15' to 'TC-007-005';
 
     // ---------------------------------------------------------------- displays
     attribute def OperatorDisplays {

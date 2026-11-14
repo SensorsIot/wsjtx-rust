@@ -12,6 +12,10 @@ package WstxMcpEndpoint {
     private import WstxMcpInterface::McpCredential;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     attribute def ProtocolEras {
         attribute modern : String = "2026-07-28";
         attribute legacy : String[2];
@@ -48,15 +52,15 @@ package WstxMcpEndpoint {
     // and on issue #12, 2026-11-01); detailed contract in WstxMcp.
     requirement 'CL-012-01' {
         doc /* Serve MCP on the station's own listener at POST /mcp (Streamable HTTP, MCP 2026-07-28 and legacy 2025-11-25/2025-06-18, stateless, JSON responses only) and map every tool onto exactly one existing versioned station operation dispatched in-process through the station router: no second station state, modem, QSO engine, transmit-authority path, raw CAT/PTT/audio tool or MCP-owned retry. Details: WstxMcpInterface::McpEndpoint, ProtocolEras, ToolCatalog, ToolResult. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/mcp.rs; server/src/main.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/mcp.rs; server/src/main.rs"; }
     }
     dependency CL_012_01_to_FR_020 from 'CL-012-01' to 'FR-020';
     dependency CL_012_01_to_FR_021 from 'CL-012-01' to 'FR-021';
     requirement 'CL-012-02' {
         doc /* An MCP client observes exactly the browser's station views (profile, receive, selection, radio, transmit, contact, automation, strategy, the #42 alert history and decoded result pages, and the strategy verdicts of POST /strategy/evaluate, read-only) and operates through the same ContactCommand, HaltTransmit and AutomationCommand bodies, receipts, revisions, command_id idempotency and refusal codes as the browser, for FT8 and FT4. Details: WstxMcpInterface::ToolCatalog, ToolResult. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/mcp.rs; server/src/contact_http.rs; server/src/automation.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/mcp.rs; server/src/contact_http.rs; server/src/automation.rs"; }
     }
     dependency CL_012_02_to_FR_020 from 'CL-012-02' to 'FR-020';
     dependency CL_012_02_to_FR_007 from 'CL-012-02' to 'FR-007';
@@ -67,16 +71,14 @@ package WstxMcpEndpoint {
              Expected (WstxMcp tables and the fixture's own identities): supportedVersions exactly [2026-07-28, 2025-11-25, 2025-06-18]; tools exactly wstx_read, wstx_results, wstx_contact_command, wstx_transmit_halt, wstx_automation_command, wstx_strategy_evaluate in this order and identical in both eras, wstx_read's view enum the nine views (alerts last, #42), wstx_strategy_evaluate readOnlyHint and the wstx_automation_command description naming every AutomationConfiguration key (max_run_minutes and strategy included); each view (strategy included: active "NA first", my_continent EU) equal to the browser response apart from the per-read monotonic_ms/utc_ms; profile_id/boot_id the fixture's; automation configuration and run null; the two rows with their literal text, frequency, SNR and sequences; the verdicts equal the browser's: K1ABC (FN42, NA) rank 0 and W1AW (FN31, NA) rank 0, W1AW first (strongest); legacy protocolVersion 2025-11-25, no Mcp-Session-Id, no resultType; the text content equals structuredContent; no PTT exchange.
              actual candidate router and executable, no radio, audio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-012-01';
             verify 'CL-012-02';
             verify 'CL-012-04';
         }
-        attribute executable : String = "server/src/mcp_tests.rs; tests/mcp.test.cjs";
+        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp.test.cjs"; }
     }
-    dependency CL_012_01_verified_by_TC_020_001 from 'CL-012-01' to 'TC-020-001';
-    dependency CL_012_02_verified_by_TC_020_001 from 'CL-012-02' to 'TC-020-001';
     verification 'TC-020-002' {
         doc /* Validation and authority
              Setup: as TC-020-001 (a) plus a second HTTPS station with its own MCP client and a plaintext station; (b) the executable with a browser-style grant.
@@ -84,32 +86,27 @@ package WstxMcpEndpoint {
              Expected (independent refusal catalogue): 401 with WWW-Authenticate Bearer realm="wstx" for every credential case and the plaintext station; 403, 405, 415, 413; JSON-RPC -32700, -32600 (each malformed envelope), -32022 with data {supported,requested} (also for 2025-03-26), -32020 (also for the missing legacy header), -32601 with 404, -32602; tool errors status 400 invalid_request with the field (extra, view, source_id, request twice) and no station call; station refusals 403 wrong_profile, 409 stale_revision, 400 invalid_request action, 409 row_unavailable, 409 state_conflict boot_id, 409 not_configured, 400 max_contacts, 409 stale_revision safety_revision; before the valid enable_tx the contact revision, contact, arm state, policy revision and PTT log are unchanged; enable_tx 202 and armed, retry 200 with the same receipt, changed body 409 state_conflict command_id; Halt 202 and disarmed; (b) cookie 401, both bearers 401 with reason mcp_token_required and the Settings hint.
              actual candidate router and executable with transmit and radio doubles; no RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-012-01';
             verify 'CL-012-02';
             verify 'CL-012-03';
         }
-        attribute executable : String = "server/src/mcp_tests.rs; tests/mcp.test.cjs; server/src/automation_tests.rs";
+        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp.test.cjs; server/src/automation_tests.rs"; }
     }
-    dependency CL_012_01_verified_by_TC_020_002 from 'CL-012-01' to 'TC-020-002';
-    dependency CL_012_02_verified_by_TC_020_002 from 'CL-012-02' to 'TC-020-002';
-    dependency CL_012_02_verified_by_TC_020_003 from 'CL-012-02' to 'TC-020-003';
     requirement 'CL-012-03' {
         doc /* MCP authorization is explicit and separate from the browser (#58): exactly one Authorization: Bearer field carrying an MCP client token of this station, created and revoked in Settings > General > Access & grants, shown once, stored only as its SHA-256 and compared in constant time; cookies sent to /mcp are never read, the station access token and browser grant transports are refused with a hint to the MCP client token, an MCP token is refused on every browser route and never exchanged for a browser cookie or grant, revocation takes effect at the next request, refused bearers are rate limited and every use is audited (name, action, time). Every request carries its principal (browser, mcp, automation) from its credential; only browser is an operator action. A plaintext profile has no MCP access, a present Origin must be the station's. Transmit-capable operations need the MCP client's station transport like the browser's grant. Automation is station-owned, unconfigured and stopped at every boot, starts only on an explicit start with a current grant transport and the current acknowledged safety revision, lives no longer than that transport and its maximum duration, is shown read-only in the browser station bar, never takes over an operator's CQ or contact, and stops at Halt (also one racing its arming, answered with a Halt), explicit stop, lost or replaced transport, receive context or mode change, contact change, disarm, no answer, completion or its contact limit, never replaying a transmit action or leaving a selected unarmed contact. Details: WstxMcpInterface::McpCredential, OperatingAutomation, AutomationIndicator. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/mcp.rs; server/src/automation.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/contact_http.rs; server/src/profile.rs; server/src/main.rs; client/contact.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/mcp.rs; server/src/automation.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/contact_http.rs; server/src/profile.rs; server/src/main.rs; client/contact.js"; }
     }
     dependency CL_012_03_to_FR_020 from 'CL-012-03' to 'FR-020';
     dependency CL_012_03_to_FR_008 from 'CL-012-03' to 'FR-008';
     requirement 'CL-012-04' {
         doc /* The exact tool catalog, schemas and result envelope, the AutomationConfiguration (every key required, no default policy), the deterministic CandidateSelection (eligibility, first_seen / strongest_snr / lowest_frequency ranking, call-then-sequence tie) and the run states, counters, receipts and bounds are those of WstxMcp; contact progression and logging remain WstxContact's. Details: WstxMcpInterface::ToolCatalog, AutomationConfiguration, CandidateSelection, OperatingAutomation, AutomationWire. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/mcp.rs; server/src/automation.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/mcp.rs; server/src/automation.rs"; }
     }
     dependency CL_012_04_to_FR_020 from 'CL-012-04' to 'FR-020';
-    dependency CL_012_04_verified_by_TC_020_001 from 'CL-012-04' to 'TC-020-001';
-    dependency CL_012_03_verified_by_TC_020_002 from 'CL-012-03' to 'TC-020-002';
     verification 'TC-020-003' {
         doc /* Operating automation
              Setup: actual candidate router, contact engine and #9 transmit owner on the recording hardware double with virtual UTC (bench set 1 s after an even FT8 period E), injected FT8 or FT4 live job, hand-authored codec-packed rows, the MCP test client with its MCP client token; each run start follows a browser action of the operator (#39: MCP requests never start the Tx watchdog).
@@ -117,16 +114,14 @@ package WstxMcpEndpoint {
              Expected (hand table): (a) first_seen K1ABC, W1AW, DL1XYZ, AA1AA; strongest_snr AA1AA, W1AW, K1ABC; lowest_frequency AA1AA, W1AW, K1ABC, DL1XYZ; min -5 and -3 W1AW, AA1AA; allowed K1ABC, DL1XYZ; blocked K1ABC, DL1XYZ, AA1AA; worked K1ABC excludes it; null unconfigured, every bound admitted and each malformed value refused with its field. (b) nothing selected before start or from the earlier publication; W1AW selected (candidates 2), replying, Tx1 "W1AW HB9BLA JN47", parity odd, Rx 900, armed; roger_report, signoff with Tx5 "W1AW HB9BLA 73"; after the own period completed, disarmed, last text "W1AW HB9BLA 73", run waiting with completed_contacts 1; K1ABC then selected and armed (W1AW worked); stop 202 stopped, reason stopped, disarmed, no Halt request; no later selection; second stop stale_request. (c) state_conflict run for both; armed then Halt: stopped/halted; retry 200 with the original receipt and no new run; stale_revision expected_run_revision; later rows select nothing and leave W1AW disarmed; state_conflict contact, then a waiting run ended halted by the browser Halt with the contact still cancelled. (d) W1AW selected; no_answer after the second publication, disarmed; context_changed and disarmed after the new job; authority_lost with nothing selected; MCP then 401. (e) not_ready mode for ft8; FT4 W1AW selected, Tx4 rr73, armed. (d) also: own (odd) period publications are not counted (unanswered 0 then 1 after the first even one, no_answer after the second even one). (f) limit_reached with completed_contacts 1; completed, no later selection, disarmed. (g) stopped halted, disarmed, HaltTransmit count + 2, PTT never keyed, no later arming. (h) waiting at 59 s, time_limit at 61 s; still waiting after the browser's newer proof (another credential, #58), then stopped; waiting at 8 h - 60 s, authority_lost at 8 h + 1 s. (i) contact_changed with the operator's CQ still calling and armed and not taken over by the later row; contact_changed with the manual_entry contact kept; contact_changed after cancel; transmit_stopped without a HaltTransmit; contact_changed with DL1ABC disarmed. (j) 409 stale_revision safety_revision; provider_error with no contact; transmit_refused with the selected contact cancelled (no partner left), disarmed, PTT never used.
              simulated FT4/FT8 traffic and real station services; no RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-012-02';
             verify 'CL-012-03';
             verify 'CL-012-04';
         }
-        attribute executable : String = "server/src/automation_tests.rs";
+        @TestedBy { test = "server/src/automation_tests.rs"; }
     }
-    dependency CL_012_03_verified_by_TC_020_003 from 'CL-012-03' to 'TC-020-003';
-    dependency CL_012_04_verified_by_TC_020_003 from 'CL-012-04' to 'TC-020-003';
     verification 'TC-020-004' {
         doc /* Separate MCP client credential (#58)
              Setup: (a) actual candidate router on a selected HTTPS profile (HB9BLA, JN47AA) with its auth-v1 owner, contact engine and #9 transmit owner on the recording hardware double with virtual UTC, one enrolled browser grant and an MCP client created by it; (b) the compiled executable on a disposable HTTPS profile with a browser-style grant; (c) the browser page in Chromium with the MCP client routes answered by the test.
@@ -134,12 +129,11 @@ package WstxMcpEndpoint {
              Expected: token "wstx_mcp_" + 43 characters; the listing names fixture agent and Claude Code with created time and last used null, without token or digest; the record holds the SHA-256 and never the token; every browser route 401 with no effect; /session 401 without Set-Cookie; MCP client routes and status 401 for both; /mcp 401 for the cookie, 401 reason mcp_token_required with the Settings > ... MCP clients hint for both legacy bearers, 200 for the MCP token; recent newest first: "tools/call wstx_read contact" status 200 then "tools/list" by Claude Code, last used set, the same line last in mcp-audit.log with the client id and no token; revoke 200 listing one client; then /mcp 401 reason mcp_token_invalid and the internal transport 401; second revoke 409; the other client and the browser unaffected; the ninth client 429; seven 401 then 429 (budget 10/60 s). Watchdog: both set_frequency 202, set_watchdogs operator_required, the five non-tool routes 401, the MCP token 401, still spent after every MCP request, both Enable Tx refused tx_watchdog, PTT keyed and released only for the one CQ. (c) nothing read before Settings opens; list "Claude <Code> · created 2026-11-02 08:00 UTC · last used never" as text, the new token shown with "shown only once", cleared by Done; the confirmation names the client; exact requests list, create, list, revoke.
              actual candidate router, executable and Chromium with transmit and radio doubles; no RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-012-03';
             verify 'CL-039-06';
         }
-        attribute executable : String = "server/src/mcp_tests.rs; tests/mcp.test.cjs; tests/ui-operating.test.cjs";
+        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp.test.cjs; tests/ui-operating.test.cjs"; }
     }
-    dependency CL_012_03_verified_by_TC_020_004 from 'CL-012-03' to 'TC-020-004';
 }

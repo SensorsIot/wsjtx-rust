@@ -22,6 +22,10 @@ package WstxRadioIO {
     private import WstxRadioControl::CatResult;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     doc /* Canonical capture/CAT contract with partial native Windows and IC-7300 implementation;
          hardware matrix completion and physical acceptance remain separately declared.
          Contract: contract 4.5/12.8; recorded source and pure decoder contracts remain
@@ -516,23 +520,21 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
     dependency pttPromise from PttControl to WstxRequirements::'FR-009';
     requirement 'CL-008-06' {
         doc /* Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs"; }
     }
     dependency CL_008_06_to_FR_009 from 'CL-008-06' to 'FR-009';
-    dependency CL_008_06_verified_by_TC_009_001 from 'CL-008-06' to 'TC-009-001';
-    dependency CL_008_06_verified_by_TC_009_003 from 'CL-008-06' to 'TC-009-003';
     requirement 'CL-008-04' {
         doc /* Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs"; }
     }
     dependency CL_008_04_to_FR_002 from 'CL-008-04' to 'FR-002';
     dependency CL_008_04_to_FR_009 from 'CL-008-04' to 'FR-009';
     requirement 'CL-008-05' {
         doc /* Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs"; }
     }
     dependency CL_008_05_to_FR_002 from 'CL-008-05' to 'FR-002';
     dependency CL_008_05_to_FR_009 from 'CL-008-05' to 'FR-009';
@@ -542,20 +544,13 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations.
              actual Rust control module and serial emulator. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-008-05';
             verify 'CL-008-06';
         }
-        attribute executable : String = "server/tests/radio_control.rs";
+        @TestedBy { test = "server/tests/radio_control.rs"; }
     }
-    dependency CL_008_04_verified_by_TC_009_001 from 'CL-008-04' to 'TC-009-001';
-    dependency CL_008_04_verified_by_TC_009_002 from 'CL-008-04' to 'TC-009-002';
-    dependency CL_008_05_verified_by_TC_002_003 from 'CL-008-05' to 'TC-002-003';
-    dependency CL_008_05_verified_by_TC_009_002 from 'CL-008-05' to 'TC-009-002';
-    dependency CL_008_05_verified_by_TC_009_003 from 'CL-008-05' to 'TC-009-003';
-    dependency CL_008_05_verified_by_TC_009_004 from 'CL-008-05' to 'TC-009-004';
-    dependency CL_008_05_verified_by_TC_009_005 from 'CL-008-05' to 'TC-009-005';
     requirement 'CL-022-03' {
         doc /* Target replacement for explicit Connect/per-click receive_only_verified:
              configuration UI has a one-time per-safety-revision action 'Confirm
@@ -599,8 +594,8 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              read-only, no receive restart, no revision advance, never replacing a known
              selection), so no band choice by hand is needed after startup or a
              reconnect. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js"; }
     }
     dependency CL_022_03_to_FR_008 from 'CL-022-03' to 'FR-008';
     dependency CL_022_03_to_FR_009 from 'CL-022-03' to 'FR-009';
@@ -645,23 +640,20 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              policy_attempt_deferred_by_rf_work_is_not_a_failure. Pending: real Windows
              native release/cancel measurement. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
-        attribute executable : String = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs";
+        @Automation { run = AutomationState::partial; }
+        @TestedBy { test = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs"; }
         objective {
             verify 'CL-022-03';
             verify 'CL-022-04';
         }
     }
-    dependency CL_022_03_verified_by_TC_022_009 from 'CL-022-03' to 'TC-022-009';
-    dependency CL_022_03_verified_by_TC_022_010 from 'CL-022-03' to 'TC-022-010';
     requirement 'CL-044-11' {
         doc /* The server pushes the AGC state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.agc {v 1, type radio.agc, data {profile_id, boot_id, target, connection_generation, value, result, trigger}} once the station has an AGC target and then after each change (target the saved AGC or null; value the AGC the radio reported last or null; result unchanged, written or the radio error code, null before the first exchange; trigger connect or selection); nothing is polled. Settings > Radio, CAT group: an AGC select FAST/MID/SLOW, shown only while the form's control is CAT with an IC-7300 endpoint, saved with Apply ⟳ as settings.radio.agc (a hidden select sends no radio key), and below it the read-back line from radio.agc: "Radio AGC <value> · read back, already as set", "Radio AGC <value> · set to <target> and read back", "Radio AGC <target> not applied · <result>". Detect radio (CL-044-02) proposes radio {agc SLOW} with the IC-7300 proposal, shows the row "AGC SLOW · recommended for FT8/FT4", and "Use this setup" sets the AGC select. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/radio_agc.rs; server/src/main.rs; server/src/radio_setup.rs; client/index.html; client/app.js; client/recording.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/radio_agc.rs; server/src/main.rs; server/src/radio_setup.rs; client/index.html; client/app.js; client/recording.js"; }
     }
     dependency CL_044_11_to_FR_019 from 'CL-044-11' to 'FR-019';
     dependency CL_044_11_to_FR_009 from 'CL-044-11' to 'FR-009';
-    dependency CL_044_11_verified_by_TC_044_009 from 'CL-044-11' to 'TC-044-009';
     verification 'TC-044-010' {
         doc /* AGC field and read-back in Settings > Radio
              Setup: actual candidate server on a disposable plaintext profile with IC-7300 CAT (not authorized, so no CAT owner opens anything) and Chromium; radio.agc events injected into the page's station-message stream as the server sends them; /radio/detect answered by a route fixture with the IC-7300 proposal.
@@ -669,14 +661,12 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              Expected: the AGC select in the CAT group shows SLOW (migrated default); the read-back line "Radio AGC SLOW · set to SLOW and read back", then "Radio AGC SLOW not applied · busy"; the saved profile holds settings.radio.agc MID; with control Disabled the select and line are hidden; the proposal row "AGC SLOW · recommended for FT8/FT4" and the select set to SLOW; no horizontal scroll at 360 px; no page error.
              no radio, serial port or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-044-11';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
-    dependency CL_044_11_verified_by_TC_044_010 from 'CL-044-11' to 'TC-044-010';
-    dependency CL_044_11_verified_by_TC_044_011 from 'CL-044-11' to 'TC-044-011';
 
     doc /* Issue22 contract. Delivered: CL-022-01 persistent browser key,
          enrollment, challenge/proof transport, retained-key recovery and the

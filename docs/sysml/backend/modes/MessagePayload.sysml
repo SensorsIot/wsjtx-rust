@@ -121,13 +121,10 @@ package WstxOfflineDecode {
             test = "server/tests/decoder_vectors.rs::frozen_payload_channel_tone_vectors; server/tests/decoder_vectors.rs::canonical_payload_boundaries";
         }
     }
-    dependency CL_007_03_verified_by_TC_004_005 from 'CL-007-03' to 'TC-004-005';
-    dependency CL_007_09_verified_by_TC_004_002 from 'CL-007-09' to 'TC-004-002';
-    dependency CL_007_09_verified_by_TC_004_005 from 'CL-007-09' to 'TC-004-005';
     requirement 'CL-024-01' {
         doc /* #24 S1. The station keeps one session hash table per station instance, fed by every concrete call decoded or sent and by my own call, and shows a hashed call as <CALL> once it resolves, otherwise <...>, as packjt77 does (this reverses the earlier rule of the payload function WstxOfflineDecode::UnpackPayload that a hash is never filled in). It generates and accepts the WSJT-X message sets for exactly one nonstandard or compound call with the bracket rules of genStdMsgs and refuses two nonstandard calls. It accepts free text of at most 13 characters (0.0) in an operator-edited slot. Every transmitted text packs unaltered. Slice S1a: the hash table and fill-in (WstxOfflineDecode::HashResolution); slice S1b: compound/nonstandard QSOs through the contact engine (WstxStandardQso::StandardMessageSet, SelectDecodedRow, EnterDxStation), the nonstandard DX-call fill-in rule, free text in an operator-edited slot with Tx5 editable from the operating screen, and Band Activity marking <MYCALL> rows as to me. The 0.1 DXpedition DX-call rule (hashdx10) is #24 S4a, TC-024-010. Station automation (Auto Call, Auto CQ, Pounce, the strategy) and Call 1st stay standard-only: a run does not start with a nonstandard profile callsign (not_ready call). */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/decoder/payload.rs; server/src/recording.rs; server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; client/contact.js; client/recording.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/decoder/hashes.rs; server/src/decoder/payload.rs; server/src/recording.rs; server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; client/contact.js; client/recording.js"; }
     }
     dependency CL_024_01_to_FR_024 from 'CL-024-01' to 'FR-024';
     dependency CL_024_01_to_FR_004 from 'CL-024-01' to 'FR-004';
@@ -138,13 +135,12 @@ package WstxOfflineDecode {
              Expected: without a table the text is "<...> W9XYZ -05" with to {kind hash, text null, hash_bits 22}; the 'from' calls K1ABC/R, DL1ABC and the nonstandard CQ call are learned, the 'to' call W9XYZ of "W9XYZ DL1ABC JO62" and the nonstandard full 'to' call of a hash-'from' message are not; filled-in texts "<PJ4/K1ABC> W9XYZ -05" with to {kind hash, text PJ4/K1ABC, hash_bits 22, the same hash_value}, "<K1ABC/R> W9XYZ", "<DL1ABC> PA/K1XX", "<...> PA/K1XX", "<...> W9XYZ", "PA/K1XX <DL1ABC> RR73"; the DXpedition hash "<...>" then "<KH1/KH7Z>"; my call fills "<HB9BLA>" in the 'to' slot of standard, nonstandard and EU VHF messages but not the nonstandard hash 'from' slot ("PJ4/K1ABC <...> RR73"), and still after 1000 more calls have pushed it out of the 22-bit list, where the oldest call is then "<...>"; the later of two calls with one 12-bit hash wins; the accepted requests teach VP2X/K1JT and YW18FIFA, the refused one nothing; the pure unpack of every message is unchanged.
              no radio, audio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-024-01';
         }
-        attribute executable : String = "server/src/decoder/hashes_test.rs; server/tests/transmit_service.rs";
+        @TestedBy { test = "server/src/decoder/hashes_test.rs; server/tests/transmit_service.rs"; }
     }
-    dependency CL_024_01_verified_by_TC_024_001 from 'CL-024-01' to 'TC-024-001';
     verification 'TC-024-002' {
         doc /* The station's live publication fills in hashed calls
              Setup: the actual station Recording owner with a fixture live FT8 job and hand-authored decodes; my call HB9BLA set on the Recording; the station fixture with its transmit owner on the recording hardware double; the real profile PUT handler.
@@ -152,13 +148,12 @@ package WstxOfflineDecode {
              Expected: the first record keeps "<...> W9XYZ -05" (no rewriting of history); the later one reads "<VP2X/K1JT> W9XYZ -05" with to {kind hash, text VP2X/K1JT}, "<HB9BLA> VP2X/K1JT" and "<...> W9XYZ" with text null; the UDP Decode messages carry the same texts; the strategy has no facts for a record whose 'from' is hashed and unchanged facts otherwise; after the change "<HB9BLB> VP2X/K1JT"; after the startup wiring the transmit owner holds the Recording's own table and my call is HB9BLA; after the profile save my call is HB9BLA.
              no radio, audio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-024-01';
         }
-        attribute executable : String = "server/src/recording_tests.rs; server/src/contact_http_tests.rs; server/src/auth_tests.rs";
+        @TestedBy { test = "server/src/recording_tests.rs; server/src/contact_http_tests.rs; server/src/auth_tests.rs"; }
     }
-    dependency CL_024_01_verified_by_TC_024_002 from 'CL-024-01' to 'TC-024-002';
     verification 'TC-024-003' {
         doc /* Compound and nonstandard QSOs through the contact engine
              Setup: the contact engine against the actual #9 transmit owner core on a virtual UTC clock with its recording hardware double (no audio, PTT or radio); rows built as the station builds them: packed, unpacked, filled in by a HashTable with my call set, and read by the station's row reader; HB9BLA JN47AA, or DL/HB9BLA.
@@ -167,13 +162,12 @@ package WstxOfflineDecode {
              Expected: (a) the message set "<PJ4/K1ABC> HB9BLA JN47", "<PJ4/K1ABC> HB9BLA -NN", "<PJ4/K1ABC> HB9BLA R-NN", "PJ4/K1ABC <HB9BLA> RRR", "PJ4/K1ABC <HB9BLA> 73", "CQ HB9BLA JN47"; the station sends Tx1, Tx3, Tx5, completes and logs PJ4/K1ABC with rcvd -12; (b) Tx6 "CQ DL/HB9BLA", then Tx2 "K1ABC <DL/HB9BLA> -NN", Tx4 "<K1ABC> DL/HB9BLA RRR", completed after the partner's 73, logged K1ABC grid FN42; (c) YW18FIFA and PJ4/K1ABC/P accepted with their nonstandard sets, the 12-character call and PA/K1XX as DL/HB9BLA (two nonstandard calls) invalid_call, the rows from an unresolved hash refused row_not_standard and the one from W9XYZ selected; (d) Tx5 "TNX 73 GL" stored, the long text and a text that would not pack unaltered invalid_message; the own-CQ free text is sent once, the contact completes and nothing is handed to the log; (e) Call 1st skips the nonstandard and the hashed caller and answers W9XYZ; (f) the entry is accepted with Tx1 "<PJ4/K1ABC> HB9BLA JN47" and after the step the station's table holds DX call PJ4/K1ABC; the filled-in 'to' is <HB9BLA>, not <X> (and <X> without the DX call); (g) not_ready call with DL/HB9BLA, then the next readiness check (not_configured strategy) with HB9BLA.
              no radio, audio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-024-01';
         }
-        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; server/src/decoder/hashes_test.rs; server/src/strategy_tests.rs";
+        @TestedBy { test = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; server/src/decoder/hashes_test.rs; server/src/strategy_tests.rs"; }
     }
-    dependency CL_024_01_verified_by_TC_024_003 from 'CL-024-01' to 'TC-024-003';
     verification 'TC-024-010' {
         doc /* The 0.1 DXpedition DX-call rule (hashdx10)
              Setup: the pure payload codec and the hash table of WstxOfflineDecode::HashResolution; 0.1 payloads built from their fields (the packer refuses 0.1).
@@ -181,13 +175,12 @@ package WstxOfflineDecode {
              Expected: "<...>" without a DX call; "<KH1/KH7Z>" with the DX call set, also over the colliding calls10 entry; the calls10 entry (or "<...>") for another DX call and "<...>" for KH although its hash matches (hashdx10 needs at least 3 characters); the received 0.1 hash slot is not filled with my call (unpack77 applies hashmy10 only to nrx=0); the pure unpack is unchanged.
              no radio, audio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-024-01';
         }
-        attribute executable : String = "server/src/decoder/hashes_test.rs";
+        @TestedBy { test = "server/src/decoder/hashes_test.rs"; }
     }
-    dependency CL_024_01_verified_by_TC_024_010 from 'CL-024-01' to 'TC-024-010';
     verification 'TC-024-004' {
         doc /* Tx5 free text and <MYCALL> rows in the operating screen
              Setup: the browser fixture of the operating screen with the actual isolated station, hand-written live records and a hand-written contact snapshot of an own CQ (no partner, only Tx6), the profile call HB9BLA; contact commands are recorded (the station's validation of the text is TC-024-003).
@@ -196,11 +189,10 @@ package WstxOfflineDecode {
              Expected: the rows to <HB9BLA> or HB9BLA carry the mycall mark (ba-tome) and sort first as value 1 (calling me, #55 BandActivityValue), the unresolved one does not and follows them; the QSO pane Calling me lists one line per station calling my call, oldest first: PJ4/K1ABC by its newest row "HB9BLA <PJ4/K1ABC> -12" and "<HB9BLA> K1ABC -12", not the unresolved one; during the QSO only "<HB9BLA> K1ABC -12" (the partner PJ4/K1ABC's rows are not callers); Tx5 is enabled without a message while the other empty slots and the Tx5 Next choice are not; edit_message {slot tx5, text "tnx 73 gl"} is sent and nothing transmits; no page errors.
              no radio, audio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-024-01';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
-    dependency CL_024_01_verified_by_TC_024_004 from 'CL-024-01' to 'TC-024-004';
 }

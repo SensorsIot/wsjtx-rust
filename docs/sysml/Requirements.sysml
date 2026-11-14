@@ -8,6 +8,8 @@ package WstxRequirements {
     private import ModelNotes::Conflict;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::ImplementedIn;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -179,141 +181,141 @@ package WstxRequirements {
     requirement 'FR-001' {
         doc /* Station setup
              Configure and persist station identity, locator, devices, radio settings, and operating preferences. Validate values and explain invalid input. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/profile.rs; client/app.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/profile.rs; client/app.js"; }
     }
     requirement 'FR-002' {
         doc /* Audio
              Select supported input and output devices; capture receive audio and play generated transmit audio with the timing and sample handling required by each mode. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/receive.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/receive.rs"; }
     }
     requirement 'FR-003' {
         doc /* Receive processing
              Process live audio and supported saved recordings; expose mode-appropriate filtering, synchronization, decoding options, and results. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/receive.rs; server/src/recording.rs; server/src/decoder/mod.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/receive.rs; server/src/recording.rs; server/src/decoder/mod.rs"; }
     }
     requirement 'FR-004' {
         doc /* Decoding
              Decode the baseline mode and message variants, reporting available callsigns, locators, signal measurements, timing, and frequency information. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/decoder/mod.rs; server/src/decoder/payload.rs; server/src/decoder/search.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/decoder/mod.rs; server/src/decoder/payload.rs; server/src/decoder/search.rs"; }
     }
     requirement 'FR-005' {
         doc /* Encoding
              Produce protocol-compatible messages, channel symbols, and waveforms for supported transmit modes and variants. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/mod.rs; server/src/transmit/pack.rs; server/src/transmit/waveform.rs; server/src/transmit/schedule.rs; server/src/decoder/channel.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/transmit/mod.rs; server/src/transmit/pack.rs; server/src/transmit/waveform.rs; server/src/transmit/schedule.rs; server/src/decoder/channel.rs"; }
     }
     requirement 'FR-006' {
         doc /* Time and sequencing
              Schedule receive and transmit periods against UTC and apply each mode's timing rules. Surface clock or device problems that prevent reliable operation. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/audio.rs; server/src/receive.rs; server/src/recording.rs; server/src/transmit/schedule.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/audio.rs; server/src/receive.rs; server/src/recording.rs; server/src/transmit/schedule.rs"; }
     }
     requirement 'FR-007' {
         doc /* QSO operation
              Support the baseline workflows for choosing a decoded station, preparing messages, progressing an exchange, and completing or aborting a contact. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        @Status { build = ImplementationState::target; }
     }
     requirement 'FR-008' {
         doc /* Transmit control
              Provide clear transmit state and an immediate halt action; handle PTT, radio errors, and device loss without leaving transmit active unintentionally. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs"; }
     }
     requirement 'FR-009' {
         doc /* Radio control
              Support baseline radio-control capabilities, including frequency, mode, PTT, split operation, and supported device interfaces. The hardware support matrix is to be inventoried. The first hardware end-to-end test target is an Icom IC-7300 on a different PC; #8 must settle its setup and acceptance contract before the test. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs"; }
     }
     requirement 'FR-010' {
         doc /* Displays
              Provide spectrum, waterfall, decode, frequency, and operating-state views sufficient to carry out the baseline workflows. Pixel-identical UI reproduction is not yet a requirement. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "client/recording.js; client/recording.css; server/src/spectrum.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "client/recording.js; client/recording.css; server/src/spectrum.rs"; }
     }
     requirement 'FR-011' {
         doc /* Logging
              Record completed contacts and support the baseline log formats, import/export paths, and duplicate or prior-contact indications where applicable. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        @Status { build = ImplementationState::target; }
     }
     requirement 'FR-012' {
         doc /* Integrations
              Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04 (send-only, operator 2026-11-06), contract WstxUdp; reception reporting remains target. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/network_message.rs; server/src/udp.rs; server/src/pskr.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/network_message.rs; server/src/udp.rs; server/src/pskr.rs"; }
     }
     requirement 'FR-013' {
         doc /* EME
              Provide baseline astronomical information, Doppler handling, and Echo measurement workflows applicable to each application. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        @Status { build = ImplementationState::target; }
     }
     requirement 'FR-014' {
         doc /* Wideband reception
              Replace MAP65 and QMAP capabilities, including supported wideband input, band maps, polarization processing where applicable, and coordination with the narrowband application. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        @Status { build = ImplementationState::target; }
     }
     requirement 'FR-015' {
         doc /* Utilities
              Identify the user and validation needs served by upstream utilities. Provide the selected capabilities through the smallest practical interface, documenting any required external compatibility. */
-        attribute coverage : ImplementationState = ImplementationState::target;
+        @Status { build = ImplementationState::target; }
     }
     requirement 'FR-016' {
         doc /* Settings and migration
              Persist Rust application settings reliably. Define compatibility and migration behavior for existing WSJT-X profiles before a user migration release. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/profile.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/profile.rs"; }
     }
     requirement 'FR-017' {
         doc /* Help and notices
              Provide operating guidance, version information, relevant attribution, license access, and a clear indication that this is an independent port. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "client/index.html; client/app.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "client/index.html; client/app.js"; }
     }
     requirement 'FR-018' {
         doc /* Recorded audio input
              Load and validate recorded receive audio for repeatable processing, preserving source data and reporting unsupported or invalid input. The first recorded-input format, bounded import/replay workflow and tests are specified in4.4/6.4/12.6 ; implementation coverage is declared below. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/recording.rs; server/src/recording_http.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/recording.rs; server/src/recording_http.rs"; }
     }
     requirement 'FR-019' {
         doc /* Browser operator interface
              Provide a modern HTML/CSS/JavaScript operator interface that can run on the home computer, rendering station information and sending control requests to the server. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "client/index.html; client/app.js; client/recording.js; server/src/main.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "client/index.html; client/app.js; client/recording.js; server/src/main.rs"; }
     }
     requirement 'FR-020' {
         doc /* MCP automation
              Expose shared station operations through MCP for observing and automating FT4/FT8 activity, including station selection and QSO workflows. Exact tools and automation policies are specified in their CRs: issue #12, CL-012-01..04, contract WstxMcp. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/mcp.rs; server/src/automation.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/mcp.rs; server/src/automation.rs"; }
     }
     requirement 'FR-021' {
         doc /* Station server and remote operation
              Separate the Rust station server and browser client through a defined interface. Support same-machine development and remote operation over limited-bandwidth links, with authoritative server state, explicit connection status, and state resynchronization. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/main.rs; client/app.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/main.rs; client/app.js"; }
     }
     requirement 'FR-022' {
         doc /* Concurrent persisted station profiles — phase 1 target
              Support a variable number of independently startable/stoppable server instances on one Windows PC, using distinct listening ports, separate browser windows and isolated persisted configurations. Four is a minimum acceptance target, not a software limit. Preserve instance identity and access isolation across restart and concurrent use. Independent persisted profile functionality is implemented; coverage and verification are declared separately. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/profile.rs; server/src/main.rs; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/profile.rs; server/src/main.rs; client/app.js"; }
     }
     requirement 'FR-023' {
         doc /* Optional direct FlexRadio integration — phase 2 target
              Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist their receive intent (never a radio identity, slice index or handle) and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Receive and control at isolated level 2 are delivered (WstxFlexSession::NativeFlexWireSubset); live hardware qualification TC-023-004/005 and transmit TC-023-006 remain open. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs; server/src/flex/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/flex/session.rs; server/src/flex/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js"; }
     }
     requirement 'FR-024' {
         doc /* Contest, special-activity and DXpedition operation — phase three
              Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound. S5 SuperFox Hound moved to its own phase-two issue #77 (operator 2026-11-08); Fox (S6) was dropped; EU VHF (S3), decoded since S1a, is sent by issue #99 (operator 2026-11-09, CL-099-01/02). */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs"; }
     }
     requirement 'FR-025' {
         subject station : StationProcess;

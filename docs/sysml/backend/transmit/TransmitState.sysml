@@ -30,6 +30,10 @@ package WstxTransmit {
     private import WstxTransmitControl::TransmitHaltUse;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     doc /* Canonical FT8 and FT4 transmit contract. Slice A (issue #9, FT4 issue #11
          slice A): message packing, channel symbols, waveform and pure period
          scheduling, none of which opens audio, keys PTT or touches a radio. Slice B
@@ -299,8 +303,8 @@ package WstxTransmit {
              TransmitAuthority, TransmitArming, TransmitRequest, TransmitOutcome,
              TransmitTiming, TransmitClock, PttControl, AudioPlayback, SetTune,
              TransmitWatchdog, TransmitWire. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs"; }
     }
     dependency CL_009_03_to_FR_008 from 'CL-009-03' to 'FR-008';
     dependency CL_009_03_to_FR_009 from 'CL-009-03' to 'FR-009';
@@ -315,8 +319,8 @@ package WstxTransmit {
              boot, a radio found transmitting before the boot ever keyed gets exactly one
              off-only release with readback. Details: WstxTransmit::HaltTransmit,
              TransmitTiming, PttControl, StartupSafetyRelease, TransmitOutcome. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs"; }
     }
     dependency CL_009_04_to_FR_008 from 'CL-009-04' to 'FR-008';
     dependency CL_009_04_to_FR_006 from 'CL-009-04' to 'FR-006';
@@ -368,12 +372,12 @@ package WstxTransmit {
              no audio device,
              radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-009-03';
             verify 'CL-009-04';
         }
-        attribute executable : String = "server/tests/transmit_service.rs; server/src/transmit_http_tests.rs; server/src/contact_tests.rs";
+        @TestedBy { test = "server/tests/transmit_service.rs; server/src/transmit_http_tests.rs; server/src/contact_tests.rs"; }
     }
     verification 'TC-008-002' {
         doc /* Physical controlled FT8 transmit
@@ -391,16 +395,12 @@ package WstxTransmit {
              each failure end RF within the settled bound; restart does not transmit.
              5 — Tests with external effects and explicit operator consent; HB9BLA radio
              PC, physical IC-7300. Not run by the automated gate. */
-        attribute automation : AutomationState = AutomationState::planned;
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-009-03';
             verify 'CL-009-04';
         }
     }
-    dependency CL_009_03_verified_by_TC_008_003 from 'CL-009-03' to 'TC-008-003';
-    dependency CL_009_04_verified_by_TC_008_003 from 'CL-009-04' to 'TC-008-003';
-    dependency CL_009_03_verified_by_TC_008_002 from 'CL-009-03' to 'TC-008-002';
-    dependency CL_009_04_verified_by_TC_008_002 from 'CL-009-04' to 'TC-008-002';
     requirement 'CL-009-05' {
         doc /* Determine the station clock state for transmit from the station's own SNTP
              measurement, off the transmit and audio threads, at start and every 60 s
@@ -420,8 +420,8 @@ package WstxTransmit {
              refuses transmit and its offset is never applied.
              GET /transmit also reports clock_warning. Details:
              WstxTransmitClock::TransmitClock, AirClock, TransmitWire. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/clock.rs; server/src/transmit/air.rs; server/src/transmit_http.rs; server/src/main.rs; client/recording.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/transmit/clock.rs; server/src/transmit/air.rs; server/src/transmit_http.rs; server/src/main.rs; client/recording.js"; }
     }
     dependency CL_009_05_to_FR_006 from 'CL-009-05' to 'FR-006';
     verification 'TC-006-003' {
@@ -453,15 +453,13 @@ package WstxTransmit {
              public time server, audio or radio; the actual server and Chromium for the
              status line. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-009-05';
             verify 'CL-009-02';
         }
-        attribute executable : String = "server/tests/transmit_clock.rs; server/src/transmit_http_tests.rs; tests/ui-operating.test.cjs";
+        @TestedBy { test = "server/tests/transmit_clock.rs; server/src/transmit_http_tests.rs; tests/ui-operating.test.cjs"; }
     }
-    dependency CL_009_05_verified_by_TC_006_003 from 'CL-009-05' to 'TC-006-003';
-    dependency CL_039_06_verified_by_TC_020_004 from 'CL-039-06' to 'TC-020-004';
 
     // #43 Optional clock from the air (defaults chosen on the CR, recorded in AirClock).
     requirement 'CL-043-01' {
@@ -497,8 +495,8 @@ package WstxTransmit {
              these details the browser reads GET /clock only when the
              Settings drawer opens (at most every 10 s) or the General tab is chosen,
              never on a timer, so the thin link carries no clock polling. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/clock_http.rs; server/src/main.rs; server/src/recording.rs; server/src/transmit_http.rs; client/contact.js; client/recording.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/clock_http.rs; server/src/main.rs; server/src/recording.rs; server/src/transmit_http.rs; client/contact.js; client/recording.js"; }
     }
     dependency CL_043_01_to_FR_006 from 'CL-043-01' to 'FR-006';
     dependency CL_043_01_to_FR_016 from 'CL-043-01' to 'FR-016';
@@ -586,13 +584,11 @@ package WstxTransmit {
              warning value for other clients. Without evidence and with correction 0 the status line reads
              "Clock accepted (stations heard are not off to one side)" instead of the
              synchronized wording. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/air.rs; server/src/transmit/clock.rs; server/src/transmit/windows_time.rs; server/src/clock_http.rs; server/src/recording.rs; server/src/transmit_http.rs; server/src/main.rs; client/contact.js; client/recording.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/transmit/air.rs; server/src/transmit/clock.rs; server/src/transmit/windows_time.rs; server/src/clock_http.rs; server/src/recording.rs; server/src/transmit_http.rs; server/src/main.rs; client/contact.js; client/recording.js"; }
     }
     dependency CL_043_03_to_FR_006 from 'CL-043-03' to 'FR-006';
     dependency CL_043_03_to_FR_005 from 'CL-043-03' to 'FR-005';
-    dependency CL_043_03_verified_by_TC_043_001 from 'CL-043-03' to 'TC-043-001';
-    dependency CL_009_05_verified_by_TC_043_001 from 'CL-009-05' to 'TC-043-001';
     verification 'TC-043-002' {
         doc /* Clock from the air: stable feedback with the receive windows
              Setup: (a) the AirClock in a closed receive loop of 40 FT8 periods: the crowd
@@ -623,14 +619,13 @@ package WstxTransmit {
              no audio device, radio
              or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-043-03';
             verify 'CL-007-05';
         }
-        attribute executable : String = "server/tests/transmit_air_clock.rs; server/src/recording_tests.rs";
+        @TestedBy { test = "server/tests/transmit_air_clock.rs; server/src/recording_tests.rs"; }
     }
-    dependency CL_043_03_verified_by_TC_043_002 from 'CL-043-03' to 'TC-043-002';
     verification 'TC-043-003' {
         doc /* Clock view, wire and display
              Setup: the actual station router on a disposable profile directory with the
@@ -664,17 +659,14 @@ package WstxTransmit {
              loopback only, no
              public time server, audio or radio. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-01';
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
-        attribute executable : String = "server/src/clock_http_tests.rs; tests/ui-operating.test.cjs";
+        @TestedBy { test = "server/src/clock_http_tests.rs; tests/ui-operating.test.cjs"; }
     }
-    dependency CL_043_01_verified_by_TC_043_003 from 'CL-043-01' to 'TC-043-003';
-    dependency CL_043_03_verified_by_TC_043_003 from 'CL-043-03' to 'TC-043-003';
-    dependency CL_009_05_verified_by_TC_043_003 from 'CL-009-05' to 'TC-043-003';
     verification 'TC-043-004' {
         doc /* Live clock from the air on HB9BLA
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3, USB Audio
@@ -711,7 +703,7 @@ package WstxTransmit {
              explicit operator consent;
              HB9BLA. Not run by the automated gate. */
         @TestLevel { cost = 5; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-043-01';
             verify 'CL-043-02';
@@ -719,10 +711,6 @@ package WstxTransmit {
             verify 'CL-009-05';
         }
     }
-    dependency CL_043_01_verified_by_TC_043_004 from 'CL-043-01' to 'TC-043-004';
-    dependency CL_043_03_verified_by_TC_043_004 from 'CL-043-03' to 'TC-043-004';
-    dependency CL_009_05_verified_by_TC_043_004 from 'CL-009-05' to 'TC-043-004';
-    dependency CL_043_03_verified_by_TC_092_001 from 'CL-043-03' to 'TC-092-001';
     verification 'TC-092-002' {
         doc /* Replay of the 10 m FT4 refusals of 2026-11-09
              Setup: StationClock with a fake SNTP monitor holding a current
@@ -742,15 +730,13 @@ package WstxTransmit {
              no audio, radio or
              network. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
-        attribute executable : String = "server/tests/transmit_air_clock.rs";
+        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
     }
-    dependency CL_043_03_verified_by_TC_092_002 from 'CL-043-03' to 'TC-092-002';
-    dependency CL_009_05_verified_by_TC_092_002 from 'CL-009-05' to 'TC-092-002';
     verification 'TC-092-003' {
         doc /* The three situations: correction, state and warnings
              Setup: StationClock with a fake SNTP monitor that records rounds (asked a
@@ -795,15 +781,13 @@ package WstxTransmit {
              no public time server,
              audio or radio. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
-        attribute executable : String = "server/tests/transmit_air_clock.rs; server/src/clock_http_tests.rs; server/src/transmit_http_tests.rs";
+        @TestedBy { test = "server/tests/transmit_air_clock.rs; server/src/clock_http_tests.rs; server/src/transmit_http_tests.rs"; }
     }
-    dependency CL_043_03_verified_by_TC_092_003 from 'CL-043-03' to 'TC-092-003';
-    dependency CL_009_05_verified_by_TC_092_003 from 'CL-009-05' to 'TC-092-003';
     verification 'TC-092-004' {
         doc /* No clock source setting
              Setup: the actual station router on a disposable profile directory, SNTP
@@ -819,13 +803,12 @@ package WstxTransmit {
              loopback only, no
              public time server, audio or radio. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-01';
         }
-        attribute executable : String = "server/src/clock_http_tests.rs";
+        @TestedBy { test = "server/src/clock_http_tests.rs"; }
     }
-    dependency CL_043_01_verified_by_TC_092_004 from 'CL-043-01' to 'TC-092-004';
     verification 'TC-092-005' {
         doc /* Clock entries in the error field and the clock status line
              Setup: the actual server and Chromium at 1366x768 with routed transmit.state,
@@ -858,14 +841,13 @@ package WstxTransmit {
              no radio or
              RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-03';
             verify 'CL-037-02';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
-    dependency CL_043_03_verified_by_TC_092_005 from 'CL-043-03' to 'TC-092-005';
     verification 'TC-092-006' {
         doc /* Live clock state on HB9BLA after the deploy
              Setup: the deployed candidate on HB9BLA, receive running.
@@ -879,14 +861,12 @@ package WstxTransmit {
              GET /receive/clock recorded.
              Not run by the automated gate. */
         @TestLevel { cost = 3; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-043-01';
             verify 'CL-043-03';
         }
     }
-    dependency CL_043_01_verified_by_TC_092_006 from 'CL-043-01' to 'TC-092-006';
-    dependency CL_043_03_verified_by_TC_092_006 from 'CL-043-03' to 'TC-092-006';
     verification 'TC-092-007' {
         doc /* Live PC clock offset
              Setup: HB9BLA, FT8 receive on a band with at least ten stations heard; the
@@ -906,12 +886,11 @@ package WstxTransmit {
              operator with administrator rights. Not run by the
              automated gate. */
         @TestLevel { cost = 4; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-043-03';
         }
     }
-    dependency CL_043_03_verified_by_TC_092_007 from 'CL-043-03' to 'TC-092-007';
     verification 'TC-092-008' {
         doc /* Live call on a sparse band with NTP not correct
              Setup: HB9BLA, IC-7300, 10 m FT4 with few stations; the operator's consent
@@ -924,14 +903,12 @@ package WstxTransmit {
              explicit operator consent;
              HB9BLA. Not run by the automated gate. */
         @TestLevel { cost = 5; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
     }
-    dependency CL_043_03_verified_by_TC_092_008 from 'CL-043-03' to 'TC-092-008';
-    dependency CL_009_05_verified_by_TC_092_008 from 'CL-009-05' to 'TC-092-008';
     verification 'TC-092-009' {
         doc /* clock.state pushed to every profile
              Setup: the actual server with a receive-only and a transmit-configured
@@ -953,19 +930,17 @@ package WstxTransmit {
              loopback only, no
              public time server, audio or radio. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-01';
             verify 'CL-043-03';
         }
-        attribute executable : String = "server/src/clock_http_tests.rs";
+        @TestedBy { test = "server/src/clock_http_tests.rs"; }
     }
-    dependency CL_043_01_verified_by_TC_092_009 from 'CL-043-01' to 'TC-092-009';
-    dependency CL_043_03_verified_by_TC_092_009 from 'CL-043-03' to 'TC-092-009';
     requirement 'CL-044-13' {
         doc /* The server pushes the Tx level state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.tx_level {v 1, type radio.tx_level, data {profile_id, boot_id, managed, level_db, stored, alc unknown|available|unavailable, assistant, result, meters null|{alc, po_pct, swr_x10}, power_limit_pct, warnings [...] (CL-044-14), keying_confirmed (CL-044-15)}} after each change; nothing is polled. Settings > Radio > Audio shows, for an IC-7300 CAT control only, a Set level button, a line with the level and the last result, the last ALC, Po and SWR, and the optional Profile power field (settings.radio.power_limit_pct) saved with Apply; the Tx level slider is shown only with alc unavailable. Set level and the slider send POST /radio/tx-level; a refusal is shown on the line. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/radio_level.rs; server/src/main.rs; client/recording.js; client/app.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/radio_level.rs; server/src/main.rs; client/recording.js; client/app.js"; }
     }
     dependency CL_044_13_to_FR_019 from 'CL-044-13' to 'FR-019';
     dependency CL_044_13_to_FR_009 from 'CL-044-13' to 'FR-009';
@@ -973,8 +948,8 @@ package WstxTransmit {
     // Operator decision 2026-11-06 (#44, live ALC 31-32 at Po 102 %): the level lowers above ALC 10.
     requirement 'CL-044-14' {
         doc /* In normal operation the station reads the radio's meters exactly once per transmission, in the middle of its audio: the transmit step calls the read when half of the audio remaining at audio start has played, once per transmission, on no Tune, and not at all when less than 2 s of audio remained at audio start. The call returns at once and the burst (CL-044-12: 15 13, 15 11, 15 12) runs on its own thread, so the transmit step, the audio and the release never wait for the radio, and a PTT exchange cancels the burst. Nothing is read while Set level runs. From the reading the level moves by at most one step, stored like CL-044-12 and taken by the next transmission's audio start only: ALC above raw 0010 or Po above the profile power: one down, not below -40 dB; else ALC exactly 0 and Po below 80 % of the profile power: one up, not above 0 dB and not back to the ceiling; otherwise unchanged. A lowering on the reading right after a step up makes the level just left the ceiling, so a level reading 0 below a level reading above 0010 settles on the lower one; any other lowering leaves the step up free, so the level follows a drive that falls later. The ceiling lives in memory until a stored Set level, a changed profile power or a restart. Set level's stop (CL-044-12, ALC 0, one step below the first rise) is inside this window, and one step up from it, the ALC onset (reads 4-7, about 6 per dB on the IC-7300), stays inside it. Without a profile power Po is neither over nor low, so there is no step up. Persistent trouble is an entry in the error field, from the third transmission in a row until a reading without it: alc_high (ALC at or above raw 0060, half the ALC zone; lowering below that is routine and shows no entry), po_low (Po below half the profile power), swr_high (SWR at or above 2.0, raw 0080). A clear fault, SWR at or above 3.0 (raw 0120), stops transmitting at once through the priority halt (DisarmCause halt) with the entry swr_fault, and automation may not arm again until an operator action (WatchdogFromOperator); the entry stays until a later reading below 3.0 or a stored Set level. The radio.tx_level data carries these as warnings [...]. A failed read judges nothing. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/radio_level.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; client/recording.js; client/contact.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/radio_level.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; client/recording.js; client/contact.js"; }
     }
     dependency CL_044_14_to_FR_009 from 'CL-044-14' to 'FR-009';
     verification 'TC-044-017' {
@@ -984,13 +959,12 @@ package WstxTransmit {
              Expected: (a) one down at ALC 0011, none at 0010, no warning from three readings of 0059, the floor and 0 dB hold, one up only with ALC 0 and Po below 80 %, none without a profile power, one down above it, none without ALC, fault at 0120 and not at 0119, warnings from the third reading, cleared by one good reading; (b) due exactly once at period + 6 820 ms in each, none for Tune, none for audio starting at period + 11 200 ms; (c) no byte without the hold; with it exactly 15 13, 15 11, 15 12, level -11 stored, nothing handed to the running audio; (d) alc_high from the third, level -13, gone with the good one; (e) one halt, disarmed halt, automation refused, entry swr_fault; the entry stays with the reading without SWR; after the clear reading no entry and still armed; (f) no byte; (g) one call reaches the sink, one burst from the installed sink; (h) the level stays -10, stored false, and the next Tune plays -10; (i) -10 dB for good after at most two transmissions from -10 dB and three from -9 dB, no warning; (j) -10, -11, -12, -13 dB and then unchanged, no warning; (k) Set level stores -9 dB, the correction takes it to -8 dB and stays, from -7 dB it comes back to -8 dB and stays; (l) the level stays with ALC 0 and the same profile power, and goes up one after the changed profile power and after the stored Set level; (m) -13, -12, -11, -11, -12, -11 dB.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-044-14';
         }
-        attribute executable : String = "server/src/radio_level_tests.rs; server/src/transmit_http_tests.rs; server/tests/transmit_service.rs";
+        @TestedBy { test = "server/src/radio_level_tests.rs; server/src/transmit_http_tests.rs; server/tests/transmit_service.rs"; }
     }
-    dependency CL_044_14_verified_by_TC_044_017 from 'CL-044-14' to 'TC-044-017';
     verification 'TC-044-018' {
         doc /* Tx trouble in the error field
              Setup: candidate server and Chromium; radio.tx_level events injected.
@@ -998,13 +972,12 @@ package WstxTransmit {
              Expected: one error field entry each, swr_fault with error severity and the others warn, all gone after the empty list.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-044-14';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
-    dependency CL_044_14_verified_by_TC_044_018 from 'CL-044-14' to 'TC-044-018';
     verification 'TC-044-019' {
         doc /* Monitoring on HB9BLA
              Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, 40 m, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported). The mismatched-antenna / SWR 3.0 stop step is dropped by operator decision of 2026-11-08 ("bad SWR is handled by the transceiver"); the station's own stop at and above SWR 3.0 stays (CL-044-14), covered offline; the SWR display is #68.
@@ -1012,14 +985,11 @@ package WstxTransmit {
              Expected: at most one radio.tx_level meter frame per transmission (sent only when the values change); decode by another station unaffected; ALC above 0010 goes down one step at the next transmission until it reads 0010 or less, with no entry below 0060.
              Not run by the automated gate. */
         @TestLevel { cost = 5; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
-        attribute method : String = "manual";
+        @Automation { run = AutomationState::planned; method = "manual"; }
         objective {
             verify 'CL-044-14';
         }
     }
-    dependency CL_044_14_verified_by_TC_044_019 from 'CL-044-14' to 'TC-044-019';
-    dependency CL_044_13_verified_by_TC_044_014 from 'CL-044-13' to 'TC-044-014';
     verification 'TC-044-015' {
         doc /* Tx level in Settings > Radio > Audio
              Setup: candidate server and Chromium; radio.tx_level events injected, POST /radio/tx-level answered by a route fixture.
@@ -1027,18 +997,16 @@ package WstxTransmit {
              Expected: the button is in #settings-audio, no slider before alc unavailable, the line and meters show the pushed values, a malformed event is ignored, the click sends exactly one set_level, the slider sends one manual, Apply saves radio.power_limit_pct, all of it hidden when control is Disabled, no horizontal overflow at 360 px.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-044-13';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
-    dependency CL_044_13_verified_by_TC_044_015 from 'CL-044-13' to 'TC-044-015';
-    dependency CL_044_13_verified_by_TC_044_016 from 'CL-044-13' to 'TC-044-016';
     requirement 'CL-039-06' {
         doc /* The Tx watchdog limits the repetitions of one message (WstxQsoControl::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxQsoControl::TxWatchdog. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs"; }
     }
     dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
     verification 'TC-039-005' {
@@ -1048,35 +1016,33 @@ package WstxTransmit {
              Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
              transmit double; no RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-039-06';
         }
-        attribute executable : String = "server/src/strategy_tests.rs";
+        @TestedBy { test = "server/src/strategy_tests.rs"; }
     }
-    dependency CL_039_06_verified_by_TC_039_005 from 'CL-039-06' to 'TC-039-005';
-    dependency CL_039_06_verified_by_TC_039_007 from 'CL-039-06' to 'TC-039-007';
 
     // The transmit state, its start actions and its stops (WstxTransmit::TransmitArming,
     // WstxContact::StartActions).
     requirement 'CL-111-01' {
         doc /* Transmit state. The station has one transmit state, on or off, with the cause of its last change in both directions. It is off at every station start (cause startup). It is on only from an accepted start action (CL-111-02) until the next stop (CL-111-03). While it is off no TransmitRequest is planned or keyed. A selection, a setting, a chosen Next message, a reconnect, a reload, a repeated command and a partner message never switch it on. Not delivered yet: three commands still switch the state on directly, and each is to be retired: the contact command enable_tx, through which the browser and the runs still start; the Set level assistant, which switches the state on (cause operator, ending a repetition-limit stop) and off around its tone; and the arm command of the transmit route. Details: WstxTransmit::TransmitArming. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/contact.rs"; }
     }
     dependency CL_111_01_to_FR_007 from 'CL-111-01' to 'FR-007';
     dependency CL_111_01_to_FR_008 from 'CL-111-01' to 'FR-008';
     requirement 'CL-111-03' {
         doc /* Stops. A completed, cancelled or stopped sequence does not transmit: the state goes off with the cause of the stop, the pending request is dropped, and nothing is sent until the next start. Stop: cause; transmission on the air; what stays of the QSO. QSO completed: contactCompleted; none; completed, logged once. Cancel contact, F4: contactCancelled; finishes; cancelled, an own CQ becomes idle. Abort QSO, Esc: contactCancelled; stops now, no halt; cancelled. Halt Tx, Alt+H, MCP halt: halt; stops now; state kept, an own CQ ends. Repetition limit (Tx watchdog): txWatchdog; none keyed; state kept, an own CQ ends. Partner works another station on the own Tx frequency: partnerWorksOther; stops now by an abort, no halt; state kept (a contact that pauses for a busy partner moves Tx clear instead and stops only when that move is refused, CL-097-06). Mode change: modeChanged; as CL-011-04; cancelled. Band change: bandChanged; finishes, and a band selection in the program is refused busy during a transmission; cancelled as by a mode change: DX call and Tx1 to Tx5 cleared, Tx6 next, an own CQ becomes idle, a completed QSO keeps its fields. Radio or capability lost: deviceLost; released; state kept. Safety revision changed: authorityChanged; state kept. Refused or failed transmission: refused, failed; state kept. A run ends and leaves a contact it did not finish or cancel, with no other stop of this list: runEnded; finishes; state kept. A band change is any change of the station band the station sees: the station band (the radio's dial band, else the band of the operating selection) differs from the band the contact was prepared on. It covers a band selection in the program and a change at the radio's own dial. An unknown station band is no band change. The band-change stop shows bandChanged in every case, also when a run's contact is ended by it. The run's own stop reason stays (a pounce: band_changed). A pounce run's contact is cancelled like every other. A stop is admitted with any earlier contact revision, as cancel and abort are. In one station step any stop wins over any start: the start is refused state_conflict and nothing is sent. When several stops arrive in one step the shown cause is the first of: halt; deviceLost, authorityChanged, failed, refused; Abort QSO (contactCancelled); txWatchdog; partnerWorksOther; bandChanged, modeChanged, runEnded, Cancel contact (contactCancelled); contactCompleted. After a stop with the state kept, the QSO continues only by Reply on the partner's row or by "Send <exchange> next"; after a repetition-limit stop also by Reset. Enter in the DX call field does not continue a stopped QSO. An own CQ ended by the repetition limit is started again with the CQ button. Not delivered yet: no run raises runEnded, and a run that is neither a strategy nor a pounce stops contact_changed when the band change ends its contact. Details: WstxTransmit::StopOrder, WstxQsoTransmit::BandChange, ModeChange, AutoSequence. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs"; }
     }
     dependency CL_111_03_to_FR_007 from 'CL-111-03' to 'FR-007';
     dependency CL_111_03_to_FR_008 from 'CL-111-03' to 'FR-008';
     requirement 'CL-111-06' {
         doc /* Tune. tune {enabled, safety_revision}. Tune on is accepted whenever the transmit capability is available with a current grant and nothing is on the air or pending, whatever the transmit state. It is refused stale_revision with field safety_revision on another revision than the station's, busy while a transmission is keyed or a request is pending, transmit_unavailable without capability or grant. From an MCP client or a run it is refused tx_watchdog as an automatic start (CL-111-02): when no browser action was seen this boot, after a repetition-limit stop or after a clear fault (CL-044-14). Tune never changes the transmit state or its cause. The Tune watchdog is unchanged (default 90 s, 1..300 s). Tune off needs no revision. Details: WstxTransmit::SetTune. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; client/contact.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; client/contact.js"; }
     }
     dependency CL_111_06_to_FR_008 from 'CL-111-06' to 'FR-008';
     verification 'TC-111-001' {
@@ -1087,13 +1053,12 @@ package WstxTransmit {
              Automated: (a), (b), (d). Not automated yet: (c).
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-111-03';
         }
-        attribute executable : String = "server/src/transmit_state_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/transmit_state_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs"; }
     }
-    dependency CL_111_03_verified_by_TC_111_001 from 'CL-111-03' to 'TC-111-001';
     verification 'TC-111-002' {
         doc /* What is not a start never transmits
              Setup: as TC-111-001, from a station start; for the reload and the repeated command_id the actual station router (contact_http_tests fixture).
@@ -1102,13 +1067,12 @@ package WstxTransmit {
              Not automated yet: the reconnect.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-111-01';
         }
-        attribute executable : String = "server/src/transmit_state_tests.rs; server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/transmit_state_tests.rs; server/src/contact_http_tests.rs"; }
     }
-    dependency CL_111_01_verified_by_TC_111_002 from 'CL-111-01' to 'TC-111-002';
     verification 'TC-111-007' {
         doc /* Wire
              Setup: the actual station router (contact_http_tests fixture).
@@ -1116,14 +1080,12 @@ package WstxTransmit {
              Expected (WstxQsoControl::ContactSnapshot, WstxTransmitControl::TransmitWire): the transmit view carries the causes of CL-111-03 as snake_case values and last_arm_cause (operator, auto or null); the largest snapshot stays at most 4096 bytes and the event at most 1024.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-111-01';
         }
-        attribute executable : String = "server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/contact_http_tests.rs"; }
     }
-    dependency CL_111_01_verified_by_TC_111_007 from 'CL-111-01' to 'TC-111-007';
-    dependency CL_039_06_verified_by_TC_111_008 from 'CL-039-06' to 'TC-111-008';
     verification 'TC-111-009' {
         doc /* A band change stops and cancels
              Setup: as TC-111-001, the station band 20m; for the selection, the dial and the runs the actual station router (contact_http_tests, strategy_tests).
@@ -1132,13 +1094,12 @@ package WstxTransmit {
              Automated: (a) and (b) as the station band at the engine and as the band of the operating selection at the station, (c), (d), (e); the dial as the station band is shown for a run's own CQ (TC-063-010). Not automated yet: (b) for a QSO at the station, (g), (h).
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-111-03';
         }
-        attribute executable : String = "server/src/transmit_state_tests.rs; server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/transmit_state_tests.rs; server/src/contact_http_tests.rs"; }
     }
-    dependency CL_111_03_verified_by_TC_111_009 from 'CL-111-03' to 'TC-111-009';
     verification 'TC-111-010' {
         doc /* Tune
              Setup: as TC-111-001.
@@ -1146,13 +1107,12 @@ package WstxTransmit {
              Expected (CL-111-06): (a) keyed, state and cause unchanged; released. (b) stale_revision, not keyed. (c) busy. (d) transmit_unavailable. (e) accepted, QSO prepared, refusal busy, state off, nothing sent. (f) Tune ends (guard, TC-008-001). (g) tx_watchdog and not keyed at boot, after the clear fault and after the limit; keyed after the browser action.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-111-06';
         }
-        attribute executable : String = "server/src/transmit_state_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/transmit_state_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs"; }
     }
-    dependency CL_111_06_verified_by_TC_111_010 from 'CL-111-06' to 'TC-111-010';
     verification 'TC-111-013' {
         doc /* A stop wins
              Setup: as TC-111-001.
@@ -1160,13 +1120,12 @@ package WstxTransmit {
              Expected (the order of CL-111-03): the start is state_conflict, state off, nothing keyed. Shown cause of the two stops, in the order of the steps: halt; deviceLost; contactCancelled; txWatchdog; partnerWorksOther; txWatchdog; bandChanged.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-111-03';
         }
-        attribute executable : String = "server/src/transmit_state_tests.rs";
+        @TestedBy { test = "server/src/transmit_state_tests.rs"; }
     }
-    dependency CL_111_03_verified_by_TC_111_013 from 'CL-111-03' to 'TC-111-013';
     verification 'TC-111-015' {
         doc /* Live on the transceiver
              Setup: HB9BLA, the deployed candidate, the operator's browser, the transceiver on an antenna.
@@ -1174,8 +1133,7 @@ package WstxTransmit {
              Expected (observation, the radio's Tx indicator): "Tx off · QSO complete", nothing keyed in the next 4 own periods; "Tx off · halted"; the second send is not keyed, Reset sends it once more; the typed callsign is called in the next own period; "Tx off · band changed", nothing keyed on the new band for 2 own periods; Tune keys with the state off.
              Not run by the automated gate. */
         @TestLevel { cost = 5; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
-        attribute method : String = "manual";
+        @Automation { run = AutomationState::planned; method = "manual"; }
         objective {
             verify 'CL-111-01';
             verify 'CL-111-02';
@@ -1184,12 +1142,10 @@ package WstxTransmit {
             verify 'CL-111-08';
         }
     }
-    dependency CL_111_01_verified_by_TC_111_015 from 'CL-111-01' to 'TC-111-015';
-    dependency CL_111_03_verified_by_TC_111_015 from 'CL-111-03' to 'TC-111-015';
     requirement 'CL-061-04' {
         doc /* The station treats every T/R period in which it is on the air as a Tx period and decides it itself (WstxStationProtocol client-server rule, #10: the server decides and pushes, the browser renders). On the air means the transmit owner's PTT is keyed or not confirmed released, a transmission's audio runs, or Tune is on; the station records the period start (its UTC on the transmit owner's clock, the clock the transmitter keys on) of every such observation and the start of the last transmitted period (transmit.last_period_utc), the latest 16. The receive path reads this without waiting for the transmit owner. For a Tx period: (1) no decode attempt: the live worker skips its analysis windows (prompt and late), no record and no UDP decode is published for it and the decoder is not marked busy; the job's latest_decode for that period carries "transmitted": true with an empty range (first_sequence = next_sequence = the frozen publication end) and complete false (RadioIO LatestDecodePeriod); (2) no Rx level measurement while on the air and for the rest of that Tx period: station.tick rx_level_db is null then, and the measurement restarts with the next receive period, so a level and the "Audio level low/overdriven" error-field entries refer to receive periods only (the browser shows "Tx · not measured" while station.tick says transmitting); (3) the waterfall rows of a Tx period carry "tx": true (spectrum.frame and spectrum.detail.frame, the key present only then) and the browser paints them as Tx rows (RGB(90,20,30)) without a spectrum trace, never as received silence; (4) the period bar (red), the QSO pane line "TX now", the Band Activity marker (CL-061-03) and the meter state Tx while the error field shows no level entry. Audio capture keeps running throughout: no device stop or start and no loss epoch; only the use of the samples is suspended. HALT, the Tx watchdog and PTT release are unchanged. Without a correlated receive clock no period can be named: decoding continues and only the level stops while on the air. Deliberate differences from WSJT-X 3.3 (half duplex: MainWindow::transmitDisplay calls monitor(false), which suspends the audio input stream and cancels a pending FT8 decode, and stopTx resumes it with monitor(true); the signal meter is set to 0 and the waterfall receives no rows while transmitting): this station keeps capturing (one continuous source, no restart), marks the Tx rows instead of leaving them out, publishes the Tx period as a marked view, reports the level as unavailable (null) rather than 0 and suspends it to the end of the Tx period rather than to the end of the transmission. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/recording.rs; server/src/transmit/service.rs; client/recording.js; client/contact.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/recording.rs; server/src/transmit/service.rs; client/recording.js; client/contact.js"; }
     }
     dependency CL_061_04_to_FR_007 from 'CL-061-04' to 'FR-007';
     dependency CL_061_04_to_FR_010 from 'CL-061-04' to 'FR-010';
@@ -1201,13 +1157,12 @@ package WstxTransmit {
              Expected (independent: the noted period and the scripted windows): the 12:00:15 view has transmitted true, complete false, first_sequence = next_sequence and the late window keeps that view; the decoder busy count did not move for it; the 12:00:30 view has no transmitted key and complete true; no level is measured (rx_level null) during the 12:00:15 blocks; the 12:00:30 blocks give a level again after 1 s; while on the air rx_level is null and the waterfall rows carry tx true, receive rows carry no tx key; with the transmit owner on the air rx_level is null at once and the block adds no level, and after the release the recorded Tx period is exactly 12:00:15 (FT8) or 12:00:22.5 (FT4). On the parent code the 12:00:15 window is decoded and published complete.
              no radio. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-061-04';
         }
-        attribute executable : String = "server/src/recording_tx_tests.rs";
+        @TestedBy { test = "server/src/recording_tx_tests.rs"; }
     }
-    dependency CL_061_04_verified_by_TC_061_005 from 'CL-061-04' to 'TC-061-005';
     verification 'TC-061-006' {
         doc /* The browser renders Tx rows and shows level warnings only for receive periods
              Setup: actual station Router and browser client with a scripted correlated live receive, Detailed waterfall frames and station.tick events (explicit presentation fixtures).
@@ -1215,13 +1170,12 @@ package WstxTransmit {
              Expected (independent: the scripted ticks and rows): the error field shows "Audio level low" for the first tick; while transmitting the meter reads "Tx · not measured" and neither "Audio level low" nor "Audio overdriven" is listed, nor after the transmission while rx_level_db is null; the receive tick shows "Audio level low" again; the waterfall paints the tx rows RGB(90,20,30) and the receive row with its levels. On the parent client the meter reads "Unavailable" while transmitting and the tx frames are refused (unknown key); on the parent station the level is still measured in the Tx period (TC-061-005).
              no radio. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-061-04';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
-    dependency CL_061_04_verified_by_TC_061_006 from 'CL-061-04' to 'TC-061-006';
     verification 'TC-061-007' {
         doc /* Tx periods on HB9BLA
              Setup: the gated candidate installed on HB9BLA, 40 m FT8 and FT4, CQ, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), the operator's consent, one browser on the LAN.
@@ -1229,11 +1183,9 @@ package WstxTransmit {
              Expected: each Tx period shows the Tx marker and no empty block, its waterfall rows are Tx rows, no "Audio level low" entry appears in or right after a Tx period, the receive periods decode and show their level; audio.loss_epochs does not grow from the transmissions; HALT stops the transmission as before.
              Not run by the automated gate. */
         @TestLevel { cost = 5; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
-        attribute method : String = "manual";
+        @Automation { run = AutomationState::planned; method = "manual"; }
         objective {
             verify 'CL-061-04';
         }
     }
-    dependency CL_061_04_verified_by_TC_061_007 from 'CL-061-04' to 'TC-061-007';
 }

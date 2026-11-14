@@ -15,6 +15,10 @@ package WstxLogbook {
     private import RequirementDerivation::*;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     requirement 'CL-011-03' {
         doc /* Complete and log FT4 contacts through the common contact engine with the
              FT4 rules: the contact's mode fixed at preparation and carried in every
@@ -23,12 +27,11 @@ package WstxLogbook {
              200..2916 Hz, TIME_ON one 7.5 s period before the first Tx3, log MODE MFSK
              SUBMODE FT4 and worked-before by effective mode FT4; only rows of the
              contact's mode count. Details: WstxContact::ContactMode, FT4-NOTE rules. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs; server/src/logbook.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/contact.rs; server/src/contact_http.rs; server/src/logbook.rs"; }
     }
     dependency CL_011_03_to_FR_007 from 'CL-011-03' to 'FR-007';
     dependency CL_011_03_to_FR_011 from 'CL-011-03' to 'FR-011';
-    dependency CL_011_03_verified_by_TC_007_008 from 'CL-011-03' to 'TC-007-008';
     // CL-010-04: ExportAdi is streamed (#10, 2026-11-04). #41 retired the #10 log review queue: completion and
     // Log QSO log directly (WstxContact::DirectLog); TIME_ON/TIME_OFF come from the
     // contact engine (server/src/contact.rs).
@@ -44,8 +47,8 @@ package WstxLogbook {
     // TC-080-001); MCP traffic is outside that budget.
     requirement 'CL-010-04' {
         doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record except the same station again directly after it (CL-085-01), Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxLogbook::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/logbook.js; client/contact.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/logbook.js; client/contact.js"; }
     }
     dependency CL_010_04_to_FR_011 from 'CL-010-04' to 'FR-011';
     verification 'TC-011-001' {
@@ -54,11 +57,11 @@ package WstxLogbook {
              Steps: complete a contact (transmitted Tx5 73 after the partner's report; received 73 in rogers); repeat the completion events; manual Log QSO before completion, then the partner's later messages; Log QSO again unchanged; storage failure at completion, then recovery; restart; the same call again as a new contact; SaveContact with power 10 and comment, invalid power -1, comment with CR/LF or 1025 characters, repeat save; second profile; the browser Log QSO button.
              Expected (independent record catalogue and direct file reading): each completion stores exactly one record with the hand-computed CALL, GRIDSQUARE, MODE/SUBMODE, RST_SENT/RST_RCVD, QSO_DATE/TIME_ON (first transmitted Tx2/Tx3 rule), TIME_OFF, BAND, FREQ = dial + Tx offset, STATION_CALLSIGN and MY_GRIDSQUARE, and the UDP target receives one QSO Logged and one Logged ADIF for it; repeated completion and an unchanged Log QSO add no record and no datagram; an early Log QSO closes the contact (completed, Enable Tx off, nothing queued), so the partner's later messages neither replace its record nor send a second datagram pair (#37); Log QSO of a completed contact keeps its completion record even after a location change; a due retry stores the record in the contact step and the datagrams follow; a failed write leaves the record unsaved with storage_unavailable shown and is stored by the retry; nothing is logged again after restart; the second contact with the same call is a separate record; SaveContact identical resave alreadySaved, changed resave conflict, invalid fields refused; the browser shows no review form and sends no POST /contacts; no cross-profile record or browser-clock time.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-010-04';
         }
-        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs; server/src/udp_tests.rs";
+        @TestedBy { test = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs; server/src/udp_tests.rs"; }
     }
     verification 'TC-011-002' {
         doc /* ADI interchange, Update logbook from ADIF and boundaries
@@ -66,15 +69,12 @@ package WstxLogbook {
              Steps: update the logbook, update again with the same file and with a grown file, retry the same import_id with identical and different total/sha256, export, reopen, page history at cursor 0, total-1 and total with limit 1/10/11; in the browser pick the file in Settings > Logging & Reporting and press Update logbook.
              Expected (independent ADI parser and hand-counted catalogue): the independently counted added/already present/skipped numbers with the skip reasons {code,field} and dropped fields; the stored station records unchanged byte for byte (existing wins) except an upgraded confirmation: a rerun sets Y/V with its date and via on present records (also records added earlier from the same file), never downgrades or removes one, changes no other stored field, and a repeat writes nothing; DirectLog replacing a record keeps its confirmation and SaveContact of it stays already saved; invalid confirmation values are dropped with their reason and QSL_SENT is not stored; the worked set answers worked vs confirmed per DXCC entity, entity x band and entity x band x mode (needed = not worked or not confirmed) and is rebuilt after an upgrade; a rerun of 27,000 QSOs all confirmed upgrades all of them within seconds; a stored log with repeated or invalid verbatim QSL fields stays readable; a record within 120 s of a stored one with the same call, band and effective mode present, one beyond or on another band or mode added; MFSK/FT4 and FT4 consolidated as one mode; added records carry APP_WSTXRUST_SOURCE LOG4OM2 and a new contact id and only the kept fields (no NAME, ADDRESS, EMAIL or other field stored); a second update adds nothing, a grown file only its new records; a structural fault or over-limit input publishes zero records with record/field context; same import_id retry has no second effect, different values state_conflict; no datagram reaches the UDP target; the added calls and grids answer worked-before; history pages hold stable indexes, limit 11 refused, at most 16384 bytes; export then update adds nothing; the browser shows "Logbook updated: N added, M already present (C confirmations updated), K skipped" with the reasons, and "Logbook not updated" for a refused file.
              2 — Isolated automated functional tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-010-04';
         }
-        attribute executable : String = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs; server/src/udp_tests.rs";
+        @TestedBy { test = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs; server/src/udp_tests.rs"; }
     }
-    dependency CL_010_04_verified_by_TC_011_001 from 'CL-010-04' to 'TC-011-001';
-    dependency CL_010_04_verified_by_TC_011_002 from 'CL-010-04' to 'TC-011-002';
-    dependency CL_010_04_verified_by_TC_007_007 from 'CL-010-04' to 'TC-007-007';
 
     // ---------------------------------------------------------------- the same station again
     attribute def SameStationAgain {
@@ -122,8 +122,8 @@ package WstxLogbook {
              whatever was exchanged, without a time window, after a station restart, and
              whoever started the QSO. Under a contest the contest's own dupe rule decides
              instead. Details: WstxLogbook::SameStationAgain. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/logbook.rs; server/src/contact_http.rs; client/contact.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/logbook.rs; server/src/contact_http.rs; client/contact.js"; }
     }
     #derivation connection {
         end #original ::> 'FR-011';
@@ -151,12 +151,12 @@ package WstxLogbook {
              Auto goes on.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-085-01';
             verify 'CL-085-02';
         }
-        attribute executable : String = "server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/contact_http_tests.rs"; }
     }
     verification 'TC-085-002' {
         doc /* What is logged again
@@ -174,11 +174,11 @@ package WstxLogbook {
              logged; (g), (h), (i) logged; (j) the rule reads that profile's log only.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-085-01';
         }
-        attribute executable : String = "server/src/logbook_tests.rs; server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/logbook_tests.rs; server/src/contact_http_tests.rs"; }
     }
     verification 'TC-085-003' {
         doc /* Restart, pending records and outside records
@@ -197,11 +197,11 @@ package WstxLogbook {
              states (a guard).
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-085-01';
         }
-        attribute executable : String = "server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/contact_http_tests.rs"; }
     }
     verification 'TC-085-005' {
         doc /* What the operator sees
@@ -216,11 +216,11 @@ package WstxLogbook {
              shows that QSO's "Logged" notice.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-085-01';
         }
-        attribute executable : String = "tests/contact.test.cjs; server/src/contact_http_tests.rs";
+        @TestedBy { test = "tests/contact.test.cjs; server/src/contact_http_tests.rs"; }
     }
     verification 'TC-085-006' {
         doc /* Live
@@ -235,7 +235,7 @@ package WstxLogbook {
              Not run by the
              automated gate. */
         @TestLevel { cost = 5; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-085-01';
             verify 'CL-085-02';
@@ -245,8 +245,8 @@ package WstxLogbook {
     // Saved Auto Seq and Call 1st (WstxContact::QsoSettingsFile).
     requirement 'CL-110-01' {
         doc /* Auto Seq and Call 1st are kept per profile across station starts (WstxLogbook::QsoSettingsFile). (1) At a station start the two settings have the values last saved for the selected profile. When nothing usable is saved, both are on. (2) An accepted set_auto_seq or set_call_first is saved before its receipt is returned, whichever client sent it (browser or MCP). After the receipt, a station start on the same profile directory has that value. (3) A value is saved whether it is on or off: after off and on again, the next start has on because on was saved, not because nothing is there. (4) When the save fails, the command is refused storage_unavailable with field null; the setting, the snapshot and contact_revision are unchanged, and the earlier saved values stay as they were. The same command sent again with a new command_id saves once storage is available. In the browser, after a refused set_auto_seq or set_call_first the checkbox shows the station's value again, not the clicked one, in the same step that shows the refusal. (5) Saving does not change the profile document: its revision does not advance. (6) Another profile never has these values: a profile directory holds only its own. (7) Starting with saved values changes nothing else: the transmit state (WstxTransmit::TransmitArming) is off with cause startup, no contact exists, and no TransmitRequest is planned until a start action (enable_tx). (8) Every other setting of ContactSnapshot settings (tx1_skip, tx_calls, tune_seconds, rx_hz, tx_hz, hold_tx, parity, report, activity, exchange, serial) is not saved and has its stated start value at every station start. Details: WstxLogbook::QsoSettingsFile, Contact. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact_http.rs; server/src/main.rs; server/src/profile.rs; client/contact.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/contact_http.rs; server/src/main.rs; server/src/profile.rs; client/contact.js"; }
     }
     dependency CL_110_01_to_FR_007 from 'CL-110-01' to 'FR-007';
     dependency CL_110_01_to_FR_016 from 'CL-110-01' to 'FR-016';
@@ -257,13 +257,12 @@ package WstxLogbook {
              Expected (CL-110-01 points 1, 2, 3, 5, 6): (a) auto_seq true, call_first true. (b) 202; the repeated body 200 with the same receipt (guard of the receipt rule); after the start call_first false, auto_seq true. (c) both false. (d) both true, and the file holds auto_seq true and call_first true. (e) both false. (f) the same revision. (g) B has both true. (h) call_first false.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-110-01';
         }
-        attribute executable : String = "server/src/contact_http_tests.rs; server/src/mcp_tests.rs";
+        @TestedBy { test = "server/src/contact_http_tests.rs; server/src/mcp_tests.rs"; }
     }
-    dependency CL_110_01_verified_by_TC_110_001 from 'CL-110-01' to 'TC-110-001';
     verification 'TC-110-002' {
         doc /* Missing, hand-written and unusable files
              Setup: as TC-110-001; a hand-written qso-settings.json is put into the profile directory before the station start; <id> is that profile's UUID.
@@ -271,13 +270,12 @@ package WstxLogbook {
              Expected (the WstxLogbook::QsoSettingsFile format): (a), (b) auto_seq false, call_first true. (c) to (i) both true in each. (j) the station start succeeds and GET /contact returns 200; the command returns 202, the file is the exact object with auto_seq true and call_first false, and the new station start has those values.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-110-01';
         }
-        attribute executable : String = "server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/contact_http_tests.rs"; }
     }
-    dependency CL_110_01_verified_by_TC_110_002 from 'CL-110-01' to 'TC-110-002';
     verification 'TC-110-003' {
         doc /* A failed save
              Setup: as TC-110-001, saved state call_first true; fault injected: the replace of qso-settings.json fails (the profile store's test seam), nothing else in the profile directory is touched.
@@ -285,14 +283,12 @@ package WstxLogbook {
              Expected (CL-110-01 point 4): (a) refused storage_unavailable, field null; GET /contact shows call_first true and the same contact_revision as before; the profile directory is unchanged. (b) 202, call_first false, and the new station start has false. (c) 202: only the two saved settings depend on storage.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-110-01';
         }
-        attribute executable : String = "server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/contact_http_tests.rs"; }
     }
-    dependency CL_110_01_verified_by_TC_110_003 from 'CL-110-01' to 'TC-110-003';
-    dependency CL_110_01_verified_by_TC_110_004 from 'CL-110-01' to 'TC-110-004';
     verification 'TC-110-005' {
         doc /* The browser after a restart
              Setup: Chromium against the candidate server on a disposable profile directory, 1366x768.
@@ -300,13 +296,12 @@ package WstxLogbook {
              Expected (CL-110-01 points 1, 2, 4): (a) Call 1st unticked and Auto Seq ticked. (b) the same. (c) while the snapshot is held back both checkboxes are disabled and unticked, so no value is shown before the saved one arrives. (d) the result line shows the refusal and the box is ticked again, with the setting true in the snapshot.
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-110-01';
         }
-        attribute executable : String = "tests/ui-operating.test.cjs";
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
-    dependency CL_110_01_verified_by_TC_110_005 from 'CL-110-01' to 'TC-110-005';
     verification 'TC-110-006' {
         doc /* Live on the station
              Setup: HB9BLA, the deployed candidate, the operator's browser; no transmission, the transmit state stays off.
@@ -314,12 +309,11 @@ package WstxLogbook {
              Expected: (a) Auto Seq and Call 1st are both ticked. (b) Call 1st unticked, Auto Seq ticked, transmit state off. (c) both ticked.
              Not run by the automated gate. */
         @TestLevel { cost = 4; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::planned;
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-110-01';
         }
     }
-    dependency CL_110_01_verified_by_TC_110_006 from 'CL-110-01' to 'TC-110-006';
     verification 'TC-007-008' {
         doc /* FT4 contact, logging and mixed-mode isolation
              Setup: the contact engine against the actual #9 transmit owner core on a
@@ -384,12 +378,12 @@ package WstxLogbook {
              engine, #9 owner core and router, independent row and outcome fixtures; no
              RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-011-03';
             verify 'CL-011-04';
         }
-        attribute executable : String = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/ui-operating.test.cjs";
+        @TestedBy { test = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/ui-operating.test.cjs"; }
     }
     verification 'TC-110-004' {
         doc /* The restored values govern the station
@@ -398,13 +392,13 @@ package WstxLogbook {
              Expected (WstxStandardQso::CallFirst, AutoSequence, CL-009-04): (a) still calling, the next own period sends "CQ HB9BLA JN47". (b) EA4HTI in report with Tx2 next, as TC-010-010. (c) state and next slot unchanged, suggested_slot tx3. (d) directly after the start the transmit state is off with cause startup, no contact exists, and no TransmitRequest appears in the 3 own periods (guard of CL-009-04). Also: the run is waiting with reason auto_seq (guard of the automation readiness).
              no radio or RF. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-110-01';
             verify 'CL-010-17';
             verify 'CL-010-02';
         }
-        attribute executable : String = "server/src/contact_tests.rs; server/src/strategy_tests.rs";
+        @TestedBy { test = "server/src/contact_tests.rs; server/src/strategy_tests.rs"; }
     }
     attribute def QsoSettingsFile {
         attribute schemaVersion : Integer = 1;

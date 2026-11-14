@@ -9,6 +9,10 @@ package WstxTransmitClock {
     private import WstxRequirements::AutomationState;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     requirement 'CL-043-02' {
         doc /* The station estimates its clock offset from the decodes of its live receive
              (WstxTransmitClock::AirClock): every published decode whose message names a
@@ -33,14 +37,11 @@ package WstxTransmitClock {
              stays continuous (a step that corrected the system clock leaves 0); a
              correction beyond 3000 ms after that restarts at 0; a correction of 0 stays
              0 (the accepted time is the system clock). */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/air.rs; server/src/recording.rs; server/src/transmit_http.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/transmit/air.rs; server/src/recording.rs; server/src/transmit_http.rs"; }
     }
     dependency CL_043_02_to_FR_006 from 'CL-043-02' to 'FR-006';
     dependency CL_043_02_to_FR_004 from 'CL-043-02' to 'FR-004';
-    dependency CL_043_02_verified_by_TC_043_001 from 'CL-043-02' to 'TC-043-001';
-    dependency CL_043_02_verified_by_TC_043_004 from 'CL-043-02' to 'TC-043-004';
-    dependency CL_043_02_verified_by_TC_092_001 from 'CL-043-02' to 'TC-092-001';
     verification 'TC-043-001' {
         doc /* Clock from the air: estimates of known DT distributions
              Setup: hand-written raw DT sets around a twelve-station crowd with true DT
@@ -79,13 +80,13 @@ package WstxTransmitClock {
              no audio, radio or
              network. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-02';
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
-        attribute executable : String = "server/tests/transmit_air_clock.rs";
+        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
     }
     // #92 Time synchronization in three situations: the station clock is always known.
     verification 'TC-092-001' {
@@ -125,12 +126,12 @@ package WstxTransmitClock {
              no audio, radio or
              network. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::implemented;
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-02';
             verify 'CL-043-03';
         }
-        attribute executable : String = "server/tests/transmit_air_clock.rs";
+        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
     }
     attribute def TransmitClock {
         attribute maxOffsetMs : Integer = 500;

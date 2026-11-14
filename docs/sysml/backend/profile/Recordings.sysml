@@ -338,8 +338,6 @@ package WstxProfileRecordings {
             test = "tests/recording-fixtures.test.cjs; tests/recording.test.cjs; server/src/recording_tests.rs";
         }
     }
-    dependency CL_006_01_verified_by_TC_018_001 from 'CL-006-01' to 'TC-018-001';
-    dependency CL_006_01_verified_by_TC_018_002 from 'CL-006-01' to 'TC-018-002';
     part def RecordedSource {
         attribute storedMetadata : WstxProfileRecordings::RecordingMetadata[*];
         attribute storedManifests : WstxProfileRecordings::RecordingManifest[*];

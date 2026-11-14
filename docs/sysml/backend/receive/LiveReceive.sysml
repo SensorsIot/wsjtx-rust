@@ -25,6 +25,10 @@ package WstxLiveReceive {
     private import WstxOperatingReceive::'CL-008-07';
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     item def LiveTimedResultRecord :> ResultRecord {
         attribute period_start_utc : String[0..1];
         attribute dt_seconds : Real[0..1];
@@ -237,24 +241,24 @@ package WstxLiveReceive {
     dependency conversionOwner from convertReceive to WstxArchitecture::StationProcess::receive;
     requirement 'CL-007-01' {
         doc /* Explicit FT4/FT8 selection MUST process the immutable canonical 12 kHz live source through the existing receive-job authority. Independent recorded fixtures MUST exercise the same pure modem without a physical radio; no file-decoding product operation is provided. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/decoder/mod.rs; server/src/receive.rs; client/recording.js";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/decoder/mod.rs; server/src/receive.rs; client/recording.js"; }
     }
     dependency CL_007_01_to_FR_003 from 'CL-007-01' to 'FR-003';
     dependency CL_007_01_to_FR_004 from 'CL-007-01' to 'FR-004';
     dependency CL_007_01_to_FR_018 from 'CL-007-01' to 'FR-018';
     requirement 'CL-007-05' {
         doc /* Live decode latency (#47). With a correlated UTC source clock, on the reference PC HB9BLA under normal station load (receive, waterfall, one browser, UDP enabled), for any session length: live FT8 MUST publish every decode of a frame with DT -1.6 s to +0.56 s by its period start + 15.0 s, and live FT4 every decode with DT -1.4 s to +0.86 s by period start + 7.5 s. Every frame with DT -1.6 s to +2.4 s (FT8) or -1.4 s to +2.2 s (FT4) MUST be published, the later ones from a late window early in the next period, which waits for the prompt decode instead of cutting it short, and extends its period's view with them under the same view id (nothing new publishes nothing), so clients keep their rows and cursor. The receive owner MUST measure the capture clock against UTC continuously (each timestamped packet's canonical frame against its QPC/system-time UTC, averaged over about 1 s, a jump above 0.2 s restarting the average) and re-anchor the window schedule, period UTC and DT whenever the measured offset moved by more than 50 ms, without dropping, repeating or reordering a window for a correction of any size; the measured offset and rate are read on demand from GET /receive/clock (capture_drift_ms, capture_drift_ppm), never added to the high-frequency GET /receive snapshot, whose clock object and thin-link size stay unchanged. (At zero offset the prompt windows hold FT8 DT -1.7..+0.66 s and FT4 -1.5..+0.96 s, prompt plus late windows FT8 -1.7..+2.56 s and FT4 -1.5..+2.36 s; the ranges above keep 0.1 s for the re-anchoring residual: the 50 ms threshold and drift within one period.) No per-period decode count cap applies; the only search bound is the existing 256 qualified-candidate limit with explicit SearchLimited. Without a correlated UTC clock the source-counter window grid of WstxLiveReceive::LiveWindowSchedule applies and no latency is promised. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/receive.rs; server/src/recording.rs; server/src/decoder/search.rs; server/src/decoder/subtraction.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/receive.rs; server/src/recording.rs; server/src/decoder/search.rs; server/src/decoder/subtraction.rs"; }
     }
     dependency CL_007_05_to_FR_003 from 'CL-007-05' to 'FR-003';
     dependency CL_007_05_to_FR_004 from 'CL-007-05' to 'FR-004';
     dependency CL_007_05_to_FR_021 from 'CL-007-05' to 'FR-021';
     requirement 'CL-008-02' {
         doc /* Deliver immutable canonical 12 kHz mono samples and explicit timing/gaps through one common converter to the existing spectrum/decoder worker, without fabricating samples or UTC accuracy. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs"; }
     }
     dependency CL_008_02_to_FR_002 from 'CL-008-02' to 'FR-002';
     dependency CL_008_02_to_FR_003 from 'CL-008-02' to 'FR-003';
@@ -266,7 +270,7 @@ package WstxLiveReceive {
         @TestLevel { cost = 1; location = TestLocation::developmentPc; }
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @TestLevel { cost = 5; location = TestLocation::station; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-007-04';
             verify 'CL-007-05';
@@ -274,32 +278,21 @@ package WstxLiveReceive {
             verify 'FR-004';
             verify 'FR-021';
         }
-        attribute executable : String = "server/tests/decoder_signal.rs::live_busy_period_publishes_every_decode_promptly; server/tests/receive_integration.rs::receive_schedule_completes_windows_at_period_residues; server/src/recording_tests.rs::live_window_schedule_follows_the_utc_period_grid; server/src/recording_tests.rs::late_window_waits_for_the_prompt_decode_without_overrun; server/src/recording_tests.rs::drifting_capture_clock_keeps_prompt_windows_on_the_utc_period; server/src/recording_tests.rs::late_window_republishes_its_period_view_with_late_starters; server/tests/receive_integration.rs::receive_reschedule_moves_completions_without_dropping_or_repeating; server/tests/receive_integration.rs::receive_clock_steps_keep_each_period_window_once_and_in_order; server/src/auth_tests.rs::plaintext_profile_operating_routes_and_ws_require_runtime_token; tests/ui-operating.test.cjs";
+        @TestedBy { test = "server/tests/decoder_signal.rs::live_busy_period_publishes_every_decode_promptly; server/tests/receive_integration.rs::receive_schedule_completes_windows_at_period_residues; server/src/recording_tests.rs::live_window_schedule_follows_the_utc_period_grid; server/src/recording_tests.rs::late_window_waits_for_the_prompt_decode_without_overrun; server/src/recording_tests.rs::drifting_capture_clock_keeps_prompt_windows_on_the_utc_period; server/src/recording_tests.rs::late_window_republishes_its_period_view_with_late_starters; server/tests/receive_integration.rs::receive_reschedule_moves_completions_without_dropping_or_repeating; server/tests/receive_integration.rs::receive_clock_steps_keep_each_period_window_once_and_in_order; server/src/auth_tests.rs::plaintext_profile_operating_routes_and_ws_require_runtime_token; tests/ui-operating.test.cjs"; }
     }
-    dependency CL_007_01_verified_by_TC_004_001 from 'CL-007-01' to 'TC-004-001';
-    dependency CL_007_01_verified_by_TC_004_002 from 'CL-007-01' to 'TC-004-002';
-    dependency CL_007_01_verified_by_TC_004_003 from 'CL-007-01' to 'TC-004-003';
-    dependency CL_007_05_verified_by_TC_004_004 from 'CL-007-05' to 'TC-004-004';
-    dependency CL_008_02_verified_by_TC_002_001 from 'CL-008-02' to 'TC-002-001';
-    dependency CL_008_02_verified_by_TC_002_003 from 'CL-008-02' to 'TC-002-003';
-    dependency CL_008_02_verified_by_TC_009_002 from 'CL-008-02' to 'TC-009-002';
-    dependency CL_007_05_verified_by_TC_043_002 from 'CL-007-05' to 'TC-043-002';
-    dependency CL_007_05_verified_by_TC_057_002 from 'CL-007-05' to 'TC-057-002';
-    dependency CL_007_05_verified_by_TC_057_003 from 'CL-007-05' to 'TC-057-003';
     verification 'TC-009-002' {
         doc /* Controlled IC-7300 receive station
              On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations.
              Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth.
              4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. */
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; method = "manual"; }
         objective {
             verify 'CL-008-02';
             verify 'CL-008-04';
             verify 'CL-008-05';
             verify 'CL-008-07';
         }
-        attribute executable : String = "server/tests/radio_native.rs::read_only_selected_endpoint_discovery; server/tests/radio_hardware.rs::authorized_ic7300_frequency_query_evidence; server/tests/radio_hardware.rs::authorized_ic7300_readonly_inventory_evidence; server/tests/radio_hardware.rs::authorized_ic7300_prepare_usb_data; server/tests/radio_hardware.rs::authorized_ic7300_restore_lsb_data_off; server/tests/audio_hardware.rs::selected_radio_audio_capture_evidence; server/tests/audio_listen.rs::selected_radio_audio_to_listening_wav";
-        attribute method : String = "manual";
+        @TestedBy { test = "server/tests/radio_native.rs::read_only_selected_endpoint_discovery; server/tests/radio_hardware.rs::authorized_ic7300_frequency_query_evidence; server/tests/radio_hardware.rs::authorized_ic7300_readonly_inventory_evidence; server/tests/radio_hardware.rs::authorized_ic7300_prepare_usb_data; server/tests/radio_hardware.rs::authorized_ic7300_restore_lsb_data_off; server/tests/audio_hardware.rs::selected_radio_audio_capture_evidence; server/tests/audio_listen.rs::selected_radio_audio_to_listening_wav"; }
     }
     verification 'TC-002-003' {
         doc /* Audio without CAT
@@ -307,11 +300,11 @@ package WstxLiveReceive {
              Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; engine glitches keep job/generation; GET /receive audio.loss_epochs counts unknown-loss rotations only and audio.last_loss names the latest trigger (null iff0); no default-device substitution or audio archiving.
              actual receive service and independent device/control fixtures. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute automation : AutomationState = AutomationState::partial;
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-008-02';
             verify 'CL-008-05';
         }
-        attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/src/recording_tests.rs";
+        @TestedBy { test = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/src/recording_tests.rs"; }
     }
 }
