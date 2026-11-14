@@ -56,7 +56,7 @@ package WstxIgnoreLists {
              not changed. Its why text names the entry when the entry is a pattern. */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js; client/recording.css";
+            module = "server/src/strategy.rs; server/src/contest.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js; client/recording.css";
         }
     }
     #derivation connection {
@@ -84,6 +84,8 @@ package WstxIgnoreLists {
              (session list: JA*)" and "K1ABC is ignored (session list)"; the session list is
              named before the permanent list, and an exact entry before a pattern.
              (e) A caller or a CQ matched by a pattern gets no rank and is not called by Auto.
+             A contest strategy gives the sender rank null with the why text naming the
+             pattern, and a pounce on it gets no answer and no key.
              (f) A stored schema 4 file with exact entries reads unchanged (guard, green on both).
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         @Automation { run = AutomationState::implemented; }

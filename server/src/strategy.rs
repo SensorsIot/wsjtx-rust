@@ -1498,7 +1498,7 @@ pub(crate) fn run_admits(state: &ProfileState, record: &Value) -> bool {
 }
 impl Station {
     /// CL-042-02 the list and the entry that ignore `call`: the session list before the permanent
-    /// list; in one list the exact entry, else the first matching pattern in text order.
+    /// list; in one list the exact entry, else the alphabetically smallest matching pattern.
     pub(crate) fn ignored_by(&self, call: &str) -> Option<(Tier, &str)> {
         [Tier::Session, Tier::Permanent]
             .into_iter()

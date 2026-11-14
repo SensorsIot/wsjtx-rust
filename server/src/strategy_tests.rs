@@ -3722,7 +3722,16 @@ async fn tc_125_001_session_patterns_and_the_station_skip_matches() {
     f.state.recording.fixture_band("40m");
     f.tick();
     // Refused session entries name the field call; patterns are accepted.
-    for bad in ["*", "**", "k1*", "K1ABCDEFGHIJK*", ""] {
+    for bad in [
+        "*",
+        "**",
+        "***",
+        "k1*",
+        "k1abc",
+        "K1?BC",
+        "K1ABCDEFGHIJK*",
+        "",
+    ] {
         let r = ignore(&f, json!(bad), json!(true)).await;
         assert_eq!(
             (
@@ -3742,6 +3751,12 @@ async fn tc_125_001_session_patterns_and_the_station_skip_matches() {
             .map(|e| e["call"].as_str().unwrap().to_owned())
             .collect::<Vec<_>>()
     };
+    for entry in ["K*1ABC", "*K1ABCDEFGHI*"] {
+        let r = ignore(&f, json!(entry), json!(true)).await;
+        assert_eq!(r.status, StatusCode::OK, "{entry}: {}", r.json);
+        let r = ignore(&f, json!(entry), json!(false)).await;
+        assert_eq!(r.status, StatusCode::OK, "{entry}: {}", r.json);
+    }
     for entry in ["BY*", "*/MM", "K*1A", "BY*"] {
         let r = ignore(&f, json!(entry), json!(true)).await;
         assert_eq!(r.status, StatusCode::OK, "{entry}: {}", r.json);
@@ -3817,6 +3832,68 @@ async fn tc_125_001_a_run_never_selects_a_cq_matched_by_a_pattern() {
     );
     let run = f.read("automation").await["run"].clone();
     assert_eq!(run["last_decision"]["candidates"], json!(1));
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: CL-042-02; TC-125-001 (e) a contest strategy ranks no sender matched by a pattern and
+// names the entry in the why text (the contest evaluator shares the matcher).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_125_001_a_contest_strategy_skips_a_sender_matched_by_a_pattern() {
+    let f = station(true).await;
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_band("40m");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ WW BY1AA OM89", 1000.0, Some(9.0)),
+            ("CQ WW JA1XYZ PM95", 1200.0, Some(-15.0)),
+        ],
+    );
+    browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
+    let mut selected = config(Some("WW Digi"));
+    selected["contest"] = json!({"profile":"ww_digi","start":"2026-08-29T12:00Z",
+        "end":"2026-08-30T12:00Z"});
+    selected["ignore_calls"] = json!(["BY*"]);
+    let p = put(&f, json!(0), selected).await;
+    assert_eq!(p.status, StatusCode::OK, "{}", p.json);
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
+        "generation":generation,"first_sequence":0,"next_sequence":2,"strategy":null,"explain":true});
+    let v = f.browser("POST", "/strategy/evaluate", Some(body)).await;
+    assert_eq!(v.status, StatusCode::OK, "{}", v.json);
+    assert_eq!(v.json["strategy"], "WW Digi");
+    let by = v.json["verdicts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["sequence"] == json!(0))
+        .unwrap();
+    assert_eq!(by["rank"], Value::Null, "{by}");
+    assert_eq!(by["why"], "BY1AA is ignored (permanent list: BY*)");
+    let ja = v.json["verdicts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["sequence"] == json!(1))
+        .unwrap();
+    assert_eq!(ja["rank"], json!(0), "{ja}");
+}
+
+// Proves: CL-042-02; TC-125-001 (e) a pounce on a call matched by a pattern gets no answer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_125_001_a_pounce_never_answers_a_call_matched_by_a_pattern() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let mut c = config(Some("Test calls"));
+    c["ignore_calls"] = json!(["BY*"]);
+    save(&f, c).await;
+    assert_eq!(pounce(&f, "BY1AA", 5).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ BY1AA OM89", 1500.0, Some(-15.0))]);
+    assert_eq!(f.read("contact").await["contact"], Value::Null);
+    assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
     assert_eq!(f.keys(), 0);
 }
 
