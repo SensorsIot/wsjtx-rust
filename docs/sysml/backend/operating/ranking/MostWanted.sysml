@@ -38,8 +38,9 @@ package WstxMostWanted {
         subject ranking : RankingService;
         doc /* The value order can use the Club Log Most Wanted list: it is validated, stored in
              the profile folder and mapped to cty.dat entities by ADIF number (an unmapped
-             number is ignored and counted). No automatic refresh and nothing bundled (Club Log
-             states no terms). Everything works without a list (strongest first). The list is
+             number is ignored and counted). There is no upload, a failed download keeps the
+             list. No automatic refresh and nothing bundled (Club Log states no terms).
+             Everything works without a list (strongest first). The list is
              read off the station step. */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {

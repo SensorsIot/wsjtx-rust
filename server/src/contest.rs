@@ -760,7 +760,7 @@ pub(crate) struct ContestValue {
     pub new_multiplier: bool,
     pub points: Option<u64>,
 }
-/// One record's classification (WstxRankingControl::ContestVerdict): kind, grey, why and the value.
+/// One record's classification (WstxContestRanking::ContestVerdictRule): kind, grey, why and the value.
 fn classify(
     s: &Selection,
     f: &Facts,
@@ -892,7 +892,7 @@ pub(crate) fn order_by(a: &Verdict, b: &Verdict, callers_first: bool) -> std::cm
         // An exact tie only: the lower audio frequency, then the call; never decode order.
         .then_with(|| crate::strategy::exact_tie(&a.facts, &b.facts))
 }
-/// WstxRankingControl::ContestVerdict: in display order, by ContestValueOrder.
+/// WstxContestRanking::ContestVerdictRule: in display order, by ContestValueOrder.
 pub(crate) fn evaluate(
     s: &Selection,
     records: &[Value],

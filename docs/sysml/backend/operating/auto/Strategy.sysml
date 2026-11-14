@@ -286,7 +286,8 @@ package WstxStrategy {
              finishes its period (WstxQsoTransmit::SetEnableTx) and nothing after it is keyed.
              Still at once (Enable Tx off and the contact cancelled, nothing logged): HALT from
              any source; Abort QSO; an operator's selection of another station (a double-click,
-             WstxStandardQso::ChangeContact); the Tx watchdog's stop; the grant revoked or a safety
+             WstxStandardQso::ChangeContact); the Tx watchdog's stop; the grant revoked or a
+             safety
              edit (authority_lost; a safety edit disarms in the transmit owner itself,
              authorityChanged); a band change or a mode change by the operator; a station
              restart (transmit is disarmed at every start); and the run's leaving while it runs
@@ -300,7 +301,8 @@ package WstxStrategy {
              station band or the mode differs, the grant is no longer current (revoked, or a
              safety edit) or the HALT count has grown. It never arms, selects, answers or
              moves a frequency. The guard ends when the contact is no longer active or is
-             replaced, when a new run starts, or on a restart. A started QSO is always finished (#81): a target that answers our call is progress, never a caller judged again. */
+             replaced, when a new run starts, or on a restart. A started QSO is always finished
+             (#81): a target that answers our call is progress, never a caller judged again. */
     }
     attribute def LeaveRule {
         attribute leaveMode : LeaveMode;
@@ -315,37 +317,47 @@ package WstxStrategy {
              resets the count to 0. Two situations, counted alike: (1) he repeats, because he
              does not hear us: the target is decoded in that publication without progress (a CQ
              again, a message to another station); (2) we repeat, because we do not hear him,
-             although he may hear us: the target is not decoded in it. A call paused by BusyPause
-             is no repetition for leaving.
+             although he may hear us: the target is not decoded in it. A call paused by
+             BusyPause is no repetition for leaving.
              Hears us: PskrUse on and HearingFeed hears (a spot of my call at the target at most
              600 s old on this band and mode).
              The strategy's leave (decision 5):
-             calls {calls n, calls_heard m}: the run leaves at the repetition that brings the count
-             to n, or to m while the target hears us, in both situations (reason repetitions).
-             until_logged {gone_minutes g}: no count; the run stays until the QSO is completed (and
-             logged, WstxLogbook::DirectLog) and leaves at the first fresh complete publication of
+             calls {calls n, calls_heard m}: the run leaves at the repetition that brings the
+             count to n, or to m while the target hears us, in both situations (reason
+             repetitions).
+             until_logged {gone_minutes g}: no count; the run stays until the QSO is completed
+             (and logged, WstxLogbook::DirectLog) and leaves at the first fresh complete
+             publication of
              the target's parity at whose period start the newest decoded message of the target
              (any message, to anyone, on this band and mode; at the selection the message it was
              selected on) has a period start g minutes or more earlier (reason gone): exactly g
              minutes leaves, g minutes less one period does not.
-             contest {tx_changes c} (contest style): in situation 1 while the target hears us and
-             no more valuable station is listed in this publication (a callable station, eligible,
+             contest {tx_changes c} (contest style): in situation 1 while the target hears us
+             and no more valuable station is listed in this publication (a callable station,
+             eligible,
              not the target, strictly before it by the strategy's order, for a contest strategy
-             WstxContestRanking::ContestValueOrder) the run stays, with no count (staying). Otherwise it
-             counts Tx changes (operator 2026-11-09, #97 Q4 "6 calls on 3 slots"): a change point is a
-             repetition at which TxMoveRule's case would move (k >= 1 and its count reaching k), and
-             with k = 0 (stay) every repetition; at a change point with fewer than c changes made
-             the change counts and Tx moves by TxMoveRule when the case's k >= 1 (also counted when
-             no candidate is left and Tx stays); with k = 0 Tx never moves (stay means stay, #94 "it
-             hears us, we stay"), also off a heard target that is no longer the most valuable; at a
-             change point with c changes made the run leaves (reason tx_changes). So c 2 with every
+             WstxContestRanking::ContestValueOrder) the run stays, with no count (staying).
+             Otherwise it
+             counts Tx changes (operator 2026-11-09, #97 Q4 "6 calls on 3 slots"): a change
+             point is a
+             repetition at which TxMoveRule's case would move (k >= 1 and its count reaching k),
+             and with k = 0 (stay) every repetition; at a change point with fewer than c changes
+             made
+             the change counts and Tx moves by TxMoveRule when the case's k >= 1 (also counted
+             when no candidate is left and Tx stays); with k = 0 Tx never moves (stay means
+             stay, #94 "it
+             hears us, we stay"), also off a heard target that is no longer the most valuable;
+             at a change point with c changes made the run leaves (reason tx_changes). So c 2
+             with every
              2nd call leaves after 6 calls on three slots, and c 2 with k 0 after 3 calls on one
              slot.
-             Progress resets every count of the contact to 0 (calls, change points, changes made).
-             No change before an exit criterion (Q7): a more valuable station never ends a stay
+             Progress resets every count of the contact to 0 (calls, change points, changes
+             made). No change before an exit criterion (Q7): a more valuable station never ends
+             a stay
              except as the contest mode says.
-             The one exception: a caller of my call that passes the filters (CallerOfMyCall; in a
-             contest strategy only a caller with a rank, so never a dupe) is answered at once while
+             The one exception: a caller of my call that passes the filters (CallerOfMyCall; in
+             a contest strategy only a caller with a rank, so never a dupe) is answered at once
+             while
              the target has not answered in this contact, when callers_first is on, it is
              eligible and not in QuietTime, and the target is not that caller: the stay ends
              and that caller is selected from the same publication.
@@ -353,7 +365,8 @@ package WstxStrategy {
              and contest leave at the stop at N that is back (StrategyWatchdog), with no contest
              stay; there is no busy pause and no caller exception.
              Leaving: disarm and cancel the contact, the left station gets its retry pause
-             (QuietTime), run.left = {call, reason repetitions|gone|tx_changes|caller}, and the run
+             (QuietTime), run.left = {call, reason repetitions|gone|tx_changes|caller}, and the
+             run
              waits; reason caller selects the caller from that publication at once. The stops of
              StrategyRun "Ends at once" are no leaving. */
     }

@@ -738,7 +738,7 @@ async function selectRow(tr){
   else if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact'),tr.dataset.sender);
   return reply;
 }
-// WstxValueOrder::DirectedCqRule: the station decides; a CQ that is not answerable is a warning
+// WstxContact::DirectedCqSelection: the station decides; a CQ that is not answerable is a warning
 // the operator may confirm (a declined warning sends nothing further).
 async function selectConfirmed(row,replace,label,from=aborts){
   const reply=await sendExplicit(()=>send('select_row',{row,replace},label),from);
@@ -1400,7 +1400,7 @@ function showContinent(){
 }
 continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
 // ---------------------------------------------------------------- #42 ignore lists
-// WstxRankingControl::IgnoreLists: the station keeps both lists and applies them; this client
+// WstxIgnoreLists::IgnoreListsRule: the station keeps both lists and applies them; this client
 // only edits them (PUT /strategy for the permanent list, POST /strategy/ignore for the
 // session list) and shows the session list the station returns.
 continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC DL1XYZ" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never marked or answered by a strategy. Band Activity right-click adds a station for this session; a band change clears the session list.</small><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
@@ -1459,7 +1459,7 @@ addEventListener('wstx-row-menu',event=>{
 });
 ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
 // ---------------------------------------------------------------- #42 Alert
-// WstxRankingControl::Alert: the station records an alert for each new candidate of the active strategy; this client
+// WstxAlert::AlertRule: the station records an alert for each new candidate of the active strategy; this client
 // lists the history and announces new alerts as the operator chose (both off by default):
 // a short tone while the page is visible, a browser notification also while it is hidden.
 ignoreList?.closest('.op-ignore-session')?.insertAdjacentHTML('afterend','<div class="op-alerts" style="min-width:0"><strong>Alerts</strong> <small>Each new station the active strategy would call records an alert; alerts never transmit.</small><br><label class="op-check"><input type="checkbox" id="alert-sound">Sound</label> <label class="op-check"><input type="checkbox" id="alert-notify">Browser notification</label> <small id="alert-note" role="status"></small><ul id="alert-history" aria-label="Alert history" style="margin:4px 0 0;padding-left:1.2em;max-height:12em;overflow:auto;overflow-wrap:anywhere"></ul><button type="button" id="alert-clear">Clear alerts</button></div>');
@@ -1559,7 +1559,7 @@ async function startPounce(call){
 }
 pounceItem.addEventListener('click',()=>{const call=pounceItem.dataset.call;if(!call)return;if(pouncing(call))stopPounce();else startPounce(call);});
 // ---------------------------------------------------------------- #39 Most Wanted list
-// WstxRankingControl::MostWantedList in Settings > General: status with the source attribution, an upload
+// WstxSettings::MostWantedListDisplay in Settings > General: status with the source attribution, an upload
 // the station validates, and Download now, one fetch on the operator's click. No automatic refresh.
 if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p class="op-actions"><span id="mw-status" class="op-muted" role="status">No list</span> <button type="button" id="mw-update" title="Fetches the list from clublog.org once, now">Update Most Wanted</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">A strategy calls the stations on this list first, by their rank, then the strongest; without a list the strongest first. It only changes when you click: Club Log states no terms for it.</p>');
 function showMostWanted(){

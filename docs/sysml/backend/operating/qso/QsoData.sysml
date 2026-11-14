@@ -2040,9 +2040,8 @@ package WstxContact {
     }
     requirement 'CL-039-25' {
         doc /* Settings shows "List from <date>" with its entries, unmapped numbers and source
-             attribution, and one button Update Most Wanted that fetches it once on the
-             operator's click; there is no upload, a failed download keeps the list and shows
-             the reason in one line. */
+             attribution, and one button Update Most Wanted that fetches it once on the operator's
+             click; a failed download shows the reason in one line. */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
             module = "server/src/most_wanted.rs; server/src/strategy.rs; client/contact.js";
@@ -2069,7 +2068,8 @@ package WstxContact {
     }
     requirement 'CL-042-06' {
         doc /* Settings > General edits the permanent list; the Band Activity right-click menu
-             "Ignore <call>" / "Stop ignoring <call>" fills the session list. A saved
+             "Ignore <call>" / "Stop ignoring <call>" adds to and removes from the session list. A
+             saved
              configuration from before the lists reads with empty lists and 30 minutes. */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
@@ -2109,7 +2109,7 @@ package WstxContact {
     }
     requirement 'CL-063-07' {
         doc /* An operator's selection of such a CQ needs no confirmation; outside the matching
-             activity the CQ stays not answerable, with the warning of CL-039-03. */
+             activity the CQ stays not answerable, with the warning of CL-039-24. */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
             module = "server/src/strategy.rs; server/src/contact_http.rs; server/src/contact.rs";

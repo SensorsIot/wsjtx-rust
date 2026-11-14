@@ -4038,7 +4038,7 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
 // alert history, Sound and Browser notification (off by default; permission asked only on
 // the click). The station's alert snapshots are hand-written fixtures; the page's
 // Notification and AudioContext are recording doubles; the expected lines, tones and
-// notifications are written here from WstxRankingControl::Alert.
+// notifications are written here from WstxSettings::AlertDisplay.
 test('TC-042-007 Alert history, sound and browser notification',{timeout:60000},async t=>{
   let view;const puts=[],clears=[];let history=[],revision=1;
   const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,value:['most_wanted'],callers_first:true,cq_when_no_target:false,repetitions:4,quiet_minutes:10,treat_73_as_cq:false,window:{kind:'all'}};

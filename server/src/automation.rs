@@ -1469,7 +1469,7 @@ impl Owner {
         } else {
             None
         };
-        // WstxRankingControl::WorkedWindow: keeps the worked set current off the step.
+        // WstxValueOrder::WorkedWindowRule: keeps the worked set current off the step.
         if let Some((_, s)) = &chosen {
             strategy::worked_of(state, s.window);
         }
@@ -2266,8 +2266,8 @@ fn period_of(records: &[Value], sequence: u64) -> Option<i64> {
         .and_then(|r| r["period_start_utc"].as_str())
         .and_then(contact::parse_utc)
 }
-/// The verdicts of `records` as the run's own evaluation reads them: WstxRankingControl::ContestVerdict
-/// in a contest (a dupe has no rank), WstxRankingControl::Verdict otherwise. The step never builds the
+/// The verdicts of `records` as the run's own evaluation reads them: WstxContestRanking::ContestVerdictRule
+/// in a contest (a dupe has no rank), WstxValueOrder::VerdictRule otherwise. The step never builds the
 /// contest log.
 fn verdicts(
     contact: &contact_http::Station,

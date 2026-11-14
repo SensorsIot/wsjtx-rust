@@ -27,7 +27,8 @@ package WstxRankingControl {
         attribute rankingState : RankingState;
     }
     attribute def RankingKeys {
-        doc /* The ranking group of a strategy: bands, filters, order, contest and whether callers of
+        doc /* The ranking group of a strategy: bands, filters, order, contest and whether
+             callers of
              my call are answered first. */
         attribute bands : StrategyBands;
         attribute newWhat : NewWhat[0..7];
@@ -46,7 +47,8 @@ package WstxRankingControl {
         attribute callersFirst : Boolean = true;
     }
     attribute def EvaluateReply {
-        doc /* The verdicts of an evaluate request, in display order, and with a contest in force the
+        doc /* The verdicts of an evaluate request, in display order, and with a contest in
+             force the
              contest verdicts and the tally. */
         attribute verdicts : Verdict[0..*];
         attribute contestVerdicts : ContestVerdict[0..*];
@@ -111,7 +113,8 @@ package WstxRankingControl {
         attribute kind : CountryKind;
         attribute value : String;
         attribute bands : StrategyBands[0..1];
-        doc /* kind prefix: value 1..13 of A-Z 0-9 / (upper case); kind country: a full entity name of
+        doc /* kind prefix: value 1..13 of A-Z 0-9 / (upper case); kind country: a full entity
+             name of
              the country table. */
     }
     attribute def CountryList {
@@ -139,7 +142,8 @@ package WstxRankingControl {
         attribute grey : Boolean;
         attribute why : String[0..1];
         doc /* The verdict of one decoded standard record with a resolved sender: its place in the
-             decode order, its rank (null: not ranked), whether it is greyed and, when asked, why. */
+             decode order, its rank (null: not ranked), whether it is greyed and, when asked,
+             why. */
     }
     attribute def ContestVerdict {
         attribute dupe : Boolean;

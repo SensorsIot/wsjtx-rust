@@ -84,11 +84,11 @@ package WstxSettings {
              control or a pointer action outside it. Exactly four sections
              (SettingsSection):
              General: station (display name, callsign, locator, continent, #42 the
-             ignore lists of WstxRankingControl::IgnoreLists: permanent calls, session expiry
+             ignore lists of WstxSettings::IgnoreListsDisplay: permanent calls, session expiry
              minutes, the session list with remove controls; #42 the Alerts section of
-             WstxRankingControl::Alert: Sound and Browser notification checkboxes, both off by
+             WstxSettings::AlertDisplay: Sound and Browser notification checkboxes, both off by
              default, and the alert history newest first with Clear; #39 the Most Wanted
-             section of WstxRankingControl::MostWantedList: status with the date and source attribution, and one button Update Most Wanted), clock
+             section of WstxSettings::MostWantedListDisplay: status with the date and source attribution, and one button Update Most Wanted), clock
              (#43/#92 CL-043-01 a status line only, no source setting: the SNTP state,
              the Windows Time service state, the correction and the stations heard
              (median DT, how many above +0.1 s and below -0.1 s), the warning and its remedy, read with GET /clock when the drawer

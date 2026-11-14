@@ -353,7 +353,9 @@ package WstxStationLink {
     attribute def ContestVerdictWire {
         attribute verdict : WstxRankingControl::ContestVerdict;
         attribute tally : WstxRankingControl::ContestTally;
-        doc /* POST /strategy/evaluate with strategy null and a contest in force returns the contest verdicts, with strategy the profile's name and contest the tally {qsos, multipliers, points,
+        doc /* POST /strategy/evaluate with strategy null and a contest in force returns the
+             contest verdicts, with strategy the profile's name and contest the tally {qsos,
+             multipliers, points,
              score} (null when the log is unreadable); explain false lists the ranked, the
              greyed and the dupes. A draft strategy still previews the draft. why: "calls my
              call", "new multiplier", "<n> points" joined by " \· ", or the reason above. */

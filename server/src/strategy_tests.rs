@@ -2204,7 +2204,7 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: TC-039-030 (WstxRankingControl::WorkedWindow through the store): a QSO of this UTC date
+// Proves: TC-039-030 (WstxValueOrder::WorkedWindowRule through the store): a QSO of this UTC date
 // counts in today, not in a window that ended before.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
@@ -3156,7 +3156,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
 }
 
 // ------------------------------------------------------------------ #42 ignore lists
-// Proves: TC-042-002 (WstxRankingControl::IgnoreLists; the expected tiers, reasons, expiries
+// Proves: TC-042-002 (WstxIgnoreLists::IgnoreListsRule; the expected tiers, reasons, expiries
 // and selections are written here from the contract, not evaluator output).
 #[test]
 fn tc_042_002_ignore_configuration_is_exact() {

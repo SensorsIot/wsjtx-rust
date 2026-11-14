@@ -965,7 +965,7 @@ impl WorkedIndex {
 fn square(grid: &str) -> Option<String> {
     grid.get(..4).map(str::to_ascii_uppercase)
 }
-/// The most windows of worked sets kept (WstxRankingControl::WorkedWindow).
+/// The most windows of worked sets kept (WstxValueOrder::WorkedWindowRule).
 const WORKED_WINDOWS: usize = 4;
 /// (log revision, country table, (first date, last date), worked set).
 type WindowCache = (
@@ -1004,7 +1004,7 @@ pub struct Logbook {
     /// The table is held (not its address), so a later table can never match it.
     worked_set: Mutex<Option<WorkedCache>>,
     worked_windows: Mutex<Vec<WindowCache>>,
-    /// #39 the keys a background build is running for (WstxRankingControl::WorkedWindow).
+    /// #39 the keys a background build is running for (WstxValueOrder::WorkedWindowRule).
     worked_building: Mutex<Vec<Option<(u32, u32)>>>,
     /// #10 the worked-before index for the records revision it was built from.
     worked_index: Mutex<Option<(u64, std::sync::Arc<WorkedIndex>)>>,
@@ -1406,7 +1406,7 @@ impl Logbook {
             Some((revision, table.cty.clone(), worked.clone()));
         Ok(worked)
     }
-    /// #39 WstxRankingControl::WorkedWindow: WorkedBefore of the records dated first..=last
+    /// #39 WstxValueOrder::WorkedWindowRule: WorkedBefore of the records dated first..=last
     /// (YYYYMMDD), cached per log revision, country table and window, at most
     /// WORKED_WINDOWS of them.
     pub fn worked_window(
@@ -1446,7 +1446,7 @@ impl Logbook {
         cache.push((revision, table.cty.clone(), (first, last), worked.clone()));
         Ok(worked)
     }
-    /// #39 WstxRankingControl::WorkedWindow for the station step: the last built set of this window
+    /// #39 WstxValueOrder::WorkedWindowRule for the station step: the last built set of this window
     /// (all time: None) at once, without building (a rebuild of the operator's log takes about
     /// 100 ms, two station steps). A set that is missing or behind the log or the country
     /// table is built on its own thread for a later step; None until the first is ready.

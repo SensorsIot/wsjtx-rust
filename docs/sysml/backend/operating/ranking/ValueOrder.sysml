@@ -65,12 +65,20 @@ package WstxValueOrder {
              without a band counts only for ever.  */
     }
     attribute def CallerOfMyCall {
+        @FollowsSource {
+            reference = "WSJT-X widgets/mainwindow.cpp 1564-1568 (the CQ response None), "
+                + "mainwindow_settings.cpp 313 (default None), mainwindow.cpp 7481-7496 (it "
+                + "answers no "
+                + "caller of my CQ automatically), Configuration.cpp 3884 (Calling CQ forces "
+                + "Call 1st, off "
+                + "by default)";
+        }
         doc /* A decoded standard message with a resolved sender, addressed to my call, other
              than the sender's RR73/73, whose sender is not ignored (IgnoreLists). A caller of
              my call has a rank only when it passes the filters
              too: every line of Candidate except "a CQ" (and the CQ target line, which judges
              only CQs); for a contest strategy the contest's verdict (a dupe never has a rank,
-             WstxRankingControl::ContestVerdict) and the country and US state lists. A caller
+             WstxContestRanking::ContestVerdictRule) and the country and US state lists. A caller
              that fails
              gets rank null with the failing line as why ("calls my call · not new", "calls my
              call · region"). Decision 4, Calling stations are answered (callers_first): on, the
@@ -231,7 +239,8 @@ package WstxValueOrder {
 
     attribute def CountryListRule {
         @Conflict {
-            what = "WstxSettings::StrategyEditor says a prefix or country entry is typed as free text "
+            what = "WstxSettings::StrategyEditor says a prefix or country entry is typed as "
+                + "free text "
                 + "with no picker; this text says the editor has a country picker.";
         }
         @NotStated {
@@ -410,7 +419,8 @@ package WstxValueOrder {
              order: it ranks by ContestValueOrder, under the same rule for callers. */
         @FollowsSource {
             reference = "WstxRequirements::BehaviorBaseline (WSJT-X): the CQ response None "
-                + "answers no caller automatically and 'Calling CQ forces Call 1st' is off by default";
+                + "answers no caller automatically and 'Calling CQ forces Call 1st' is off by "
+                + "default";
         }
         @Status { build = ImplementationState::partial; }
         @ImplementedIn {
@@ -498,7 +508,7 @@ package WstxValueOrder {
              W1AW worked on 20m; rows HB9BLA W1AW FN31 (+5), HB9BLA N1NEW FN31 (-9), CQ K1ABC
              FN42 (-1). The run's steps with callers are TC-097-018's. Oracle: the operator's
              decision on callers; WSJT-X with the CQ response None answers no caller
-             automatically.
+             automatically (widgets/mainwindow.cpp 7481-7496).
              (a) Casual: W1AW rank null, why "calls my call · not new"; N1NEW ranked first, then
              K1ABC.
              (b) Calling stations are answered off with order [snr]: N1NEW rank null, why "calls

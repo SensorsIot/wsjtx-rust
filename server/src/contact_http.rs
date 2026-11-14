@@ -1207,7 +1207,7 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
         return Err(("invalid_request", None));
     }
     // set_activity's exchange is optional (ContestExchange, #24 S2b), and so is
-    // select_row's directive_confirmed (WstxValueOrder::DirectedCqRule).
+    // select_row's directive_confirmed (WstxContact::DirectedCqSelection).
     // Tune off needs no safety revision (CL-111-06).
     let optional = |k: &str| {
         (action == "set_activity" && k == "exchange")
@@ -1358,7 +1358,7 @@ impl Station {
                 let (record, mode) = r
                     .live_record(source, job, generation, sequence)
                     .ok_or(("row_unavailable", Some("row")))?;
-                // WstxValueOrder::DirectedCqRule: only the operator can confirm the warning.
+                // WstxContact::DirectedCqSelection: only the operator can confirm the warning.
                 if let Some(reason) =
                     strategy::selection_warning(state, &record, inner.engine.settings.activity)
                     && (automatic || body["directive_confirmed"] != true)

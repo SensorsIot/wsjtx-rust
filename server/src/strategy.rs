@@ -5,8 +5,8 @@
 //! never evaluates a strategy itself. Routes: GET /strategy (StrategySnapshot), PUT
 //! /strategy (configuration; a changed selection ends a run and, while Auto is on, starts
 //! the new one), POST /strategy/auto (WstxAutoControl::AutoToggle), POST /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
-//! /strategy/alerts/clear (WstxRankingControl::Alert), POST /strategy/most-wanted/download
-//! (WstxRankingControl::MostWantedList), GET /strategy/contests (WstxStrategies::ContestHttp).
+//! /strategy/alerts/clear (WstxStationLink::AlertWire), POST /strategy/most-wanted/download
+//! (WstxStationLink::MostWantedListWire), GET /strategy/contests (WstxStrategies::ContestHttp).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
@@ -1340,7 +1340,7 @@ struct SessionEntry {
     band: Option<String>,
     until: Instant,
 }
-/// #42 WstxRankingControl::IgnoreLists session list: station memory only, at most 64 entries in
+/// #42 WstxIgnoreLists::IgnoreListsRule session list: station memory only, at most 64 entries in
 /// the order added, each ending at its expiry; any change of the observed station band
 /// empties it.
 #[derive(Clone, Debug, Default)]
@@ -1526,7 +1526,7 @@ impl Station {
             }
         }
     }
-    /// WstxRankingControl::StrategyBands: why every verdict is unranked off the strategy's bands.
+    /// WstxValueOrder::StrategyBandsRule: why every verdict is unranked off the strategy's bands.
     fn off_band(&self, s: &Strategy) -> Option<&'static str> {
         let bands = s.bands.as_ref()?;
         match self.band.as_deref() {
@@ -1645,7 +1645,7 @@ pub(crate) enum Kind {
     Caller,
     Candidate,
 }
-/// WstxRankingControl::Verdict of one record.
+/// WstxValueOrder::VerdictRule of one record.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Verdict {
     pub facts: Facts,
@@ -1793,7 +1793,7 @@ fn key_cmp(a: &[(u8, f64)], b: &[(u8, f64)]) -> std::cmp::Ordering {
         .find(|o| o.is_ne())
         .unwrap_or(std::cmp::Ordering::Equal)
 }
-/// WstxRankingControl::Verdict: one per decoded standard record with a resolved sender, in display
+/// WstxValueOrder::VerdictRule: one per decoded standard record with a resolved sender, in display
 /// order: rank (the position in ValueOrder) ascending, then the records without a rank in
 /// their order.
 pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Verdict> {
@@ -1832,7 +1832,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
     out.extend(rest);
     out
 }
-/// #97 a contest strategy's verdicts: the contest's (WstxRankingControl::ContestVerdict, the contest's
+/// #97 a contest strategy's verdicts: the contest's (WstxContestRanking::ContestVerdictRule, the contest's
 /// rules first), then the strategy's bands and its country, US state and CQ target lists on top,
 /// ranked by ContestValueOrder with the strategy's callers_first.
 pub(crate) fn evaluate_contest(
@@ -1927,7 +1927,7 @@ fn window_dates(window: Window) -> Option<(u32, u32)> {
         Window::FromTo(first, last) => Some((first, last)),
     }
 }
-/// WstxRankingControl::WorkedWindow for the station step: never builds on it. The worked set of a
+/// WstxValueOrder::WorkedWindowRule for the station step: never builds on it. The worked set of a
 /// window is cached per (log revision, country table, first date, last date; today is its UTC
 /// date), at most 4 windows, so it is not rebuilt per evaluation. A rebuild takes about 100 ms
 /// with 26,902 QSOs (measured 2026-11-06, release build, two station steps), so it never runs on
@@ -2010,7 +2010,7 @@ fn contest_log(
 }
 
 // ------------------------------------------------------------------ alerts
-/// #42 WstxRankingControl::Alert: the station's alert history (memory only) with its live-job
+/// #42 WstxAlert::AlertRule: the station's alert history (memory only) with its live-job
 /// cursor and the dedupe memory (kept apart from the history: Clear keeps it).
 #[derive(Default)]
 struct AlertLog {
@@ -2084,7 +2084,7 @@ pub(crate) struct Owner {
     /// Counts each Auto on, so that the station step never turns off an Auto that was switched
     /// on after it looked at the run (auto_step).
     auto_epoch: std::sync::atomic::AtomicU64,
-    /// WstxRankingControl::MostWantedList: a leaf lock over the parsed list; the file is read
+    /// WstxMostWanted::MostWantedListRule: a leaf lock over the parsed list; the file is read
     /// off the station step (`most_wanted_load`), the step only clones the Arc.
     most_wanted: Mutex<MostWantedState>,
     /// Test seam: the reply of the next Download now in place of the HTTP fetch.
@@ -2424,7 +2424,7 @@ impl Owner {
             self.switch_auto(&mut inner, false);
         }
     }
-    /// #42 WstxRankingControl::Alert, once per station step: reads the live records past the
+    /// #42 WstxAlert::AlertRule, once per station step: reads the live records past the
     /// cursor once each and records an alert for each new candidate of the active strategy.
     /// Never transmits or changes a contact or run.
     pub(crate) fn alert_step(&self, state: &ProfileState) {
@@ -2795,7 +2795,7 @@ impl Owner {
             .config(state)
             .ok_or(("not_configured", Some("configuration".into())))?;
         self.most_wanted_load(state);
-        // WstxRankingControl::ContestVerdict: a draft is a preview (a contest draft over the contest in
+        // WstxStationLink::ContestVerdictWire: a draft is a preview (a contest draft over the contest in
         // force, or its contest's period from now); else the active strategy.
         let chosen = match draft {
             Some(s) => s,

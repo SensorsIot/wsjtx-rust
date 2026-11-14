@@ -168,7 +168,7 @@ package WstxStrategies {
              without one (as active, WstxStrategy D2). A changed contest is a changed selection.
              HALT turns Auto off and leaves the contest in force: it then transmits nothing. An MCP principal cannot select one (the PUT
              /strategy principal guard). No alert is recorded for a contest
-             (WstxRankingControl::Alert follows the active strategy of class strategy). */
+             (WstxAlert::AlertRule follows the active strategy of class strategy). */
     }
     attribute def ContestPrompt {
         doc /* The Contest button of the strategy element opens a modal dialog with its own HALT (the
