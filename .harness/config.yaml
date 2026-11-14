@@ -145,7 +145,7 @@ meter:
   # The day Alex stage one runs in this project (operator 2026-11-14, harness#80).
   rules_start: 2026-11-14
   # The improvement run (Jonah) after 10 changes Alex pulled from Define to Land, counted from
-  # 2026-11-14 (operator 2026-11-14); the coordinator counts them until the meter does (harness#104).
+  # 2026-11-14 (operator 2026-11-14); `report_cr.py --meter` counts them (harness#104).
   prices:
     claude-opus-5-5: {input: 4, output: 20, cache_read: 0.20}
     claude-sonnet-5-5: {input: 2, output: 10, cache_read: 0.10}

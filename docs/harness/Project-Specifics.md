@@ -40,7 +40,7 @@ What holds whichever machine is used:
 - One PC holds development at a time. `python harness/core/tools/handover.py to <machine>`,
   run on the PC that is left, moves it: the checks, the owner labels, the checkpoints, the
   holder and the arriving PC's setup are the tool's
-  ([several machines](../../harness/core/agents/roles.md#several-machines)). The binding
+  ([several machines](../../harness/core/docs/Workspaces.md#several-machines)). The binding
   is `machines:` and `handover:` in `.harness/config.yaml`: HB9BLA is reached from Andreas
   over SSH; on Andreas the arriving half is run by hand (`handover.py arrive`). The test
   inputs it verifies are those of `.git/migration-data/MANIFEST.json`. Everything local is
@@ -94,6 +94,11 @@ are prohibited.
 ## Local Windows development
 
 Install Rust through [rustup](https://rustup.rs/) and the Visual Studio C++ Build Tools with the Desktop development with C++ workload and a Windows SDK. The toolchain file selects the compiler version automatically.
+
+Once per clone, the operator runs `git submodule update --init`, then
+`python3 harness/core/tools/install_hooks.py`, and the same inside the submodule
+(`cd harness && python3 core/tools/install_hooks.py`) for its commit hook. The roles' hooks
+refuse `install_hooks.py`: it is the operator's.
 
 The local pre-push gate is the authoritative check:
 
