@@ -14,3 +14,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Project secrets per machine (harness#80 notifier); never committed.
+.harness/secrets.md

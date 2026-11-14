@@ -28,7 +28,7 @@ machines:
   Andreas: {}
 handover:
   repositories: [SensorsIot/harness]
-  install_check: python harness/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer --check
+  install_check: python harness/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer --agent issue-coordinator --check
   # The decoder test inputs outside the repository, verified on arrival against their manifest.
   inputs: ["{common}/migration-data/MANIFEST.json"]
   # Listed at a handover, never moved.
@@ -67,7 +67,8 @@ timing_classes:
     timer:   {clocks: [injected],        isolation: any,   red: never}
 # Select the authoritative execution location; the workflow has no automatic trigger.
 execution_mode: local
-# Three issue workspaces; the coordinator occupies this runtime's fourth agent slot.
+# Three issue workspaces: two for Alex's coders (alex.machines.implement), one for the
+# coordinator; no build in the coordinator's workspace while a gate runs (operator 2026-11-14).
 parallel_workers: 3
 # The push gate runs up to three selected suites at a time; the suites' exclusive/shared
 # tags keep conflicting ones apart (docs/harness/Project-Specifics.md).
@@ -145,3 +146,21 @@ meter:
     claude-opus-5-5: {input: 4, output: 20, cache_read: 0.20}
     claude-sonnet-5-5: {input: 2, output: 10, cache_read: 0.10}
     claude-haiku-5-5: {input: 0.10, output: 0.50, cache_read: 0.01}
+
+# Alex, the coordinator's state machine, stage one (harness core/docs/Alex.md, "The numbers";
+# operator decisions of 2026-11-14 on harness#80).
+alex:
+  machines: {define: 1, check: 1, implement: 2, review: 1, coordinate: 1}
+  limits: {ready: 3, queued_landed: 2}
+  buffer_per_coder: 2
+  investment_share: 1
+  fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60}
+  spend_per_day_usd: 200
+  first: [192]
+  priority_labels: [P1, P2, P3]
+  skip_labels: [paused]
+  restrictions:
+    - until_accepted: 192
+      brief: "No transmission: no agent started by Alex keys the real radio or the emulator before wsjtx-rust#192 is accepted (operator 2026-11-14)."
+  launcher: {command: claude, permission_mode: auto}
+  poll: 120
