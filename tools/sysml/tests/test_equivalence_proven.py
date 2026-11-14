@@ -132,7 +132,7 @@ SINGLE = {
                               "proven clause-list 'TC-001-002' Requirements.sysml -> Requirements.sysml"),
     "cost line wording": (edits(BASE, (COST_LINE, "             no radio. */\n"), (FIRST_AUTOMATION, DEV + FIRST_AUTOMATION)),
                           "proven cost 'TC-001-001' Requirements.sysml -> Requirements.sysml"),
-    "cost bold wording": (edits(BASE, ("**Level: 3 — Live read-only tests.** Watch it.", "Watch it."),
+    "cost bold wording at a line start": (edits(BASE, ("**Level: 3 — Live read-only tests.** Watch it.", "Watch it."),
                                 ("verify 'CL-001-03'; }\n", "verify 'CL-001-03'; }\n"
                                  "        @TestLevel { cost = 3; location = TestLocation::flexRadio; }\n")),
                           "proven cost 'TC-001-003' Requirements.sysml -> Requirements.sysml"),
@@ -162,6 +162,17 @@ SHORTHAND_BASE = edits(BASE, ("verify 'CL-001-01'; verify 'CL-001-02'; verify 'C
                               "verify 'CL-001-01'; verify 'CL-001-02'; }"))
 SHORTHAND = (SHORTHAND_BASE, edits(SHORTHAND_BASE, ("checks CL-001-01/02 offline", "checks offline")),
              "proven clause-list 'TC-001-003' Requirements.sysml -> Requirements.sysml")
+# A bold wording in the middle of a line: in a base whose TC-001-002 holds one.
+SECOND_AUTOMATION = ("        attribute automation : AutomationState = AutomationState::planned;\n"
+                     "        objective { verify 'CL-001-01'; verify 'CL-001-02'; }\n")
+MID_BOLD_BASE = edits(BASE, ("Expected: shown.", "Expected: shown. **Level: 4 — Controlled live tests with operator consent.** Then."))
+MID_BOLD = (MID_BOLD_BASE, edits(MID_BOLD_BASE, ("shown. **Level: 4 — Controlled live tests with operator consent.** Then.",
+                                                 "shown. Then."),
+                                 (SECOND_AUTOMATION,
+                                  "        @TestLevel { cost = 4; location = TestLocation::flexRadio; }\n" + SECOND_AUTOMATION)),
+            "proven cost 'TC-001-002' Requirements.sysml -> Requirements.sysml")
+# An attribute the catalog does not read for a case: in a base whose TC-001-002 holds one.
+FOREIGN_BASE = edits(BASE, (SECOND_AUTOMATION, '        attribute implementation : String = "server/a.rs";\n' + SECOND_AUTOMATION))
 # P2: a difference as today: (base, head) with exit 1 and no proven line.
 UNPROVEN = {
     "another case's number": (BASE, edits(BASE, ("See TC-001-002 and", "See and"))),
@@ -196,6 +207,15 @@ UNPROVEN = {
     "an attribute removed without its metadata": (BASE, edits(BASE, (FIRST_EXECUTABLE, ""))),
     "one other word changed beside proven spans": (BASE, edits(BASE, ("#### TC-001-001 — First case", "First case"),
                                                                ("Steps: open and check.", "Steps: open and look."))),
+    # Review of db2b018ab: whitespace alone is no proven removal.
+    "whitespace only": (BASE, edits(BASE, ("Steps: open and check.", "Steps:  open and check."))),
+    "two lines joined": (BASE, edits(BASE, ("CL-001-01, CL-001-02\n             | 2 —", "CL-001-01, CL-001-02 | 2 —"))),
+    # An attribute the catalog does not read for a case, removed with no metadata.
+    "an attribute the catalog does not read for the kind": (FOREIGN_BASE, BASE),
+    # A bold wording at a line start with the wrong pair on the head.
+    "a bold wording at a line start with a wrong pair": (BASE, edits(
+        BASE, ("**Level: 3 — Live read-only tests.** Watch it.", "Watch it."),
+        ("verify 'CL-001-03'; }\n", "verify 'CL-001-03'; }\n        @TestLevel { cost = 3; location = TestLocation::station; }\n"))),
 }
 # P3: all five rules in TC-001-001 at once, one of its two verified_by dependencies removed.
 ALL = edits(BASE, ("#### TC-001-001 — First case", "First case"), ("Proves CL-001-01, CL-001-02. See", "See"),
@@ -239,6 +259,7 @@ class ProvenRemovalTests(unittest.TestCase):
 
         cases = {name: (BASE, head) for name, (head, _line) in SINGLE.items()}
         cases["clause-list shorthand"] = SHORTHAND[:2]
+        cases["cost bold wording mid-line"] = MID_BOLD[:2]
         cases.update(UNPROVEN)
         cases["all five"] = (BASE, ALL)
         names = list(cases)
@@ -262,6 +283,7 @@ class ProvenRemovalTests(unittest.TestCase):
     def test_p1_each_rule_alone_is_proven(self):
         expected = {name: line for name, (_head, line) in SINGLE.items()}
         expected["clause-list shorthand"] = SHORTHAND[2]
+        expected["cost bold wording mid-line"] = MID_BOLD[2]
         for name, line in expected.items():
             with self.subTest(name):
                 code, lines = self.results[name]
@@ -285,7 +307,12 @@ class ProvenRemovalTests(unittest.TestCase):
                                  ("a dependency whose case no longer verifies the clause",
                                   "missing CL_001_02_verified_by_TC_001_001 R Requirements.sysml"),
                                  ("an attribute removed without its metadata",
-                                  "missing 'TC-001-001'::executable R Requirements.sysml")):
+                                  "missing 'TC-001-001'::executable R Requirements.sysml"),
+                                 ("whitespace only", "changed 'TC-001-001' doc "),
+                                 ("two lines joined", "changed 'TC-001-002' doc "),
+                                 ("an attribute the catalog does not read for the kind",
+                                  "missing 'TC-001-002'::implementation R Requirements.sysml"),
+                                 ("a bold wording at a line start with a wrong pair", "changed 'TC-001-003' ")):
                 self.assertTrue(any(line.startswith(prefix) for line in self.results[name][1]), self.shown(name))
 
     # P3: all five rules in one case at once; and a marked commit doing this

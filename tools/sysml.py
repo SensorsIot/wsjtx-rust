@@ -2179,6 +2179,9 @@ PROVEN_RULES = ("case-number", "clause-list", "cost", "dependency", "status")
 SEPARATORS = ("; ", ", ", ": ", ". ", " — ", " - ")
 STATUS_METADATA = ("Status", "Automation", "ImplementedIn", "TestedBy")
 STATUS_ATTRIBUTES = ("coverage", "automation", "method", "implementation", "executable")
+# Per kind of declaration, the attributes `stated` reads and the metadata form of each.
+STATUS_FORMS = {"requirement": {"coverage": "Status", "implementation": "ImplementedIn"},
+                "verification": {"automation": "Automation", "method": "Automation", "executable": "TestedBy"}}
 VERIFICATION_KINDS = ("VerificationCaseUsage", "VerificationCaseDefinition")
 QUOTED_IDENTITY = re.compile(r"'(" + IDENTITY + r")'")
 # A clause list: an optional `Proves `, then identities, each with the shorthand `references`
@@ -2321,6 +2324,17 @@ def fact_groups(facts: tuple) -> dict[str, list[int]]:
         if path not in ("", "via"):
             groups.setdefault(path.split("/", 1)[0], []).append(index)
     return groups
+
+
+def metadata_name(facts: tuple, step: str, indices: list[int]):
+    """The simple name of the metadata definition typing the metadata usage of one owned
+    element (raw facts); None when it is no metadata usage typed by a model definition."""
+    for index in indices:
+        path, kind, feature, value = facts[index]
+        if kind == "ref" and feature == "type" and path == step + "/MetadataUsage[0]/FeatureTyping[0]" and len(value) == 1:
+            name = re.fullmatch(r"M:(?:.*::)?(\w+)", value[0])
+            return name[1] if name else None
+    return None
 
 
 def group_class(facts: tuple, step: str, indices: list[int]):
@@ -2511,10 +2525,12 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
                    "refs": {target.rsplit("::", 1)[-1].strip("'") for target in verify_targets(raw_b)}}
         rules, removed, docs = set(), set(), True
         for text_b, text_h in zip(texts(facts_b, groups_b, classes_b), texts(facts_h, groups_h, classes_h)):
-            if collapsed(text_b) == collapsed(text_h):
+            if text_b == text_h:
                 continue
+            # Collapsing whitespace is the comparison of a proven deletion, not an acceptance
+            # of its own: a doc that differs needs at least one proven span deleted.
             chosen = proven_spans(text_b, text_h, doc_candidates(text_b, element, wordings))
-            if chosen is None:
+            if not chosen:
                 docs = False
                 continue
             for rule, pairs_ in chosen:
@@ -2528,7 +2544,13 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
             docs = False
         proven_rules = set(rules) if docs else set()
         status = True
-        if attributes or grouped(facts_b, groups_b, classes_b, "status") != grouped(facts_h, groups_h, classes_h, "status"):
+        # A removed attribute counts only as the one the catalog reads for this kind of
+        # declaration, replaced by its own metadata form on the head.
+        replaced = STATUS_FORMS["verification" if identity and identity.startswith("TC-") else "requirement"]
+        written = {metadata_name(raw_h, step, indices) for step, indices in groups_h.items() if classes_h[step] == "status"}
+        if any(replaced.get(entries_b[member]["rel"].rsplit("::", 1)[-1]) not in written for member in attributes):
+            status = False
+        elif attributes or grouped(facts_b, groups_b, classes_b, "status") != grouped(facts_h, groups_h, classes_h, "status"):
             stated_b = declared_facts(base, entries_b[key_b]["file"], identity) if identity else None
             status = stated_b is not None and stated_b == declared_facts(head, entries_h[key_h]["file"], identity)
             if status:
