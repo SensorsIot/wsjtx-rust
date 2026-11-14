@@ -35,6 +35,9 @@ package WstxContact {
     private import WstxContestRanking::'CL-063-04';
     private import WstxValueOrder::'CL-097-02';
     private import WstxValueOrder::'CL-097-03';
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::Status;
+    private import RequirementDerivation::*;
     doc /* Canonical contract of the standard FT8 contact (issue #10, CL-010-01..04, -06,
          -10..-14 in WstxRequirements): standard messages Tx1-Tx6, the server-owned
          auto-sequencing state machine, manual DX Call/Grid entry, Rx/Tx audio frequency
@@ -394,6 +397,7 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-063-02';
+            verify 'CL-063-07';
         }
         attribute executable : String = "server/src/strategy_tests.rs::tc_063_004_the_directive_table_in_a_contest_activity; server/src/strategy_tests.rs::tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation";
     }
@@ -435,6 +439,7 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-02';
+            verify 'CL-097-09';
         }
         attribute executable : String = "server/src/strategy97_tests.rs";
     }
@@ -919,6 +924,7 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-01';
+            verify 'CL-042-05';
         }
         attribute executable : String = "server/src/strategy_tests.rs; tests/ui-operating.test.cjs";
     }
@@ -932,6 +938,7 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-02';
+            verify 'CL-042-06';
         }
         attribute executable : String = "server/src/strategy_tests.rs";
     }
@@ -945,6 +952,7 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-02';
+            verify 'CL-042-06';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
@@ -993,6 +1001,7 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-04';
+            verify 'CL-042-07';
         }
         attribute executable : String = "server/src/strategy_tests.rs";
     }
@@ -1006,6 +1015,7 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-04';
+            verify 'CL-042-07';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
@@ -1034,6 +1044,7 @@ package WstxContact {
         objective {
             verify 'CL-039-02';
             verify 'CL-039-03';
+            verify 'CL-039-24';
         }
         attribute executable : String = "server/src/strategy_tests.rs; tests/contact.test.cjs";
     }
@@ -1065,6 +1076,7 @@ package WstxContact {
         objective {
             verify 'CL-039-03';
             verify 'CL-039-05';
+            verify 'CL-039-24';
         }
         attribute executable : String = "server/src/strategy_tests.rs";
     }
@@ -1082,6 +1094,7 @@ package WstxContact {
             verify 'CL-039-04';
             verify 'CL-039-05';
             verify 'CL-039-10';
+            verify 'CL-039-25';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
@@ -1100,6 +1113,7 @@ package WstxContact {
             verify 'CL-039-04';
             verify 'CL-039-05';
             verify 'CL-039-06';
+            verify 'CL-039-25';
         }
     }
     dependency CL_039_05_verified_by_TC_039_007 from 'CL-039-05' to 'TC-039-007';
@@ -1551,6 +1565,7 @@ package WstxContact {
         objective {
             verify 'CL-063-03';
             verify 'CL-063-04';
+            verify 'CL-063-08';
         }
         attribute executable : String = "server/src/contest_tests.rs::tc_063_006_only_the_period_counts_and_each_dupe_rule; server/src/contest_tests.rs::tc_063_006_verdicts_callable_by_value; server/src/contest_tests.rs::tc_063_006_a_field_day_exchange_to_my_call_is_a_caller";
     }
@@ -1566,6 +1581,7 @@ package WstxContact {
         objective {
             verify 'CL-063-03';
             verify 'CL-063-04';
+            verify 'CL-063-08';
         }
         attribute executable : String = "server/src/contest_tests.rs::tc_063_007_a_selection_is_parsed_exactly; server/src/strategy_tests.rs::tc_063_007_a_contest_selection_store_and_evaluation";
     }
@@ -1581,6 +1597,7 @@ package WstxContact {
         objective {
             verify 'CL-063-03';
             verify 'CL-063-04';
+            verify 'CL-063-08';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
@@ -1986,4 +2003,159 @@ package WstxContact {
     }
     dependency CL_097_01_verified_by_TC_097_019 from 'CL-097-01' to 'TC-097-019';
     dependency CL_097_07_verified_by_TC_097_019 from 'CL-097-07' to 'TC-097-019';
+
+    attribute def DirectedCqSelection {
+        doc /* A CQ that is not answerable is never answered by a run or a pounce.
+             An operator's selection of such a row (double-click, Reply, Select, the other-calls
+             list) is refused directive_not_answerable (409 with error.reason = this text); the
+             browser shows it as a warning the operator can confirm, and only then sends
+             select_row again with the optional directive_confirmed true. The directive is
+             checked before contact_active, so during a contact a plain click (select_row
+             without replace) on such a row is refused this way too and offers nothing
+             (CL-037-05); a double-click warns. A command that is not the browser's (automation,
+             MCP, UDP) can never confirm it: its select_row is refused directive_not_answerable
+             also with directive_confirmed. The one exception (CqTargetList): a strategy run's
+             own select_row of a CQ whose directive word is on its active strategy's CQ target
+             include list passes, and that strategy's verdict of it is not grey.
+             A word on the include list of the CQ target line that DirectedCqRule does not
+             answer (POTA, SOTA, a number) is answerable for this strategy, never for the
+             operator's own selection, whose warning stays.
+             In a contest activity the activity's own word is answerable (ContestDirective): a
+             selection of it needs no directive_confirmed, and a word outside its activity keeps
+             the warning. */
+    }
+
+    requirement 'CL-039-24' {
+        doc /* A CQ that is not answerable is never answered by a run or pounce. An operator's
+             selection of it shows a warning the operator can confirm ("CQ NA — not for EU");
+             automation, MCP and UDP cannot confirm it. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/dxcc.rs; client/contact.js";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-039-24';
+    }
+    requirement 'CL-039-25' {
+        doc /* Settings shows "List from <date>" with its entries, unmapped numbers and source
+             attribution, and one button Update Most Wanted that fetches it once on the
+             operator's click; there is no upload, a failed download keeps the list and shows
+             the reason in one line. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/most_wanted.rs; server/src/strategy.rs; client/contact.js";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-039-25';
+    }
+    requirement 'CL-042-05' {
+        doc /* The editor offers them in decision 2; the live preview names why. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/dxcc.rs; server/src/logbook.rs; client/contact.js";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-042-05';
+    }
+    #derivation connection {
+        end #original ::> 'FR-011';
+        end #derive ::> 'CL-042-05';
+    }
+    requirement 'CL-042-06' {
+        doc /* Settings > General edits the permanent list; the Band Activity right-click menu
+             "Ignore <call>" / "Stop ignoring <call>" fills the session list. A saved
+             configuration from before the lists reads with empty lists and 30 minutes. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js; client/recording.css";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-042-06';
+    }
+    #derivation connection {
+        end #original ::> 'FR-010';
+        end #derive ::> 'CL-042-06';
+    }
+    #derivation connection {
+        end #original ::> 'FR-020';
+        end #derive ::> 'CL-042-06';
+    }
+    requirement 'CL-042-07' {
+        doc /* The browser plays a short sound and/or shows a browser notification as the
+             operator chose in Settings > General (both off by default; the notification
+             permission is asked only on the operator's click; no sound while the page is
+             hidden), and lists the history with a Clear. An MCP client may read the history
+             (wstx_read alerts), not clear it. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/contact_http.rs; server/src/main.rs; server/src/mcp.rs; client/contact.js";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-042-07';
+    }
+    #derivation connection {
+        end #original ::> 'FR-020';
+        end #derive ::> 'CL-042-07';
+    }
+    requirement 'CL-063-07' {
+        doc /* An operator's selection of such a CQ needs no confirmation; outside the matching
+             activity the CQ stays not answerable, with the warning of CL-039-03. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/contact_http.rs; server/src/contact.rs";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-024';
+        end #derive ::> 'CL-063-07';
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-063-07';
+    }
+    requirement 'CL-063-08' {
+        doc /* With a contest in force Band Activity lists only those stations; a Show all
+             toggle (off) shows the rest. Colour only for the callable, a new multiplier apart;
+             a dupe and a directed CQ dimmed. The browser renders after a publication, never on
+             a timer. A contest also works by hand: every row stays selectable with Show all. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/contest.rs; server/src/strategy.rs; client/contact.js; client/recording.css";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-024';
+        end #derive ::> 'CL-063-08';
+    }
+    #derivation connection {
+        end #original ::> 'FR-010';
+        end #derive ::> 'CL-063-08';
+    }
+    requirement 'CL-097-09' {
+        doc /* A CQ whose word is on the CQ target include list: Band Activity marks it without
+             strike-through; the operator's own selection of it keeps its warning. */
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/dxcc.rs; server/src/automation.rs";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-097-09';
+    }
+    #derivation connection {
+        end #original ::> 'FR-011';
+        end #derive ::> 'CL-097-09';
+    }
+    dependency directedCqSelectionClause from DirectedCqSelection to 'CL-039-24';
 }

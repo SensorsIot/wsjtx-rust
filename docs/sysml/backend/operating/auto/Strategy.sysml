@@ -29,15 +29,11 @@ package WstxStrategy {
          Decisions (operator decisions on #39, 2026-11-04 to 2026-11-06, comments
          6626205191, 6626483800, 6626497059, 6626745310, 6626929588, 6626981068,
          6627875105, and the implementing CR's defaults, listed on #39):
-         D1 One evaluator: the station evaluates every strategy (Verdict). The browser
-            renders the verdicts (POST /strategy/evaluate) and never evaluates anything
-            itself; automatic operation uses the same verdicts.
          D2 What a strategy is: exactly one strategy is active, or none (manual operation).
             A strategy is of one of two classes (StrategyClass) and holds the nine settings of
             D19 (Strategy). Selecting a strategy only ranks Band Activity by it (Verdict);
             transmitting is Auto's (AutoToggle). The browser sends only the selection and the
             toggles.
-         D3 Treat 73 as CQ: an RR73 or 73 that ends another station's QSO counts as calling.
          D15 Strategydef (operator grill 2026-11-07, Q1-Q42, #39 comment 6705641422, the
             operator's "yes, go ahead", and the answers of 2026-11-07 relayed on #39): filter
             and order apart (Candidate, ValueOrder), SNR and distance as order criteria, the
@@ -82,39 +78,12 @@ package WstxStrategy {
             QSO (ManualIntervention).
          D8 Out (operator decision on #42): band hopping, also as a suggestion; Rapid
             RR73; unauthenticated UDP control; shell-command alerts.
-         D9 Ignore lists (#42, IgnoreLists): a permanent list in Settings > General and a
-            session list filled from Band Activity (right-click Ignore), with a timed
-            expiry and cleared on a band change. They govern the strategy only (marks,
-            runs); a manual Reply, Select or double-click of an ignored station is still
-            the operator's explicit choice and is not refused.
          D10 Pounce (#42, Pounce; WSJT-Z's "wait for one call"): an operator action arms a
             watch for exactly one call on the current band and mode; when that station
             calls CQ or ends a QSO with RR73/73 the station answers it as a double-click
             does (select, Enable Tx, Auto Seq). It is a WstxMcp::OperatingAutomation run
             (one run at a time: never beside a strategy run), it is not a strategy, and it
             ends on success, a band change, HALT, the Tx watchdog or the operator.
-         D11 Alert (#42, Alert): without a setting. The station records an alert for each
-            new candidate of the active strategy in a bounded history in station memory;
-            the browser plays a short sound and/or shows a browser notification as the
-            operator chose (both off by default). An alert never transmits and changes no
-            contact or automation state.
-         D12 Most Wanted list (#39 6626483800, MostWantedList): the operator asked for
-            "download and refresh like cty.dat". This project's cty.dat has no automatic
-            download (bundled file plus Settings upload, WstxContact country file), so the
-            list is kept simple (operator 2026-11-06: "Most wanted countries stay forever. They do
-            not change a lot. We have to find an extremely simple way to update it from time to
-            time."): a Settings section with one button "Update Most Wanted" beside the list's
-            date that fetches it once on the operator's click. There is no upload (operator:
-            "Why would we upload something?"); a failed download keeps the list.
-            Terms check (2026-11-06): the clublog.org pages mostwanted.php, need_api and
-            requestapikey state no terms and no limits; the footer says "Club Log (c)
-            Michael Wells G7VJR"; need_api says "You do not need a key unless you write
-            software which integrates with Club Log", requestapikey says "A developer API
-            key is no longer required". Permission to redistribute or fetch automatically
-            is not established, and the operator ruled (#39 comment 6685317139): no automatic
-            refresh and nothing bundled. Everything works without a list.
-         D13 Grids are a known-unknown: only 6,729 of the operator's 26,902 Log4OM QSOs carry
-            a grid, so a missing grid is unknown, never new (NewNeeded grid).
          D19 Strategy settings and ranking (operator grill 2026-11-09, mockups "DXCC all" and
             "ARRL Digi fast"; operator 2026-11-12). The operator chooses a strategy; every
             strategy holds the same settings with its own values, each editable per strategy,
@@ -331,7 +300,7 @@ package WstxStrategy {
              station band or the mode differs, the grant is no longer current (revoked, or a
              safety edit) or the HALT count has grown. It never arms, selects, answers or
              moves a frequency. The guard ends when the contact is no longer active or is
-             replaced, when a new run starts, or on a restart. */
+             replaced, when a new run starts, or on a restart. A started QSO is always finished (#81): a target that answers our call is progress, never a caller judged again. */
     }
     attribute def LeaveRule {
         attribute leaveMode : LeaveMode;

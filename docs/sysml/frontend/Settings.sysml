@@ -439,4 +439,40 @@ package WstxSettings {
              double-click and the directive warning unchanged. */
     }
     dependency viewClause from ContestView to WstxContestRanking::'CL-063-04';
+
+    attribute def IgnoreListsDisplay {
+        doc /* Band Activity: the right-click menu offers "Ignore <call>" for a row with a
+             resolved sender (session list), "Stop ignoring <call>" when that call is on the
+             session list, and no ignore item for other rows. Settings > General: the permanent
+             list (calls separated by spaces or commas, saved on change with PUT /strategy), the
+             session expiry in minutes (saved on change), and the session list with each call's
+             remaining minutes and a remove control; the list is read again when the drawer
+             opens. */
+    }
+    attribute def MostWantedListDisplay {
+        doc /* Browser, Settings > General: "List from <date> · <entries> entries" (and how many
+             are not mapped), or "No list; strategies call the strongest first", with beside it
+             one button "Update Most Wanted"; one click does everything. A failure keeps the
+             list and shows the reason in one line. */
+    }
+    attribute def AlertDisplay {
+        doc /* Browser: Settings > General shows an Alerts section: "Sound" and "Browser
+             notification" checkboxes, both off by default, kept per browser and profile in
+             localStorage (wstx.alerts.v1:<profile_id> = {sound, notify}; unreadable: both off);
+             checking Browser notification is the only place that asks for the browser's
+             notification permission (Notification.requestPermission on that click, never
+             otherwise); a permission other than granted leaves it unchecked with the reason.
+             The history list, newest first, each line "<HH:MM:SS> <call> <message> · <rule> ·
+             <band> <MODE> · <snr> dB · <dxcc>" (unknown parts left out), and a Clear button
+             (POST /strategy/alerts/clear). An alert counts as new when its id is above the
+             highest id this page has seen (the history read at page load or reconnect announces
+             nothing): for each new alert a short tone (Web Audio, about 0.15 s) only when Sound
+             is on and the page is visible, and a notification titled "Alert <call>" with body
+             "<message> · <rule>" when Browser notification is on and permission is granted
+             (also while the page is hidden); with both off nothing is announced (the history
+             still lists it). */
+    }
+    dependency ignoreListsDisplayClause from IgnoreListsDisplay to WstxContact::'CL-042-06';
+    dependency mostWantedListDisplayClause from MostWantedListDisplay to WstxContact::'CL-039-25';
+    dependency alertDisplayClause from AlertDisplay to WstxContact::'CL-042-07';
 }

@@ -5334,11 +5334,13 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
   const element=qualified=>{const [pkg,name]=qualified.split('::');return doc(fileOf(pkg),name);};
   const S=fileOf('WstxStrategy'),C=fileOf('WstxContest'),R='Requirements.sysml';
   const scope=[
-    ...[1,2,3,15,19].map(n=>decision(S,n)),
+    ...[2,15,19].map(n=>decision(S,n)),
     ...['NewWhat','NewPer','ValueCriterion','Needed','StrategyBands','CountryList','UsStateFilter','CqTargetList','Verdict'].map(n=>element(`WstxRankingControl::${n}`)),
     ...['StrategyClass','LeaveMode','Strategy'].map(n=>element(`WstxStrategies::${n}`)),
     element('WstxStrategy::PskCase'),
     ...['UsStateOf','NewNeeded','CallerOfMyCall','Candidate','ValueOrder'].map(n=>element(`WstxValueOrder::${n}`)),
+    ...['StrategyBandsRule','CountryListRule','UsStateFilterRule','CqTargetListRule','VerdictRule'].map(n=>element(`WstxValueOrder::${n}`)),
+    element('WstxContestRanking::ContestVerdictRule'),
     ...['BuiltinStrategies','StrategyConfiguration'].map(n=>element(`WstxStrategies::${n}`)),
     element("WstxSettings::StrategyEditor"),
     head(C),decision(C,1),decision(C,11),
