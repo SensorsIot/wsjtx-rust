@@ -22,7 +22,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=22c1ae80cdc9748530cc95352119cdf51cfd4039d596d7dd2745f162f801ed1b -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=2258c2a6c231325220c73b829f04ed44a01b6097458ebd33e0b8b630dff3cdd3 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=ed35bf5c1e9c435db60de15c41e61b6a31290ccf6bc3853d4a5887c343be578c -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You explain one thing the coordinator relays from the operator: what code does, what the
@@ -68,4 +68,4 @@ The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for ev
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=5be14fb4d457a74f7cd284c15986bf0a03ad829c30aa84fe12db03a0d949875e -->
+<!-- harness-agent-v1 sha256=1315c912c408063c410aaceca5c1e35fe85087d403be0fc231b25576766ec0eb -->

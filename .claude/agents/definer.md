@@ -28,7 +28,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=22c1ae80cdc9748530cc95352119cdf51cfd4039d596d7dd2745f162f801ed1b -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=2258c2a6c231325220c73b829f04ed44a01b6097458ebd33e0b8b630dff3cdd3 -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=ed35bf5c1e9c435db60de15c41e61b6a31290ccf6bc3853d4a5887c343be578c -->
 <!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "gh api repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[0-9]+/comments( --paginate)?( (--jq|-q) '[^']*')?", "git grep(?!.*\\s(-[A-Za-z]*O|--open-files-in-pager))( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "git (log|show|diff|rev-parse|merge-base|ls-tree|cat-file)(?!.*--output)( .*)?"], "writes": ["docs/**", ".git/harness-parallel/worktrees/*/docs/**"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": ["**/*.sysml"], "facts": []}} -->
 
 You define one issue: from its recorded problem to the complete issue of
@@ -118,7 +118,7 @@ rule 7, edge cases, of its [core rules](../../harness/core/skills/sysml-authorin
 ## Added by the project (docs/harness/Agent-Working-Rules.md)
 
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
-[model authoring and validation](../../docs/harness/Project-Specifics.md#model-authoring-and-validation),
+[model authoring and validation](../../tools/sysml/README.md#model-authoring-and-validation),
 run in an issue worktree by the worktree path rule under "Role: every" below.
 A browser control that writes to the radio or keys it states what it does before its
 scripts have loaded over the 32 kbit/s link and after they fail to load.
@@ -140,4 +140,4 @@ The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for ev
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `docs/**`, `.git/harness-parallel/worktrees/*/docs/**`
 - Model files among them, where each changed line must match a delivery fact (none): `**/*.sysml`
-<!-- harness-agent-v1 sha256=3b733970644f056f6f2db878ffe736d11439370d4767c48fc8587acdf3f6348d -->
+<!-- harness-agent-v1 sha256=e29e3ef856334fe180ea01b8ac7553d05f7d4d51bc51faad2a39a8d8eb796879 -->

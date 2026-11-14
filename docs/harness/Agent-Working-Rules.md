@@ -94,7 +94,7 @@ guard:
 ```
 
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
-[model authoring and validation](Project-Specifics.md#model-authoring-and-validation),
+[model authoring and validation](../../tools/sysml/README.md#model-authoring-and-validation),
 run in an issue worktree by the worktree path rule under "Role: every" below.
 A browser control that writes to the radio or keys it states what it does before its
 scripts have loaded over the 32 kbit/s link and after they fail to load.
@@ -153,7 +153,7 @@ guard:
   the tests run on the build of the temporary tree (its pack `CARGO_TARGET_DIR`).
 - **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
   and its `executable` binding
-  ([source bindings](Project-Specifics.md#canonical-model-catalog-and-source-bindings));
+  ([source bindings](../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings));
   the hook refuses any other model line.
 - **Proves tags:** this project's tag syntax for test-design step 5 is a `// Proves: <ID>`
   comment, on a real `#[test]` (or Node `test(...)`) that exercises the promise, never on
