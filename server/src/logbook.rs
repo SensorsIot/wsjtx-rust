@@ -236,6 +236,42 @@ impl Record {
             .map(|b| b.to_ascii_lowercase())
             .or_else(|| self.values[FREQ].as_deref().and_then(band_of_mhz))
     }
+    /// CL-085-01 (#85): this record, handed to the log, is the same station again after
+    /// `newest`, the newest QSO of the log: CALL equal ignoring case (K1ABC/P is not K1ABC),
+    /// the same band (an unknown band equals only an unknown band) and the same mode (FT8
+    /// and FT4 differ). Under a contest, `contest` is its dupe rule and decides instead
+    /// within that: the second QSO is the same station again only when the rule counts it
+    /// as a dupe of the first (under band_grid a new grid of both is not a dupe).
+    pub fn same_station_again(
+        &self,
+        newest: &Record,
+        contest: Option<crate::contest::Dupes>,
+    ) -> bool {
+        let call = |r: &Record| r.values[CALL].as_deref().unwrap_or("").to_ascii_uppercase();
+        let same = call(self) == call(newest)
+            && self.effective_band() == newest.effective_band()
+            && self.effective_mode() == newest.effective_mode();
+        if !same {
+            return false;
+        }
+        match contest {
+            Some(crate::contest::Dupes::BandGrid) => {
+                let grid = |r: &Record| {
+                    r.values[GRID]
+                        .as_deref()
+                        .and_then(|g| g.get(..4))
+                        .map(str::to_ascii_uppercase)
+                };
+                // Without a grid on either side only the band can tell (a dupe).
+                match (grid(self), grid(newest)) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => true,
+                }
+            }
+            // band, band_mode_class and call: the same call, band and mode is a dupe.
+            _ => true,
+        }
+    }
     /// Seconds of QSO_DATE + TIME_ON on a day count (UTC), for the consolidation window.
     fn start_seconds(&self) -> Option<i64> {
         let date = self.values[QSO_DATE].as_deref()?;
@@ -1323,6 +1359,11 @@ impl Logbook {
     pub fn saved(&self, contact_id: &str) -> bool {
         self.lock()
             .is_ok_and(|inner| inner.ids.contains_key(contact_id))
+    }
+    /// CL-085-01 (#85): the last stored record in storage order (the last entry of QSO
+    /// History), whatever wrote it; None for an empty log.
+    pub fn newest(&self) -> Result<Option<Record>, StoreError> {
+        Ok(self.lock()?.records.last().cloned())
     }
     pub fn total(&self) -> Result<usize, StoreError> {
         Ok(self.lock()?.records.len())

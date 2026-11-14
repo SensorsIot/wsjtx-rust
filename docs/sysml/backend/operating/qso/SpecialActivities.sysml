@@ -7,6 +7,10 @@ package WstxSpecialActivities {
     private import WstxRequirements::'FR-024';
     private import WstxRequirements::'FR-004';
     private import WstxRequirements::'FR-005';
+    private import WstxQsoPart::QsoAndLogging;
+    private import WstxOperatingChain::'CL-085-02';
+    private import WstxLogbook::'CL-085-01';
+    private import RequirementDerivation::*;
     requirement 'CL-111-10' {
         doc /* Hound limits. While the Hound still calls with Tx1, the transmit state goes off (cause txWatchdog) when 300 s have passed since the last accepted start. Every accepted start restarts the 300 s, a run's start included. reset_repetitions does not restart it. The reply timeout ends at every accepted start and at completion; nothing else about WstxSpecialActivities::HoundOperation changes, "a Fox report never switches transmission on" included. Details: WstxSpecialActivities::HoundOperation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -300,9 +304,9 @@ package WstxSpecialActivities {
              is folded and blank runs collapse; anything else, a missing exchange for these
              two, or an exchange for another activity is refused invalid_request field
              exchange. serial is the station's contest serial number: 1 at boot,
-             incremented by one each time a contact is logged (DirectLog, completion or
-             Log QSO of a contact not yet logged) while an activity other than none is set
-             (MW ~10542), never reset by set_activity. set_activity also sets the activity of the
+             incremented by one each time the log accepts a contact at its first hand-over
+             (ContestSerialRule: completion or Log QSO of a contact not yet logged) while an
+             activity other than none is set (MW ~10542), never reset by set_activity. set_activity also sets the activity of the
              current contact (its messages are regenerated and its log fields follow it).
              DIFFERENT from WSJT-X: a contest contact without exchange_sent or
              exchange_rcvd is still logged (logqso.cpp ~415 refuses it), and the RTTY RST of
@@ -335,6 +339,56 @@ package WstxSpecialActivities {
              (second word); another activity SRX_STRING. Fields are written in the
              LogRecord order. */
     }
+    attribute def ContestSerialRule {
+        doc /* The contest serial (ContestExchange serial) counts for a contact only at its
+             first hand-over to the log (its completion, or Log QSO of a contact not yet
+             logged) and only when the log answers accepted over
+             WstxOperatingChain::CompletedContact. On refused (WstxLogbook::SameStationAgain)
+             it keeps its value, and the next station is sent the same serial. A record the
+             log cannot store (log_invalid_field), a pending one (storage_unavailable) and one
+             dropped by log_queue_full are accepted answers and count. */
+    }
+    attribute contestSerialRule : ContestSerialRule;
+    satisfy 'CL-085-03' by contestSerialRule;
+    requirement 'CL-085-03' {
+        subject qso : QsoAndLogging;
+        doc /* The contest serial counts for a completed contact only when the log answers
+             accepted (CL-085-02). On refused it is not counted: it keeps its value, and the
+             next station is sent the same serial. Details:
+             WstxSpecialActivities::ContestSerialRule. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs";
+    }
+    #derivation connection {
+        end #original ::> 'FR-024';
+        end #derive ::> 'CL-085-03';
+    }
+    verification 'TC-085-004' {
+        doc /* TC-085-004 — Contest serial
+             CL-085-03, CL-085-02, CL-085-01
+             Setup: the actual server with a disposable profile directory, a virtual UTC clock
+             and hand-authored decoded rows; a contest with a serial: the active strategy is of
+             class contest (a built-in contest strategy with its contest selected); profile
+             HB9BLA, partner K1ABC.
+             Steps: (a) K1ABC is logged with serial N; a second QSO with K1ABC; then the next
+             station is entered. (b) The same with the second QSO closed by Log QSO. (c) K1ABC,
+             W1AW, K1ABC. (d) na_vhf (band_grid): K1ABC/R in FN42, then K1ABC/R in FN42 again
+             directly after, then K1ABC/R in FN43 directly after the first. (e) A contest QSO
+             whose record is refused log_invalid_field (no profile callsign).
+             Expected (ContestSerialRule, WstxLogbook::SameStationAgain): (a) the serial becomes
+             N+1; the second QSO sends N+1 and completes with no record, the serial stays N+1,
+             and the next station is sent N+1. (b) the same. (c) three records, the serial
+             counts three times. (d) FN42 again not logged and not counted; FN43 logged and
+             counted. (e) the answer is accepted and the serial counts.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-085-03';
+            verify 'CL-085-02';
+            verify 'CL-085-01';
+        }
+        attribute executable : String = "server/src/contact_http_tests.rs; server/src/logbook_tests.rs";
+    }
     attribute def EuVhfExchange {
         attribute serialMinimum : Integer = 1;
         attribute serialMaximum : Integer = 2047;
@@ -354,7 +408,7 @@ package WstxSpecialActivities {
              invalid_call with field callsign while the profile callsign has more than 11
              characters (a hashed slot holds no more; the profile admits 12). The serial is
              ContestExchange serial, the one station contest serial (1 at boot, +1 for each
-             logged contact while a contest activity is set, never reset by set_activity);
+             contact the log accepts while a contest activity is set, never reset by set_activity);
              #98 replaces its source by the log (highest STX of the contest + 1) for rtty and
              eu_vhf alike.
              Messages. Tx6 "CQ TEST MYCALL GRID4" (a nonstandard MYCALL keeps "CQ MYCALL");

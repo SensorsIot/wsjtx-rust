@@ -712,6 +712,39 @@ test('TC-009-005 a lost selection read does not disable the controls the socket 
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: CL-085-01; TC-085-005 (a), (c). #85 L1: a QSO with the station logged last is not
+// logged; the QSO pane says so and why, shows no "Logged" notice, and the log holds the station
+// once. The next logged QSO shows its "Logged" notice. Expected texts: the L1 wording.
+test('TC-085-005 the QSO pane says that a QSO with the station logged last was not logged',{timeout:60000},async()=>{
+  if(await page.locator('#region-logbook').isVisible())await page.locator('#region-logbook .return-operate').click();
+  await page.locator('#operating-workspace').waitFor({state:'visible'});
+  if(!await page.locator('#qso-more').evaluate(el=>el.open))await page.locator('#qso-more summary').click();
+  const logged=async call=>{
+    await page.locator('#dx-call').fill(call);await page.locator('#dx-grid').fill('JO40');await page.locator('#dx-grid').press('Enter');
+    await waitFor(async()=>(await snapshot()).contact?.dx_call===call&&(await snapshot()).contact?.state!=='completed',`${call} entered`);
+    await page.getByRole('button',{name:'Log QSO'}).click();
+    await waitFor(async()=>(await snapshot()).contact?.state==='completed',`${call} closed by Log QSO`);
+  };
+  const count=async call=>{let n=0;for(let cursor=0;;){const p=await (await fetch(`${origin}/contacts?cursor=${cursor}&limit=10`)).json();if(!p.records?.length)return n;n+=p.records.filter(r=>r.call===call).length;cursor+=p.records.length;}};
+  const notice=page.locator('#contact-logged');
+  await logged('DL7XYZ');
+  await notice.filter({hasText:'Logged DL7XYZ'}).waitFor();
+  assert.equal(await count('DL7XYZ'),1);
+  // (a) The same station again: not logged, and why.
+  await logged('DL7XYZ');
+  await notice.filter({hasText:'Not logged DL7XYZ'}).waitFor();
+  assert.equal(await notice.textContent(),'Not logged DL7XYZ · same station as the last log entry');
+  assert.equal(await notice.isVisible(),true);
+  const s=await snapshot();
+  assert.deepEqual(s.log,{contact_id:s.contact.id,call:'DL7XYZ',outcome:'unsaved',error:'same_station_again'});
+  assert.equal(await count('DL7XYZ'),1,'the log lists DL7XYZ once');
+  // (c) The next logged QSO shows its own notice.
+  await logged('DL8XYZ');
+  await notice.filter({hasText:'Logged DL8XYZ'}).waitFor();
+  assert.equal(await notice.textContent(),'✓ Logged DL8XYZ');
+  assert.deepEqual(page.errors,[]);
+});
+
 test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);

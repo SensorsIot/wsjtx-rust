@@ -9,6 +9,10 @@ package WstxLogbook {
     private import WstxContact::'CL-011-04';
     private import WstxStandardQso::'CL-010-02';
     private import WstxContact::'CL-010-17';
+    private import WstxLogPart::LogService;
+    private import WstxOperatingChain::'CL-085-02';
+    private import ModelNotes::DiffersFromSource;
+    private import RequirementDerivation::*;
     requirement 'CL-011-03' {
         doc /* Complete and log FT4 contacts through the common contact engine with the
              FT4 rules: the contact's mode fixed at preparation and carried in every
@@ -37,7 +41,7 @@ package WstxLogbook {
     // (StationTickEvent), a target judged from the link byte log since #80 (CL-003-05,
     // TC-080-001); MCP traffic is outside that budget.
     requirement 'CL-010-04' {
-        doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record, Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxLogbook::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
+        doc /* Log every completed contact directly, without a review step (#41, as WSJT-X): at completion and on a manual Log QSO the server stores the contact's record in the profile directory's ADIF 3.1.8 contacts.adi with its contact identity and sends it to the WSJT-X UDP targets as QSO Logged and Logged ADIF; exactly one record per contact identity (an identical re-log adds nothing, completion after an early Log QSO replaces it; each contact is sent to the UDP targets once), a later contact with the same station a new record except the same station again directly after it (CL-085-01), Saved only after durable acknowledgement, a failed write visibly unsaved and retried; ADI export and history with the stated limits; and (#10, operator 2026-11-03) Update logbook from ADIF, the one ADI import: an export of another logger (for example Log4OM) is consolidated into the contact log, repeatable and incremental, a record already present (same contact identity, or same call, band and mode/submode with a start within 2 minutes) adding nothing and the stored record winning, only the log's own fields kept, added records marked with their source, QSO confirmation status (LoTW, QSL and eQSL received with their dates and via) kept and, on a rerun, upgraded on records already present (a confirmation is only added, never removed; #10, operator 2026-11-04), so worked-before and award queries tell worked from confirmed per entity, band and mode, invalid records skipped and invalid optional fields dropped with their reasons in the summary, nothing sent to the UDP targets or elsewhere, and the added records feeding worked-before, DXCC and grid status. The former log review queue (OfferLogReview, discard_review, the review form) is retired. Details: WstxLogbook::LogRecord, DirectLog, SaveContact, UpdateLogbook, ExportAdi, ContactHistory, AdiLimits, WorkedBeforeQuery; WstxUdp::OutboundRules. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/main.rs; client/logbook.js; client/contact.js";
     }
@@ -71,6 +75,172 @@ package WstxLogbook {
     dependency CL_010_04_verified_by_TC_011_001 from 'CL-010-04' to 'TC-011-001';
     dependency CL_010_04_verified_by_TC_011_002 from 'CL-010-04' to 'TC-011-002';
     dependency CL_010_04_verified_by_TC_007_007 from 'CL-010-04' to 'TC-007-007';
+
+    // ---------------------------------------------------------------- the same station again
+    attribute def SameStationAgain {
+        doc /* The rule DirectLog applies to each completed contact handed to it over
+             WstxOperatingChain::CompletedContact (at its completion or by Log QSO). The newest
+             QSO of the log is the record handed over last and still pending, if there is
+             one, otherwise the last record of contacts.adi in storage order (the last entry
+             of ContactHistory), whatever wrote it; a repeated Log QSO of the same contactId
+             is no second QSO. The contact is the same station again when its CALL equals the
+             newest QSO's CALL ignoring case (K1ABC/P is another station than K1ABC), its band
+             equals that record's band and its mode equals that record's mode. Band: BAND,
+             else the band that contains FREQ; the contact's band is that of the dial
+             confirmed at its completion; an unknown band (dial not confirmed, neither BAND nor
+             FREQ) equals only an unknown band. Mode: MODE, with SUBMODE when MODE is MFSK, so
+             FT8 and FT4 differ. Under a contest (the active strategy is of class contest,
+             WstxStrategies::StrategyClass) the contest's dupe rule (WstxStrategies::
+             ContestProfile) decides within that: the contact is refused only when the rule
+             counts it as a dupe of the newest QSO; under band_grid a four-character grid known
+             on both and different is no dupe, so a rover from a new grid is logged.
+             A refused contact writes no record, changes no field of a stored one, reaches no
+             WstxUdp target, and its log outcome is unsaved with the error same_station_again
+             (WstxQsoControl::ContactSnapshot log) until the next outcome; no Logged notice is
+             shown, and the QSO pane shows "Not logged <call> · same station as the last log
+             entry". No time is involved; after a restart the newest QSO is read from
+             contacts.adi. Every other contact is logged as DirectLog states: another station
+             logged in between (then the first station is logged again), another band, another
+             mode, an empty log, a previous QSO with that station that was cancelled or never
+             stored. Records written by UpdateLogbook or SaveContact are stored as given, never
+             judged, and can be the newest QSO. It holds whoever started the QSO: the operator,
+             an agent through MCP, or Auto. */
+        @DiffersFromSource {
+            what = "WSJT-X LogBook::add appends every logged QSO without a dupe check; "
+                + "the product never logs the same station twice in a row";
+        }
+    }
+    attribute sameStationAgain : SameStationAgain;
+    satisfy 'CL-085-01' by sameStationAgain;
+    requirement 'CL-085-01' {
+        subject log : LogService;
+        doc /* When the log receives a completed contact (at its completion, or by Log QSO) and
+             the newest QSO of the profile's log is the same station on the same band and in
+             the same mode, the log refuses it: no record is written, no field of an existing
+             record changes, and its latest log outcome is unsaved with the reason same
+             station again. Otherwise it logs the contact as DirectLog states. It holds
+             whatever was exchanged, without a time window, after a station restart, and
+             whoever started the QSO. Under a contest the contest's own dupe rule decides
+             instead. Details: WstxLogbook::SameStationAgain. */
+        attribute coverage : ImplementationState = ImplementationState::implemented;
+        attribute implementation : String = "server/src/logbook.rs; server/src/contact_http.rs; client/contact.js";
+    }
+    #derivation connection {
+        end #original ::> 'FR-011';
+        end #derive ::> 'CL-085-01';
+    }
+    verification 'TC-085-001' {
+        doc /* TC-085-001 — The same station in a row is not logged
+             CL-085-01, CL-085-02
+             Setup: the actual server with a disposable profile directory, a virtual UTC clock,
+             hand-authored decoded rows, the transmit-service double and a UDP target on
+             127.0.0.1; profile HB9BLA, partner K1ABC, FT8; for (g) the HTTPS station whose
+             strategy run holds the grant.
+             Steps: (a) a QSO with K1ABC completes; his "HB9BLA K1ABC RR73" is selected and
+             started. (b) after the first QSO, a complete second exchange from "CQ K1ABC FN42"
+             to my 73. (c) after my CQ, K1ABC answers with his grid (Call 1st) and the exchange
+             completes on his 73. (d) three QSOs with K1ABC in a row. (e) Log QSO during a
+             running second QSO with K1ABC. (f) Log QSO again on the first, logged contact.
+             (g) with Auto on, after a QSO made by hand with K1ABC, Auto selects K1ABC as a
+             caller and the QSO completes.
+             Expected (SameStationAgain, CL-085-02; WstxUdp::'CL-040-01' as a guard): (a) one
+             record, one QSO Logged and one Logged ADIF; after the repeat one 73 is sent, the
+             contact completes with transmission off, contacts.adi is byte-identical, the target
+             received nothing more and the contact's saved is false. (b), (c) no record and
+             nothing at the target. (d) one record. (e) the QSO is closed (completed, Tx6,
+             transmission off) and no record is written. (f) nothing changes. (g) no record;
+             Auto goes on.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-085-01';
+            verify 'CL-085-02';
+        }
+        attribute executable : String = "server/src/contact_http_tests.rs";
+    }
+    verification 'TC-085-002' {
+        doc /* TC-085-002 — What is logged again
+             CL-085-01
+             Setup: as TC-085-001; the terms on records as DirectLog writes them (BAND and FREQ
+             from the confirmed dial).
+             Steps: (a) K1ABC, then W1AW, then K1ABC. (b) K1ABC on 14.074 MHz, then on 7.074
+             MHz. (c) K1ABC in FT8, then in FT4 on the same band. (d) the log's last record has
+             FREQ 14.074500 and no BAND, a QSO on 20 m; then FREQ 7.074000. (e) last record
+             "k1abc"; K1ABC/P after K1ABC. (f) both QSOs with the dial not confirmed; one
+             confirmed and one not. (g) an empty log. (h) a cancelled QSO with K1ABC, then a
+             completed one. (i) a first QSO whose record was refused log_invalid_field, then a
+             valid one with the same station. (j) a second profile with its own log.
+             Expected (SameStationAgain): (a), (b), (c) each logged; (d) not logged, then
+             logged; (e) "k1abc" then K1ABC not logged, K1ABC/P logged; (f) not logged, then
+             logged; (g), (h), (i) logged; (j) the rule reads that profile's log only.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-085-01';
+        }
+        attribute executable : String = "server/src/logbook_tests.rs; server/src/contact_http_tests.rs";
+    }
+    verification 'TC-085-003' {
+        doc /* TC-085-003 — Restart, pending records and outside records
+             CL-085-01
+             Setup: as TC-085-001; for (c) and (d) the radio double with the confirmed CAT dial
+             7.074 MHz and a log prepared by hand.
+             Steps: (a) the server is stopped after the QSO with K1ABC and started again; the
+             next QSO with K1ABC. (b) the first record is pending after an injected failed
+             write; a second QSO with that station completes meanwhile; then the retry. (c) a
+             log whose last record is K1ABC on the dial's band in FT8 from another program; a
+             QSO with K1ABC. (d) after it an ADIF import appends a record of DL1ABC; the next
+             QSO with K1ABC. (e) POST /contacts with a record of K1ABC directly after a logged
+             QSO with K1ABC.
+             Expected (SameStationAgain): (a) not logged, the file unchanged. (b) nothing is
+             handed over for the second; after the retry the log holds one record and the
+             target received one pair. (c) not logged. (d) logged. (e) stored as SaveContact
+             states (a guard).
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-085-01';
+        }
+        attribute executable : String = "server/src/contact_http_tests.rs";
+    }
+    verification 'TC-085-005' {
+        doc /* TC-085-005 — What the operator sees
+             CL-085-01
+             Setup: Chromium against the candidate server; for (b) the actual server.
+             Steps: (a) a QSO with a station, then a second QSO with that station closed by Log
+             QSO; the Logbook page's records. (b) GET /contact after a refused QSO. (c) the
+             next logged QSO.
+             Expected (SameStationAgain): (a) the QSO pane shows "Not logged <call> · same
+             station as the last log entry" and no "Logged" notice; the log lists the station
+             once. (b) log is {contact_id, call, outcome: unsaved, error: same_station_again}
+             with the second contact's id; the snapshot stays within 4096 bytes. (c) the pane
+             shows that QSO's "Logged" notice.
+             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-085-01';
+        }
+        attribute executable : String = "tests/contact.test.cjs; server/src/contact_http_tests.rs";
+    }
+    verification 'TC-085-006' {
+        doc /* TC-085-006 — Live
+             CL-085-01, CL-085-02
+             Setup: HB9BLA, IC-7300, operator present, authorized live transmission, a second
+             station as partner, an independent receiver.
+             Steps: (a) after a logged FT8 QSO the partner sends his RR73 again; the operator
+             double-clicks it. (b) after one QSO with any other station, a new QSO with the
+             first partner.
+             Expected: (a) the receiver decodes one 73 from HB9BLA; the pane says "Not logged";
+             QSO History and contacts.adi hold the partner once; the external logger received
+             the QSO once. (b) logged.
+             5 — Live on the station with the operator's consent; HB9BLA. Not run by the
+             automated gate. */
+        attribute automation : AutomationState = AutomationState::planned;
+        objective {
+            verify 'CL-085-01';
+            verify 'CL-085-02';
+        }
+    }
 
     // Saved Auto Seq and Call 1st (WstxContact::QsoSettingsFile).
     requirement 'CL-110-01' {
@@ -359,9 +529,10 @@ package WstxLogbook {
              identical fields adds nothing (alreadySaved); with different fields the
              contact's record is replaced in place (replaced), keeping its index. Log QSO of a contact already logged at
              its completion (stored or pending) changes nothing: the record keeps the
-             dial, Tx offset and location of completion. A second contact with the same
-             station is a new contactId and a new record (WSJT-X LogBook::add appends
-             without a dupe check). Only the first store of a contactId (saved) is sent
+             dial, Tx offset and location of completion. A contact that is the same station
+             again after the newest QSO of the log is refused (SameStationAgain); any other
+             contact with a station already in the log is a new contactId and a new record.
+             Only the first store of a contactId (saved) is sent
              to the WstxUdp targets as QSO Logged then Logged ADIF, so each contact
              reaches the external programs once; a replacement stays internal. They are
              sent by the station step, never from inside a command. Idempotence: a retried command_id has no second

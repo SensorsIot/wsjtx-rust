@@ -2709,3 +2709,677 @@ async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station()
     assert_eq!(snap["contact"]["state"], "calling");
     assert_eq!(snap["transmit"]["arm_state"], "armed");
 }
+
+// ------------------------------------------------------------------ #85
+// Never the same station twice in a row in the log (CL-085-01 to -03). The actual router,
+// station step, log and UDP owner with a loopback target; the #9 transmit owner on the
+// recording double on a virtual UTC. Expected outcomes are the hand-written rule table of
+// CL-085-01 (refused: no record, nothing at the target, `same_station_again`), never output.
+
+/// A loopback UDP target that selects QSO Logged and Logged ADIF, installed before the owner
+/// opens (no default target is activated).
+fn udp_target_85(f: &Fixture) -> std::net::UdpSocket {
+    let peer = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    peer.set_read_timeout(Some(std::time::Duration::from_millis(150)))
+        .unwrap();
+    let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,"targets":[{
+        "address":peer.local_addr().unwrap().to_string(),"enabled":true,"multicast_ttl":1,
+        "multicast_interface":null,"messages":["qso_logged","logged_adif"]}]});
+    std::fs::write(
+        f.dir.join(crate::udp::FILE_NAME),
+        serde_json::to_vec(&doc).unwrap(),
+    )
+    .unwrap();
+    let owner = crate::udp::Owner::open(&f.state, false, &f.dir.join("udp-instance"));
+    assert!(f.state.recording.udp.set(owner.clone()).is_ok());
+    owner.step(&f.state);
+    datagrams_85(&peer);
+    peer
+}
+/// The message types (QDataStream u32 at bytes 8..12) the target received since the last call.
+fn datagrams_85(peer: &std::net::UdpSocket) -> Vec<u32> {
+    let mut kinds = Vec::new();
+    let mut b = [0u8; 8192];
+    while let Ok((n, _)) = peer.recv_from(&mut b) {
+        assert!(n >= 12);
+        kinds.push(u32::from_be_bytes([b[8], b[9], b[10], b[11]]));
+    }
+    kinds
+}
+fn calls_85(f: &Fixture) -> Vec<String> {
+    f.state.logbook.history(&f.id, 0, 50).unwrap()["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["call"].as_str().unwrap().to_owned())
+        .collect()
+}
+fn log_file_85(f: &Fixture) -> Option<Vec<u8>> {
+    std::fs::read(f.dir.join(crate::logbook::FILE_NAME)).ok()
+}
+/// FT8 on a virtual UTC: the partner's messages are published 13 s into his (even) period,
+/// my transmissions (odd) are recorded from the transmit owner's view.
+struct Air85<'a> {
+    f: &'a Fixture,
+    p0: i64,
+    t: i64,
+    job: (String, String, u64),
+    sent: Vec<(i64, String)>,
+}
+impl<'a> Air85<'a> {
+    fn new(f: &'a Fixture) -> Self {
+        let job = f.state.recording.fixture_live_job("ft8");
+        f.contact().grant.store(true, Ordering::SeqCst);
+        // An even FT8 period (a multiple of 30 s).
+        let p0 = now_ms().div_euclid(30_000) * 30_000 + 60_000;
+        let mut air = Self {
+            f,
+            p0,
+            t: p0 - 1_000,
+            job,
+            sent: Vec::new(),
+        };
+        air.to(p0);
+        air
+    }
+    fn p(&self, n: i64) -> i64 {
+        self.p0 + n * 15_000
+    }
+    fn to(&mut self, until: i64) {
+        let service = &self.f.state.recording.transmit.get().unwrap().service;
+        while self.t < until {
+            self.t += 100;
+            self.f.bench.frozen.store(self.t, Ordering::SeqCst);
+            service.with(|c| c.tick());
+            self.f.tick();
+            let v = service.view();
+            if let (Some(p), Some(text)) = (v.last_period_utc_ms, v.last_text.clone())
+                && self.sent.last().is_none_or(|(q, x)| *q != p || *x != text)
+            {
+                self.sent.push((p, text));
+            }
+        }
+    }
+    /// The partner's `text` in period `n`; returns its row.
+    fn hear(&mut self, n: i64, text: &str) -> Value {
+        self.to(self.p(n) + 13_000);
+        let seq = self.f.state.recording.fixture_publish_period(
+            &period_text(self.p(n)),
+            vec![record(text, 1500.0, Some(-9.0))],
+        )[0];
+        self.f.tick();
+        let (source, job, generation) = &self.job;
+        json!({"source_id":source,"job_id":job,"generation":generation,"sequence":seq})
+    }
+    fn sent_in(&self, n: i64) -> Vec<&str> {
+        self.sent
+            .iter()
+            .filter(|(p, _)| *p == self.p(n))
+            .map(|(_, t)| t.as_str())
+            .collect()
+    }
+    /// My transmissions from period `n` on.
+    fn sent_from(&self, n: i64) -> Vec<(i64, &str)> {
+        self.sent
+            .iter()
+            .filter(|(p, _)| *p >= self.p(n))
+            .map(|(p, t)| ((p - self.p0) / 15_000, t.as_str()))
+            .collect()
+    }
+}
+/// Reply (#111): one command selects the row and starts, with the safety revision shown.
+async fn reply_85(f: &Fixture, row: &Value) {
+    let (s, v) = f
+        .send("reply", json!({"row":row,"safety_revision":3}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "reply: {v}");
+}
+/// A whole QSO with `call` from his CQ in period `n` to my 73 in n+5; returns the period
+/// after it.
+async fn qso_from_cq_85(air: &mut Air85<'_>, n: i64, call: &str) -> i64 {
+    let cq = air.hear(n, &format!("CQ {call} FN42"));
+    reply_85(air.f, &cq).await;
+    air.hear(n + 2, &format!("HB9BLA {call} -09"));
+    air.hear(n + 4, &format!("HB9BLA {call} RR73"));
+    air.to(air.p(n + 6));
+    assert_eq!(
+        air.sent_from(n),
+        [
+            (n + 1, format!("{call} HB9BLA JN47").as_str()),
+            (n + 3, format!("{call} HB9BLA R-09").as_str()),
+            (n + 5, format!("{call} HB9BLA 73").as_str()),
+        ],
+        "the exchange with {call}"
+    );
+    let snap = air.f.snapshot().await;
+    assert_eq!(snap["contact"]["state"], "completed", "{snap}");
+    assert_eq!(snap["transmit"]["arm_state"], "disarmed", "{snap}");
+    n + 6
+}
+
+// Proves: CL-085-01, CL-085-02; TC-085-001 (a), (b), (c), (d); TC-085-002 (a), (g)
+// Proves: TC-085-005 (b). On the air with K1ABC: the first QSO is logged (one record, one QSO Logged and
+// one Logged ADIF); his repeated RR73 answered again, a whole second exchange from his CQ and a
+// QSO after my CQ answered with his grid (Call 1st) complete as usual and add nothing; after a
+// QSO with W1AW, K1ABC is logged again. CL-040-01 (one pair per saved record) is the guard.
+#[tokio::test]
+async fn tc_085_001_the_same_station_in_a_row_is_not_logged() {
+    let f = fixture("http://127.0.0.1:18085", true);
+    let target = udp_target_85(&f);
+    let mut air = Air85::new(&f);
+    // (g) An empty log: the first QSO is logged (guard).
+    let n = qso_from_cq_85(&mut air, 0, "K1ABC").await;
+    assert_eq!(calls_85(&f), ["K1ABC"]);
+    assert_eq!(datagrams_85(&target), [5, 12], "QSO Logged, Logged ADIF");
+    let first = f.snapshot().await;
+    assert_eq!(first["contact"]["saved"], true);
+    let file = log_file_85(&f);
+
+    // (a) His RR73 again: Reply sends one 73; the contact completes, transmission off; nothing
+    // is written or sent, and the contact is not saved.
+    let rr73 = air.hear(n, "HB9BLA K1ABC RR73");
+    reply_85(&f, &rr73).await;
+    let snap = f.snapshot().await;
+    assert_eq!(
+        (
+            snap["contact"]["state"].as_str(),
+            snap["contact"]["next_slot"].as_str()
+        ),
+        (Some("signoff"), Some("tx5"))
+    );
+    assert_ne!(
+        snap["contact"]["id"], first["contact"]["id"],
+        "a new contact"
+    );
+    air.to(air.p(n + 2));
+    assert_eq!(air.sent_from(n), [(n + 1, "K1ABC HB9BLA 73")], "one 73");
+    let (status, snap, _, bytes) = f.call("GET", "/contact", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(snap["contact"]["state"], "completed");
+    assert_eq!(snap["transmit"]["arm_state"], "disarmed");
+    assert_eq!(snap["contact"]["saved"], false);
+    assert_eq!(log_file_85(&f), file, "contacts.adi is byte-identical");
+    assert!(datagrams_85(&target).is_empty(), "nothing at the target");
+    // TC-085-005 (b): the log member names the refused contact; the snapshot stays bounded.
+    assert_eq!(
+        snap["log"],
+        json!({"contact_id":snap["contact"]["id"],"call":"K1ABC","outcome":"unsaved",
+            "error":"same_station_again"})
+    );
+    assert!(bytes <= 4096, "{bytes} bytes");
+    let n = n + 2;
+
+    // (b), (d) A complete second exchange from his CQ: the third QSO in a row, still one record.
+    let n = qso_from_cq_85(&mut air, n, "K1ABC").await;
+    assert_eq!(calls_85(&f), ["K1ABC"]);
+    assert_eq!(log_file_85(&f), file);
+    assert!(datagrams_85(&target).is_empty());
+    assert_eq!(f.snapshot().await["log"]["error"], "same_station_again");
+
+    // TC-085-002 (a) K1ABC, W1AW, K1ABC: each is logged.
+    let n = qso_from_cq_85(&mut air, n, "W1AW").await;
+    let n = qso_from_cq_85(&mut air, n, "K1ABC").await;
+    assert_eq!(calls_85(&f), ["K1ABC", "W1AW", "K1ABC"]);
+    assert_eq!(datagrams_85(&target), [5, 12, 5, 12]);
+    let snap = f.snapshot().await;
+    assert_eq!(
+        snap["log"],
+        json!({"contact_id":snap["contact"]["id"],"call":"K1ABC","outcome":"saved","error":null})
+    );
+    let file = log_file_85(&f);
+
+    // (c) My CQ answered by K1ABC with his grid (Call 1st); it completes on his 73: no record.
+    let (s, v) = f.send("set_call_first", json!({"enabled":true})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let (s, v) = f.send("call_cq", json!({"safety_revision":3})).await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    air.hear(n + 2, "HB9BLA K1ABC FN42");
+    air.hear(n + 4, "HB9BLA K1ABC R-05");
+    air.hear(n + 6, "HB9BLA K1ABC 73");
+    air.to(air.p(n + 7));
+    assert_eq!(
+        air.sent_from(n),
+        [
+            (n + 1, "CQ HB9BLA JN47"),
+            (n + 3, "K1ABC HB9BLA -09"),
+            (n + 5, "K1ABC HB9BLA RRR"),
+        ]
+    );
+    let snap = f.snapshot().await;
+    assert_eq!(snap["contact"]["state"], "completed", "{snap}");
+    assert_eq!(snap["log"]["error"], "same_station_again");
+    assert_eq!(log_file_85(&f), file);
+    assert!(datagrams_85(&target).is_empty());
+    assert!(air.sent_in(n + 7).is_empty());
+}
+
+/// 2026-11-01T12:34:30Z, an even FT8 period.
+const P85: i64 = 1_793_536_470_000;
+fn operate_85(f: &Fixture, action: &str, extra: Value) {
+    let (revision, _, _) = f.contact().facts();
+    let body = f.body(revision, action, extra);
+    f.contact()
+        .operate(&f.state, body, false)
+        .unwrap_or_else(|e| panic!("{action}: {e:?}"));
+}
+/// The partner's `text` in the FT8 period at `period`, then one station step 14 s into it.
+fn partner_85(f: &Fixture, period: i64, text: &str) {
+    f.state
+        .recording
+        .fixture_publish_period(&period_text(period), vec![record(text, 1500.0, Some(-9.0))]);
+    f.bench.frozen.store(period + 14_000, Ordering::SeqCst);
+    f.tick();
+}
+/// A QSO with `call` entered at `at` and completed in rogers by his R-09 and 73 (no
+/// transmission is needed for the log).
+fn entered_qso_85(f: &Fixture, at: i64, call: &str) {
+    f.bench.frozen.store(at, Ordering::SeqCst);
+    operate_85(
+        f,
+        "enter_dx",
+        json!({"dx_call":call,"dx_grid":null,"replace":true}),
+    );
+    partner_85(f, at + 30_000, &format!("HB9BLA {call} R-09"));
+    partner_85(f, at + 60_000, &format!("HB9BLA {call} 73"));
+    assert_eq!(
+        f.contact().facts().1.unwrap().state,
+        "completed",
+        "{call} completed: {}",
+        String::from_utf8(f.contact().snapshot(&f.state).unwrap()).unwrap()
+    );
+}
+fn log_view_85(f: &Fixture) -> Value {
+    let bytes = f.contact().snapshot(&f.state).unwrap();
+    serde_json::from_slice::<Value>(&bytes).unwrap()["log"].clone()
+}
+fn refused_85(f: &Fixture, call: &str) -> Value {
+    json!({"contact_id":f.contact().facts().1.unwrap().id,"call":call,"outcome":"unsaved",
+        "error":"same_station_again"})
+}
+
+// Proves: CL-085-01, CL-085-02; TC-085-001 (e), (f); TC-085-002 (h), (i); TC-085-003 (a), (b),
+// (e). Log QSO of a running second QSO with the station logged last closes it and writes
+// nothing; a cancelled or an invalid (log_invalid_field) first QSO leaves the next one with that
+// station logged; a pending first record is the newest QSO; the stored log is read again after a
+// restart; SaveContact stores what it is given (L5).
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_085_001_log_qso_pending_records_and_restart() {
+    let f = fixture("http://127.0.0.1:18086", false);
+    f.state.recording.fixture_live_job("ft8");
+    let target = udp_target_85(&f);
+    // (h) A cancelled QSO with K1ABC logs nothing.
+    f.bench.frozen.store(P85 - 10_000, Ordering::SeqCst);
+    operate_85(
+        &f,
+        "enter_dx",
+        json!({"dx_call":"K1ABC","dx_grid":null,"replace":true}),
+    );
+    operate_85(&f, "cancel", json!({}));
+    // (i) A QSO with K1ABC closed by Log QSO while the profile has no callsign is refused
+    // log_invalid_field and writes nothing either.
+    f.bench.frozen.store(P85, Ordering::SeqCst);
+    operate_85(
+        &f,
+        "enter_dx",
+        json!({"dx_call":"K1ABC","dx_grid":null,"replace":true}),
+    );
+    partner_85(&f, P85 + 30_000, "HB9BLA K1ABC R-09");
+    f.state.store.lock().unwrap().document.callsign = String::new();
+    operate_85(&f, "open_log", json!({}));
+    f.state.store.lock().unwrap().document.callsign = "HB9BLA".into();
+    assert_eq!(log_view_85(&f)["error"], "log_invalid_field");
+    assert!(calls_85(&f).is_empty());
+    // Then a valid QSO with K1ABC is logged.
+    entered_qso_85(&f, P85 + 90_000, "K1ABC");
+    assert_eq!(calls_85(&f), ["K1ABC"]);
+    assert_eq!(datagrams_85(&target), [5, 12]);
+    let file = log_file_85(&f);
+    // (f) Log QSO again on the logged contact changes nothing (guard).
+    operate_85(&f, "open_log", json!({}));
+    f.tick();
+    assert_eq!(log_file_85(&f), file);
+    assert!(datagrams_85(&target).is_empty());
+
+    // (e) Log QSO during a running second QSO with K1ABC: closed (completed, Tx6), no record.
+    f.bench.frozen.store(P85 + 180_000, Ordering::SeqCst);
+    operate_85(
+        &f,
+        "enter_dx",
+        json!({"dx_call":"K1ABC","dx_grid":null,"replace":true}),
+    );
+    partner_85(&f, P85 + 210_000, "HB9BLA K1ABC R-05");
+    assert_eq!(f.contact().facts().1.unwrap().state, "rogers");
+    operate_85(&f, "open_log", json!({}));
+    f.tick();
+    let snap: Value = serde_json::from_slice(&f.contact().snapshot(&f.state).unwrap()).unwrap();
+    assert_eq!(
+        (
+            snap["contact"]["state"].as_str(),
+            snap["contact"]["next_slot"].as_str(),
+            snap["transmit"]["arm_state"].as_str()
+        ),
+        (Some("completed"), Some("tx6"), Some("disarmed"))
+    );
+    assert_eq!(snap["log"], refused_85(&f, "K1ABC"));
+    assert_eq!(log_file_85(&f), file);
+    assert!(datagrams_85(&target).is_empty());
+
+    // TC-085-003 (b) The first record of W1AW is pending after a failed write; a second QSO
+    // with W1AW completes meanwhile and is refused. The retry stores one record, one pair.
+    f.state.logbook.inject_fault(Some("write"));
+    entered_qso_85(&f, P85 + 300_000, "W1AW");
+    assert_eq!(log_view_85(&f)["error"], "storage_unavailable");
+    entered_qso_85(&f, P85 + 390_000, "W1AW");
+    assert_eq!(log_view_85(&f), refused_85(&f, "W1AW"));
+    f.state.logbook.inject_fault(None);
+    f.contact().retry_logs_now();
+    f.tick();
+    assert_eq!(calls_85(&f), ["K1ABC", "W1AW"]);
+    assert_eq!(datagrams_85(&target), [5, 12]);
+
+    // TC-085-003 (a) K1ABC logged, the station restarted: the next K1ABC is not logged.
+    entered_qso_85(&f, P85 + 480_000, "K1ABC");
+    assert_eq!(calls_85(&f), ["K1ABC", "W1AW", "K1ABC"]);
+    let file = log_file_85(&f);
+    let f = f.restart();
+    f.state.recording.fixture_live_job("ft8");
+    entered_qso_85(&f, P85 + 600_000, "K1ABC");
+    assert_eq!(log_view_85(&f), refused_85(&f, "K1ABC"));
+    assert_eq!(log_file_85(&f), file, "the file is unchanged");
+
+    // TC-085-003 (e) SaveContact of a K1ABC record right after it: stored as today (guard).
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap(),
+        "record":{"contact_id":profile::new_uuid().unwrap(),"call":"K1ABC","gridsquare":null,"mode":"FT8",
+        "submode":null,"rst_sent":"-12","rst_rcvd":"-09","qso_date":"20261101","time_on":"124500",
+        "qso_date_off":"20261101","time_off":"124600","band":null,"freq":null,
+        "station_callsign":"HB9BLA","my_gridsquare":"JN47AA","tx_pwr":null,"comment":null}});
+    let (s, v, _, _) = f.call("POST", "/contacts", Some(body)).await;
+    assert_eq!(s, StatusCode::CREATED, "{v}");
+    assert_eq!(calls_85(&f), ["K1ABC", "W1AW", "K1ABC", "K1ABC"]);
+}
+
+/// Makes the built-in contest strategy `name` of the contest `id` the active strategy (class
+/// contest), with its contest selected for 2026-11-01.
+fn contest_strategy_85(f: &Fixture, name: &str, id: &str) {
+    let owner = &f.contact().strategy;
+    let mut configuration = owner.config(&f.state).unwrap().json();
+    configuration["active"] = json!(name);
+    configuration["contest"] =
+        json!({"profile":id,"start":"2026-11-01T00:00Z","end":"2026-11-02T00:00Z"});
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+        "expected_revision":owner.revision(),"configuration":configuration});
+    owner.put(&f.state, body).unwrap();
+}
+fn snap_85(f: &Fixture) -> Value {
+    serde_json::from_slice(&f.contact().snapshot(&f.state).unwrap()).unwrap()
+}
+/// A QSO with `call` (grid `grid`) entered at `at` and closed by Log QSO.
+fn log_qso_85(f: &Fixture, at: i64, call: &str, grid: Option<&str>) {
+    f.bench.frozen.store(at, Ordering::SeqCst);
+    operate_85(
+        f,
+        "enter_dx",
+        json!({"dx_call":call,"dx_grid":grid,"replace":true}),
+    );
+    operate_85(f, "open_log", json!({}));
+    f.tick();
+    assert_eq!(f.contact().facts().1.unwrap().state, "completed");
+}
+
+// Proves: CL-085-03, CL-085-02, CL-085-01; TC-085-004 (a)-(e). Under a contest (the active
+// strategy is of class contest) the serial counts only when the log accepts the contact: a
+// second QSO in a row with K1ABC (a dupe under the contest's rule) keeps the serial and the next
+// station is sent the same one; under band_grid a rover from a new grid is logged and counts; a
+// record refused log_invalid_field is accepted for the answer and counts (L6).
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_085_004_the_contest_serial_counts_only_on_accepted() {
+    let f = fixture("http://127.0.0.1:18089", false);
+    f.state.recording.fixture_live_job("ft8");
+    contest_strategy_85(&f, "ARRL Digi", "arrl_digi");
+    operate_85(
+        &f,
+        "set_activity",
+        json!({"activity":"rtty","exchange":"DX"}),
+    );
+    let serial = |f: &Fixture| snap_85(f)["settings"]["serial"].as_u64().unwrap();
+    assert_eq!(serial(&f), 1);
+    // (a) K1ABC logged with 0001; a second QSO with K1ABC sends 0002 and completes: no record,
+    // the serial stays 2, and the next station is sent 0002.
+    let rtty = |at: i64, call: &str| {
+        f.bench.frozen.store(at, Ordering::SeqCst);
+        operate_85(
+            &f,
+            "enter_dx",
+            json!({"dx_call":call,"dx_grid":null,"replace":true}),
+        );
+        // The serial my Tx2 sends (its last word; the RST follows the report).
+        let tx2 = snap_85(&f)["contact"]["messages"][1].clone();
+        let sent = tx2.as_str().unwrap().rsplit(' ').next().unwrap().to_owned();
+        partner_85(&f, at + 30_000, &format!("HB9BLA {call} R 579 MA"));
+        partner_85(&f, at + 60_000, &format!("HB9BLA {call} 73"));
+        assert_eq!(f.contact().facts().1.unwrap().state, "completed", "{call}");
+        sent
+    };
+    assert_eq!(rtty(P85, "K1ABC"), "0001");
+    assert_eq!(calls_85(&f), ["K1ABC"]);
+    assert_eq!(serial(&f), 2);
+    assert_eq!(rtty(P85 + 90_000, "K1ABC"), "0002");
+    assert_eq!(snap_85(&f)["log"], refused_85(&f, "K1ABC"));
+    assert_eq!(calls_85(&f), ["K1ABC"]);
+    assert_eq!(serial(&f), 2, "not counted on refused");
+    f.bench.frozen.store(P85 + 180_000, Ordering::SeqCst);
+    operate_85(
+        &f,
+        "enter_dx",
+        json!({"dx_call":"W1AW","dx_grid":null,"replace":true}),
+    );
+    let tx2 = snap_85(&f)["contact"]["messages"][1].clone();
+    assert!(
+        tx2.as_str().unwrap().starts_with("W1AW HB9BLA ")
+            && tx2.as_str().unwrap().ends_with(" 0002"),
+        "the next station is sent the same serial: {tx2}"
+    );
+    // (b) The same with the second QSO closed by Log QSO.
+    log_qso_85(&f, P85 + 210_000, "K1ABC", None);
+    assert_eq!(snap_85(&f)["log"], refused_85(&f, "K1ABC"));
+    assert_eq!(serial(&f), 2);
+    // (c) K1ABC, W1AW, K1ABC: three records, three counts (guard).
+    log_qso_85(&f, P85 + 240_000, "W1AW", None);
+    log_qso_85(&f, P85 + 270_000, "K1ABC", None);
+    assert_eq!(calls_85(&f), ["K1ABC", "W1AW", "K1ABC"]);
+    assert_eq!(serial(&f), 4);
+    // (e) A record refused log_invalid_field (no profile callsign): accepted, the serial counts.
+    f.bench.frozen.store(P85 + 300_000, Ordering::SeqCst);
+    operate_85(
+        &f,
+        "enter_dx",
+        json!({"dx_call":"DL1ABC","dx_grid":null,"replace":true}),
+    );
+    f.state.store.lock().unwrap().document.callsign = String::new();
+    operate_85(&f, "open_log", json!({}));
+    f.state.store.lock().unwrap().document.callsign = "HB9BLA".into();
+    assert_eq!(snap_85(&f)["log"]["error"], "log_invalid_field");
+    assert_eq!(serial(&f), 5);
+
+    // (d) na_vhf under ARRL June VHF (band_grid): K1ABC/R from FN42 logged; from FN42 again
+    // directly after it not logged; from FN43 directly after the first logged, serial counted.
+    contest_strategy_85(&f, "ARRL June VHF", "arrl_vhf_jun");
+    operate_85(
+        &f,
+        "set_activity",
+        json!({"activity":"na_vhf","exchange":null}),
+    );
+    log_qso_85(&f, P85 + 330_000, "K1ABC/R", Some("FN42"));
+    assert_eq!(snap_85(&f)["log"]["outcome"], "saved");
+    let n = serial(&f);
+    log_qso_85(&f, P85 + 360_000, "K1ABC/R", Some("FN42"));
+    assert_eq!(snap_85(&f)["log"], refused_85(&f, "K1ABC/R"));
+    assert_eq!(serial(&f), n);
+    log_qso_85(&f, P85 + 390_000, "K1ABC/R", Some("FN43"));
+    assert_eq!(snap_85(&f)["log"]["outcome"], "saved");
+    assert_eq!(serial(&f), n + 1);
+    assert_eq!(
+        calls_85(&f),
+        ["K1ABC", "W1AW", "K1ABC", "K1ABC/R", "K1ABC/R"]
+    );
+}
+
+// Proves: CL-085-01; TC-085-001 (g). With Auto on, after a QSO made by hand with K1ABC, the
+// strategy run answers K1ABC calling me and the QSO completes: no record, and Auto goes on. The
+// HTTPS station of the MCP fixture (the run needs the grant) on the virtual UTC.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_085_001_g_auto_answers_the_station_logged_last_and_nothing_is_logged() {
+    use crate::automation_tests::{publish, run_state};
+    let f = crate::mcp_tests::station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let station = f.state.recording.contact.get().unwrap().clone();
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    let e = now_ms().div_euclid(30_000) * 30_000 + 120_000;
+    let mut t = e - 10_000;
+    let mut to = |until: i64| {
+        while t < until {
+            t += 100;
+            f.bench.frozen.store(t, Ordering::SeqCst);
+            service.with(|c| c.tick());
+            f.tick();
+        }
+    };
+    to(e - 10_000);
+    // The QSO by hand: K1ABC entered, his R-09 and 73 complete it; it is logged.
+    let command = f.command(
+        station.facts().0,
+        "enter_dx",
+        json!({"dx_call":"K1ABC","dx_grid":null,"replace":true}),
+    );
+    let r = f.browser("POST", "/contact/command", Some(command)).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
+    to(e + 14_000);
+    publish(&f, e, &[("HB9BLA K1ABC R-09", 1500.0, Some(-9.0))]);
+    to(e + 44_000);
+    publish(&f, e + 30_000, &[("HB9BLA K1ABC 73", 1500.0, Some(-9.0))]);
+    assert_eq!(station.facts().1.unwrap().state, "completed");
+    let calls = |f: &crate::mcp_tests::Mcp| -> Vec<String> {
+        f.state.logbook.history(&f.id, 0, 10).unwrap()["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["call"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(calls(&f), ["K1ABC"]);
+    // Auto on with a strategy that answers every caller: a new call worked in a past window
+    // only, so the QSO by hand does not make K1ABC worked for it.
+    let mut s = crate::strategy::tests::strategy_json("Answer callers");
+    s["filters"]["worked_since"] = json!({"kind":"from_to","from":"2020-01-01","to":"2020-01-02"});
+    let configuration = json!({"continent":null,"active":"Answer callers","strategies":[s],
+        "ignore_calls":[],"session_ignore_minutes":30});
+    let revision = f.browser("GET", "/strategy", None).await.json["revision"].clone();
+    let r = f
+        .browser(
+            "PUT",
+            "/strategy",
+            Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,
+            "expected_revision":revision,"configuration":configuration})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    let r = crate::strategy::tests::auto(&f, true, None).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    // K1ABC calls me with a report: Auto answers him; his RR73 is answered with 73.
+    to(e + 74_000);
+    publish(&f, e + 60_000, &[("HB9BLA K1ABC -10", 1500.0, Some(-10.0))]);
+    let c = f.read("contact").await;
+    assert_eq!(
+        (
+            c["contact"]["dx_call"].as_str(),
+            c["transmit"]["arm_state"].as_str()
+        ),
+        (Some("K1ABC"), Some("armed")),
+        "{c}"
+    );
+    let second = c["contact"]["id"].clone();
+    to(e + 104_000);
+    publish(
+        &f,
+        e + 90_000,
+        &[("HB9BLA K1ABC RR73", 1500.0, Some(-10.0))],
+    );
+    to(e + 130_000);
+    let c = f.read("contact").await;
+    assert_eq!(c["contact"]["id"], second);
+    assert_eq!(c["contact"]["state"], "completed", "{c}");
+    assert_eq!(
+        c["log"],
+        json!({"contact_id":second,"call":"K1ABC","outcome":"unsaved","error":"same_station_again"})
+    );
+    assert_eq!(calls(&f), ["K1ABC"], "no record");
+    assert_ne!(run_state(&f).await.0, "stopped", "Auto goes on");
+    assert!(station.strategy.auto(&f.state), "Auto is still on");
+}
+
+fn open_gate_85(
+    publish: &mut dyn FnMut() -> std::io::Result<()>,
+) -> Result<std::io::Result<()>, crate::authorization::Error> {
+    Ok(publish())
+}
+
+// Proves: CL-085-01; TC-085-002 (j); TC-085-003 (c), (d). The newest record of a log prepared by
+// hand (another program's K1ABC on 40 m in FT8, the confirmed CAT dial of the radio double being
+// 7.074 MHz) makes the next QSO with K1ABC not logged; an ADIF import appending DL1ABC makes the
+// next one logged (L5). A second profile reads only its own log.
+#[tokio::test(flavor = "multi_thread")]
+async fn tc_085_003_the_newest_record_whatever_wrote_it() {
+    let origin = "http://127.0.0.1:18087";
+    let (dir, _) = profile_directory(origin, false, "JN47AA");
+    std::fs::write(
+        dir.join(crate::logbook::FILE_NAME),
+        "Log4OM\n<eoh>\n<call:5>K1ABC <qso_date:8>20261101 <time_on:6>120000 <band:3>40m \
+         <freq:8>7.075000 <mode:3>FT8 <app_wstxrust_contact_id:36>33333333-3333-4333-8333-333333333333 <eor>\n",
+    )
+    .unwrap();
+    let f = start_station(dir, origin, false);
+    f.state.recording.fixture_live_job("ft8");
+    let r = &f.state.recording;
+    let (actor, _) = crate::radio_http_tests::actor(r.profile.clone(), r.boot.clone(), 0, false);
+    r.fixture_radio(actor.clone());
+    let deadline = Instant::now() + std::time::Duration::from_secs(3);
+    while contact_http::confirmed_dial(r).is_none() && Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(contact_http::confirmed_dial(r), Some(7_074_000));
+    let file = log_file_85(&f);
+    // (c) Not logged; the file is unchanged.
+    entered_qso_85(&f, P85, "K1ABC");
+    assert_eq!(log_view_85(&f), refused_85(&f, "K1ABC"));
+    assert_eq!(log_file_85(&f), file);
+    // (d) An ADIF import appends DL1ABC: the next K1ABC is logged.
+    let adi = b"WSJT-X\n<eoh>\n<call:6>DL1ABC <qso_date:8>20261101 <time_on:6>121000 <band:3>40m \
+        <freq:8>7.075000 <mode:3>FT8 <eor>\n";
+    let sha: String = ring::digest::digest(&ring::digest::SHA256, adi)
+        .as_ref()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let id = profile::new_uuid().unwrap();
+    f.state
+        .logbook
+        .reserve(&id, adi.len() as u64, &sha, Instant::now())
+        .unwrap();
+    f.state
+        .logbook
+        .chunk(&id, 0, adi.len() as u64, adi, Instant::now(), &open_gate_85)
+        .unwrap();
+    assert_eq!(calls_85(&f), ["K1ABC", "DL1ABC"]);
+    entered_qso_85(&f, P85 + 120_000, "K1ABC");
+    assert_eq!(calls_85(&f), ["K1ABC", "DL1ABC", "K1ABC"]);
+    let stored = f.state.logbook.history(&f.id, 2, 1).unwrap();
+    assert_eq!(stored["records"][0]["band"], "40m", "{stored}");
+    actor.request_close();
+
+    // (j) A second profile with its own (empty) log logs K1ABC.
+    let g = fixture("http://127.0.0.1:18088", false);
+    g.state.recording.fixture_live_job("ft8");
+    entered_qso_85(&g, P85, "K1ABC");
+    assert_eq!(calls_85(&g), ["K1ABC"]);
+    assert_eq!(calls_85(&f), ["K1ABC", "DL1ABC", "K1ABC"]);
+}
