@@ -1,6 +1,8 @@
 package WstxRadioControlPart {
     private import ScalarValues::*;
     private import WstxRadioControl::RadioControl;
+    private import WstxKeying::Keying;
+    private import WstxCat::CatPort;
     part def RadioBinding {
         doc /* The station's selected radio resource. Persisted intent resolves it at
              connection, and every control request carries it as resource context. The
@@ -27,12 +29,13 @@ package WstxRadioControlPart {
         doc /* Capabilities, CAT/PTT/status, independent failures and resource claims. No
              samples; control implementation coverage does not limit physical radio capabilities. */
         port station : ~RadioControl;
-        port transmit : ~RadioControl;
+        port transmit : ~Keying;
         port backend : RadioControl;
     }
     part def RustRadioDriver {
         attribute connectionSettings : WstxRadioControl::ControlSelection;
         attribute observed : WstxRadioControl::RadioObservation[0..1];
         port authorized : ~RadioControl;
+        port radio : CatPort;
     }
 }

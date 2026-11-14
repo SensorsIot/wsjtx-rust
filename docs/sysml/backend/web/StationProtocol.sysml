@@ -179,18 +179,18 @@ package WstxStationProtocol {
     }
     action exchangeStatus : ExchangeStatus;
     satisfy WstxStationProtocol::'CL-003-02' by exchangeStatus;
-    dependency stationOwner from exchangeStatus to WstxArchitecture::physicalStation::backend::stations::station;
-    dependency transportOwner from exchangeStatus to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency stationOwner from exchangeStatus to WstxArchitecture::StationProcess::station;
+    dependency transportOwner from exchangeStatus to WstxArchitecture::StationProcess::web;
     dependency securityPromise from SessionSecurity to WstxStationProtocol::'CL-003-07';
     dependency budgetPromise from ThinLinkBudget to WstxStationProtocol::'CL-003-05';
     dependency pushedStatePromise from PushedStationState to WstxStationProtocol::'CL-003-05';
     dependency pushedStateBootPromise from PushedStationState to WstxOperatingLayout::'CL-074-01';
-    dependency pushedStateOwner from PushedStationState to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency pushedStateOwner from PushedStationState to WstxArchitecture::StationProcess::web;
     dependency bufferPromise from Limits to WstxStationProtocol::'CL-003-06';
     dependency exchangeVerification from ExchangeStatus to WstxStationProtocol::'TC-021-005';
     dependency budgetJudgedFromLog from ThinLinkBudget to LinkTrafficLog;
     dependency trafficLogPromise from LinkTrafficLog to WstxStationProtocol::'CL-003-05';
-    dependency trafficLogOwner from LinkTrafficLog to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency trafficLogOwner from LinkTrafficLog to WstxArchitecture::StationProcess::web;
     dependency trafficLogVerification from LinkTrafficLog to WstxStationProtocol::'TC-080-001';
     dependency livenessVerification from Heartbeat to WstxStationProtocol::'TC-021-008';
     dependency tlsVerification from SessionSecurity to WstxStationProtocol::'TC-021-009';
@@ -243,7 +243,7 @@ package WstxStationProtocol {
         out cookieName : String;
     }
     action authenticate : AuthenticateProfile;
-    dependency authenticationOwner from authenticate to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency authenticationOwner from authenticate to WstxArchitecture::StationProcess::web;
     satisfy WstxStationProtocol::'CL-005-03' by authenticate;
 
     doc /* Issue22 target data/actions below implement CL-022-01/02 only after exact
@@ -675,7 +675,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
              never resumes or retries a mutation implicitly. */
     }
     action transfer : TransferDisplay;
-    dependency transferOwner from transfer to WstxArchitecture::physicalStation::backend::stations::web;
+    dependency transferOwner from transfer to WstxArchitecture::StationProcess::web;
     requirement 'CL-003-03' {
         doc /* The server MUST validate request structure, protocol version, command and message size in the contract's order. Rejected input MUST follow the defined error/close behavior; recoverable errors MUST leave the server available without exposing internal details. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

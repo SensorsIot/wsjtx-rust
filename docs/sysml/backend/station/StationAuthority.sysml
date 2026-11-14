@@ -19,5 +19,5 @@ package WstxStationAuthority {
              system call. A commit already begun is reconciled via snapshot, not cancelled. */
     }
     action cancelImport : CancelImport;
-    dependency importAuthority from cancelImport to WstxArchitecture::physicalStation::backend::stations::station;
+    dependency importAuthority from cancelImport to WstxArchitecture::StationProcess::station;
 }

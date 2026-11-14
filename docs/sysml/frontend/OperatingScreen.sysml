@@ -661,7 +661,7 @@ attribute def ActivityOrdering {
              No horizontal page overflow; axis labels and primary controls remain reachable. */
     }
     action present : PresentStation;
-    dependency browserOwner from present to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency browserOwner from present to WstxArchitecture::Frontend::browsers;
     attribute def PageUpdate {
         attribute reloadsAtMostOncePerBuild : Boolean = true;
         attribute keepsBrowserSettings : Boolean = true;
@@ -727,13 +727,13 @@ attribute def ActivityOrdering {
              and loss detection, fresh displayed status<=10s; undetected loss adds its
              separate detection bound. Reconnect never replays old mutable operations. */
     }
-    dependency presentationOwner from BrowserSnapshotPolicy to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency presentationOwner from BrowserSnapshotPolicy to WstxArchitecture::Frontend::browsers;
     dependency reconnectPromise from BrowserLinkLifecycle to WstxOperatingLayout::'CL-003-04';
     dependency browserVerification from BrowserSnapshotPolicy to WstxStationProtocol::'TC-021-006';
     dependency reconnectVerification from BrowserLinkLifecycle to WstxOperatingLayout::'TC-021-007';
     dependency pageUpdatePromise from PageUpdate to WstxOperatingLayout::'CL-051-02';
     dependency rejectedSnapshotPromise from PageUpdate to WstxOperatingLayout::'CL-051-03';
-    dependency buildPresentationOwner from PageUpdate to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency buildPresentationOwner from PageUpdate to WstxArchitecture::Frontend::browsers;
     attribute def AutomationIndicator {
         doc /* Browser station bar, read-only, beside the transmit state: while a run is
              waiting or in a contact it shows "Automation waiting" or "Automation in

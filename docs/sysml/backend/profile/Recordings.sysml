@@ -22,7 +22,7 @@ package WstxProfileRecordings {
     private import WstxAudioStreams::ReceiveSamples;
     private import WstxRecordingTransfer::RecordingTransfer;
     doc /* The recordings function of the profile part (WstxProfileRecordings::RecordedSource,
-         deployed as physicalStation::backend::stations::profile::recordings): one imported
+         deployed as WstxProfiles::PersistedProfile::recordings): one imported
          recording per profile, kept with its metadata and manifest in the profile directory
          (WstxContext::OutsideThing::profileFiles) across restarts, and its samples
          offered, timed and immutable, through the port samples of RecordedSource. Replay
@@ -259,9 +259,9 @@ package WstxProfileRecordings {
     action recoverSource : RecoverRecordedSource;
     satisfy 'CL-006-01' by importRecording;
     dependency storageOwner from importRecording
-        to WstxArchitecture::physicalStation::backend::stations::profile::recordings;
+        to WstxProfiles::PersistedProfile::recordings;
     dependency recoveryOwner from recoverSource
-        to WstxArchitecture::physicalStation::backend::stations::profile::recordings;
+        to WstxProfiles::PersistedProfile::recordings;
 
     requirement 'CL-006-01' {
         doc /* The profile MUST import only a recording within RecordingLimits and the PCM WAV

@@ -1,7 +1,10 @@
 // Canonical authority: SysML
 package WstxRequirements {
     private import ScalarValues::*;
-    private import WstxArchitecture::physicalStation;
+    private import WstxArchitecture::Station;
+    private import WstxArchitecture::Frontend;
+    private import WstxArchitecture::Backend;
+    private import WstxArchitecture::StationProcess;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -43,12 +46,12 @@ package WstxRequirements {
              adapter access. The ownership explanations and existing policy contracts apply
              together; target parts do not claim runtime delivery or settled policy. */
     }
-    dependency deploymentOwnership from physicalStation to PhysicalDeploymentStructure;
-    dependency stationIdentityOwnership from physicalStation::backend::stations to StationResourceIdentity;
-    dependency boundaryOwnership from physicalStation::backend::stations to ResponsibilityAndExchangeBoundaries;
+    dependency deploymentOwnership from Station to PhysicalDeploymentStructure;
+    dependency stationIdentityOwnership from Backend::stations to StationResourceIdentity;
+    dependency boundaryOwnership from Backend::stations to ResponsibilityAndExchangeBoundaries;
 
     verification ResolvedArchitectureGraph {
-        subject deployment :> physicalStation;
+        subject deployment : Station;
         doc /* Level 2 isolated automated model test on the development PC; no radio,
              device or runtime service. Resolve the accepted model and legal negative
              mutations with the pinned semantic validator. Independent expectations are
@@ -84,7 +87,7 @@ package WstxRequirements {
         attribute executionStatus : String = "defined automated companion; declaration records no execution verdict";
     }
     verification ArchitecturalOwnershipReview {
-        subject deployment :> physicalStation;
+        subject deployment : Station;
         doc /* Manual contract review on the development PC, without external effects.
              Compare this decomposition with WstxRequirements::ReleasePolicy,
              SharedDataOwnership, ProcessingAndHaltOwnership, RemoteDeliveryPolicy,
@@ -127,13 +130,13 @@ package WstxRequirements {
              Receiver filter width MUST NOT be inferred from a named filter or either
              the radio scope span or the browser waterfall span. */
     }
-    dependency browserPropertyOwnership from physicalStation::frontend::browsers to ComponentPropertyOwnership;
-    dependency stationPropertyOwnership from physicalStation::backend::stations to ComponentPropertyOwnership;
-    dependency radioPropertyOwnership from physicalStation::backend::stations::radioControl
+    dependency browserPropertyOwnership from Frontend::browsers to ComponentPropertyOwnership;
+    dependency stationPropertyOwnership from Backend::stations to ComponentPropertyOwnership;
+    dependency radioPropertyOwnership from StationProcess::radioControl
         to RadioModelReferenceSeparation;
 
     verification ComponentPropertyInventoryReview {
-        subject deployment :> physicalStation;
+        subject deployment : Station;
         objective {
             verify ComponentPropertyOwnership;
             verify RadioModelReferenceSeparation;

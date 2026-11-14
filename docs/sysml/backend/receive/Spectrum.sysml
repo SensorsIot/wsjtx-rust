@@ -250,6 +250,6 @@ package WstxReceiveSpectrum {
     action spectrum : CalculateSpectrum;
     satisfy WstxRecordingReceive::'CL-006-02' by replaySpectrum;
     satisfy WstxRecordingReceive::'CL-006-03' by spectrum;
-    dependency receiveOwner from replaySpectrum to WstxArchitecture::physicalStation::backend::stations::receive;
-    dependency spectrumOwner from spectrum to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency receiveOwner from replaySpectrum to WstxArchitecture::StationProcess::receive;
+    dependency spectrumOwner from spectrum to WstxArchitecture::StationProcess::receive;
 }

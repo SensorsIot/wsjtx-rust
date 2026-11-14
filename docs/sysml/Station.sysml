@@ -47,6 +47,42 @@ package WstxArchitecture {
     private import WstxTransmitPart::TransmitService;
     private import WstxWebPart::WebAdapter;
     private import WstxProfileRecordings::RecordedSource;
+    private import WstxClockPart::ClockService;
+    private import WstxRankingPart::RankingService;
+    private import WstxAutoPart::AutoService;
+    private import WstxLogPart::LogService;
+    private import WstxSpotsPart::SpotsService;
+    private import WstxUdpPart::UdpService;
+    private import WstxFlexAdapterPart::FlexAdapter;
+    private import WstxStationLink::StationLink;
+    private import WstxStationCommands::StationCommands;
+    private import WstxStationCommands::StationStatus;
+    private import WstxReceiveControl::ReceiveControl;
+    private import WstxTransmitControl::TransmitControl;
+    private import WstxQsoControl::QsoControl;
+    private import WstxRankingControl::RankingControl;
+    private import WstxAutoControl::AutoControl;
+    private import WstxLogControl::LogControl;
+    private import WstxAudioControl::AudioControl;
+    private import WstxRadioControl::StationRadioControl;
+    private import WstxKeying::KeyingLink;
+    private import WstxAudioStreams::AudioExchangeLink;
+    private import WstxAudioStreams::CaptureSamplesLink;
+    private import WstxAudioStreams::ReceiveSamplesLink;
+    private import WstxModeProcessing::ReceiveProcessingLink;
+    private import WstxModeProcessing::EncodeProcessingLink;
+    private import WstxProfileAccess::ProfileAccessLink;
+    private import WstxRecordingTransfer::RecordingTransferLink;
+    private import WstxDecodes::Decodes;
+    private import WstxDisplayData::DisplayData;
+    private import WstxHearing::Hearing;
+    private import WstxPeriodTiming::PeriodTiming;
+    private import WstxPeriodTiming::ClockStatus;
+    private import WstxOperatingChain::RankedActivity;
+    private import WstxOperatingChain::TargetChoice;
+    private import WstxOperatingChain::MessageToSend;
+    private import WstxOperatingChain::CompletedContact;
+    private import WstxOperatingChain::WorkedBefore;
     doc /* Product structure: one selected-radio deployment context, its frontend and backend
          containers of the product's functions, software owners and typed exchanges.
          The frontend may run locally on the backend computer or remotely over the
@@ -70,16 +106,16 @@ package WstxArchitecture {
          WstxRecordingReceive, WstxOfflineDecode, WstxModemDecode, WstxRadioIO,
          WstxOperatingLayout and WstxOperatingReceive. */
 
-    part physicalStation {
+    part def Station {
         doc /* The deployment of the product's functions: the browser client functions
              (frontend) and the server process functions (backend), with their populations
              and connections. Outside things are not parts; OutsideThing lists them. */
         part frontend : Frontend;
         part backend : Backend;
-        part browserAttachments[*] : BrowserAttachment;
-    }
-    view physicalInterconnection : StandardViewDefinitions::InterconnectionView {
-        expose physicalStation::*;
+        part browserAttachments[*] : BrowserAttachment {
+            ref part :>> browser : BrowserClient :> frontend.browsers;
+            ref part :>> station : StationProcess :> backend.stations;
+        }
     }
     part def Frontend {
         doc /* Deployment container only; station exchanges terminate
@@ -95,7 +131,9 @@ package WstxArchitecture {
              routing is not all-to-all delivery or simultaneous transmission. */
         doc /* Deployment container only; no host forwarding interfaces. Release and
              acceleration policy remain owned by WstxProductScope. */
-        part stations[*] : StationProcess;
+        part stations[*] : StationProcess {
+            ref part :>> authority : RadioAuthority :> radioAuthority;
+        }
         part radioAuthority : RadioAuthority;
     }
     part def BrowserAttachment {
@@ -103,9 +141,9 @@ package WstxArchitecture {
              link. This portless association selects one browser and one station, never
              the whole population. The station exchange terminates directly on the
              selected WebAdapter. */
-        ref part browser : BrowserClient :> physicalStation.frontend.browsers;
-        ref part station : StationProcess :> physicalStation.backend.stations;
-        connection browserStation connect browser.station to station.web.client;
+        ref part browser : BrowserClient;
+        ref part station : StationProcess;
+        interface browserStation : StationLink connect browser.station to station.web.client;
     }
     part def StationProcess {
         part profile : PersistedProfile;
@@ -114,12 +152,19 @@ package WstxArchitecture {
         part mcp : McpAdapter;
         part receive : ReceivePipeline;
         part modes : ModeFunctions;
+        part clock : ClockService;
         part audio : AudioInterface;
         part radioControl : RadioControlInterface;
         part transmit : TransmitService;
+        part ranking : RankingService;
+        part auto : AutoService;
         part qso : QsoAndLogging;
+        part log : LogService;
+        part spots : SpotsService;
+        part udp : UdpService;
         part radioBinding : RadioBinding;
-        ref part authority : RadioAuthority :> physicalStation.backend.radioAuthority;
+        part flexAdapter[0..1] : FlexAdapter;
+        ref part authority : RadioAuthority;
         port authorityRequest : RadioControl;
         port authorizedControl : ~RadioControl;
         doc /* Phase 1 radio-facing parts are independent audio and CAT adapters.
@@ -129,31 +174,57 @@ package WstxArchitecture {
              no part, combined backend or common connector to this graph. */
         part audioAdapter : AudioDeviceAdapter;
         part catAdapter : RustRadioDriver;
-        connection webOperations connect web.station to station.webOperations;
-        connection mcpOperations connect mcp.station to station.mcpOperations;
-        connection profileContext connect station.profile to profile.context;
-        connection receiveJobs connect station.receive to receive.jobs;
-        connection transmitOperations connect station.transmit to transmit.operations;
-        connection qsoOperations connect station.qso to qso.operations;
-        connection stationControl connect station.control to radioControl.station;
-        connection receiveSamples connect audio.receive to receive.audio;
-        connection audioAvailability connect audio.status to station.audioStatus;
-        connection receiveModem connect receive.processing to modes.receive;
-        connection encodeModem connect transmit.encode to modes.encode;
-        connection transmitAudio connect transmit.audio to audio.transmit;
-        connection transmitControl connect transmit.control to radioControl.transmit;
-        connection uploadedRecording connect web.recording to station.upload;
-        connection validatedRecording connect station.acceptedRecording to profile.upload;
-        connection recordedInput connect profile.recordedSamples to audio.recorded;
-        connection contactStorage connect qso.contacts to profile.contacts;
-        connection contactTransmit connect qso.transmit to transmit.contacts;
-        connection selectedAudio connect audio.backend to audioAdapter.host;
+        interface webOperations : StationCommands connect web.station to station.webOperations;
+        interface mcpOperations : StationCommands connect mcp.station to station.mcpOperations;
+        interface profileContext : ProfileAccessLink connect station.profile to profile.context;
+        interface receiveJobs : ReceiveControl connect station.receive to receive.jobs;
+        interface transmitOperations : TransmitControl connect station.transmit to transmit.operations;
+        interface qsoOperations : QsoControl connect station.qso to qso.operations;
+        interface stationControl : StationRadioControl connect station.control to radioControl.station;
+        interface receiveSamples : ReceiveSamplesLink connect audio.receive to receive.audio;
+        interface audioAvailability : AudioControl connect station.audioStatus to audio.status;
+        interface receiveModem : ReceiveProcessingLink connect receive.processing to modes.receive;
+        interface encodeModem : EncodeProcessingLink connect transmit.encode to modes.encode;
+        interface transmitAudio : AudioExchangeLink connect transmit.audio to audio.transmit;
+        interface transmitControl : KeyingLink connect transmit.control to radioControl.transmit;
+        interface uploadedRecording : RecordingTransferLink connect web.recording to station.upload;
+        interface validatedRecording : RecordingTransferLink
+            connect station.acceptedRecording to profile.upload;
+        interface recordedInput : ReceiveSamplesLink connect profile.recordedSamples to audio.recorded;
+        interface contactStorage : ProfileAccessLink connect log.contacts to profile.contacts;
+        interface contactTransmit : MessageToSend connect qso.transmit to transmit.contacts;
+        interface selectedAudio : AudioExchangeLink connect audio.backend to audioAdapter.host;
+        interface stationRanking : RankingControl connect station.ranking to ranking.control;
+        interface stationAuto : AutoControl connect station.auto to auto.control;
+        interface stationLog : LogControl connect station.log to log.control;
+        interface stationStatus : StationStatus connect station.udp to udp.status;
+        interface clockStatus : ClockStatus connect clock.status to station.clock;
+        interface decodesRanking : Decodes connect receive.decodes to ranking.decodes;
+        interface decodesQso : Decodes connect receive.decodes to qso.decodes;
+        interface decodesClock : Decodes connect receive.decodes to clock.decodes;
+        interface decodesUdp : Decodes connect receive.decodes to udp.decodes;
+        interface displayWeb : DisplayData connect receive.display to web.display;
+        interface displayAuto : DisplayData connect receive.display to auto.display;
+        interface timingReceive : PeriodTiming connect clock.timing to receive.timing;
+        interface timingTransmit : PeriodTiming connect clock.timing to transmit.timing;
+        interface timingQso : PeriodTiming connect clock.timing to qso.timing;
+        interface rankedActivity : RankedActivity connect ranking.ranked to auto.ranked;
+        interface targetChoice : TargetChoice connect auto.target to qso.target;
+        interface completedContact : CompletedContact connect qso.completed to log.completed;
+        interface loggedContact : CompletedContact connect log.logged to udp.logged;
+        interface workedBefore : WorkedBefore connect log.workedBefore to ranking.workedBefore;
+        interface hearingRanking : Hearing connect spots.hearing to ranking.hearing;
+        interface hearingAuto : Hearing connect spots.hearing to auto.hearing;
+        interface hearingQso : Hearing connect spots.hearing to qso.hearing;
+        interface nativeSamples : CaptureSamplesLink connect audio.backend to flexAdapter.samples;
+        connection nativeControl connect radioControl.backend to flexAdapter.control;
         connection authorityRequestDelegation connect radioControl.backend to authorityRequest;
         connection authorizedControlDelegation connect authorizedControl to catAdapter.authorized;
         connection commonAuthority connect authorityRequest to authority.requests;
         connection authorizedBackend connect authority.authorized to authorizedControl;
         binding requestContext bind authorityRequest.request.resourceContext = radioBinding;
         binding catContext bind catAdapter.authorized.request.resourceContext = radioBinding;
+        binding flexContext bind flexAdapter.control.request.resourceContext = radioBinding;
     }
 
     dependency audioPromise from AudioInterface to WstxRequirements::'FR-002';

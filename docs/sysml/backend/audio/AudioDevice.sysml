@@ -27,5 +27,5 @@ package WstxAudio {
              discontinuityfalse,EOS last nonempty block. Semantic incompatible changes
              need coordinated new version. Unit conversion !=AGC/preprocessing/resampling. */
     }
-    dependency sharedInput from SampleBlock to WstxArchitecture::physicalStation::backend::stations::audio;
+    dependency sharedInput from SampleBlock to WstxArchitecture::StationProcess::audio;
 }

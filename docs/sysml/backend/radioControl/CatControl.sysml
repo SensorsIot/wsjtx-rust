@@ -79,7 +79,7 @@ package WstxRadioIO {
     action execute : ExecuteCat;
     satisfy WstxRadioIO::'CL-008-04' by execute;
     satisfy WstxRadioIO::'CL-008-06' by execute;
-    dependency controlOwner from execute to WstxArchitecture::physicalStation::backend::stations::radioControl;
+    dependency controlOwner from execute to WstxArchitecture::StationProcess::radioControl;
     package Verification {
         doc /* Planned Cost2Windows actual candidate adapters/services/browser and independent
              native-clock/device/serial/decoder-step fixtures, no hardware. Physicalcase
