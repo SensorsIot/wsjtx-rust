@@ -161,7 +161,7 @@ alex:
   investment_share: 2   # the product stop (operator 2026-11-14, #205): only investment work runs, on both coders
   fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60, test: 120}
   spend_per_day_usd: 200
-  first: [203, 204, 205, 206]   # the product stop: #205 comment 6882277210; conversions follow after their prerequisites are confirmed
+  first: [203, 204]   # the product stop (#205 comment 6882277210): only what may start now; #205 after #203 and #204, #206 after #205, then the conversions (the coordinator adds each when its prerequisites land)
   only_first: true
   priority_labels: [P1, P2, P3]
   skip_labels: [paused]
