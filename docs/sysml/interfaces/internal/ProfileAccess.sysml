@@ -6,6 +6,11 @@ package WstxProfileAccess {
         out item request : ProfileRequest;
         in item outcome : ProfileOutcome;
     }
+    interface def ProfileAccessLink {
+        doc /* Settings, strategies and contacts stored in the profile. */
+        end client : ProfileAccess;
+        end profile : ~ProfileAccess;
+    }
     item def ProfileRequest;
     item def ProfileOutcome;
 

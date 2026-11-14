@@ -10,6 +10,11 @@ package WstxRadioControl {
         in item outcome : ControlOutcome;
         binding replyContext bind outcome.request = request;
     }
+    interface def StationRadioControl {
+        doc /* The station service commands radio control. */
+        end station : RadioControl;
+        end radioControl : ~RadioControl;
+    }
     item def ControlRequest { ref part resourceContext : WstxRadioControlPart::RadioBinding; }
     item def ControlOutcome { ref item request : ControlRequest; }
     item def ReadRadioCapabilities :> ControlRequest;

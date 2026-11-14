@@ -1,9 +1,33 @@
 package WstxContext {
     private import ScalarValues::*;
     private import ModelNotes::FollowsSource;
-    private import WstxArchitecture::physicalStation;
+    private import ModelNotes::Conflict;
+    private import WstxArchitecture::Station;
+    private import WstxRadioProperties::Radio;
+    private import WstxOperatorInteraction::OperatorInteractionPort;
+    private import WstxOperatorInteraction::OperatorInteraction;
+    private import WstxMcpInterface::McpPort;
+    private import WstxMcpInterface::Mcp;
+    private import WstxCat::CatPort;
+    private import WstxCat::Cat;
+    private import WstxSoundDevice::SoundDevicePort;
+    private import WstxSoundDevice::SoundDevice;
+    private import WstxFlexApi::FlexApiPort;
+    private import WstxFlexApi::FlexApi;
+    private import WstxUdp::UdpPort;
+    private import WstxUdp::Udp;
+    private import WstxPskReporter::PskReporterPort;
+    private import WstxPskReporter::PskReporter;
+    private import WstxClubLog::ClubLogPort;
+    private import WstxClubLog::ClubLog;
+    private import WstxTimeSource::TimeSourcePort;
+    private import WstxTimeSource::TimeSource;
 
     enum def OutsideThing {
+        @Conflict {
+            what = "This doc says no outside thing is a part or has a port; "
+                + "StationContext declares each as a black-box part, nine of them with a port.";
+        }
         doc /* The outside things the server opens a socket, device or file to. None is a
              part or has a port. The function that owns each carries its information and
              state on the ports it offers to other functions; the wire protocol is that
@@ -83,30 +107,94 @@ package WstxContext {
             @FollowsSource { reference = "Windows file locking through std::fs::File::try_lock"; }
         }
     }
-    dependency catRadioOwner from OutsideThing::catRadio
-        to physicalStation::backend::stations::radioControl;
-    dependency flexRadioOwner from OutsideThing::flexRadio
-        to physicalStation::backend::stations::receive;
-    dependency soundDeviceOwner from OutsideThing::soundDevice
-        to physicalStation::backend::stations::audio;
-    dependency browserOwner from OutsideThing::browser
-        to physicalStation::backend::stations::web;
-    dependency mcpClientOwner from OutsideThing::mcpClient
-        to physicalStation::backend::stations::mcp;
-    dependency udpPeerOwner from OutsideThing::udpPeer
-        to physicalStation::backend::stations::station;
-    dependency pskReporterOwner from OutsideThing::pskReporter
-        to physicalStation::backend::stations::qso;
-    dependency clubLogOwner from OutsideThing::clubLog
-        to physicalStation::backend::stations::qso;
-    dependency timeServerOwner from OutsideThing::timeServer
-        to physicalStation::backend::stations::transmit;
-    dependency windowsTimeOwner from OutsideThing::windowsTime
-        to physicalStation::backend::stations::transmit;
-    dependency profileFilesOwner from OutsideThing::profileFiles
-        to physicalStation::backend::stations::profile;
-    dependency tlsFilesOwner from OutsideThing::tlsFiles
-        to physicalStation::backend::stations::web;
-    dependency resourceLocksOwner from OutsideThing::resourceLocks
-        to physicalStation::backend::radioAuthority;
+
+    part def StationContext {
+        doc /* The station and the outside things around it. An outside thing is a black box:
+             it has no inner structure and no requirement names it as its subject. The
+             function that owns it is the one its port is joined to; for the five without a
+             port, the function its doc names. */
+        @Conflict {
+            what = "The doc of WstxArchitecture::Station says outside things are not parts; "
+                + "the usages below are black-box parts.";
+        }
+        part station : Station;
+
+        part operator {
+            doc /* The licensed person who operates the station through the browser. */
+            port link : ~OperatorInteractionPort;
+        }
+        part mcpClient {
+            doc /* An MCP client, a program that operates the station with the operator's
+                 rights. */
+            port link : ~McpPort;
+        }
+        part catRadio : Radio {
+            doc /* The transceiver reached through its CAT serial link. */
+            port link : ~CatPort;
+        }
+        part flexRadio : Radio {
+            doc /* A FlexRadio reached through its native API. */
+            port link : ~FlexApiPort;
+        }
+        part soundDevice {
+            doc /* The sound-card capture and playback endpoints. */
+            port link : ~SoundDevicePort;
+        }
+        part udpPeer {
+            doc /* The configured WSJT-X UDP targets, send-only. */
+            port link : ~UdpPort;
+        }
+        part pskReporter {
+            doc /* The PSK Reporter MQTT broker, subscribe-only. */
+            port link : ~PskReporterPort;
+        }
+        part clubLog {
+            doc /* The Club Log most-wanted download. */
+            port link : ~ClubLogPort;
+        }
+        part timeServer {
+            doc /* The SNTP time servers. */
+            port link : ~TimeSourcePort;
+        }
+        part browser {
+            doc /* The operator's browser program, over HTTPS and WebSocket on the station
+                 listener. Its owner is the web function. */
+        }
+        part windowsTime {
+            doc /* The Windows Time service, its state read only. Its owner is the transmit
+                 function. */
+        }
+        part profileFiles {
+            doc /* The profile directory and its files. Its owner is the profile function. */
+        }
+        part tlsFiles {
+            doc /* The TLS certificate and key files named at launch. Its owner is the web
+                 function. */
+        }
+        part resourceLocks {
+            doc /* The radio identity lock files. Its owner is the radio authority. */
+        }
+
+        interface operatorInteractionLink : OperatorInteraction
+            connect station.frontend.browsers.operator to operator.link;
+        interface mcpLink : Mcp connect station.backend.stations.mcp.agent to mcpClient.link;
+        interface catLink : Cat connect station.backend.stations.catAdapter.radio to catRadio.link;
+        interface soundDeviceLink : SoundDevice
+            connect station.backend.stations.audioAdapter.device to soundDevice.link;
+        interface flexApiLink : FlexApi
+            connect station.backend.stations.flexAdapter.radio to flexRadio.link;
+        interface udpLink : Udp connect station.backend.stations.udp.peers to udpPeer.link;
+        interface pskReporterLink : PskReporter
+            connect station.backend.stations.spots.pskReporter to pskReporter.link;
+        interface clubLogLink : ClubLog
+            connect station.backend.stations.ranking.clubLog to clubLog.link;
+        interface timeSourceLink : TimeSource
+            connect station.backend.stations.clock.timeSource to timeServer.link;
+    }
+
+    part context : StationContext;
+
+    view physicalInterconnection : StandardViewDefinitions::InterconnectionView {
+        expose context::station::*;
+    }
 }

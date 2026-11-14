@@ -216,7 +216,8 @@ package WstxBandActivity {
              A Tx period (the station's latest_decode transmitted marker, CL-061-04)
              shows one Tx marker row and no empty block; the receive period below it
              keeps its divider and stays when the next period arrives (CL-061-03).
-             After a page load only the latest period shows until the next one arrives. Within a period the ActivityOrdering applies (column
+             After a page load only the latest period shows until the next one arrives. Within a
+             period the ActivityOrdering applies (column
              header click). DXCC shows the shown name of the sender's entity
              (WstxLogControl::DecodedEntity dxcc; title: name, continent, CQ and ITU zone),
              an explicit unavailable mark without one. Distance is the great-circle
@@ -224,8 +225,10 @@ package WstxBandActivity {
              the roger, never a grid; a grid from another row or the log is not used);
              without a grid the entity distance marked approximate ("~n km"); unavailable
              otherwise. The QSO pane header shows the partner's shown name and continent
-             first on its detail line under the call and grid (GET /dxcc?call=, once per DX call), and the
-             entity distance marked approximate when the contact has no grid. Colours (#50, BandActivityColours) are the WSJT-X
+             first on its detail line under the call and grid (GET /dxcc?call=, once per DX
+             call), and the
+             entity distance marked approximate when the contact has no grid. Colours (#50,
+             BandActivityColours) are the WSJT-X
              row backgrounds; the only text mark is WSJT-X's a-priori marker: a record with
              a_priori N shows a small "aN" after its message, outside the message text
              (#56 slice 5, WstxModemDecode::APrioriHypotheses); worked before (WstxContact::
@@ -235,21 +238,26 @@ package WstxBandActivity {
              rows are ordered
              by value (BandActivityValue, ActivityOrdering); row density (#55, operator 2026-11-03,
              CL-055-05): table rows with a fine pointer have 1 px vertical cell padding and line
-             height 1.25 at the unchanged font size (at most 24 px per row), period dividers 1 px,
+             height 1.25 at the unchanged font size (at most 24 px per row), period dividers 1
+             px,
              so more stations fit; with a coarse pointer (touch) rows keep 8 px padding; at most
-             44em wide (360 px, 200 % zoom) a row is a compact row without field labels (#37, live
+             44em wide (360 px, 200 % zoom) a row is a compact row without field labels (#37,
+             live
              finding 2026-11-04: the earlier labelled card rows were about 325 px high, one
              decode on screen): UTC, dB, DT, Freq and the distance on the first line, then the
              message and the country, wrapping only between whole fields at the readable text
              size (usually two lines, about 45 px, still tappable), so at least six rows are on
              screen at 360x800 (TC-037-003); at most 48em wide Band Activity, above the QSO
-             pane, has a fixed height (29rem) and scrolls inside; with a strategy active the strategy accent of
-             WstxSettings::ValueView (ranked rows first in their period under the value sort, greyed directed
-             CQs not for my continent). A selection of a CQ that is not answerable first shows the
-             WstxStrategy::DirectedCqRule warning; only its confirmation selects (during a contact a
-             click on it offers nothing). Pointer: click selects (SelectDecodedRow, prepares, never
-             transmits; while a contact is active a row that can start a contact for me, a
-             CQ/QRZ complying with WstxStrategy::DirectedCqRule or a row addressed to my call,
+             pane, has a fixed height (29rem) and scrolls inside; with a strategy active the
+             strategy accent of
+             WstxSettings::ValueView (ranked rows first in their period under the value sort,
+             greyed directed
+             CQs not for my continent). A selection of a CQ that is not answerable first shows
+             the WstxContact::DirectedCqSelection warning; only its confirmation selects (during
+             a contact a
+             click on it offers nothing). Pointer: click selects (SelectDecodedRow, prepares,
+             never transmits; while a contact is active a row that can start a contact for me, a
+             CQ/QRZ complying with WstxValueOrder::DirectedCqRule or a row addressed to my call,
              only offers "Change contact to <call>", naming its sender, whose replacement keeps
              Enable Tx as it is, and a row of a QSO between others or a CQ directed elsewhere
              offers nothing (#37, CL-037-05); double-click
@@ -270,7 +278,7 @@ package WstxBandActivity {
              Reply menu item does the same; right-click
              opens a menu: Reply, Select, Set Rx here and, for a row with a resolved
              sender, "Pounce <call>" or "Stop pouncing <call>" (#42 WstxStrategy::Pounce)
-             and "Ignore <call>" or "Stop ignoring <call>" (#42 WstxStrategy::
+             and "Ignore <call>" or "Stop ignoring <call>" (#42 WstxRankingControl::
              IgnoreLists session list). Enter selects; the menu is also
              reachable with the keyboard (context-menu key / Shift+F10). */
     }

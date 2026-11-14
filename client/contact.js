@@ -738,7 +738,7 @@ async function selectRow(tr){
   else if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact'),tr.dataset.sender);
   return reply;
 }
-// WstxStrategy::DirectedCqRule: the station decides; a CQ that is not answerable is a warning
+// WstxContact::DirectedCqSelection: the station decides; a CQ that is not answerable is a warning
 // the operator may confirm (a declined warning sends nothing further).
 async function selectConfirmed(row,replace,label,from=aborts){
   const reply=await sendExplicit(()=>send('select_row',{row,replace},label),from);
@@ -1286,7 +1286,7 @@ addEventListener('wstx-contact-render',showAuto);
 autoButton?.addEventListener('click',async()=>{
   if(!view||autoPosting)return;const on=!auto();let confirmed=false;
   if(on&&selection()){
-    // WstxContest::AutomationClause: a contest whose rules forbid it asks first; declined sends nothing.
+    // WstxStrategies::AutomationClause: a contest whose rules forbid it asks first; declined sends nothing.
     if(!selectedProfile())await loadContests();const p=selectedProfile();
     if(p?.automation==='forbidden'){if(!await window.wstxConfirm(`The rules of ${p.name} forbid automatic operation: ${p.automation_text} Transmit automatically anyway?`,'Transmit automatically'))return;confirmed=true;}
   }
@@ -1400,11 +1400,11 @@ function showContinent(){
 }
 continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
 // ---------------------------------------------------------------- #42 ignore lists
-// WstxRankingControl::IgnoreLists: the station keeps both lists and applies them; this client
+// WstxIgnoreLists::IgnoreListsRule: the station keeps both lists and applies them; this client
 // only edits them (PUT /strategy for the permanent list, POST /strategy/ignore for the
 // session list) and shows the session list the station returns.
-continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC DL1XYZ" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never marked or answered by a strategy. Band Activity right-click adds a station for this session; a band change clears the session list.</small><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
-const ignoreCalls=$('ignore-calls'),ignoreMinutes=$('ignore-minutes'),ignoreList=$('ignore-session');
+continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls or patterns)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC BY* */MM" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never marked or answered by a strategy. Band Activity right-click adds a station for this session; a band change clears the session list. A pattern uses * for any characters, for example BY* or */MM.</small><label>Ignore for this session<input id="ignore-add" spellcheck="false" autocomplete="off" placeholder="JA* or K1ABC" aria-describedby="ignore-help"></label><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
+const ignoreCalls=$('ignore-calls'),ignoreMinutes=$('ignore-minutes'),ignoreList=$('ignore-session'),ignoreAdd=$('ignore-add');
 const sessionIgnored=call=>(view?.session_ignore??[]).some(e=>e.call===call);
 function showIgnore(){
   if(!ignoreCalls)return;const c=config();ignoreCalls.disabled=ignoreMinutes.disabled=!c;
@@ -1429,10 +1429,12 @@ async function ignore(call,on){
 }
 // A change that leaves the saved value as it is (a repeated change on blur) sends nothing.
 ignoreCalls?.addEventListener('change',()=>{const c=config(),calls=[...new Set(words(ignoreCalls.value,false))];if(c&&calls.join(' ')!==(c.ignore_calls??[]).join(' '))saveConfiguration({...c,ignore_calls:calls},'Ignore list');});
+// The session add field takes a call or a pattern; the station refuses a malformed entry.
+ignoreAdd?.addEventListener('change',()=>{const entry=words(ignoreAdd.value,false)[0];ignoreAdd.value='';if(view&&entry)ignore(entry,true);});
 ignoreMinutes?.addEventListener('change',()=>{const c=config(),n=Number(ignoreMinutes.value);if(c&&Number.isInteger(n)&&n!==c.session_ignore_minutes)saveConfiguration({...c,session_ignore_minutes:n},'Session ignore');});
 // Station strategy settings, not profile fields: they never mark the profile form unsaved,
 // and Enter saves the list instead of submitting (applying) the profile form.
-for(const el of [ignoreCalls,ignoreMinutes]){for(const type of ['input','change'])el?.addEventListener(type,event=>event.stopPropagation());
+for(const el of [ignoreCalls,ignoreAdd,ignoreMinutes]){for(const type of ['input','change'])el?.addEventListener(type,event=>event.stopPropagation());
   el?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();el.dispatchEvent(new Event('change'));}});}
 // The session list ends by time and band change at the station: read it when Settings opens.
 const settingsDrawer=document.querySelector('#settings-drawer');
@@ -1459,7 +1461,7 @@ addEventListener('wstx-row-menu',event=>{
 });
 ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
 // ---------------------------------------------------------------- #42 Alert
-// WstxRankingControl::Alert: the station records an alert for each new candidate of the active strategy; this client
+// WstxAlert::AlertRule: the station records an alert for each new candidate of the active strategy; this client
 // lists the history and announces new alerts as the operator chose (both off by default):
 // a short tone while the page is visible, a browser notification also while it is hidden.
 ignoreList?.closest('.op-ignore-session')?.insertAdjacentHTML('afterend','<div class="op-alerts" style="min-width:0"><strong>Alerts</strong> <small>Each new station the active strategy would call records an alert; alerts never transmit.</small><br><label class="op-check"><input type="checkbox" id="alert-sound">Sound</label> <label class="op-check"><input type="checkbox" id="alert-notify">Browser notification</label> <small id="alert-note" role="status"></small><ul id="alert-history" aria-label="Alert history" style="margin:4px 0 0;padding-left:1.2em;max-height:12em;overflow:auto;overflow-wrap:anywhere"></ul><button type="button" id="alert-clear">Clear alerts</button></div>');
@@ -1559,7 +1561,7 @@ async function startPounce(call){
 }
 pounceItem.addEventListener('click',()=>{const call=pounceItem.dataset.call;if(!call)return;if(pouncing(call))stopPounce();else startPounce(call);});
 // ---------------------------------------------------------------- #39 Most Wanted list
-// WstxRankingControl::MostWantedList in Settings > General: status with the source attribution, an upload
+// WstxSettings::MostWantedListDisplay in Settings > General: status with the source attribution, an upload
 // the station validates, and Download now, one fetch on the operator's click. No automatic refresh.
 if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p class="op-actions"><span id="mw-status" class="op-muted" role="status">No list</span> <button type="button" id="mw-update" title="Fetches the list from clublog.org once, now">Update Most Wanted</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">A strategy calls the stations on this list first, by their rank, then the strongest; without a list the strongest first. It only changes when you click: Club Log states no terms for it.</p>');
 function showMostWanted(){
@@ -1588,7 +1590,7 @@ const NEW_MEANS=[['not_worked','Not worked'],['not_confirmed','Not confirmed (QS
 const REGIONS=[['all','All'],['dx','Other continents than mine'],['selected','Selected continents']];
 const SINCE=[['all','Any time'],['today','Today UTC'],['from_to','From/to UTC dates']];
 const BANDS=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','70cm'];
-// WstxStrategy::ValueCriterion in the model's order, with the editor's labels (StrategyEditor).
+// WstxRankingControl::ValueCriterion in the model's order, with the editor's labels (StrategyEditor).
 const CRITERIA=[['most_wanted','Most wanted (Club Log rank)'],['new_dxcc','New DXCC'],['new_dxcc_band','New DXCC on band'],['new_dxcc_band_mode','New DXCC on band and mode'],['new_call','New call'],['new_call_band','New call on band'],['new_grid','New grid'],['new_grid_band','New grid on band'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone'],['new_continent','New continent'],['new_prefix','New prefix'],['snr_bucket','SNR bucket (above 0, -10..0, below -10)'],['snr','SNR (stronger first)'],['distance','Distance (farthest first)'],['hears_us','Hears us first (PSK Reporter)']];
 const PSK_CASES=[['heard','He reports and hears us'],['not_heard','He reports, does not hear us'],['no_reports','He does not report']];
 // WstxStrategies::ContestPrompt: choose the contest, its period (pre-filled from the schedule rule)
@@ -1789,7 +1791,7 @@ editor.addEventListener('input',event=>{
 });
 editor.addEventListener('click',event=>{
   const d=drafts[current];
-  // WstxStrategy::ValueOrder in the editor: add a row, remove, up and down; SNR stays the fixed last.
+  // WstxValueOrder::ValueOrder in the editor: add a row, remove, up and down; SNR stays the fixed last.
   const v=event.target.closest('#se-order-add,.se-up,.se-down,.se-remove');
   if(v&&d&&!d.builtin&&!v.disabled){
     const list=d.order,i=Number(v.dataset.index);

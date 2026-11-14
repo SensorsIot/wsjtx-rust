@@ -12,8 +12,8 @@
     },
     {
       "focus": {
-        "file": "PhysicalArchitecture.sysml",
-        "qualified": "physicalArchitecture",
+        "file": "Context.sysml",
+        "qualified": "WstxContext::physicalInterconnection",
         "kind": "view"
       },
       "view": "interconnection"

@@ -371,6 +371,13 @@
   - docs/sysml/backend/operating/qso/Qso.sysml
   - docs/sysml/backend/audio/Audio.sysml
   - docs/sysml/backend/radioControl/RadioControl.sysml
+  - docs/sysml/backend/clock/Clock.sysml
+  - docs/sysml/backend/operating/ranking/Ranking.sysml
+  - docs/sysml/backend/operating/auto/Auto.sysml
+  - docs/sysml/backend/log/Log.sysml
+  - docs/sysml/backend/spots/Spots.sysml
+  - docs/sysml/backend/udp/Udp.sysml
+  - docs/sysml/backend/flexAdapter/FlexAdapter.sysml
   - tools/sysml.py
   - tools/sysml/Validate.java
   - tools/sysml/architecture-oracle.json

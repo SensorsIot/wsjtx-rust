@@ -37,7 +37,7 @@ package WstxProfiles {
     private import WstxProfileRecordings::RecordedSource;
     private import WstxRecordingTransfer::RecordingTransfer;
     doc /* The profile part (WstxProfiles::PersistedProfile, deployed as
-         physicalStation::backend::stations::profile): the saved profile of one station, its
+         WstxArchitecture::StationProcess::profile): the saved profile of one station, its
          creation, its launch with ownership, its save through GET and PUT /profile, its stop
          and its recovery. Its directory is the outside thing
          WstxContext::OutsideThing::profileFiles. The recordings function of the part is
@@ -289,14 +289,14 @@ package WstxProfiles {
     action saveProfile : SaveSelectedProfile;
     action stopOrRecover : RecoverOrStopProfile;
     dependency launchOwner from launchProfile
-        to WstxArchitecture::physicalStation::backend::stations::profile;
+        to WstxArchitecture::StationProcess::profile;
     dependency saveOwner from saveProfile
-        to WstxArchitecture::physicalStation::backend::stations::profile;
+        to WstxArchitecture::StationProcess::profile;
     dependency stationValidationOwner from saveProfile
-        to WstxArchitecture::physicalStation::backend::stations::station;
+        to WstxArchitecture::StationProcess::station;
     dependency createOwner from createProfile to WstxProfiles::PersistedProfile;
     dependency lifecycleOwner from stopOrRecover
-        to WstxArchitecture::physicalStation::backend::stations;
+        to WstxArchitecture::Backend::stations;
     dependency internalRequestRefinement from SaveProfile to WstxProfileAccess::ProfileRequest;
     dependency externalRequestRefinement from HttpProfilePut
         to WstxStationCommands::StationRequest;

@@ -144,8 +144,8 @@ package WstxQsoPane {
              inside; "Nobody is calling" when none). Each
              section keeps its height whether it is empty or full; the open Tx1-Tx6 fold-out
              covers both sections in place, so it moves nothing. Heights
-             follow the text size (rem), so 200 % text keeps the same rows. The whole stack fits the
-             1366x768 screen (TC-007-009, TC-037-003); the default split (LowerPanel) leaves
+             follow the text size (rem), so 200 % text keeps the same rows. The whole stack fits
+             the 1366x768 screen (TC-007-009, TC-037-003); the default split (LowerPanel) leaves
              room for it.
              A running QSO is a contact with a DX call in replying..signoff
              (WstxContact::ContactState); a contact that is completed, logged or cancelled is
@@ -158,7 +158,8 @@ package WstxQsoPane {
              reports sent and received; idle: "No contact selected"; while an own CQ runs
              (contact state calling) "Calling CQ" with the detail line "Tx even (1st)" or
              "Tx odd (2nd)", the Tx period, whatever the receive display shows (#37,
-             operator 2026-11-02); the badge Ready, Tx on, Transmitting or Receive only (Receive only, with CQ, Tune,
+             operator 2026-11-02); the badge Ready, Tx on, Transmitting or Receive only (Receive
+             only, with CQ, Tune,
              Now and Auto Seq disabled and the reason beside them, while the transmit capability
              is not available: #22, it follows the pushed contact snapshot; only a running Tune
              can be turned off).
@@ -179,8 +180,8 @@ package WstxQsoPane {
              partner of the last QSO stays excluded after it ended, until another contact
              runs), on any frequency, as soon as its row is decoded (operator 2026-11-04:
              everyone addressing me except the partner). While a QSO runs a caller within
-             +/-50 Hz of my Rx or Tx offset (QsoPaneCrowding) is a ⚠ line ("EA8BIA ⚠ | 0 | IL18 |
-             Canary Islands"), and a double-click (or Enter) on any line switches the contact
+             +/-50 Hz of my Rx or Tx offset (QsoPaneCrowding) is a ⚠ line ("EA8BIA ⚠ | 0 | IL18
+             | Canary Islands"), and a double-click (or Enter) on any line switches the contact
              to that station and replies (SelectDecodedRow with replace, then SetEnableTx on;
              ChangeContact keeps Enable Tx on). When no QSO runs (idle, finished, or an own
              CQ) a double-click (or Enter) answers (select, then
@@ -199,7 +200,8 @@ package WstxQsoPane {
              another band or mode)") from the worked_status of the sender's records of the
              latest and the previous period (WstxLogbook::WorkedBeforeQuery),
              e.g. "New DXCC · New call"; a line without such a reason has no hover text. The
-             double-click hint is the title of the section's "Calling me" header. When no row qualifies, the section shows the muted placeholder
+             double-click hint is the title of the section's "Calling me" header. When no row
+             qualifies, the section shows the muted placeholder
              "Nobody is calling" instead of an empty list, in the same height.
              4. NEXT: "▸ next: <message>" with a progress bar and the countdown to
              the next period of the contact's parity, only while Enable Tx is on and the
@@ -209,7 +211,8 @@ package WstxQsoPane {
              of the waveform, audio delay plus 12.64 s FT8 / 5.04 s FT4 after the period
              start), the message being the transmit view's last_text of this period, else
              the next message; during Tune (transmit view tune) "▶ TX now: Tune" with the
-             Tune seconds left (watchdog tune_remaining_seconds); otherwise "▸ next: <message>" with "Tx in <n> s" (#37,
+             Tune seconds left (watchdog tune_remaining_seconds); otherwise "▸ next: <message>"
+             with "Tx in <n> s" (#37,
              operator 2026-11-02). The bar (#50, operator 2026-11-02) is the
              one period bar: its width is the elapsed part of the current period
              (15 s FT8, 7.5 s FT4) on the station's clock (Contact OperatorDisplays
@@ -219,28 +222,34 @@ package WstxQsoPane {
              and green, as the Rx marker rgb(48,208,80), in every other (receive) period.
              5. Direct buttons: CQ, Auto, PSK, Tune, HALT, Abort QSO (Esc), Log QSO (#39
              strategydef, operator Q5, Q17, Q29: "Auto" right of CQ, a toggle green while on and
-             grey while off, WstxAutoControl::AutoToggle; "PSK", "Use PSK Reporter" as its title,
-             right of Auto, a toggle green while on, WstxHearingFeed::PskrUse, disabled while the
-             Settings switch is off; both follow only the pushed station state). (SetEnableTx (#37). Operator
+             grey while off, WstxAutoControl::AutoToggle; "PSK", "Use PSK Reporter" as its
+             title, right of Auto, a toggle green while on, WstxHearingFeed::PskrUse, disabled
+             while the
+             Settings switch is off; both follow only the pushed station state). (SetEnableTx
+             (#37). Operator
              2026-11-03 ("We have two HALT buttons ... I do not understand why we need a Reply
              and an RR73 and a 73 button there"): RR73 and 73 are gone, Auto Seq sends them
              and the fold-out Next/Now overrides by hand as in WSJT-X; Reply, kept only as the
              operator's workaround until the #50 double-click fix was installed, is gone too:
              a double-click on a Band Activity row or a Calling me row, or the row menu Reply,
-             starts the reply (with the WstxStrategy::DirectedCqRule warning for a CQ not answerable);
+             starts the reply (with the WstxContact::DirectedCqSelection warning for a CQ not
+             answerable);
              this HALT is the one HALT of the operating view (OperatingScreen);
-             Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxLogbook::DirectLog
+             Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now,
+             WstxLogbook::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result
              line goes when the QSO ends.
-             6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for loggedNoticeSeconds seconds, then nothing; a contact that could not
+             6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for
+             loggedNoticeSeconds seconds, then nothing; a contact that could not
              be stored shows "Not logged <call> · <reason>" while that outcome holds.
              7. QSO dialogue (#37, operator 2026-11-02, revising "no dialogue"): the QSO
              section (fixed height, item 8) holds the
              ContactSnapshot
              dialogue of the running QSO only, as a table (#60, operator 2026-11-03, replacing
              the earlier line and arrow formats) with the header row "UTC | Direction |
-             Exchange | Rep | Rx SNR | Tx SNR", one row per entry, oldest first and newest at the
-             bottom, "×N" in Rep for N > 1 repeats (empty for one), no frequency and no other
+             Exchange | Rep | Rx SNR | Tx SNR", one row per entry, oldest first and newest at
+             the bottom, "×N" in Rep for N > 1 repeats (empty for one), no frequency and no
+             other
              station (the callers are the Calling me section, item 3). The section scrolls
              inside, kept at its newest row, with the header row staying visible; it is the
              header row and qsoAreaRows (12) rows high (narrowQsoAreaRows at most 48em wide,
@@ -266,8 +275,10 @@ package WstxQsoPane {
              dialogue entry at or before that row (an Exchange "R-02" gives "−2", a plain report
              "-05" gives "−5"); each is empty only while no such value exists yet. Example
              (operator, #60): "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | | +8 |",
-             "22:51:30 | CT1BFP ◂ HB9BLA | +08 | | +8 |", "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | | +7 | −2",
-             "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | | +7 | −2", "22:52:15 | HB9BLA ◂ CT1BFP | 73 | ×2 | +9 | −2".
+             "22:51:30 | CT1BFP ◂ HB9BLA | +08 | | +8 |", "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | |
+             +7 | −2",
+             "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | | +7 | −2", "22:52:15 | HB9BLA ◂ CT1BFP | 73 |
+             ×2 | +9 | −2".
              Sent rows keep their own colour.
              Messages between two other stations are not QSO pane lines.
              There is no LAST row, no crowding badge and no status line
@@ -280,8 +291,9 @@ package WstxQsoPane {
              next" button (e.g. "Send 73 next", the full message as its title) that chooses
              that slot and arms (Reply). It is hidden otherwise and never clipped on the
              1366x768 screen.
-             PSK Reporter lines (#39 strategydef, WstxHearingFeed::PskrUse): while Use PSK Reporter
-             is on and a strategy or contest run's own contact has a target, two lines under the
+             PSK Reporter lines (#39 strategydef, WstxHearingFeed::PskrUse): while Use PSK
+             Reporter is on and a strategy or contest run's own contact has a target, two lines
+             under the
              header, in the message lines' fixed area: "Hears us: <age> ago · <rp> dB", "Hears
              us: no" or "Hears us: unknown"; and "Tx <hz> Hz · open at his end: yes", "· no" or
              "· unknown". Hidden otherwise; never clipped on the 1366x768 screen; at 360 px they
@@ -298,7 +310,8 @@ package WstxQsoPane {
              WSJT-X Tx5 free text, #24 S1b; the others once they have a message), Skip Tx1,
              RRR/RR73 and Cancel contact in place, and above them the Activity choice (None,
              NA VHF, EU VHF, WW Digi, ARRL Digi, Field Day, RTTY Roundup, Hound; set_activity,
-             WstxSpecialActivities::GridExchangeContest, #24 S2a, EuVhfExchange, #99, HoundOperation, #24 S4b) that shows the
+             WstxSpecialActivities::GridExchangeContest, #24 S2a, EuVhfExchange, #99,
+             HoundOperation, #24 S4b) that shows the
              station's setting, with an Exchange entry beside it (ContestExchange, #24 S2b:
              shows settings.exchange; choosing Field Day or RTTY Roundup sends set_activity
              with the entered exchange, and changing the exchange while one of them is chosen

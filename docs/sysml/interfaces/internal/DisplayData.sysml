@@ -1,5 +1,14 @@
 package WstxDisplayData {
     private import ScalarValues::*;
+    port def DisplayDataPort {
+        out item spectrum : SpectrumFrame;
+        out item detailedSpectrum : DetailedSpectrumFrame;
+    }
+    interface def DisplayData {
+        doc /* Spectrum and waterfall rows from receive; discardable. */
+        end receive : DisplayDataPort;
+        end consumer : ~DisplayDataPort;
+    }
     item def SpectrumFrame :> WstxModeProcessing::ProcessingResult {
         attribute v : Integer = 1;
         attribute boot_id : String;

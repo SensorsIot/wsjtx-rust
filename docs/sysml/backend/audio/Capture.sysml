@@ -13,5 +13,5 @@ package WstxAudioCapture {
     action capture : CaptureAudio;
     satisfy WstxProfiles::'CL-008-01' by capture;
     satisfy WstxRadioIO::'CL-008-05' by capture;
-    dependency captureOwner from capture to WstxArchitecture::physicalStation::backend::stations::audio;
+    dependency captureOwner from capture to WstxArchitecture::StationProcess::audio;
 }

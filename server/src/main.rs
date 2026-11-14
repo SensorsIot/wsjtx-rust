@@ -1201,7 +1201,7 @@ async fn connection(
     let mut free_tx_slots_seen: Option<u64> = None;
     // #39 WstxStrategies::StrategyHttp strategy.state: only after a change since this peer subscribed.
     let mut strategy_seen: Option<u64> = None;
-    // #42 WstxRankingControl::Alert alert.state: only after a change since this peer subscribed.
+    // #42 WstxStationLink::AlertWire alert.state: only after a change since this peer subscribed.
     let mut alert_seen: Option<u64> = None;
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).

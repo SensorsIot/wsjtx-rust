@@ -1,130 +1,242 @@
 package WstxRankingControl {
     private import ScalarValues::*;
-    attribute def WorkedWindow {
-        doc /* window all: the log's cached worked set (rebuilt after a log or country table
-             change). today (the current UTC date) and from_to: a worked set built only from
-             the records whose QSO_DATE lies in the window, inclusive; cached per (log
-             revision, country table, first date, last date; today is its UTC date), at most 4
-             windows, so it is not rebuilt per evaluation. A record without a date counts only
-             for all. A rebuild takes about 100 ms with 26,902 QSOs (measured 2026-11-06, release
-             build, two station steps), so it never runs on the station step: the step uses the
-             last built set of the window at once, and a set missing or behind the log is
-             built on its own thread for a later step. A selection and POST /strategy/evaluate
-             (blocking threads) wait for the current set. With no set yet nothing is
-             needed in that step (no claim of needed). */
+    private import WstxModeProcessing::Mode;
+    port def RankingControlPort {
+        out item rules : RankingRules;
+        in item ranked : RankedList;
+        in attribute alert : Alert;
     }
-    attribute def MostWantedList {
-        attribute entriesMax : Integer = 1000;
-        doc /* D12. Source https://clublog.org/mostwanted.php?api=1: JSON {"1":"344","2":"123",
-             ...}, rank to ADIF DXCC number (340 entries, verified 2026-11-06). Parsed exactly:
-             an object of 1..1000 keys, each a positive integer in text, each value a positive
-             integer below 10000 in text or as a number, no number twice; else the update fails,
-             nothing changed. Stored in the profile folder as
-             most_wanted.json {schema_version 1, profile_id, date (UTC date of the download), list}. cty.dat has no ADIF numbers: the
-             table most_wanted::ENTITIES maps cty.dat entity full names to ADIF numbers (the
-             340 current entities; WAE-only entities, Sicily, African Italy, Bear Island,
-             Shetland Islands, European Turkey and Vienna Intl Ctr, carry their DXCC parent's
-             number). A number of the list without a table entry is ignored and counted as
-             unmapped in the status. An entity not in the table or not on the list has no rank
-             (ValueOrder sorts it after the listed ones). A list once fetched stays until the next
-             update. The file is read off the station step (the first
-             GET /strategy, POST /strategy/evaluate or selection, on a blocking thread); the
-             step only reads a parsed Arc behind a leaf lock. An unreadable file: no list,
-             most_wanted_unreadable true.
-             Status in the GET /strategy snapshot: most_wanted null or {date, entries,
-             unmapped}, most_wanted_unreadable, most_wanted_attribution "Club Log Most Wanted
-             list, Club Log (c) Michael Wells G7VJR, clublog.org".
-             Browser, Settings > General: "List from <date> · <entries> entries" (and how many
-             are not mapped), or "No list; strategies call the strongest first", with beside it one
-             button "Update Most Wanted"; one click does everything. A failure keeps the list and shows the
-             reason in one line.
-             POST /strategy/most-wanted/download {v, profile_id, boot_id}:
-             the station fetches the source once on the operator's click, with the User-Agent
-             of most_wanted::USER_AGENT naming this project; a failure or a reply that is no list is 502 download_failed with
-             error.reason, nothing changed. Exact keys, with the refusals of POST /strategy/ignore, and
-             it returns the snapshot; no MCP tool dispatches to it. There is no automatic
-             refresh. */
+    item def RankingRules {
+        doc /* The active strategy's ranking rules, the lists and the commands the station sends:
+             the filters, the order, the contest and the ignore lists, and one command each to
+             evaluate, to add or remove a session ignore entry, to clear the alerts and to update
+             the Most Wanted list. The wire keys are those of the strategy. */
+        attribute keys : RankingKeys;
+        attribute ignore : IgnoreLists;
+        attribute mostWanted : MostWantedList[0..1];
+        attribute evaluate : EvaluateRequest[0..1];
+        attribute ignoreCommand : IgnoreCommand[0..1];
+        attribute clearAlerts : Boolean = false;
+        attribute updateMostWanted : Boolean = false;
+    }
+    item def RankedList {
+        doc /* The ranked verdicts of the evaluated records, the evaluate reply and the ranking
+             state: the session ignore list, the Most Wanted status, my continent as configured
+             or as derived from my callsign. */
+        attribute reply : EvaluateReply;
+        attribute rankingState : RankingState;
+    }
+    attribute def RankingKeys {
+        doc /* The ranking group of a strategy: bands, filters, order, contest and whether
+             callers of
+             my call are answered first. */
+        attribute bands : StrategyBands;
+        attribute newWhat : NewWhat[0..7];
+        attribute newPer : NewPer;
+        attribute newMeans : Needed;
+        attribute region : RegionKind;
+        attribute regionContinents : Continent[0..7];
+        attribute minSnrDb : Integer[0..1];
+        attribute workedSince : WorkedWindow;
+        attribute treat73AsCq : Boolean = true;
+        attribute countries : CountryList;
+        attribute states : UsStateFilter;
+        attribute cqTargets : CqTargetList;
+        attribute order : ValueCriterion[0..16];
+        attribute contest : String[0..1];
+        attribute callersFirst : Boolean = true;
+    }
+    attribute def EvaluateReply {
+        doc /* The verdicts of an evaluate request, in display order, and with a contest in
+             force the
+             contest verdicts and the tally. */
+        attribute verdicts : Verdict[0..*];
+        attribute contestVerdicts : ContestVerdict[0..*];
+        attribute contestTally : ContestTally[0..1];
+    }
+    attribute def RankingState {
+        doc /* The session ignore list, the Most Wanted status, and my continent as configured or as
+             derived from my callsign. */
+        attribute sessionIgnore : SessionIgnoreEntry[0..*];
+        attribute mostWantedStatus : MostWantedStatus[0..1];
+        attribute myContinent : Continent[0..1];
+        attribute derivedContinent : Continent[0..1];
+    }
+    interface def RankingControl {
+        doc /* The station service commands the ranking function; ranking reports the ranked
+             list and its alerts. */
+        end station : RankingControlPort;
+        end ranking : ~RankingControlPort;
+    }
+
+    enum def Continent { enum AF; enum AN; enum AS; enum EU; enum NA; enum OC; enum SA; }
+    enum def NewWhat {
+        doc /* What must be new, wire names exactly, multiple choice: dxcc (the DXCC entity), call,
+             grid (the 4-character grid), cq_zone (WAZ), itu_zone, continent (WAC), prefix (WPX,
+             WpxPrefix). */
+        enum dxcc; enum call; enum grid; enum cq_zone; enum itu_zone; enum continent; enum prefix;
+    }
+    enum def NewPer {
+        doc /* New per: ever (any band and mode), band (the station band, any mode), band_mode (the
+             station band and the operating mode, ADIF MODE, an MFSK record by its SUBMODE). One
+             choice for every NewWhat of the strategy. */
+        enum ever; enum band; enum band_mode;
+    }
+    enum def Needed {
+        doc /* New means: not_worked; not_confirmed (not worked, or worked and not confirmed: LoTW,
+             QSL or eQSL received, dxcc::Standing). */
+        enum not_worked; enum not_confirmed;
+    }
+    enum def ValueCriterion {
+        doc /* The criteria of ValueOrder, wire names exactly. */
+        enum most_wanted; enum new_dxcc; enum new_dxcc_band; enum new_dxcc_band_mode;
+        enum new_call; enum new_call_band; enum new_grid; enum new_grid_band;
+        enum new_cq_zone; enum new_itu_zone; enum new_continent; enum new_prefix;
+        enum snr_bucket; enum snr; enum distance; enum hears_us;
+    }
+    enum def RegionKind { enum 'all'; enum dx; enum selected; }
+    enum def WindowKind { enum 'all'; enum today; enum from_to; }
+    attribute def WorkedWindow {
+        attribute kind : WindowKind;
+        attribute firstDate : String[0..1];
+        attribute lastDate : String[0..1];
+        doc /* The window of the worked set: from_to carries two real calendar dates
+             "YYYY-MM-DD" between 1930-01-01 and 2099-12-31 with firstDate <= lastDate. */
+    }
+    attribute def StrategyBands {
+        attribute bands : String[0..32];
+        doc /* The ADIF band names, in lower case ("20m", "6m", "2m", "70cm"), 1..32 unique, of the
+             ADIF band enumeration; none: every band. */
+    }
+    enum def CountryKind { enum prefix; enum country; }
+    attribute def CountryEntry {
+        attribute kind : CountryKind;
+        attribute value : String;
+        attribute bands : StrategyBands[0..1];
+        doc /* kind prefix: value 1..13 of A-Z 0-9 / (upper case); kind country: a full entity
+             name of
+             the country table. */
+    }
+    attribute def CountryList {
+        attribute entriesMax : Integer = 64;
+        attribute included : CountryEntry[0..*];
+        attribute excluded : CountryEntry[0..*];
+        doc /* The prefix and country lines of the filters, each list 0..entriesMax entries. */
+    }
+    attribute def UsStateFilter {
+        attribute included : String[0..51];
+        attribute excluded : String[0..51];
+        doc /* Unique two-letter codes of the 50 US states and DC (ADIF Primary Administrative
+             Subdivision of the entities 291, 6 and 110). */
+    }
+    attribute def CqTargetList {
+        attribute entriesMax : Integer = 32;
+        attribute included : String[0..*];
+        attribute excluded : String[0..*];
+        doc /* The CQ target lines of the filters: each list 0..entriesMax unique words of 1..8 A-Z
+             0-9. */
+    }
+    attribute def Verdict {
+        attribute sequence : Integer;
+        attribute rank : Integer[0..1];
+        attribute grey : Boolean;
+        attribute why : String[0..1];
+        doc /* The verdict of one decoded standard record with a resolved sender: its place in the
+             decode order, its rank (null: not ranked), whether it is greyed and, when asked,
+             why. */
+    }
+    attribute def ContestVerdict {
+        attribute dupe : Boolean;
+        attribute newMultiplier : Boolean;
+        attribute points : Integer[0..1];
+        doc /* The verdict with a contest in force: a Verdict with whether the record is a dupe, a
+             new multiplier and its QSO points (null when not known). */
+    }
+    attribute def ContestTally {
+        attribute qsos : Integer;
+        attribute multipliers : Integer;
+        attribute points : Integer;
+        attribute score : Integer;
+        doc /* The tally of the contest log in the period. */
+    }
+    attribute def EvaluateRequest {
+        attribute recordsMax : Integer = 2048;
+        attribute sourceId : String;
+        attribute jobId : String;
+        attribute generation : Integer;
+        attribute firstSequence : Integer;
+        attribute nextSequence : Integer;
+        attribute draft : RankingKeys[0..1];
+        attribute explain : Boolean;
+        doc /* The retained records [firstSequence, nextSequence) of one live job, at most
+             recordsMax, evaluated for the saved active strategy or, with a draft, for the draft;
+             explain asks for the reason of every verdict. */
+    }
+    attribute def IgnoreCommand {
+        attribute call : String;
+        attribute ignore : Boolean;
+        doc /* Add the entry (the key stays call) to the session ignore list (or renew it) or, with
+             ignore false, remove it (not listed: no change). */
+    }
+    attribute def SessionIgnoreEntry {
+        attribute call : String;
+        attribute band : String[0..1];
+        attribute expiry : String;
+        doc /* One entry of the session ignore list: the entry (the key stays call), the station
+             band when it was added (null when unknown) and its expiry. */
     }
     attribute def IgnoreLists {
         attribute sessionEntriesMax : Integer = 64;
-        doc /* #42 (CL-042-02). A sender is ignored when its call (exactly, not as a prefix)
-             is on the permanent list (configuration ignore_calls) or on the session list.
-             The session list lives in station memory only (never persisted; a station
-             restart empties it): at most 64 entries in the order added, each {call, band,
-             expiry}, the band being the station band (CAT dial band, else the operating
-             selection band; null when unknown) and the expiry session_ignore_minutes
-             after the add, both taken when added (adding a listed call again renews
-             them and moves it last; adding a 65th call drops the oldest). An entry ends
-             at its expiry.
-             Band change: the station's contact step (every 50 ms, whether or not a
-             browser is connected) compares the station band with the band it saw last;
-             any change (also to or from unknown) empties the session list, so it is
-             empty before the next evaluation or run step on the new band.
-             Effect: an ignored sender's verdict has rank null and is not greyed, why
-             "<call> is ignored (session list)" or "(permanent list)" (session first when
-             on both); so it gets no mark, a run never selects it, also when it calls me. A
-             contact already in progress is not changed by ignoring its partner.
-             Band Activity: the right-click menu offers "Ignore <call>" for a row with a
-             resolved sender (session list), "Stop ignoring <call>" when that call is on
-             the session list, and no ignore item for other rows. Settings > General: the
-             permanent list (calls separated by spaces or commas, saved on change with
-             PUT /strategy), the session expiry in minutes (saved on change), and the
-             session list with each call's remaining minutes and a remove control; the
-             list is read again when the drawer opens. */
+        attribute permanent : String[0..*];
+        attribute session : SessionIgnoreEntry[0..*];
+        doc /* The permanent list (the entries of the strategy configuration) and the session list
+             (at most sessionEntriesMax entries in the order added). */
+    }
+    attribute def MostWantedEntry {
+        attribute rank : Integer;
+        attribute adifNumber : Integer;
+        doc /* The rank of one DXCC entity, by its ADIF number. */
+    }
+    attribute def MostWantedList {
+        attribute entriesMax : Integer = 1000;
+        attribute entries : MostWantedEntry[0..*];
+        doc /* The list, 1..entriesMax entries, kept in the profile folder as most_wanted.json
+             {schema_version 1, profile_id, date (UTC date of the download), list}. */
+    }
+    attribute def MostWantedStatus {
+        attribute date : String;
+        attribute entries : Integer;
+        attribute unmapped : Integer;
+        attribute unreadable : Boolean;
+        attribute attribution : String =
+            "Club Log Most Wanted list, Club Log (c) Michael Wells G7VJR, clublog.org";
+        doc /* The status of the list: the date of the download, the number of entries and of
+             numbers that no cty.dat entity maps to; unreadable when the file cannot be read. */
+    }
+    attribute def AlertEntry {
+        attribute id : Integer;
+        attribute utc : String;
+        attribute call : String;
+        attribute messageText : String;
+        attribute rule : String;
+        attribute band : String[0..1];
+        attribute mode : Mode;
+        attribute snrDb : Integer[0..1];
+        attribute dxcc : String[0..1];
+        doc /* One alert: id (1, 2, ... since the station started), utc (the record's
+             period_start_utc), call, messageText (the record text), rule (the strategy name), band
+             (station band, null when unknown), mode (the live job mode), snrDb (null when
+             unknown), dxcc (the full entity name of WstxCountryFile::EntityOfCall, null
+             without an entity). */
     }
     attribute def Alert {
         attribute historyMax : Integer = 100;
         attribute dedupeMinutes : Integer = 10;
-        doc /* #42 (CL-042-04, without a setting since #39 2026-11-06). Station side: the
-             station's contact step (every 50 ms, whether or not a browser is connected) reads
-             the records of the current live job past its alert cursor once each (a job not seen
-             before from its first retained record); the cursor advances also while no strategy
-             is active, so a later selection never alerts on older decodes. With an active
-             strategy, each new record that is a Candidate of it (Verdict, its window and list)
-             records an alert; a caller of my call, an ignored sender and a CQ greyed by
-             DirectedCqRule never alert. Dedupe: no alert when the
-             station recorded one for the same call and the same station band
-             (station_band at that time; unknown counts as its own band) whose period
-             start lies less than 10 minutes before this record's period start (exactly
-             10 minutes later alerts again); this memory is kept apart from the history,
-             so Clear does not reset it. An alert never transmits, never selects, arms or
-             changes a contact, the automation run, the Tx watchdog or the strategy
-             store.
-             History: station memory only (it survives page reloads, a station restart
-             empties it), the last 100 alerts in the order recorded (the 101st drops the
-             oldest), each {id (1, 2, ... since the station started), utc (the record's
-             period_start_utc), call, message (the record text), rule (the strategy name),
-             band (station band, null when unknown), mode (the live
-             job mode, ft8 or ft4), snr_db (null when unknown), dxcc (the full entity name
-             of WstxCountryFile::EntityOfCall, null without an entity)}; revision counts every
-             alert recorded and every clear since the station started.
-             Routes (the StrategyHttp rules for Origin, authorization, media and size): GET
-             /strategy/alerts (operating access, no query, empty body) -> {v 1,
-             profile_id, boot_id, revision, alerts (oldest first)}. POST
-             /strategy/alerts/clear {v, profile_id, boot_id}: exact keys, the refusals of
-             POST /strategy/ignore (400 invalid_request with the field,
-             unsupported_version, 403 wrong_profile, 409 state_conflict boot_id); it
-             empties the history, revision + 1, and returns the alerts snapshot. No MCP
-             tool dispatches to the clear (an MCP principal is refused, #58); wstx_read
-             view alerts reads GET /strategy/alerts (WstxMcpInterface::ToolCatalog).
-             Event: a display-subscribed peer receives alert.state {v 1, type
-             "alert.state", data {profile_id, boot_id, alert_revision}} when the revision
-             changes after it subscribed (never on subscription itself), paced with
-             contact.state; the browser then reads GET /strategy/alerts.
-             Browser: Settings > General shows an Alerts section: "Sound" and "Browser
-             notification" checkboxes, both off by default, kept per browser and profile
-             in localStorage (wstx.alerts.v1:<profile_id> = {sound, notify}; unreadable:
-             both off); checking Browser notification is the only place that asks for the
-             browser's notification permission (Notification.requestPermission on that
-             click, never otherwise); a permission other than granted leaves it unchecked
-             with the reason. The history list, newest first, each line "<HH:MM:SS> <call>
-             <message> · <rule> · <band> <MODE> · <snr> dB · <dxcc>" (unknown parts left
-             out), and a Clear button (POST /strategy/alerts/clear). An alert counts as new
-             when its id is above the highest id this page has seen (the history read at
-             page load or reconnect announces nothing): for each new alert a short tone
-             (Web Audio, about 0.15 s) only when Sound is on and the page is visible, and a
-             notification titled "Alert <call>" with body "<message> · <rule>" when Browser
-             notification is on and permission is granted (also while the page is hidden);
-             with both off nothing is announced (the history still lists it). */
+        attribute revision : Integer;
+        attribute history : AlertEntry[0..*];
+        doc /* The alert history: station memory only (it survives page reloads, a station restart
+             empties it), the last historyMax alerts in the order recorded (a further alert drops
+             the oldest); revision counts every alert recorded and every clear since the station
+             started. */
     }
 }

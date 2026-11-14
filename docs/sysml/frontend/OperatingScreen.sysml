@@ -661,7 +661,7 @@ attribute def ActivityOrdering {
              No horizontal page overflow; axis labels and primary controls remain reachable. */
     }
     action present : PresentStation;
-    dependency browserOwner from present to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency browserOwner from present to WstxArchitecture::Frontend::browsers;
     attribute def PageUpdate {
         attribute reloadsAtMostOncePerBuild : Boolean = true;
         attribute keepsBrowserSettings : Boolean = true;
@@ -727,13 +727,13 @@ attribute def ActivityOrdering {
              and loss detection, fresh displayed status<=10s; undetected loss adds its
              separate detection bound. Reconnect never replays old mutable operations. */
     }
-    dependency presentationOwner from BrowserSnapshotPolicy to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency presentationOwner from BrowserSnapshotPolicy to WstxArchitecture::Frontend::browsers;
     dependency reconnectPromise from BrowserLinkLifecycle to WstxOperatingLayout::'CL-003-04';
     dependency browserVerification from BrowserSnapshotPolicy to WstxStationProtocol::'TC-021-006';
     dependency reconnectVerification from BrowserLinkLifecycle to WstxOperatingLayout::'TC-021-007';
     dependency pageUpdatePromise from PageUpdate to WstxOperatingLayout::'CL-051-02';
     dependency rejectedSnapshotPromise from PageUpdate to WstxOperatingLayout::'CL-051-03';
-    dependency buildPresentationOwner from PageUpdate to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency buildPresentationOwner from PageUpdate to WstxArchitecture::Frontend::browsers;
     attribute def AutomationIndicator {
         doc /* Browser station bar, read-only, beside the transmit state: while a run is
              waiting or in a contact it shows "Automation waiting" or "Automation in
@@ -2068,7 +2068,7 @@ attribute def ActivityOrdering {
     }
     dependency CL_054_01_verified_by_TC_054_003 from 'CL-054-01' to 'TC-054-003';
     requirement 'CL-037-05' {
-        doc /* (#37, operator 2026-11-04: the QSO area offered "Change contact to W4WFC DL1FRH JO30", "This makes no sense") While a contact is active, a click on a Band Activity row offers a contact change only for a row that can start a contact for me, a CQ/QRZ complying with the directed-CQ rule (WstxStrategy::DirectedCqRule, also without Highlight or an active strategy) or a row addressed to my call, and the offer names the sender ("Change contact to K1ABC"); a click on a row of a QSO between others or on a CQ directed elsewhere offers nothing and leaves no refusal text. A deliberate double-click on such a row calls its sender and its command line reads "Call <sender>", never the foreign message. Details: WstxBandActivity::BandActivityView. */
+        doc /* (#37, operator 2026-11-04: the QSO area offered "Change contact to W4WFC DL1FRH JO30", "This makes no sense") While a contact is active, a click on a Band Activity row offers a contact change only for a row that can start a contact for me, a CQ/QRZ complying with the directed-CQ rule (WstxValueOrder::DirectedCqRule, also without Highlight or an active strategy) or a row addressed to my call, and the offer names the sender ("Change contact to K1ABC"); a click on a row of a QSO between others or on a CQ directed elsewhere offers nothing and leaves no refusal text. A deliberate double-click on such a row calls its sender and its command line reads "Call <sender>", never the foreign message. Details: WstxBandActivity::BandActivityView. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "client/contact.js; client/recording.js; server/src/contact_http.rs";
     }

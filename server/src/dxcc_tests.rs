@@ -666,7 +666,7 @@ fn tc_055_002_worked_set_follows_each_uploaded_table() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// Proves: TC-039-030 WstxStrategy::WpxPrefix, the examples of the CQ WPX Contest rules.
+// Proves: TC-039-030 WstxValueOrder::WpxPrefix, the examples of the CQ WPX Contest rules.
 #[test]
 fn tc_039_030_wpx_prefix_table() {
     for (call, prefix) in [

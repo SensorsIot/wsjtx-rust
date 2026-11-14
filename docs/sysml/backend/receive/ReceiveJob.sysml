@@ -120,7 +120,7 @@ package WstxRecordingReceive {
     }
     action cancelReceive : CancelReceive;
     satisfy WstxRecordingReceive::'CL-006-04' by cancelReceive;
-    dependency cancellationOwner from cancelReceive to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency cancellationOwner from cancelReceive to WstxArchitecture::StationProcess::receive;
     action def AdmitDecode {
         in source : WstxAudioStreams::SourceDescriptor[0..1];
         in settings : Settings;
@@ -135,7 +135,7 @@ package WstxRecordingReceive {
     }
     action admitDecode : AdmitDecode;
     satisfy WstxLiveReceive::'CL-007-01' by admitDecode;
-    dependency admissionOwner from admitDecode to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency admissionOwner from admitDecode to WstxArchitecture::StationProcess::receive;
 
     package IndependentVerification {
         doc /* All cases cost 2 - isolated automated tests on Windows development PC.

@@ -1,5 +1,16 @@
 package WstxLogControl {
     private import ScalarValues::*;
+    port def LogControlPort {
+        out item command : LogCommand;
+        in item 'state' : LogState;
+    }
+    item def LogCommand { doc /* Export, import, edits, the contest scoring rules. */ }
+    item def LogState { doc /* The log state. */ }
+    interface def LogControl {
+        doc /* The station service commands the log function; log reports its state. */
+        end station : LogControlPort;
+        end log : ~LogControlPort;
+    }
     attribute def DecodedEntity {
         doc /* #55 (CL-055-02). GET /receive/results adds to each decoded record whose
              sender call resolves the optional keys below; other records are unchanged. The
@@ -18,7 +29,7 @@ package WstxLogControl {
              (from EntityOfCall of each logged call; a logged call without an entity
              counts for nothing); each with its _band form: not on this band in any mode
              (WSJT-X LogBook::match with highlight by mode off, its default; the
-             strategy's filter is WstxStrategy::NewNeeded, #97). The worked set
+             strategy's filter is WstxValueOrder::NewNeeded, #97). The worked set
              is rebuilt only when the log or the country table changes; the annotation
              runs off the async runtime. Band: the CAT dial
              band, else the operating selection band; without a band no _band flag is

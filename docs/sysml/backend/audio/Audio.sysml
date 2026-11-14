@@ -3,6 +3,7 @@ package WstxAudioPart {
     private import WstxAudioStreams::AudioExchange;
     private import WstxAudioControl::AudioStatus;
     private import WstxAudioStreams::ReceiveSamples;
+    private import WstxSoundDevice::SoundDevicePort;
     part def AudioInterface {
         attribute configuredIntent : WstxAudio::DeviceIntent;
         attribute observedState : WstxAudio::AudioState;
@@ -21,5 +22,6 @@ package WstxAudioPart {
     }
     part def AudioDeviceAdapter {
         port host : ~AudioExchange;
+        port device : SoundDevicePort;
     }
 }

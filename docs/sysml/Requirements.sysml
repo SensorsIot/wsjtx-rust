@@ -1,7 +1,11 @@
 // Canonical authority: SysML
 package WstxRequirements {
     private import ScalarValues::*;
-    private import WstxArchitecture::physicalStation;
+    private import WstxArchitecture::Station;
+    private import WstxArchitecture::Frontend;
+    private import WstxArchitecture::Backend;
+    private import WstxArchitecture::StationProcess;
+    private import ModelNotes::Conflict;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -43,12 +47,12 @@ package WstxRequirements {
              adapter access. The ownership explanations and existing policy contracts apply
              together; target parts do not claim runtime delivery or settled policy. */
     }
-    dependency deploymentOwnership from physicalStation to PhysicalDeploymentStructure;
-    dependency stationIdentityOwnership from physicalStation::backend::stations to StationResourceIdentity;
-    dependency boundaryOwnership from physicalStation::backend::stations to ResponsibilityAndExchangeBoundaries;
+    dependency deploymentOwnership from Station to PhysicalDeploymentStructure;
+    dependency stationIdentityOwnership from Backend::stations to StationResourceIdentity;
+    dependency boundaryOwnership from Backend::stations to ResponsibilityAndExchangeBoundaries;
 
     verification ResolvedArchitectureGraph {
-        subject deployment :> physicalStation;
+        subject deployment : Station;
         doc /* Level 2 isolated automated model test on the development PC; no radio,
              device or runtime service. Resolve the accepted model and legal negative
              mutations with the pinned semantic validator. Independent expectations are
@@ -84,7 +88,7 @@ package WstxRequirements {
         attribute executionStatus : String = "defined automated companion; declaration records no execution verdict";
     }
     verification ArchitecturalOwnershipReview {
-        subject deployment :> physicalStation;
+        subject deployment : Station;
         doc /* Manual contract review on the development PC, without external effects.
              Compare this decomposition with WstxRequirements::ReleasePolicy,
              SharedDataOwnership, ProcessingAndHaltOwnership, RemoteDeliveryPolicy,
@@ -127,13 +131,13 @@ package WstxRequirements {
              Receiver filter width MUST NOT be inferred from a named filter or either
              the radio scope span or the browser waterfall span. */
     }
-    dependency browserPropertyOwnership from physicalStation::frontend::browsers to ComponentPropertyOwnership;
-    dependency stationPropertyOwnership from physicalStation::backend::stations to ComponentPropertyOwnership;
-    dependency radioPropertyOwnership from physicalStation::backend::stations::radioControl
+    dependency browserPropertyOwnership from Frontend::browsers to ComponentPropertyOwnership;
+    dependency stationPropertyOwnership from Backend::stations to ComponentPropertyOwnership;
+    dependency radioPropertyOwnership from StationProcess::radioControl
         to RadioModelReferenceSeparation;
 
     verification ComponentPropertyInventoryReview {
-        subject deployment :> physicalStation;
+        subject deployment : Station;
         objective {
             verify ComponentPropertyOwnership;
             verify RadioModelReferenceSeparation;
@@ -306,6 +310,27 @@ package WstxRequirements {
              Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound. S5 SuperFox Hound moved to its own phase-two issue #77 (operator 2026-11-08); Fox (S6) was dropped; EU VHF (S3), decoded since S1a, is sent by issue #99 (operator 2026-11-09, CL-099-01/02). */
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs";
+    }
+    requirement 'FR-025' {
+        subject station : StationProcess;
+        @Conflict {
+            what = "FR-025 and FR-026 have the subject StationProcess, while "
+                + "WstxArchitecture::StationProcess satisfies them by auto, ranking and station; "
+                + "the Pilot warns that the bound features have no conforming types. Open for "
+                + "the operator.";
+        }
+        doc /* Automatic operation
+             Select the next station to call, or call CQ, and choose the transmit slot, from
+             the ranking of the active strategy and without operator action. The operator or
+             an agent toggles it with the Auto control; while it is on, the station accepts
+             no other start and no other choice of station or message, and Halt and Halt QSO
+             always act. */
+    }
+    requirement 'FR-026' {
+        subject station : StationProcess;
+        doc /* Strategies and ranking
+             Define and select strategies and contests, and order the decoded stations by the
+             rules of the active one, presenting that order. */
     }
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;

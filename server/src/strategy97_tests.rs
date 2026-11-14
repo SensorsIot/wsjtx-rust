@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 // #97 strategy redesign (WstxStrategy D19, CL-097-01..07): TC-097-001..008 and TC-097-010 at cost 2.
 // The expected values, refusal paths, tables and orders are written here from the model
-// (WstxStrategy::Strategy, BuiltinStrategies, StrategyConfiguration, Candidate, CountryList,
+// (WstxStrategies::Strategy, BuiltinStrategies, StrategyConfiguration, Candidate, CountryList,
 // UsStateFilter, CqTargetList, CallerOfMyCall, ValueOrder, TxMoveRule, FreeTxSlot) and from the
 // cited cty.dat lines (Fed. Rep. of Germany 669, Japan 1223, United States 1251); never evaluator
 // output.

@@ -995,7 +995,7 @@ and backend variants.
   `check` applies these rules and `oracle` applies them before it writes. Then `check`
   alone: every port of the deployment is an end of at least one connection of the
   deployment; an end reached through a reference resolves to the referenced part's port
-  (`authority.requests` to `physicalStation.backend.radioAuthority.requests`), and a
+  (`authority.requests` to `context.station.backend.radioAuthority.requests`), and a
   binding, also one a contract declares, joins no port. Otherwise the first unjoined port
   in sorted path order is named. The rule cannot tell an outside thing from a function:
   an outside part put back with its connection is refused only while the oracle file does

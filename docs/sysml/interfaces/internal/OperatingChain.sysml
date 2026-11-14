@@ -1,23 +1,54 @@
 package WstxOperatingChain {
     private import ScalarValues::*;
-    attribute def ContestVerdict {
-        doc /* WstxStrategy::Verdict with a contest in force, one per decoded record with a resolved
-             sender that is standard, or a Field Day exchange (type field_day) to a call, in this
-             order of tests: ignored (IgnoreLists, as a strategy); greyed
-             (DirectedCqRule); "my own message"; "band unknown"; "band not in the contest"; "log
-             unreadable"; "dupe" (DupeRule for the station band, mode class Digital; rank null,
-             dupe true, also when it calls my call: operator #63 "non-dupe",
-             WstxStrategy::CallerOfMyCall); a caller of my call (CallerOfMyCall, also a grid or Field Day
-             exchange to it); else the callsign guard (SaneCall; a /R rover passes where a new grid counts,
-             band_grid); else "not a CQ": a CQ or an RR73/73 to someone else counts as calling, in
-             every contest. So the callable records have a rank by ContestValueOrder; every other has
-             rank null. The reply's verdicts carry dupe, new_multiplier (the record's key is not
-             yet in the period, false without a grid) and points (PointsRule; null when not known).
-             POST /strategy/evaluate with strategy null and a contest in force returns these, with
-             strategy the profile's name and contest the tally {qsos, multipliers, points, score}
-             (null when the log is unreadable); explain false lists the ranked, the greyed and the
-             dupes. A draft strategy still previews the draft. why: "calls my call", "new
-             multiplier", "<n> points" joined by " \· ", or the reason above. */
+    private import WstxRankingControl::RankedList;
+    private import WstxQsoControl::QsoProgress;
+    port def RankedActivityPort { out item ranked : RankedList; }
+    interface def RankedActivity {
+        doc /* The ranked list, from ranking to auto. */
+        end ranking : RankedActivityPort;
+        end auto : ~RankedActivityPort;
+    }
+    port def TargetChoicePort {
+        out item target : CallTarget;
+        out attribute slot : TxSlot;
+        in item answer : StartAnswer;
+        in item progress : QsoProgress;
+    }
+    item def CallTarget { doc /* The station to call, or CQ. */ }
+    item def StartAnswer {
+        attribute blockedBy : TransmitRefusal[0..1];
+        doc /* The answer to a start: absent when the start will happen, otherwise the arm
+             condition that blocks it, one of clockNotSynchronized, busy by Tune,
+             radioUnavailable, transmitUnsupported and notAuthorized. */
+    }
+    interface def TargetChoice {
+        doc /* The station Auto chooses, from auto to qso, and what qso answers. */
+        end auto : TargetChoicePort;
+        end qso : ~TargetChoicePort;
+    }
+    port def MessageToSendPort { out item request : TransmitRequest; }
+    interface def MessageToSend {
+        doc /* The next message of a contact and its period, from qso to transmit. */
+        end qso : MessageToSendPort;
+        end transmit : ~MessageToSendPort;
+    }
+    port def CompletedContactPort {
+        out item contact : FinishedContact;
+        in item answer : LogAnswer;
+    }
+    item def FinishedContact { doc /* The finished contact; the logged contact. */ }
+    item def LogAnswer { doc /* The log answers accepted or refused. */ }
+    interface def CompletedContact {
+        doc /* A finished contact, and the log's answer. */
+        end producer : CompletedContactPort;
+        end consumer : ~CompletedContactPort;
+    }
+    port def WorkedBeforePort { out item worked : WorkedSet; }
+    item def WorkedSet { doc /* What has been worked. */ }
+    interface def WorkedBefore {
+        doc /* What has been worked, from log to ranking. */
+        end log : WorkedBeforePort;
+        end ranking : ~WorkedBeforePort;
     }
 
     // ---------------------------------------------------------------- messages
@@ -77,7 +108,7 @@ package WstxOperatingChain {
         enum packRefused; enum frequencyOutOfRange; enum busy; enum notAuthorized;
         enum radioUnavailable;
     }
-    attribute def TransmitRequest {
+    item def TransmitRequest {
         attribute contactId : String[0..1];
         attribute requestSequence : Integer;
         attribute mode : WstxModeProcessing::Mode;

@@ -3,6 +3,7 @@ package WstxWebPart {
     private import WstxStationLink::BrowserExchange;
     private import WstxRecordingTransfer::RecordingTransfer;
     private import WstxStationCommands::StationOperations;
+    private import WstxDisplayData::DisplayDataPort;
     part def WebAdapter {
         attribute privateRuntimeInputs : WstxStationLink::RuntimeInputs;
         attribute effectiveEndpoint : WstxStationProtocol::EndpointPolicy;
@@ -16,6 +17,7 @@ package WstxWebPart {
         port client : ~BrowserExchange;
         port station : StationOperations;
         port recording : RecordingTransfer;
+        port display : ~DisplayDataPort;
     }
     package ImplementedStatusSlice {
         doc /* Implemented status/TLS subset alongside WstxProfiles profile functionality.

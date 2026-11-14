@@ -6,6 +6,12 @@ package WstxStationLink {
     port def BrowserExchange :> StationOperations {
         out item upload : Recording;
     }
+    interface def StationLink {
+        doc /* The one front-to-back connection: a browser client and the web function of the
+             station process it is attached to. */
+        end client : BrowserExchange;
+        end web : ~BrowserExchange;
+    }
     attribute def Limits {
         attribute controlBytes : Integer = 1024;
         attribute safeIntegerMax : Integer = 900719925 * 10000000 + 4740991;
@@ -316,5 +322,73 @@ package WstxStationLink {
              well-formed UUIDs are404 except explicit profile_id mismatch. Errors do not echo input.
              Input progress is bytes received/declared Content-Range total while receiving; before
              the first chunk show awaiting upload rather than a fabricated percent. Validation/commit states are distinct from completed. */
+    }
+
+    attribute def AlertWire {
+        attribute alert : WstxRankingControl::Alert;
+        doc /* Routes (the StrategyHttp rules for Origin, authorization, media and size): GET
+             /strategy/alerts (operating access, no query, empty body) -> {v 1, profile_id,
+             boot_id, revision, alerts (oldest first)}. POST /strategy/alerts/clear {v,
+             profile_id, boot_id}: exact keys, the refusals of POST /strategy/ignore (400
+             invalid_request with the field, unsupported_version, 403 wrong_profile, 409
+             state_conflict boot_id); it empties the history, revision + 1, and returns the
+             alerts snapshot. No MCP tool dispatches to the clear (an MCP principal is refused);
+             wstx_read view alerts reads GET /strategy/alerts (WstxMcpInterface::ToolCatalog).
+             Event: a display-subscribed peer receives alert.state {v 1, type "alert.state",
+             data {profile_id, boot_id, alert_revision}} when the revision changes after it
+             subscribed (never on subscription itself), paced with contact.state; the browser
+             then reads GET /strategy/alerts. */
+    }
+    attribute def MostWantedListWire {
+        attribute status : WstxRankingControl::MostWantedStatus;
+        doc /* Status in the GET /strategy snapshot: most_wanted null or {date, entries,
+             unmapped}, most_wanted_unreadable, most_wanted_attribution "Club Log Most Wanted
+             list, Club Log (c) Michael Wells G7VJR, clublog.org".
+             POST /strategy/most-wanted/download {v, profile_id, boot_id}: the station fetches
+             the source once on the operator's click (WstxClubLog::MostWantedDownload); a
+             failure or a reply that is no list is 502 download_failed with error.reason,
+             nothing changed. Exact keys, with the refusals of POST /strategy/ignore, and it
+             returns the snapshot; no MCP tool dispatches to it. There is no automatic refresh. */
+    }
+    attribute def ContestVerdictWire {
+        attribute verdict : WstxRankingControl::ContestVerdict;
+        attribute tally : WstxRankingControl::ContestTally;
+        doc /* POST /strategy/evaluate with strategy null and a contest in force returns the
+             contest verdicts, with strategy the profile's name and contest the tally {qsos,
+             multipliers, points,
+             score} (null when the log is unreadable); explain false lists the ranked, the
+             greyed and the dupes. A draft strategy still previews the draft. why: "calls my
+             call", "new multiplier", "<n> points" joined by " \· ", or the reason above. */
+    }
+
+    attribute def IgnoreListsWire {
+        attribute lists : WstxRankingControl::IgnoreLists;
+        attribute command : WstxRankingControl::IgnoreCommand;
+        doc /* POST /strategy/ignore {v, profile_id, boot_id, call, ignore}: exact keys; same
+             Origin/authorization/media/size rules and refusal codes as PUT /strategy (400
+             invalid_request with the field, unsupported_version, 403 wrong_profile, 409
+             state_conflict boot_id); call: an entry of CL-042-02's form; ignore true adds that
+             entry to the session list (or renews it), false removes it (not listed: no
+             change). It changes no revision, is allowed while a strategy runs and applies at
+             the next evaluation;
+             returns the snapshot. No MCP tool dispatches to it (an MCP principal is refused). */
+    }
+    attribute def EvaluateWire {
+        attribute request : WstxRankingControl::EvaluateRequest;
+        attribute reply : WstxRankingControl::EvaluateReply;
+        doc /* POST /strategy/evaluate {v, profile_id, boot_id, source_id, job_id, generation,
+             first_sequence, next_sequence (0 <= next - first <= 2048), strategy (null: the
+             saved active strategy, else a draft Strategy), explain}: the verdicts of the
+             retained live records [first, next) of exactly that live job (another job: 409
+             stale_request job_id; no active strategy: 409 not_configured strategy) in display
+             order: every one when explain, else only those with a rank or grey. Never changes
+             station state. */
+    }
+    attribute def RankingStateWire {
+        attribute rankingState : WstxRankingControl::RankingState;
+        doc /* GET /strategy carries the ranking state: my_continent (configured, else derived;
+             null when unknown), derived_continent, session_ignore (the session list in the
+             order added without ended entries, each {call, band, remaining_s: whole seconds to
+             its expiry, rounded up}), the MostWantedList status. */
     }
 }

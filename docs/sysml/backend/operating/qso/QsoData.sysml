@@ -1,5 +1,6 @@
 package WstxContact {
     private import ScalarValues::*;
+    private import ModelBindings::RetiredCase;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::'FR-007';
     private import WstxRequirements::'FR-008';
@@ -24,6 +25,19 @@ package WstxContact {
     private import WstxOperatingLayout::'CL-065-02';
     private import WstxOperatingChain::TxSlot;
     private import WstxOperatingChain::BusyPartner;
+    private import WstxValueOrder::'CL-039-02';
+    private import WstxValueOrder::'CL-039-03';
+    private import WstxMostWanted::'CL-039-10';
+    private import WstxValueOrder::'CL-042-01';
+    private import WstxIgnoreLists::'CL-042-02';
+    private import WstxAlert::'CL-042-04';
+    private import WstxContestRanking::'CL-063-02';
+    private import WstxContestRanking::'CL-063-04';
+    private import WstxValueOrder::'CL-097-02';
+    private import WstxValueOrder::'CL-097-03';
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::Status;
+    private import RequirementDerivation::*;
     doc /* Canonical contract of the standard FT8 contact (issue #10, CL-010-01..04, -06,
          -10..-14 in WstxRequirements): standard messages Tx1-Tx6, the server-owned
          auto-sequencing state machine, manual DX Call/Grid entry, Rx/Tx audio frequency
@@ -331,13 +345,6 @@ package WstxContact {
         attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/main.rs";
     }
     dependency CL_063_01_to_FR_024 from 'CL-063-01' to 'FR-024';
-    requirement 'CL-063-02' {
-        doc /* In a contest activity a CQ with the activity's own word (na_vhf, eu_vhf (#99) and arrl_digi CQ TEST, ww_digi CQ WW, field_day CQ FD, rtty CQ RU) is answerable: it is no longer greyed and an operator's selection needs no confirmation. Outside the matching activity it stays not answerable, with the warning of CL-039-03. Details: WstxContest::ContestDirective, WstxStrategy::DirectedCqRule. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/contact.rs";
-    }
-    dependency CL_063_02_to_FR_024 from 'CL-063-02' to 'FR-024';
-    dependency CL_063_02_to_FR_007 from 'CL-063-02' to 'FR-007';
     verification 'TC-063-001' {
         doc /* TC-063-001 — The profile table
              CL-063-01
@@ -390,10 +397,10 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-063-02';
+            verify 'CL-063-07';
         }
         attribute executable : String = "server/src/strategy_tests.rs::tc_063_004_the_directive_table_in_a_contest_activity; server/src/strategy_tests.rs::tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation";
     }
-    dependency CL_063_02_verified_by_TC_063_004 from 'CL-063-02' to 'TC-063-004';
     requirement 'CL-063-06' {
         doc /* The safety of a contest run stays on the server and is that of a strategy run: HALT from any source ends it and turns Auto off (the contest stays), Abort QSO (Esc) ends the QSO only, the Tx watchdog stops its CQ, with no client for 60 s or after 8 hours it starts nothing new, finishes the QSO in progress and its own CQ ends at once, only the browser's Auto on starts it, and a double-click is a manual intervention it resumes after. Details: WstxAutoControl::ContestRun, WstxAutoControl::StrategyRun, AutoToggle, ManualIntervention, WatchdogFromOperator. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -415,19 +422,6 @@ package WstxContact {
         attribute executable : String = "server/src/strategy_tests.rs::tc_063_011_the_safety_of_a_contest_run_stays_on_the_server; server/src/strategy_tests.rs::tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band";
     }
     dependency CL_063_06_verified_by_TC_063_011 from 'CL-063-06' to 'TC-063-011';
-    requirement 'CL-097-02' {
-        doc /* (#97 decisions 1 and 2, ranking only) Band: off the strategy's bands (all by default) every verdict has rank null, why "band not in the strategy" or "band unknown"; it never switches bands. Filters, every line must hold: what must be new (DXCC entity, call, grid, CQ zone, ITU zone, continent, prefix; any chosen one counts) per ever, band or band and mode, new meaning not worked or not confirmed (QSL/LoTW); region; minimum SNR; worked since (any time, today, from-to); Treat 73 as CQ; prefix/country include and exclude lists (an entry optionally per band; country names from the country table); US state include and exclude (the state from the message exchange where it carries one, else the log's STATE, a confirmed record first; unknown fails an include list; FCC/ISED and grid are #101); CQ target include and exclude (POTA, SOTA, EU, DX ...; a word on the include list makes that CQ's verdict not grey for this strategy: Band Activity marks it without strike-through, and Alert records it; the operator's own selection keeps its warning). Callers of my call must pass the filters too; a started QSO is always finished (#81). A contest strategy applies its contest's verdict first, then the country, US state and CQ target lists. Each failing line is named in the verdict's reason. Details: WstxStrategy::StrategyBands, Candidate, NewNeeded, CallerOfMyCall, CountryList, UsStateFilter, UsStateOf, CqTargetList, Verdict. */
-        attribute implementation : String = "server/src/strategy.rs; server/src/dxcc.rs; server/src/automation.rs";
-        attribute coverage : ImplementationState = ImplementationState::partial;
-    }
-    dependency CL_097_02_to_FR_007 from 'CL-097-02' to 'FR-007';
-    dependency CL_097_02_to_FR_011 from 'CL-097-02' to 'FR-011';
-    requirement 'CL-097-03' {
-        doc /* (#97 decision 3) Order: dropdown rows of criteria, the first decides and the next breaks a tie: Most wanted (Club Log rank); New DXCC, on band, on band and mode; New call, on band; New grid, on band; New CQ zone; New ITU zone; New continent; New prefix; SNR bucket (above 0 dB, -10..0 dB, below -10 dB); SNR (stronger first); Distance (farthest first); Hears us first (a PSK Reporter spot of my call at that station at most 600 s old). Then always SNR, then for an exact tie the lower audio frequency and the call; decode order is never a ranking. With "Calling stations are answered" on, the callers that pass the filters come first, ranked among themselves; with it off a caller of my call has rank null, why "calls my call · not answered" (decided as WSJT-X, whose CQ response None answers no caller automatically and whose "Calling CQ forces Call 1st" is off by default). A contest strategy has no order: it ranks by ContestValueOrder, under the same rule for callers. Details: WstxStrategy::ValueOrder, ValueCriterion, CallerOfMyCall, Verdict; WstxContest::ContestValueOrder. */
-        attribute implementation : String = "server/src/strategy.rs; server/src/contest.rs";
-        attribute coverage : ImplementationState = ImplementationState::partial;
-    }
-    dependency CL_097_03_to_FR_007 from 'CL-097-03' to 'FR-007';
     requirement 'CL-097-05' {
         doc /* (#97 decision 6, operator #94 and #90) Tx frequency while a run calls a target that has not answered, per PSK Reporter case (he reports and hears us; he reports and does not hear us; he does not report or it is unknown): stay, move every call, or move every n-th call (a busy-paused call not counted). A move goes to another quiet slot (never the current one), never within 50 Hz of a frequency he reports decoding in my Tx parity (no fallback: with none left Tx stays and it is tried at the next call), never below 500 Hz; Hold Tx on moves Tx alone, off Rx and Tx together; after his answer Tx never moves in that exchange. Auto never chooses a slot below 500 Hz; the upper edge (a signal reaching above 2400 Hz) is allowed but loses every tie. The open-slot marks still mark from 300 Hz. Details: WstxStrategy::TxMoveRule, FreeTxSlot, HearingFeed, PskrUse. */
         attribute implementation : String = "server/src/automation.rs; server/src/freeslot.rs; server/src/pskr.rs";
@@ -435,78 +429,20 @@ package WstxContact {
     }
     dependency CL_097_05_to_FR_007 from 'CL-097-05' to 'FR-007';
     dependency CL_097_05_to_FR_020 from 'CL-097-05' to 'FR-020';
-    verification 'TC-097-004' {
-        doc /* TC-097-004 — The strategy's bands
-             CL-097-02
-             Setup: the evaluator with the pinned cty.dat fixture and hand-authored codec-packed rows; a strategy with bands ["20m", "40m"]. The run's steps off the bands are TC-097-018's.
-             Steps: evaluate with the station band 20m, 15m and unknown; the same strategy with bands null on 15m.
-             Expected: on 20m the candidates ranked; on 15m every verdict rank null with why "band not in the strategy", unknown "band unknown"; bands null ranks on 15m. Red on the parent: bands is refused.
-             2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-097-02';
-        }
-        attribute executable : String = "server/src/strategy97_tests.rs";
-    }
-    dependency CL_097_02_verified_by_TC_097_004 from 'CL-097-02' to 'TC-097-004';
-    verification 'TC-097-005' {
-        doc /* TC-097-005 — What must be new, new per, new means and worked since
-             CL-097-02
-             Setup: the evaluator with the pinned cty.dat fixture and a hand log (worked and confirmed QSOs per band, mode and date, with and without grid) for HB9BLA JN37VL on 20m FT8; the expected verdicts hand-worked in the test from the log and the cty.dat entries.
-             Steps: each NewWhat alone with each new_per and each new_means: dxcc; call; grid (no grid in the message, a logged QSO without grid); cq_zone; itu_zone (an entity whose cty.dat entry overrides the ITU zone); continent; prefix (the WpxPrefix table cases); two whats (either counts); worked_since today and from_to with an undated record; region dx and selected; min_snr_db; treat_73_as_cq on and off; the station band unknown with new_per band.
-             Expected: the hand-worked tables: each what new exactly where the log lacks its key per the chosen per and means; D13 grid rules; the override zone used; an undated record counts only for any time; band unknown: nothing new per band or band_mode; RR73 to another counted as calling only with treat_73_as_cq. Red on the parent: the keys are refused.
-             2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-097-02';
-        }
-        attribute executable : String = "server/src/strategy97_tests.rs";
-    }
-    dependency CL_097_02_verified_by_TC_097_005 from 'CL-097-02' to 'TC-097-005';
     verification 'TC-097-006' {
         doc /* TC-097-006 — Country, US state and CQ target lists
              CL-097-02
              Setup: the evaluator with the pinned cty.dat fixture; a hand log with STATE fields (W6ABC: a confirmed record STATE CA and a newer unconfirmed STATE NV); rows CQ POTA K1ABC FN42, CQ SOTA W7XYZ DN31, CQ DX JA1XYZ PM95, CQ EU DL1XYZ JO62, plain CQ W6ABC CM87, CQ VE3ABC FN03, an RTTY Roundup exchange of K1RU carrying MA, CQ K9NOR EN52 with no log record; a VK9 call and a call of Lord Howe Island; the station band 20m then 40m.
              Steps: countries include [prefix VK9]; include [country "Lord Howe Island"]; include [prefix DL, bands [40m]] on 20m and on 40m; exclude [country "United States"]; include [prefix W] with exclude [prefix W6]; a PUT with country "Atlantis"; states include [CA]; include [MA]; exclude [CA]; cq_targets include [POTA]; exclude [DX]; the built-in POTA/SOTA on the same rows with K1ABC also logged on 20m yesterday and W7XYZ logged on 20m today; the Band Activity rows and the alert history under POTA/SOTA and under another strategy (browser case with routed verdicts). The run's own select_row of CQ POTA and the directive refusals are TC-097-018's.
-             Expected (hand-worked from WstxStrategy::CountryList, UsStateFilter, UsStateOf, CqTargetList): prefix by the start of the call, country by the entity; the DL entry only on 40m; exclude wins over include; "Atlantis" refused 400 at its field path; CA for W6ABC (confirmed before newer unconfirmed), MA for K1RU from the exchange; K9NOR (unknown) and VE3ABC fail include and pass exclude; with include [POTA] only CQ POTA is ranked (answerable for the strategy although DirectedCqRule greys it), the plain CQ and CQ DX fail with why "CQ target"; exclude [DX] fails CQ DX only; POTA/SOTA ranks K1ABC (worked yesterday, new today; grey false) and not W7XYZ (worked today, "not new"), and nothing else of the rows; in Band Activity the CQ POTA row marked and not struck through under POTA/SOTA, struck through under the other strategy; one alert for K1ABC under POTA/SOTA. Red on the parent: the lists are refused.
+             Expected (hand-worked from WstxRankingControl::CountryList, UsStateFilter, UsStateOf, CqTargetList): prefix by the start of the call, country by the entity; the DL entry only on 40m; exclude wins over include; "Atlantis" refused 400 at its field path; CA for W6ABC (confirmed before newer unconfirmed), MA for K1RU from the exchange; K9NOR (unknown) and VE3ABC fail include and pass exclude; with include [POTA] only CQ POTA is ranked (answerable for the strategy although DirectedCqRule greys it), the plain CQ and CQ DX fail with why "CQ target"; exclude [DX] fails CQ DX only; POTA/SOTA ranks K1ABC (worked yesterday, new today; grey false) and not W7XYZ (worked today, "not new"), and nothing else of the rows; in Band Activity the CQ POTA row marked and not struck through under POTA/SOTA, struck through under the other strategy; one alert for K1ABC under POTA/SOTA. Red on the parent: the lists are refused.
              2 — Isolated automated tests; Windows development PC. */
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-097-02';
+            verify 'CL-097-09';
         }
         attribute executable : String = "server/src/strategy97_tests.rs";
     }
-    dependency CL_097_02_verified_by_TC_097_006 from 'CL-097-02' to 'TC-097-006';
-    verification 'TC-097-007' {
-        doc /* TC-097-007 — Callers of my call pass the filters and are answered only when Calling stations are answered is on
-             CL-097-02, CL-097-03
-             Setup: the evaluator with the pinned cty.dat fixture, HB9BLA on 20m; the built-in Casual (call, per band, not worked; Calling stations are answered on); a log with W1AW worked on 20m; rows HB9BLA W1AW FN31 (+5), HB9BLA N1NEW FN31 (-9), CQ K1ABC FN42 (-1). The run's steps with callers are TC-097-018's.
-             Steps: evaluate Casual; the same with Calling stations are answered off and order [snr]; a caller failing region dx, min SNR -5, a country exclude, a state include.
-             Expected (oracle: the operator's decision 2 on #97, CL-097-03, WstxStrategy::Verdict; WSJT-X with the CQ response None answers no caller automatically, widgets/mainwindow.cpp 7481-7496): W1AW rank null, why "calls my call · not new"; N1NEW first with callers on, then K1ABC; with callers off N1NEW has rank null, kind none, why "calls my call · not answered", and K1ABC alone is ranked; each failing caller names its line ("calls my call · region", "· below min SNR", "· country list", "· state list"). Red on the parent: with callers off N1NEW is ranked by SNR after K1ABC.
-             2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-097-02';
-            verify 'CL-097-03';
-        }
-        attribute executable : String = "server/src/strategy97_tests.rs";
-    }
-    dependency CL_097_02_verified_by_TC_097_007 from 'CL-097-02' to 'TC-097-007';
-    dependency CL_097_03_verified_by_TC_097_007 from 'CL-097-03' to 'TC-097-007';
-    verification 'TC-097-008' {
-        doc /* TC-097-008 — The order criteria
-             CL-097-03
-             Setup: the evaluator with the TC-039-040 rows extended by stations at SNR +1, 0, -10, -11 and unknown; a feed without a connection fed hand-authored spots of my call at JA1XYZ and VK2ABC; the expected orders hand-worked in the test (distances by the haversine formula written there).
-             Steps: order [snr_bucket]; [snr_bucket, distance]; [hears_us] with PskrUse on and off; [new_cq_zone], [new_itu_zone], [new_continent], [new_prefix], [new_dxcc_band_mode] each before [snr]; [most_wanted, snr]; a contest strategy evaluated; the WW Digi built-in (contest_tests: WW Digi in force on 20m, K1OLD logged in the period) with CQ WW JA1XYZ PM95, the non-dupe caller HB9BLA VK2ABC QF56 and the dupe caller HB9BLA K1OLD FN20, with Calling stations are answered on and off.
-             Expected: +1 first; 0 and -10 in the middle bucket; -11 last; unknown after them; inside a bucket SNR, frequency, call (alone) or farthest first (with distance); JA1XYZ and VK2ABC first with PskrUse on, the plain SNR order with it off; each new criterion puts the new stations first with SNR order inside; the contest strategy ranks by ContestValueOrder; decode order never changes an order. WW Digi: on, VK2ABC rank 0 and JA1XYZ rank 1; off, VK2ABC rank null with why "calls my call · not answered" and JA1XYZ rank 0; K1OLD rank null either way. Red on the parent: with callers off the non-dupe caller VK2ABC keeps a rank (ranked among the others).
-             2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::partial;
-        objective {
-            verify 'CL-097-03';
-        }
-        attribute executable : String = "server/src/strategy97_tests.rs; server/src/contest_tests.rs";
-    }
-    dependency CL_097_03_verified_by_TC_097_008 from 'CL-097-03' to 'TC-097-008';
     verification 'TC-097-010' {
         doc /* TC-097-010 — Tx moves per PSK case and Auto's slot choice
              CL-097-05
@@ -521,11 +457,7 @@ package WstxContact {
         attribute executable : String = "server/src/strategy97_tests.rs; server/src/freeslot_tests.rs; server/src/pskr_tests.rs";
     }
     dependency CL_097_05_verified_by_TC_097_010 from 'CL-097-05' to 'TC-097-010';
-    dependency CL_097_02_verified_by_TC_097_016 from 'CL-097-02' to 'TC-097-016';
-    dependency CL_097_03_verified_by_TC_097_016 from 'CL-097-03' to 'TC-097-016';
     dependency CL_097_05_verified_by_TC_097_016 from 'CL-097-05' to 'TC-097-016';
-    dependency CL_097_02_verified_by_TC_097_019 from 'CL-097-02' to 'TC-097-019';
-    dependency CL_097_03_verified_by_TC_097_019 from 'CL-097-03' to 'TC-097-019';
     // #11 slice B (CL-011-02..04): FT4 in the operating workflow through the shared
     // contact engine; detailed contract in WstxContact (StationOperatingMode,
     // ContactMode, ModeChange, FT4-NOTE rules). The issue's planned TC-007-002 collided
@@ -669,19 +601,6 @@ package WstxContact {
     }
     dependency CL_039_01_to_FR_007 from 'CL-039-01' to 'FR-007';
     dependency CL_039_01_to_FR_016 from 'CL-039-01' to 'FR-016';
-    requirement 'CL-039-02' {
-        doc /* One station evaluator gives each decoded standard message a verdict: its filters are CL-097-02 and its order CL-097-03, callers of my call included. SNR is always the hidden last tie-breaker, then for an exact tie the lower audio frequency and the call; decode order is never a ranking. Distance is from the profile locator to the message grid, else to the cty.dat entity centre. POST /strategy/evaluate returns the verdicts of retained live records for the saved strategy or a draft, with the reason when asked; the browser never evaluates a strategy itself. Details: WstxStrategy::NewNeeded, WpxPrefix, WorkedWindow, CallerOfMyCall, Candidate, ValueOrder, StationDistance, Verdict, StrategyHttp. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/logbook.rs; server/src/recording.rs; server/src/dxcc.rs";
-    }
-    dependency CL_039_02_to_FR_007 from 'CL-039-02' to 'FR-007';
-    dependency CL_039_02_to_FR_011 from 'CL-039-02' to 'FR-011';
-    requirement 'CL-039-03' {
-        doc /* One directive rule before every strategy and for the operator: a CQ is answerable when it is a plain CQ, CQ <my continent> (derived from the profile call via cty.dat, locator fallback) or CQ DX from another continent. Every other directive is not answerable: a strategy skips it (greyed, never matches, never answered by a run or pounce) and an operator's selection shows a warning the operator can confirm ("CQ NA — not for EU"); automation, MCP and UDP cannot confirm it. In a contest activity its own word (CQ TEST, WW, FD, RU) is answerable too (CL-063-02). Details: WstxStrategy::DirectedCqRule, MyContinent, StrategyRun. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/dxcc.rs; client/contact.js";
-    }
-    dependency CL_039_03_to_FR_007 from 'CL-039-03' to 'FR-007';
     requirement 'CL-039-05' {
         doc /* Selecting a strategy marks its candidates; it transmits only while Auto is on (CL-039-22), through the existing station automation and contact engine (no second engine), with no confirmation and no client decision: the browser sends only the selection and the toggle, and HALT is always on screen. A strategy run calls CQ only with CQ when idle (CL-039-22) and goes on after each QSO without a contact limit, waiting for the next opportunity, for at most 8 hours from its start, also with a browser open (operator decision 2026-11-06: a new start gives a new 8 hours); it answers callers of my call (only with Calling stations are answered on, first), then the best candidate; it leaves a station by the leave rule (CL-039-23) and may call it again after its retry pause; it never selects a station the operator cancelled or aborted again in that run, nor one completed in that run on this band and mode. It follows its grant, not the transport of the starting request: a page reload or a second tab does not stop it, a revoked grant does. Unattended (operator decision, #39 comment 6685226511) and at the run limit ("Finish the QSO first", operator 2026-11-07): with no authenticated client (a status WebSocket session, or an authenticated MCP request) for 60 s, or past 8 hours, it selects no new station and answers no caller, its own CQ ends at once, a QSO the partner is answering is completed, otherwise the contact ends at x repetitions, and it stops with the reason no_client or run_limit; only an Auto on restarts it, never an AutomationCommand start. A band or mode change by the operator and HALT end the contact at once; Auto off, None, another selection, a contest deselected and the end of a contest period end at once a contact that is no started QSO and let a started QSO finish (#81, CL-081-01). It waits instead of stopping across a receive restart; a refused start or a stop turns Auto off with the reason shown and leaves the strategy selected. HALT from any source stops the run and turns Auto off, pushed to the browser; the selection stays. Esc does not. A double-click is always possible and is a manual intervention: the run waits for that QSO to end and resumes. An MCP principal cannot select a strategy nor switch Auto. Every Auto decision is taken at the earliest moment the information it needs is available, never later (#89, operator 2026-11-09: "decision always fastest when needed info is available. this is a general rule for the auto mode"). Details: WstxAutoControl::StrategyRun (Decision timing), AutoToggle, StrategySelector, ManualIntervention, SaneCall; WstxMcp::OperatingAutomation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -790,12 +709,6 @@ package WstxContact {
         attribute executable : String = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs; server/src/automation_tests.rs";
     }
     dependency CL_039_09_verified_by_TC_039_010 from 'CL-039-09' to 'TC-039-010';
-    requirement 'CL-039-10' {
-        doc /* The value order can use the Club Log Most Wanted list: Settings shows "List from <date>" with its entries, unmapped numbers and source attribution, and one button Update Most Wanted that fetches it once on the operator's click; there is no upload, a failed download keeps the list and shows the reason in one line; it is validated, stored in the profile folder and mapped to cty.dat entities by ADIF number (an unmapped number is ignored and counted). No automatic refresh and nothing bundled (operator decision, #39 comment 6685317139; Club Log states no terms, recorded in WstxStrategy D12). Everything works without a list (strongest first). The list is read off the station step. Details: WstxRankingControl::MostWantedList, ValueOrder. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/most_wanted.rs; server/src/strategy.rs; client/contact.js";
-    }
-    dependency CL_039_10_to_FR_007 from 'CL-039-10' to 'FR-007';
     verification 'TC-039-030' {
         doc /* TC-039-030 — Goals, windows, value order, callers and the WPX prefix
              CL-039-01, CL-039-02, CL-039-05
@@ -812,22 +725,7 @@ package WstxContact {
         attribute executable : String = "server/src/strategy_tests.rs; server/src/dxcc_tests.rs; server/src/logbook_tests.rs";
     }
     dependency CL_039_01_verified_by_TC_039_030 from 'CL-039-01' to 'TC-039-030';
-    dependency CL_039_02_verified_by_TC_039_030 from 'CL-039-02' to 'TC-039-030';
     dependency CL_039_05_verified_by_TC_039_030 from 'CL-039-05' to 'TC-039-030';
-    verification 'TC-039-031' {
-        doc /* TC-039-031 — Most Wanted list: parsing, mapping, routes
-             CL-039-10
-             Setup: hand-written list text (no network); the bundled cty.dat; the actual station router on a disposable HTTPS profile; a test seam in place of the HTTP fetch.
-             Steps: parse valid and refused lists; map every bundled cty.dat entity; Update Most Wanted (the download route) with a fake fetch: a list with an unknown number, a failure, a reply that is no list; read the snapshot; open a new owner; POST to the former upload route; POST with the MCP cookie.
-             Expected: the refused lists parse to nothing; every bundled entity has an ADIF number, exactly 340 distinct numbers; status {date, entries, unmapped 1}; the new owner reads it; each failure is 502 download_failed with its reason and changes nothing; the upload route is gone (405 or 404); the MCP cookie is refused 401.
-             2 — Isolated automated tests; Windows development PC, no network. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-039-10';
-        }
-        attribute executable : String = "server/src/strategy_tests.rs";
-    }
-    dependency CL_039_10_verified_by_TC_039_031 from 'CL-039-10' to 'TC-039-031';
     requirement 'CL-039-11' {
         doc /* Read-only built-in strategies are offered beside the user's: the five of class strategy and one contest built-in per contest, with their values (CL-097-01, CL-097-07). They come from one server table, are listed with builtin true in the snapshot, can be selected like any strategy, cannot be edited through PUT /strategy (a user strategy with such a name is refused) and can be duplicated to a user strategy in the editor. Details: WstxStrategies::BuiltinStrategies, StrategyEditor, StrategySelector. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -862,22 +760,9 @@ package WstxContact {
         attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_05_verified_by_TC_039_033 from 'CL-039-05' to 'TC-039-033';
-    verification 'TC-039-040' {
-        doc /* TC-039-040 — The filter and the value order
-             CL-039-02
-             Setup: the evaluator as a function with the pinned cty.dat fixture, a hand log and hand-authored codec-packed rows for HB9BLA JN47AA (EU) on 20 m FT8: CQ K1ABC FN42 -12 at 1200 Hz, CQ JA1XYZ PM95 -15 at 900 Hz, CQ DL1XYZ JO62 -3 at 1500 Hz, CQ VK2ABC QF56 -20 at 600 Hz, CQ ZS6AA -8 at 2000 Hz (no grid), CQ OH1AA KP20 -3 at 1400 Hz, HB9BLA W1AW FN31 -25 (a caller); the log has K1ABC and W1AW on 20 m, DL1XYZ on 40 m only, OH1AA on 20 m today; a Most Wanted list with JA (rank 40) and VK (rank 90). Distances are computed in the test by the haversine formula written there from the locator and grid centres and the cty.dat centres.
-             Steps: new [call] per band with order [snr], [distance], [most_wanted], [most_wanted, distance], [new_dxcc, snr]; new [call, grid, dxcc] (every station of the rows a candidate) with Calling stations are answered off and each needed-first criterion alone before [snr]: [new_dxcc] (log: a DL QSO on 40 m), [new_dxcc_band] (on 20 m: DL worked on 40 m only), [new_dxcc_band_mode] (an FT4 QSO with JA on 20 m), [new_call] (K1ABC logged), [new_call_band], [new_grid] (FN42 logged on 40 m), [new_grid_band] (FN42 logged on 40 m; a row without grid; a call with a logged 20 m QSO without grid); the same with the station band unknown; new [call] per ever; worked since today with Calling stations are answered on; DL1XYZ and OH1AA at the same SNR (an exact tie except frequency); two verdicts at the same SNR and frequency; Calling stations are answered on and off with order [snr]; an empty order list; the caller W1AW failing every filter line (worked, region, minimum SNR -10).
-             Expected (hand-worked): each needed-first criterion puts the needed stations before the others and leaves SNR order inside each group, the caller W1AW without a rank (callers off): [new_dxcc] DL1XYZ after the rest; [new_dxcc_band] DL1XYZ needed on 20 m; [new_dxcc_band_mode] JA1XYZ needed (FT4 is another mode); [new_call] K1ABC after; [new_call_band] K1ABC and OH1AA after; [new_grid] K1ABC (FN42) after; [new_grid_band] K1ABC (FN42 not on 20 m) needed, the row without grid and the call with an unknown grid status not needed, a band unknown nothing needed; new_call_band excludes K1ABC and W1AW as candidates (worked on 20 m) and keeps DL1XYZ; [snr]: DL1XYZ, OH1AA (frequency 1400 before 1500 when tied: OH1AA first), ZS6AA, JA1XYZ, VK2ABC; [distance]: VK2ABC, JA1XYZ, ZS6AA (entity centre), OH1AA, DL1XYZ; [most_wanted]: JA1XYZ, VK2ABC, then the rest by SNR; [most_wanted, distance] the same for the listed, then by distance; band unknown: no candidate for new [call] per band; worked since today: OH1AA not needed by new [call] per band, W1AW (not in that log) a caller that passes, first; the exact tie of SNR and frequency ordered by call; Calling stations are answered on: W1AW first; off: W1AW has no rank (CL-097-03); the empty list: SNR order; W1AW ranks only where it passes the filters and fails them in the step failing every filter line (TC-097-007); the reasons name the needed whats; sequence (decode order) never changes an order. Red on the parent: the criteria do not exist.
-             2 — Isolated automated tests; Windows development PC. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        objective {
-            verify 'CL-039-02';
-        }
-        attribute executable : String = "server/src/strategy_tests.rs";
-    }
-    dependency CL_039_02_verified_by_TC_039_040 from 'CL-039-02' to 'TC-039-040';
     // TC-039-041 retired: its schema 2 and schema 3 store cases are TC-097-002's and its built-ins
     // TC-097-003's. The identity is not reused.
+    @RetiredCase { identity = "TC-039-041"; supersededBy = "TC-097-002; TC-097-003"; }
     verification 'TC-039-042' {
         doc /* TC-039-042 — The Auto toggle
              CL-039-22, CL-039-05
@@ -957,7 +842,6 @@ package WstxContact {
             verify 'CL-039-23';
         }
     }
-    dependency CL_039_02_verified_by_TC_039_047 from 'CL-039-02' to 'TC-039-047';
     dependency CL_039_09_verified_by_TC_039_047 from 'CL-039-09' to 'TC-039-047';
     dependency CL_039_20_verified_by_TC_039_047 from 'CL-039-20' to 'TC-039-047';
     dependency CL_039_22_verified_by_TC_039_047 from 'CL-039-22' to 'TC-039-047';
@@ -1030,13 +914,6 @@ package WstxContact {
     dependency CL_039_08_verified_by_TC_039_051 from 'CL-039-08' to 'TC-039-051';
     dependency CL_039_09_verified_by_TC_039_051 from 'CL-039-09' to 'TC-039-051';
     dependency CL_039_22_verified_by_TC_039_051 from 'CL-039-22' to 'TC-039-051';
-    requirement 'CL-042-01' {
-        doc /* What must be new reads the sender's cty.dat entity (#55) against the internal log: new [dxcc] per ever, band and band_mode, and new [cq_zone] per ever (WstxStrategy::NewNeeded); a sender without an entity, an unknown station band (for band and band_mode) or an unreadable log never counts as new. The editor offers them in decision 2; the live preview names why. Details: WstxStrategy::NewNeeded. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/dxcc.rs; server/src/logbook.rs; client/contact.js";
-    }
-    dependency CL_042_01_to_FR_007 from 'CL-042-01' to 'FR-007';
-    dependency CL_042_01_to_FR_011 from 'CL-042-01' to 'FR-011';
     verification 'TC-042-001' {
         doc /* TC-042-001 — New DXCC and CQ zone against a hand log
              CL-042-01
@@ -1047,32 +924,24 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-01';
+            verify 'CL-042-05';
         }
         attribute executable : String = "server/src/strategy_tests.rs; tests/ui-operating.test.cjs";
     }
-    dependency CL_042_01_verified_by_TC_042_001 from 'CL-042-01' to 'TC-042-001';
-    requirement 'CL-042-02' {
-        doc /* Two-tier ignore lists govern the strategy: a permanent list of calls (Settings > General, saved in the strategy configuration) and a session list in station memory (Band Activity right-click "Ignore <call>" / "Stop ignoring <call>", POST /strategy/ignore), whose entries end after the configured minutes (1..720, default 30) and which the station empties on any change of the station band. An ignored sender (exact call) is never a candidate or a caller: it gets no mark and a run never selects it; a contact already in progress and a manual Reply or Select are not changed. A saved configuration from before the lists reads with empty lists and 30 minutes. Details: WstxRankingControl::IgnoreLists. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js; client/recording.css";
-    }
-    dependency CL_042_02_to_FR_007 from 'CL-042-02' to 'FR-007';
-    dependency CL_042_02_to_FR_010 from 'CL-042-02' to 'FR-010';
-    dependency CL_042_02_to_FR_020 from 'CL-042-02' to 'FR-020';
     verification 'TC-042-002' {
         doc /* TC-042-002 — Ignore lists in the evaluator, the store, the routes and strategy runs
              CL-042-02
              Setup: hand-authored rows CQ K1ABC FN42, CQ DL1XYZ JO62, CQ NA W1AW FN31, HB9BLA VK2ABC QF56; the station HB9BLA JN47AA on 40m; the actual station router, contact engine and #9 transmit owner on the recording hardware double (virtual UTC; no audio, PTT or radio); synthetic monotonic instants for the session expiry.
-             Steps: parse the configuration with ignore_calls and session_ignore_minutes and refuse a duplicate, a lower-case or a 14-character call, 101 calls, minutes 0 and 721; read a saved pre-#42 file without both keys and with only one of them; evaluate a new_call strategy with K1ABC on the permanent list, on the session list and on both, and with W1AW (greyed) ignored; the session list: add, renew, remove, expiry at the minute boundary, 65 adds, a band change and a band unknown; POST /strategy/ignore accepted and refused (extra key, bad call, wrong profile, stale boot), GET /strategy session_ignore; the station tick on another band; a strategy run with the strongest candidate ignored, and with an ignored caller.
+             Steps: parse the configuration with ignore_calls and session_ignore_minutes and refuse a duplicate, a lower-case or a 14-character entry, an entry of only *, 101 entries, minutes 0 and 721; read a saved pre-#42 file without both keys and with only one of them; evaluate a new_call strategy with K1ABC on the permanent list, on the session list and on both, and with W1AW (greyed) ignored; the session list: add, renew, remove, expiry at the minute boundary, 65 adds, a band change and a band unknown; POST /strategy/ignore accepted and refused (extra key, bad entry, wrong profile, stale boot), GET /strategy session_ignore; the station tick on another band; a strategy run with the strongest candidate ignored, and with an ignored caller.
              Expected: the round trip keeps both keys; the refusals name ignore_calls[i], ignore_calls and session_ignore_minutes; the pre-#42 file reads with [] and 30, the one-key file is invalid_configuration; K1ABC rank null, grey false, why "K1ABC is ignored (permanent list)", "(session list)", session first when on both; W1AW also not greyed when ignored; an entry ends exactly at added + minutes and reports remaining_s rounded up; renewal moves it last with a new expiry; the 65th add drops the oldest; a band change (also to unknown) empties the list; the route returns the snapshot at an unchanged revision with the refusal codes and fields of PUT /strategy; a run selects the next candidate, never the ignored one, and the other caller, never the ignored one; no transmit key in any evaluation.
              2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-02';
+            verify 'CL-042-06';
         }
         attribute executable : String = "server/src/strategy_tests.rs";
     }
-    dependency CL_042_02_verified_by_TC_042_002 from 'CL-042-02' to 'TC-042-002';
     verification 'TC-042-003' {
         doc /* TC-042-003 — Band Activity Ignore and the Settings ignore lists
              CL-042-02
@@ -1083,10 +952,24 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-02';
+            verify 'CL-042-06';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
-    dependency CL_042_02_verified_by_TC_042_003 from 'CL-042-02' to 'TC-042-003';
+    verification 'TC-125-002' {
+        doc /* TC-125-002 — Pattern entries in the Settings ignore lists
+             CL-042-02, CL-042-06
+             Setup: the browser fixture of the operating screen with the actual isolated station and its fixture live decodes; a strategy active; the rows CQ BY1AA OM89 and CQ DL1XYZ JO62.
+             Steps: open Settings > General; enter the entries BY* and star-slash-MM (a * and then /MM) in the permanent list and leave the field; enter JA* in the session add field; close Settings; right-click the BY1AA row; open Settings again and remove the session entry JA*.
+             Expected: the permanent list saves with PUT /strategy as ignore_calls with the two entries in upper case, in the order entered; the BY1AA row loses its strategy mark after the station's new verdicts; the add field sends POST /strategy/ignore {call "JA*", ignore true}, is empty afterwards, and the session list shows JA* with its remaining minutes; the row menu of the BY1AA row offers Reply, Select, Set Rx here, "Pounce BY1AA" and "Ignore BY1AA" and no "Stop ignoring"; remove sends ignore false for JA* and the list is empty; no page errors.
+             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+        attribute automation : AutomationState = AutomationState::implemented;
+        objective {
+            verify 'CL-042-02';
+            verify 'CL-042-06';
+        }
+        attribute executable : String = "tests/ui-operating.test.cjs";
+    }
     requirement 'CL-042-03' {
         doc /* Pounce waits for one chosen call and answers it: an operator action (Band Activity right-click "Pounce <call>") starts a station automation run with pounce <call> on the current band and mode (one run at a time, so never beside a strategy run, and needing a known band); when that call is decoded sending a CQ that the directed-CQ rule leaves to me, or an RR73/73 ending another QSO (then my Tx frequency is held), and it is on no ignore list, the station answers it as a double-click does (select_row, enable_tx; the contact engine calls in the next own period and Auto Seq runs the QSO). The pounce ends when that contact completes, on a station band change (band_changed), on HALT, the Tx watchdog or the operator's Stop pounce; a contact without an answer for max_unanswered_periods partner periods is cancelled and the pounce waits again. While it runs the QSO pane and the strategy element show it. Details: WstxStrategy::Pounce, WstxMcp::AutomationConfiguration, OperatingAutomation. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -1122,13 +1005,6 @@ package WstxContact {
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_042_03_verified_by_TC_042_005 from 'CL-042-03' to 'TC-042-005';
-    requirement 'CL-042-04' {
-        doc /* Alert has no setting: for each new candidate of the active strategy (an ignored sender, a directed CQ not for me and a caller of my call never alert), the station records an alert (time, call, message, strategy name, band, mode, SNR, DXCC entity) in a history of the last 100 alerts in station memory (kept across page reloads, empty after a station restart), at most one per call and band in 10 minutes, and announces it to the browser; the browser plays a short sound and/or shows a browser notification as the operator chose in Settings > General (both off by default; the notification permission is asked only on the operator's click; no sound while the page is hidden), and lists the history with a Clear. An alert never transmits or changes a contact or automation run. An MCP client may read the history (wstx_read alerts), not clear it. Details: WstxRankingControl::Alert; WstxMcpInterface::ToolCatalog. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/strategy.rs; server/src/contact_http.rs; server/src/main.rs; server/src/mcp.rs; client/contact.js";
-    }
-    dependency CL_042_04_to_FR_007 from 'CL-042-04' to 'FR-007';
-    dependency CL_042_04_to_FR_020 from 'CL-042-04' to 'FR-020';
     verification 'TC-042-006' {
         doc /* TC-042-006 — Alert at the station: candidates, dedupe, ignore and directed-CQ rule, history and routes
              CL-042-04
@@ -1139,10 +1015,10 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-04';
+            verify 'CL-042-07';
         }
         attribute executable : String = "server/src/strategy_tests.rs";
     }
-    dependency CL_042_04_verified_by_TC_042_006 from 'CL-042-04' to 'TC-042-006';
     verification 'TC-042-007' {
         doc /* TC-042-007 — The Settings alert history, sound and browser notification
              CL-042-04
@@ -1153,10 +1029,10 @@ package WstxContact {
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-042-04';
+            verify 'CL-042-07';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
-    dependency CL_042_04_verified_by_TC_042_007 from 'CL-042-04' to 'TC-042-007';
     verification 'TC-039-001' {
         doc /* TC-039-001 — Strategy configuration is exact
              CL-039-01
@@ -1182,11 +1058,10 @@ package WstxContact {
         objective {
             verify 'CL-039-02';
             verify 'CL-039-03';
+            verify 'CL-039-24';
         }
         attribute executable : String = "server/src/strategy_tests.rs; tests/contact.test.cjs";
     }
-    dependency CL_039_02_verified_by_TC_039_002 from 'CL-039-02' to 'TC-039-002';
-    dependency CL_039_03_verified_by_TC_039_002 from 'CL-039-03' to 'TC-039-002';
     verification 'TC-039-003' {
         doc /* TC-039-003 — Strategy store, routes and evaluation
              CL-039-01, CL-039-02, CL-039-03
@@ -1203,8 +1078,6 @@ package WstxContact {
         attribute executable : String = "server/src/strategy_tests.rs";
     }
     dependency CL_039_01_verified_by_TC_039_003 from 'CL-039-01' to 'TC-039-003';
-    dependency CL_039_02_verified_by_TC_039_003 from 'CL-039-02' to 'TC-039-003';
-    dependency CL_039_03_verified_by_TC_039_003 from 'CL-039-03' to 'TC-039-003';
     verification 'TC-039-004' {
         doc /* TC-039-004 — Strategy runs
              CL-039-03, CL-039-05
@@ -1217,10 +1090,10 @@ package WstxContact {
         objective {
             verify 'CL-039-03';
             verify 'CL-039-05';
+            verify 'CL-039-24';
         }
         attribute executable : String = "server/src/strategy_tests.rs";
     }
-    dependency CL_039_03_verified_by_TC_039_004 from 'CL-039-03' to 'TC-039-004';
     dependency CL_039_05_verified_by_TC_039_004 from 'CL-039-05' to 'TC-039-004';
     verification 'TC-039-006' {
         doc /* TC-039-006 — Strategy selector, value marks, editor popup and Most Wanted in the browser
@@ -1235,12 +1108,12 @@ package WstxContact {
             verify 'CL-039-04';
             verify 'CL-039-05';
             verify 'CL-039-10';
+            verify 'CL-039-25';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_039_01_verified_by_TC_039_006 from 'CL-039-01' to 'TC-039-006';
     dependency CL_039_05_verified_by_TC_039_006 from 'CL-039-05' to 'TC-039-006';
-    dependency CL_039_10_verified_by_TC_039_006 from 'CL-039-10' to 'TC-039-006';
     verification 'TC-039-007' {
         doc /* TC-039-007 — Live strategy on HB9BLA
              CL-039-03, CL-039-04, CL-039-05, CL-039-06
@@ -1254,12 +1127,12 @@ package WstxContact {
             verify 'CL-039-04';
             verify 'CL-039-05';
             verify 'CL-039-06';
+            verify 'CL-039-25';
         }
     }
-    dependency CL_039_03_verified_by_TC_039_007 from 'CL-039-03' to 'TC-039-007';
     dependency CL_039_05_verified_by_TC_039_007 from 'CL-039-05' to 'TC-039-007';
     requirement 'CL-055-02' {
-        doc /* Each decoded record of a resolved sender carries its entity (shown name, continent, CQ and ITU zone, entity distance) and the WSJT-X new-* flags that hold against the internal log (new call, grid, DXCC, continent, CQ zone and ITU zone, each ever and on this band), only the true ones, for the #50 row colours. Band Activity's DXCC column shows the shown name; Distance uses the message grid and otherwise the entity distance marked approximate; the QSO pane header shows the partner's country and continent. The strategy's continent condition and the directed-CQ rule use the sender's entity (WstxStrategy::ContinentOfCall). Details: WstxLogControl::DecodedEntity; WstxOperatingLayout BandActivity. */
+        doc /* Each decoded record of a resolved sender carries its entity (shown name, continent, CQ and ITU zone, entity distance) and the WSJT-X new-* flags that hold against the internal log (new call, grid, DXCC, continent, CQ zone and ITU zone, each ever and on this band), only the true ones, for the #50 row colours. Band Activity's DXCC column shows the shown name; Distance uses the message grid and otherwise the entity distance marked approximate; the QSO pane header shows the partner's country and continent. The strategy's continent condition and the directed-CQ rule use the sender's entity (WstxValueOrder::ContinentOfCall). Details: WstxLogControl::DecodedEntity; WstxOperatingLayout BandActivity. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
         attribute implementation : String = "server/src/dxcc.rs; server/src/receive_http.rs; server/src/strategy.rs; server/src/decoder/payload.rs; client/recording.js; client/contact.js";
     }
@@ -1681,13 +1554,6 @@ package WstxContact {
     }
     dependency CL_063_03_to_FR_024 from 'CL-063-03' to 'FR-024';
     dependency CL_063_03_to_FR_019 from 'CL-063-03' to 'FR-019';
-    requirement 'CL-063-04' {
-        doc /* With a contest in force Band Activity lists only the stations that can be called (non-dupe in the period, directive allows it, a CQ or an RR73/73, on a band of the contest), ordered by callers of my call, new multiplier, QSO points, SNR, with the partner on top; a Show all toggle (off) shows the rest. Colour only for the callable, a new multiplier apart; a dupe and a directed CQ dimmed. The station evaluates, the browser renders after a publication, never on a timer. A contest also works by hand: every row stays selectable with Show all. Details: WstxOperatingChain::ContestVerdict, ContestValueOrder, ContestView. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; client/contact.js; client/recording.css";
-    }
-    dependency CL_063_04_to_FR_024 from 'CL-063-04' to 'FR-024';
-    dependency CL_063_04_to_FR_010 from 'CL-063-04' to 'FR-010';
     verification 'TC-063-005' {
         doc /* TC-063-005 \— The points and multiplier rules
              CL-063-03
@@ -1713,11 +1579,11 @@ package WstxContact {
         objective {
             verify 'CL-063-03';
             verify 'CL-063-04';
+            verify 'CL-063-08';
         }
         attribute executable : String = "server/src/contest_tests.rs::tc_063_006_only_the_period_counts_and_each_dupe_rule; server/src/contest_tests.rs::tc_063_006_verdicts_callable_by_value; server/src/contest_tests.rs::tc_063_006_a_field_day_exchange_to_my_call_is_a_caller";
     }
     dependency CL_063_03_verified_by_TC_063_006 from 'CL-063-03' to 'TC-063-006';
-    dependency CL_063_04_verified_by_TC_063_006 from 'CL-063-04' to 'TC-063-006';
     verification 'TC-063-007' {
         doc /* TC-063-007 \— The contest selection on the store and the evaluate route
              CL-063-03, CL-063-04
@@ -1729,11 +1595,11 @@ package WstxContact {
         objective {
             verify 'CL-063-03';
             verify 'CL-063-04';
+            verify 'CL-063-08';
         }
         attribute executable : String = "server/src/contest_tests.rs::tc_063_007_a_selection_is_parsed_exactly; server/src/strategy_tests.rs::tc_063_007_a_contest_selection_store_and_evaluation";
     }
     dependency CL_063_03_verified_by_TC_063_007 from 'CL-063-03' to 'TC-063-007';
-    dependency CL_063_04_verified_by_TC_063_007 from 'CL-063-04' to 'TC-063-007';
     verification 'TC-063-008' {
         doc /* TC-063-008 \— The contest prompt, the callable list and Show all in the browser
              CL-063-03, CL-063-04
@@ -1745,11 +1611,11 @@ package WstxContact {
         objective {
             verify 'CL-063-03';
             verify 'CL-063-04';
+            verify 'CL-063-08';
         }
         attribute executable : String = "tests/ui-operating.test.cjs";
     }
     dependency CL_063_03_verified_by_TC_063_008 from 'CL-063-03' to 'TC-063-008';
-    dependency CL_063_04_verified_by_TC_063_008 from 'CL-063-04' to 'TC-063-008';
     requirement 'CL-063-05' {
         doc /* With Auto on the run applies the contest strategy (CL-097-04, CL-097-07): it calls the most valuable callable station by the contest's rules, and with its CQ when idle calls CQ with the contest's message and answers the most valuable non-dupe caller (with Calling stations are answered on; new multiplier, QSO points, SNR), not the first decoded; a dupe caller is never answered and never ends a stay. Leaving follows CL-039-23 with the strategy's leave and retry pause. Where the rules forbid automatic operation the browser shows the clause as a warning when Auto is switched on and transmits only after the operator's confirmation, and the station refuses Auto on without it; where they are silent a short note. It waits while the activity, the band or the period do not fit the contest; a contest can still be operated by hand. Details: WstxAutoControl::ContestRun, AutomationClause, ContestSelection; WstxAutoControl::AutoToggle, LeaveRule. */
         attribute coverage : ImplementationState = ImplementationState::implemented;
@@ -1908,7 +1774,7 @@ package WstxContact {
     // 2026-11-09, re-scope 2026-11-12; takes over #84, #90, #91, #93, #94). Detailed contract in
     // WstxStrategy D19.
     requirement 'CL-097-01' {
-        doc /* (#97, operator grill 2026-11-09 and 2026-11-12) There are two classes (operator grill Q12): strategy (Filters and Order from the filter questions) and contest (from a contest, CL-097-07); a strategy's class is never switched. strategy.json schema 4 holds, per strategy and in this order: name, class, bands, filters, order, contest, callers_first, leave, tx_move_every {heard, not_heard, no_reports}, busy_pause, cq_when_idle, cq_wait_periods, retry_minutes; each refusal names its field path. A strategy is new only as a duplicate (built-in or saved), keeping its class and contest. The editor shows the settings as the nine numbered decisions: 1 band, 2 filters, 3 order, 4 "Calling stations are answered", 5 leaving a station, 6 Tx frequency, 7 busy pause, 8 "CQ when idle, after <n> periods with nothing callable", 9 retry pause. Saved files of schema 1, 2 and 3 are upgraded at their revision as WstxStrategies::StrategyConfiguration maps them (a schema 3 strategy key by key, with cq_wait_periods 2), and a saved strategy whose name collides with a built-in is renamed, never dropped, with the rename shown once. Built-ins: the five of the table of 2026-11-09, DXCC all, New DXCC on band, New DXCC (until logged, gone 10 min, most wanted then SNR, CQ when idle off), Casual (new call per band, SNR bucket then distance, after 4 calls or 8 if he hears us, CQ when idle on) and POTA/SOTA (only CQ POTA and CQ SOTA, new call per band since today, SNR bucket then distance, after 4 calls or 8 if he hears us, CQ when idle off), all of class strategy, all bands, region all, Calling stations are answered on, Tx stay/every call/every 2nd call, busy pause on, retry 10 min; plus one contest built-in per contest (CL-097-07); each with cq_wait_periods 2. "DXCC all" is first in the list; no built-in is called the default, and active is None at a station start. A strategy defines values only: it never selects, calls, answers, arms or transmits. The settings of decisions 5 to 9 take effect only through the part that starts QSOs: the run (CL-097-04) until #119, then Auto. Details: WstxStrategy::Strategy, StrategyClass, BuiltinStrategies, StrategyConfiguration, StrategyEditor, StrategySelector, StrategyHttp. */
+        doc /* (#97, operator grill 2026-11-09 and 2026-11-12) There are two classes (operator grill Q12): strategy (Filters and Order from the filter questions) and contest (from a contest, CL-097-07); a strategy's class is never switched. strategy.json schema 4 holds, per strategy and in this order: name, class, bands, filters, order, contest, callers_first, leave, tx_move_every {heard, not_heard, no_reports}, busy_pause, cq_when_idle, cq_wait_periods, retry_minutes; each refusal names its field path. A strategy is new only as a duplicate (built-in or saved), keeping its class and contest. The editor shows the settings as the nine numbered decisions: 1 band, 2 filters, 3 order, 4 "Calling stations are answered", 5 leaving a station, 6 Tx frequency, 7 busy pause, 8 "CQ when idle, after <n> periods with nothing callable", 9 retry pause. Saved files of schema 1, 2 and 3 are upgraded at their revision as WstxStrategies::StrategyConfiguration maps them (a schema 3 strategy key by key, with cq_wait_periods 2), and a saved strategy whose name collides with a built-in is renamed, never dropped, with the rename shown once. Built-ins: the five of the table of 2026-11-09, DXCC all, New DXCC on band, New DXCC (until logged, gone 10 min, most wanted then SNR, CQ when idle off), Casual (new call per band, SNR bucket then distance, after 4 calls or 8 if he hears us, CQ when idle on) and POTA/SOTA (only CQ POTA and CQ SOTA, new call per band since today, SNR bucket then distance, after 4 calls or 8 if he hears us, CQ when idle off), all of class strategy, all bands, region all, Calling stations are answered on, Tx stay/every call/every 2nd call, busy pause on, retry 10 min; plus one contest built-in per contest (CL-097-07); each with cq_wait_periods 2. "DXCC all" is first in the list; no built-in is called the default, and active is None at a station start. A strategy defines values only: it never selects, calls, answers, arms or transmits. The settings of decisions 5 to 9 take effect only through the part that starts QSOs: the run (CL-097-04) until #119, then Auto. Details: WstxStrategies::Strategy, StrategyClass, BuiltinStrategies, StrategyConfiguration, StrategyEditor, StrategySelector, StrategyHttp. */
         attribute implementation : String = "server/src/strategy.rs; client/contact.js";
         attribute coverage : ImplementationState = ImplementationState::partial;
     }
@@ -1930,14 +1796,14 @@ package WstxContact {
     dependency CL_097_06_to_FR_007 from 'CL-097-06' to 'FR-007';
     dependency CL_097_06_to_FR_008 from 'CL-097-06' to 'FR-008';
     requirement 'CL-097-07' {
-        doc /* (#97, interface to #98) A strategy of class contest names a contest id of the contest table, has order [], and has filters {countries, states, cq_targets}: the contest supplies its rules (dupes, points, multipliers, ranking) and the strategy its other settings. Each contest has a read-only contest built-in with leave contest style after 2 Tx changes, tx_move_every {0, 2, 2}, busy_pause off, cq_when_idle on, cq_wait_periods 2 and retry_minutes 10. The contest prompt offers the built-in and the saved contest strategies of that contest; the prompt's choice and period select it. There is no operation choice and no per-contest repetitions or retry pause: with cq_when_idle on the strategy's CQ when idle applies. Details: WstxContest D11, ContestSelection, ContestPrompt, ContestRun, ContestValueOrder; WstxStrategy::StrategyClass, BuiltinStrategies. */
+        doc /* (#97, interface to #98) A strategy of class contest names a contest id of the contest table, has order [], and has filters {countries, states, cq_targets}: the contest supplies its rules (dupes, points, multipliers, ranking) and the strategy its other settings. Each contest has a read-only contest built-in with leave contest style after 2 Tx changes, tx_move_every {0, 2, 2}, busy_pause off, cq_when_idle on, cq_wait_periods 2 and retry_minutes 10. The contest prompt offers the built-in and the saved contest strategies of that contest; the prompt's choice and period select it. There is no operation choice and no per-contest repetitions or retry pause: with cq_when_idle on the strategy's CQ when idle applies. Details: WstxContest D11, ContestSelection, ContestPrompt, ContestRun, ContestValueOrder; WstxStrategies::StrategyClass, BuiltinStrategies. */
         attribute implementation : String = "server/src/contest.rs; server/src/strategy.rs; server/src/automation.rs; client/contact.js";
         attribute coverage : ImplementationState = ImplementationState::partial;
     }
     dependency CL_097_07_to_FR_007 from 'CL-097-07' to 'FR-007';
     dependency CL_097_07_to_FR_020 from 'CL-097-07' to 'FR-020';
     requirement 'CL-097-08' {
-        doc /* (#97 decision 8, operator 2026-11-12) The CQ wait: cq_wait_periods is an integer 1..20, default 2, in every strategy of both classes; anything else, also a missing key, is refused at strategies[i].cq_wait_periods. With cq_when_idle on, the part that starts QSOs calls CQ only after this many consecutive fresh complete publications with nothing callable. Every period counts, in both parities: 2 is 30 s in FT8 and 15 s in FT4. The count starts at 0 at Auto on, after a QSO ends and after a leaving. With cq_when_idle off the value has no effect and is kept. Details: WstxStrategy::Strategy, CqWhenNoTarget, StrategyConfiguration, StrategyEditor. */
+        doc /* (#97 decision 8, operator 2026-11-12) The CQ wait: cq_wait_periods is an integer 1..20, default 2, in every strategy of both classes; anything else, also a missing key, is refused at strategies[i].cq_wait_periods. With cq_when_idle on, the part that starts QSOs calls CQ only after this many consecutive fresh complete publications with nothing callable. Every period counts, in both parities: 2 is 30 s in FT8 and 15 s in FT4. The count starts at 0 at Auto on, after a QSO ends and after a leaving. With cq_when_idle off the value has no effect and is kept. Details: WstxStrategies::Strategy, CqWhenNoTarget, StrategyConfiguration, StrategyEditor. */
         attribute implementation : String = "server/src/strategy.rs; server/src/automation.rs; client/contact.js";
         attribute coverage : ImplementationState = ImplementationState::partial;
     }
@@ -1946,7 +1812,7 @@ package WstxContact {
     verification 'TC-097-001' {
         doc /* TC-097-001 — Strategy schema 4 on the wire
              CL-097-01, CL-097-08
-             Setup: the actual station store and router on a disposable HTTPS profile; hand-written configurations; the expected acceptances and refusals written in the test from WstxStrategy::Strategy.
+             Setup: the actual station store and router on a disposable HTTPS profile; hand-written configurations; the expected acceptances and refusals written in the test from WstxStrategies::Strategy.
              Steps: PUT one strategy of each class with every key at its bounds (bands null and 32 bands; new with 1 and 7 whats; countries with 64 entries in each list, each {kind "prefix", value of 3 characters, bands null} except one entry with a 13-character prefix and one with 32 bands, states 51, cq_targets 32 of 8 characters; the test asserts the encoded body is below 32768 bytes; order with 16 criteria; each leave mode at its lower and upper bounds; tx_move_every 0 and 20; cq_wait_periods 1 and 20; retry_minutes 1 and 120); then one refusal each: cq_wait_periods 0, 21, "2", null and missing; band "11m", a repeated band, 33 bands; new [] and a repeated what; new_per "slot"; a country entry of kind "call", prefix "VK-9", a prefix of 14 characters, an entry with 33 bands, a country name not in the table, 65 entries; state "XX" and "PR", 52 states; a CQ target of 9 characters and "PO-TA", 33 CQ targets; an order with a repeat and with 17; leave calls 0 and 21, calls_heard below calls and 41, gone_minutes 0 and 61, tx_changes 0 and 21, mode "never"; tx_move_every -1, 21 and a missing case; retry_minutes 0 and 121; a contest strategy with order [most_wanted], with filters.new, with contest null and "unknown"; a class strategy with contest "ww_digi"; class "award" and "casual" (refused values); names "DXCC all" and "casual"; each schema 3 key (goals, needed, value, window, repetitions, quiet_minutes, cq_when_no_target) and builtin; a configuration whose body exceeds 32768 bytes.
              Expected: the first PUT accepted with revision + 1 and read back key for key; each refusal 400 invalid_request naming exactly its field path (strategies[0].bands[0], strategies[0].filters.countries.include[0].value, strategies[0].leave.calls_heard, strategies[0].cq_wait_periods for each CQ wait refusal, strategies[0].class, strategies[1].order, strategies[1].contest, strategies[0].name ...; strategy 0 of class strategy, 1 of class contest), nothing stored; the oversized body refused as every oversized body. Red on the parent: cq_wait_periods is refused as an extra key.
              2 — Isolated automated tests; Windows development PC, no radio. */
@@ -2137,7 +2003,7 @@ package WstxContact {
         doc /* TC-097-019 — The model carries no superseded wording
              CL-097-01, CL-097-02, CL-097-03, CL-097-07
              Setup: the files docs/sysml/*.sysml as read by the test; the patterns and scopes written in the test from lists A and B of #97.
-             Steps: (1) the doc bodies rewritten into settings or ranking text: WstxStrategy package doc lines D1, D2, D3, D15, D19 and the docs of StrategyClass, NewWhat, NewPer, ValueCriterion, Needed, LeaveMode, PskCase, Strategy, StrategyBands, CountryList, UsStateFilter, UsStateOf, CqTargetList, BuiltinStrategies, StrategyConfiguration, NewNeeded, CallerOfMyCall, Candidate, ValueOrder, Verdict, StrategyEditor; the WstxContest package doc before D1 and its lines D1 and D11, and the docs of ContestSelection, ContestPrompt, ContestValueOrder, ContestView; the docs of CL-039-01, CL-039-02, CL-039-04, CL-039-11, CL-042-01, CL-063-03; each searched for P1 (the run vocabulary: run, runs, StrategyRun, ManualIntervention, the search-and-pounce operation, pounce, policy run, select_row, enable_tx), P2 (a strategy or contest strategy that selects, calls, answers, leaves, arms, transmits or starts) and P3 (a replacement or target note, ignoring case), with the patterns of #97's TC-097-019 written in the test. (2) every file searched for the old setting vocabulary of #97's check 2 (the operation choice, the per-contest repetitions and quiet time, the CQ option and the goals of schema 3, the callers rule of D5 and the old callers label, the award class), except the refused-keys sentences of WstxStrategy::Strategy and WstxStrategies::ContestSelection, the upgrade text of WstxStrategies::StrategyConfiguration, TC-097-001 and TC-097-002. (3) every file searched for a #97 note or label (the issue number followed by a colon, with or without a parenthesis between).
+             Steps: (1) the doc bodies rewritten into settings or ranking text: WstxStrategy package doc lines D1, D2, D3, D15, D19 and the docs of StrategyClass, NewWhat, NewPer, ValueCriterion, Needed, LeaveMode, PskCase, Strategy, StrategyBands, CountryList, UsStateFilter, UsStateOf, CqTargetList, BuiltinStrategies, StrategyConfiguration, NewNeeded, CallerOfMyCall, Candidate, ValueOrder, Verdict, StrategyEditor; the WstxContest package doc before D1 and its lines D1 and D11, and the docs of ContestSelection, ContestPrompt, ContestValueOrder, ContestView; the docs of CL-039-01, CL-039-02, CL-039-04, CL-039-11, CL-042-01, CL-063-03; each searched for P1 (the run vocabulary: run, runs, StrategyRun, ManualIntervention, the search-and-pounce operation, pounce, policy run, select_row, enable_tx), P2 (a strategy or contest strategy that selects, calls, answers, leaves, arms, transmits or starts) and P3 (a replacement or target note, ignoring case), with the patterns of #97's TC-097-019 written in the test. (2) every file searched for the old setting vocabulary of #97's check 2 (the operation choice, the per-contest repetitions and quiet time, the CQ option and the goals of schema 3, the callers rule of D5 and the old callers label, the award class), except the refused-keys sentences of WstxStrategies::Strategy and WstxStrategies::ContestSelection, the upgrade text of WstxStrategies::StrategyConfiguration, TC-097-001 and TC-097-002. (3) every file searched for a #97 note or label (the issue number followed by a colon, with or without a parenthesis between).
              Expected: no match in any of the three searches; a failure names each hit as file:line and the matched text. Red on the parent: the hits of lists A and B (search 1 in WstxStrategy D1, D2, D19, CallerOfMyCall, CqTargetList, UsStateOf, Verdict, StrategyEditor, the WstxContest package doc and D11, ContestSelection, ContestPrompt, ContestView, CL-039-01, 02, 04, 11, CL-042-01, CL-063-03; search 2 in Strategy, Contest, Contact, ProductScope and Requirements; search 3 the #97 notes and labels).
              2 — Isolated automated test; Windows development PC; no browser, radio or RF. */
         attribute automation : AutomationState = AutomationState::implemented;
@@ -2151,4 +2017,160 @@ package WstxContact {
     }
     dependency CL_097_01_verified_by_TC_097_019 from 'CL-097-01' to 'TC-097-019';
     dependency CL_097_07_verified_by_TC_097_019 from 'CL-097-07' to 'TC-097-019';
+
+    attribute def DirectedCqSelection {
+        doc /* A CQ that is not answerable is never answered by a run or a pounce.
+             An operator's selection of such a row (double-click, Reply, Select, the other-calls
+             list) is refused directive_not_answerable (409 with error.reason = this text); the
+             browser shows it as a warning the operator can confirm, and only then sends
+             select_row again with the optional directive_confirmed true. The directive is
+             checked before contact_active, so during a contact a plain click (select_row
+             without replace) on such a row is refused this way too and offers nothing
+             (CL-037-05); a double-click warns. A command that is not the browser's (automation,
+             MCP, UDP) can never confirm it: its select_row is refused directive_not_answerable
+             also with directive_confirmed. The one exception (CqTargetList): a strategy run's
+             own select_row of a CQ whose directive word is on its active strategy's CQ target
+             include list passes, and that strategy's verdict of it is not grey.
+             A word on the include list of the CQ target line that DirectedCqRule does not
+             answer (POTA, SOTA, a number) is answerable for this strategy, never for the
+             operator's own selection, whose warning stays.
+             In a contest activity the activity's own word is answerable (ContestDirective): a
+             selection of it needs no directive_confirmed, and a word outside its activity keeps
+             the warning. */
+    }
+
+    requirement 'CL-039-24' {
+        doc /* A CQ that is not answerable is never answered by a run or pounce. An operator's
+             selection of it shows a warning the operator can confirm ("CQ NA — not for EU");
+             automation, MCP and UDP cannot confirm it. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/dxcc.rs; client/contact.js";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-039-24';
+    }
+    requirement 'CL-039-25' {
+        doc /* Settings shows "List from <date>" with its entries, unmapped numbers and source
+             attribution, and one button Update Most Wanted that fetches it once on the operator's
+             click; a failed download shows the reason in one line. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/most_wanted.rs; server/src/strategy.rs; client/contact.js";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-039-25';
+    }
+    requirement 'CL-042-05' {
+        doc /* The editor offers them in decision 2; the live preview names why. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/dxcc.rs; server/src/logbook.rs; client/contact.js";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-042-05';
+    }
+    #derivation connection {
+        end #original ::> 'FR-011';
+        end #derive ::> 'CL-042-05';
+    }
+    requirement 'CL-042-06' {
+        doc /* Settings > General edits the permanent list with entries of CL-042-02's form and
+             the session list with an add field for a call or a pattern and a remove control per
+             entry; the Band Activity right-click menu "Ignore <call>" / "Stop ignoring <call>"
+             adds the exact call to and removes it from the session list. A saved
+             configuration from before the lists reads with empty lists and 30 minutes. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/main.rs; client/contact.js; client/recording.css";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-042-06';
+    }
+    #derivation connection {
+        end #original ::> 'FR-010';
+        end #derive ::> 'CL-042-06';
+    }
+    #derivation connection {
+        end #original ::> 'FR-020';
+        end #derive ::> 'CL-042-06';
+    }
+    requirement 'CL-042-07' {
+        doc /* The browser plays a short sound and/or shows a browser notification as the
+             operator chose in Settings > General (both off by default; the notification
+             permission is asked only on the operator's click; no sound while the page is
+             hidden), and lists the history with a Clear. An MCP client may read the history
+             (wstx_read alerts), not clear it. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/contact_http.rs; server/src/main.rs; server/src/mcp.rs; client/contact.js";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-042-07';
+    }
+    #derivation connection {
+        end #original ::> 'FR-020';
+        end #derive ::> 'CL-042-07';
+    }
+    requirement 'CL-063-07' {
+        doc /* An operator's selection of such a CQ needs no confirmation; outside the matching
+             activity the CQ stays not answerable, with the warning of CL-039-24. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/contact_http.rs; server/src/contact.rs";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-024';
+        end #derive ::> 'CL-063-07';
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-063-07';
+    }
+    requirement 'CL-063-08' {
+        doc /* With a contest in force Band Activity lists only those stations; a Show all
+             toggle (off) shows the rest. Colour only for the callable, a new multiplier apart;
+             a dupe and a directed CQ dimmed. The browser renders after a publication, never on
+             a timer. A contest also works by hand: every row stays selectable with Show all. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/contest.rs; server/src/strategy.rs; client/contact.js; client/recording.css";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-024';
+        end #derive ::> 'CL-063-08';
+    }
+    #derivation connection {
+        end #original ::> 'FR-010';
+        end #derive ::> 'CL-063-08';
+    }
+    requirement 'CL-097-09' {
+        doc /* A CQ whose word is on the CQ target include list: Band Activity marks it without
+             strike-through; the operator's own selection of it keeps its warning. */
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/dxcc.rs; server/src/automation.rs";
+        }
+    }
+    #derivation connection {
+        end #original ::> 'FR-007';
+        end #derive ::> 'CL-097-09';
+    }
+    #derivation connection {
+        end #original ::> 'FR-011';
+        end #derive ::> 'CL-097-09';
+    }
+    dependency directedCqSelectionClause from DirectedCqSelection to 'CL-039-24';
 }

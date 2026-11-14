@@ -91,7 +91,7 @@ package WstxMcp {
              max_run_minutes, optional (absent: 120; D7), and strategy, optional boolean
              (absent or false; true is refused 409 operator_required strategy: a strategy
              run starts only by a browser's selection, D8), and pounce, optional (absent or null: no pounce; else one
-             call of 3..13 A-Z 0-9 / passing WstxStrategy::SaneCall, and
+             call of 3..13 A-Z 0-9 / passing WstxValueOrder::SaneCall, and
              not in blocked_calls, else invalid_request pounce; #42 WstxStrategy::Pounce);
              null is the unconfigured state; the snapshot always shows
              max_run_minutes, strategy and pounce. modes: nonempty unique subset of

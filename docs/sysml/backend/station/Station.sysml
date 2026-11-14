@@ -5,6 +5,14 @@ package WstxStationPart {
     private import WstxRadioControl::RadioControl;
     private import WstxRecordingTransfer::RecordingTransfer;
     private import WstxStationCommands::StationOperations;
+    private import WstxStationCommands::StationStatusPort;
+    private import WstxReceiveControl::ReceiveControlPort;
+    private import WstxTransmitControl::TransmitControlPort;
+    private import WstxQsoControl::QsoControlPort;
+    private import WstxRankingControl::RankingControlPort;
+    private import WstxAutoControl::AutoControlPort;
+    private import WstxLogControl::LogControlPort;
+    private import WstxPeriodTiming::ClockStatusPort;
     part def StationService {
         attribute currentOperatingSelection : WstxOperatingReceive::WireSelection;
         attribute resolvedOperatingSelection : WstxOperatingReceive::Selection[0..1];
@@ -40,9 +48,14 @@ package WstxStationPart {
         port webOperations : ~StationOperations;
         port mcpOperations : ~StationOperations;
         port profile : ProfileAccess;
-        port receive : StationOperations;
-        port transmit : StationOperations;
-        port qso : StationOperations;
+        port receive : ReceiveControlPort;
+        port transmit : TransmitControlPort;
+        port qso : QsoControlPort;
+        port ranking : RankingControlPort;
+        port auto : AutoControlPort;
+        port log : LogControlPort;
+        port udp : StationStatusPort;
+        port clock : ~ClockStatusPort;
         port control : RadioControl;
         port upload : ~RecordingTransfer;
         port acceptedRecording : RecordingTransfer;

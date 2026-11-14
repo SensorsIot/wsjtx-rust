@@ -5,8 +5,8 @@
 //! never evaluates a strategy itself. Routes: GET /strategy (StrategySnapshot), PUT
 //! /strategy (configuration; a changed selection ends a run and, while Auto is on, starts
 //! the new one), POST /strategy/auto (WstxAutoControl::AutoToggle), POST /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
-//! /strategy/alerts/clear (WstxRankingControl::Alert), POST /strategy/most-wanted/download
-//! (WstxRankingControl::MostWantedList), GET /strategy/contests (WstxStrategies::ContestHttp).
+//! /strategy/alerts/clear (WstxStationLink::AlertWire), POST /strategy/most-wanted/download
+//! (WstxStationLink::MostWantedListWire), GET /strategy/contests (WstxStrategies::ContestHttp).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
@@ -35,7 +35,7 @@ use crate::contact::Activity;
 pub use crate::dxcc::CONTINENTS;
 use crate::dxcc::{Category, Standing, Worked};
 
-/// WstxStrategy::StrategyClass (#97 D19), wire names "strategy" and "contest".
+/// WstxStrategies::StrategyClass (#97 D19), wire names "strategy" and "contest".
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Class {
     Strategy,
@@ -49,7 +49,7 @@ impl Class {
         }
     }
 }
-/// WstxStrategy::NewWhat, in wire order.
+/// WstxRankingControl::NewWhat, in wire order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum NewWhat {
     Dxcc,
@@ -74,7 +74,7 @@ impl NewWhat {
         WHATS.iter().find(|g| g.1 == self).map_or("", |g| g.0)
     }
 }
-/// WstxStrategy::NewPer, least specific first.
+/// WstxRankingControl::NewPer, least specific first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum NewPer {
     Ever,
@@ -91,7 +91,7 @@ impl NewPer {
         PERS.iter().find(|g| g.1 == self).map_or("", |g| g.0)
     }
 }
-/// WstxStrategy::ValueCriterion, the criteria of ValueOrder, wire names exactly.
+/// WstxRankingControl::ValueCriterion, the criteria of ValueOrder, wire names exactly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Criterion {
     MostWanted,
@@ -191,7 +191,7 @@ pub(crate) struct TxMoveEvery {
     pub not_heard: u64,
     pub no_reports: u64,
 }
-/// One entry of WstxStrategy::CountryList.
+/// One entry of WstxRankingControl::CountryList.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CountryEntry {
     /// kind "country" (an entity name) or "prefix".
@@ -214,11 +214,11 @@ impl<T> Default for Lists<T> {
         }
     }
 }
-/// WstxStrategy::Strategy bounds of the lists and bands.
+/// WstxStrategies::Strategy bounds of the lists and bands.
 pub const COUNTRIES_MAX: usize = 64;
 pub const CQ_TARGETS_MAX: usize = 32;
 pub const BANDS_MAX: usize = 32;
-/// WstxStrategy::UsStateFilter: the 50 US states and DC.
+/// WstxRankingControl::UsStateFilter: the 50 US states and DC.
 pub const US_STATES: [&str; 51] = [
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
     "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM",
@@ -251,7 +251,7 @@ pub(crate) enum Window {
     Today,
     FromTo(u32, u32),
 }
-/// WstxStrategy::Strategy (#97 D19, schema 4): the nine decisions of one strategy. A contest
+/// WstxStrategies::Strategy (#97 D19, schema 4): the nine decisions of one strategy. A contest
 /// strategy (class contest) uses only the three lists of its filters; the other filter fields
 /// keep their base values and are never read for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -273,7 +273,7 @@ pub(crate) struct Strategy {
     pub cq_targets: Lists<String>,
     /// 3 Order (ValueOrder): 0..16 unique criteria; [] for a contest.
     pub order: Vec<Criterion>,
-    /// The contest id of a contest strategy (WstxContest::ProfileTable).
+    /// The contest id of a contest strategy (WstxStrategies::ProfileTable).
     pub contest: Option<&'static str>,
     /// 4 Calling stations are answered (off: a caller of my call has no rank, CL-097-03).
     pub callers_first: bool,
@@ -398,7 +398,7 @@ pub(crate) struct Config {
     pub continent: Option<String>,
     pub active: Option<String>,
     pub strategies: Vec<Strategy>,
-    /// #42 the permanent ignore list (exact calls) and the session list expiry.
+    /// #42 the permanent ignore list (entries of CL-042-02's form) and the session list expiry.
     pub ignore_calls: Vec<String>,
     pub session_ignore_minutes: u64,
     /// #63 the contest in force (memory only, never with an active award strategy).
@@ -438,6 +438,49 @@ fn word(v: &Value, field: &str, max: usize, extra: &[u8]) -> Result<String, Fiel
         .map(str::to_owned)
         .ok_or(bad(field))
 }
+/// WstxIgnoreLists::CL-042-02 an entry of either ignore list: 1..13 characters of A-Z, 0-9, / and
+/// `*`, with at least one character other than `*` (an entry of only `*` would ignore every
+/// station).
+fn ignore_entry(v: &Value, field: &str) -> Result<String, Field> {
+    let entry = word(v, field, 13, b"/*")?;
+    if entry.bytes().all(|b| b == b'*') {
+        return Err(bad(field));
+    }
+    Ok(entry)
+}
+/// CL-042-02 an entry matches a call when it matches the whole call: `*` stands for any run of
+/// characters (the empty run included) anywhere and any number of times; every other character
+/// matches itself.
+pub(crate) fn entry_matches(entry: &str, call: &str) -> bool {
+    let (p, s) = (entry.as_bytes(), call.as_bytes());
+    let (mut pi, mut si) = (0, 0);
+    // The last `*` seen and the call position its run currently ends at.
+    let mut star: Option<(usize, usize)> = None;
+    while si < s.len() {
+        if pi < p.len() && p[pi] == b'*' {
+            star = Some((pi, si));
+            pi += 1;
+        } else if pi < p.len() && p[pi] == s[si] {
+            pi += 1;
+            si += 1;
+        } else if let Some((sp, ss)) = star {
+            pi = sp + 1;
+            si = ss + 1;
+            star = Some((sp, ss + 1));
+        } else {
+            return false;
+        }
+    }
+    p[pi..].iter().all(|&b| b == b'*')
+}
+/// CL-042-02 why text of an ignored sender: the list, and the entry when it is a pattern.
+pub(crate) fn ignore_why(call: &str, tier: Tier, entry: &str) -> String {
+    if entry.contains('*') {
+        format!("{call} is ignored ({} list: {entry})", tier.name())
+    } else {
+        format!("{call} is ignored ({} list)", tier.name())
+    }
+}
 fn bounded(v: &Value, field: &str, lo: u64, hi: u64) -> Result<u64, Field> {
     v.as_u64()
         .filter(|n| (lo..=hi).contains(n))
@@ -468,7 +511,7 @@ fn date_text(d: u32) -> String {
 }
 /// CL-097-08: the CQ wait of every built-in, and of a schema 4 file written without the key.
 pub(crate) const CQ_WAIT_DEFAULT: u64 = 2;
-/// The exact keys of WstxStrategy::Strategy (schema 4), in the order of the decisions.
+/// The exact keys of WstxStrategies::Strategy (schema 4), in the order of the decisions.
 const STRATEGY_KEYS: [&str; 13] = [
     "name",
     "class",
@@ -884,7 +927,7 @@ pub(crate) fn parse_config(v: &Value, table: Option<&crate::dxcc::Table>) -> Res
     let mut ignore_calls: Vec<String> = Vec::new();
     for (i, c) in calls.iter().enumerate() {
         let field = format!("ignore_calls[{i}]");
-        let c = word(c, &field, 13, b"/")?;
+        let c = ignore_entry(c, &field)?;
         if ignore_calls.contains(&c) {
             return Err(bad(field));
         }
@@ -1165,7 +1208,7 @@ impl Config {
     pub(crate) fn automatic_contest(&self) -> Option<crate::contest::Selection> {
         self.contest
     }
-    /// A contest whose WstxContest::AutomationClause is forbidden: Auto on needs the confirmation.
+    /// A contest whose WstxStrategies::AutomationClause is forbidden: Auto on needs the confirmation.
     pub(crate) fn forbidden_contest(&self) -> bool {
         self.contest
             .is_some_and(|c| c.profile.automation == crate::contest::AutomationClause::Forbidden)
@@ -1243,7 +1286,7 @@ fn haversine_km(a: (f64, f64), b: (f64, f64)) -> f64 {
     let h = ((la2 - la1) / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dl / 2.0).sin().powi(2);
     12_742.0 * h.sqrt().min(1.0).asin()
 }
-/// WstxStrategy::StationDistance: whole km (truncated) from the centre of the profile locator
+/// WstxValueOrder::StationDistance: whole km (truncated) from the centre of the profile locator
 /// to the centre of the 4-character grid in the message, else to the sender's cty.dat entity
 /// centre (the entity distance of DecodedEntity). None without a profile locator, or without
 /// grid and entity.
@@ -1340,7 +1383,7 @@ struct SessionEntry {
     band: Option<String>,
     until: Instant,
 }
-/// #42 WstxRankingControl::IgnoreLists session list: station memory only, at most 64 entries in
+/// #42 WstxIgnoreLists::IgnoreListsRule session list: station memory only, at most 64 entries in
 /// the order added, each ending at its expiry; any change of the observed station band
 /// empties it.
 #[derive(Clone, Debug, Default)]
@@ -1365,7 +1408,9 @@ impl Session {
     pub(crate) fn remove(&mut self, call: &str) {
         self.entries.retain(|e| e.call != call);
     }
-    /// The station band now: a change from the band seen last empties the list.
+    /// The station band now: a change from the band seen last empties the list. The station's
+    /// contact step calls it every 50 ms, whether or not a browser is connected, so the list is
+    /// empty before the next evaluation or run step on the new band.
     pub(crate) fn observe_band(&mut self, band: Option<&str>) {
         let band = band.map(str::to_owned);
         if self.seen.as_ref().is_some_and(|seen| *seen != band) {
@@ -1386,7 +1431,7 @@ impl Session {
             .collect()
     }
 }
-/// WstxStrategy::DirectedCqRule, the one directive rule of strategies and the operator:
+/// WstxValueOrder::DirectedCqRule, the one directive rule of strategies and the operator:
 /// a plain CQ, CQ <my continent> or CQ DX from another known continent. Every other
 /// directive excludes me.
 pub(crate) fn answerable(target: Option<&str>, mine: Option<&str>, sender: Option<&str>) -> bool {
@@ -1452,6 +1497,27 @@ pub(crate) fn run_admits(state: &ProfileState, record: &Value) -> bool {
         .is_some_and(|s| f.cq && included_target(&s, f.target.as_deref()))
 }
 impl Station {
+    /// CL-042-02 the list and the entry that ignore `call`: the session list before the permanent
+    /// list; in one list the exact entry, else the alphabetically smallest matching pattern.
+    pub(crate) fn ignored_by(&self, call: &str) -> Option<(Tier, &str)> {
+        [Tier::Session, Tier::Permanent]
+            .into_iter()
+            .find_map(|tier| {
+                if let Some((entry, t)) = self.ignored.get_key_value(call)
+                    && *t == tier
+                {
+                    return Some((tier, entry.as_str()));
+                }
+                self.ignored
+                    .iter()
+                    .filter(|(entry, t)| {
+                        **t == tier && entry.contains('*') && entry_matches(entry, call)
+                    })
+                    .map(|(entry, _)| entry.as_str())
+                    .min()
+                    .map(|entry| (tier, entry))
+            })
+    }
     /// A CQ, or with treat_73_as_cq an RR73/73 that ends someone else's QSO.
     pub(crate) fn cq_like(&self, f: &Facts, treat_73_as_cq: bool) -> bool {
         f.cq || (treat_73_as_cq
@@ -1474,7 +1540,7 @@ impl Station {
             self.my_continent.as_deref(),
         )
     }
-    /// WstxStrategy::CallerOfMyCall, before the ignore check.
+    /// WstxValueOrder::CallerOfMyCall, before the ignore check.
     pub(crate) fn calls_me(&self, f: &Facts) -> bool {
         f.to_call.as_deref() == Some(self.my_call.as_str()) && !f.signoff
     }
@@ -1490,7 +1556,7 @@ impl Station {
             Region::Selected(list) => theirs.is_some_and(|t| list.iter().any(|c| c == t)),
         }
     }
-    /// WstxStrategy::NewNeeded: whether `what` is new for the sender per `per`, with the
+    /// WstxValueOrder::NewNeeded: whether `what` is new for the sender per `per`, with the
     /// strategy's new_means and the worked set of its window. False without the log, without
     /// an entity (the entity whats) and without a known band (per band and band_mode).
     pub(crate) fn new_needed(&self, s: &Strategy, what: NewWhat, per: NewPer, f: &Facts) -> bool {
@@ -1524,7 +1590,7 @@ impl Station {
             }
         }
     }
-    /// WstxStrategy::StrategyBands: why every verdict is unranked off the strategy's bands.
+    /// WstxValueOrder::StrategyBandsRule: why every verdict is unranked off the strategy's bands.
     fn off_band(&self, s: &Strategy) -> Option<&'static str> {
         let bands = s.bands.as_ref()?;
         match self.band.as_deref() {
@@ -1533,7 +1599,7 @@ impl Station {
             Some(_) => None,
         }
     }
-    /// WstxStrategy::UsStateOf: the message's exchange first, then the log.
+    /// WstxValueOrder::UsStateOf: the message's exchange first, then the log.
     fn us_state(&self, f: &Facts, from_messages: &HashMap<String, String>) -> Option<String> {
         let entity = self.dxcc.lookup(&f.from)?;
         if !crate::dxcc::US_ENTITIES.contains(&entity.name.as_str()) {
@@ -1643,7 +1709,7 @@ pub(crate) enum Kind {
     Caller,
     Candidate,
 }
-/// WstxStrategy::Verdict of one record.
+/// WstxValueOrder::VerdictRule of one record.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Verdict {
     pub facts: Facts,
@@ -1651,7 +1717,7 @@ pub(crate) struct Verdict {
     pub grey: bool,
     pub why: String,
     pub kind: Option<Kind>,
-    /// #63 what a contest adds (WstxOperatingChain::ContestVerdict).
+    /// #63 what a contest adds (WstxRankingControl::ContestVerdict).
     pub contest: Option<crate::contest::ContestValue>,
 }
 impl Verdict {
@@ -1697,12 +1763,8 @@ fn classify(
     st: &Station,
     states: &HashMap<String, String>,
 ) -> (Option<Kind>, bool, String) {
-    if let Some(tier) = st.ignored.get(&f.from) {
-        return (
-            None,
-            false,
-            format!("{} is ignored ({} list)", f.from, tier.name()),
-        );
+    if let Some((tier, entry)) = st.ignored_by(&f.from) {
+        return (None, false, ignore_why(&f.from, tier, entry));
     }
     if st.greyed(f) && !included_target(s, f.target.as_deref()) {
         let text = not_for_me(
@@ -1774,7 +1836,7 @@ fn classify(
         format!("new: {}{on}", new.join(", ")),
     )
 }
-/// WstxStrategy::ValueOrder of a ranked record, smaller first: with callers_first the callers
+/// WstxValueOrder::ValueOrder of a ranked record, smaller first: with callers_first the callers
 /// before the candidates; then the strategy's criteria in its order; then always the hidden
 /// SNR (stronger first, unknown last). The exact tie follows (exact_tie).
 fn value_key(s: &Strategy, v: &Verdict, st: &Station) -> Vec<(u8, f64)> {
@@ -1791,7 +1853,7 @@ fn key_cmp(a: &[(u8, f64)], b: &[(u8, f64)]) -> std::cmp::Ordering {
         .find(|o| o.is_ne())
         .unwrap_or(std::cmp::Ordering::Equal)
 }
-/// WstxStrategy::Verdict: one per decoded standard record with a resolved sender, in display
+/// WstxValueOrder::VerdictRule: one per decoded standard record with a resolved sender, in display
 /// order: rank (the position in ValueOrder) ascending, then the records without a rank in
 /// their order.
 pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Verdict> {
@@ -1830,7 +1892,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
     out.extend(rest);
     out
 }
-/// #97 a contest strategy's verdicts: the contest's (WstxOperatingChain::ContestVerdict, the contest's
+/// #97 a contest strategy's verdicts: the contest's (WstxContestRanking::ContestVerdictRule, the contest's
 /// rules first), then the strategy's bands and its country, US state and CQ target lists on top,
 /// ranked by ContestValueOrder with the strategy's callers_first.
 pub(crate) fn evaluate_contest(
@@ -1881,7 +1943,7 @@ pub(crate) fn sane_call(call: &str) -> bool {
         && call.bytes().any(|b| b.is_ascii_uppercase())
         && !call.ends_with("/R")
 }
-/// WstxStrategy::MyContinent: the configured one, else the cty.dat continent of my call,
+/// WstxValueOrder::MyContinent: the configured one, else the cty.dat continent of my call,
 /// else that of the entity nearest to my locator.
 pub(crate) fn my_continent(
     config: &Config,
@@ -1925,7 +1987,11 @@ fn window_dates(window: Window) -> Option<(u32, u32)> {
         Window::FromTo(first, last) => Some((first, last)),
     }
 }
-/// WstxRankingControl::WorkedWindow for the station step: never builds on it.
+/// WstxValueOrder::WorkedWindowRule for the station step: never builds on it. The worked set of a
+/// window is cached per (log revision, country table, first date, last date; today is its UTC
+/// date), at most 4 windows, so it is not rebuilt per evaluation. A rebuild takes about 100 ms
+/// with 26,902 QSOs (measured 2026-11-06, release build, two station steps), so it never runs on
+/// the station step: a set missing or behind the log is built on its own thread for a later step.
 pub(crate) fn worked_of(state: &ProfileState, window: Window) -> Option<std::sync::Arc<Worked>> {
     state.logbook.worked_latest(window_dates(window))
 }
@@ -2004,11 +2070,15 @@ fn contest_log(
 }
 
 // ------------------------------------------------------------------ alerts
-/// #42 WstxRankingControl::Alert: the station's alert history (memory only) with its live-job
+/// #42 WstxAlert::AlertRule: the station's alert history (memory only) with its live-job
 /// cursor and the dedupe memory (kept apart from the history: Clear keeps it).
 #[derive(Default)]
 struct AlertLog {
-    /// (live job identity, next sequence to read).
+    /// (live job identity, next sequence to read). The station's contact step (every 50 ms,
+    /// whether or not a browser is connected) reads the records of the current live job past the
+    /// cursor once each (a job not seen before from its first retained record); the cursor
+    /// advances also while no strategy is active, so a later selection never alerts on older
+    /// decodes.
     cursor: Option<((String, String, u64), u64)>,
     entries: std::collections::VecDeque<Value>,
     next_id: u64,
@@ -2074,7 +2144,7 @@ pub(crate) struct Owner {
     /// Counts each Auto on, so that the station step never turns off an Auto that was switched
     /// on after it looked at the run (auto_step).
     auto_epoch: std::sync::atomic::AtomicU64,
-    /// WstxRankingControl::MostWantedList: a leaf lock over the parsed list; the file is read
+    /// WstxMostWanted::MostWantedListRule: a leaf lock over the parsed list; the file is read
     /// off the station step (`most_wanted_load`), the step only clones the Arc.
     most_wanted: Mutex<MostWantedState>,
     /// Test seam: the reply of the next Download now in place of the HTTP fetch.
@@ -2414,7 +2484,7 @@ impl Owner {
             self.switch_auto(&mut inner, false);
         }
     }
-    /// #42 WstxRankingControl::Alert, once per station step: reads the live records past the
+    /// #42 WstxAlert::AlertRule, once per station step: reads the live records past the
     /// cursor once each and records an alert for each new candidate of the active strategy.
     /// Never transmits or changes a contact or run.
     pub(crate) fn alert_step(&self, state: &ProfileState) {
@@ -2565,8 +2635,7 @@ impl Owner {
     pub(crate) fn ignore(&self, state: &ProfileState, body: Value) -> Result<Value, Refusal> {
         let r = &state.recording;
         Self::envelope_shape(&body, &["call", "ignore"])?;
-        let call =
-            word(&body["call"], "call", 13, b"/").map_err(|f| ("invalid_request", Some(f)))?;
+        let call = ignore_entry(&body["call"], "call").map_err(|f| ("invalid_request", Some(f)))?;
         let on = body["ignore"]
             .as_bool()
             .ok_or(("invalid_request", Some("ignore".into())))?;
@@ -2616,7 +2685,7 @@ impl Owner {
             .config(state)
             .filter(Config::selected)
             .ok_or(("not_configured", Some("strategy".into())))?;
-        // WstxContest::AutomationClause: a warning the operator must confirm, never a block.
+        // WstxStrategies::AutomationClause: a warning the operator must confirm, never a block.
         if config.forbidden_contest() && !confirmation {
             return Err(("invalid_request", Some("automation_confirmed".into())));
         }
@@ -2785,7 +2854,7 @@ impl Owner {
             .config(state)
             .ok_or(("not_configured", Some("configuration".into())))?;
         self.most_wanted_load(state);
-        // WstxOperatingChain::ContestVerdict: a draft is a preview (a contest draft over the contest in
+        // WstxStationLink::ContestVerdictWire: a draft is a preview (a contest draft over the contest in
         // force, or its contest's period from now); else the active strategy.
         let chosen = match draft {
             Some(s) => s,

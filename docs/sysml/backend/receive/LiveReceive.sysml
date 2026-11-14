@@ -88,8 +88,8 @@ package WstxLiveReceive {
     action publishResults : PublishResults;
     satisfy WstxOperatingLayout::'CL-007-02' by publishResults;
     satisfy WstxLiveReceive::'CL-007-05' by liveWindowSchedule;
-    dependency publicationOwner from publishResults to WstxArchitecture::physicalStation::backend::stations::web;
-    dependency viewerOwner from publishResults to WstxArchitecture::physicalStation::frontend::browsers;
+    dependency publicationOwner from publishResults to WstxArchitecture::StationProcess::web;
+    dependency viewerOwner from publishResults to WstxArchitecture::Frontend::browsers;
     attribute def SourceTiming {
         attribute sourceId : String;
         attribute segment : Integer;
@@ -232,7 +232,7 @@ package WstxLiveReceive {
     action convertReceive : ConvertAndReceive;
     satisfy WstxLiveReceive::'CL-008-02' by convertReceive;
     satisfy WstxRecordingReceive::'CL-008-03' by convertReceive;
-    dependency conversionOwner from convertReceive to WstxArchitecture::physicalStation::backend::stations::receive;
+    dependency conversionOwner from convertReceive to WstxArchitecture::StationProcess::receive;
     requirement 'CL-007-01' {
         doc /* Explicit FT4/FT8 selection MUST process the immutable canonical 12 kHz live source through the existing receive-job authority. Independent recorded fixtures MUST exercise the same pure modem without a physical radio; no file-decoding product operation is provided. */
         attribute coverage : ImplementationState = ImplementationState::implemented;

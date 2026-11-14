@@ -3,6 +3,11 @@ package WstxRecordingTransfer {
     private import WstxReceiveControl::ErrorCode;
     private import WstxReceiveControl::JobView;
     port def RecordingTransfer { out item recording : Recording; }
+    interface def RecordingTransferLink {
+        doc /* An uploaded recording passed on after validation. */
+        end sender : RecordingTransfer;
+        end receiver : ~RecordingTransfer;
+    }
     item def Recording;
 
     attribute def RecordingLimits {

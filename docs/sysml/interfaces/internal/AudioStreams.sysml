@@ -6,9 +6,29 @@ package WstxAudioStreams {
         in item capture : SampleBlock;
         in item outcome : AudioOutcome;
     }
+    interface def AudioExchangeLink {
+        doc /* Capture and playback samples of the selected radio type. */
+        end producer : AudioExchange;
+        end consumer : ~AudioExchange;
+    }
+    port def CaptureSamples {
+        out item capture : SampleBlock;
+        out item outcome : AudioOutcome;
+    }
+    interface def CaptureSamplesLink {
+        doc /* The capture samples of a native radio session, joined to the audio function's
+             exchange. */
+        end audio : AudioExchange;
+        end session : CaptureSamples;
+    }
     port def ReceiveSamples {
         out item samples : SampleBlock;
         out item outcome : AudioOutcome;
+    }
+    interface def ReceiveSamplesLink {
+        doc /* Live samples, or a recording for replay, to the receive function. */
+        end source : ReceiveSamples;
+        end receive : ~ReceiveSamples;
     }
     item def SampleBlock {
         doc /* Immutable recorded and live samples feed the same receive boundary.

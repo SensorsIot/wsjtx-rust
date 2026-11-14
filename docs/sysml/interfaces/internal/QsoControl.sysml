@@ -1,5 +1,23 @@
 package WstxQsoControl {
     private import ScalarValues::*;
+    port def QsoControlPort {
+        out item command : QsoCommand;
+        in item 'state' : QsoState;
+    }
+    item def QsoCommand {
+        doc /* Auto Seq on or off, a target or message chosen by the operator or an agent,
+             Hold Tx, the contest exchange. */
+    }
+    item def QsoState { doc /* The QSO state. */ }
+    item def QsoProgress {
+        doc /* Answered, completed, repetition count, busy partner, refused or failed after
+             admission. */
+    }
+    interface def QsoControl {
+        doc /* The station service commands the qso function; qso reports its state. */
+        end station : QsoControlPort;
+        end qso : ~QsoControlPort;
+    }
     enum def ContactAction {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
         enum set_report; enum set_tx1_skip; enum set_tx4; enum set_frequency; enum set_hold_tx;
@@ -21,7 +39,7 @@ package WstxQsoControl {
              {v,profile_id,boot_id,command_id,contact_revision,action} (commandAction is the JSON key action) plus exactly the
              parameters of its action (all required, nullable where stated):
              select_row {row:{source_id,job_id,generation,sequence},replace} plus the optional
-             directive_confirmed boolean (WstxStrategy::DirectedCqRule; refused
+             directive_confirmed boolean (WstxContact::DirectedCqSelection; refused
              directive_not_answerable, 409 with error.reason in the browser's case);
              enter_dx {dx_call,dx_grid|null,replace}; cancel {};
              choose_next {slot:"tx1".."tx6"}; edit_message {slot,text};

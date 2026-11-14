@@ -2204,7 +2204,7 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: TC-039-030 (WstxRankingControl::WorkedWindow through the store): a QSO of this UTC date
+// Proves: TC-039-030 (WstxValueOrder::WorkedWindowRule through the store): a QSO of this UTC date
 // counts in today, not in a window that ended before.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
@@ -3156,7 +3156,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
 }
 
 // ------------------------------------------------------------------ #42 ignore lists
-// Proves: TC-042-002 (WstxRankingControl::IgnoreLists; the expected tiers, reasons, expiries
+// Proves: TC-042-002 (WstxIgnoreLists::IgnoreListsRule; the expected tiers, reasons, expiries
 // and selections are written here from the contract, not evaluator output).
 #[test]
 fn tc_042_002_ignore_configuration_is_exact() {
@@ -3574,6 +3574,349 @@ async fn tc_042_002_a_run_never_answers_an_ignored_caller() {
         e,
         &[
             ("HB9BLA K1ABC FN42", 1500.0, Some(9.0)),
+            ("HB9BLA DL1XYZ JO62", 1200.0, Some(-10.0)),
+        ],
+    );
+    assert_eq!(
+        contact(&f).await,
+        (json!("DL1XYZ"), json!("report"), json!("armed"))
+    );
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["last_decision"]["candidates"], json!(1));
+    assert_eq!(f.keys(), 0);
+}
+
+// ------------------------------------------------------------------ #125 ignore patterns
+/// A decoded CQ row of `sequence` whose sender is `call`, whatever its form (the compound
+/// calls of the table are nonstandard messages that cannot be packed, so the sender field is set).
+fn cq_row_from(sequence: u64, call: &str) -> Value {
+    let mut r = record(
+        "CQ K1ABC FN42",
+        1000.0 + sequence as f64 * 100.0,
+        Some(-10.0),
+    );
+    r["sequence"] = json!(sequence);
+    r["fields"]["from"]["text"] = json!(call);
+    r
+}
+
+// Proves: CL-042-02; TC-125-001 (a) validation of the permanent list. The accepted and refused
+// entries are written here from the rule: 1..13 of A-Z 0-9 / and *, one other than *.
+#[test]
+fn tc_125_001_permanent_list_entries_validate() {
+    let mut c = config(Some("Test calls"));
+    let accepted = json!(["*/MM", "BY*", "K*1ABC", "*K1ABC*", "*K1ABCDEFGHI*", "K1ABC"]);
+    c["ignore_calls"] = accepted.clone();
+    let ok = parse_config(&c, None).unwrap();
+    assert_eq!(json!(ok.ignore_calls), accepted);
+    assert_eq!(ok.json(), c, "round trip keeps the entries");
+    for (list, field) in [
+        (json!(["*"]), "ignore_calls[0]"),
+        (json!(["BY*", "**"]), "ignore_calls[1]"),
+        (json!(["***"]), "ignore_calls[0]"),
+        (json!(["k1abc*"]), "ignore_calls[0]"),
+        (json!(["K1ABCDEFGHIJK*"]), "ignore_calls[0]"),
+        (json!([""]), "ignore_calls[0]"),
+        (json!(["K1?BC"]), "ignore_calls[0]"),
+        (json!(["BY*", "K1ABC", "BY*"]), "ignore_calls[2]"),
+    ] {
+        let mut bad = c.clone();
+        bad["ignore_calls"] = list.clone();
+        assert_eq!(parse_config(&bad, None), Err(field.to_owned()), "{list}");
+    }
+    // A stored schema 4 file with exact entries reads unchanged (guard, green on both).
+    let c4 = json!({"continent":null,"active":null,"strategies":[],
+        "ignore_calls":["K1ABC","VK2ABC/P"],"session_ignore_minutes":30});
+    assert_eq!(parse_config(&c4, None).unwrap().json(), c4);
+}
+
+// Proves: CL-042-02; TC-125-001 (b), (c), (d) matching of an entry against the whole resolved
+// call, by the hand table below, and the why text naming a pattern entry.
+#[test]
+fn tc_125_001_entries_match_the_whole_call() {
+    // (entry, call, matches)
+    let table = [
+        ("*/MM", "DL1ABC/MM", true),
+        ("*/MM", "DL1ABC/M", false),
+        ("BY*", "BY1AA", true),
+        ("BY*", "BYA1B", true),
+        ("BY*", "ABY1A", false),
+        ("*K1ABC*", "K1ABC", true),
+        ("*K1ABC*", "K1ABC/P", true),
+        ("K1ABC", "K1ABC", true),
+        ("K1ABC", "K1ABC/P", false),
+        ("K1ABC", "AK1ABC", false),
+        ("K*1ABC", "K1ABC", true),
+        ("K*1ABC", "KW1ABC", true),
+        ("K*1ABC", "K1ABD", false),
+        ("A*B*C", "AXBYC", true),
+        ("A*B*C", "ACB", false),
+        ("EA8/*", "EA8/DL1ABC", true),
+        ("*/DL1ABC", "EA8/DL1ABC", true),
+        ("DL1*", "EA8/DL1ABC", false),
+    ];
+    let s = award(&[Goal::NewCall]);
+    for (entry, call, expected) in table {
+        for tier in [Tier::Permanent, Tier::Session] {
+            let mut st = me();
+            st.ignored.insert(entry.to_owned(), tier);
+            let v = evaluate(&s, &[cq_row_from(0, call)], &st);
+            let ignored = v[0].rank.is_none() && v[0].why.contains("is ignored");
+            assert_eq!(ignored, expected, "{entry} against {call} ({tier:?})");
+        }
+    }
+    // (d) The why text names a pattern entry and keeps today's text for an exact one.
+    let why = |entries: &[(&str, Tier)], call: &str| {
+        let mut st = me();
+        for (entry, tier) in entries {
+            st.ignored.insert((*entry).to_owned(), *tier);
+        }
+        evaluate(&s, &[cq_row_from(0, call)], &st)[0].why.clone()
+    };
+    assert_eq!(
+        why(&[("BY*", Tier::Permanent)], "BY1AA"),
+        "BY1AA is ignored (permanent list: BY*)"
+    );
+    assert_eq!(
+        why(&[("JA*", Tier::Session)], "JA1ABC"),
+        "JA1ABC is ignored (session list: JA*)"
+    );
+    assert_eq!(
+        why(&[("K1ABC", Tier::Session)], "K1ABC"),
+        "K1ABC is ignored (session list)"
+    );
+    // The session list wins over the permanent list; within one list the exact entry is shown.
+    assert_eq!(
+        why(
+            &[("BY*", Tier::Permanent), ("BY1AA", Tier::Session)],
+            "BY1AA"
+        ),
+        "BY1AA is ignored (session list)"
+    );
+    assert_eq!(
+        why(&[("BY*", Tier::Permanent), ("JA*", Tier::Session)], "BY1AA"),
+        "BY1AA is ignored (permanent list: BY*)"
+    );
+    assert_eq!(
+        why(
+            &[("BY*", Tier::Permanent), ("BY1AA", Tier::Permanent)],
+            "BY1AA"
+        ),
+        "BY1AA is ignored (permanent list)"
+    );
+    assert_eq!(
+        why(
+            &[("BY*", Tier::Permanent), ("JA*", Tier::Session)],
+            "JA1ABC"
+        ),
+        "JA1ABC is ignored (session list: JA*)"
+    );
+}
+
+// Proves: CL-042-02; TC-125-001 (a) the session add, (d) the why text and (e) a caller or a CQ
+// matched by a pattern is neither ranked nor called by Auto (the actual station router and
+// contact engine on the recording hardware double).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_125_001_session_patterns_and_the_station_skip_matches() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.tick();
+    // Refused session entries name the field call; patterns are accepted.
+    for bad in [
+        "*",
+        "**",
+        "***",
+        "k1*",
+        "k1abc",
+        "K1?BC",
+        "K1ABCDEFGHIJK*",
+        "",
+    ] {
+        let r = ignore(&f, json!(bad), json!(true)).await;
+        assert_eq!(
+            (
+                r.status.as_u16(),
+                r.json["error"]["code"].clone(),
+                r.json["error"]["field"].clone()
+            ),
+            (400, json!("invalid_request"), json!("call")),
+            "{bad:?}"
+        );
+    }
+    let calls = |r: &crate::mcp_tests::Reply| {
+        r.json["session_ignore"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["call"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    for entry in ["K*1ABC", "*K1ABCDEFGHI*"] {
+        let r = ignore(&f, json!(entry), json!(true)).await;
+        assert_eq!(r.status, StatusCode::OK, "{entry}: {}", r.json);
+        let r = ignore(&f, json!(entry), json!(false)).await;
+        assert_eq!(r.status, StatusCode::OK, "{entry}: {}", r.json);
+    }
+    for entry in ["BY*", "*/MM", "K*1A", "BY*"] {
+        let r = ignore(&f, json!(entry), json!(true)).await;
+        assert_eq!(r.status, StatusCode::OK, "{entry}: {}", r.json);
+    }
+    let g = f.browser("GET", "/strategy", None).await;
+    assert_eq!(
+        calls(&g),
+        ["*/MM", "K*1A", "BY*"],
+        "a duplicate renews the entry and moves it last"
+    );
+    let r = ignore(&f, json!("*/MM"), json!(false)).await;
+    assert_eq!(
+        calls(&r),
+        ["K*1A", "BY*"],
+        "a pattern is removed as an entry"
+    );
+    let r = ignore(&f, json!("K*1A"), json!(false)).await;
+    assert_eq!(calls(&r), ["BY*"]);
+    // The station evaluates with both lists.
+    let mut c = config(Some("Test calls"));
+    c["ignore_calls"] = json!(["JA*"]);
+    save(&f, c).await;
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ BY1AA OM89", 1500.0, Some(9.0)),
+            ("CQ JA1ABC PM95", 900.0, Some(5.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-10.0)),
+        ],
+    );
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
+        "generation":generation,"first_sequence":0,"next_sequence":3,"strategy":null,"explain":true});
+    let v = f.browser("POST", "/strategy/evaluate", Some(body)).await;
+    assert_eq!(
+        v.json["verdicts"],
+        json!([{"sequence":2,"rank":0,"grey":false,"why":"new: call"},
+            {"sequence":0,"rank":null,"grey":false,"why":"BY1AA is ignored (session list: BY*)"},
+            {"sequence":1,"rank":null,"grey":false,"why":"JA1ABC is ignored (permanent list: JA*)"}])
+    );
+    assert_eq!(f.keys(), 0, "ignore lists never key");
+}
+
+// Proves: CL-042-02; TC-125-001 (e) a CQ matched by a pattern is not called by Auto.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_125_001_a_run_never_selects_a_cq_matched_by_a_pattern() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let mut c = config(Some("Test calls"));
+    c["ignore_calls"] = json!(["BY*"]);
+    select(&f, c).await;
+    assert_eq!(
+        ignore(&f, json!("JA*"), json!(true)).await.status,
+        StatusCode::OK
+    );
+    // BY1AA (permanent pattern) and JA1ABC (session pattern) would rank first (strongest).
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ BY1AA OM89", 1500.0, Some(9.0)),
+            ("CQ JA1ABC PM95", 900.0, Some(5.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-10.0)),
+        ],
+    );
+    assert_eq!(
+        contact(&f).await,
+        (json!("DL1XYZ"), json!("replying"), json!("armed"))
+    );
+    let run = f.read("automation").await["run"].clone();
+    assert_eq!(run["last_decision"]["candidates"], json!(1));
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: CL-042-02; TC-125-001 (e) a contest strategy ranks no sender matched by a pattern and
+// names the entry in the why text (the contest evaluator shares the matcher).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_125_001_a_contest_strategy_skips_a_sender_matched_by_a_pattern() {
+    let f = station(true).await;
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    f.state.recording.fixture_band("40m");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ WW BY1AA OM89", 1000.0, Some(9.0)),
+            ("CQ WW JA1XYZ PM95", 1200.0, Some(-15.0)),
+        ],
+    );
+    browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
+    let mut selected = config(Some("WW Digi"));
+    selected["contest"] = json!({"profile":"ww_digi","start":"2026-08-29T12:00Z",
+        "end":"2026-08-30T12:00Z"});
+    selected["ignore_calls"] = json!(["BY*"]);
+    let p = put(&f, json!(0), selected).await;
+    assert_eq!(p.status, StatusCode::OK, "{}", p.json);
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
+        "generation":generation,"first_sequence":0,"next_sequence":2,"strategy":null,"explain":true});
+    let v = f.browser("POST", "/strategy/evaluate", Some(body)).await;
+    assert_eq!(v.status, StatusCode::OK, "{}", v.json);
+    assert_eq!(v.json["strategy"], "WW Digi");
+    let by = v.json["verdicts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["sequence"] == json!(0))
+        .unwrap();
+    assert_eq!(by["rank"], Value::Null, "{by}");
+    assert_eq!(by["why"], "BY1AA is ignored (permanent list: BY*)");
+    let ja = v.json["verdicts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["sequence"] == json!(1))
+        .unwrap();
+    assert_eq!(ja["rank"], json!(0), "{ja}");
+}
+
+// Proves: CL-042-02; TC-125-001 (e) a pounce on a call matched by a pattern gets no answer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_125_001_a_pounce_never_answers_a_call_matched_by_a_pattern() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let mut c = config(Some("Test calls"));
+    c["ignore_calls"] = json!(["BY*"]);
+    save(&f, c).await;
+    assert_eq!(pounce(&f, "BY1AA", 5).await.status, StatusCode::ACCEPTED);
+    publish(&f, e, &[("CQ BY1AA OM89", 1500.0, Some(-15.0))]);
+    assert_eq!(f.read("contact").await["contact"], Value::Null);
+    assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
+    assert_eq!(f.keys(), 0);
+}
+
+// Proves: CL-042-02; TC-125-001 (e) a caller matched by a pattern is not answered.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_125_001_a_run_never_answers_a_caller_matched_by_a_pattern() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("40m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let mut c = config(Some("Test calls"));
+    c["ignore_calls"] = json!(["BY*"]);
+    select(&f, c).await;
+    assert_eq!(
+        ignore(&f, json!("*A1ABC"), json!(true)).await.status,
+        StatusCode::OK
+    );
+    publish(
+        &f,
+        e,
+        &[
+            ("HB9BLA BY1AA OM89", 1500.0, Some(9.0)),
+            ("HB9BLA JA1ABC PM95", 1300.0, Some(7.0)),
             ("HB9BLA DL1XYZ JO62", 1200.0, Some(-10.0)),
         ],
     );
