@@ -310,6 +310,21 @@ package WstxRequirements {
         attribute coverage : ImplementationState = ImplementationState::partial;
         attribute implementation : String = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs";
     }
+    requirement 'FR-025' {
+        subject station : StationProcess;
+        doc /* Automatic operation
+             Select the next station to call, or call CQ, and choose the transmit slot, from
+             the ranking of the active strategy and without operator action. The operator or
+             an agent toggles it with the Auto control; while it is on, the station accepts
+             no other start and no other choice of station or message, and Halt and Halt QSO
+             always act. */
+    }
+    requirement 'FR-026' {
+        subject station : StationProcess;
+        doc /* Strategies and ranking
+             Define and select strategies and contests, and order the decoded stations by the
+             rules of the active one, presenting that order. */
+    }
     doc /* Canonical product scope and navigation. WstxRequirements owns stable
          FR/CL/TC declarations. WstxArchitecture owns parts/ports/connections;
          WstxStationProtocol the shared status/auth/transport contract;

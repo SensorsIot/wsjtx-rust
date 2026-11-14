@@ -116,11 +116,14 @@ package WstxArchitecture {
             ref part :>> browser : BrowserClient :> frontend.browsers;
             ref part :>> station : StationProcess :> backend.stations;
         }
+        satisfy WstxRequirements::'FR-021' by browserAttachments;
     }
     part def Frontend {
         doc /* Deployment container only; station exchanges terminate
              directly on selected contained BrowserClient instances. */
         part browsers[*] : BrowserClient;
+        satisfy WstxRequirements::'FR-010' by browsers;
+        satisfy WstxRequirements::'FR-017' by browsers;
     }
     part def Backend {
         doc /* The variable station population has no architecture-imposed numeric limit. */
@@ -178,19 +181,23 @@ package WstxArchitecture {
         interface mcpOperations : StationCommands connect mcp.station to station.mcpOperations;
         interface profileContext : ProfileAccessLink connect station.profile to profile.context;
         interface receiveJobs : ReceiveControl connect station.receive to receive.jobs;
-        interface transmitOperations : TransmitControl connect station.transmit to transmit.operations;
+        interface transmitOperations : TransmitControl
+            connect station.transmit to transmit.operations;
         interface qsoOperations : QsoControl connect station.qso to qso.operations;
-        interface stationControl : StationRadioControl connect station.control to radioControl.station;
+        interface stationControl : StationRadioControl
+            connect station.control to radioControl.station;
         interface receiveSamples : ReceiveSamplesLink connect audio.receive to receive.audio;
         interface audioAvailability : AudioControl connect station.audioStatus to audio.status;
         interface receiveModem : ReceiveProcessingLink connect receive.processing to modes.receive;
         interface encodeModem : EncodeProcessingLink connect transmit.encode to modes.encode;
         interface transmitAudio : AudioExchangeLink connect transmit.audio to audio.transmit;
         interface transmitControl : KeyingLink connect transmit.control to radioControl.transmit;
-        interface uploadedRecording : RecordingTransferLink connect web.recording to station.upload;
+        interface uploadedRecording : RecordingTransferLink
+            connect web.recording to station.upload;
         interface validatedRecording : RecordingTransferLink
             connect station.acceptedRecording to profile.upload;
-        interface recordedInput : ReceiveSamplesLink connect profile.recordedSamples to audio.recorded;
+        interface recordedInput : ReceiveSamplesLink
+            connect profile.recordedSamples to audio.recorded;
         interface contactStorage : ProfileAccessLink connect log.contacts to profile.contacts;
         interface contactTransmit : MessageToSend connect qso.transmit to transmit.contacts;
         interface selectedAudio : AudioExchangeLink connect audio.backend to audioAdapter.host;
@@ -225,33 +232,33 @@ package WstxArchitecture {
         binding requestContext bind authorityRequest.request.resourceContext = radioBinding;
         binding catContext bind catAdapter.authorized.request.resourceContext = radioBinding;
         binding flexContext bind flexAdapter.control.request.resourceContext = radioBinding;
+        satisfy WstxRequirements::'FR-001' by station;
+        satisfy WstxRequirements::'FR-002' by audio;
+        satisfy WstxRequirements::'FR-003' by receive;
+        satisfy WstxRequirements::'FR-004' by modes;
+        satisfy WstxRequirements::'FR-005' by modes;
+        satisfy WstxRequirements::'FR-006' by transmit;
+        satisfy WstxRequirements::'FR-006' by receive;
+        satisfy WstxRequirements::'FR-007' by qso;
+        satisfy WstxRequirements::'FR-008' by transmit;
+        satisfy WstxRequirements::'FR-009' by radioControl;
+        satisfy WstxRequirements::'FR-011' by qso;
+        satisfy WstxRequirements::'FR-012' by station;
+        satisfy WstxRequirements::'FR-013' by modes;
+        satisfy WstxRequirements::'FR-014' by receive;
+        satisfy WstxRequirements::'FR-015' by modes;
+        satisfy WstxRequirements::'FR-016' by profile;
+        satisfy WstxRequirements::'FR-018' by profile.recordings;
+        satisfy WstxRequirements::'FR-019' by web;
+        satisfy WstxRequirements::'FR-020' by mcp;
+        satisfy WstxRequirements::'FR-022' by profile;
+        satisfy WstxRequirements::'FR-025' by auto;
+        satisfy WstxRequirements::'FR-026' by ranking;
+        satisfy WstxRequirements::'FR-026' by station;
     }
 
-    dependency audioPromise from AudioInterface to WstxRequirements::'FR-002';
-    dependency controlPromise from RadioControlInterface to WstxRequirements::'FR-009';
-    dependency profilesPromise from PersistedProfile to WstxRequirements::'FR-022';
     doc /* Responsibility traces identify the owning boundary for an existing requirement,
          not delivered capability or an executed verification. */
-    dependency configurationPromise from StationService to WstxRequirements::'FR-001';
-    dependency receivePromise from ReceivePipeline to WstxRequirements::'FR-003';
-    dependency decodePromise from ModeFunctions to WstxRequirements::'FR-004';
-    dependency encodePromise from ModeFunctions to WstxRequirements::'FR-005';
-    dependency timingPromise from TransmitService to WstxRequirements::'FR-006';
-    dependency receiveTimingPromise from ReceivePipeline to WstxRequirements::'FR-006';
-    dependency qsoPromise from QsoAndLogging to WstxRequirements::'FR-007';
-    dependency haltPromise from TransmitService to WstxRequirements::'FR-008';
-    dependency displayPromise from BrowserClient to WstxRequirements::'FR-010';
-    dependency loggingPromise from QsoAndLogging to WstxRequirements::'FR-011';
-    dependency integrationPromise from StationService to WstxRequirements::'FR-012';
-    dependency emePromise from ModeFunctions to WstxRequirements::'FR-013';
-    dependency widebandPromise from ReceivePipeline to WstxRequirements::'FR-014';
-    dependency utilitiesPromise from ModeFunctions to WstxRequirements::'FR-015';
-    dependency persistencePromise from PersistedProfile to WstxRequirements::'FR-016';
-    dependency helpPromise from BrowserClient to WstxRequirements::'FR-017';
-    dependency recordingPromise from RecordedSource to WstxRequirements::'FR-018';
-    dependency htmlPromise from WebAdapter to WstxRequirements::'FR-019';
-    dependency mcpPromise from McpAdapter to WstxRequirements::'FR-020';
-    dependency linkPromise from BrowserAttachment to WstxRequirements::'FR-021';
     doc /* WstxOperatingReceive refines coordinated receive controls on the existing
          receive and radio authority path: single-owner release/setup/readback/restart
          and cancellation fences. It introduces no additional station/backend/physical

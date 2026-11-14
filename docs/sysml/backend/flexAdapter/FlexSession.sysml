@@ -1,5 +1,6 @@
 package WstxFlexSession {
     private import ScalarValues::*;
+    private import ModelNotes::Conflict;
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::'FR-023';
     private import WstxRequirements::'FR-008';
@@ -285,6 +286,12 @@ package WstxFlexSession {
     dependency CL_013_06_verified_by_TC_023_003 from 'CL-013-06' to 'TC-023-003';
     requirement NativeFlexWireSubset {
         attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
+        @Conflict {
+            what = "The doc says the radio's samples enter the existing native "
+                + "queue/converter/epoch path of receive; the connection nativeSamples of "
+                + "WstxArchitecture::StationProcess joins the Flex adapter's samples to the "
+                + "audio function, and receive takes them from there.";
+        }
         doc /* FR-023 delivered receive/control subset and the defaults chosen where the
              model left gaps (issue #13, level 2). Wire facts come from the SmartSDR TCP/IP
              API wiki and the pinned FlexLib 4.3.16.42034 reference archive SHA-256

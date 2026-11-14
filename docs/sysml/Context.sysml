@@ -1,6 +1,7 @@
 package WstxContext {
     private import ScalarValues::*;
     private import ModelNotes::FollowsSource;
+    private import ModelNotes::Conflict;
     private import WstxArchitecture::Station;
     private import WstxRadioProperties::Radio;
     private import WstxOperatorInteraction::OperatorInteractionPort;
@@ -23,6 +24,10 @@ package WstxContext {
     private import WstxTimeSource::TimeSource;
 
     enum def OutsideThing {
+        @Conflict {
+            what = "This doc says no outside thing is a part or has a port; "
+                + "StationContext declares each as a black-box part, nine of them with a port.";
+        }
         doc /* The outside things the server opens a socket, device or file to. None is a
              part or has a port. The function that owns each carries its information and
              state on the ports it offers to other functions; the wire protocol is that
@@ -108,6 +113,10 @@ package WstxContext {
              it has no inner structure and no requirement names it as its subject. The
              function that owns it is the one its port is joined to; for the five without a
              port, the function its doc names. */
+        @Conflict {
+            what = "The doc of WstxArchitecture::Station says outside things are not parts; "
+                + "the usages below are black-box parts.";
+        }
         part station : Station;
 
         part operator {
