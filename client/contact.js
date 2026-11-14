@@ -1403,8 +1403,8 @@ continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfig
 // WstxIgnoreLists::IgnoreListsRule: the station keeps both lists and applies them; this client
 // only edits them (PUT /strategy for the permanent list, POST /strategy/ignore for the
 // session list) and shows the session list the station returns.
-continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC DL1XYZ" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never marked or answered by a strategy. Band Activity right-click adds a station for this session; a band change clears the session list.</small><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
-const ignoreCalls=$('ignore-calls'),ignoreMinutes=$('ignore-minutes'),ignoreList=$('ignore-session');
+continentSelect?.closest('label')?.insertAdjacentHTML('afterend','<label>Always ignore (calls or patterns)<input id="ignore-calls" spellcheck="false" autocomplete="off" placeholder="K1ABC BY* */MM" aria-describedby="ignore-help"></label><label>Session ignore (minutes)<input id="ignore-minutes" type="number" min="1" max="720" step="1"></label><div class="op-ignore-session"><small id="ignore-help">Ignored stations are never marked or answered by a strategy. Band Activity right-click adds a station for this session; a band change clears the session list. A pattern uses * for any characters, for example BY* or */MM.</small><label>Ignore for this session<input id="ignore-add" spellcheck="false" autocomplete="off" placeholder="JA* or K1ABC" aria-describedby="ignore-help"></label><ul id="ignore-session" aria-label="Ignored this session"></ul></div>');
+const ignoreCalls=$('ignore-calls'),ignoreMinutes=$('ignore-minutes'),ignoreList=$('ignore-session'),ignoreAdd=$('ignore-add');
 const sessionIgnored=call=>(view?.session_ignore??[]).some(e=>e.call===call);
 function showIgnore(){
   if(!ignoreCalls)return;const c=config();ignoreCalls.disabled=ignoreMinutes.disabled=!c;
@@ -1429,10 +1429,12 @@ async function ignore(call,on){
 }
 // A change that leaves the saved value as it is (a repeated change on blur) sends nothing.
 ignoreCalls?.addEventListener('change',()=>{const c=config(),calls=[...new Set(words(ignoreCalls.value,false))];if(c&&calls.join(' ')!==(c.ignore_calls??[]).join(' '))saveConfiguration({...c,ignore_calls:calls},'Ignore list');});
+// The session add field takes a call or a pattern; the station refuses a malformed entry.
+ignoreAdd?.addEventListener('change',()=>{const entry=words(ignoreAdd.value,false)[0];ignoreAdd.value='';if(view&&entry)ignore(entry,true);});
 ignoreMinutes?.addEventListener('change',()=>{const c=config(),n=Number(ignoreMinutes.value);if(c&&Number.isInteger(n)&&n!==c.session_ignore_minutes)saveConfiguration({...c,session_ignore_minutes:n},'Session ignore');});
 // Station strategy settings, not profile fields: they never mark the profile form unsaved,
 // and Enter saves the list instead of submitting (applying) the profile form.
-for(const el of [ignoreCalls,ignoreMinutes]){for(const type of ['input','change'])el?.addEventListener(type,event=>event.stopPropagation());
+for(const el of [ignoreCalls,ignoreAdd,ignoreMinutes]){for(const type of ['input','change'])el?.addEventListener(type,event=>event.stopPropagation());
   el?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();el.dispatchEvent(new Event('change'));}});}
 // The session list ends by time and band change at the station: read it when Settings opens.
 const settingsDrawer=document.querySelector('#settings-drawer');

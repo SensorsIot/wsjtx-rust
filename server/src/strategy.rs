@@ -398,7 +398,7 @@ pub(crate) struct Config {
     pub continent: Option<String>,
     pub active: Option<String>,
     pub strategies: Vec<Strategy>,
-    /// #42 the permanent ignore list (exact calls) and the session list expiry.
+    /// #42 the permanent ignore list (entries of CL-042-02's form) and the session list expiry.
     pub ignore_calls: Vec<String>,
     pub session_ignore_minutes: u64,
     /// #63 the contest in force (memory only, never with an active award strategy).
@@ -437,6 +437,49 @@ fn word(v: &Value, field: &str, max: usize, extra: &[u8]) -> Result<String, Fiel
         })
         .map(str::to_owned)
         .ok_or(bad(field))
+}
+/// WstxIgnoreLists::CL-042-02 an entry of either ignore list: 1..13 characters of A-Z, 0-9, / and
+/// `*`, with at least one character other than `*` (an entry of only `*` would ignore every
+/// station).
+fn ignore_entry(v: &Value, field: &str) -> Result<String, Field> {
+    let entry = word(v, field, 13, b"/*")?;
+    if entry.bytes().all(|b| b == b'*') {
+        return Err(bad(field));
+    }
+    Ok(entry)
+}
+/// CL-042-02 an entry matches a call when it matches the whole call: `*` stands for any run of
+/// characters (the empty run included) anywhere and any number of times; every other character
+/// matches itself.
+pub(crate) fn entry_matches(entry: &str, call: &str) -> bool {
+    let (p, s) = (entry.as_bytes(), call.as_bytes());
+    let (mut pi, mut si) = (0, 0);
+    // The last `*` seen and the call position its run currently ends at.
+    let mut star: Option<(usize, usize)> = None;
+    while si < s.len() {
+        if pi < p.len() && p[pi] == b'*' {
+            star = Some((pi, si));
+            pi += 1;
+        } else if pi < p.len() && p[pi] == s[si] {
+            pi += 1;
+            si += 1;
+        } else if let Some((sp, ss)) = star {
+            pi = sp + 1;
+            si = ss + 1;
+            star = Some((sp, ss + 1));
+        } else {
+            return false;
+        }
+    }
+    p[pi..].iter().all(|&b| b == b'*')
+}
+/// CL-042-02 why text of an ignored sender: the list, and the entry when it is a pattern.
+pub(crate) fn ignore_why(call: &str, tier: Tier, entry: &str) -> String {
+    if entry.contains('*') {
+        format!("{call} is ignored ({} list: {entry})", tier.name())
+    } else {
+        format!("{call} is ignored ({} list)", tier.name())
+    }
 }
 fn bounded(v: &Value, field: &str, lo: u64, hi: u64) -> Result<u64, Field> {
     v.as_u64()
@@ -884,7 +927,7 @@ pub(crate) fn parse_config(v: &Value, table: Option<&crate::dxcc::Table>) -> Res
     let mut ignore_calls: Vec<String> = Vec::new();
     for (i, c) in calls.iter().enumerate() {
         let field = format!("ignore_calls[{i}]");
-        let c = word(c, &field, 13, b"/")?;
+        let c = ignore_entry(c, &field)?;
         if ignore_calls.contains(&c) {
             return Err(bad(field));
         }
@@ -1454,6 +1497,27 @@ pub(crate) fn run_admits(state: &ProfileState, record: &Value) -> bool {
         .is_some_and(|s| f.cq && included_target(&s, f.target.as_deref()))
 }
 impl Station {
+    /// CL-042-02 the list and the entry that ignore `call`: the session list before the permanent
+    /// list; in one list the exact entry, else the alphabetically smallest matching pattern.
+    pub(crate) fn ignored_by(&self, call: &str) -> Option<(Tier, &str)> {
+        [Tier::Session, Tier::Permanent]
+            .into_iter()
+            .find_map(|tier| {
+                if let Some((entry, t)) = self.ignored.get_key_value(call)
+                    && *t == tier
+                {
+                    return Some((tier, entry.as_str()));
+                }
+                self.ignored
+                    .iter()
+                    .filter(|(entry, t)| {
+                        **t == tier && entry.contains('*') && entry_matches(entry, call)
+                    })
+                    .map(|(entry, _)| entry.as_str())
+                    .min()
+                    .map(|entry| (tier, entry))
+            })
+    }
     /// A CQ, or with treat_73_as_cq an RR73/73 that ends someone else's QSO.
     pub(crate) fn cq_like(&self, f: &Facts, treat_73_as_cq: bool) -> bool {
         f.cq || (treat_73_as_cq
@@ -1699,12 +1763,8 @@ fn classify(
     st: &Station,
     states: &HashMap<String, String>,
 ) -> (Option<Kind>, bool, String) {
-    if let Some(tier) = st.ignored.get(&f.from) {
-        return (
-            None,
-            false,
-            format!("{} is ignored ({} list)", f.from, tier.name()),
-        );
+    if let Some((tier, entry)) = st.ignored_by(&f.from) {
+        return (None, false, ignore_why(&f.from, tier, entry));
     }
     if st.greyed(f) && !included_target(s, f.target.as_deref()) {
         let text = not_for_me(
@@ -2575,8 +2635,7 @@ impl Owner {
     pub(crate) fn ignore(&self, state: &ProfileState, body: Value) -> Result<Value, Refusal> {
         let r = &state.recording;
         Self::envelope_shape(&body, &["call", "ignore"])?;
-        let call =
-            word(&body["call"], "call", 13, b"/").map_err(|f| ("invalid_request", Some(f)))?;
+        let call = ignore_entry(&body["call"], "call").map_err(|f| ("invalid_request", Some(f)))?;
         let on = body["ignore"]
             .as_bool()
             .ok_or(("invalid_request", Some("ignore".into())))?;

@@ -278,7 +278,7 @@ package WstxBandActivity {
              Reply menu item does the same; right-click
              opens a menu: Reply, Select, Set Rx here and, for a row with a resolved
              sender, "Pounce <call>" or "Stop pouncing <call>" (#42 WstxStrategy::Pounce)
-             and "Ignore <call>" or "Stop ignoring <call>" (#42 WstxStrategy::
+             and "Ignore <call>" or "Stop ignoring <call>" (#42 WstxRankingControl::
              IgnoreLists session list). Enter selects; the menu is also
              reachable with the keyboard (context-menu key / Shift+F10). */
     }

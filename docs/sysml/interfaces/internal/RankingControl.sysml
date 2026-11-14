@@ -175,21 +175,21 @@ package WstxRankingControl {
     attribute def IgnoreCommand {
         attribute call : String;
         attribute ignore : Boolean;
-        doc /* Add the call to the session ignore list (or renew it) or, with ignore false, remove
-             it (not listed: no change). */
+        doc /* Add the entry (the key stays call) to the session ignore list (or renew it) or, with
+             ignore false, remove it (not listed: no change). */
     }
     attribute def SessionIgnoreEntry {
         attribute call : String;
         attribute band : String[0..1];
         attribute expiry : String;
-        doc /* One entry of the session ignore list: the call, the station band when it was added
-             (null when unknown) and its expiry. */
+        doc /* One entry of the session ignore list: the entry (the key stays call), the station
+             band when it was added (null when unknown) and its expiry. */
     }
     attribute def IgnoreLists {
         attribute sessionEntriesMax : Integer = 64;
         attribute permanent : String[0..*];
         attribute session : SessionIgnoreEntry[0..*];
-        doc /* The permanent list (the calls of the strategy configuration) and the session list
+        doc /* The permanent list (the entries of the strategy configuration) and the session list
              (at most sessionEntriesMax entries in the order added). */
     }
     attribute def MostWantedEntry {

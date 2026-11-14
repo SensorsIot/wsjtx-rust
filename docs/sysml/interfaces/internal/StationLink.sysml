@@ -367,9 +367,10 @@ package WstxStationLink {
         doc /* POST /strategy/ignore {v, profile_id, boot_id, call, ignore}: exact keys; same
              Origin/authorization/media/size rules and refusal codes as PUT /strategy (400
              invalid_request with the field, unsupported_version, 403 wrong_profile, 409
-             state_conflict boot_id); call 1..13 of A-Z 0-9 /; ignore true adds the call to the
-             session list (or renews it), false removes it (not listed: no change). It changes
-             no revision, is allowed while a strategy runs and applies at the next evaluation;
+             state_conflict boot_id); call: an entry of CL-042-02's form; ignore true adds that
+             entry to the session list (or renews it), false removes it (not listed: no
+             change). It changes no revision, is allowed while a strategy runs and applies at
+             the next evaluation;
              returns the snapshot. No MCP tool dispatches to it (an MCP principal is refused). */
     }
     attribute def EvaluateWire {

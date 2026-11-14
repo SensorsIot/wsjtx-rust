@@ -768,11 +768,11 @@ fn classify(
     log: Option<&Log>,
 ) -> (Option<Kind>, bool, String, Option<ContestValue>) {
     let p = s.profile;
-    if let Some(tier) = st.ignored.get(&f.from) {
+    if let Some((tier, entry)) = st.ignored_by(&f.from) {
         return (
             None,
             false,
-            format!("{} is ignored ({} list)", f.from, tier.name()),
+            crate::strategy::ignore_why(&f.from, tier, entry),
             None,
         );
     }
