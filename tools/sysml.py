@@ -2475,8 +2475,10 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
     missing_keys = set(missing)
 
     def prove(key_b: str, key_h: str, facts_b: tuple, facts_h: tuple, attributes: list[str]):
-        """CL-014-22 for one pair: the rules that prove every change of it, in rule order,
-        or None when a change is not proven (it is then a difference as before)."""
+        """CL-014-22 for one pair: (the rules proven, in rule order; whether every change is
+        proven). The docs with their levels and the status are proven apart: an unproven doc
+        or level change leaves the status proof standing, and the other way round. A change
+        of any other fact proves nothing."""
         raw_b, raw_h = entries_b[key_b]["facts"], entries_h[key_h]["facts"]
         groups_b, groups_h = fact_groups(raw_b), fact_groups(raw_h)
         classes_b = {step: group_class(raw_b, step, indices) for step, indices in groups_b.items()}
@@ -2490,7 +2492,7 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
             return renumbered(blank, {step for step, kind in classes.items() if kind in ("status", "level")})
 
         if rest(facts_b, classes_b) != rest(facts_h, classes_h):
-            return None
+            return [], False
 
         def texts(facts, groups, classes):
             return [facts[index][3] for step, indices in groups.items() if classes[step] == "doc"
@@ -2507,31 +2509,31 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
                    "verification": kind in VERIFICATION_KINDS, "file": entries_b[key_b]["file"],
                    "segments": entries_b[key_b]["rel"].split("::"),
                    "refs": {target.rsplit("::", 1)[-1].strip("'") for target in verify_targets(raw_b)}}
-        rules, removed = set(), set()
+        rules, removed, docs = set(), set(), True
         for text_b, text_h in zip(texts(facts_b, groups_b, classes_b), texts(facts_h, groups_h, classes_h)):
             if collapsed(text_b) == collapsed(text_h):
                 continue
             chosen = proven_spans(text_b, text_h, doc_candidates(text_b, element, wordings))
             if chosen is None:
-                return None
+                docs = False
+                continue
             for rule, pairs_ in chosen:
                 rules.add(rule)
                 removed.update(pairs_)
         levels_b = [group_level(raw_b, indices) for step, indices in groups_b.items() if classes_b[step] == "level"]
         levels_h = [group_level(raw_h, indices) for step, indices in groups_h.items() if classes_h[step] == "level"]
-        if None in levels_b or None in levels_h:
-            return None
-        if "cost" in rules:
-            if set(levels_h) != set(levels_b) | removed:
-                return None
-        elif sorted(levels_b) != sorted(levels_h):
-            return None
+        # The removed cost wordings and the added levels prove each other.
+        if None in levels_b or None in levels_h or (set(levels_h) != set(levels_b) | removed if "cost" in rules
+                                                     else sorted(levels_b) != sorted(levels_h)):
+            docs = False
+        proven_rules = set(rules) if docs else set()
+        status = True
         if attributes or grouped(facts_b, groups_b, classes_b, "status") != grouped(facts_h, groups_h, classes_h, "status"):
             stated_b = declared_facts(base, entries_b[key_b]["file"], identity) if identity else None
-            if stated_b is None or stated_b != declared_facts(head, entries_h[key_h]["file"], identity):
-                return None
-            rules.add("status")
-        return [rule for rule in PROVEN_RULES if rule in rules]
+            status = stated_b is not None and stated_b == declared_facts(head, entries_h[key_h]["file"], identity)
+            if status:
+                proven_rules.add("status")
+        return [rule for rule in PROVEN_RULES if rule in proven_rules], docs and status
 
     def dependency(key: str):
         """The head file of the case that still verifies the clause of a missing
@@ -2559,15 +2561,14 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
                       and entries_b[member]["rel"].rsplit("::", 1)[-1] in STATUS_ATTRIBUTES]
         if facts_b == facts_h and not attributes:
             continue
-        rules = prove(key_b, key_h, facts_b, facts_h, attributes)
-        if rules is None:
-            if facts_b != facts_h:
-                index = next((i for i, (x, y) in enumerate(zip(facts_b, facts_h)) if x != y), min(len(facts_b), len(facts_h)))
-                fact = facts_b[index] if index < len(facts_b) else facts_h[index]
-                changed.append(f"changed {b['rel']} {label(fact, facts_b)} {b['file']} -> {h['file']}")
-            continue
-        covered.update(attributes)
+        rules, complete = prove(key_b, key_h, facts_b, facts_h, attributes)
         proven.extend(f"proven {rule} {b['rel']} {b['file']} -> {h['file']}" for rule in rules)
+        if "status" in rules:
+            covered.update(attributes)
+        if not complete and facts_b != facts_h:
+            index = next((i for i, (x, y) in enumerate(zip(facts_b, facts_h)) if x != y), min(len(facts_b), len(facts_h)))
+            fact = facts_b[index] if index < len(facts_b) else facts_h[index]
+            changed.append(f"changed {b['rel']} {label(fact, facts_b)} {b['file']} -> {h['file']}")
     # A pair whose owner is a named element has paired owners.
     for key_b, key_h in sorted(pair.items()):
         owner_b, owner_h = entries_b[key_b]["owner"], entries_h[key_h]["owner"]
