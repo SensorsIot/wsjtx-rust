@@ -545,6 +545,13 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   `GET /radio` reads `ready` when CAT works.
 - **Deploys.** A deploy writes the pinned launcher, so the station returns to `ic7300`;
   switch back to the simulator afterwards if the run continues.
+- **Keying the emulator** is not a transmission (operator 2026-11-14, #192). Before every
+  keying the agent confirms that the active profile is SIM-IC7300; no simulated contact
+  reaches the real logbook, Club Log, PSK Reporter or a UDP target; no agent switches the
+  station to the `ic7300` profile. Agents do not transmit on the real radio until #192 is
+  accepted.
+- **Administrator rights.** Agents have none. A step that needs them is a script the
+  operator runs in an elevated shell, restoring what it changed in a `finally` block.
 
 ### Operator role and returns
 
