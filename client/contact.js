@@ -738,7 +738,7 @@ async function selectRow(tr){
   else if(reply?.refused==='contact_active')offerChange(()=>send('select_row',{row,replace:true,directive_confirmed:true},'Change contact'),tr.dataset.sender);
   return reply;
 }
-// WstxStrategy::DirectedCqRule: the station decides; a CQ that is not answerable is a warning
+// WstxValueOrder::DirectedCqRule: the station decides; a CQ that is not answerable is a warning
 // the operator may confirm (a declined warning sends nothing further).
 async function selectConfirmed(row,replace,label,from=aborts){
   const reply=await sendExplicit(()=>send('select_row',{row,replace},label),from);
@@ -1286,7 +1286,7 @@ addEventListener('wstx-contact-render',showAuto);
 autoButton?.addEventListener('click',async()=>{
   if(!view||autoPosting)return;const on=!auto();let confirmed=false;
   if(on&&selection()){
-    // WstxContest::AutomationClause: a contest whose rules forbid it asks first; declined sends nothing.
+    // WstxStrategies::AutomationClause: a contest whose rules forbid it asks first; declined sends nothing.
     if(!selectedProfile())await loadContests();const p=selectedProfile();
     if(p?.automation==='forbidden'){if(!await window.wstxConfirm(`The rules of ${p.name} forbid automatic operation: ${p.automation_text} Transmit automatically anyway?`,'Transmit automatically'))return;confirmed=true;}
   }
@@ -1588,7 +1588,7 @@ const NEW_MEANS=[['not_worked','Not worked'],['not_confirmed','Not confirmed (QS
 const REGIONS=[['all','All'],['dx','Other continents than mine'],['selected','Selected continents']];
 const SINCE=[['all','Any time'],['today','Today UTC'],['from_to','From/to UTC dates']];
 const BANDS=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','70cm'];
-// WstxStrategy::ValueCriterion in the model's order, with the editor's labels (StrategyEditor).
+// WstxRankingControl::ValueCriterion in the model's order, with the editor's labels (StrategyEditor).
 const CRITERIA=[['most_wanted','Most wanted (Club Log rank)'],['new_dxcc','New DXCC'],['new_dxcc_band','New DXCC on band'],['new_dxcc_band_mode','New DXCC on band and mode'],['new_call','New call'],['new_call_band','New call on band'],['new_grid','New grid'],['new_grid_band','New grid on band'],['new_cq_zone','New CQ zone'],['new_itu_zone','New ITU zone'],['new_continent','New continent'],['new_prefix','New prefix'],['snr_bucket','SNR bucket (above 0, -10..0, below -10)'],['snr','SNR (stronger first)'],['distance','Distance (farthest first)'],['hears_us','Hears us first (PSK Reporter)']];
 const PSK_CASES=[['heard','He reports and hears us'],['not_heard','He reports, does not hear us'],['no_reports','He does not report']];
 // WstxStrategies::ContestPrompt: choose the contest, its period (pre-filled from the schedule rule)
@@ -1789,7 +1789,7 @@ editor.addEventListener('input',event=>{
 });
 editor.addEventListener('click',event=>{
   const d=drafts[current];
-  // WstxStrategy::ValueOrder in the editor: add a row, remove, up and down; SNR stays the fixed last.
+  // WstxValueOrder::ValueOrder in the editor: add a row, remove, up and down; SNR stays the fixed last.
   const v=event.target.closest('#se-order-add,.se-up,.se-down,.se-remove');
   if(v&&d&&!d.builtin&&!v.disabled){
     const list=d.order,i=Number(v.dataset.index);

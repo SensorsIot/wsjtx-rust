@@ -227,7 +227,7 @@ package WstxQsoPane {
              and the fold-out Next/Now overrides by hand as in WSJT-X; Reply, kept only as the
              operator's workaround until the #50 double-click fix was installed, is gone too:
              a double-click on a Band Activity row or a Calling me row, or the row menu Reply,
-             starts the reply (with the WstxStrategy::DirectedCqRule warning for a CQ not answerable);
+             starts the reply (with the WstxValueOrder::DirectedCqRule warning for a CQ not answerable);
              this HALT is the one HALT of the operating view (OperatingScreen);
              Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now, WstxLogbook::DirectLog
              (#41), and closes it, so nothing stays queued). A command's accepted result

@@ -438,5 +438,5 @@ package WstxSettings {
              mult \· score <s>". Manual operation stays as it is: every row selects as ever, the
              double-click and the directive warning unchanged. */
     }
-    dependency viewClause from ContestView to WstxContact::'CL-063-04';
+    dependency viewClause from ContestView to WstxContestRanking::'CL-063-04';
 }

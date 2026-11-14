@@ -50,25 +50,6 @@ package WstxOperatingChain {
         end log : WorkedBeforePort;
         end ranking : ~WorkedBeforePort;
     }
-    attribute def ContestVerdict {
-        doc /* WstxStrategy::Verdict with a contest in force, one per decoded record with a resolved
-             sender that is standard, or a Field Day exchange (type field_day) to a call, in this
-             order of tests: ignored (IgnoreLists, as a strategy); greyed
-             (DirectedCqRule); "my own message"; "band unknown"; "band not in the contest"; "log
-             unreadable"; "dupe" (DupeRule for the station band, mode class Digital; rank null,
-             dupe true, also when it calls my call: operator #63 "non-dupe",
-             WstxStrategy::CallerOfMyCall); a caller of my call (CallerOfMyCall, also a grid or Field Day
-             exchange to it); else the callsign guard (SaneCall; a /R rover passes where a new grid counts,
-             band_grid); else "not a CQ": a CQ or an RR73/73 to someone else counts as calling, in
-             every contest. So the callable records have a rank by ContestValueOrder; every other has
-             rank null. The reply's verdicts carry dupe, new_multiplier (the record's key is not
-             yet in the period, false without a grid) and points (PointsRule; null when not known).
-             POST /strategy/evaluate with strategy null and a contest in force returns these, with
-             strategy the profile's name and contest the tally {qsos, multipliers, points, score}
-             (null when the log is unreadable); explain false lists the ranked, the greyed and the
-             dupes. A draft strategy still previews the draft. why: "calls my call", "new
-             multiplier", "<n> points" joined by " \· ", or the reason above. */
-    }
 
     // ---------------------------------------------------------------- messages
     enum def TxSlot { enum tx1; enum tx2; enum tx3; enum tx4; enum tx5; enum tx6; }

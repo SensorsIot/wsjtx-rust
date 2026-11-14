@@ -390,7 +390,7 @@ struct Target {
     answered: bool,
     /// The station band at its selection: a band change ends the contact at once.
     band: Option<&'static str>,
-    /// Its WstxContest::ContestValueOrder value at the selection (a contest run).
+    /// Its WstxContestRanking::ContestValueOrder value at the selection (a contest run).
     value: Option<crate::contest::ContestValue>,
     /// A contest stay (#97 LeaveRule contest: heard, decoded, nothing more valuable).
     staying: bool,
@@ -2266,8 +2266,8 @@ fn period_of(records: &[Value], sequence: u64) -> Option<i64> {
         .and_then(|r| r["period_start_utc"].as_str())
         .and_then(contact::parse_utc)
 }
-/// The verdicts of `records` as the run's own evaluation reads them: WstxOperatingChain::ContestVerdict
-/// in a contest (a dupe has no rank), WstxStrategy::Verdict otherwise. The step never builds the
+/// The verdicts of `records` as the run's own evaluation reads them: WstxRankingControl::ContestVerdict
+/// in a contest (a dupe has no rank), WstxRankingControl::Verdict otherwise. The step never builds the
 /// contest log.
 fn verdicts(
     contact: &contact_http::Station,
@@ -2330,7 +2330,7 @@ struct Seen {
     /// An eligible caller of my call other than the target (with a rank: never a contest dupe).
     caller: bool,
     /// A contest: a callable eligible station other than the target strictly before it by
-    /// WstxContest::ContestValueOrder.
+    /// WstxContestRanking::ContestValueOrder.
     better: bool,
     /// The target's frequency in this publication.
     hz: Option<u32>,

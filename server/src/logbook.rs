@@ -102,7 +102,7 @@ const QSO_DATE_OFF: usize = 8;
 const TIME_OFF: usize = 9;
 const BAND: usize = 10;
 const FREQ: usize = 11;
-/// #97 the ADIF STATE (WstxStrategy::UsStateOf).
+/// #97 the ADIF STATE (WstxValueOrder::UsStateOf).
 const STATE: usize = 23;
 /// The contest fields are FIELDS[CONTEST..CONFIRMATION].
 const CONTEST: usize = 16;
@@ -114,7 +114,7 @@ const CHANNELS: [(usize, usize, Option<usize>); 3] =
     [(24, 25, None), (26, 27, Some(28)), (29, 30, None)];
 
 /// ADIF 3.1.8 band enumeration with inclusive limits in Hz.
-/// #97 a band name of the ADIF band enumeration, in lower case (WstxStrategy::StrategyBands).
+/// #97 a band name of the ADIF band enumeration, in lower case (WstxRankingControl::StrategyBands).
 pub fn is_band(name: &str) -> bool {
     BANDS.iter().any(|(b, _, _)| *b == name)
 }

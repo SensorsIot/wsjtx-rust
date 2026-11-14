@@ -246,10 +246,10 @@ package WstxBandActivity {
              pane, has a fixed height (29rem) and scrolls inside; with a strategy active the strategy accent of
              WstxSettings::ValueView (ranked rows first in their period under the value sort, greyed directed
              CQs not for my continent). A selection of a CQ that is not answerable first shows the
-             WstxStrategy::DirectedCqRule warning; only its confirmation selects (during a contact a
+             WstxValueOrder::DirectedCqRule warning; only its confirmation selects (during a contact a
              click on it offers nothing). Pointer: click selects (SelectDecodedRow, prepares, never
              transmits; while a contact is active a row that can start a contact for me, a
-             CQ/QRZ complying with WstxStrategy::DirectedCqRule or a row addressed to my call,
+             CQ/QRZ complying with WstxValueOrder::DirectedCqRule or a row addressed to my call,
              only offers "Change contact to <call>", naming its sender, whose replacement keeps
              Enable Tx as it is, and a row of a QSO between others or a CQ directed elsewhere
              offers nothing (#37, CL-037-05); double-click

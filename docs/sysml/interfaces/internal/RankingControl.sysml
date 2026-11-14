@@ -140,4 +140,119 @@ package WstxRankingControl {
              notification is on and permission is granted (also while the page is hidden);
              with both off nothing is announced (the history still lists it). */
     }
+
+    enum def NewWhat {
+        doc /* "What must be new?" (#97 decision 2), wire names exactly, multiple choice: dxcc (the
+             DXCC entity), call, grid (the 4-character grid), cq_zone (WAZ), itu_zone, continent
+             (WAC), prefix (WPX, WpxPrefix). */
+        enum dxcc; enum call; enum grid; enum cq_zone; enum itu_zone; enum continent; enum prefix;
+    }
+    enum def NewPer {
+        doc /* "New per" (#97 decision 2): ever (any band and mode), band (the station band, any
+             mode), band_mode (the station band and the operating mode, ADIF MODE, an MFSK record by
+             its SUBMODE). One choice for every NewWhat of the strategy. */
+        enum ever; enum band; enum band_mode;
+    }
+    enum def Needed {
+        doc /* "New means" (#97 decision 2): not_worked; not_confirmed (not worked, or worked and
+             not confirmed: LoTW, QSL or eQSL received, dxcc::Standing). */
+        enum not_worked; enum not_confirmed;
+    }
+    enum def ValueCriterion {
+        doc /* The criteria of ValueOrder (Q2, Q3, Q8; decision 3), wire names exactly. */
+        enum most_wanted; enum new_dxcc; enum new_dxcc_band; enum new_dxcc_band_mode;
+        enum new_call; enum new_call_band; enum new_grid; enum new_grid_band;
+        enum new_cq_zone; enum new_itu_zone; enum new_continent; enum new_prefix;
+        enum snr_bucket; enum snr; enum distance; enum hears_us;
+    }
+    enum def RegionKind { enum 'all'; enum dx; enum selected; }
+    enum def WindowKind { enum 'all'; enum today; enum from_to; }
+    attribute def StrategyBands {
+        doc /* #97 decision 1. A strategy with bands null works on every band; with a list it works
+             only while the station band (CAT dial band, else the operating selection band) is one
+             of them, and an unknown station band is none of them. It never switches bands (D8).
+             Off its bands: every verdict has rank null with why "band not in the strategy" ("band
+             unknown" when unknown), so nothing is marked, alerted or called. A contest strategy
+             works only on the bands both of its list and of the contest
+             (WstxRankingControl::ContestVerdict "band not in the contest"). */
+    }
+    attribute def CountryList {
+        attribute entriesMax : Integer = 64;
+        doc /* #97 decision 2 "Prefix/country include/exclude (optionally per band, + Country
+             names)". filters.countries = {include, exclude}, each 0..64 entries {kind, value,
+             bands}: kind "prefix" with value 1..13 of A-Z 0-9 / (upper case), matching when the
+             decoded call begins with it; or kind "country" with value a full entity name of the
+             country table (WstxCountryFile::EntityOfCall, a WAE entity by its own name), matching the
+             sender's entity, compared ignoring case; a name the current table does not hold is
+             refused at the PUT (an entry read from the file whose name a replaced cty.dat no
+             longer holds matches nothing); bands null (every band) or 1..32 unique ADIF band
+             names, the entry counting only while the station band is one of them. The line
+             holds when no exclude entry matches and, with a non-empty include list, at least one
+             include entry matches; a sender without an entity matches no country entry. Editor:
+             one line per entry, with a country picker that lists the table's names. */
+    }
+    attribute def UsStateFilter {
+        doc /* #97 decision 2 "US state include/exclude". filters.states = {include, exclude}, each
+             0..51 unique two-letter codes of the 50 US states and DC (ADIF Primary Administrative
+             Subdivision of the entities 291, 6 and 110). The sender's state (UsStateOf): with a
+             non-empty include list the line holds only when the state is known and listed (an
+             unknown state, also every station outside those entities, fails it); with an exclude
+             list it fails only when the state is known and listed. */
+    }
+    attribute def CqTargetList {
+        attribute entriesMax : Integer = 32;
+        doc /* #97 decision 2 "CQ target include/exclude (POTA, SOTA, EU, DX ...)".
+             filters.cq_targets = {include, exclude}, each 0..32 unique words of 1..8 A-Z 0-9: the
+             directive of a CQ (the word after CQ: "CQ POTA K1ABC FN42" has POTA, "CQ DX ..." DX; a
+             plain CQ and an RR73/73 counted as calling have none). Exclude: a CQ whose directive is
+             listed fails. Include (non-empty): only a CQ whose directive is listed passes; a plain
+             CQ and an RR73/73 counted as calling fail. A caller of my call is no CQ and is not
+             judged by this line. A word on the
+             include list that DirectedCqRule does not answer (POTA, SOTA, a number) is answerable
+             for this strategy, never for the operator's own selection, whose warning stays.
+             Verdict: such a CQ is not grey for that strategy (grey false, ranked by its filters
+             and order), so Band Activity marks it and does not strike it through, and Alert
+             records it like any candidate. A continent directive and DX keep DirectedCqRule
+             (operator 2026-11-09, #97 Q2: "we could define a pota/sota strategy"; the built-in
+             POTA/SOTA, BuiltinStrategies). */
+    }
+    attribute def Verdict {
+        attribute sequence : Integer;
+        attribute rank : Integer[0..1];
+        attribute grey : Boolean;
+        doc /* One per decoded standard record with a resolved sender (others have none):
+             an ignored sender (IgnoreLists) has rank null, grey false; else grey per
+             DirectedCqRule (not grey when its directive word is on the strategy's CQ target
+             include list, CqTargetList); a Candidate, and a caller (CallerOfMyCall) while Calling
+             stations are answered is on, have rank = the position (0-based) in ValueOrder among
+             the evaluated records; with it off a caller has rank null, why "calls my call · not
+             answered" (CL-097-03); every other record rank null.
+             why (explain only): "calls my call", "new: dxcc, grid" (the new whats, with
+             " on <band>" or " on <band> <MODE>" per new_per), with " · Most Wanted
+             #n" when ranked by the list, "not new", "not a CQ", "region", "below min SNR",
+             "band not in the strategy", "band unknown", "country list", "state list", "CQ
+             target", "calls my call · <failing line>" (CallerOfMyCall),
+             "my own message", "callsign guard", the DirectedCqRule text "CQ x — not for c" or
+             "<call> is ignored (session list)" / "(permanent list)". Display order: rank
+             ascending; records without a rank follow in sequence order. */
+    }
+    attribute def ContestVerdict {
+        doc /* WstxRankingControl::Verdict with a contest in force, one per decoded record with a resolved
+             sender that is standard, or a Field Day exchange (type field_day) to a call, in this
+             order of tests: ignored (IgnoreLists, as a strategy); greyed
+             (DirectedCqRule); "my own message"; "band unknown"; "band not in the contest"; "log
+             unreadable"; "dupe" (DupeRule for the station band, mode class Digital; rank null,
+             dupe true, also when it calls my call: operator #63 "non-dupe",
+             WstxValueOrder::CallerOfMyCall); a caller of my call (CallerOfMyCall, also a grid or Field Day
+             exchange to it); else the callsign guard (SaneCall; a /R rover passes where a new grid counts,
+             band_grid); else "not a CQ": a CQ or an RR73/73 to someone else counts as calling, in
+             every contest. So the callable records have a rank by ContestValueOrder; every other has
+             rank null. The reply's verdicts carry dupe, new_multiplier (the record's key is not
+             yet in the period, false without a grid) and points (PointsRule; null when not known).
+             POST /strategy/evaluate with strategy null and a contest in force returns these, with
+             strategy the profile's name and contest the tally {qsos, multipliers, points, score}
+             (null when the log is unreadable); explain false lists the ranked, the greyed and the
+             dupes. A draft strategy still previews the draft. why: "calls my call", "new
+             multiplier", "<n> points" joined by " \· ", or the reason above. */
+    }
 }
