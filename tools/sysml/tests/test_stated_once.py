@@ -304,7 +304,7 @@ class StatedOnceTests(unittest.TestCase):
             with self.subTest("state taken", definition=label):
                 entries = self.flat(target, tested_by("tests/case.cjs"), typed, definition(stated))
                 self.assertEqual(entries["TC-001-001"], {"kind": "verification", "state": "implemented", "refs": ["FR-901", "CL-003-01"],
-                                                         "bindings": ["tests/case.cjs"], "manual": False})
+                                                         "bindings": ["tests/case.cjs"], "manual": False, "levels": []})
             with self.subTest("the case's own state wins over an implemented definition", definition=label):
                 for own in (automation("planned"), run("planned")):
                     self.assertEqual(self.flat(target, own, typed, definition(stated))["TC-001-001"]["state"], "planned")

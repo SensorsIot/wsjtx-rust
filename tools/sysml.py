@@ -5,8 +5,9 @@ case is in that case's binding (binding_agreement). check additionally calls the
 pinned Java parser/name resolver/semantic validator. markers lists the ModelNotes markers
 and checks nothing. retired checks the catalog and lists the `@RetiredCase` retirements;
 status checks it and prints each FR's status computed from its clauses (CL-014-19).
-equivalence compares two revisions of the model by meaning and identities lists the
-identity diff of two revisions (CL-014-17); both only read the repository. oracle
+equivalence compares two revisions of the model by meaning, a removal it proves
+(CL-014-22) being no difference, and identities lists the identity diff of two revisions
+(CL-014-17); both only read the repository. oracle
 writes the architecture oracle file from the resolved inventory, printing one line per
 change (CL-014-06); no other command writes it. paths rewrites only the code paths of a
 rename list in the model files (CL-014-20); no other command writes a model. None
@@ -433,6 +434,57 @@ def file_derivations(key: str, clean: str) -> list[tuple[str, list[str]]]:
     return found
 
 
+# CL-014-21: the places a test runs, the members of `ModelBindings::TestLocation`.
+TEST_LOCATIONS = ("developmentPc", "station", "simulator", "flexRadio")
+TEST_LEVEL_FORM = re.compile(r"\bmetadata(?!\s+def\b)\s+[^;{}]*\bTestLevel\b(?!::)")
+VERIFICATION_USAGE = re.compile(r"\bverification\s+(?!def\b)(?:<[^<>{};]*>\s*)?(\w+|'[^']*')")
+OWNER_NAME = re.compile(r"(?:\b(?:abstract|ref|in|out|inout|private|public|protected|variation|individual|derived|"
+                        r"readonly|end|doc)\s+)*(?:\w+\s+)?(?:def\s+)?(?:<[^<>{};]*>\s*)?(\w+|'[^']*')")
+
+
+def file_levels(key: str, clean: str) -> dict[int, list[tuple[int, str]]]:
+    """CL-014-21: the `@TestLevel` pairs of one comment-free model file, by the offset of
+    the `{` of the body that states them, each list sorted. Only a verification case,
+    definition or usage states them; every other owner, and every form other than
+    `@TestLevel { cost = <1..5>; location = TestLocation::<place>; }` once per pair, is
+    refused: `Invalid test level: <identity>`, or `Invalid test level: <name>: <key>`."""
+    code = blanked(clean)
+    found = [(offset, pairs) for offset, pairs in annotations(clean, code, "TestLevel")]
+    found += [(match.start(), None) for match in TEST_LEVEL_FORM.finditer(code)]
+    if not found:
+        return {}
+    owners = owning_bodies(code, [offset for offset, _pairs in found])
+    identities = {match.end() - 1: match[3] for match in DECLARATION.finditer(clean)}
+    kinds = {match.end() - 1: match[1] for match in DECLARATION.finditer(clean)}
+    definitions = {match.end() - 1 for match in CASE_DEFINITION.finditer(code)}
+    levels = {}
+    for offset, pairs in sorted(found, key=lambda item: item[0]):
+        opening = owners[offset]
+        if opening in identities:
+            name, verification = identities[opening], kinds[opening] == "verification"
+            invalid = ValueError("Invalid test level: " + name)
+        else:
+            start = max(code.rfind(character, 0, opening) for character in ";{}") + 1 if opening >= 0 else 0
+            header = clean[start:opening] if opening >= 0 else ""
+            verification = opening in definitions or bool(VERIFICATION_USAGE.search(blanked(header)))
+            named = OWNER_NAME.search(header)
+            invalid = ValueError(f"Invalid test level: {named[1]}: {key}" if named else f"Invalid test level: {key}")
+        if not verification or pairs is None:
+            raise invalid
+        values = dict(pairs)
+        if sorted(feature for feature, _value in pairs) != ["cost", "location"]:
+            raise invalid
+        cost = re.fullmatch(r"[1-5]", values["cost"])
+        place = re.fullmatch(r"(?:\w+::)*TestLocation::(\w+)", values["location"])
+        if not cost or not place or place[1] not in TEST_LOCATIONS:
+            raise invalid
+        pair = (int(cost[0]), place[1])
+        if pair in levels.get(opening, []):
+            raise invalid
+        levels.setdefault(opening, []).append(pair)
+    return {opening: sorted(pairs) for opening, pairs in levels.items()}
+
+
 def computed_status(states: list[str]) -> str:
     """CL-014-19: implemented when all clauses are, target when all are or there is none,
     partial in every other case."""
@@ -500,6 +552,7 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             for feature, value in pairs:
                 if feature == "tests":
                     file_bindings(key, string_literal(value), root)
+        levels = file_levels(key, clean)
         # The verification definitions of this file by name: what a case typed by one takes.
         definitions = {}
         for match in CASE_DEFINITION.finditer(code):
@@ -510,7 +563,7 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             states, bindings, methods, _unread = stated(body, code[match.end():match.end() + len(body)], "verification")
             if bindings:
                 raise ValueError(f"Verification definition carries a test binding: {name}: {key}")
-            definitions.setdefault(name, []).append((states, methods))
+            definitions.setdefault(name, []).append((states, methods, levels.get(match.end() - 1, [])))
         for match, (start, end) in zip(declarations, bodies):
             kind, identifier = match[1], match[3]
             if identifier in entries:
@@ -523,6 +576,10 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             # once, gives its state and method; the case's own statement wins, and a fact
             # the case names in a spelling that is not read is refused, never taken over.
             definition = definitions.get(match[4] or "", [])
+            # CL-014-21: a case stating no level takes its definition's, as it takes automation.
+            own_levels = levels.get(match.end() - 1, [])
+            if not own_levels and len(definition) == 1:
+                own_levels = definition[0][2]
             if len(definition) == 1:
                 if not states and "state" not in unread:
                     states = definition[0][0]
@@ -557,6 +614,8 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
             entries[identifier] = {"kind": kind, "state": states[0] if states else None, "refs": refs,
                                    "bindings": [binding.strip() for binding in bindings[0].split(";")] if bindings else [],
                                    "manual": methods == ["manual"]}
+            if kind == "verification":
+                entries[identifier]["levels"] = own_levels
             declared_in[identifier] = key
         derivations.extend(file_derivations(key, clean))
         # Retired cases: after the file's detail tests and declarations are checked.
@@ -595,16 +654,13 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
     for identifier, entry in entries.items():
         if identifier.startswith("CL-") and identifier not in dependencies and identifier not in derived:
             raise ValueError("Canonical clause lacks requirement ownership: " + identifier)
-        if identifier.startswith("CL-") and identifier in dependencies and identifier not in case_links:
-            raise ValueError("Canonical clause lacks a declared verification case: " + identifier)
         if entry["kind"] == "verification":
             if not entry["refs"] or any(ref not in entries or ref.startswith("TC-") for ref in entry["refs"]):
                 raise ValueError("Undefined or absent verification target: " + identifier)
             verified.update(entry["refs"])
-            # Reciprocity holds for the clauses owned by a dependency only.
-            actual_clauses = {ref for ref in entry["refs"] if ref.startswith("CL-") and ref in dependencies}
-            declared_clauses = {clause for clause, cases in case_links.items() if identifier in cases and clause in dependencies}
-            if actual_clauses != declared_clauses:
+            # CL-014-05: a clause is verified by the cases whose `verify` names it; a written
+            # dependency from a clause to this case needs the case to verify that clause.
+            if any(identifier in cases and clause not in entry["refs"] for clause, cases in case_links.items()):
                 raise ValueError("Nonreciprocal canonical verification links: " + identifier)
     unverified = {i for i in entries if i.startswith("CL-")} - verified
     if unverified:
@@ -2114,9 +2170,251 @@ def summary(facts: tuple) -> str:
     return (owned or facts[0][3]) + (" " + json.dumps(words[:60]) if words else "")
 
 
-def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, list[str]]:
-    """P2 to P6 of CL-014-17 for two exported sides: (exit code, lines). `exempt` maps a
-    citation of a pinned or fixture reader to its reader kind (`exemptions`)."""
+# ---- proven removals (CL-014-22) ----
+
+# The mapping of cost wordings to (cost, location), read by every `equivalence` run.
+COST_WORDINGS = Path(__file__).with_name("sysml") / "cost-wordings.json"
+PROVEN_RULES = ("case-number", "clause-list", "cost", "dependency", "status")
+# The one separator a deleted span may take with it.
+SEPARATORS = ("; ", ", ", ": ", ". ", " — ", " - ")
+STATUS_METADATA = ("Status", "Automation", "ImplementedIn", "TestedBy")
+STATUS_ATTRIBUTES = ("coverage", "automation", "method", "implementation", "executable")
+# Per kind of declaration, the attributes `stated` reads and the metadata form of each.
+STATUS_FORMS = {"requirement": {"coverage": "Status", "implementation": "ImplementedIn"},
+                "verification": {"automation": "Automation", "method": "Automation", "executable": "TestedBy"}}
+VERIFICATION_KINDS = ("VerificationCaseUsage", "VerificationCaseDefinition")
+QUOTED_IDENTITY = re.compile(r"'(" + IDENTITY + r")'")
+# A clause list: an optional `Proves `, then identities, each with the shorthand `references`
+# reads, joined by `, `, ` and ` or `; `.
+CLAUSE_ITEM = ID.pattern + r"(?:(?:/|,\s*|\.\.|–)\d+(?![\w-]))*"
+CLAUSE_LIST = re.compile(r"(?<![\w-])(?:Proves )?" + CLAUSE_ITEM + r"(?:(?:, | and |; )" + CLAUSE_ITEM + r")*(?![\w-])")
+
+
+def cost_wordings(path: Path = None) -> dict:
+    """The mapping file, checked whole: `line`, `bold` (wording, cost, location), `places`
+    (phrase, location) and `element` (file, element, wording, cost, location). A missing or
+    malformed file cannot be compared (Unreadable), naming the file."""
+    path = COST_WORDINGS if path is None else path
+    try:
+        name = path.resolve().relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        name = str(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise Unreadable(f"{name}: {error}") from None
+    fields = {"line": ("wording", "cost", "location"), "bold": ("wording", "cost", "location"),
+              "places": ("phrase", "location"), "element": ("file", "element", "wording", "cost", "location")}
+    if not isinstance(data, dict) or set(data) != set(fields):
+        raise Unreadable(f"{name}: not an object of {', '.join(fields)}")
+    found = {}
+    for section, keys in fields.items():
+        rows = data[section]
+        if not isinstance(rows, list):
+            raise Unreadable(f"{name}: {section} is not a list")
+        found[section] = []
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != set(keys) \
+                    or any(not isinstance(row[key], str) or not row[key] for key in keys if key != "cost") \
+                    or row["location"] not in TEST_LOCATIONS \
+                    or "cost" in keys and (type(row["cost"]) is not int or not 1 <= row["cost"] <= 5):
+                raise Unreadable(f"{name}: invalid {section} entry {json.dumps(row)}")
+            found[section].append(tuple(row[key] for key in keys))
+    return found
+
+
+def collapsed(text: str) -> str:
+    """Text with each run of whitespace taken as one space, trimmed."""
+    return " ".join(text.split())
+
+
+def whole(text: str, start: int, end: int) -> bool:
+    """No letter or digit directly before `start` or after `end`."""
+    return not (start > 0 and text[start - 1].isalnum()) and not (end < len(text) and text[end].isalnum())
+
+
+def longest(text: str, start: int, wordings) -> tuple:
+    """The longest of `wordings` (tuples, the wording first) that stands whole at `start`."""
+    matches = [row for row in wordings if text.startswith(row[0], start) and whole(text, start, start + len(row[0]))]
+    return max(matches, key=lambda row: len(row[0]), default=None)
+
+
+def doc_candidates(text: str, element: dict, wordings: dict) -> list[tuple[int, int, str, tuple]]:
+    """The spans of a doc text that a rule may remove, as (start, end, rule, removed pairs)."""
+    found = []
+    if element["case"]:
+        identity = element["case"]
+        for match in re.finditer(r"(?:(?<!#)#{1,6} )?" + re.escape(identity), text):
+            if not re.search(r"[\w-]$", text[:match.start()] or " ") and not re.match(r"[\w-]", text[match.end():]):
+                found.append((match.start(), match.end(), "case-number", ()))
+    if not element["verification"]:
+        return found
+    for match in CLAUSE_LIST.finditer(text):
+        try:
+            listed = set(references(match[0]))
+        except ValueError:
+            continue
+        if not any(ref.startswith("TC-") for ref in listed) and listed == element["refs"]:
+            found.append((match.start(), match.end(), "clause-list", ()))
+    costs = {}
+    starts = sorted({match.end() for match in re.finditer(r"(?:^|\n)[ \t]*", text)})
+    # The Pilot drops the first `*` of a comment line (and a space after it): a bold wording
+    # at a line start is read in that form.
+    for start in starts:
+        for wording, cost, place in wordings["bold"]:
+            stripped = wording[1:].lstrip(" ") if wording.startswith("*") else None
+            if stripped and text.startswith(stripped, start) and whole(text, start, start + len(stripped)):
+                costs[start] = max(costs.get(start, (start, ())), (start + len(stripped), ((cost, place),)))
+    for start in starts:
+        row = longest(text, start, [(wording, (cost, place)) for wording, cost, place in wordings["line"]])
+        if not row:
+            continue
+        end, (cost, place) = start + len(row[0]), row[1]
+        if text.startswith("; ", end) and (phrase := longest(text, end + 2, wordings["places"])):
+            if phrase[1] != place:
+                continue
+            end += 2 + len(phrase[0])
+        costs[start] = max(costs.get(start, (start, ())), (end, ((cost, place),)))
+    own = [(wording, cost, place) for file, name, wording, cost, place in wordings["element"]
+           if file == element["file"] and element["segments"][-len(name.split("::")):] ==
+           [f"'{segment}'" if re.fullmatch(IDENTITY, segment) else segment for segment in name.split("::")]]
+    for wording, cost, place in wordings["bold"] + own:
+        start = text.find(wording)
+        while start >= 0:
+            end = start + len(wording)
+            if whole(text, start, end):
+                costs[start] = max(costs.get(start, (start, ())), (end, ((cost, place),)))
+            start = text.find(wording, start + 1)
+    found.extend((start, end, "cost", pairs) for start, (end, pairs) in costs.items())
+    return sorted(found)
+
+
+def proven_spans(base: str, head: str, candidates: list) -> list | None:
+    """The spans of `candidates` whose deletion, each with at most the one separator that
+    directly follows it, turns `base` into `head` (compared collapsed): [(rule, pairs)],
+    or None when no choice does. Nothing may be inserted."""
+    target, failed = collapsed(head), set()
+
+    def search(index: int, position: int, kept: str):
+        prefix = collapsed(kept)
+        if not target.startswith(prefix) or (index, position, prefix) in failed:
+            return None
+        if index == len(candidates):
+            return [] if collapsed(kept + base[position:]) == target else None
+        start, end, rule, pairs = candidates[index]
+        if start >= position:
+            ends = [end + len(separator) for separator in SEPARATORS if base.startswith(separator, end)] + [end]
+            for stop in ends:
+                rest = search(index + 1, stop, kept + base[position:start])
+                if rest is not None:
+                    return [(rule, pairs)] + rest
+        rest = search(index + 1, position, kept)
+        if rest is None:
+            failed.add((index, position, prefix))
+        return rest
+
+    return search(0, 0, "")
+
+
+def fact_groups(facts: tuple) -> dict[str, list[int]]:
+    """The indices of the facts of each element an entry owns directly, by its first path
+    step (such as `OwningMembership[2]`), in the order of the facts."""
+    groups = {}
+    for index, (path, _kind, _feature, _value) in enumerate(facts):
+        if path not in ("", "via"):
+            groups.setdefault(path.split("/", 1)[0], []).append(index)
+    return groups
+
+
+def metadata_name(facts: tuple, step: str, indices: list[int]):
+    """The simple name of the metadata definition typing the metadata usage of one owned
+    element (raw facts); None when it is no metadata usage typed by a model definition."""
+    for index in indices:
+        path, kind, feature, value = facts[index]
+        if kind == "ref" and feature == "type" and path == step + "/MetadataUsage[0]/FeatureTyping[0]" and len(value) == 1:
+            name = re.fullmatch(r"M:(?:.*::)?(\w+)", value[0])
+            return name[1] if name else None
+    return None
+
+
+def group_class(facts: tuple, step: str, indices: list[int]):
+    """`doc` for a documentation comment, `status` for a Status, Automation, ImplementedIn
+    or TestedBy metadata usage, `level` for a TestLevel one, else None (raw facts)."""
+    for index in indices:
+        path, kind, feature, value = facts[index]
+        if kind == "text" and path == step + "/Documentation[0]":
+            return "doc"
+        if kind == "ref" and feature == "type" and path == step + "/MetadataUsage[0]/FeatureTyping[0]" and len(value) == 1:
+            name = re.fullmatch(r"M:(?:.*::)?(\w+)", value[0])
+            if name and name[1] in STATUS_METADATA:
+                return "status"
+            if name and name[1] == "TestLevel":
+                return "level"
+    return None
+
+
+def group_level(facts: tuple, indices: list[int]):
+    """The (cost, location) of one TestLevel metadata usage from its raw facts; None when it
+    is not one integer literal 1 to 5 and one TestLocation member."""
+    costs = [facts[index][3] for index in indices if facts[index][1] == "attr" and facts[index][2] == "value"
+             and facts[index][0].rsplit("/", 1)[-1].startswith("LiteralInteger[")]
+    places = [match[1] for index in indices if facts[index][1] == "ref" and facts[index][2] == "memberElement"
+              for value in facts[index][3] if (match := re.fullmatch(r"M:(?:.*::)?TestLocation::(\w+)", value))]
+    if len(costs) != 1 or len(places) != 1 or costs[0] not in ("1", "2", "3", "4", "5") or places[0] not in TEST_LOCATIONS:
+        return None
+    return int(costs[0]), places[0]
+
+
+def renumbered(facts: tuple, removed: set[str]) -> tuple:
+    """`facts` without the owned elements of the first steps `removed`, the indices of the
+    first steps after them moved down as if those elements were not written."""
+    gone = sorted(int(re.search(r"\[(\d+)\]$", step)[1]) for step in removed)
+
+    def fix(path: str) -> str:
+        first, separator, rest = path.partition("/")
+        step = re.fullmatch(r"(\w+)\[(\d+)\]", first)
+        if not step:
+            return path
+        number = int(step[2])
+        return f"{step[1]}[{number - sum(1 for index in gone if index < number)}]" + separator + rest
+
+    found = []
+    for path, kind, feature, value in facts:
+        if path not in ("", "via"):
+            if path.split("/", 1)[0] in removed:
+                continue
+            path = fix(path)
+        if kind == "ref":
+            value = tuple("#" + fix(target[1:]) if target.startswith("#") and len(target) > 1 else target for target in value)
+        found.append((path, kind, feature, value))
+    return tuple(found)
+
+
+def verify_targets(facts: tuple) -> set[str]:
+    """The keys of the elements an entry's own `verify` statements name (raw facts)."""
+    return {target[2:] for path, kind, feature, value in facts
+            if kind == "ref" and feature == "referencedFeature" and "RequirementVerificationMembership[" in path
+            for target in value if target.startswith("M:")}
+
+
+def declared_facts(side: Side, file_key: str, identity: str):
+    """What the catalog reads from the declaration of `identity` in one file of a side:
+    (states, bindings, methods, unread) of `stated`; None when it is not declared there."""
+    clean = without_comments(side.sources.get(file_key, ""))
+    code = blanked(clean)
+    for match in DECLARATION.finditer(clean):
+        if match[3] == identity:
+            body = declaration_body(clean, match.end() - 1)
+            states, bindings, methods, unread = stated(body, code[match.end():match.end() + len(body)], match[1])
+            return states, bindings, methods, sorted(unread)
+    return None
+
+
+def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None) -> tuple[int, list[str]]:
+    """P2 to P6 of CL-014-17 for two exported sides, with the proven removals of CL-014-22:
+    (exit code, lines). `exempt` maps a citation of a pinned or fixture reader to its reader
+    kind (`exemptions`); `wordings` is the mapping file's content (read when None)."""
+    wordings = cost_wordings() if wordings is None else wordings
     entries_b, entries_h = base.export["entries"], head.export["entries"]
 
     def by_rel(entries):
@@ -2187,7 +2485,112 @@ def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, 
     paired = set(pair.values())
     strict_b = Normal(base, lambda key: "M:" + pair[key] if key in pair else "U:" + rel(entries_b, key))
     strict_h = Normal(head, lambda key: "M:" + key if key in paired else "U:" + rel(entries_h, key))
-    differences, moves, info = [], [], []
+    differences, moves, info, proven = [], [], [], []
+    missing_keys = set(missing)
+
+    def prove(key_b: str, key_h: str, facts_b: tuple, facts_h: tuple, attributes: list[str]):
+        """CL-014-22 for one pair: (the rules proven, in rule order; whether every change is
+        proven). The docs with their levels and the status are proven apart: an unproven doc
+        or level change leaves the status proof standing, and the other way round. A change
+        of any other fact proves nothing."""
+        raw_b, raw_h = entries_b[key_b]["facts"], entries_h[key_h]["facts"]
+        groups_b, groups_h = fact_groups(raw_b), fact_groups(raw_h)
+        classes_b = {step: group_class(raw_b, step, indices) for step, indices in groups_b.items()}
+        classes_h = {step: group_class(raw_h, step, indices) for step, indices in groups_h.items()}
+
+        def rest(facts, classes):
+            # The facts without status and level metadata, each doc text left out.
+            docs = {step for step, kind in classes.items() if kind == "doc"}
+            blank = tuple((path, kind, feature, "" if kind == "text" and path.split("/", 1)[0] in docs else value)
+                          for path, kind, feature, value in facts)
+            return renumbered(blank, {step for step, kind in classes.items() if kind in ("status", "level")})
+
+        if rest(facts_b, classes_b) != rest(facts_h, classes_h):
+            return [], False
+
+        def texts(facts, groups, classes):
+            return [facts[index][3] for step, indices in groups.items() if classes[step] == "doc"
+                    for index in indices if facts[index][1] == "text"]
+
+        def grouped(facts, groups, classes, wanted):
+            return [tuple(("G" + facts[index][0][len(step):],) + facts[index][1:] for index in indices)
+                    for step, indices in groups.items() if classes[step] == wanted]
+
+        last = entries_b[key_b]["rel"].rsplit("::", 1)[-1]
+        identity = match[1] if (match := QUOTED_IDENTITY.fullmatch(last)) else None
+        kind = next((value for path, sort, _feature, value in raw_b if path == "" and sort == "kind"), None)
+        element = {"case": identity if identity and identity.startswith("TC-") else None,
+                   "verification": kind in VERIFICATION_KINDS, "file": entries_b[key_b]["file"],
+                   "segments": entries_b[key_b]["rel"].split("::"),
+                   "refs": {target.rsplit("::", 1)[-1].strip("'") for target in verify_targets(raw_b)}}
+        rules, removed, docs = set(), set(), True
+        for text_b, text_h in zip(texts(facts_b, groups_b, classes_b), texts(facts_h, groups_h, classes_h)):
+            if text_b == text_h:
+                continue
+            # Collapsing whitespace is the comparison of a proven deletion, not an acceptance
+            # of its own: a doc that differs needs at least one proven span deleted.
+            chosen = proven_spans(text_b, text_h, doc_candidates(text_b, element, wordings))
+            if not chosen:
+                docs = False
+                continue
+            for rule, pairs_ in chosen:
+                rules.add(rule)
+                removed.update(pairs_)
+        levels_b = [group_level(raw_b, indices) for step, indices in groups_b.items() if classes_b[step] == "level"]
+        levels_h = [group_level(raw_h, indices) for step, indices in groups_h.items() if classes_h[step] == "level"]
+        # The removed cost wordings and the added levels prove each other.
+        if None in levels_b or None in levels_h or (set(levels_h) != set(levels_b) | removed if "cost" in rules
+                                                     else sorted(levels_b) != sorted(levels_h)):
+            docs = False
+        proven_rules = set(rules) if docs else set()
+        status = True
+        # A removed attribute counts only as the one the catalog reads for this kind of
+        # declaration, replaced by its own metadata form on the head.
+        replaced = STATUS_FORMS["verification" if identity and identity.startswith("TC-") else "requirement"]
+        written = {metadata_name(raw_h, step, indices) for step, indices in groups_h.items() if classes_h[step] == "status"}
+        if any(replaced.get(entries_b[member]["rel"].rsplit("::", 1)[-1]) not in written for member in attributes):
+            status = False
+        elif attributes or grouped(facts_b, groups_b, classes_b, "status") != grouped(facts_h, groups_h, classes_h, "status"):
+            stated_b = declared_facts(base, entries_b[key_b]["file"], identity) if identity else None
+            status = stated_b is not None and stated_b == declared_facts(head, entries_h[key_h]["file"], identity)
+            if status:
+                proven_rules.add("status")
+        return [rule for rule in PROVEN_RULES if rule in proven_rules], docs and status
+
+    def dependency(key: str):
+        """The head file of the case that still verifies the clause of a missing
+        `dependency <name> from <CL> to <TC>`; None when the removal is not proven."""
+        raw = entries_b[key]["facts"]
+        own = {feature: value for path, kind, feature, value in raw if path == "" and kind in ("kind", "ref")}
+        if own.get("") != "Dependency" or len(own.get("client", ())) != 1 or len(own.get("supplier", ())) != 1:
+            return None
+        clause, case = own["client"][0], own["supplier"][0]
+        if not clause.startswith("M:") or not case.startswith("M:"):
+            return None
+        clause, case = clause[2:], case[2:]
+        if not re.fullmatch(r"'CL-\d{3}-\d{2}'", clause.rsplit("::", 1)[-1]) \
+                or not re.fullmatch(r"'TC-\d{3}-\d{3}'", case.rsplit("::", 1)[-1]):
+            return None
+        if clause not in pair or case not in pair or pair[clause] not in verify_targets(entries_h[pair[case]]["facts"]):
+            return None
+        return entries_h[pair[case]]["file"]
+
+    changed, covered = [], set()
+    for key_b, key_h in sorted(pair.items()):
+        b, h = entries_b[key_b], entries_h[key_h]
+        facts_b, facts_h = strict_b.facts(b["facts"], b["file"]), strict_h.facts(h["facts"], h["file"])
+        attributes = [member for member in members_b.get(key_b, []) if member in missing_keys
+                      and entries_b[member]["rel"].rsplit("::", 1)[-1] in STATUS_ATTRIBUTES]
+        if facts_b == facts_h and not attributes:
+            continue
+        rules, complete = prove(key_b, key_h, facts_b, facts_h, attributes)
+        proven.extend(f"proven {rule} {b['rel']} {b['file']} -> {h['file']}" for rule in rules)
+        if "status" in rules:
+            covered.update(attributes)
+        if not complete and facts_b != facts_h:
+            index = next((i for i, (x, y) in enumerate(zip(facts_b, facts_h)) if x != y), min(len(facts_b), len(facts_h)))
+            fact = facts_b[index] if index < len(facts_b) else facts_h[index]
+            changed.append(f"changed {b['rel']} {label(fact, facts_b)} {b['file']} -> {h['file']}")
     # A pair whose owner is a named element has paired owners.
     for key_b, key_h in sorted(pair.items()):
         owner_b, owner_h = entries_b[key_b]["owner"], entries_h[key_h]["owner"]
@@ -2196,18 +2599,19 @@ def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, 
             differences.append(f"changed {b['rel']} owner {b['file']} -> {h['file']}")
     for key in missing:
         entry = entries_b[key]
+        if key in covered:
+            continue
+        if (file := dependency(key)) is not None:
+            proven.append(f"proven dependency {entry['rel']} {entry['file']} -> {file}")
+            continue
         differences.append(f"missing {entry['rel']} {entry['package']} {entry['file']}")
     for key in added:
         entry = entries_h[key]
         differences.append(f"added {entry['rel']} {entry['package']} {entry['file']}")
+    differences.extend(changed)
     pairs = Counter()
     for key_b, key_h in sorted(pair.items()):
         b, h = entries_b[key_b], entries_h[key_h]
-        facts_b, facts_h = strict_b.facts(b["facts"], b["file"]), strict_h.facts(h["facts"], h["file"])
-        if facts_b != facts_h:
-            index = next((i for i, (x, y) in enumerate(zip(facts_b, facts_h)) if x != y), min(len(facts_b), len(facts_h)))
-            fact = facts_b[index] if index < len(facts_b) else facts_h[index]
-            differences.append(f"changed {b['rel']} {label(fact, facts_b)} {b['file']} -> {h['file']}")
         if (b["package"], b["file"]) != (h["package"], h["file"]):
             moves.append(f"moved {b['rel']} {b['package']} {b['file']} -> {h['package']} {h['file']}")
             pairs[(b["file"], h["file"])] += 1
@@ -2251,11 +2655,12 @@ def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, 
                 differences.append(f"stale-by-change {path}:{line} {citation}")
         elif not on_b and not on_h:
             info.append(f"unresolved {path}:{line} {citation}")
-    lines = differences + moves + [f"pair {files[0]} -> {files[1]}: {count}" for files, count in sorted(pairs.items())] + info
+    lines = differences + sorted(proven) + moves + [f"pair {files[0]} -> {files[1]}: {count}" for files, count in sorted(pairs.items())] + info
     lines.append((f"{len(differences)} differences; {len(pair)} entries paired, {len(moves)} moved"
                   if differences else f"equivalent: {len(pair)} entries paired, {len(moves)} moved")
                  + ("; exempt: " + ", ".join(f"{path} {count}" for path, count in exempt_counts.items())
-                    if exempt_counts else ""))
+                    if exempt_counts else "")
+                 + (f"; proven: {len(proven)}" if proven else ""))
     return (1 if differences else 0), lines
 
 
@@ -2315,6 +2720,7 @@ def exemptions(pairs: list, citations: list, side_of, exported) -> list[dict]:
 def compare_revisions(pairs: list[tuple[str, object]], cache: Path) -> tuple[list[tuple[int, list[str]]], int]:
     """P1 for each (base, head) pair, head None for the working tree, with one Pilot export
     per distinct tree: ([(exit code, lines)], number of exports)."""
+    wordings = cost_wordings()
     with tempfile.TemporaryDirectory(prefix="sysml-equivalence-") as folder:
         folder = Path(folder)
         sides = {}
@@ -2359,7 +2765,7 @@ def compare_revisions(pairs: list[tuple[str, object]], cache: Path) -> tuple[lis
 
         exported(list(sides.values()), {})
         exempt = exemptions(resolved, citations, pinned_side, exported)
-        return [compare(base, head, found, marks)
+        return [compare(base, head, found, marks, wordings)
                 for (base, head), found, marks in zip(resolved, citations, exempt)], len(sides)
 
 

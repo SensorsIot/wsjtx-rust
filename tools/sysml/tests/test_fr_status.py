@@ -202,6 +202,49 @@ class DerivationOwnershipTests(Fixture):
                                                    DERIVED, OWNS.replace("CL-901-01", "CL-901-02"),
                                                    CHECKS.replace("CL-901-01", "CL-901-02")))
             self.assertEqual(self.check()["FR-901"]["clauses"], ["CL-901-01", "CL-901-02"])
+        # V3 of TC-DOC-019: the verify statement is the one verification link (CL-014-05).
+        with self.subTest("the FR dependency, no dependency to its case"):
+            self.write("Requirements.sysml", model(CASE, OWNS))
+            self.assertEqual(self.check()["TC-001-001"]["refs"], ["CL-901-01"])
+        with self.subTest("a case verifying a clause owned by dependency without the reciprocal one"):
+            self.write("Requirements.sysml", model(
+                requirement("CL-901-02", "target"), CASE.replace("verify 'CL-901-01';", "verify 'CL-901-01'; verify 'CL-901-02';"),
+                DERIVED, OWNS.replace("CL-901-01", "CL-901-02"), "    dependency checks from 'CL-901-02' to 'TC-001-002';\n",
+                CASE.replace("TC-001-001", "TC-001-002").replace("'CL-901-01'", "'CL-901-02'")))
+            self.assertEqual(self.check()["TC-001-001"]["refs"], ["CL-901-01", "CL-901-02"])
+
+    # V1: a clause owned by a dependency to its FR is verified by a case's verify alone
+    # Proves: CL-014-05; TC-DOC-019
+    def test_verify_alone_links_a_clause_owned_by_dependency(self):
+        with self.subTest("no dependency to the case"):
+            self.write("Requirements.sysml", model(CASE, OWNS))
+            entries = self.check()
+            self.assertEqual((entries["TC-001-001"]["refs"], entries["FR-901"]["clauses"]), (["CL-901-01"], ["CL-901-01"]))
+        with self.subTest("the dependency to the case and its verify"):
+            self.write("Requirements.sysml", model(CASE, OWNS, CHECKS))
+            self.assertEqual(self.check()["TC-001-001"]["refs"], ["CL-901-01"])
+
+    # V2: a dependency to a case that does not verify the clause; a clause no case verifies
+    # Proves: CL-014-05; TC-DOC-019
+    def test_dependency_to_a_case_not_verifying_the_clause_and_an_unverified_clause_are_refused(self):
+        second = CASE.replace("TC-001-001", "TC-001-002")
+        refused = {
+            "dependency to a case that does not verify the clause":
+                (model(CASE, second.replace("verify 'CL-901-01';", "verify 'FR-901';"), OWNS,
+                       CHECKS.replace("TC-001-001", "TC-001-002")),
+                 "Nonreciprocal canonical verification links: TC-001-002$"),
+            "dependency to a case, the clause derived":
+                (model(CASE, second.replace("verify 'CL-901-01';", "verify 'FR-901';"), DERIVED,
+                       CHECKS.replace("TC-001-001", "TC-001-002")),
+                 "Nonreciprocal canonical verification links: TC-001-002$"),
+            "a clause no case verifies":
+                (model(CASE.replace("verify 'CL-901-01';", "verify 'FR-901';"), OWNS),
+                 "Canonical clauses lack verification links: CL-901-01$"),
+        }
+        for label, (text, message) in refused.items():
+            with self.subTest(label), self.refused(message):
+                self.write("Requirements.sysml", text)
+                self.check()
 
     # S9a, refused, each with its message
     # Proves: CL-014-05; TC-DOC-002
@@ -210,12 +253,6 @@ class DerivationOwnershipTests(Fixture):
             "neither derivation nor dependency to an FR": (model(CASE, CHECKS), "Canonical clause lacks requirement ownership: CL-901-01$"),
             "derived, no verifying case": (model(CASE.replace("verify 'CL-901-01';", "verify 'FR-901';"), DERIVED),
                                            "Canonical clauses lack verification links: CL-901-01$"),
-            "the FR dependency, no dependency to its case": (model(CASE, OWNS), "Canonical clause lacks a declared verification case: CL-901-01$"),
-            "a case verifying a clause owned by dependency without the reciprocal one":
-                (model(requirement("CL-901-02", "target"), CASE.replace("verify 'CL-901-01';", "verify 'CL-901-01'; verify 'CL-901-02';"),
-                       DERIVED, OWNS.replace("CL-901-01", "CL-901-02"), "    dependency checks from 'CL-901-02' to 'TC-001-002';\n",
-                       CASE.replace("TC-001-001", "TC-001-002").replace("'CL-901-01'", "'CL-901-02'")),
-                 "Nonreciprocal canonical verification links: TC-001-001$"),
             "derived from an FR that does not exist": (model(CASE, derivation("FR-999", "CL-901-01")),
                                                        "Invalid canonical clause dependency: CL-901-01 -> FR-999$"),
             "deriving an FR": (model(CASE, DERIVED, derivation("FR-901", "FR-901")),

@@ -333,10 +333,9 @@ class ModelTreeTests(unittest.TestCase):
     }
 }
 '''
-        with self.subTest("without the reciprocal dependency"):
+        with self.subTest("without a dependency to the case (CL-014-05)"):
             self.write("Requirements.sysml", FLAT.rsplit("}", 1)[0] + second)
-            with self.refused("Nonreciprocal canonical verification links: TC-001-002"):
-                self.check()
+            self.assertEqual(self.check()["TC-001-002"]["refs"], ["CL-003-01"])
         with self.subTest("undefined target"):
             self.write("Requirements.sysml", FLAT.replace("verify 'FR-901';", "verify PPart::'FR-999';"))
             with self.refused("verification target: TC-001-001"):
