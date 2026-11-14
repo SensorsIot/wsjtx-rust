@@ -22,8 +22,8 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=41b97facc8eaed22c37d2d5466c4a0ce7ba378b3cc4bd16d639e6fe543e322fd -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=7be0404d9ed8d7ff1a233f7dcd70ce8a671145d6e461d8b1304fd64c9aead8c0 -->
-<!-- harness-role-policy {"commands": ["gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "gh issue comment [0-9]+ --body 'Ready: (PASS|not yet)(\\n[^']*)?'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=b6c4d127c9aa4fef12c681c37f05a9350bf3be4b80884f79298291a32fed9cb6 -->
+<!-- harness-role-policy {"commands": ["gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "gh issue comment [0-9]+ --body 'Ready: (PASS|not yet) \u2014 [0-9a-f]{7,40}( \\(renewed from [0-9a-f]{7,40}\\))?(\\n[^']*)?'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You did not write this issue. Do [Check](../../harness/core/docs/CR-Process.md#check), or its renewal
 round at `ready`, exactly as defined there and nothing more; the verdict names the main tip
@@ -61,9 +61,11 @@ moved under a statement of the issue.
 ## Added by the project (docs/harness/Agent-Working-Rules.md)
 
 The checker posts its verdict as its own issue comment, in the posting form under
-"Role: every" below. Its first line is exactly `Ready: PASS` or `Ready: not yet`, as the
-[ready check](../../harness/core/docs/CR-Process.md#ready-check) says; the hook refuses any
-other first line.
+"Role: every" below. Its first line is exactly `Ready: PASS — <sha>` or
+`Ready: not yet — <sha>`, naming the main commit it read, or
+`Ready: PASS — <tip> (renewed from <sha>)` for a renewal, as
+[Check](../../harness/core/docs/CR-Process.md#check) says; the hook refuses any other first
+line (harness#91).
 
 The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for every role. Gate build folders
 are on D: (`gate.cargo_target_root` in `.harness/config.yaml`); a role's own build folders
@@ -82,8 +84,8 @@ are the coder's above.
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue (view|list)( .*)?`, `gh pr (view|list)( .*)?`, `gh search issues( .*)?`, `(python3?|py)(\.exe)? \S*cr_state\.py class [0-9]+ product --note '[^']*'`, `gh issue comment [0-9]+ --body 'Ready: (PASS|not yet)(\n[^']*)?'`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})`
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue (view|list)( .*)?`, `gh pr (view|list)( .*)?`, `gh search issues( .*)?`, `(python3?|py)(\.exe)? \S*cr_state\.py class [0-9]+ product --note '[^']*'`, `gh issue comment [0-9]+ --body 'Ready: (PASS|not yet) — [0-9a-f]{7,40}( \(renewed from [0-9a-f]{7,40}\))?(\n[^']*)?'`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})`
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=ac1ece6e0391a158155671506d509baa0928eff1107416c1d15e111cb91d99c2 -->
+<!-- harness-agent-v1 sha256=66e711e201ccfb0fa6c0a6c543f6dc183e7d93351fdb628c2ed539d7c01a1d1a -->

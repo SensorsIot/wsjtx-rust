@@ -104,13 +104,15 @@ scripts have loaded over the 32 kbit/s link and after they fail to load.
 ```yaml
 guard:
   commands:
-    - 'gh issue comment [0-9]+ --body ''Ready: (PASS|not yet)(\n[^'']*)?'''
+    - 'gh issue comment [0-9]+ --body ''Ready: (PASS|not yet) — [0-9a-f]{7,40}( \(renewed from [0-9a-f]{7,40}\))?(\n[^'']*)?'''
 ```
 
 The checker posts its verdict as its own issue comment, in the posting form under
-"Role: every" below. Its first line is exactly `Ready: PASS` or `Ready: not yet`, as the
-[ready check](../../harness/core/docs/CR-Process.md#ready-check) says; the hook refuses any
-other first line.
+"Role: every" below. Its first line is exactly `Ready: PASS — <sha>` or
+`Ready: not yet — <sha>`, naming the main commit it read, or
+`Ready: PASS — <tip> (renewed from <sha>)` for a renewal, as
+[Check](../../harness/core/docs/CR-Process.md#check) says; the hook refuses any other first
+line (harness#91).
 
 ### Role: coder
 
