@@ -137,7 +137,8 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `sysml-tools` | The SysML tool's own unit tests `test_[!adre]*.py` on isolated models | The SysML tool and its tests |
 | `sysml-equivalence-tests` | TC-DOC-015: `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
 | `sysml-equivalence` | CL-014-17: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
-| `sysml-architecture` | TC-DOC-005 architecture integrity: the mutation tests `test_a*.py` on the pinned model of `1df1ba3a5` and its oracle file, and the `oracle` tests and TC-DOC-016's structure-check tests on fixture trees, one Pilot validation per mutation or model state | `Station.sysml`, `Context.sysml`, `Requirements.sysml`, `interfaces/`, the new part files, the SysML tool, `Validate.java`, the oracle file `architecture-oracle.json`, the toolchain pin and the test file |
+| `sysml-architecture-context` | TC-DOC-005's context list on the working model: `test_architecture_context.py` reads `docs/sysml`, the oracle file and the pending list, without the Pilot | `Station.sysml`, `Context.sysml`, `Requirements.sysml`, `interfaces/`, the part files, the SysML tool, the oracle file `architecture-oracle.json`, the pending list `pending-structure.json` and its test file |
+| `sysml-architecture` | TC-DOC-005 architecture integrity, the validator tests: every `test_a*.py` but `test_architecture_context.py` (`-p "test_a*[!x]?.py"`), the mutation tests on the pinned model of `1df1ba3a5` and its oracle file, and the `oracle` tests and TC-DOC-016's structure-check tests on fixture trees, one Pilot validation per mutation or model state | The SysML tool, `Validate.java`, the toolchain pin and its own test files (the pin and the fixtures); not a model edit, the oracle file or the pending list. The model and the client/server/test source are fingerprint inputs only |
 | `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
 | `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
@@ -263,15 +264,19 @@ meet.
 
 The model has an explicit documentation owner. Its edits select the catalog/trace check,
 one full semantic validation and the tests that read the model (`sysml-documentation`, about
-30 s); the tool's own unit tests (`sysml-tools`, about 50 s) run only when the tool changes;
-the architecture mutation tests (`sysml-architecture`, one Pilot JVM per mutation) run
-only when `Station.sysml`, `RadioProperties.sysml` or the tool that judges it changes, since the companion
-models are validated by `check` itself. Runtime oracles are selected by changed
-implementation and executable tests. Source
+30 s); the tool's own unit tests (`sysml-tools`, about 50 s) run only when the tool changes.
+An edit to an architecture model file, the oracle file `architecture-oracle.json` or the
+pending list `pending-structure.json` also selects the architecture's working-model checks
+(`sysml-architecture-context`, no Pilot); `sysml-documentation` judges the same files with
+`check`. The architecture validator tests (`sysml-architecture`, one Pilot JVM per mutation
+or fixture state) judge the pinned model of `1df1ba3a5` and fixture trees, so they run only
+when the tool, `Validate.java`, the toolchain pin or their own test files change (#202).
+Runtime oracles are selected by changed implementation and executable tests. Source
 edits also select the fast binding check, without a dependency that runs the full Pilot
-mutation suite on every code edit. Both model suites fingerprint the model, tool and
-complete client/server/test source inputs they read. A source edit or deletion invalidates
-old trace evidence and full-model evidence, even when only the fast suite is selected.
+mutation suite on every code edit. `sysml-documentation` and `sysml-architecture`
+fingerprint the model, tool and complete client/server/test source inputs they read. A
+source edit or deletion invalidates old trace evidence, full-model evidence and the
+validator tests' evidence, even when only the fast suite is selected.
 Independent contract comparison still checks that tests prove the changed promises.
 
 A file selects the groups whose test cases prove its promises, not every group whose
