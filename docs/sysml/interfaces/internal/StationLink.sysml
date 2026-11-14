@@ -325,6 +325,7 @@ package WstxStationLink {
     }
 
     attribute def AlertWire {
+        attribute alert : WstxRankingControl::Alert;
         doc /* Routes (the StrategyHttp rules for Origin, authorization, media and size): GET
              /strategy/alerts (operating access, no query, empty body) -> {v 1, profile_id,
              boot_id, revision, alerts (oldest first)}. POST /strategy/alerts/clear {v,
@@ -339,6 +340,7 @@ package WstxStationLink {
              then reads GET /strategy/alerts. */
     }
     attribute def MostWantedListWire {
+        attribute status : WstxRankingControl::MostWantedStatus;
         doc /* Status in the GET /strategy snapshot: most_wanted null or {date, entries,
              unmapped}, most_wanted_unreadable, most_wanted_attribution "Club Log Most Wanted
              list, Club Log (c) Michael Wells G7VJR, clublog.org".
@@ -349,8 +351,9 @@ package WstxStationLink {
              returns the snapshot; no MCP tool dispatches to it. There is no automatic refresh. */
     }
     attribute def ContestVerdictWire {
-        doc /* POST /strategy/evaluate with strategy null and a contest in force returns these,
-             with strategy the profile's name and contest the tally {qsos, multipliers, points,
+        attribute verdict : WstxRankingControl::ContestVerdict;
+        attribute tally : WstxRankingControl::ContestTally;
+        doc /* POST /strategy/evaluate with strategy null and a contest in force returns the contest verdicts, with strategy the profile's name and contest the tally {qsos, multipliers, points,
              score} (null when the log is unreadable); explain false lists the ranked, the
              greyed and the dupes. A draft strategy still previews the draft. why: "calls my
              call", "new multiplier", "<n> points" joined by " \· ", or the reason above. */
@@ -359,7 +362,7 @@ package WstxStationLink {
     attribute def IgnoreListsWire {
         attribute lists : WstxRankingControl::IgnoreLists;
         attribute command : WstxRankingControl::IgnoreCommand;
-        doc /* POST /strategy/ignore {v, profile_id, boot_id, call, ignore} : exact keys; same
+        doc /* POST /strategy/ignore {v, profile_id, boot_id, call, ignore}: exact keys; same
              Origin/authorization/media/size rules and refusal codes as PUT /strategy (400
              invalid_request with the field, unsupported_version, 403 wrong_profile, 409
              state_conflict boot_id); call 1..13 of A-Z 0-9 /; ignore true adds the call to the
@@ -383,6 +386,6 @@ package WstxStationLink {
         doc /* GET /strategy carries the ranking state: my_continent (configured, else derived;
              null when unknown), derived_continent, session_ignore (the session list in the
              order added without ended entries, each {call, band, remaining_s: whole seconds to
-             its expiry, rounded up}), the MostWantedList status, */
+             its expiry, rounded up}), the MostWantedList status. */
     }
 }
