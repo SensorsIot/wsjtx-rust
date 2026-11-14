@@ -144,6 +144,8 @@ meter:
   host: claude
   # The day Alex stage one runs in this project (operator 2026-11-14, harness#80).
   rules_start: 2026-11-14
+  # The improvement run (Jonah) after 10 changes Alex pulled from Define to Land, counted from
+  # 2026-11-14 (operator 2026-11-14); the coordinator counts them until the meter does (harness#104).
   prices:
     claude-opus-5-5: {input: 4, output: 20, cache_read: 0.20}
     claude-sonnet-5-5: {input: 2, output: 10, cache_read: 0.10}
@@ -153,11 +155,11 @@ meter:
 # Alex, the coordinator's state machine, stage one (harness core/docs/Alex.md, "The numbers";
 # operator decisions of 2026-11-14 on harness#80).
 alex:
-  machines: {define: 1, check: 1, implement: 2, review: 1, coordinate: 1}
+  machines: {define: 1, check: 1, implement: 2, review: 1, coordinate: 1, test: 2}
   limits: {ready: 3, queued_landed: 2}
   buffer_per_coder: 2
   investment_share: 1
-  fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60}
+  fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60, test: 120}
   spend_per_day_usd: 200
   first: [192]
   priority_labels: [P1, P2, P3]
@@ -165,5 +167,7 @@ alex:
   restrictions:
     - until_accepted: 192
       brief: "No transmission: no agent started by Alex keys the real radio or the emulator before wsjtx-rust#192 is accepted (operator 2026-11-14)."
-  launcher: {command: claude, permission_mode: auto, model: claude-opus-5-5}
+  # The station tester's MCP servers: the band simulator only; the IC-7300 emulator runs as its
+  # own process on COM5 (one owner of the port), so no run starts a second one.
+  launcher: {command: claude, permission_mode: auto, model: claude-opus-5-5, mcp: {station: .harness/mcp/station.json}}
   poll: 120

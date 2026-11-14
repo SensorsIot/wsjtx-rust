@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "ft8-band-simulator": {
+      "type": "stdio",
+      "command": "D:/Github/FT-8-Simulator/.venv/Scripts/python.exe",
+      "args": [
+        "D:/Github/FT-8-Simulator/simulator.py"
+      ],
+      "env": {
+        "FT8_SIM_FT8SIM": "C:/WSJT/wsjtx-3.3.0-beta5-reference/bin/ft8sim.exe",
+        "FT8_SIM_JT9": "C:/WSJT/wsjtx-3.3.0-beta5-reference/bin/jt9.exe",
+        "FT8_SIM_FT4SIM": "C:/WSJT/wsjtx-3.3.0-beta5-tools/wsjtx-3.3.0-beta5-windows-x86_64-utilities/ft4sim.exe",
+        "FT8_SIM_CTY": "C:/WSJT/wsjtx-3.3.0-beta5-reference/share/wsjtx/cty.dat",
+        "FT8_SIM_ARTIFACTS": "D:/Github/FT-8-Simulator/artifacts/SIM-IC7300"
+      }
+    }
+  }
+}
