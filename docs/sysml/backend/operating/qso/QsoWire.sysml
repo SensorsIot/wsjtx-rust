@@ -6,29 +6,33 @@ package WstxQsoWire {
     private import WstxRequirements::AutomationState;
     private import WstxStandardQso::'TC-007-004';
     private import WstxQsoControl::ContactAction;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     requirement 'CL-010-15' {
         doc /* Expose the contact operations only through the versioned WstxContact wire contract: exact routes, keys and byte caps, command_id idempotency, contact_revision, the ContactRefusal codes, the contact.state and station.tick events, and the stated Thin/Off byte budget, leaving StatusReply and the compressed-route allowlist unchanged. Details: WstxQsoControl::ContactWire, ContactCommand, CommandReceipt, ContactSnapshot, ContactStateEvent, StationTickEvent. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact_http.rs; server/src/logbook_http.rs; server/src/main.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/contact_http.rs; server/src/logbook_http.rs; server/src/main.rs"; }
     }
     dependency CL_010_15_to_FR_019 from 'CL-010-15' to 'FR-019';
     dependency CL_010_15_to_FR_021 from 'CL-010-15' to 'FR-021';
     verification 'TC-007-005' {
-        doc /* TC-007-005 — Pushed contact, transmit and receive state without polling
-             CL-010-15
+        doc /* Pushed contact, transmit and receive state without polling
              #80 (operator 2026-11-09): the two-browser 32 kbit/s link workload is retired; the link budgets are targets judged from the link byte log (CL-003-05, TC-080-001). What remains are the unshaped pushed-state cases (WstxStationLink::PushedStationState).
              Setup: actual candidate server and Chromium on an unshaped local connection, the contact engine and #9 transmit owner on the recording hardware double, hand-authored result rows published by a test-only control peer, a request recorder.
              Steps: another client changes the contact and the transmit state; an own contact command, a command right after another, a stale safety revision, Esc and CQ during unanswered commands; an older GET /contact held across events; contact.js loaded after the socket's first event; a running Tune on Thin and on Detailed; receive.state with a job, audio and a refused event; contact.state carrying a contact and its dialogue rows.
              Expected: transmit.state and contact.state carry all fields first and then only what changed, shown with no GET /transmit and no GET /contact; an own command reads no GET /contact and a refusal shows its code; the next command goes with the receipt's revision; a stale safety revision is read at once and the CQ retried; nothing queued follows an abort; an older read never replaces a pushed change; a contact client loading after the first event has the state without a read; a Tune countdown alone at most once per 5 s below Detailed; receive.state carries the job and the audio, read again only for a new state, a refused event or a failed read; dialogue rows in order including a continuation at the same sequence.
-             2 — Isolated automated functional tests; Windows development PC, real browser/server, no link simulator; no radio. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/contact.test.cjs; server/src/contact_http_tests.rs; server/src/receive_http_tests.rs; tests/ui-operating.test.cjs";
+             real browser/server, no link simulator; no radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        @TestedBy { test = "tests/contact.test.cjs; server/src/contact_http_tests.rs; server/src/receive_http_tests.rs; tests/ui-operating.test.cjs"; }
         objective {
             verify 'CL-010-15';
         }
     }
-    dependency CL_010_15_verified_by_TC_007_004 from 'CL-010-15' to 'TC-007-004';
-    dependency CL_010_15_verified_by_TC_007_005 from 'CL-010-15' to 'TC-007-005';
 
     // ---------------------------------------------------------------- displays
     attribute def OperatorDisplays {

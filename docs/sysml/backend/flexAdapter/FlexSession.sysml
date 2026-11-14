@@ -6,48 +6,54 @@ package WstxFlexSession {
     private import WstxRequirements::'FR-008';
     private import WstxRequirements::'FR-009';
     private import WstxRequirements::AutomationState;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     requirement 'CL-013-01' {
         doc /* Phase 2 MUST offer direct native-network integration as an optional profile connection type for the selected radio control, status and sample-stream functions. When selected, that native path MUST NOT require the external SmartSDR desktop application, SmartSDR CAT or DAX applications to be installed/running as bridges. This restriction does not prohibit those tools as operator-selected infrastructure for the standard connection path. A Rust implementation may coordinate shared radio access internally without forcing one hardware GUI-client session per logical station server. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs; server/src/main.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/flex/session.rs; server/src/main.rs"; }
     }
     dependency CL_013_01_to_FR_023 from 'CL-013-01' to 'FR-023';
     requirement 'CL-013-02' {
         doc /* This independence concerns desktop applications. Compatible radio-side firmware and its API remain required; this specification does not promise a FlexRadio operating without its SmartSDR radio firmware or an unrestricted firmware compatibility range. Pin supported models, firmware/API versions and selected stream formats before implementation. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/wire.rs; server/src/flex/session.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/flex/wire.rs; server/src/flex/session.rs"; }
     }
     dependency CL_013_02_to_FR_023 from 'CL-013-02' to 'FR-023';
     requirement 'CL-013-03' {
         doc /* Each native FlexRadio profile MUST persist its receive intent: its own client identity and receive antenna, and no radio identity (operator decision 2026-11-06 on #22: the station uses whichever radio discovery finds available). Where discovery cannot reach the radio, the profile may also save the radio's address (operator decision 2026-11-06 on #13): a locator for that one radio, not compared with anything. On every connection/reconnection the system MUST reconcile that intent with authoritative discovery/status and current runtime handles. A changed/transient slice index MUST NOT redirect a station to another station's slice. Unresolvable associations MUST produce a visible unavailable/conflict state rather than guessing a replacement. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs; server/src/profile.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/flex/session.rs; server/src/profile.rs"; }
     }
     dependency CL_013_03_to_FR_023 from 'CL-013-03' to 'FR-023';
     requirement 'CL-013-04' {
         doc /* Control responses and received stream data MUST be routed to the associated station. Capacity shortages, occupied resources and incompatible API behavior MUST be reported without stealing another profile's slice or silently reducing the requested independence. Four-slice hardware validation requires a model/configuration that actually provides at least four usable slices. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/flex/session.rs"; }
     }
     dependency CL_013_04_to_FR_023 from 'CL-013-04' to 'FR-023';
     requirement 'CL-013-05' {
         doc /* Shared-radio transmit, tuning and other constrained-resource authority MUST be coordinated under FR-008/FR-009 before those operations are enabled. Four station profiles do not confer simultaneous independent transmit authority. Reconnect/profile restoration MUST NOT replay an old transmit request or bypass the future ownership policy. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/flex/session.rs; server/src/transmit_http.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/flex/session.rs; server/src/transmit_http.rs"; }
     }
     dependency CL_013_05_to_FR_008 from 'CL-013-05' to 'FR-008';
     dependency CL_013_05_to_FR_009 from 'CL-013-05' to 'FR-009';
     dependency CL_013_05_to_FR_023 from 'CL-013-05' to 'FR-023';
     requirement 'CL-013-06' {
         doc /* The native path MUST reuse the common browser, station-operation, DSP/modem and future MCP interfaces. The default standard connection remains usable without FlexRadio hardware or native-profile fields. A mixed set of instances MUST preserve each profile's selected path, configuration and routing independently. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/recording.rs; server/src/receive_http.rs; server/src/selection_http.rs; client/recording.js; client/contact.js";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/recording.rs; server/src/receive_http.rs; server/src/selection_http.rs; client/recording.js; client/contact.js"; }
     }
     dependency CL_013_06_to_FR_023 from 'CL-013-06' to 'FR-023';
     verification 'TC-023-001' {
-        doc /* #### TC-023-001 — Direct protocol and four-station route isolation
+        doc /* Direct protocol and four-station route isolation
 
-             **Promise:** FR-023; CL-013-01, CL-013-04. **Level: 2 — Isolated automated tests.**
+             **Promise:** FR-023; CL-013-01, CL-013-04.
              **Where it runs:** Windows PC, candidate Rust system, four station profiles/windows
              and an independent local FlexRadio protocol emulator; no real radio or external service.
 
@@ -109,8 +115,9 @@ package WstxFlexSession {
              arrives only after client udp_register from the stream's port, which repeats, and no
              command names a local address. A full radio on a saved address reports
              radio_refused. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs";
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        @TestedBy { test = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs"; }
         objective {
             verify 'CL-013-01';
             verify 'CL-013-04';
@@ -118,9 +125,9 @@ package WstxFlexSession {
         }
     }
     verification 'TC-023-002' {
-        doc /* #### TC-023-002 — Persisted intent and changed runtime handles
+        doc /* Persisted intent and changed runtime handles
 
-             **Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05. **Level: 2 — Isolated automated tests.**
+             **Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05.
              **Where it runs:** Windows PC, disposable persisted profiles and a local radio emulator.
 
              **Inputs/actions:** Save the native receive intent, disconnect/restart the
@@ -154,8 +161,9 @@ package WstxFlexSession {
              Authorization: a native station without a grant makes no TCP connection and, after
              its only grant is revoked, its client and slice leave the emulator.
              profile.json bytes stay unchanged and hold no radio identity (no serial key). */
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        @TestedBy { test = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs"; }
         objective {
             verify 'CL-013-03';
             verify 'CL-013-04';
@@ -164,9 +172,9 @@ package WstxFlexSession {
         }
     }
     verification 'TC-023-003' {
-        doc /* #### TC-023-003 — Capability limits and shared-resource coordination
+        doc /* Capability limits and shared-resource coordination
 
-             **Promise:** FR-023; FR-008/FR-009; CL-013-02, CL-013-04, CL-013-05, CL-013-06. **Level: 2 — Isolated automated tests.**
+             **Promise:** FR-023; FR-008/FR-009; CL-013-02, CL-013-04, CL-013-05, CL-013-06.
              **Where it runs:** Windows PC, four logical station servers and an API/resource emulator.
 
              **Inputs/actions:** Emulate sufficient and insufficient slice capacities, incompatible
@@ -200,8 +208,9 @@ package WstxFlexSession {
              No audio input for it. The line stands in the receive details, not in the top bar, and
              opens from its error-field entry; the screen has no page scroll at 1366x768. Stopping
              the station turns the line stale. No page errors. */
-        attribute automation : AutomationState = AutomationState::implemented;
-        attribute executable : String = "tests/native-flex.test.cjs";
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        @TestedBy { test = "tests/native-flex.test.cjs"; }
         objective {
             verify 'CL-013-02';
             verify 'CL-013-04';
@@ -213,9 +222,9 @@ package WstxFlexSession {
         }
     }
     verification 'TC-023-004' {
-        doc /* #### TC-023-004 — Live direct-radio tuning and slice lifecycle
+        doc /* Live direct-radio tuning and slice lifecycle
 
-             **Promise:** FR-023; FR-009. **Level: 4 — Controlled live tests with operator consent.**
+             **Promise:** FR-023; FR-009.
              **Where it runs:** Windows PC and a designated FlexRadio test station, using a recorded
              supported model/firmware and hardware capacity of at least four usable slices.
 
@@ -228,16 +237,17 @@ package WstxFlexSession {
              those desktop applications. Each station retains its intended slice and other stations
              remain isolated through the approved lifecycle actions. Live tuning/allocation changes
              radio state, so this case is not classified as read-only level 3. */
-        attribute automation : AutomationState = AutomationState::planned;
+        @TestLevel { cost = 4; location = TestLocation::flexRadio; }
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'FR-009';
             verify 'FR-023';
         }
     }
     verification 'TC-023-005' {
-        doc /* #### TC-023-005 — Observational live status, only where genuinely read-only
+        doc /* Observational live status, only where genuinely read-only
 
-             **Promise:** FR-023. **Level: 3 — Live read-only tests.**
+             **Promise:** FR-023.
              **Where it runs:** An authorized designated FlexRadio station and the Windows PC.
 
              **Inputs/actions:** Observe existing discovery/status/stream identity using a path that
@@ -246,16 +256,16 @@ package WstxFlexSession {
              **Expected results:** Reported state matches the designated radio without changing its
              operating resources. If the selected API workflow requires such changes, use the level-4
              case and operator consent instead; do not relabel a mutating test as observational. */
-        attribute automation : AutomationState = AutomationState::planned;
+        @TestLevel { cost = 3; location = TestLocation::flexRadio; }
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'FR-023';
         }
     }
     verification 'TC-023-006' {
-        doc /* #### TC-023-006 — Conditional future transmit validation
+        doc /* Conditional future transmit validation
 
              **Promise:** FR-008/FR-009, FR-023; CL-013-05.
-             **Level: 5 — Tests with external effects and explicit operator consent.**
              **Where it runs:** A designated authorized physical test station, only after transmit
              functionality, its ownership policy and the specific test operation have been approved.
 
@@ -266,7 +276,8 @@ package WstxFlexSession {
              **Expected results:** The agreed single-radio transmit authority is enforced, conflicts
              are refused and FR-008 halt/failure behavior is met. This conditional definition does
              not authorize transmission now or make it part of the receive-only live test above. */
-        attribute automation : AutomationState = AutomationState::planned;
+        @TestLevel { cost = 5; location = TestLocation::flexRadio; }
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-013-05';
             verify 'FR-008';
@@ -274,16 +285,6 @@ package WstxFlexSession {
             verify 'FR-023';
         }
     }
-    dependency CL_013_01_verified_by_TC_023_001 from 'CL-013-01' to 'TC-023-001';
-    dependency CL_013_02_verified_by_TC_023_003 from 'CL-013-02' to 'TC-023-003';
-    dependency CL_013_03_verified_by_TC_023_002 from 'CL-013-03' to 'TC-023-002';
-    dependency CL_013_04_verified_by_TC_023_001 from 'CL-013-04' to 'TC-023-001';
-    dependency CL_013_04_verified_by_TC_023_002 from 'CL-013-04' to 'TC-023-002';
-    dependency CL_013_04_verified_by_TC_023_003 from 'CL-013-04' to 'TC-023-003';
-    dependency CL_013_05_verified_by_TC_023_002 from 'CL-013-05' to 'TC-023-002';
-    dependency CL_013_05_verified_by_TC_023_003 from 'CL-013-05' to 'TC-023-003';
-    dependency CL_013_05_verified_by_TC_023_006 from 'CL-013-05' to 'TC-023-006';
-    dependency CL_013_06_verified_by_TC_023_003 from 'CL-013-06' to 'TC-023-003';
     requirement NativeFlexWireSubset {
         attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
         @Conflict {

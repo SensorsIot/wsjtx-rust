@@ -7,6 +7,12 @@ package WstxTransmitClock {
     private import WstxTransmit::'CL-009-05';
     private import WstxTransmit::'CL-043-03';
     private import WstxRequirements::AutomationState;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     requirement 'CL-043-02' {
         doc /* The station estimates its clock offset from the decodes of its live receive
              (WstxTransmitClock::AirClock): every published decode whose message names a
@@ -31,17 +37,13 @@ package WstxTransmitClock {
              stays continuous (a step that corrected the system clock leaves 0); a
              correction beyond 3000 ms after that restarts at 0; a correction of 0 stays
              0 (the accepted time is the system clock). */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/transmit/air.rs; server/src/recording.rs; server/src/transmit_http.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/transmit/air.rs; server/src/recording.rs; server/src/transmit_http.rs"; }
     }
     dependency CL_043_02_to_FR_006 from 'CL-043-02' to 'FR-006';
     dependency CL_043_02_to_FR_004 from 'CL-043-02' to 'FR-004';
-    dependency CL_043_02_verified_by_TC_043_001 from 'CL-043-02' to 'TC-043-001';
-    dependency CL_043_02_verified_by_TC_043_004 from 'CL-043-02' to 'TC-043-004';
-    dependency CL_043_02_verified_by_TC_092_001 from 'CL-043-02' to 'TC-092-001';
     verification 'TC-043-001' {
-        doc /* TC-043-001 — Clock from the air: estimates of known DT distributions
-             CL-043-02, CL-043-03, CL-009-05
+        doc /* Clock from the air: estimates of known DT distributions
              Setup: hand-written raw DT sets around a twelve-station crowd with true DT
              -250, -150, -100, -50, 0, 0, 50, 100, 150, 200, 300, 400 ms (median 25 ms);
              the pure AirClock and StationClock on explicit or real clocks with a fake
@@ -75,20 +77,20 @@ package WstxTransmitClock {
              restarts at 0; only synchronized plans a transmit start; correction and state
              equal with SNTP +12, -1900 and none (SNTP never applied), warning
              stations_off with SNTP +12 and correction -2000, pc_clock_off with -1900.
-             2 — Isolated automated tests; Windows development PC, no audio, radio or
+             no audio, radio or
              network. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-02';
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
-        attribute executable : String = "server/tests/transmit_air_clock.rs";
+        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
     }
     // #92 Time synchronization in three situations: the station clock is always known.
     verification 'TC-092-001' {
-        doc /* TC-092-001 — Evidence rule of the clock from the air
-             CL-043-02, CL-043-03
+        doc /* Evidence rule of the clock from the air
              Setup: the pure AirClock and StationClock on explicit clocks with a fake SNTP
              monitor; hand-written votes, one per station, given as DT against station
              UTC (raw DT plus the correction), FT8 periods; no receive, radio or network.
@@ -121,14 +123,15 @@ package WstxTransmitClock {
              100 ms step changes nothing, the 101 ms step clears the window; the 2000 ms
              step leaves -3000 ms, the 2001 ms step restarts at 0; the +525 ms step leaves
              0; the state is never unknown.
-             2 — Isolated automated tests; Windows development PC, no audio, radio or
+             no audio, radio or
              network. */
-        attribute automation : AutomationState = AutomationState::implemented;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-043-02';
             verify 'CL-043-03';
         }
-        attribute executable : String = "server/tests/transmit_air_clock.rs";
+        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
     }
     attribute def TransmitClock {
         attribute maxOffsetMs : Integer = 500;

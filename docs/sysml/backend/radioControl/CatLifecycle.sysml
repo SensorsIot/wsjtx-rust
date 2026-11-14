@@ -7,6 +7,8 @@ package WstxCatLifecycle {
     private import WstxRadioIO::'TC-022-009';
     private import WstxOperatingLayout::'TC-022-010';
     private import WstxRadioControl::AutomaticCatStatus;
+    private import ModelBindings::Status;
+    private import ModelBindings::ImplementedIn;
     requirement 'CL-022-04' {
         doc /* Selected target cadence: after confirmed released failed attempt wait
              1,2,4,8seconds on successive failures, then8seconds capped. Use one timer
@@ -30,14 +32,12 @@ package WstxCatLifecycle {
              the first tick observing the confirmed released failure (<=one tick
              after release). Explicit recovery from a failed-close quarantine is a
              station restart; no in-process action clears it. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs"; }
     }
     dependency CL_022_04_to_FR_008 from 'CL-022-04' to 'FR-008';
     dependency CL_022_04_to_FR_009 from 'CL-022-04' to 'FR-009';
     dependency CL_022_04_to_FR_021 from 'CL-022-04' to 'FR-021';
-    dependency CL_022_04_verified_by_TC_022_009 from 'CL-022-04' to 'TC-022-009';
-    dependency CL_022_04_verified_by_TC_022_010 from 'CL-022-04' to 'TC-022-010';
     enum def AutomaticCatEvent { enum eligible; enum readbackConfirmed; enum attemptFailedReleased; enum delayElapsed; enum disabledOrRevoked; enum identityChanged; enum releaseFailed; enum recoveryConfirmed; }
     action def MaintainCommissionedCat {
         doc /* Target CL-022-03/04 action under existing selected-radio authority and

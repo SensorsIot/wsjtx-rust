@@ -6,20 +6,25 @@ package WstxTransmitSchedule {
     private import WstxRequirements::AutomationState;
     private import WstxTransmit::'TC-006-003';
     private import WstxTransmit::ClockState;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     requirement 'CL-009-02' {
         doc /* Plan an FT8 transmission start for a named even/odd 15 s UTC period from a
              virtual clock: 500 ms audio delay, late start up to 75 % of the period by
              skipping the elapsed prefix, refusal for an unsynchronized/unknown clock,
              an unaligned period or a stale request, and no catch-up or replay of a
              missed period. Details: WstxTransmitSchedule::Ft8Schedule, PlanTransmitStart. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/transmit/schedule.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/transmit/schedule.rs"; }
     }
     dependency CL_009_02_to_FR_006 from 'CL-009-02' to 'FR-006';
     dependency CL_009_02_to_FR_005 from 'CL-009-02' to 'FR-005';
     verification 'TC-006-001' {
-        doc /* TC-006-001 — FT8 transmit period scheduling
-             CL-009-02
+        doc /* FT8 transmit period scheduling
              Setup: virtual UTC clock values around period boundaries, both parities,
              12 kHz and 48 kHz, every clock state.
              Steps: select the next slot and plan starts before the period, at the audio
@@ -29,15 +34,14 @@ package WstxTransmitSchedule {
              TxStartPolicy.hpp 0.75, mainwindow.cpp even/odd t mod 30 s): exact audio
              start and skipped-sample counts; 11249 ms admitted and 11250 ms stale;
              stale requests never move to a later period.
-             2 — Isolated automated tests; Windows development PC, no clock, audio or radio. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             no clock, audio or radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-009-02';
         }
-        attribute executable : String = "server/tests/transmit_vectors.rs";
+        @TestedBy { test = "server/tests/transmit_vectors.rs"; }
     }
-    dependency CL_009_02_verified_by_TC_006_003 from 'CL-009-02' to 'TC-006-003';
-    dependency CL_009_02_verified_by_TC_006_001 from 'CL-009-02' to 'TC-006-001';
     enum def ScheduleRefusal { enum clockNotSynchronized; enum misalignedPeriod; enum stalePeriod; }
     attribute def Ft4Schedule {
         attribute periodMs : Integer = 7500;

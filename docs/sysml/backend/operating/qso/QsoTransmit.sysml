@@ -8,94 +8,93 @@ package WstxQsoTransmit {
     private import WstxTransmit::'CL-039-06';
     private import WstxOperatingChain::TxSlot;
     private import WstxQsoControl::TxWatchdog;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
     requirement 'CL-111-02' {
         doc /* Start actions. The start actions are exactly these. Each is one ContactCommand and carries the safety revision shown to its sender; grant, clock, period and safety-revision checks are unchanged. Reply: double-click or row menu Reply on a Band Activity row, double-click or Enter on a Calling me row: reply {row, directive_confirmed?, safety_revision}. CQ: the CQ button: call_cq {safety_revision}. Call: Enter in the DX call or grid field, and the button beside them: call_dx {dx_call, dx_grid, replace, safety_revision}. Send next: "Send <exchange> next": send_next {slot, safety_revision}. Reset: the Reset button: reset_repetitions {safety_revision}. Auto: a strategy, contest or policy run: reply or call_cq sent by the run, cause auto. The outcome of each start in each state is the table of WstxQsoTransmit::StartActions. A Hound's call_cq is no_contact. A slot without text is invalid_message, as choose_next. enable_tx is retired: refused invalid_request with field action, for the browser and for MCP clients. select_row, enter_dx and choose_next stay and never start. An MCP client may send reply, call_cq, call_dx and send_next; its start is automatic: after a repetition-limit stop, or when no browser action was seen this boot, it is refused tx_watchdog. A start refused for a stale contact or safety revision, for tx_watchdog, or by a row or call refusal changes nothing: no QSO is prepared. The browser retries a start refused stale_revision at most twice with the reloaded snapshot, as CL-061-02. Not delivered yet: the browser controls and the runs still send select_row or enter_dx and enable_tx, enable_tx is still accepted, and the MCP tool description does not name the starts. Details: WstxQsoTransmit::StartActions, ContactCommand. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/contact.rs; server/src/contact_http.rs"; }
     }
     dependency CL_111_02_to_FR_007 from 'CL-111-02' to 'FR-007';
     dependency CL_111_02_to_FR_008 from 'CL-111-02' to 'FR-008';
     requirement 'CL-111-05' {
         doc /* A start never becomes a CQ. Only call_cq calls CQ. reply and call_dx name their own partner and start that QSO in every state. send_next and reset_repetitions act on the current QSO: when it has ended, was cancelled or never existed they are refused no_contact and nothing is sent (the table of WstxQsoTransmit::StartActions). Not delivered yet: enable_tx with no partner still calls CQ. Details: WstxQsoTransmit::StartActions. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/contact.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/contact.rs"; }
     }
     dependency CL_111_05_to_FR_007 from 'CL-111-05' to 'FR-007';
     requirement 'CL-111-08' {
         doc /* Reset. The QSO pane has a Reset button. It is offered only for a QSO with a partner: while it transmits (state on, replying to signoff), and while it is stopped by the repetition limit (state off, cause txWatchdog). It is not offered during an own CQ, in any other state, or after Halt, a lost radio or a refused transmission. While on: the repetition count of the message due next starts anew; the state stays on. While stopped by the limit: the count starts anew, the state goes on, and the message due next, the one that got no answer, is sent from the next own period. Only the operator in the browser may use it: from a run or an MCP client it is refused operator_required. Its other outcomes are the table of WstxQsoTransmit::StartActions. The limit itself is unchanged: 1..99, default 6; a send that would exceed it is never keyed. Labels: "Reset count" while the state is on; "Reset · send again" while stopped by the limit. Not delivered yet: the button; the command reset_repetitions is. Details: WstxQsoTransmit::StartActions, TxWatchdog. */
-        attribute coverage : ImplementationState = ImplementationState::partial;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs";
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/contact.rs; server/src/contact_http.rs"; }
     }
     dependency CL_111_08_to_FR_007 from 'CL-111-08' to 'FR-007';
     dependency CL_111_08_to_FR_008 from 'CL-111-08' to 'FR-008';
     verification 'TC-111-003' {
-        doc /* TC-111-003 — Each start in each state
-             CL-111-02
+        doc /* Each start in each state
              Setup: as TC-111-001, one station built anew for each cell; for the wire the actual station router (contact_http_tests fixture).
              Steps: every cell of the outcome table of WstxQsoTransmit::StartActions, one command each; call_cq on an own CQ kept off after a lost radio, with the radio back and with the radio still away. Further negatives: a stale safety revision; enable_tx; a Hound's call_cq.
              Expected (the outcome table): a cell that says "on" transmits in the next own period, a refusal sends nothing and changes nothing. The own CQ kept off: with the radio back the same CQ, on, cause operator, sent in the next own period; with the radio away transmit_unavailable, nothing changed. A stale safety revision is stale_revision and nothing is prepared; enable_tx is invalid_request field action; a Hound's call_cq is no_contact.
              Not automated yet: enable_tx refused.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::partial;
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-111-02';
         }
-        attribute executable : String = "server/src/transmit_state_tests.rs; server/src/contact_http_tests.rs";
+        @TestedBy { test = "server/src/transmit_state_tests.rs; server/src/contact_http_tests.rs"; }
     }
-    dependency CL_111_02_verified_by_TC_111_003 from 'CL-111-02' to 'TC-111-003';
     verification 'TC-111-004' {
-        doc /* TC-111-004 — Only start controls lead to a transmission
-             CL-111-02
+        doc /* Only start controls lead to a transmission
              Setup: Chromium against the candidate server with a recording hardware double; "QSO prepared, state off".
              Steps: every button and input of the operating view is used once; a double-click on a row.
              Expected (the start table of CL-111-02): the set that caused a TransmitRequest equals the start table; the test fails when its list of controls is not the page's. A double-click sends exactly one reply.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-111-02';
         }
     }
-    dependency CL_111_02_verified_by_TC_111_004 from 'CL-111-02' to 'TC-111-004';
     verification 'TC-111-006' {
-        doc /* TC-111-006 — A start never becomes a CQ
-             CL-111-05
+        doc /* A start never becomes a CQ
              Setup: as TC-111-001.
              Steps: send_next and reset_repetitions on a completed and on a cancelled QSO and with no contact; reply and call_dx after a completed QSO; call_cq.
              Expected (CL-111-05): no_contact, no CQ and no other request in 3 periods. reply and call_dx call their own partner, never CQ. call_cq calls CQ.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::implemented;
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-111-05';
         }
-        attribute executable : String = "server/src/transmit_state_tests.rs";
+        @TestedBy { test = "server/src/transmit_state_tests.rs"; }
     }
-    dependency CL_111_05_verified_by_TC_111_006 from 'CL-111-05' to 'TC-111-006';
-    dependency CL_111_02_verified_by_TC_111_008 from 'CL-111-02' to 'TC-111-008';
     verification 'TC-111-012' {
-        doc /* TC-111-012 — Reset
-             CL-111-08
+        doc /* Reset
              Setup: as TC-111-001, limit 2; for (g) Chromium against the candidate server.
              Steps: (a) QSO, state on, the message sent once: Reset. (b) after the limit's stop: Reset. (c) a kept QSO after Halt, after deviceLost and after a refused transmission. (d) no contact, idle, own CQ calling, own CQ ended by the limit, completed, cancelled; then the CQ button. (e) from an MCP principal and from a run. (f) a stale safety revision. (g) the button in each state.
              Expected (CL-111-08, the outcome table): (a) two more sends are keyed and the next is not (three in all). (b) the same message is sent again from the next own period, cause operator, count 1. (c) state_conflict. (d) no_contact; the CQ button then calls CQ again. (e) operator_required, count unchanged. (f) stale_revision. (g) the button is present in exactly the two offered states, with the labels of CL-111-08, and absent in the states of (c) and (d).
              Not automated yet: (g).
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::partial;
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-111-08';
         }
-        attribute executable : String = "server/src/transmit_state_tests.rs";
+        @TestedBy { test = "server/src/transmit_state_tests.rs"; }
     }
-    dependency CL_111_08_verified_by_TC_111_012 from 'CL-111-08' to 'TC-111-012';
-    dependency CL_111_02_verified_by_TC_111_015 from 'CL-111-02' to 'TC-111-015';
-    dependency CL_111_08_verified_by_TC_111_015 from 'CL-111-08' to 'TC-111-015';
     verification 'TC-111-008' {
-        doc /* TC-111-008 — Runs and MCP
-             CL-111-02, CL-039-06
+        doc /* Runs and MCP
              Setup: the station with a strategy run and a contest run (strategy_tests) and with an MCP client (mcp_tests).
              Steps: each run starts; an MCP reply before any browser action, after a repetition-limit stop, and after an operator start.
              Expected (CL-039-06): a run starts by one reply or call_cq, cause auto; the MCP reply is tx_watchdog with nothing prepared in the first two, accepted in the third.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
-        attribute automation : AutomationState = AutomationState::planned;
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::planned; }
         objective {
             verify 'CL-111-02';
             verify 'CL-039-06';

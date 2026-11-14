@@ -21,6 +21,8 @@ package WstxProfileRecordings {
     private import WstxRecordingTransfer::RecordingLimits;
     private import WstxAudioStreams::ReceiveSamples;
     private import WstxRecordingTransfer::RecordingTransfer;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
     doc /* The recordings function of the profile part (WstxProfileRecordings::RecordedSource,
          deployed as WstxProfiles::PersistedProfile::recordings): one imported
          recording per profile, kept with its metadata and manifest in the profile directory
@@ -276,7 +278,7 @@ package WstxProfileRecordings {
     dependency CL_006_01_to_FR_018 from 'CL-006-01' to 'FR-018';
 
     verification 'TC-018-001' {
-        doc /* TC-018-001 — Valid recordings
+        doc /* Valid recordings
              Setup: byte-built PCM WAVs with 1, 2,048, 4,096, 4,097 and
              RecordingLimits::importMaxFrames frames, endpoint samples -32768, -1, 0, 1 and
              32767 and legal ancillary and padding chunks; the pinned original recordings
@@ -295,7 +297,8 @@ package WstxProfileRecordings {
              (d) Two replays give equal spectra, within 0.5 dB quantization plus 0.05 dB.
              Oracle: hand-authored RIFF offsets and the manifests; the original recordings
              prove real input, not the calibration.
-             2 — Isolated automated tests; Windows PC, disposable profiles, no radio. */
+             disposable profiles, no radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-006-01';
@@ -306,7 +309,7 @@ package WstxProfileRecordings {
         }
     }
     verification 'TC-018-002' {
-        doc /* TC-018-002 — Invalid recordings and import faults
+        doc /* Invalid recordings and import faults
              Setup: table-mutated WAVs; slow, aborted and timed-out uploads; storage faults at
              each commit step (write, flush, metadata, manifest, cleanup), with restarts at
              the commit boundaries.
@@ -323,7 +326,8 @@ package WstxProfileRecordings {
                  Cleanup keeps committed data and reports its own failure.
              (d) Other stations, other profiles and the status stay available.
              Oracle: hand-specified errors of WstxStationLink::HttpValidation.
-             2 — Isolated automated tests; Windows PC, disposable profiles, no radio. */
+             disposable profiles, no radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-006-01';
@@ -334,8 +338,6 @@ package WstxProfileRecordings {
             test = "tests/recording-fixtures.test.cjs; tests/recording.test.cjs; server/src/recording_tests.rs";
         }
     }
-    dependency CL_006_01_verified_by_TC_018_001 from 'CL-006-01' to 'TC-018-001';
-    dependency CL_006_01_verified_by_TC_018_002 from 'CL-006-01' to 'TC-018-002';
     part def RecordedSource {
         attribute storedMetadata : WstxProfileRecordings::RecordingMetadata[*];
         attribute storedManifests : WstxProfileRecordings::RecordingManifest[*];

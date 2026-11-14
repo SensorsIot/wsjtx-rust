@@ -5,6 +5,8 @@ package WstxOperatingChain {
     private import WstxRequirements::'FR-011';
     private import WstxRequirements::ImplementationState;
     private import RequirementDerivation::*;
+    private import ModelBindings::Status;
+    private import ModelBindings::ImplementedIn;
     port def RankedActivityPort { out item ranked : RankedList; }
     interface def RankedActivity {
         doc /* The ranked list, from ranking to auto. */
@@ -62,8 +64,8 @@ package WstxOperatingChain {
              transmission goes off with cause contactCompleted, and a Log QSO of a running QSO
              still closes it (completed, Tx6). Details: WstxOperatingChain::LogAnswer,
              WstxSpecialActivities::ContestSerialRule. */
-        attribute coverage : ImplementationState = ImplementationState::implemented;
-        attribute implementation : String = "server/src/contact.rs; server/src/contact_http.rs";
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/contact.rs; server/src/contact_http.rs"; }
     }
     #derivation connection {
         end #original ::> 'FR-011';
