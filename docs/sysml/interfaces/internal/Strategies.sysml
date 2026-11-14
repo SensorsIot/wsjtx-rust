@@ -2,6 +2,8 @@ package WstxStrategies {
     private import ScalarValues::*;
     private import WstxRankingControl::Needed;
     private import WstxRankingControl::NewPer;
+    private import WstxRankingControl::Continent;
+    private import WstxRankingControl::RankingKeys;
     attribute def BuiltinStrategies {
         doc /* D19 (operator grill 2026-11-09). The read-only presets, one table in the
              station in this order, listed in the GET /strategy snapshot as builtin_strategies,
@@ -50,7 +52,7 @@ package WstxStrategies {
              (StrategyConfiguration); it is never dropped. */
     }
     attribute def StrategyConfiguration {
-        attribute continent : String[0..1];
+        attribute continent : Continent[0..1];
         attribute active : String[0..1];
         attribute strategiesMax : Integer = 16;
         attribute ignoreCallsMax : Integer = 100;
@@ -104,25 +106,14 @@ package WstxStrategies {
     }
     attribute def StrategyHttp {
         attribute bodyBytesMax : Integer = 32768;
-        attribute evaluateRecordsMax : Integer = 2048;
+
         doc /* GET /strategy (operating access, no query, empty body): {v 1, profile_id,
-             boot_id, revision, configuration (or null), configuration_error, my_continent
-             (configured, else derived; null when unknown), derived_continent,
-             session_ignore (#42: the session list in the order added without ended
-             entries, each {call, band, remaining_s: whole seconds to its expiry, rounded
-             up}), the MostWantedList status, builtin_strategies (BuiltinStrategies) and
+             boot_id, revision, configuration (or null), configuration_error, the ranking state
+             of RankingStateWire, builtin_strategies (BuiltinStrategies) and
              configuration_note ([] or the renames of the upgrade, [{from, to}], until the next
              PUT; the editor shows each once as "Renamed <from> to <to>")}. The body limit stays
-             32768 bytes: a configuration whose PUT is larger is refused like any oversized body,
-             and the editor says so.
-             POST /strategy/ignore {v, profile_id, boot_id, call, ignore} (#42): exact
-             keys; same Origin/authorization/media/size rules and refusal codes as PUT
-             /strategy (400 invalid_request with the field, unsupported_version, 403
-             wrong_profile, 409 state_conflict boot_id); call 1..13 of A-Z 0-9 /; ignore
-             true adds the call to the session list (or renews it), false removes it (not
-             listed: no change). It changes no revision, is allowed while a strategy runs and
-             applies at the next evaluation; returns the snapshot. No MCP tool dispatches
-             to it (an MCP principal is refused, #58 principal guard).
+             32768 bytes: a configuration whose PUT is larger is refused like any oversized
+             body, and the editor says so.
              PUT /strategy {v, profile_id, boot_id, expected_revision, configuration}:
              exact keys; same Origin/authorization/media/size rules and refusal codes as
              PUT /udp (400 invalid_request with the field, unsupported_version, 403
@@ -136,15 +127,8 @@ package WstxStrategies {
              strategy.state {v 1, type "strategy.state", data {profile_id, boot_id,
              strategy_revision}}: a display-subscribed peer receives it when the revision
              changes after it subscribed (never on subscription itself), paced with
-             contact.state; the browser then reads GET /strategy. So a HALT's Auto off and another
-             browser's selection or toggle are pushed.
-             POST /strategy/evaluate {v, profile_id, boot_id, source_id, job_id,
-             generation, first_sequence, next_sequence (0 <= next - first <= 2048),
-             strategy (null: the saved active strategy, else a draft Strategy), explain}:
-             the verdicts of the retained live records [first, next) of exactly that live
-             job (another job: 409 stale_request job_id; no active strategy: 409
-             not_configured strategy) in display order: every one when explain, else only
-             those with a rank or grey. Never changes station state. */
+             contact.state; the browser then reads GET /strategy. So a HALT's Auto off and
+             another browser's selection or toggle are pushed. */
     }
     attribute def ContestProfile {
         doc /* Rule facts only, one data entry per contest, no behaviour of its own; wire keys of
@@ -206,7 +190,7 @@ package WstxStrategies {
     }
 
     enum def StrategyClass {
-        doc /* D19, two classes (operator grill Q12 2026-11-09; wire "strategy" and "contest").
+        doc /* Two classes, wire "strategy" and "contest".
              strategy: Filters and Order from the filter questions; DXCC all and Casual are both of
              this class and differ only in their answers. contest: Filters and Order from a contest
              (WstxContest), with the operator's country, US state and CQ target lists on top; a
@@ -217,22 +201,18 @@ package WstxStrategies {
         enum contest;
     }
     enum def LeaveMode {
-        doc /* #97 decision 5 (LeaveRule): calls (after n calls without an answer, m while he hears
-             us), until_logged (stay until the QSO is logged; leave when he has not been decoded for
-             n minutes), contest (contest style: while he hears us stay as long as he is still the
+        doc /* The leave modes of LeaveRule: calls (after n calls without an answer, m while he
+             hears
+             us), until_logged (stay until the QSO is logged; leave when he has not been decoded
+             for n minutes), contest (contest style: while he hears us stay as long as he is
+             still the
              most valuable, else leave after n Tx changes). */
         enum calls; enum until_logged; enum contest;
     }
     attribute def Strategy {
         attribute name : String;
         attribute strategyClass : StrategyClass;
-        attribute bands : String[0..*];
-        attribute contest : String[0..1];
-        attribute newPer : NewPer;
-        attribute needed : Needed;
-        attribute minSnrDb : Integer[0..1];
-        attribute treat73AsCq : Boolean = true;
-        attribute callersFirst : Boolean = true;
+        attribute ranking : RankingKeys;
         attribute leaveMode : LeaveMode;
         attribute leaveCalls : Integer = 4;
         attribute leaveCallsHeard : Integer = 8;
@@ -245,36 +225,44 @@ package WstxStrategies {
         attribute cqWhenIdle : Boolean = false;
         attribute cqWaitPeriods : Integer = 2;
         attribute retryMinutes : Integer = 10;
-        attribute orderCriteriaMax : Integer = 16;
-        attribute listEntriesMax : Integer = 64;
+
         assert constraint leaveCallsRange { leaveCalls >= 1 and leaveCalls <= 20 }
-        assert constraint leaveCallsHeardRange { leaveCallsHeard >= leaveCalls and leaveCallsHeard <= 40 }
+        assert constraint leaveCallsHeardRange {
+            leaveCallsHeard >= leaveCalls and leaveCallsHeard <= 40
+        }
         assert constraint goneRange { goneMinutes >= 1 and goneMinutes <= 60 }
         assert constraint txChangesRange { txChanges >= 1 and txChanges <= 20 }
-        assert constraint moveRange { moveEveryHeard >= 0 and moveEveryHeard <= 20 and moveEveryNotHeard >= 0 and moveEveryNotHeard <= 20 and moveEveryNoReports >= 0 and moveEveryNoReports <= 20 }
+        assert constraint moveRange {
+            moveEveryHeard >= 0 and moveEveryHeard <= 20 and moveEveryNotHeard >= 0 and
+            moveEveryNotHeard <= 20 and moveEveryNoReports >= 0 and moveEveryNoReports <= 20
+        }
         assert constraint retryRange { retryMinutes >= 1 and retryMinutes <= 120 }
         assert constraint cqWaitRange { cqWaitPeriods >= 1 and cqWaitPeriods <= 20 }
-        doc /* D19 (schema 4 of strategy.json, StrategyConfiguration). The same keys for every
-             class, in the order of the decisions; wire keys exactly:
-             name (1..32 printable ASCII, no leading/trailing space, unique ignoring case, never a
-             built-in's name, BuiltinStrategies); class (StrategyClass);
-             bands (decision 1, StrategyBands: null for every band, else 1..32 unique ADIF band
-             names of the ADIF band enumeration in lower case, "20m", "6m", "2m", "70cm");
+        doc /* Schema 4 of strategy.json (StrategyConfiguration). The same keys for every class,
+             in the order of the decisions; the keys bands, filters, order, contest and
+             callers_first
+             are the features of RankingKeys; wire keys exactly:
+             name (1..32 printable ASCII, no leading/trailing space, unique ignoring case, never
+             a built-in's name, BuiltinStrategies); class (StrategyClass);
+             bands (decision 1, StrategyBands: null for every band);
              filters (decision 2, Candidate): for class strategy exactly {new (1..7 unique
-             NewWhat), new_per (NewPer), new_means (Needed), region ({kind all} | {kind dx} | {kind
-             selected, continents: 1..7 unique of AF AN AS EU NA OC SA}), min_snr_db (null or an
-             integer -50..49), worked_since ({kind all} | {kind today} | {kind from_to, from, to}:
-             real calendar dates "YYYY-MM-DD" between 1930-01-01 and 2099-12-31 with from <= to),
-             treat_73_as_cq (boolean), countries (CountryList), states (UsStateFilter), cq_targets
-             (CqTargetList)}; for contest exactly {countries, states, cq_targets};
+             NewWhat), new_per (NewPer), new_means (Needed), region ({kind all} | {kind dx} |
+             {kind
+             selected, continents: 1..7 unique Continent codes}), min_snr_db (null or an
+             integer -50..49), worked_since ({kind all} | {kind today} | {kind from_to, from,
+             to}: WorkedWindow),
+             treat_73_as_cq (boolean), countries (CountryList), states (UsStateFilter),
+             cq_targets (CqTargetList)}; for contest exactly {countries, states, cq_targets};
              order (decision 3, ValueOrder): 0..16 unique ValueCriterion in the operator's order
              for class strategy, [] for contest (a contest ranks by its own rules);
              contest: null for class strategy, a contest id of the contest table for contest
              (the contest table, WstxStrategies::ProfileTable);
-             callers_first (decision 4 "Calling stations are answered", boolean, CallerOfMyCall);
-             leave (decision 5, LeaveRule): {mode "calls", calls 1..20, calls_heard calls..40} |
+             callers_first (decision 4 "Calling stations are answered", boolean,
+             CallerOfMyCall); leave (decision 5, LeaveRule): {mode "calls", calls 1..20,
+             calls_heard calls..40} |
              {mode "until_logged", gone_minutes 1..60} | {mode "contest", tx_changes 1..20};
-             tx_move_every (decision 6, TxMoveRule): exactly {heard, not_heard, no_reports}, each
+             tx_move_every (decision 6, TxMoveRule): exactly {heard, not_heard, no_reports},
+             each
              an integer 0..20: 0 stay, 1 move every call, n move every n-th call;
              busy_pause (decision 7, boolean, BusyPause);
              cq_when_idle (decision 8, boolean, CqWhenNoTarget);
@@ -286,23 +274,27 @@ package WstxStrategies {
              strategies[0].leave.calls_heard, strategies[0].filters.countries.include[2].value).
              A strategy is new only as a duplicate (StrategyEditor): there is no blank strategy.
              Nothing else exists: goals, needed, value, window, region, min_snr_db, repetitions,
-             quiet_minutes and cq_when_no_target at the strategy's top level (schema 3, read only by
-             the upgrade), calls_per_station, rules, conditions, sort, auto role, switch after, skip
+             quiet_minutes and cq_when_no_target at the strategy's top level (schema 3, read
+             only by the upgrade), calls_per_station, rules, conditions, sort, auto role, switch
+             after, skip
              after and callers are refused like any extra key. */
     }
     enum def DupeRule {
         doc /* band: once per band. band_mode_class: once per band and per Phone, CW or Digital.
-             band_grid: once per band from any specific grid. call: one QSO per call in the period. */
+             band_grid: once per band from any specific grid. call: one QSO per call in
+             the period. */
         enum band;
         enum band_mode_class;
         enum band_grid;
         enum call;
     }
     enum def PointsRule {
-        doc /* one_plus_per_3000_km; one_plus_per_500_km_up; field_day (Phone 1, CW 2, Digital 2);
-             vhf_january (50 and 144 MHz 1, 222 and 432 MHz 2, 902 and 1296 MHz 4, 2.3 GHz and up 8);
-             vhf_june_september (1, 2, 3, 4); kilometres (one per km truncated plus 1 between large
-             square centres at 111.2 km per degree, the same large square 50); one_per_call. */
+        doc /* one_plus_per_3000_km; one_plus_per_500_km_up; field_day (Phone 1, CW 2, Digital
+             2); vhf_january (50 and 144 MHz 1, 222 and 432 MHz 2, 902 and 1296 MHz 4, 2.3
+             GHz and up 8);
+             vhf_june_september (1, 2, 3, 4); kilometres (one per km truncated plus 1 between
+             large square centres at 111.2 km per degree, the same large square 50);
+             one_per_call. */
         enum one_plus_per_3000_km;
         enum one_plus_per_500_km_up;
         enum field_day;
@@ -326,35 +318,43 @@ package WstxStrategies {
         enum silent;
     }
     attribute def ScheduleRule {
-        doc /* A profile has one or more rounds, each a day rule and a start and an exclusive end in
-             minutes from 00:00 UTC of that day: the n-th full weekend of a month, the last full
-             weekend of a month, the n-th Saturday of a month, the n-th weekday of every month, or
-             asked (not computable). A full weekend is a Saturday whose Sunday is in the same month;
-             its day is the Saturday. An end stated as "through hh59" is the next minute, exclusive.
-             The current or next occurrence is the earliest of all rounds that has not ended at
-             that instant. A round may name its one band (FT8 Activity). None when every round is
-             asked. Times are UTC. */
+        doc /* A profile has one or more rounds, each a day rule and a start and an exclusive
+             end in minutes from 00:00 UTC of that day: the n-th full weekend of a month, the last
+             full
+             weekend of a month, the n-th Saturday of a month, the n-th weekday of every month,
+             or asked (not computable). A full weekend is a Saturday whose Sunday is in the same
+             month;
+             its day is the Saturday. An end stated as "through hh59" is the next minute,
+             exclusive. The current or next occurrence is the earliest of all rounds that has
+             not ended at
+             that instant. A round may name its one band (FT8 Activity). None when every round
+             is asked. Times are UTC. */
     }
     attribute def ProfileTable {
         doc /* The entries, in selector order, id: name; activity; rules; clause.
-             ww_digi: WW Digi; ww_digi; HF six bands, band, one_plus_per_3000_km, field_per_band;
-             forbidden (IX.12). Last full weekend of August (unconfirmed: the rules state only the
+             ww_digi: WW Digi; ww_digi; HF six bands, band, one_plus_per_3000_km,
+             field_per_band; forbidden (IX.12). Last full weekend of August (unconfirmed: the
+             rules state only the
              dates), Saturday 12:00 to Sunday 12:00.
-             arrl_digi: ARRL Digi; arrl_digi; HF six bands and 6 m, band, one_plus_per_500_km_up,
-             none; forbidden (OPRG.4). First full weekend of June, Saturday 18:00 to Monday 00:00.
+             arrl_digi: ARRL Digi; arrl_digi; HF six bands and 6 m, band,
+             one_plus_per_500_km_up, none; forbidden (OPRG.4). First full weekend of June,
+             Saturday 18:00 to Monday 00:00.
              arrl_field_day: ARRL Field Day; field_day; HF six bands and all from 50 MHz,
-             band_mode_class, field_day, none; forbidden (6.4). Fourth full weekend of June, Saturday
+             band_mode_class, field_day, none; forbidden (6.4). Fourth full weekend of June,
+             Saturday
              18:00 to Sunday 21:00.
              arrl_vhf_jan: ARRL January VHF; na_vhf; all from 50 MHz, band_grid, vhf_january,
              grid_per_band; forbidden (OPRG.4: contemporaneous direct initiation). Asked.
              arrl_vhf_jun: ARRL June VHF, arrl_vhf_sep: ARRL September VHF; na_vhf; alike with
              vhf_june_september. Second full weekend of June and of September, Saturday 18:00 to
              Monday 03:00.
-             iaru_50_mgm: IARU R1 50 MHz MGM (6 m), iaru_70_mgm: IARU R1 70 MHz MGM (4 m); activity
-             none; band, kilometres, grid_per_band; silent. Third Saturday of April and of May,
+             iaru_50_mgm: IARU R1 50 MHz MGM (6 m), iaru_70_mgm: IARU R1 70 MHz MGM (4 m);
+             activity none; band, kilometres, grid_per_band; silent. Third Saturday of April and
+             of May,
              Saturday 14:00 to Sunday 14:00.
              ft8_activity: FT8 Activity; activity none; 2 m, 70 cm, 23 cm, call, one_per_call,
-             grid_per_band; silent. Each month first Wednesday 2 m, second 70 cm, third 23 cm, 17:00
+             grid_per_band; silent. Each month first Wednesday 2 m, second 70 cm, third 23 cm,
+             17:00
              to 21:00.
              A rule source that does not state something is stated in the entry as unconfirmed.
              The executable table and its hand oracle: server/src/contest.rs, TC-063-001. */

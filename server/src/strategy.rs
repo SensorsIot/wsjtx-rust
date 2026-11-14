@@ -1365,7 +1365,9 @@ impl Session {
     pub(crate) fn remove(&mut self, call: &str) {
         self.entries.retain(|e| e.call != call);
     }
-    /// The station band now: a change from the band seen last empties the list.
+    /// The station band now: a change from the band seen last empties the list. The station's
+    /// contact step calls it every 50 ms, whether or not a browser is connected, so the list is
+    /// empty before the next evaluation or run step on the new band.
     pub(crate) fn observe_band(&mut self, band: Option<&str>) {
         let band = band.map(str::to_owned);
         if self.seen.as_ref().is_some_and(|seen| *seen != band) {
@@ -1925,7 +1927,11 @@ fn window_dates(window: Window) -> Option<(u32, u32)> {
         Window::FromTo(first, last) => Some((first, last)),
     }
 }
-/// WstxRankingControl::WorkedWindow for the station step: never builds on it.
+/// WstxRankingControl::WorkedWindow for the station step: never builds on it. The worked set of a
+/// window is cached per (log revision, country table, first date, last date; today is its UTC
+/// date), at most 4 windows, so it is not rebuilt per evaluation. A rebuild takes about 100 ms
+/// with 26,902 QSOs (measured 2026-11-06, release build, two station steps), so it never runs on
+/// the station step: a set missing or behind the log is built on its own thread for a later step.
 pub(crate) fn worked_of(state: &ProfileState, window: Window) -> Option<std::sync::Arc<Worked>> {
     state.logbook.worked_latest(window_dates(window))
 }
@@ -2008,7 +2014,11 @@ fn contest_log(
 /// cursor and the dedupe memory (kept apart from the history: Clear keeps it).
 #[derive(Default)]
 struct AlertLog {
-    /// (live job identity, next sequence to read).
+    /// (live job identity, next sequence to read). The station's contact step (every 50 ms,
+    /// whether or not a browser is connected) reads the records of the current live job past the
+    /// cursor once each (a job not seen before from its first retained record); the cursor
+    /// advances also while no strategy is active, so a later selection never alerts on older
+    /// decodes.
     cursor: Option<((String, String, u64), u64)>,
     entries: std::collections::VecDeque<Value>,
     next_id: u64,
