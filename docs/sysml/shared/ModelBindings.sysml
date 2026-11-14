@@ -7,5 +7,9 @@ package ModelBindings {
     metadata def ImplementedIn { attribute module : String; }
     metadata def TestedBy { attribute test : String; }
     metadata def DetailTests { attribute tests : String; attribute covers : String; }
-    metadata def RetiredCase { attribute identity : String; attribute test : String; }
+    metadata def RetiredCase {
+        attribute identity : String;
+        attribute test : String[0..1];
+        attribute supersededBy : String[0..1];
+    }
 }
