@@ -1,5 +1,16 @@
 package WstxAutoControl {
     private import ScalarValues::*;
+    port def AutoControlPort {
+        out item command : AutoCommand;
+        in item activity : AutoActivity;
+    }
+    item def AutoCommand { doc /* Auto on or off, the active strategy's Auto rules. */ }
+    item def AutoActivity { doc /* What Auto is doing. */ }
+    interface def AutoControl {
+        doc /* The station service commands the auto function; auto reports what it is doing. */
+        end station : AutoControlPort;
+        end auto : ~AutoControlPort;
+    }
     attribute def StrategyRun {
         doc /* A WstxMcp::OperatingAutomation run with strategy true; one run at a time.
              Start and end (AutoToggle): a run starts only when Auto is switched on with a

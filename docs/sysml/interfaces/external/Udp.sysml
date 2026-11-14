@@ -60,6 +60,14 @@ package WstxUdp {
          D7 The Settings UI is #37's; Close is sent when a target is disabled or removed,
             and at shutdown (CL-112-06). */
 
+    port def UdpPort { out item datagram : UdpItem; }
+    item def UdpItem { doc /* What the UDP sender sends to its peers; send-only. */ }
+    interface def Udp {
+        doc /* The UDP sender and the configured WSJT-X peers; send-only. */
+        end udp : UdpPort;
+        end peers : ~UdpPort;
+    }
+
     attribute def UdpWire {
         attribute magic : String = "0xADBCCBDA";
         attribute outboundSchema : Integer = 2;

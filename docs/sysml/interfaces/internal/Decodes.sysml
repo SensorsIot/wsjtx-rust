@@ -1,5 +1,11 @@
 package WstxDecodes {
     private import ScalarValues::*;
+    port def DecodesPort { out item result : ResultRecord; }
+    interface def Decodes {
+        doc /* The decoded messages of each period, from receive to a consumer. */
+        end receive : DecodesPort;
+        end consumer : ~DecodesPort;
+    }
     enum def FrameStatus {
         doc /* decoded: a payload of a supported family with valid content. unsupported: a
              CRC-valid payload of a family the product does not unpack. invalid_payload: a

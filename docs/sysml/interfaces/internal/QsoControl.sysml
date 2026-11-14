@@ -1,5 +1,23 @@
 package WstxQsoControl {
     private import ScalarValues::*;
+    port def QsoControlPort {
+        out item command : QsoCommand;
+        in item 'state' : QsoState;
+    }
+    item def QsoCommand {
+        doc /* Auto Seq on or off, a target or message chosen by the operator or an agent,
+             Hold Tx, the contest exchange. */
+    }
+    item def QsoState { doc /* The QSO state. */ }
+    item def QsoProgress {
+        doc /* Answered, completed, repetition count, busy partner, refused or failed after
+             admission. */
+    }
+    interface def QsoControl {
+        doc /* The station service commands the qso function; qso reports its state. */
+        end station : QsoControlPort;
+        end qso : ~QsoControlPort;
+    }
     enum def ContactAction {
         enum select_row; enum enter_dx; enum cancel; enum choose_next; enum edit_message;
         enum set_report; enum set_tx1_skip; enum set_tx4; enum set_frequency; enum set_hold_tx;

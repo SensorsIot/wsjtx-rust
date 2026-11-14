@@ -45,7 +45,7 @@
     ]
   },
   "contracts": {
-    "WstxAudioControl::AudioStatus": {"items": {"outcome": ["out", "WstxAudioControl::AudioOutcome"]}},
+    "WstxAudioControl::AudioStatus": {"items": {"command": ["in", "WstxAudioControl::AudioCommand"], "outcome": ["out", "WstxAudioControl::AudioOutcome"]}},
     "WstxAudioStreams::AudioExchange": {"items": {"capture": ["in", "WstxAudioStreams::SampleBlock"], "outcome": ["in", "WstxAudioControl::AudioOutcome"], "playback": ["out", "WstxAudioStreams::SampleBlock"]}},
     "WstxAudioStreams::ReceiveSamples": {"items": {"outcome": ["out", "WstxAudioControl::AudioOutcome"], "samples": ["out", "WstxAudioStreams::SampleBlock"]}},
     "WstxModeProcessing::EncodeProcessing": {"items": {"request": ["out", "WstxModeProcessing::EncodeRequest"], "waveform": ["in", "WstxModeProcessing::Waveform"]}},

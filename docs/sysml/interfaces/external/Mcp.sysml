@@ -1,6 +1,15 @@
 package WstxMcpInterface {
     private import ScalarValues::*;
 
+    port def McpPort;
+    item def McpItem { doc /* What an agent and the MCP function exchange. */ }
+    interface def Mcp {
+        doc /* An agent and the MCP function of one station. */
+        end mcp : McpPort;
+        end agent : ~McpPort;
+        item exchange : McpItem;
+    }
+
     attribute def McpEndpoint {
         attribute route : String = "POST /mcp";
         attribute bodyBytesMax : Integer = 8192;

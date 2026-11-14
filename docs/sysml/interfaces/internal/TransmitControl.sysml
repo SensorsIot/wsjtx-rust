@@ -1,5 +1,16 @@
 package WstxTransmitControl {
     private import ScalarValues::*;
+    port def TransmitControlPort {
+        out item command : TransmitCommand;
+        in item 'state' : TransmitState;
+    }
+    item def TransmitCommand { doc /* Halt, tune. */ }
+    item def TransmitState { doc /* The transmit state. */ }
+    interface def TransmitControl {
+        doc /* The station service commands the transmit function; transmit reports its state. */
+        end station : TransmitControlPort;
+        end transmit : ~TransmitControlPort;
+    }
     // ------------------------------------------------------------------
     // #9 slice B transmit owner (delivered; consumer contract of WstxContact #10,
     // supervisor decision 2026-10-31 on #10). Implementation:

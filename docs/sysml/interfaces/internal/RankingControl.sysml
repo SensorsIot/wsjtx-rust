@@ -1,5 +1,18 @@
 package WstxRankingControl {
     private import ScalarValues::*;
+    port def RankingControlPort {
+        out item rules : RankingRules;
+        in item ranked : RankedList;
+        in attribute alert : Alert;
+    }
+    item def RankingRules { doc /* The active strategy's ranking rules, the lists. */ }
+    item def RankedList { doc /* The ranked list. */ }
+    interface def RankingControl {
+        doc /* The station service commands the ranking function; ranking reports the ranked
+             list and its alerts. */
+        end station : RankingControlPort;
+        end ranking : ~RankingControlPort;
+    }
     attribute def WorkedWindow {
         doc /* window all: the log's cached worked set (rebuilt after a log or country table
              change). today (the current UTC date) and from_to: a worked set built only from
