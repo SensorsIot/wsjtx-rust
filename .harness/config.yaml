@@ -142,6 +142,13 @@ queue:
 # station scripts under tools/deploy and the reference tools stay product paths, since a tool
 # change skips Install and Accept (coordinator 2026-11-14, #203).
 classes:
+  # A model restructuring (commits touching only docs/sysml/) is proven by equivalence with
+  # the proven removals of CL-014-22 and needs no Review (harness#78 Q3; #205).
+  restructuring:
+    label: restructuring
+    proof:
+      equivalence: python tools/sysml.py equivalence {base} {head}
+      model_paths: [docs/sysml/]
   tool: {label: tool, paths: [tools/sysml.py, tools/sysml/, docs/sysml/shared/ModelBindings.sysml]}
 
 # The meter (report_cr.py --meter, harness core/docs/CR-Reporting.md "The meter").
