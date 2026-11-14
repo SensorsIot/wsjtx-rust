@@ -430,6 +430,8 @@
   - tools/sysml.py
   - tools/sysml/Validate.java
   - tools/sysml/tests/test_equivalence.py
+  - tools/sysml/tests/test_equivalence_proven.py
+  - tools/sysml/cost-wordings.json
   needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout (E1 reads 5da7aab02 and its parent, E10 8245ec5f0 and 0e4b4c73a) and git to build temporary repositories. No radio or live service."
 
 # CL-014-17: a commit marked `Model-Move: pure` must not change the meaning of the model.
