@@ -535,12 +535,16 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   handoff, its own `contacts.adi`, `udp.json` without targets, `pskr.json` disabled. The
   operator profile `ic7300` and its logbook are never touched; their hashes are taken before
   and compared after.
-- **Switch (coordinator).** The real IC-7300 is off (the operator switches it). Back up
-  `station\launcher.ps1`, point its profile line at `profiles\SIM-IC7300` and set
+- **Switch.** The real IC-7300 is off (the operator switches it).
+  `.harness/deploy/station-switch.ps1 -To simulator` (the tester or the coordinator) backs
+  up `station\launcher.ps1` once, points its profile line at `profiles\SIM-IC7300` and sets
   `WSTX_RADIO_DISCOVERY=off`, `WSTX_UDP=off`, `WSTX_PSKR=off` (without discovery off, a
-  silent COM4 makes the station adopt the real radio on COM3). Stop the station gracefully
-  (Ctrl+C helper of `radio-preflight.ps1`), restart the task, read back the profile.
-  Return: the backed-up launcher, the same restart.
+  silent COM4 makes the station adopt the real radio on COM3), stops the station gracefully
+  (Ctrl+C, `station-control.ps1`, as `radio-preflight.ps1` does), restarts the task, reads
+  the profile back (`GET /radio`, `station-running.json`) and compares the hashes of the
+  operator profile and its logbook; any difference exits non-zero. Return:
+  `station-switch.ps1 -To back`, the coordinator only: the backed-up launcher (without one,
+  the pinned launcher), the same restart. `-DryRun` prints every step and changes nothing.
 - **CAT confirmation.** A new profile, and any change of its CAT setup, needs the operator's
   receive-only confirmation in the browser (Settings, "CAT receive-only confirmation");
   until then CAT stays closed. Agents never change the CAT endpoint during a simulator run.
