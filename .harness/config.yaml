@@ -142,6 +142,8 @@ queue:
 # is 0.1x input by the usual ratio. A relation, not a bill.
 meter:
   host: claude
+  # The day Alex stage one runs in this project (operator 2026-11-14, harness#80).
+  rules_start: 2026-11-14
   prices:
     claude-opus-5-5: {input: 4, output: 20, cache_read: 0.20}
     claude-sonnet-5-5: {input: 2, output: 10, cache_read: 0.10}
