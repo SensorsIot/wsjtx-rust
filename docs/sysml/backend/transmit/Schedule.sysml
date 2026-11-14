@@ -6,6 +6,8 @@ package WstxTransmitSchedule {
     private import WstxRequirements::AutomationState;
     private import WstxTransmit::'TC-006-003';
     private import WstxTransmit::ClockState;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
     requirement 'CL-009-02' {
         doc /* Plan an FT8 transmission start for a named even/odd 15 s UTC period from a
              virtual clock: 500 ms audio delay, late start up to 75 % of the period by
@@ -18,8 +20,7 @@ package WstxTransmitSchedule {
     dependency CL_009_02_to_FR_006 from 'CL-009-02' to 'FR-006';
     dependency CL_009_02_to_FR_005 from 'CL-009-02' to 'FR-005';
     verification 'TC-006-001' {
-        doc /* TC-006-001 — FT8 transmit period scheduling
-             CL-009-02
+        doc /* FT8 transmit period scheduling
              Setup: virtual UTC clock values around period boundaries, both parities,
              12 kHz and 48 kHz, every clock state.
              Steps: select the next slot and plan starts before the period, at the audio
@@ -29,7 +30,8 @@ package WstxTransmitSchedule {
              TxStartPolicy.hpp 0.75, mainwindow.cpp even/odd t mod 30 s): exact audio
              start and skipped-sample counts; 11249 ms admitted and 11250 ms stale;
              stale requests never move to a later period.
-             2 — Isolated automated tests; Windows development PC, no clock, audio or radio. */
+             no clock, audio or radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-009-02';

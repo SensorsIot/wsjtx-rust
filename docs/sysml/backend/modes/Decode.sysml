@@ -23,6 +23,8 @@ package WstxModemDecode {
     private import WstxLiveReceive::'CL-007-05';
     private import WstxOperatingLayout::'CL-057-01';
     private import WstxOperatingLayout::'TC-057-003';
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
     doc /* The decode function of the modes part (WstxModesPart::ModeFunctions). A window
          of canonical 12 kHz samples with its mode and a-priori context goes in; the records
          of the frames decoded in it come out. The payload, channel code and waveform are
@@ -299,7 +301,7 @@ package WstxModemDecode {
     dependency CL_007_10_to_FR_004 from 'CL-007-10' to 'FR-004';
 
     verification 'TC-004-001' {
-        doc /* TC-004-001 — Offline FT4
+        doc /* Offline FT4
              Setup: independent FT4 waveforms from a separate encoder, the pinned modern FT4
              recording with its jt9 report, and the SIM18 FT4 fixtures; the station modem
              offline. Every test bound to this case selects FT4 and is named path::test; at
@@ -319,7 +321,8 @@ package WstxModemDecode {
              (e) SIM18-FT4-CLEAN decodes exactly "CQ K1ABC FN42". Open: no bound test
                  shows (e).
              Oracle: the injected payloads; jt9 is a lower bound, not exhaustive truth.
-             2 — Isolated automated tests; Windows PC, offline fixtures. */
+             offline fixtures. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-007-01';
@@ -337,7 +340,7 @@ package WstxModemDecode {
         }
     }
     verification 'TC-004-002' {
-        doc /* TC-004-002 — Offline FT8
+        doc /* Offline FT8
              Setup: independent FT8 waveforms from a separate encoder, the pinned official
              FT8 recording with its jt9 report, the recorded corpus with its jt9-deep
              reference, and the SIM18 FT8 fixtures; the station modem offline. Every test
@@ -375,7 +378,8 @@ package WstxModemDecode {
                  -25 dB or none, and no FT4 word.
              (l) A weak word that fails at its fine point decodes at the nearby data point.
              Oracle: the injected payloads; jt9 is a lower bound, not exhaustive truth.
-             2 — Isolated automated tests; Windows PC, offline fixtures. */
+             offline fixtures. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-007-01';
@@ -394,7 +398,7 @@ package WstxModemDecode {
         }
     }
     verification 'TC-004-003' {
-        doc /* TC-004-003 — Invalid input, rejection and resources
+        doc /* Invalid input, rejection and resources
              Setup: noise, silence, wrong-mode and bad-CRC inputs; a release build on the
              reference PC for the budgets.
              (a) 1,000 noise windows per mode publish nothing.
@@ -447,12 +451,12 @@ package WstxModemDecode {
     dependency CL_057_02_to_FR_003 from 'CL-057-02' to 'FR-003';
     dependency CL_057_02_to_FR_004 from 'CL-057-02' to 'FR-004';
     verification 'TC-057-002' {
-        doc /* TC-057-002 — Parallel decode: identical result, wall time by thread count
-             CL-057-02, CL-057-01, CL-007-05
+        doc /* Parallel decode: identical result, wall time by thread count
              Setup: release build; the hash-pinned busy recording websdr_test7.wav as the UTC-aligned FT8 prompt window (as TC-004-004); for the end-to-end case the TC-057-001 live path and Detailed browser.
              Steps: decode the window three times each on 1, 4 and 12 threads; order-preserving map of 200 items on 1, 2, 4 and 8 threads with one slow item, and with cancellation from inside the work; the TC-057-001 run with the default thread count.
              Expected (independent oracle: the single-threaded decode of the same window and the input order): the records on 4 and 12 threads equal those on 1 thread bit for bit and in order, at least 25 records; best wall times are reported per thread count (busy corpus period); the map returns every item once in input order and a cancelled caller ends with Cancelled; the cooperative-quanta and quality cases of TC-004-001 stay green; end to end (TC-057-001 setup, two busy periods), each period's view is published by its period start + 15.0 s on the server timeline (CL-007-05) and its rows are painted at most 300 ms after that publication (CL-057-01), so every row is painted by period start + 15.3 s; the time from window completion (+13.8 s) to the painted rows is reported, not asserted (#72: no contract states that bound).
-             2 — Isolated automated functional tests; Windows PC, no radio. */
+             no radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-057-02';

@@ -10,6 +10,8 @@ package WstxMostWanted {
     private import ModelBindings::Status;
     private import ModelBindings::TestedBy;
     private import RequirementDerivation::*;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
 
     attribute def MostWantedListRule {
         @NotStated {
@@ -53,8 +55,7 @@ package WstxMostWanted {
     }
 
     verification 'TC-039-031' {
-        doc /* TC-039-031 — Most Wanted list: parsing, mapping, routes
-             CL-039-10
+        doc /* Most Wanted list: parsing, mapping, routes
              Setup: hand-written list text (no network); the bundled cty.dat; the actual station
              router on a disposable HTTPS profile; a test seam in place of the HTTP fetch.
              (a) Refused lists: they parse to nothing.
@@ -66,7 +67,8 @@ package WstxMostWanted {
              its reason and changes nothing.
              (e) POST to the former upload route: the route is gone (405 or 404).
              (f) POST with the MCP cookie: refused 401.
-             2 — Isolated automated tests; Windows development PC, no network. */
+             no network. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-039-10';

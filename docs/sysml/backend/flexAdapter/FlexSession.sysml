@@ -6,6 +6,8 @@ package WstxFlexSession {
     private import WstxRequirements::'FR-008';
     private import WstxRequirements::'FR-009';
     private import WstxRequirements::AutomationState;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
     requirement 'CL-013-01' {
         doc /* Phase 2 MUST offer direct native-network integration as an optional profile connection type for the selected radio control, status and sample-stream functions. When selected, that native path MUST NOT require the external SmartSDR desktop application, SmartSDR CAT or DAX applications to be installed/running as bridges. This restriction does not prohibit those tools as operator-selected infrastructure for the standard connection path. A Rust implementation may coordinate shared radio access internally without forcing one hardware GUI-client session per logical station server. */
         attribute coverage : ImplementationState = ImplementationState::partial;
@@ -45,9 +47,9 @@ package WstxFlexSession {
     }
     dependency CL_013_06_to_FR_023 from 'CL-013-06' to 'FR-023';
     verification 'TC-023-001' {
-        doc /* #### TC-023-001 — Direct protocol and four-station route isolation
+        doc /* Direct protocol and four-station route isolation
 
-             **Promise:** FR-023; CL-013-01, CL-013-04. **Level: 2 — Isolated automated tests.**
+             **Promise:** FR-023; CL-013-01, CL-013-04.
              **Where it runs:** Windows PC, candidate Rust system, four station profiles/windows
              and an independent local FlexRadio protocol emulator; no real radio or external service.
 
@@ -109,6 +111,7 @@ package WstxFlexSession {
              arrives only after client udp_register from the stream's port, which repeats, and no
              command names a local address. A full radio on a saved address reports
              radio_refused. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs";
         objective {
@@ -118,9 +121,9 @@ package WstxFlexSession {
         }
     }
     verification 'TC-023-002' {
-        doc /* #### TC-023-002 — Persisted intent and changed runtime handles
+        doc /* Persisted intent and changed runtime handles
 
-             **Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05. **Level: 2 — Isolated automated tests.**
+             **Promise:** FR-023; CL-013-03, CL-013-04, CL-013-05.
              **Where it runs:** Windows PC, disposable persisted profiles and a local radio emulator.
 
              **Inputs/actions:** Save the native receive intent, disconnect/restart the
@@ -154,6 +157,7 @@ package WstxFlexSession {
              Authorization: a native station without a grant makes no TCP connection and, after
              its only grant is revoked, its client and slice leave the emulator.
              profile.json bytes stay unchanged and hold no radio identity (no serial key). */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs; server/src/flex/wire_tests.rs; server/src/flex/session_tests.rs; server/src/profile_tests.rs";
         objective {
@@ -164,9 +168,9 @@ package WstxFlexSession {
         }
     }
     verification 'TC-023-003' {
-        doc /* #### TC-023-003 — Capability limits and shared-resource coordination
+        doc /* Capability limits and shared-resource coordination
 
-             **Promise:** FR-023; FR-008/FR-009; CL-013-02, CL-013-04, CL-013-05, CL-013-06. **Level: 2 — Isolated automated tests.**
+             **Promise:** FR-023; FR-008/FR-009; CL-013-02, CL-013-04, CL-013-05, CL-013-06.
              **Where it runs:** Windows PC, four logical station servers and an API/resource emulator.
 
              **Inputs/actions:** Emulate sufficient and insufficient slice capacities, incompatible
@@ -200,6 +204,7 @@ package WstxFlexSession {
              No audio input for it. The line stands in the receive details, not in the top bar, and
              opens from its error-field entry; the screen has no page scroll at 1366x768. Stopping
              the station turns the line stale. No page errors. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/native-flex.test.cjs";
         objective {
@@ -213,9 +218,9 @@ package WstxFlexSession {
         }
     }
     verification 'TC-023-004' {
-        doc /* #### TC-023-004 — Live direct-radio tuning and slice lifecycle
+        doc /* Live direct-radio tuning and slice lifecycle
 
-             **Promise:** FR-023; FR-009. **Level: 4 — Controlled live tests with operator consent.**
+             **Promise:** FR-023; FR-009.
              **Where it runs:** Windows PC and a designated FlexRadio test station, using a recorded
              supported model/firmware and hardware capacity of at least four usable slices.
 
@@ -228,6 +233,7 @@ package WstxFlexSession {
              those desktop applications. Each station retains its intended slice and other stations
              remain isolated through the approved lifecycle actions. Live tuning/allocation changes
              radio state, so this case is not classified as read-only level 3. */
+        @TestLevel { cost = 4; location = TestLocation::flexRadio; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'FR-009';
@@ -235,9 +241,9 @@ package WstxFlexSession {
         }
     }
     verification 'TC-023-005' {
-        doc /* #### TC-023-005 — Observational live status, only where genuinely read-only
+        doc /* Observational live status, only where genuinely read-only
 
-             **Promise:** FR-023. **Level: 3 — Live read-only tests.**
+             **Promise:** FR-023.
              **Where it runs:** An authorized designated FlexRadio station and the Windows PC.
 
              **Inputs/actions:** Observe existing discovery/status/stream identity using a path that
@@ -246,16 +252,16 @@ package WstxFlexSession {
              **Expected results:** Reported state matches the designated radio without changing its
              operating resources. If the selected API workflow requires such changes, use the level-4
              case and operator consent instead; do not relabel a mutating test as observational. */
+        @TestLevel { cost = 3; location = TestLocation::flexRadio; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'FR-023';
         }
     }
     verification 'TC-023-006' {
-        doc /* #### TC-023-006 — Conditional future transmit validation
+        doc /* Conditional future transmit validation
 
              **Promise:** FR-008/FR-009, FR-023; CL-013-05.
-             **Level: 5 — Tests with external effects and explicit operator consent.**
              **Where it runs:** A designated authorized physical test station, only after transmit
              functionality, its ownership policy and the specific test operation have been approved.
 
@@ -266,6 +272,7 @@ package WstxFlexSession {
              **Expected results:** The agreed single-radio transmit authority is enforced, conflicts
              are refused and FR-008 halt/failure behavior is met. This conditional definition does
              not authorize transmission now or make it part of the receive-only live test above. */
+        @TestLevel { cost = 5; location = TestLocation::flexRadio; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-013-05';

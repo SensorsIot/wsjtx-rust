@@ -23,6 +23,8 @@ package WstxLiveReceive {
     private import WstxRadioIO::'CL-008-04';
     private import WstxRadioIO::'CL-008-05';
     private import WstxOperatingReceive::'CL-008-07';
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
     item def LiveTimedResultRecord :> ResultRecord {
         attribute period_start_utc : String[0..1];
         attribute dt_seconds : Real[0..1];
@@ -258,10 +260,12 @@ package WstxLiveReceive {
     dependency CL_008_02_to_FR_003 from 'CL-008-02' to 'FR-003';
     dependency CL_008_02_to_FR_004 from 'CL-008-02' to 'FR-004';
     verification 'TC-004-004' {
-        doc /* TC-004-004 — Live decode latency on a recorded busy period (#47)
-             FR-003, FR-004, FR-021; CL-007-04, CL-007-05
-             Cost 2 (release, Windows PC, no radio): the hash-pinned busy recording websdr_test7.wav (27 decodes) is presented as the UTC-aligned FT8 prompt window, 15 s of audio completing at period start + 13.8 s, to the live modem history. The time from window completion to the last published decode is at most 1.0 s (best of three runs, leaving 0.2 s of the 1.2 s budget for capture and publication) and at least 25 distinct decodes are published, so no per-period cap applies. Cost 1: the UTC schedule places FT8 prompt/late windows at +13.8 s/+15.7 s and FT4 at +6.5 s/+7.9 s of the period from a correlated anchor, and none without one; the window buffer emits each scheduled window at its source-counter residue with its own length and wait flag; a late window arriving during the prompt decode waits for it, with no overrun and a complete prompt result. Cost 1 (drift, #47 re-review): through the live worker's clock tracking and the real window buffer, a capture clock 2000 ppm slow over 600 s plus a +0.4 s system clock step (1.6 s in all) keeps every prompt window within 0.1 s of +13.8 s UTC and holding a DT 0 frame, while the same capture without re-anchoring completes more than 1.2 s late; GET /receive/clock reports the offset and rate while the /receive clock object keeps its exact keys; the on-demand read has the operating-read authorization and refuses a query. Cost 1: a re-anchored schedule moves completions for a forward shift and a backward step without dropping or repeating a window, and UTC steps of +2 s, -2 s and +8 s taken just before a prompt completion still complete every period's prompt and late window exactly once, in order (coinciding completions one after the other, no shift by a period). Cost 1: the FT8 late window at its real geometry (UTC +0.7..+15.7 s), analysed by the live worker, leaves latest_decode and the whole snapshot unchanged when it adds nothing, and with a DT +1.2 s late starter keeps the view id and only grows next_sequence. Cost 2 (browser): a correlated period view extended in place (same id, period and first_sequence; next_sequence grown, complete false to true) adds the late row from the existing cursor, without clearing rows, moving the period to history or an error state, while any other same-id change stays a descriptor error.
-             Cost 5 acceptance: live on HB9BLA, 10 consecutive FT8 periods publish their last decode by +15.0 s and FT4 by +7.5 s, with decode parity against jt9 on the same captured periods unchanged or better; the run records the receive session age and GET /receive/clock. */
+        doc /* Live decode latency on a recorded busy period (#47)
+              (release, Windows PC, no radio): the hash-pinned busy recording websdr_test7.wav (27 decodes) is presented as the UTC-aligned FT8 prompt window, 15 s of audio completing at period start + 13.8 s, to the live modem history. The time from window completion to the last published decode is at most 1.0 s (best of three runs, leaving 0.2 s of the 1.2 s budget for capture and publication) and at least 25 distinct decodes are published, so no per-period cap applies. the UTC schedule places FT8 prompt/late windows at +13.8 s/+15.7 s and FT4 at +6.5 s/+7.9 s of the period from a correlated anchor, and none without one; the window buffer emits each scheduled window at its source-counter residue with its own length and wait flag; a late window arriving during the prompt decode waits for it, with no overrun and a complete prompt result. (drift, #47 re-review): through the live worker's clock tracking and the real window buffer, a capture clock 2000 ppm slow over 600 s plus a +0.4 s system clock step (1.6 s in all) keeps every prompt window within 0.1 s of +13.8 s UTC and holding a DT 0 frame, while the same capture without re-anchoring completes more than 1.2 s late; GET /receive/clock reports the offset and rate while the /receive clock object keeps its exact keys; the on-demand read has the operating-read authorization and refuses a query. a re-anchored schedule moves completions for a forward shift and a backward step without dropping or repeating a window, and UTC steps of +2 s, -2 s and +8 s taken just before a prompt completion still complete every period's prompt and late window exactly once, in order (coinciding completions one after the other, no shift by a period). the FT8 late window at its real geometry (UTC +0.7..+15.7 s), analysed by the live worker, leaves latest_decode and the whole snapshot unchanged when it adds nothing, and with a DT +1.2 s late starter keeps the view id and only grows next_sequence. (browser): a correlated period view extended in place (same id, period and first_sequence; next_sequence grown, complete false to true) adds the late row from the existing cursor, without clearing rows, moving the period to history or an error state, while any other same-id change stays a descriptor error.
+              acceptance: live on HB9BLA, 10 consecutive FT8 periods publish their last decode by +15.0 s and FT4 by +7.5 s, with decode parity against jt9 on the same captured periods unchanged or better; the run records the receive session age and GET /receive/clock. */
+        @TestLevel { cost = 1; location = TestLocation::developmentPc; }
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @TestLevel { cost = 5; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-007-04';
@@ -283,8 +287,7 @@ package WstxLiveReceive {
     dependency CL_007_05_verified_by_TC_057_002 from 'CL-007-05' to 'TC-057-002';
     dependency CL_007_05_verified_by_TC_057_003 from 'CL-007-05' to 'TC-057-003';
     verification 'TC-009-002' {
-        doc /* TC-009-002 — Controlled IC-7300 receive station
-             CL-008-02, CL-008-04, CL-008-05, CL-008-07
+        doc /* Controlled IC-7300 receive station
              On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations.
              Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth.
              4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. */
@@ -299,11 +302,11 @@ package WstxLiveReceive {
         attribute method : String = "manual";
     }
     verification 'TC-002-003' {
-        doc /* TC-002-003 — Audio without CAT
-             CL-008-02, CL-008-05
+        doc /* Audio without CAT
              Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer.
              Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; engine glitches keep job/generation; GET /receive audio.loss_epochs counts unknown-loss rotations only and audio.last_loss names the latest trigger (null iff0); no default-device substitution or audio archiving.
-             2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. */
+             actual receive service and independent device/control fixtures. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-008-02';

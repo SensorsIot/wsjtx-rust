@@ -6,6 +6,8 @@ package WstxRequirements {
     private import WstxArchitecture::Backend;
     private import WstxArchitecture::StationProcess;
     private import ModelNotes::Conflict;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -53,7 +55,7 @@ package WstxRequirements {
 
     verification ResolvedArchitectureGraph {
         subject deployment : Station;
-        doc /* Level 2 isolated automated model test on the development PC; no radio,
+        doc /* isolated automated model test on the development PC; no radio,
              device or runtime service. Resolve the accepted model and legal negative
              mutations with the pinned semantic validator. Independent expectations are
              literal required endpoints, complete item-kind/direction signatures,
@@ -78,6 +80,7 @@ package WstxRequirements {
              portless browser association population retain selected endpoint identity;
              counts alone are insufficient. This case checks structure, not runtime
              timing, persistence, failure handling, platform operation or RF safety. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         objective {
             verify PhysicalDeploymentStructure;
             verify StationResourceIdentity;
@@ -142,7 +145,7 @@ package WstxRequirements {
             verify ComponentPropertyOwnership;
             verify RadioModelReferenceSeparation;
         }
-        doc /* Level 2 isolated independent manual contract review on the development PC;
+        doc /* isolated independent manual contract review on the development PC;
              no device, credential or external effects. Compare the public properties
              and interface signatures against the owning canonical profile, station,
              receive, layout and radio contracts. Expect backend-owned saved profile
@@ -169,6 +172,7 @@ package WstxRequirements {
              Inspect unresolved extension limits rather than accepting a completeness claim.
              Run focused tests on this PC at cost2, full Pilot/graph validation and99traces;
              parser success does not execute these planned action contracts. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute method : String = "manual independent public-property and interface correspondence review";
         attribute executionStatus : String = "planned; semantic resolution does not establish review or runtime acceptance";
     }

@@ -4,6 +4,8 @@ package WstxTxLevel {
     private import WstxRequirements::'FR-009';
     private import WstxRequirements::AutomationState;
     private import WstxTransmit::'CL-044-13';
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
     // Operator decisions 2026-11-04 (#44 comments 6627977497, 6628000054): Tx audio level.
     // IC-7300 meters: Icom IC-7300 Full Manual section 19, command table "15 11 Po" (0000 0 %,
     // 0143 50 %, 0213 100 %), "15 12 SWR" (0000 1.0, 0048 1.5, 0080 2.0, 0120 3.0), "15 13 ALC"
@@ -16,12 +18,12 @@ package WstxTxLevel {
     }
     dependency CL_044_12_to_FR_009 from 'CL-044-12' to 'FR-009';
     verification 'TC-044-013' {
-        doc /* TC-044-013 — Meter burst under the transmit hold; level timing
-             CL-044-12
+        doc /* Meter burst under the transmit hold; level timing
              Setup: the actual CAT actor and executor on a scripted IC-7300 transport (echo of each frame, hand-written replies); the actual transmit core on a virtual clock.
              Steps: (a) read without the hold, then with it; (b) ALC refused FA; (c) a timeout, then a stalled read released by PTT off; (d) raw values through the scales; (e) a level set before and during a transmission and during Tune.
              Expected: (a) Busy and no byte, then exactly the frames 15 13, 15 11, 15 12, and the release still works; (b) ALC missing, Po read; (c) the connection stays Ready, the release returns within 250 ms and the read returns Cancelled; (d) Po 0143 50 %, 0213 100 %, SWR 0048 1.5, 0080 2.0, 0120 3.0; (e) the level reaches the hardware immediately before the play, not during the transmission, at once during Tune; 0 dB is the playback scale, -20 dB a tenth of it.
-             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-044-12';
@@ -30,12 +32,12 @@ package WstxTxLevel {
     }
     dependency CL_044_12_verified_by_TC_044_013 from 'CL-044-12' to 'TC-044-013';
     verification 'TC-044-014' {
-        doc /* TC-044-014 — Set level, manual level, push and route
-             CL-044-12, CL-044-13
+        doc /* Set level, manual level, push and route
              Setup: the actual router, Recording owner and transmit owner on a recording hardware double, the CAT actor on a scripted IC-7300 whose ALC follows the double's level.
              Steps: (a) the decision table; (b) a run with the ALC rising at -27 dB; (c) HALT during a run; (d) a radio refusing the ALC read, then the manual level, also during Tune; (e) stored and invalid level files at startup; (f) ticks with and without Tune; (g) malformed requests and a request without a grant; (h) the profile field.
              Expected: (a) up, stored one below, -40 floor, power limit 49/50 % at Po 50 %, max_without_alc, no_alc, high_swr; (b) levels -30, -29, -28, -27, -28 stored, Tune off, disarmed, the profile revision unchanged, the next Tune at -28, no setter frame; (c) aborted, no file, prior level, Tune off, disarmed; (d) no_alc, alc unavailable, the slider action refused alc_available before, range refused, -10 stored, Tune follows; (e) -17 applied, invalid files ignored; (f) no read without Tune, one burst per second with it, exact event keys and values; (g) 400 and 401, Tune stays off; (h) absent by default, saved, 0 and 101 refused.
-             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-044-12';
@@ -45,12 +47,12 @@ package WstxTxLevel {
     }
     dependency CL_044_12_verified_by_TC_044_014 from 'CL-044-12' to 'TC-044-014';
     verification 'TC-044-016' {
-        doc /* TC-044-016 — Set level on HB9BLA
-             CL-044-12, CL-044-13
+        doc /* Set level on HB9BLA
              Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's consent, a dummy load or the station antenna, RF power set low by the test before the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it holds COM3; read back; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported).
              Steps: read 15 13, 15 11, 15 12 during Tune over CI-V; press Set level; press HALT during a second run. The evidence is the CI-V readback and the radio.tx_level frames, not the radio's display (operator decision of 2026-11-08).
              Expected: the meter values read back agree with the radio.tx_level frames and the manual's scales; the run ends with the ALC just below rising, the level stored and Tune off; HALT stops it at once and keeps the stored level.
-             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
+             Not run by the automated gate. */
+        @TestLevel { cost = 5; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {

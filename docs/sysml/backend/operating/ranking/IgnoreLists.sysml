@@ -9,6 +9,8 @@ package WstxIgnoreLists {
     private import WstxRequirements::AutomationState;
     private import ModelBindings::TestedBy;
     private import RequirementDerivation::*;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
 
     attribute def IgnoreListsRule {
         doc /* A sender is ignored when an entry of the permanent list (configuration
@@ -65,8 +67,7 @@ package WstxIgnoreLists {
     }
 
     verification 'TC-125-001' {
-        doc /* TC-125-001 — Pattern entries in the ignore lists
-             CL-042-02
+        doc /* Pattern entries in the ignore lists
              Setup: hand-authored rows (CQs and callers); the station HB9BLA on 40m; the
              actual station router and contact engine on the recording hardware double
              (virtual UTC; no audio, PTT or radio).
@@ -87,7 +88,8 @@ package WstxIgnoreLists {
              A contest strategy gives the sender rank null with the why text naming the
              pattern, and a pounce on it gets no answer and no key.
              (f) A stored schema 4 file with exact entries reads unchanged (guard, green on both).
-             2 — Isolated automated tests; Windows development PC, no radio, audio or RF. */
+             no radio, audio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-042-02';

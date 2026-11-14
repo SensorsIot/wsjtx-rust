@@ -449,8 +449,7 @@ package WstxValueOrder {
     }
 
     verification 'TC-097-004' {
-        doc /* TC-097-004 — The strategy's bands
-             CL-097-02
+        doc /* The strategy's bands
              Setup: the evaluator with the pinned cty.dat fixture and hand-authored codec-packed
              rows; a strategy with bands ["20m", "40m"]. The run's steps off the bands are
              TC-097-018's.
@@ -469,8 +468,7 @@ package WstxValueOrder {
         }
     }
     verification 'TC-097-005' {
-        doc /* TC-097-005 — What must be new, new per, new means and worked since
-             CL-097-02
+        doc /* What must be new, new per, new means and worked since
              Setup: the evaluator with the pinned cty.dat fixture and a hand log (worked and
              confirmed QSOs per band, mode and date, with and without grid) for HB9BLA JN37VL on
              20m FT8; the expected verdicts hand-worked in the test from the log and the cty.dat
@@ -500,9 +498,8 @@ package WstxValueOrder {
         }
     }
     verification 'TC-097-007' {
-        doc /* TC-097-007 — Callers of my call pass the filters and are answered only when
+        doc /* Callers of my call pass the filters and are answered only when
              Calling stations are answered is on
-             CL-097-02, CL-097-03
              Setup: the evaluator with the pinned cty.dat fixture, HB9BLA on 20m; the built-in
              Casual (call, per band, not worked; Calling stations are answered on); a log with
              W1AW worked on 20m; rows HB9BLA W1AW FN31 (+5), HB9BLA N1NEW FN31 (-9), CQ K1ABC
@@ -527,8 +524,7 @@ package WstxValueOrder {
         }
     }
     verification 'TC-097-008' {
-        doc /* TC-097-008 — The order criteria
-             CL-097-03
+        doc /* The order criteria
              Setup: the evaluator with the TC-039-040 rows extended by stations at SNR +1, 0,
              -10, -11 and unknown; a feed without a connection fed hand-authored spots of my
              call at JA1XYZ and VK2ABC; the expected orders hand-worked in the test (distances
@@ -557,8 +553,7 @@ package WstxValueOrder {
         }
     }
     verification 'TC-039-040' {
-        doc /* TC-039-040 — The filter and the value order
-             CL-039-02
+        doc /* The filter and the value order
              Setup: the evaluator as a function with the pinned cty.dat fixture, a hand log and
              hand-authored codec-packed rows for HB9BLA JN47AA (EU) on 20 m FT8: CQ K1ABC FN42
              -12 at 1200 Hz, CQ JA1XYZ PM95 -15 at 900 Hz, CQ DL1XYZ JO62 -3 at 1500 Hz, CQ

@@ -36,6 +36,8 @@ package WstxProfiles {
     private import WstxAudioStreams::ReceiveSamples;
     private import WstxProfileRecordings::RecordedSource;
     private import WstxRecordingTransfer::RecordingTransfer;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
     doc /* The profile part (WstxProfiles::PersistedProfile, deployed as
          WstxArchitecture::StationProcess::profile): the saved profile of one station, its
          creation, its launch with ownership, its save through GET and PUT /profile, its stop
@@ -332,7 +334,7 @@ package WstxProfiles {
     dependency CL_005_05_to_FR_022 from 'CL-005-05' to 'FR-022';
 
     verification 'TC-022-002' {
-        doc /* TC-022-002 — Persistence and independent restart
+        doc /* Persistence and independent restart
              Setup: four profiles from the fixture table, each in its own directory: UUID
              00000000-0000-4000-8000-00000000000i, Station i, TESTi, JN47AA, revision 0,
              standard, fixture-input-i and fixture-output-i, control disabled, null, disabled
@@ -370,8 +372,9 @@ package WstxProfiles {
                  and WSTX_BIND or WSTX_ORIGIN each give their mapped outcome.
              Oracle: independent expected fields and hashes, never the candidate's helpers.
              No power-loss durability or migration from WSJT-X is claimed.
-             2 — Isolated automated tests; Windows PC, disposable storage, N real processes
+             disposable storage, N real processes
              and windows. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-005-02';
@@ -384,7 +387,7 @@ package WstxProfiles {
         @TestedBy { test = "tests/profiles.test.cjs; server/src/profile_tests.rs"; }
     }
     verification 'TC-022-003' {
-        doc /* TC-022-003 — Lifecycle, ownership and isolation
+        doc /* Lifecycle, ownership and isolation
              Setup: four running profiles with valid inputs; each fault is applied alone, with
              otherwise valid TLS and token inputs.
              (a) Profile 1 stops and restarts while the other three refresh within
@@ -403,8 +406,9 @@ package WstxProfiles {
                  the fault is cleared, launch succeeds.
              (e) Killing the owner releases its lock. A marker alone holds nothing.
              Oracle: the mapped faults and independent hashes.
-             2 — Isolated automated tests; Windows PC, N real processes and windows, port
+             N real processes and windows, port
              reservations and controlled resource faults, never exhaustion of the PC. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective {
             verify 'CL-005-03';
@@ -439,11 +443,11 @@ package WstxProfiles {
     dependency CL_008_01_to_FR_009 from 'CL-008-01' to 'FR-009';
     dependency CL_008_01_to_FR_022 from 'CL-008-01' to 'FR-022';
     verification 'TC-002-001' {
-        doc /* TC-002-001 — Canonical live audio
-             CL-008-01, CL-008-02, CL-008-03
+        doc /* Canonical live audio
              Inject independently timed mono/stereo native float/PCM packets, silence flags, arbitrary splits, exact queue limits/one-over, gaps, timestamp errors, DATA_DISCONTINUITY flags on contiguous positions with QPC steps inside and just outside the2 ms bound, missing devices and cancellation into actual capture/converter boundaries. Generate analytic tones/impulses and rational frame maps independently.
              Channel0/normalization/finite-value rules, exact rational counts and block partition invariance within2e-5, group-delay alignment within one canonical frame, passband0.1dB/stopband60dB, bounded storage and no gap-crossing/fake silence. A contiguous flag within2 ms of the QPC timeline keeps one epoch and gap-free frames; beyond2 ms it is unknown loss; every unknown-loss epoch names its trigger. Canonical recordings unchanged. Cancel release<=250ms except explicit failed-close state; capture never invokes CAT.
-             2 — Isolated automated tests; Windows development PC, actual candidate modules and independent device/clock fixtures. */
+             actual candidate modules and independent device/clock fixtures. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-008-01';
@@ -453,11 +457,11 @@ package WstxProfiles {
         attribute executable : String = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; server/tests/receive_integration.rs; server/tests/source_contract.rs; server/src/audio.rs";
     }
     verification 'TC-009-001' {
-        doc /* TC-009-001 — Typed radio control
-             CL-008-01, CL-008-03, CL-008-04, CL-008-06
+        doc /* Typed radio control
              Feed manually derived CI-V query/set/ACK/NG/readback bytes through fragmented, malformed, echoed, foreign, stale, flooded and boundary-sized transport fixtures. Test auto-baud order/deadlines, invalid catalogue/URI, physical alias conflicts and cancellation before/after send.
              Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/in-flight exchange retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource.
-             2 — Isolated automated tests; Windows development PC, compiled control service and independent protocol/serial emulator. */
+             compiled control service and independent protocol/serial emulator. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-008-01';
@@ -469,10 +473,10 @@ package WstxProfiles {
         attribute method : String = "manual";
     }
     verification 'TC-022-001' {
-        doc /* #### TC-022-001 — Variable independent servers and browser windows
+        doc /* Variable independent servers and browser windows
 
              **Promises:** FR-001, FR-019, FR-021, FR-022; CL-005-01, CL-005-02, CL-005-03,
-             CL-005-05. **Level:** 2 — isolated automated tests.
+             CL-005-05.
              **Where:** Windows PC, N real server processes and separate real browser windows.
 
              **Setup partition:** Operational browser windows and save/readiness regressions
@@ -532,6 +536,7 @@ package WstxProfiles {
              domain/API and form-ordering subset. Operational HTTPS/grant fixture conversion
              and complete separate plaintext plus protected-HTTPS validation coverage remain
              pending; the expanded case is partial, without discarding existing assertions. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-01';
@@ -546,9 +551,9 @@ package WstxProfiles {
         attribute executable : String = "tests/profiles.test.cjs; server/src/profile_tests.rs";
     }
     verification 'TC-022-005' {
-        doc /* #### TC-022-005 — Status readiness independent of settings transport
+        doc /* Status readiness independent of settings transport
 
-             Proves CL-005-02, CL-005-03 and CL-006-04. Level 2, automated Windows real Chromium/server
+             automated Windows real Chromium/server
              fixture in tests/profiles.test.cjs, using the common four-process operational
              HTTPS/grant fixture before each relevant protected socket. Preserve separate
              plaintext HTTP/launch compatibility; auth setup requests do not count as profile
@@ -571,6 +576,7 @@ package WstxProfiles {
              socket/settings-readiness subset. The operational HTTPS/grant fixture conversion
              remains pending; the expanded case is partial, with every existing timing,
              held-response, count and stale-form assertion retained. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-005-02';

@@ -48,6 +48,8 @@ package WstxOperatingLayout {
     private import WstxContact::'CL-039-20';
     private import WstxContact::'CL-039-22';
     private import WstxContact::'CL-063-05';
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
 
     doc /* Implementation contract for the profile-mode read-only operating layout.
          Contract: WstxProductScope::ContractIndex4.7.1 and6.6 TC007002. Existing signal and
@@ -147,8 +149,8 @@ attribute def ActivityOrdering {
 }
     verification def LatestPeriodAndTimingVerification {
         objective latestPeriodAndTimingObjective { verify WstxOperatingLayout::'CL-010-09'; verify WstxOperatingLayout::'CL-007-02'; }
-        doc /* TC007006 cost2 Windows actual Rust manager/API and Chromium scripted
-             clocks/results; cost4 controlled HB9BLA receive plus local browser.
+        doc /* TC007006 Windows actual Rust manager/API and Chromium scripted
+             clocks/results; controlled HB9BLA receive plus local browser.
              Multiple periods/stations/>16rows/split+Thin pages/empty, complete vs overrun,
              gap/cancel/failure/late+obsolete context/midpage/reconnect/expiry/counters.
              Hand anchor12:00:00Z atframe0:FT8 3600/6000/8400=>-0.2/+0.0/+0.2;
@@ -162,6 +164,8 @@ attribute def ActivityOrdering {
              sequenceASC. Pagesre-sortwholelatestview; no priorperiodrow restored.
              Choicepersistsnewperiod/mode/sameprofilereconnect; differentvalidatedUUID
              resetsfrequencyASC. No servermutation/cadence/authority changes; 360px/2x. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @TestLevel { cost = 4; location = TestLocation::station; }
     }
     attribute def ReceivePresentationFreshness {
         attribute otherwiseValid : Boolean;
@@ -210,7 +214,7 @@ attribute def ActivityOrdering {
             verify WstxOperatingLayout::'CL-010-07';
             verify WstxOperatingLayout::'CL-010-08';
         }
-        doc /* TC-007-002, CL-010-05/07/08: cost2 local real-server Chromium cases at
+        doc /* TC-007-002, CL-010-05/07/08: local real-server Chromium cases at
              desktop/mobile/200% equivalent viewport. Assert ordering, literal
              identity, empty/unavailable views, disabled actions/no new commands,
              disclosure keyboard access, actual pointer/key split geometry and ARIA,
@@ -225,6 +229,7 @@ attribute def ActivityOrdering {
              messages wrap at words except emergency token breaks. Capture screenshots;
              retain actual nativeFT4/FT8 positive proofs. Long text wraps.
              TC010005/006/007 independently guard signal semantics. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
     }
     verification def livePresentation004 {
         objective {
@@ -304,7 +309,8 @@ attribute def ActivityOrdering {
              aborts the QSO, CL-010-03), real profile/recording
              behavior and request recorder refusing invented RF/QSO/strategy work.
              Same1200x800 target/actual screenshots show design correspondence.
-             Cost2 Windows isolated real server/Chromium; no radio. */
+              Windows isolated real server/Chromium; no radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
     }
     dependency agreedDesignCase from agreedDesignPresentation
         to WstxOperatingLayout::'TC-007-002';
@@ -521,7 +527,8 @@ attribute def ActivityOrdering {
     }
     verification def operatingScreen009 {
         objective { verify WstxOperatingLayout::'CL-010-16'; }
-        doc /* TC-007-009 cost2 isolated real server and Chromium. */
+        doc /* TC-007-009 isolated real server and Chromium. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
     }
     dependency operatingScreenCase from operatingScreen009 to WstxOperatingLayout::'TC-007-009';
     doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
@@ -788,12 +795,12 @@ attribute def ActivityOrdering {
     dependency CL_073_01_to_FR_019 from 'CL-073-01' to 'FR-019';
     dependency CL_073_01_to_FR_022 from 'CL-073-01' to 'FR-022';
     verification 'TC-073-001' {
-        doc /* TC-073-001 — Reproduction: Apply ⟳ of a CAT change reports the committed save
-             CL-073-01
+        doc /* Reproduction: Apply ⟳ of a CAT change reports the committed save
              Setup: actual candidate server on a disposable selected HTTPS profile (the TC-022-006 fixture: TLS localhost, token login, enrolled grant) and Chromium; control disabled at revision 0; request recorder for PUT /profile.
              Steps: connect; set CAT mode cat, endpoint fixture-cat-1, PTT disabled; press Apply ⟳; wait until the page is Connected again; read the result line, Save, the form, the shown revision, profile.json and the grant status scope.
              Expected (oracle: the contract above and the fixture's edit, not candidate output): exactly one PUT; the result line "Saved revision 1" and never "Save outcome unknown" at any time; profile.json revision 1 with control cat/fixture-cat-1/disabled; the scope's safety_revision advanced by 1 (the session-dropping path was taken); Connected again within 10 s with no token entry; Save enabled without Reload saved settings; the form shows fixture-cat-1 and the shown revision is 1. Red on the parent: "Save outcome unknown" and Save disabled.
-             2 — Isolated automated browser test; Windows development PC, no radio, serial port or RF. */
+             no radio, serial port or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/profiles.test.cjs";
         objective {
@@ -802,12 +809,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_073_01_verified_by_TC_073_001 from 'CL-073-01' to 'TC-073-001';
     verification 'TC-073-002' {
-        doc /* TC-073-002 — Received replies are known, missing replies stay unknown
-             CL-073-01
+        doc /* Received replies are known, missing replies stay unknown
              Setup: as TC-073-001; PUT /profile replies held, replaced or cut by a route fixture after the real server committed or refused them; a second window on the same profile.
              Steps (each from a fresh revision): (a) hold a committed display-name save's 200 reply, close the page's socket and let it reconnect, then release; (b) hold a committed 200 reply, announce the new revision so the page's background GET loads revision 1 first, then release; (c) hold a 409 reply (stale revision) across a socket reconnect, then release; (d) hold window A's committed revision-1 reply while window B saves revision 2 and A loads it, then release; (e) fetch a committed PUT and abort its delivery; (f) fulfil a committed PUT with status 200 and the body cut after 20 bytes; (g) with a body that is JSON but without revision; (h) hold the reply past 10 s.
              Expected (hand-written table): (a) and (b) "Saved revision 1", Save enabled, the form and shown revision 1; (c) the existing 409 text, Save disabled until reload, no "unknown"; (d) "Saved revision 1" while the shown revision stays 2 and the form is not overwritten; (e) to (h) "Save outcome unknown. Reload saved settings before retrying.", Save disabled, Refresh or a reconnect leave it disabled and an explicit reload enables it; exactly one PUT in every case (no replay); no GET /profile is sent for a save outcome in (a) to (d) beyond the socket's own initial read and the announced read. Red on the parent: (a), (b) and (d) unknown.
-             2 — Isolated automated browser tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         attribute executable : String = "tests/profiles.test.cjs";
         objective {
@@ -816,12 +823,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_073_01_verified_by_TC_073_002 from 'CL-073-01' to 'TC-073-002';
     verification 'TC-073-003' {
-        doc /* TC-073-003 — Live Apply ⟳ of a CAT change on HB9BLA
-             CL-073-01
+        doc /* Live Apply ⟳ of a CAT change on HB9BLA
              Setup: the gated candidate installed on HB9BLA, the operator's browser over HTTPS with its grant, IC-7300 on COM3; no transmission.
              Steps: note the shown revision R; in Settings > Radio change the CAT endpoint from COM3 to icom7300://COM3?baud=9600&radio=94&controller=e0 and press Apply ⟳; after the page is Connected again change it back to COM3 and press Apply ⟳; give the receive-only confirmation; change the display name and back with Apply ⟳.
              Expected (oracle: the shown revision before each save, the operator's look): each Apply ⟳ shows "Saved revision R+1", R+2, ... and never "Save outcome unknown"; after each CAT save the page is Connected again within 10 s with no token entry and Apply ⟳ is enabled without Reload saved settings; CAT shows waiting for the receive-only confirmation, then ready after it; the endpoint ends at the operator's COM3.
-             4 — Live on the station, configuration change and back, no RF; not run by the automated gate. */
+             not run by the automated gate. */
+        @TestLevel { cost = 4; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-073-01';
@@ -837,12 +844,12 @@ attribute def ActivityOrdering {
     dependency CL_057_03_to_FR_010 from 'CL-057-03' to 'FR-010';
     dependency CL_057_03_to_FR_019 from 'CL-057-03' to 'FR-019';
     verification 'TC-057-004' {
-        doc /* TC-057-004 — Only the latest even and odd periods in Band Activity
-             CL-057-03
+        doc /* Only the latest even and odd periods in Band Activity
              Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route (explicit presentation fixtures, never modem truth).
              Steps: publish three consecutive periods 12:00:00, 12:00:15 and 12:00:30 UTC (3, 2 and 2 records), then 12:01:00 (one record, a skipped period); record every results read with the view current at that moment.
              Expected (independent: the scripted periods): after the second period, its rows on top and the 12:00:00 rows below one divider; after the third, only the 12:00:30 rows on top and the 12:00:15 rows below one divider (never more than two periods, the older same-parity period gone); after 12:01:00 only its row, no divider; no results read below the current view's first sequence; no page error.
-             2 — Isolated automated browser test; Windows PC, no radio. Live acceptance: #37 items 1-2 on HB9BLA (FT8 and FT4). */
+             no radio. Live acceptance: #37 items 1-2 on HB9BLA (FT8 and FT4). */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-057-03';
@@ -861,8 +868,7 @@ attribute def ActivityOrdering {
     dependency CL_039_04_verified_by_TC_039_006 from 'CL-039-04' to 'TC-039-006';
     dependency CL_039_04_verified_by_TC_039_007 from 'CL-039-04' to 'TC-039-007';
     verification 'TC-039-046' {
-        doc /* TC-039-046 — Auto, Use PSK Reporter, the QSO pane lines and the editor in the browser
-             CL-039-04, CL-039-20, CL-039-22, CL-063-05
+        doc /* Auto, Use PSK Reporter, the QSO pane lines and the editor in the browser
              Setup: the actual isolated server and Chromium at 1366x768 and 360x740; routed replies for GET and PUT /strategy, POST /strategy/auto, GET /pskr, POST /pskr/use, GET /strategy/contests and GET /automation; pushed strategy.state, pskr.state and automation.state.
              Steps: open with no selection; select the saved strategy "New calls" (class strategy); click Auto; push the snapshot with auto true; push a HALT (auto false); click PSK; push enabled false (Settings off); push a run with hearing {heard, 75 s old, -12} and tx_slot {1420, his_end yes}, then {heard, 600 s}, {no}, {unknown} and his_end no and unknown; Use off; 10 s with no event; a contest prompt for WW Digi, Start; Auto on with the warning declined, then confirmed; FT8 Activity. The editor's steps are TC-097-014's and the prompt's fields TC-097-015's.
              Status (the station element and the contest status, from pushed automation.state and strategy.state): a waiting run, calling_cq, Auto off, a contest with Auto on and with Auto off; the contact snapshot without transmit capability.
@@ -891,8 +897,7 @@ attribute def ActivityOrdering {
     dependency CL_055_05_to_FR_019 from 'CL-055-05' to 'FR-019';
     dependency CL_055_04_verified_by_TC_055_006 from 'CL-055-04' to 'TC-055-006';
     verification 'TC-055-007' {
-        doc /* TC-055-007 — Dense Band Activity rows
-             CL-055-05
+        doc /* Dense Band Activity rows
              Setup: operating fixture at 1366x768 with a period of 30 routed decodes; Chromium.
              Steps: wait for the rows; measure a row, the font size and the rows fully visible in the table; read the coarse-pointer rule.
              Expected: a row at most 24 px high (41 px before), the font size unchanged (the normal operating font), at least 8 rows visible (5 before), and a pointer:coarse rule keeping at least 8 px cell padding; screenshot band-activity-density-1366.png (before and after on the issue).
@@ -918,12 +923,12 @@ attribute def ActivityOrdering {
     dependency CL_051_03_to_FR_021 from 'CL-051-03' to 'FR-021';
     dependency CL_051_02_verified_by_TC_051_001 from 'CL-051-02' to 'TC-051-001';
     verification 'TC-051-002' {
-        doc /* TC-051-002 — A held update and a rejected snapshot show the reload chip
-             CL-051-02, CL-051-03
+        doc /* A held update and a rejected snapshot show the reload chip
              Setup: actual candidate server and Chromium at 1366x768; routed contact snapshot with a contact calling CQ; the receive snapshot routed through, optionally with an unknown key dxcc; the proxy of TC-051-001.
              Steps: read receive with the unknown key, then without; the same for a result page, the operating selection snapshot and a contact snapshot; announce a spectrum.detail.frame of the current job with an unknown key; restart the station with build fedcba9876543210 while calling CQ; wait 1.5 s; click the chip; open a confirmation popup and reconnect to a status with another build.
              Expected: the error chip "Station data not understood (receive) · reload" in the error field, hidden again after the valid read; the same with (results), (selection) and (contact); (waterfall) for the frame; while calling CQ the warn chip "Station updated · reload" and no reload; the click reloads once and the reloaded page receives with no chip; with the popup open the chip and no reload; no page error.
-             2 — Isolated automated functional tests; Windows development PC, loopback only. */
+             loopback only. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-051-02';
@@ -956,12 +961,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_054_02_to_FR_019 from 'CL-054-02' to 'FR-019';
     verification 'TC-050-001' {
-        doc /* TC-050-001 — Waterfall pointer, lines, top bar and double-click to call
-             CL-050-01
+        doc /* Waterfall pointer, lines, top bar and double-click to call
              Setup: actual release candidate with the contact engine (contact_http_tests::contact_browser_operating_flow) and Chromium; the operating screen fixture of ui-operating with routed Band Activity rows.
              Steps: as TC-010-008; read the top bar and the QSO pane; double-click a CQ row and a row to my call.
              Expected: TC-010-008's #50 expectations; the top bar holds UTC only (one child, no period bar) and the QSO pane keeps #qso-progress; a row double-click sends select_row then enable_tx with the shown safety revision, one each; the help names "Waterfall click / double-click: Set Tx / Rx and Tx".
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-050-01';
@@ -970,8 +975,7 @@ attribute def ActivityOrdering {
     }
     dependency CL_050_01_verified_by_TC_050_001 from 'CL-050-01' to 'TC-050-001';
     verification 'TC-050-002' {
-        doc /* TC-050-002 — WSJT-X Band Activity colours
-             CL-050-02
+        doc /* WSJT-X Band Activity colours
              Setup: (a) actual candidate server; routed live job with CQ K1ABC (worked_this_band_and_mode), CQ W1XYZ, a report K9XX W2AB R-05 (both not_worked) and a free-text row; (b) the same server with routed records carrying the station's #55 flags and worked_status: CQ K1AA (no flag, worked_this_band_and_mode), CQ K2BB (new_call_band, worked_other_band_or_mode), CQ K3CC (new_call and new_call_band, not_worked) and HB9BLA K1AA R-05 to my call; Chromium.
              Steps: wait for the worked-before status of the rows; read row slots and backgrounds; turn New call off in Settings; append synthetic rows with slot sets for the #55 flags.
              Expected: no text marks; no CQ slot in Settings and no row slot cq; (a) the CQ W1XYZ row and the sender call of the non-CQ row K9XX W2AB R-05 (flags new_call, new_call_band; CL-055-04; only the call, CL-050-08) rgba(0,255,255,0.24) by default and rgba(153,255,255,0.2) with New call off; K1ABC (worked on this band and mode, no flag) and the free-text row no slot, background rgba(0,0,0,0); the choice saved in browser storage; priority My call > New continent > New DXCC, New grid and ITU zone off by default; (b) K1AA no slot and rgba(0,0,0,0); K2BB new_call_band, rgba(153,255,255,0.2); K3CC new_call and new_call_band, rgba(0,255,255,0.24); the row to my call from K1AA mycall only, rgba(255,102,102,0.32).
@@ -999,12 +1003,12 @@ attribute def ActivityOrdering {
     dependency CL_050_05_to_FR_007 from 'CL-050-05' to 'FR-007';
     dependency CL_050_05_to_FR_019 from 'CL-050-05' to 'FR-019';
     verification 'TC-050-003' {
-        doc /* TC-050-003 — Period bar colour and station clock
-             CL-050-03
+        doc /* Period bar colour and station clock
              Setup: actual candidate server and Chromium; the operating screen with a routed ContactSnapshot (Enable Tx on, own CQ, parity even) whose utc_ms is the browser's time plus a station offset; station.tick events dispatched to the page.
              Steps: read #qso-progress width and colour in an even and an odd station period, with transmitting true in the odd period, and after a 1 s backward step of the station clock; screenshots at 1366x768 and 360 px of a receive (green) and a transmit (red) period.
              Expected: the width is (station time mod period)/period within 4 percentage points, not the browser-clock phase, also right after the backward step; the even period (my Tx parity) and a transmitting period rgb(255, 64, 64), the odd receive period rgb(48, 208, 80); no width transition.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-050-03';
@@ -1013,12 +1017,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_050_03_verified_by_TC_050_003 from 'CL-050-03' to 'TC-050-003';
     verification 'TC-050-005' {
-        doc /* TC-050-005 — QSO pane while calling CQ and transmitting (#37)
-             CL-050-05
+        doc /* QSO pane while calling CQ and transmitting (#37)
              Setup: actual candidate server and Chromium; routed ContactSnapshot of an own CQ with Enable Tx on; station.tick events dispatched to the page; routed live rows.
              Steps: (ui-operating TC-050-005) read the header after a receive refresh, the message line with transmitting true (4 s into my period), with a transmit view whose last_text of this period differs from the next message, during Tune, and with transmitting false at the next odd period start, and Calling me with no row; (ui-operating TC-007-009) Calling me idle and during a QSO with Rx 1500 Hz and Tx 2100 Hz, with callers of my call at 400, 1505 (the partner), 1530, 2130 and 1600 Hz and CQs near Rx, then with Rx and Tx at 2800 Hz; (contact.test TC-007-003) Calling me with a caller and CQs near Rx on the actual server; screenshots of calling CQ, TX now and between periods.
              Expected: header "Calling CQ" with "Tx even (1st)"; "▶ TX now:" "CQ HB9BLA JN47" with "10 s left", then "K1ABC HB9BLA -05" (the text on the air), "▶ TX now:" "Tune" with "80 s left"; "▸ next:" "CQ HB9BLA JN47" with "Tx in 15 s"; "Nobody is calling" for an empty list; idle every caller as a Calling me row "<caller> | <SNR> | <grid> | <country>" oldest first and no CQ; during the QSO every caller but the partner, the 1530 and 2130 Hz callers marked ⚠ ("SV1DZB ⚠"), none marked at 2800 Hz, and a double-click on any caller sends select_row replace true then enable_tx.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-050-05';
@@ -1035,12 +1039,12 @@ attribute def ActivityOrdering {
     dependency CL_050_07_to_FR_007 from 'CL-050-07' to 'FR-007';
     dependency CL_050_07_to_FR_019 from 'CL-050-07' to 'FR-019';
     verification 'TC-050-007' {
-        doc /* TC-050-007 — Waterfall pointer, lines and axis on one frequency mapping; Rx/Tx brackets
-             CL-050-07
+        doc /* Waterfall pointer, lines and axis on one frequency mapping; Rx/Tx brackets
              Setup: actual release candidate (fixture station) and Chromium with routed contact snapshots and recorded contact commands; station.tick delivered through the page's own listener.
              Steps: at 1366x768 double-click and click at the 500, 1500 and 2500 Hz axis ticks and drag the Tx line to the 2000 Hz tick, confirming each value in the contact snapshot; repeat at 900x700 and at 360x800, with Flatten and the spectrum line on, at speed 4 and with devicePixelRatio 2; read the bracket of each line in FT8 and after an FT4 tick.
              Expected: each request carries the tick's frequency within 2 Hz; each confirmed line's centre and each tick lie within 1 px of the pointer position; the bracket starts within 1 px of its line and is as wide as 50 Hz (FT8) or 83.3 Hz (FT4) on the mapping, within 1 px, green for Rx and red for Tx; a click inside a bracket still reaches the waterfall.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-050-07';
@@ -1056,13 +1060,13 @@ attribute def ActivityOrdering {
     }
     dependency CL_050_08_to_FR_019 from 'CL-050-08' to 'FR-019';
     verification 'TC-050-008' {
-        doc /* TC-050-008 — Band Activity row marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip
-             CL-050-08
+        doc /* Band Activity row marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip
              Kept status (#50, live 2026-11-06): a row with the tip "New on 20m (worked on another band or mode)" keeps that tip when the next period of the other parity moves it below the divider, while that period is partial and after it is complete, with no worked-before query.
              Setup: actual release candidate (fixture station) and Chromium at 1440x900; routed receive pages for a kept period 12:00:00 (CQ K1PT FN42 new_call_band; CQ K7OLD FN42; K9XX W1AA R-03) and a latest period 12:00:15 (HB9BLA K1PT FN42 new_call_band; HB9BLA K2CM -05; HB9BLA K3NB R-07 new_call_band; CQ OA4DX FH17 and K9XX YO3ABC -07 with new_dxcc, new_dxcc_band, new_call, new_call_band and dxcc Peru/Romania; CQ K1WB FN42; W9AA W2CD 73; CQ JA1ZZ PM95 new_cq_zone, new_cq_zone_band, CQ zone 25), selection band 40m, the records' worked_status (K2CM, K1WB and W2CD worked on 40m FT8, K3NB on another band or mode, the others not worked) and routed contact snapshots.
              Steps: with no contact read each row's marks, message cell and sender-call backgrounds and reason tip; hover the YO3ABC message, its DXCC cell and an uncoloured row; focus the K3NB row; route a contact with K1PT in replying and reload the snapshot; read the order, stripe and marker; read the stripe at 360x800; sort by Freq and back; turn My call and New call off in Settings; route the contact completed and reload.
              Expected: no contact: no stripe; the three rows to my call whole row rgba(255,102,102,0.32) with tips "New on 40m", none (worked on this band and mode, no flag) and "New on 40m (worked on another band or mode)"; CQ OA4DX whole row rgba(255,0,255,0.26) tip "New DXCC · New call"; K9XX YO3ABC -07 message cell transparent with only the YO3ABC span rgba(255,0,255,0.26) and the same tip; CQ JA1ZZ whole row rgba(255,191,0,0.26) tip "New CQ zone 25"; the rows without a flag uncoloured without a tip; no row has a native title and the aria-description equals the tip; the tip box is one line at the pointer, absent over the DXCC cell and over an uncoloured row, shown for the focused row and gone after focus moves. Prepared K1PT: HB9BLA K1PT FN42 then CQ K1PT FN42 first, then one stripe row (no text, rgb(255,64,64)), then the other rows in the earlier order with the kept divider; the partner rows have no slot background or tip, a 4 px rgb(255,64,64) inset left bar, a bold message and the badge " ◆ QSO"; at 360x800 the stripe is a 3 px full-width rgb(255,64,64) bar; the partner block stays first after the Freq sort. With My call and New call off: K2CM uncoloured, K3NB whole row rgba(153,255,255,0.2), the OA4DX and YO3ABC tips "New DXCC · New on 40m". Completed: no stripe and no partner row; HB9BLA K1PT FN42 is a calls-me row; no worked-before query, none added by the marks, the partner or the tip; no page error.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-050-08';
@@ -1071,8 +1075,7 @@ attribute def ActivityOrdering {
     }
     dependency CL_050_08_verified_by_TC_050_008 from 'CL-050-08' to 'TC-050-008';
     verification 'TC-054-002' {
-        doc /* TC-054-002 — Fixed level mapping, Zero/Gain sliders, Flatten and the spectrum line option
-             CL-054-02
+        doc /* Fixed level mapping, Zero/Gain sliders, Flatten and the spectrum line option
              Setup: actual candidate and Chromium at 1366x768; injected Detailed rows with known levels (noise q=40, a -40 dBFS carrier, a passband slope).
              Steps: read cells; move Sensitivity to +10 and Range to 30; reload; start a new job; turn Flatten and Show spectrum line on.
              Expected: E=-85 and span 50 by default (q=40 -> t=0.1, -40 dBFS -> t=0.9 by the palette anchors); g=+10 gives E=-95, R=30 the span 30; values survive a reload and a new job (no auto level, no reset); Flatten evens the slope across frequency within one palette step while the native readout is unchanged; the spectrum canvas is hidden by default and shown on request; signal height 330 px, speed 10 px/s.
@@ -1096,12 +1099,12 @@ attribute def ActivityOrdering {
     dependency CL_060_01_to_FR_007 from 'CL-060-01' to 'FR-007';
     dependency CL_060_01_to_FR_019 from 'CL-060-01' to 'FR-019';
     verification 'TC-060-001' {
-        doc /* TC-060-001 — QSO pane dialogue table
-             CL-060-01
+        doc /* QSO pane dialogue table
              Setup: actual candidate server and Chromium at 1366x768; routed ContactSnapshot of a running QSO of HB9BLA with CT1BFP whose dialogue holds a sent CQ, the operator's #60 example (received IM59 +8, sent +08, received R-02 +7, sent RR73, received 73 +9, here repeated twice with my call hashed and unknown) and a sent free text; routed live rows of callers of my call: DL1ABC JO31, an unknown hashed call with RR73, a known hashed call <PJ4/K1ABC> with the report -05, and EA8BIA IL18 near my Rx.
              Steps: read the header cells and every #qso-dialogue row's cells and the #37 Calling me rows idle and while the QSO runs, the page scroll, the header row and the newest row position, then at 360x800 the table and page widths; screenshots at 1366x768 and 360x800.
              Expected (independent oracle: the literal operator table of #60 and its 2026-11-03 Rep and every-row SNR requests): header UTC, Direction, Exchange, Rep, Rx SNR, Tx SNR; idle no dialogue row ("No QSO") and the callers in Calling me [DL1ABC, −8, JO31, ""], [<...>, −12, JO31, ""], [<PJ4/K1ABC>, −5, JO31, ""], [EA8BIA, 0, JO31, ""]; dialogue [22:51:00, CQ HB9BLA, JN37, "", "", ""], [22:51:15, HB9BLA ◂ CT1BFP, IM59, "", +8, ""], [22:51:30, CT1BFP ◂ HB9BLA, +08, "", +8, ""], [22:51:45, HB9BLA ◂ CT1BFP, R-02, "", +7, −2], [22:52:00, CT1BFP ◂ HB9BLA, RR73, "", +7, −2], [22:52:15, <...> ◂ CT1BFP, 73, ×2, +9, −2], [22:52:30, "", TNX 73 GL, "", +9, −2]; during the QSO the same callers in Calling me, EA8BIA as "EA8BIA ⚠", and none of them a row of the QSO table; no page scroll at 1366x768, the header row and the newest row visible; at 360 px no horizontal overflow and the table within the pane.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-060-01';
@@ -1118,12 +1121,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_061_01_to_FR_019 from 'CL-061-01' to 'FR-019';
     verification 'TC-061-001' {
-        doc /* TC-061-001 — An audio loss epoch keeps the waterfall and Band Activity
-             CL-061-01
+        doc /* An audio loss epoch keeps the waterfall and Band Activity
              Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot, results route and live Detailed waterfall frames (explicit presentation fixtures, never modem truth).
              Steps: publish the periods 12:00:00 and 12:00:15 (2 and 1 records) and four waterfall rows; then announce a loss epoch: new source, job and generation, loss_epochs 1, results from sequence 0; send two waterfall rows of the new epoch from sequence 0; publish 12:00:30 under the new identity; then a Stop/Start (new identity, loss_epochs 0) with one row.
              Expected (independent: the scripted periods and rows): after the epoch the 12:00:15 and 12:00:00 rows stay below their dividers and the six waterfall rows are the four old ones, one gap row and the two new ones in that order; the error field shows no entry for the epoch; after 12:00:30 its row is on top and the 12:00:15 rows below one divider, read with the new source, job and generation from cursor 0; after the Stop/Start Band Activity and the waterfall hold only the new receive's content. On the parent client the epoch clears both.
-             2 — Isolated automated browser test; Windows PC, no radio. */
+             no radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-01';
@@ -1132,12 +1135,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_061_01_verified_by_TC_061_001 from 'CL-061-01' to 'TC-061-001';
     verification 'TC-061-002' {
-        doc /* TC-061-002 — Audio gaps on HB9BLA keep the display
-             CL-061-01
+        doc /* Audio gaps on HB9BLA keep the display
              Setup: the gated candidate installed on HB9BLA, 40 m FT8 receive, one browser on the LAN; no transmission.
              Steps: watch the waterfall and Band Activity until GET /receive audio.loss_epochs has grown at least once.
              Expected: at each growth the waterfall keeps its history with one grey gap row and Band Activity keeps its periods; the error field shows no entry for it; a mode change still clears both.
-             3 — Live, read-only on the station; with the operator at acceptance. */
+             with the operator at acceptance. */
+        @TestLevel { cost = 3; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -1168,12 +1171,12 @@ attribute def ActivityOrdering {
     dependency CL_037_03_to_FR_019 from 'CL-037-03' to 'FR-019';
     dependency CL_037_02_to_FR_021 from 'CL-037-02' to 'FR-021';
     verification 'TC-037-001' {
-        doc /* TC-037-001 — Control panel below the QSO pane
-             CL-037-01
+        doc /* Control panel below the QSO pane
              Setup: actual candidate server and Chromium at 1366x768, 1920x1080 and 360x800; routed ContactSnapshot of a running QSO.
              Steps: without opening the fold-out read the visibility of #dx-call, #dx-grid, #dx-generate, #contact-report, #contact-auto, #contact-call-first, #contact-hold and #contact-parity; read the bounding boxes of the QSO pane, #qso-control and #error-field; change each control and record the contact requests; check the fold-out holds the Tx1-Tx6 rows and no longer the moved controls, and the Rx/Tx strip holds no Hold Tx.
              Expected (oracle: the operator's #37 comments of 2026-11-03): every control visible with the fold-out closed and inside #qso-control; the three blocks stacked top to bottom (pane bottom <= control top, control bottom <= error-field top) with equal left and right edges (within 1 px) at all three sizes; the controls span at least 80% of the panel width at 1366x768 (rows, not a narrow column); Report 7 sends set_report {report 7}, Auto Seq off set_auto_seq false, Call 1st off set_call_first false, Hold Tx on set_hold_tx true, Odd / 2nd set_parity odd, DX Call W1AW with Enter sends enter_dx; no page scroll at 1366x768 and no horizontal overflow at 360 px; screenshots at 1366x768 and 360x800.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-037-01';
@@ -1182,13 +1185,13 @@ attribute def ActivityOrdering {
     }
     dependency CL_037_01_verified_by_TC_037_001 from 'CL-037-01' to 'TC-037-001';
     verification 'TC-037-002' {
-        doc /* TC-037-002 — Error field lists current problems only
-             CL-037-02
+        doc /* Error field lists current problems only
              Setup: actual candidate server and Chromium at 1366x768 with a CAT profile; routed CAT status, contact snapshot transmit refusal and connection state.
              Long text (live 2026-11-06): with a CAT status text wrapping to several lines, and one far longer than the block, the block and its last entry can be scrolled fully into view on the 1366x768 screen, with no page scroll and the Control panel top unchanged; one wheel notch moves the block by at most its visible height; at 360x800 no horizontal overflow.
              Steps: healthy station; inject a CAT status not ready; then a transmit refusal radio_lost and a stale_revision-like transient refusal busy; then clear the CAT condition; then clear the refusal; then make the station link stale; read #error-field each time and the top bar.
              Expected (oracle: the operator's #37 correction "NO history"): healthy, the field shows "No problems" and no entry; the CAT entry names the CAT status and "since HH:MM" with the current UTC hour and minute; radio_lost adds "Tx refused · radio lost", busy adds nothing; after the CAT condition clears its entry is gone without any operator action and the refusal entry stays; after the refusal clears the field shows "No problems" again; with the link stale the field shows "Station connection lost · reconnecting"; the field has no acknowledge or dismiss control; the top bar holds no exception chips.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-037-02';
@@ -1203,13 +1206,13 @@ attribute def ActivityOrdering {
     }
     dependency CL_065_02_to_FR_019 from 'CL-065-02' to 'FR-019';
     verification 'TC-065-003' {
-        doc /* TC-065-003 — Free Tx slots marks above the waterfall
-             CL-065-02
+        doc /* Free Tx slots marks above the waterfall
              Setup: actual candidate server and Chromium at 1366x768, 1920x1080 and 360x800, also devicePixelRatio 2; routed automation snapshot with a run, announced by a pushed automation.state (the browser reads GET /automation only after it, #74), and pushed free_tx_slots.state events, FT8 and FT4.
              Steps: open Settings > Expert; with a value pushed and the checkbox off read #frequency-ruler; turn it on; push a value whose slots include FT8 2110 and 2160 Hz (exactly one width apart); in the Dark, Day and Night themes take a screenshot and read the pixel at each bar's centre, at the Rx line's and the Tx line's centre and at the ruler background beside the bars; push a newer value; an FT4 value with slots 90 Hz apart; one of another run_id; one with empty slots; route run null; reload and open a second browser context; click and double-click the waterfall at a mark's frequency and drag the Tx marker across a mark.
              Expected (oracle: CL-050-07 mapping, the operator's #65 and #76 answers): the checkbox "Show free Tx slots" off by default; no mark while off; on at 1366x768 and 1920x1080 (also devicePixelRatio 2): one bar per listed slot, each 8 CSS px high (within 0.5 px) at the bottom of the ruler, with left and right edges within 1 px of x(hz) + 2 and x(hz + width) - 2 (width 50 Hz FT8, 90 Hz FT4); the 2110 and 2160 Hz bars (and the FT4 pair) two bars with a gap of 4 px (within 1 px) between them; no text in the ruler's marks layer (no rank, no rise); in each theme the drawn bar pixel differs from the drawn Rx line, Tx line and ruler background pixel by at least 40 in the sum of the R, G and B differences; the waterfall top and height unchanged; redrawn on the newer value; none for another run_id, for empty slots and with run null; on after reload, off in the other context; the same set_frequency requests as without marks, Rx and Tx lines unchanged; no request after an event and no timer request; at 360x800 no bar is required, no horizontal overflow and no page error. Red on the parent: 4 px bars over the full slot (no gap between 2110 and 2160 Hz), labels in the ruler.
              #82: replaced by TC-082-004. No checkbox (always shown), no run and no run_id match, bars over open ranges [lo, hi) instead of listed slots; its test is rewritten to TC-082-004.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-02';
@@ -1219,12 +1222,12 @@ attribute def ActivityOrdering {
     dependency CL_065_02_verified_by_TC_065_003 from 'CL-065-02' to 'TC-065-003';
     dependency CL_065_02_verified_by_TC_065_004 from 'CL-065-02' to 'TC-065-004';
     verification 'TC-082-004' {
-        doc /* TC-082-004 — Open slot marks always on the waterfall
-             CL-065-02
+        doc /* Open slot marks always on the waterfall
              Setup: actual candidate server and Chromium at 1366x768, 1920x1080 and 360x800, also devicePixelRatio 2; pushed free_tx_slots.state events, FT8 and FT4; automation never used unless a step names a GET /automation reply (announced by automation.state, #74); the Dark, Day and Night themes.
              Steps: open Settings > Expert; push FT8 open [[300, 1000], [1050, 2700]]; push [[2110, 2160], [2160, 2210]]; FT4 [[300, 390], [390, 480]]; a newer value; open []; null; while a value is held a GET /automation reply with an older value, one with null, then one with a later value; an event that arrives before the contact client's script has loaded; a new boot; in each theme read the pixel at a bar's centre, at the Rx and Tx lines' centre and at the ruler background; click and double-click the waterfall at a mark and drag the Tx marker across it; an Off page.
              Expected (oracle: CL-050-07 mapping, the operator's #76 and #82 answers): no "Show free Tx slots" checkbox; one bar per range, 8 CSS px high (within 0.5 px) at the bottom of the ruler, edges within 1 px of x(lo) + 2 and x(hi) - 2; the touching ranges two bars with a 4 px gap (within 1 px), also FT4; no text in the marks layer; in each theme the bar pixel differs from the drawn Rx line, Tx line and ruler background by at least 40 in the sum of the R, G and B differences; the waterfall top and height unchanged; redrawn on the newer value; none for [] and for null; the older and the null GET reply leave the marks unchanged, the later one replaces them; the early event's marks drawn once the client has loaded, with no request; from the new boot on no mark of the old boot until the new boot's first event; the same set_frequency requests as without marks, Rx and Tx lines unchanged; no request after an event and no timer request; at 360x800 no horizontal overflow and no page error; the Off page no marks and no event. Red on the parent: no mark without a run, and none with the checkbox off by default.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-065-02';
@@ -1243,12 +1246,12 @@ attribute def ActivityOrdering {
     dependency CL_037_04_to_FR_007 from 'CL-037-04' to 'FR-007';
     dependency CL_037_04_to_FR_019 from 'CL-037-04' to 'FR-019';
     verification 'TC-037-003' {
-        doc /* TC-037-003 — Fixed-height QSO pane with QSO and Calling me sections
-             CL-037-04
+        doc /* Fixed-height QSO pane with QSO and Calling me sections
              Setup: actual candidate server and Chromium at 1366x768, then 1920x1080 and 360x800; routed live rows of one period with ten CQs, later joined by three callers of my call (a later publication announced by receive.state, #10) (DL1ABC JO31 Fed. Rep. of Germany at 600 Hz, IW9FRA JM68 Sicily, EA8BIA IL18 Canary Islands at 1520 Hz, near my Rx 1500 Hz); routed ContactSnapshots idle, of a running QSO with IW9FRA with 1, 12 and 15 dialogue entries, armed and disarmed, and completed.
              Steps: at each step read the top and height of the QSO pane, the QSO section, the Calling me section and the top of the Control panel (in the coordinates of the scrolled workspace), the section placeholders, the Calling me cells and whether the dialogue rows lie inside the QSO section; at 360x800 scroll the workspace to the first Band Activity row and count the rows fully on screen and their height; screenshots at each size.
              Expected (independent oracle: the operator's 2026-11-04 #37 design and the live finding 2026-11-04): idle "No QSO" and "Nobody is calling" shown; with the callers the Calling me header Calling me, SNR, Grid, Country and rows [DL1ABC, −8, JO31, Fed. Rep. of Germany], [IW9FRA, +17, JM68, Sicily], [EA8BIA, 0, IL18, Canary Islands]; during the QSO no "No QSO", the partner gone from Calling me and EA8BIA marked ⚠; 12 dialogue rows all inside the section without scrolling and the section on screen at 1366x768 and 1920x1080; 6 dialogue rows all inside the section without scrolling at 360x800 (live 2026-11-06, its header one row high); with 15 rows the section scrolls and the newest row is inside it; after completion "No QSO" again; at each size the Control panel top, the pane height and both section heights are the same at every step; Calling me holds its header and 5 rows; no page scroll at 1366x768 with the Control panel, the error field and the pane HALT on screen; at 360x800 no horizontal overflow, at least six Band Activity rows on screen, each at most 48 px high, and the newest dialogue row visible.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-037-04';
@@ -1264,12 +1267,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_061_02_to_FR_007 from 'CL-061-02' to 'FR-007';
     verification 'TC-061-003' {
-        doc /* TC-061-003 — CQ retries a stale_revision refusal
-             CL-061-02
+        doc /* CQ retries a stale_revision refusal
              Setup: actual station Router and browser client with scripted contact snapshots, contact command replies and contact.state events pushed through the station-message handler of the client, each carrying the moved revision, a snapshot_sequence one above the shown snapshot and its transmit, settings, contact, log and watchdog in changed (explicit presentation fixtures); Playwright page clock, paused once CQ is enabled.
              Steps: click CQ while the station refuses one command with stale_revision, moves its revision and sends no contact.state; once the refusal is shown, move the page clock by 2499 ms, then by 1 ms. Click CQ while it refuses three, sending a contact.state with the moved revision after each; after the third refusal, wait for revision 7 in the snapshot, then click Tune.
              Expected (independent: the scripted revisions, the contract wait of 2.5 s and limit of two retries): after 2499 ms no GET /contact and no second command; after 2500 ms one GET /contact and CQ sends enable_tx with revision 4 after revision 3 (accepted); then 4, 5, 6 and the refusal is shown; the next command is tune, with no fourth enable_tx. Every wait is on an event, with a 10 s hang guard (#83). On the parent client CQ sends once (#61).
-             2 — Isolated automated browser test; Windows PC, no radio. */
+             no radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-02';
@@ -1288,12 +1291,12 @@ attribute def ActivityOrdering {
     dependency CL_061_03_to_FR_010 from 'CL-061-03' to 'FR-010';
     dependency CL_061_03_to_FR_019 from 'CL-061-03' to 'FR-019';
     verification 'TC-061-004' {
-        doc /* TC-061-004 — A Tx period shows the station's Tx marker, no empty block
-             CL-061-03
+        doc /* A Tx period shows the station's Tx marker, no empty block
              Setup: actual station Router and browser client with a scripted correlated FT8 receive snapshot and results route (explicit presentation fixtures, never modem truth).
              Steps: publish 12:00:00 UTC with 3 records; publish 12:00:15 as a Tx period (latest_decode transmitted true, no records); publish 12:00:30 with 2 records; publish 12:00:45 (a receive period) with no records. No station.tick says transmitting.
              Expected (independent: the scripted periods and the marker): after 12:00:15 Band Activity shows the marker row "Tx 12:00:15 · this station transmitted · no decode" on top, then the divider "FT8 period 12:00:00 UTC" and the three 12:00:00 rows; no "No stations decoded" and no "No verified stations" text; header "Tx · FT8 period 12:00:15 UTC · this station transmitted, no decode"; count "3 messages"; after 12:00:30 its 2 rows on top and the 12:00:00 rows below the divider "FT8 period 12:00:00 UTC", no marker; after 12:00:45 the note "No stations decoded" with the 12:00:30 rows below their divider; no page error. On the parent client the 12:00:15 view is refused (unknown key) and no marker shows.
-             2 — Isolated automated browser test; Windows PC, no radio. Live acceptance: TC-061-007. */
+             no radio. Live acceptance: TC-061-007. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-03';
@@ -1308,12 +1311,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_061_05_to_FR_019 from 'CL-061-05' to 'FR-019';
     verification 'TC-061-008' {
-        doc /* TC-061-008 — A Tx period is a thin band, the time axis stays exact, nothing pale
-             CL-061-05
+        doc /* A Tx period is a thin band, the time axis stays exact, nothing pale
              Setup: actual station Router and browser client at 1366x1200 (device scale 1; a plot holding 20 s at 10 px/s, which the #37 default split at 1366x768 does not) with a scripted correlated live receive and Detailed frames, Speed 1 (10 CSS px/s) (explicit presentation fixtures).
              Steps: deliver 12 s of receive rows; one Tx row; the rest of a 15 s Tx period with two missing rows; 12 s of receive rows; read the canvas column and the time ruler; hover the band; set the Day theme and read the rendered page pixels; deliver Tx rows after a 7.4 s hole and after a 7.6 s hole.
              Expected (independent: computed from the 0.2 s rows and 10 px/s with y(s)=floor(s*10*H/C)): after the first Tx row the band covers rows 0-3 and the receive rows start at 4; the remaining Tx rows leave that picture unchanged; after the 12 s of receive the band covers rows y(12) to y(12)+3, receive rows above and below it and no grey row; labels 39.0 s at 0, 35.0 s at y(4), 30.0 s at y(9), then 10.0 s at y(14)+4, none of 25, 20, 15 s; the band's readout names the source range 12.0-27.000 s; the Day page pixels of the band are dark red; the 7.4 s hole is part of the band and the 7.6 s hole stays grey. On the parent client the Tx rows take 150 px, the labels ignore the band and the Day pixels are pale.
-             2 — Isolated automated browser test; Windows PC, no radio. Live acceptance: TC-061-009. */
+             no radio. Live acceptance: TC-061-009. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-061-05';
@@ -1322,12 +1325,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_061_05_verified_by_TC_061_008 from 'CL-061-05' to 'TC-061-008';
     verification 'TC-061-009' {
-        doc /* TC-061-009 — The Tx band on HB9BLA
-             CL-061-05
+        doc /* The Tx band on HB9BLA
              Setup: the installed station on HB9BLA, IC-7300, RF power set by the test to at least 30 W before the first Tx (CI-V 14 0A, starting at 0090, with the station stopped and idle, because it holds COM3; read back; the first Tx must read Po at least 30 %; if below, raise the value and repeat; the operator's value is restored afterwards only if the radio still reads what the test set, otherwise it is left alone and reported), the operator's consent, the operator's browser in its usual theme.
              Steps: run a QSO with several Tx periods and look at the waterfall during and after them.
              Expected: each Tx period shows only a thin dark red band; no white or grey band appears while transmitting; the time labels below a band are the source times of those rows.
-             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
+             Not run by the automated gate. */
+        @TestLevel { cost = 5; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -1344,12 +1347,12 @@ attribute def ActivityOrdering {
     dependency CL_096_01_to_FR_010 from 'CL-096-01' to 'FR-010';
     dependency CL_096_01_to_FR_019 from 'CL-096-01' to 'FR-019';
     verification 'TC-096-001' {
-        doc /* TC-096-001 — Full-screen button in the browser
-             CL-096-01
+        doc /* Full-screen button in the browser
              Setup: actual candidate server and Chromium at 1366x768 and 360x800 with a retained authorization and a routed ContactSnapshot of a prepared contact (abortable); a request recorder on every station route; per variant an init script that, delegating to the real objects, records each call of navigator.keyboard.lock and unlock with its arguments, or deletes navigator.keyboard, or makes Document.fullscreenEnabled false, or makes Element.requestFullscreen reject.
              Steps: (a) read the top-bar buttons in order and the full-screen button's aria-label, aria-pressed, title and data-icon; click it; read document.fullscreenElement, the button and the lock calls; (b) press Escape (short keydown) while full screen with the prepared contact; read the requests, the contact and document.fullscreenElement; then open the Band Activity row menu and press Escape; read the menu; then leave full screen and press Escape; read the requests; (c) with the contact prepared again, enter full screen, call document.exitFullscreen() from the test (as the browser does on Esc held or its own control); read the button and the unlock call; then dispatch three Escape keydowns with repeat true (the held key's auto-repeat after the exit); read the requests and the contact; (d) Tab to the button, press Enter, then Space; (e) reload while full screen; (f) the variant without navigator.keyboard: click, read; with the prepared contact press Escape while full screen; read the requests; (g) the variant with fullscreenEnabled false; (h) the variant whose request rejects: click, read the page errors; (i) the unauthorized view (no retained authorization); (j) at 360x800 and 1366x768 read the page and top-bar scroll widths and the page scroll height, before and after entering full screen; (k) open "?" and read the Help region's intro text and its key entries (dt and dd) in order.
              Expected (oracle: the operator's request on #96 and the WHATWG Fullscreen Standard): (a) the order Logbook, Settings, full screen, "?", HALT; aria-label "Full screen", aria-pressed false, title "Full screen: hide the browser frame", data-icon "expand"; after the click document.fullscreenElement is document.documentElement, aria-label "Leave full screen", aria-pressed true, title "Leave full screen", data-icon "collapse", one lock call ["Escape"]; (b) in full screen no abort request, the contact still prepared and document.fullscreenElement still set; the menu closed by Escape; after leaving full screen Escape sends one abort request (unchanged Abort QSO); (c) aria-label "Full screen", aria-pressed false, title "Full screen: hide the browser frame", data-icon "expand", one unlock call; after the repeated Escape keydowns no abort request and the contact still prepared; (d) Enter enters and Space leaves full screen; (e) after the reload not full screen and the button off; (f) full screen entered, no lock call, no page error, and the Escape sends no abort request; (k) the intro "WSJT-X keys where the function exists. Letter keys and ? are inactive while a text field has focus; Alt+H always halts, Esc aborts the QSO (not in full screen)."; the entry "Esc / Abort QSO" with "Abort the QSO: the transmission stops now and the contact is cancelled (nothing logged); the station stays ready. Not in full screen." directly followed by "Full screen button" with "Hide the browser frame and show only the app; press again to leave. Esc held: leave full screen."; (g) no full-screen button and Settings directly followed by "?"; (h) not full screen, the button off, no page error and no ErrorField entry; (i) no full-screen button; (j) no horizontal overflow at 360 px and no page scroll at 1366x768 in both states; in (a) to (h) no station request caused by the button. Red on the parent: there is no full-screen button, every Escape keydown aborts (also a repeated one), and the overview lacks the full-screen texts.
-             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-096-01';
@@ -1358,12 +1361,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_096_01_verified_by_TC_096_001 from 'CL-096-01' to 'TC-096-001';
     verification 'TC-096-002' {
-        doc /* TC-096-002 — Live: full screen on the operator's browsers
-             CL-096-01
+        doc /* Live: full screen on the operator's browsers
              Setup: the gated candidate installed on HB9BLA; the operator's laptop with Chrome or Edge over the station link; an Android phone with Chrome; an iPhone with Safari if at hand. Receive only, Enable Tx off: no transmission.
              Steps: on the laptop press the full-screen button; open the Settings drawer, the Logbook and "?", and a Band Activity row menu; select a CQ row (a prepared contact, Enable Tx off) and press Esc briefly; hold Esc; enter again and leave with the button; press F5 while full screen. On the Android phone enter and leave with the button. On the iPhone look at the top bar.
              Expected: on the laptop the button left of "?"; no browser tabs, address bar or toolbars while full screen and the drawer, Logbook, overview and menu inside it; the short Esc leaves the prepared contact as it is and the page stays full screen; holding Esc shows the browser's notice and leaves full screen, the button then off, and the contact is still prepared after holding Esc; the button leaves full screen; after F5 the normal window with the button off; the waterfall keeps running throughout. On Android the browser frame goes and returns with the button. On the iPhone no full-screen button and no gap in the top bar. Screenshots on the issue.
-             4 — Live on the station without RF; operator's browsers; not run by the automated gate. */
+             operator's browsers; not run by the automated gate. */
+        @TestLevel { cost = 4; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -1419,13 +1422,12 @@ attribute def ActivityOrdering {
     dependency CL_010_07_verified_by_TC_007_004 from 'CL-010-07' to 'TC-007-004';
     dependency CL_010_08_verified_by_TC_007_004 from 'CL-010-08' to 'TC-007-004';
     verification 'TC-021-007' {
-        doc /* #### TC-021-007 — Disconnect, retry and state resynchronization
+        doc /* Disconnect, retry and state resynchronization
 
              Application payload codecs and negotiated WebSocket compression remain excluded.
              HTTP content coding12.1.1 changes no reconnect, snapshot, event or status deadline.
 
              **Clauses:** CL-003-04, CL-003-08. **Promise:** FR-021.
-             **Level:** 2 — Isolated automated tests.
              **Where it runs:** Windows PC, actual candidate server and real browser through a
              controllable disposable local proxy, with WebSocket message and attempt timestamps.
 
@@ -1455,6 +1457,7 @@ attribute def ActivityOrdering {
              exchange; it does not simulate a different application version. **Executable trace:**
              [communication.test.cjs](../../../tests/communication.test.cjs),
              `TC-021-007: dropped connection, bounded retries, fresh snapshot`. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-003-04';
@@ -1464,9 +1467,9 @@ attribute def ActivityOrdering {
         attribute executable : String = "tests/communication.test.cjs";
     }
     verification 'TC-007-002' {
-        doc /* #### TC-007-002 — Read-only operating layout slice
+        doc /* Read-only operating layout slice
 
-             Proves CL-010-05, CL-010-07, CL-010-08. Cost level 2: offline integration tests on
+             offline integration tests on
              the development PC, using the actual server and headless Chromium; no radio or
              external network. Create an isolated saved profile whose display name includes HTML
              metacharacters and connect the browser. At 1440×900 and 360×800 CSS pixels, and a
@@ -1495,6 +1498,7 @@ attribute def ActivityOrdering {
              at200% text enlargement, and8CSSpx vertical padding.
              All widths retain these minima; long text wraps without page overflow. Existing splitter, keyboard, capability and transport assertions remain.
              These style oracles come from the stated presentation values, not candidate CSS. Verify the dominant/full-width Band Activity proportions and labelled responsive rows at360/720/1200/1440/1600CSSpx and1x/2x text. Use captured physical FT4 message text strictly as a labelled presentation fixture, plus independent edge strings:3499.9Hz, signed SNR/DT, long callsigns/full messages, large source seconds, UTC-formatted text and every result status. All six values remain literal and inside their own cells; numbers never split, message tokens wrap only when needed, and table labels remain accessible. This fixture is not decoder/RF truth. Capture desktop/narrow/2x screenshots; retain the separate actual nativeFT4/FT8 decoder/browser proofs. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-05';
@@ -1504,9 +1508,9 @@ attribute def ActivityOrdering {
         attribute executable : String = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs; tests/contact.test.cjs; tests/receive-page.test.cjs; server/src/receive_http_tests.rs";
     }
     verification 'TC-007-009' {
-        doc /* #### TC-007-009 — Laptop operating screen (#37)
+        doc /* Laptop operating screen (#37)
 
-             Proves CL-010-16. Cost level 2: actual isolated server and headless Chromium on the
+             Proves CL-010-16. actual isolated server and headless Chromium on the
              development PC; no radio, audio device or network service. A Band Activity record
              with a_priori 1 shows the a1 marker after its message, outside the message text
              (#56 slice 5). At 1366x768: no page
@@ -1563,6 +1567,7 @@ attribute def ActivityOrdering {
              contact is gone at once. At 360x800 nothing overflows horizontally.
              Independent oracles: the design-interview decisions in the
              model, not the candidate markup. Screenshots at 1366x768 and 360x800. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-010-16';
@@ -1574,12 +1579,12 @@ attribute def ActivityOrdering {
         attribute executable : String = "tests/ui-operating.test.cjs; server/src/contact_tests.rs";
     }
     verification 'TC-007-006' {
-        doc /* #### TC-007-006 — Latest decode and signed relative timing
+        doc /* Latest decode and signed relative timing
 
-             Proves CL-010-09, CL-007-02. Cost2: offline automated Windows development-PC tests of the actual
+             offline automated Windows development-PC tests of the actual
              Rust manager/API and real Chromium using independently scripted sample/clock/result
              fixtures. Existing native FT4/FT8-through-real-decoder proofs remain separate; UI
-             fixtures are not RF truth. Cost4 live acceptance uses HB9BLA IC-7300 and this PC's
+             fixtures are not RF truth. live acceptance uses HB9BLA IC-7300 and this PC's
              browser for operator-authorized receive-only FT4/FT8 observation.
 
              - Publish two periods with multiple stations and more than16 latest-period records;
@@ -1606,8 +1611,10 @@ attribute def ActivityOrdering {
              signed DT-0.2/+0.2/unknown and case-varied literal messages. Check all fields and both
              directions, unknown-last, stable ties, arrivals spanning pages, empty/next periods,
              mode/reconnect retention and profile reset (to the #55 value order, the default); verify no new server mutations or changed
-             result request cadence. Cost2 Windows actual Chromium/candidate server; cost4 actual
+             result request cadence. Windows actual Chromium/candidate server; actual
              live calls, operator changes both controls and observes only latest-period rows. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @TestLevel { cost = 4; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::partial;
         objective {
             verify 'CL-007-02';
@@ -1720,7 +1727,7 @@ attribute def ActivityOrdering {
     dependency CL_022_01_to_FR_021 from 'CL-022-01' to 'FR-021';
     dependency CL_022_01_to_FR_022 from 'CL-022-01' to 'FR-022';
     verification 'TC-022-006' {
-        doc /* TC-022-006, CL-022-01/02; cost2 profiles/protocol companions
+        doc /* CL-022-01/02; profiles/protocol companions
              using existing TLS/browser helpers. Reopening a page with a retained credential while
              its last asset is held sends no challenge before the load event, then one.
              Fresh-browser initial journey: POST
@@ -1831,6 +1838,7 @@ attribute def ActivityOrdering {
              cookie and restarts both processes. Only the slow-link setup retry case
              drives a browser's clock; the cookie-retention and 28800 s combination stays
              unautomated, and TC-022-010 observes controlled cookie expiry live. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::partial;
         attribute executable : String = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/authorization_tests.rs";
         objective {
@@ -1841,7 +1849,7 @@ attribute def ActivityOrdering {
     }
     dependency CL_022_01_verified_by_TC_022_006 from 'CL-022-01' to 'TC-022-006';
     verification 'TC-022-010' {
-        doc /* TC-022-010 CL-022-01..05 authorized cost4 IC7300 receive-only acceptance. Record the actual deployed SHA/receipt/fresh radio identity and preserve official
+        doc /* IC7300 receive-only acceptance. Record the actual deployed SHA/receipt/fresh radio identity and preserve official
              WSJTX noCAT/PTT comparison. Observe explicit initial commissioning once,
              ordinary startup/reconnect with no Connect buttons, unavailable/return/
              cable/server/browser restart, truthful independent health/freshness and
@@ -1851,6 +1859,7 @@ attribute def ActivityOrdering {
              on 2026-11-08 (6719540079); the freeze is accepted on the trace. Independent source/model review,
              red-on-parent, exact ordinary gates and actual acceptance all required.
              Where: HB9BLA installed exact gated candidate, actual IC-7300 COM3/USB Audio CODEC and authenticated browser. Physical acceptance is planned and consent-bound, not an automated simulator verdict. */
+        @TestLevel { cost = 4; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-022-01';
@@ -1875,12 +1884,12 @@ attribute def ActivityOrdering {
     dependency CL_044_08_to_FR_019 from 'CL-044-08' to 'FR-019';
     dependency CL_044_08_to_FR_002 from 'CL-044-08' to 'FR-002';
     verification 'TC-044-007' {
-        doc /* TC-044-007 — Audio section shows names, not endpoint IDs
-             CL-044-08
+        doc /* Audio section shows names, not endpoint IDs
              Setup: actual candidate server on a disposable plaintext profile whose saved input is a fixture capture ID and Chromium; GET /audio/endpoints answered by a route fixture (the CODEC pair marked IC-7300, two same-named headsets, the saved input absent with its last known name), so no device is read.
              Steps: open Settings > Radio; read the Audio section, its options and their hover titles; read Settings > Expert; choose the second headset (no PUT); press Use IC-7300 audio; GET /profile; 360 px width.
              Expected: one Audio section holding #audio-input, the Rx level meter and #audio-output, no #audio-enumerate, no text input for a device; option texts "Microphone (USB Audio CODEC) — IC-7300", "Headset ... #1", "... #2", the saved input selected, disabled and labelled "... · not present"; no visible text of the Radio section contains an endpoint ID ("{0.0."), each option's title is its ID, Expert shows the saved ID; choosing sends no PUT; Use IC-7300 audio sends exactly one PUT /profile and the saved profile holds the two CODEC IDs; no horizontal scroll at 360 px; no page error.
-             2 — Isolated automated browser test; Windows development PC, no radio, audio or RF. */
+             no radio, audio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-044-08';
@@ -1889,12 +1898,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_044_08_verified_by_TC_044_007 from 'CL-044-08' to 'TC-044-007';
     verification 'TC-044-005' {
-        doc /* TC-044-005 — Detect radio panel
-             CL-044-06
+        doc /* Detect radio panel
              Setup: actual candidate server on a disposable plaintext profile (CAT not authorized, so no CAT owner opens anything) and Chromium; /radio/detect and /radio/settings/* answered by route fixtures with a hand-written IC-7300 proposal on COM250, so no serial port is probed.
              Steps: (separately) hold back the operating client and press Apply recommended radio settings with CAT ready; open Settings > Radio; wait 1.5 s; try Detect radio without the tick; tick and press it; Use this setup; check Apply/Undo with CAT not ready; with CAT ready and the station's connection generation, Apply recommended radio settings, cancel, again with Continue, Undo with Continue; Apply ⟳; GET /profile; 360 px width.
              Expected: with the client held back both buttons disabled and no /radio/settings request; no /radio request before the press; the button disabled without the tick; exactly one detect body {v 1, profile_id, boot_id, keying_inhibit_confirmed true}; port, model, 94h, 19200, endpoint, both friendly names (each endpoint ID only in its hover title, not in the text) and the 0078 DTR blocking item shown; the tick cleared; the five Radio fields filled with no PUT; Apply/Undo disabled until CAT ready; the cancelled apply sends nothing, then exactly apply and undo with {v 1, profile_id, boot_id, connection_generation} of that generation; the saved profile holds the proposed control and the two endpoint IDs; no horizontal scroll at 360 px; no page error.
-             2 — Isolated automated browser test; Windows development PC, no radio, serial port or RF. */
+             no radio, serial port or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-044-06';
@@ -1912,12 +1921,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_068_01_to_FR_019 from 'CL-068-01' to 'FR-019';
     verification 'TC-068-001' {
-        doc /* TC-068-001 — SWR at the end of the Rx/Tx strip
-             CL-068-01
+        doc /* SWR at the end of the Rx/Tx strip
              Setup: actual candidate server on a disposable plaintext profile and Chromium at 1366x768, 1920x1080 and 360x800; radio.tx_level events injected into the page's station-message stream as the server sends them (as TC-044-015), every request of the page recorded.
              Steps: (a) open the operating screen with no radio.tx_level yet; (b) push managed true, meters null; (c) push meters {alc 0, po_pct 40, swr_x10 null}; (d) push swr_x10 14; (e) push a level change with the same meters (as after the transmission); (f) a band change; (g) push swr_x10 20, then 21, then 30 with warnings [swr_fault]; (h) in the Dark, Day and Night themes read the colour at 14 and at 21; (i) push managed false with swr_x10 14; (j) push managed true with swr_x10 14 and another profile's id, then a station-ready of another boot; (k) at each width measure the strip's height and the waterfall's top and height with and without the value; (l) click the value.
              Expected (oracle: CL-068-01 and the operator's #68 answers): (a) to (c) no SWR text in the strip; (d) the strip's last item, after Rx=Tx, reads exactly "SWR 1.4" in the strip's normal text colour; (e) and (f) still "SWR 1.4"; (g) "SWR 2.0" not red, "SWR 2.1" and "SWR 3.0" in --op-error, and the error field shows its swr_fault entry as before; (h) in each theme the 2.1 colour is the theme's --op-error and the 1.4 colour the strip's text colour; (i) hidden; (j) unchanged by the other profile's push, hidden after the other boot's station-ready; (k) at 1366x768 and 1920x1080 the strip height, waterfall top and height equal those without the value (within 0.5 px); at 360x800 no horizontal scroll; (l) no request, nothing changes; no request at all caused by the pushes and no timer request; no page error. Red on the parent: no SWR text in the strip.
-             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-068-01';
@@ -1926,12 +1935,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_068_01_verified_by_TC_068_001 from 'CL-068-01' to 'TC-068-001';
     verification 'TC-068-002' {
-        doc /* TC-068-002 — SWR on the operating screen on HB9BLA
-             CL-068-01
+        doc /* SWR on the operating screen on HB9BLA
              Setup: the gated candidate installed on HB9BLA, the IC-7300 on CAT on 40 m FT8 into the station antenna, within the operator's standing transmit consent; the radio.tx_level frames recorded from the station's socket.
              Steps: open the operating screen after a station restart; transmit at least two FT8 transmissions (a CQ suffices); after the last one watch the strip through the following receive period; switch to 20 m without transmitting.
              Expected (oracle: the recorded radio.tx_level frames, not the radio's display, operator decision of 2026-11-08): no SWR text before the first reading; from the first frame with meters the strip's last item reads "SWR " and swr_x10 / 10 of the latest frame, red exactly when that is above 2.0 (on the station antenna normally not red); the value stays through the receive period after the transmission and after the band change; the Settings > Radio > Audio meter line shows the same SWR; the strip stays one line at the operator's screen width. A mismatched antenna is not used (#44 decision of 2026-11-08); red is proven by TC-068-001.
-             5 — Live with RF on the station, operator consent; HB9BLA. Not run by the automated gate. */
+             Not run by the automated gate. */
+        @TestLevel { cost = 5; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -1949,12 +1958,12 @@ attribute def ActivityOrdering {
     dependency CL_057_01_to_FR_010 from 'CL-057-01' to 'FR-010';
     dependency CL_057_01_to_FR_019 from 'CL-057-01' to 'FR-019';
     verification 'TC-057-001' {
-        doc /* TC-057-001 — Busy live period reaches Band Activity promptly (Detailed)
-             CL-057-01
+        doc /* Busy live period reaches Band Activity promptly (Detailed)
              Setup: actual isolated station Router, Recording owner, native live source, converter, UTC window schedule and modem, fed in real time with the hash-pinned busy recording websdr_test7.wav as 48 kHz native capture whose QPC clock is the system clock, filling an FT8 UTC period and again the periods 30 s and 60 s later, with silence around them; one Chromium page on the Detailed default.
              Steps: start FT8 receive from the Receive stopped chip; record the server's published counters and latest_decode (1 ms sampling), the browser's receive.state frames, /receive and /receive/results requests and every Band Activity change at the next animation frame, all on the system clock; read the first two period views' records through the actual results API; while the third busy period is published, every /receive/results read answers 503 for 9 s, then normally.
              Expected (independent oracle: the published records themselves and the issue's 0.3 s decode-to-row target): for each of the two periods: at least 25 records in the view; the painted rows are exactly the view's records (same message texts); every row is painted at most 300 ms after the view's publication. During the outage the failing reads start at least 3950 ms apart (no faster retry with records pending), and the third period's rows are painted within 5 s after reads recover. The parent client (2 s receive tick, one 16-record page per 4 s) painted them about 5 s after publication.
-             2 — Isolated automated functional test; Windows PC, release build, WSTX_SAMPLE_DIR, no radio or audio device. */
+             release build, WSTX_SAMPLE_DIR, no radio or audio device. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-057-01';
@@ -1964,12 +1973,12 @@ attribute def ActivityOrdering {
     dependency CL_057_01_verified_by_TC_057_001 from 'CL-057-01' to 'TC-057-001';
     dependency CL_057_01_verified_by_TC_057_002 from 'CL-057-01' to 'TC-057-002';
     verification 'TC-057-003' {
-        doc /* TC-057-003 — Live decode display on HB9BLA
-             CL-057-01, CL-057-02, CL-007-05
+        doc /* Live decode display on HB9BLA
              Setup: the gated candidate installed on HB9BLA, IC-7300 on COM3 receiving a busy FT8 band, one browser on the LAN on the Detailed profile; no transmission.
              Steps: watch Band Activity over 10 consecutive FT8 periods; read GET /receive audio over the same periods.
              Expected: no "Loading results" visible in normal operation; every row of each period is painted by period start + 15.3 s (CL-007-05 publication by +15.0 s plus CL-057-01's 0.3 s; #72), the observed times being reported; under that decode load no audio_stalled loss (#49): loss_epochs unchanged.
-             4 — Live on the station, receive only; not run by the automated gate. */
+             not run by the automated gate. */
+        @TestLevel { cost = 4; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-057-01';
@@ -1979,8 +1988,7 @@ attribute def ActivityOrdering {
     }
     dependency CL_057_01_verified_by_TC_057_003 from 'CL-057-01' to 'TC-057-003';
     verification 'TC-055-006' {
-        doc /* TC-055-006 — Band Activity colours, hover text and value order for every sender
-             CL-055-04, CL-055-02
+        doc /* Band Activity colours, hover text and value order for every sender
              Setup: actual router with a selected profile whose log holds DL1ABC JO62 20m FT8 (TC-055-002); in the browser the operating fixture with routed result records carrying #55 flags and dxcc, selection band 20m and the worked_status of each sender.
              Steps: read /receive/results for a report and an R-report to other stations from new senders (K9XX G4XYZ -10, K9XX YO3ABC R-07) and an RR73 from a sender worked on 20m FT8 (K9XX DL1ABC RR73); in the browser render one period with a report from a new-DXCC sender (YO3ABC K9XX -07), a row to my call, a new CQ zone, a new grid, a new call, two rows of equal value with different SNR and a worked-before CQ without flags; turn Highlight on with a strategy hit.
              Expected: the server gives both non-CQ senders their dxcc and flags (England new call, DXCC and ITU zone; Romania new DXCC) and the worked sender Germany without flags; the YO3ABC report colours only its sender call new DXCC (#50 CL-050-08) and its reason tip is "New DXCC · New call"; the row to my call keeps the my-call colour over the whole row and its tip is "New call"; the new CQ zone CQ is coloured over the whole row; the worked-before CQ has no colour and no reason tip; rows are in value order calling me, strategy hit, new DXCC, new zone, new grid, new call, no flag, equal values strongest first; the DXCC header restores this order after a Freq sort.
@@ -2010,12 +2018,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_111_09_to_FR_019 from 'CL-111-09' to 'FR-019';
     verification 'TC-111-005' {
-        doc /* TC-111-005 — The display shows state and cause
-             CL-111-04
+        doc /* The display shows state and cause
              Setup: Chromium against the candidate server with a recording hardware double.
              Steps: each text of CL-111-04, at 360x800 and 1366x768, in each region, after a reload and in a second browser; a click and a key on the display.
              Expected (the texts of CL-111-04): each text is shown; the click and the key send no request.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-111-04';
@@ -2023,12 +2031,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_111_04_verified_by_TC_111_005 from 'CL-111-04' to 'TC-111-005';
     verification 'TC-111-014' {
-        doc /* TC-111-014 — No Now button
-             CL-111-09
+        doc /* No Now button
              Setup: Chromium against the candidate server.
              Steps: the fold-out "Messages Tx1-Tx6"; choosing Next on a Tx line.
              Expected (CL-111-09): no .ct-now element; each Tx line has its Next choice and text; choosing Next sends one choose_next and no start.
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-111-09';
@@ -2037,8 +2045,7 @@ attribute def ActivityOrdering {
     dependency CL_111_09_verified_by_TC_111_014 from 'CL-111-09' to 'TC-111-014';
     dependency CL_111_04_verified_by_TC_111_015 from 'CL-111-04' to 'TC-111-015';
     verification 'TC-054-001' {
-        doc /* TC-054-001 — Detailed rows in order after a stall; gaps only for real gaps
-             CL-054-01
+        doc /* Detailed rows in order after a stall; gaps only for real gaps
              Setup: the station's detail_after/arm_detail functions with a hand-written ring; the browser page with injected live frames.
              Steps: five rows 11..15 retained after the socket sent row 10; a new job's rows; a caught-up socket; Thin sends 100 ms late for 10 periods, after a 5 s pause, 1.5 s and 1 s late; inject live Thin frames 0, 2, 5, 6 and 10; run the Detailed replay cadence.
              Expected: rows 11..15 sent once in order, "behind" true until the last; a new job starts at its oldest row; nothing resent; catch-up spacing 170 ms, steady 200 ms; Thin anchors stay on the 2 s grid, restart after the pause and after a send 1.5 s late, and the next send is at least 1 s later; row 1 drawn with row 2's levels and rows 3..4 with row 5's, rows 7..9 grey gaps; Detailed sends at least 165 ms apart and at most 5.9 per second.
@@ -2051,12 +2058,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_054_01_verified_by_TC_054_001 from 'CL-054-01' to 'TC-054-001';
     verification 'TC-054-003' {
-        doc /* TC-054-003 — Live waterfall on HB9BLA
-             CL-054-01, CL-054-02, CL-050-01, CL-050-02
+        doc /* Live waterfall on HB9BLA
              Setup: the gated candidate installed on HB9BLA, 40 m FT8 receive, the operator's page.
              Steps: watch 5 min of receive; the operator, who knows the WSJT-X Wide Graph, judges the waterfall against it (coordinator decision on #54: no WSJT-X GUI run).
              Expected: no grey seams during continuous receive; FT8 signals show start and end; strong signals distinguishable; the operator confirms the colours and the pointer mapping.
-             3 — Live, read-only on the station; with the operator at acceptance. */
+             with the operator at acceptance. */
+        @TestLevel { cost = 3; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         attribute method : String = "manual";
         objective {
@@ -2074,12 +2081,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_037_05_to_FR_007 from 'CL-037-05' to 'FR-007';
     verification 'TC-037-004' {
-        doc /* TC-037-004 — A contact change is offered only for a row that can start a contact for me
-             CL-037-05
+        doc /* A contact change is offered only for a row that can start a contact for me
              Setup: actual candidate server and Chromium at 1366x768; my continent EU from HB9BLA; routed live rows "CQ K1ABC FN42", "QRZ W1XYZ FN31", "HB9BLA DL1ABC JO31", "W4WFC DL1FRH JO30", "CQ EU G4ABC IO91", "CQ DX K2DX FN42" (NA), "CQ NA K3NA FN42" and "CQ DX DL2DX JO31" (EU); a running contact with IW9FRA; a routed POST /contact/command that refuses select_row without replace as directive_not_answerable for "CQ NA K3NA FN42" and "CQ DX DL2DX JO31" and as contact_active for the other rows, and accepts everything else.
              Steps: click each row and read the change button and the command line; double-click the foreign row and read the commands and the command line.
              Expected (independent oracle: the operator's report of 2026-11-04 on #37): CQ, QRZ, addressed and complying directed rows offer "Change contact to K1ABC", "Change contact to W1XYZ", "Change contact to DL1ABC", "Change contact to G4ABC" and "Change contact to K2DX"; the foreign row and both CQs directed elsewhere each remove the offer, show none and leave the command line empty; its double-click sends select_row with replace true, then enable_tx, and the command line reads "Call DL1FRH: accepted".
-             2 — Isolated automated functional tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-037-05';
@@ -2095,12 +2102,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_074_01_to_FR_019 from 'CL-074-01' to 'FR-019';
     verification 'TC-074-001' {
-        doc /* TC-074-001 — Reproduction: a page open across a station restart
-             CL-074-01
+        doc /* Reproduction: a page open across a station restart
              Setup: the actual isolated candidate server restarted under the test's control with the page left open (as the #22 restart in tests/receive-page.test.cjs), Chromium at 1366x768, no radio; the page's GET /strategy of the new socket held back 2 s by the test (the order a thin link gives), other requests unchanged; requests recorded.
              Steps: select "Farthest new on band" with Auto off and wait for "Strategy Farthest new on band · Auto off"; restart the server; record the line #station-automation, the selector and the Auto button at each change from the reconnect until 3 s after GET /strategy answered; then open a second page on the same server and read the same three.
              Expected (oracles: the station's state after a restart, active None and Auto off, WstxStrategy D2; the freshly opened second page): the line never shows "Strategy Farthest new on band" after the new boot is learned; at the end the line is "Automation idle", the selector None, and line, selector value and Auto pressed state, disabled state and title equal those of the second page; no GET /automation after the restart (no automation.state while automation is unused); no page error. Red on the parent: the line keeps "Strategy Farthest new on band · Auto off".
-             2 — Isolated automated browser test; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-074-01';
@@ -2109,8 +2116,7 @@ attribute def ActivityOrdering {
     }
     dependency CL_074_01_verified_by_TC_074_001 from 'CL-074-01' to 'TC-074-001';
     verification 'TC-074-002' {
-        doc /* TC-074-002 — The strategy line with None and no strategy run
-             CL-074-01
+        doc /* The strategy line with None and no strategy run
              Setup: actual browser with hand-written replies for GET and PUT /strategy and GET /automation and pushed strategy.state and automation.state (as TC-039-046); no automation.state before the steps.
              Steps: read the line; select "New calls" with Auto off; select None; push a pounce run (automation.state, configuration strategy false, pounce K1ABC waiting); push its stop with reason no_answer; push run null.
              Expected (oracle: the texts of WstxOperatingLayout::AutomationIndicator and WstxOperatingLayout::StrategySelector): "Automation idle"; "Strategy New calls · Auto off"; "Automation idle" (not the previous text); "Pounce K1ABC waiting · HALT ends it"; "Automation stopped · no answer"; "Automation idle"; no GET /automation before the first automation.state and exactly one after each. Red on the parent: "Strategy New calls · Auto off" stays after None.
@@ -2123,8 +2129,7 @@ attribute def ActivityOrdering {
     }
     dependency CL_074_01_verified_by_TC_074_002 from 'CL-074-01' to 'TC-074-002';
     verification 'TC-074-003' {
-        doc /* TC-074-003 — Every view on a new boot
-             CL-074-01
+        doc /* Every view on a new boot
              Setup: actual browser and isolated server; the test rewrites the server's replies and socket messages to name boot A, then boot B, and holds boot B's reads (GET /contact, /recording, /strategy, /pskr, /receive/startup, /strategy/alerts) and a boot A POST /strategy/ignore reply until it releases them; boot A has replies for GET /profile, /contact, /strategy (Farthest new on band selected, Auto on), /automation (an active strategy run in contact with K1ABC, with hearing and free_tx_slots, announced by automation.state), /pskr (connected), /receive/startup (Monitor off at startup on), /strategy/alerts and the recording and receive reads, and pushed radio.agc, radio.tx_level and transmit.state of boot A; "Show free Tx slots" on; then the socket closed and a new one whose GET /profile names boot B, the replies of boot B (None, Auto off, PSK Reporter off, Monitor off at startup off, no alerts, no automation.state) each held back 2 s; a late reply of boot A to GET /strategy and GET /pskr delivered after boot B is learned; a second case in which boot B's GET /strategy and GET /pskr answer 503.
              Steps: read every view listed in WstxStationLink::PushedStationState at each change from the moment boot B is learned until 3 s after the last reply; then open a second page on boot B's replies and read the same views; count the requests.
              Expected (oracles: the boot B replies written in the test and the second page): from the moment boot B is learned no view shows a value of boot A: line not "Pounce", data-active false, no Free Tx slot marks, no PSK hearing lines, Auto not pressed, the selector not on "Farthest new on band", PSK Reporter and Monitor off at startup not shown as on; while the replies are held each faulty view shows the second page's form before its reads; the late boot A replies change nothing; at the end every view equals the second page's; with 503 the strategy and PSK Reporter views stay in their empty form and nothing of boot A returns; no GET /automation on boot B, no request beyond one read per state and socket, no timer request in 5 s; the already conforming views (contact, recording, receive, operating, AGC, Tx level, native, transmit, alerts) show no boot A value as well. Red on the parent: boot A's strategy, automation and PSK Reporter values are shown after boot B is learned.
@@ -2138,12 +2143,12 @@ attribute def ActivityOrdering {
     }
     dependency CL_074_01_verified_by_TC_074_003 from 'CL-074-01' to 'TC-074-003';
     verification 'TC-074-004' {
-        doc /* TC-074-004 — Live: the operator's page across the deploy restart on HB9BLA
-             CL-074-01
+        doc /* Live: the operator's page across the deploy restart on HB9BLA
              Setup: the gated candidate deployed on HB9BLA by the operator's approved deploy, its own station restart; the operator's page (or the live page check, tests/live-page-check.cjs) open before the restart with a strategy selected and Auto off; no transmission.
              Steps: keep the page open across the restart; after it is connected to the new boot read the line, the selector, Auto and the PSK Reporter view, then reload and read them again.
              Expected (oracle: the reload of the same page): without a reload the line is "Automation idle", the selector None, Auto off; the values equal those after the reload; recorded on the issue.
-             3 — Live read-only observation on the station during the deploy's own restart; no RF. */
+             no RF. */
+        @TestLevel { cost = 3; location = TestLocation::station; }
         attribute automation : AutomationState = AutomationState::planned;
         objective {
             verify 'CL-074-01';

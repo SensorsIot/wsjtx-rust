@@ -8,6 +8,8 @@ package WstxOperatingReceive {
     private import WstxLiveReceive::'TC-009-002';
     private import WstxStationProtocol::'TC-009-005';
     private import WstxRequirements::AutomationState;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
 
     doc /* Target implementation contract for contract 4.7.5/6.6 TC009005/12.8.1.
          The canonical contract is this package and WstxRequirements; no execution or implementation verdict.
@@ -226,7 +228,8 @@ package WstxOperatingReceive {
     verification def ActualFlow { doc /* TC009005case2 actualnativefixture->soledecoder->HTTP/browser, manualzeroCAT, desiredMonitordefault and oldNextselectorseparate. */ }
     verification def TypedReadback { doc /* TC009005case3 independentCI-V and perfieldprovenance,partialsettererrors,authority/deadlinecaps. */ }
     verification def ContextAndFailure { doc /* TC009005cases4/5/6 actualcancel/release/newidentity,failedclose/Stop/profileedit/staleinterleavings;no fakehardwaretruth or secondowner. */ }
-    verification def PhysicalReceive { doc /* TC009002 authorizedcost4 actualIC7300 readback+actualbrowser,notordinarygate/noTX. */ }
+    verification def PhysicalReceive { doc /* TC009002 actualIC7300 readback+actualbrowser,notordinarygate/noTX. */
+    @TestLevel { cost = 4; location = TestLocation::station; } }
     enum def Action { enum mode; enum band; enum cancel; }
     enum def NominalOrigin { enum unknown; enum manual; enum cat_readback; enum native_readback; }
     enum def OperationResult { enum pending; enum success; enum failed; enum cancelled; }
@@ -426,7 +429,7 @@ package WstxOperatingReceive {
             verify WstxOperatingLayout::'CL-010-07';
             verify WstxOperatingLayout::'CL-010-08';
         }
-        doc /* TC009005 cases1..7 cost2 isolated Windows real services/Chromium,
+        doc /* TC009005 cases1..7 isolated Windows real services/Chromium,
              independent typed CI-V/native packet/frozen payload and TLS link fixtures.
              Monitor/Stop/legacy-next distinction, all preferred rows+missing/range,
              unknown initial nominal, release/failed-close, partial writes/readback,
@@ -438,6 +441,7 @@ package WstxOperatingReceive {
              TC009002 separate authorizedcost4 physical IC7300/USB/CAT/browser;
              actual frequency/USB/DATA/FIL, width/notch/PBT and restore independently
              observed, no TX or quiet-band fabricated decoding. Verification not run. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
     }
     doc /* Normative wire serialization and producer/consumer meanings, contract 12.8.1:
 #### 12.8.1 Coordinated receive operating selection — target extension
@@ -694,12 +698,12 @@ logical uncompressed JSON.
     }
     dependency CL_044_16_to_FR_009 from 'CL-044-16' to 'FR-009';
     verification 'TC-044-023' {
-        doc /* TC-044-023 — A band change meets a held CAT lease
-             CL-044-16
+        doc /* A band change meets a held CAT lease
              Setup: the actual router, Recording and CAT actor on a scripted IC-7300; Chromium with one refusal injected.
              Steps: (a) POST /receive/select while the lease is held for 300 ms; (b) while it stays held; (c) reserve the lease under a transmit hold; (d) in the browser, select a band and answer 409 busy.
              Expected: (a) 202 after the wait; (b) 409 busy at least 3000 ms and under 3250 ms after the request (3 s plus the 250 ms margin of CL-044-16; a red under load is rerun once), with the operating revision and selection unchanged; (c) Busy at once; (d) "Selection refused · busy" and the Band control back on the current band.
-             2 — Isolated automated tests; Windows development PC, no radio or RF. */
+             no radio or RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         attribute automation : AutomationState = AutomationState::implemented;
         objective {
             verify 'CL-044-16';
