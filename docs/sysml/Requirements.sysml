@@ -10,6 +10,8 @@ package WstxRequirements {
     private import ModelBindings::TestLocation;
     private import ModelBindings::Status;
     private import ModelBindings::ImplementedIn;
+    private import ModelBindings::Automation;
+    private import ModelBindings::TestedBy;
     doc /* Canonical functional requirements and durable verification definitions.
          The other Wstx packages own detailed typed contracts; validation does not execute tests.
          Coverage flags describe implemented source slices, not acceptance or whole-project parity. */
@@ -88,8 +90,8 @@ package WstxRequirements {
             verify StationResourceIdentity;
             verify ResponsibilityAndExchangeBoundaries;
         }
-        attribute automation : WstxRequirements::AutomationState = WstxRequirements::AutomationState::implemented;
-        attribute executable : String = "tools/sysml.py check; tools/sysml/tests/test_architecture_integrity.py";
+        @ModelBindings::Automation { run = AutomationState::implemented; }
+        @ModelBindings::TestedBy { test = "tools/sysml.py check; tools/sysml/tests/test_architecture_integrity.py"; }
         attribute executionStatus : String = "defined automated companion; declaration records no execution verdict";
     }
     verification ArchitecturalOwnershipReview {
@@ -117,7 +119,7 @@ package WstxRequirements {
             verify StationResourceIdentity;
             verify ResponsibilityAndExchangeBoundaries;
         }
-        attribute method : String = "manual independent contract correspondence review";
+        @ModelBindings::Automation { method = "manual independent contract correspondence review"; }
         attribute executionStatus : String = "planned review; no verdict recorded by this declaration";
     }
 
@@ -175,7 +177,7 @@ package WstxRequirements {
              Run focused tests on this PC at cost2, full Pilot/graph validation and99traces;
              parser success does not execute these planned action contracts. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        attribute method : String = "manual independent public-property and interface correspondence review";
+        @ModelBindings::Automation { method = "manual independent public-property and interface correspondence review"; }
         attribute executionStatus : String = "planned; semantic resolution does not establish review or runtime acceptance";
     }
     requirement 'FR-001' {
@@ -413,7 +415,7 @@ package WstxRequirements {
              timing or interactive-QSO assumptions. */
     }
     attribute def AccelerationPolicy {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::target;
+        @ModelBindings::Status { build = WstxRequirements::ImplementationState::target; }
         attribute cpuOnlyRequired : Boolean = true;
         attribute cpuWorkersBounded : Boolean = true;
         attribute automaticWorkersAccountForAllProfiles : Boolean = true;
