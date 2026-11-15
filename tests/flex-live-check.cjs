@@ -5,7 +5,7 @@
 //   node tests/flex-live-check.cjs <radio address:port> [seconds=180] [band=20m] [out directory]
 // Only with the operator's consent for that run, for a radio named on the command line. It
 // stops before connecting as a client if anyone else holds the radio, and it has no transmit
-// path. tests/native-flex.test.cjs runs it against the emulator.
+// path. tests/flexAdapter/native-flex.test.cjs runs it against the emulator.
 const fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path');
 const https = require('node:https'), net = require('node:net');
 const {randomUUID} = require('node:crypto'), {gunzipSync} = require('node:zlib');

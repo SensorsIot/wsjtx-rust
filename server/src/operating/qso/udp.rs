@@ -14,7 +14,7 @@ use wstx_rust::network_message as nm;
 use wstx_rust::transmit::service::ArmState;
 
 #[cfg(test)]
-#[path = "udp_tests.rs"]
+#[path = "../../log/udp_tests.rs"]
 mod tests;
 
 pub const TARGETS_MAX: usize = 16;

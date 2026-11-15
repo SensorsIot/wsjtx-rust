@@ -23,7 +23,7 @@ fn info_reply_of_a_real_radio_gives_its_facts() {
 // carries no address or serial. Expected values were read from the capture with a separate tool.
 #[test]
 fn dax_packet_of_a_real_radio_decodes() {
-    let raw = bytes(include_str!("dax_rx_6600.hex").trim());
+    let raw = bytes(include_str!("../flex/dax_rx_6600.hex").trim());
     let p = parse_vita(&raw).unwrap();
     assert_eq!((p.packet_type, p.tsi, p.tsf, p.words), (3, 1, 1, 263));
     assert_eq!(p.stream_id, Some(0x0400_0008));

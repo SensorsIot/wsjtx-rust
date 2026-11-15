@@ -7,7 +7,7 @@ use crate::audio::{Encoding, NativeFormat};
 use std::sync::Arc;
 
 #[cfg(windows)]
-#[path = "playback/windows.rs"]
+#[path = "../modes/playback/windows.rs"]
 #[allow(unsafe_code)]
 mod windows;
 #[cfg(windows)]

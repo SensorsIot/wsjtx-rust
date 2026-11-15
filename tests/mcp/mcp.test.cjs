@@ -14,7 +14,7 @@ const crypto = require('node:crypto');
 const {spawn} = require('node:child_process');
 const {once} = require('node:events');
 const selfsigned = require('selfsigned');
-const {grant, browserPort, stationEnv} = require('./support.cjs');
+const {grant, browserPort, stationEnv} = require('../support.cjs');
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
 let root, app, origin, ca, token, certPath, document;
 

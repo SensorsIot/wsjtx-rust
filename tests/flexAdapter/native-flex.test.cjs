@@ -15,9 +15,9 @@ const {randomUUID} = require('node:crypto');
 const {gunzipSync} = require('node:zlib');
 const selfsigned = require('selfsigned');
 const {chromium} = require('playwright');
-const {server, grant, loginPage, browserPort} = require('./support.cjs');
-const {FlexEmulator, vita, daxPayload, FROZEN} = require('./flex-emulator.cjs');
-const {run: liveCheck} = require('./flex-live-check.cjs');
+const {server, grant, loginPage, browserPort} = require('../support.cjs');
+const {FlexEmulator, vita, daxPayload, FROZEN} = require('../flex-emulator.cjs');
+const {run: liveCheck} = require('../flex-live-check.cjs');
 
 const FT8 = {'40m': 7074000, '30m': 10136000, '20m': 14074000, '17m': 18100000};
 // Commands that could transmit or disturb other clients are never acceptable here.
@@ -309,7 +309,7 @@ test('TC-023-001 the live check script decodes real FT8 through the real packet 
   assert.ok(Math.abs(report.loss_percent - 100 / 64) < 0.5, `loss ${report.loss_percent}`);
   assert.ok(report.received_ratio > 0.8, `received ${report.received_ratio}`);
   // Independent oracle: the vector's own manifest text, and a signal on the UTC period.
-  const manifest = JSON.parse(await fs.readFile(path.join(__dirname, '..', 'fixtures', 'decoder', 'independent-vectors', 'manifest.json')));
+  const manifest = JSON.parse(await fs.readFile(path.join(__dirname, '..', '..', 'fixtures', 'decoder', 'independent-vectors', 'manifest.json')));
   const expected = manifest.vectors.find(v => v.mode === 'ft8' && v.id === 'cq').expected_receive.text;
   assert.ok(report.texts.includes(expected), JSON.stringify(report.texts));
   // The vector starts 0.5 s into its period, which FT8 calls DT 0; arrival time may add a little.
@@ -718,7 +718,7 @@ test('TC-023-003 capacity, incompatible API and mixed standard/native profiles t
 test('TC-023-001 the emulator sends what a real FLEX-6600 sent', async () => {
   // Its encoder must reproduce the captured packet byte for byte, so the candidate is never
   // compared with an emulator that drifted from what the radio does.
-  const real = Buffer.from((await fs.readFile(path.join(__dirname, '..', 'server', 'src', 'flex', 'dax_rx_6600.hex'), 'utf8')).trim(), 'hex');
+  const real = Buffer.from((await fs.readFile(path.join(__dirname, '..', '..', 'server', 'src', 'flex', 'dax_rx_6600.hex'), 'utf8')).trim(), 'hex');
   const packet = vita({type: 3, stream: 0x04000008, packetClass: 0x03e3, count: 0, time: FROZEN, payload: real.subarray(28)});
   assert.equal(packet.toString('hex'), real.toString('hex'));
   // 1 kHz at 24 kHz: sample 6 is the quarter period's peak, equal in both channels.

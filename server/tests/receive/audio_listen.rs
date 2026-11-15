@@ -1,8 +1,8 @@
 #![cfg(windows)]
 #![deny(unsafe_code)]
-#[path = "../src/audio.rs"]
+#[path = "../../src/audio.rs"]
 pub mod audio;
-#[path = "../src/source.rs"]
+#[path = "../../src/source.rs"]
 pub mod source;
 
 use audio::{CaptureHandle, Encoding, LiveSource};

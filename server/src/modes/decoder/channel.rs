@@ -29,7 +29,7 @@ impl Default for Channel {
 }
 impl Channel {
     pub fn new() -> Self {
-        let generator = include_str!("../../../fixtures/decoder/protocol-data/generator.dat")
+        let generator = include_str!("../../../../fixtures/decoder/protocol-data/generator.dat")
             .lines()
             .filter(|s| s.len() == 91 && s.bytes().all(|c| c == b'0' || c == b'1'))
             .map(|s| std::array::from_fn(|i| s.as_bytes()[i] - b'0'))
@@ -37,7 +37,7 @@ impl Channel {
         assert_eq!(generator.len(), 83);
         let mut checks = vec![vec![]; 83];
         let mut column = 0;
-        for line in include_str!("../../../fixtures/decoder/protocol-data/parity.dat").lines() {
+        for line in include_str!("../../../../fixtures/decoder/protocol-data/parity.dat").lines() {
             let numbers = line
                 .split_whitespace()
                 .map(str::parse::<usize>)

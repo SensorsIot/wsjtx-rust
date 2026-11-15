@@ -995,5 +995,5 @@ async fn refine_exhaustive(
 }
 
 #[cfg(test)]
-#[path = "search_test.rs"]
+#[path = "../modes/decoder/search_test.rs"]
 mod tests;

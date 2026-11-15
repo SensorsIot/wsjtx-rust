@@ -6,7 +6,9 @@ pub mod flex;
 #[cfg(test)]
 pub mod model_values;
 pub mod network_message;
+#[path = "transmit/playback.rs"]
 pub mod playback;
 pub mod radio_control;
 pub mod source;
+#[path = "modes/transmit/mod.rs"]
 pub mod transmit;

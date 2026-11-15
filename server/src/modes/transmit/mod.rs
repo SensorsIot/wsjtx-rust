@@ -3,15 +3,21 @@
 //! period scheduling; `service` is the slice B transmit owner (arming, PTT, audio, halt),
 //! `clock` the station's SNTP clock measurement (TransmitClock) and `air` the clock from
 //! the air, the reference of the station clock (#43, #92).
+#[path = "../../transmit/air.rs"]
 pub mod air;
+#[path = "../../transmit/clock.rs"]
 pub mod clock;
+#[path = "../../transmit/pack.rs"]
 mod pack;
+#[path = "../../transmit/schedule.rs"]
 mod schedule;
+#[path = "../../transmit/service.rs"]
 pub mod service;
 mod waveform;
 // #92: the one Windows Time service query (Win32 FFI), read-only.
 #[cfg(windows)]
 #[allow(unsafe_code)]
+#[path = "../../transmit/windows_time.rs"]
 mod windows_time;
 use crate::decoder::{Channel, Mode};
 pub use pack::{Family, PackError, Packed, pack};

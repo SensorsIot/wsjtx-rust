@@ -17,9 +17,9 @@ use std::{
     time::{Duration, Instant},
 };
 use wstx_rust::transmit::air;
-#[path = "receive_diagnostics.rs"]
+#[path = "receive/receive_diagnostics.rs"]
 pub(crate) mod diagnostics;
-#[path = "receive_startup.rs"]
+#[path = "receive/receive_startup.rs"]
 pub(crate) mod startup;
 #[cfg(test)]
 #[path = "recording_tests.rs"]

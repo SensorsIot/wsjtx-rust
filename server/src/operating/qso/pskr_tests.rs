@@ -687,7 +687,7 @@ fn the_broker_can_only_be_replaced_on_loopback() {
 
 fn chain() -> Vec<CertificateDer<'static>> {
     CertificateDer::pem_slice_iter(include_bytes!(
-        "../../fixtures/pskr/broker-chain-20261106.pem"
+        "../../../../fixtures/pskr/broker-chain-20261106.pem"
     ))
     .map(Result::unwrap)
     .collect()

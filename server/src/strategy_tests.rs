@@ -17,11 +17,11 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use wstx_rust::transmit::service::Hardware;
 // #81 WstxStrategy::StartedQso (TC-081-001..005), on this file's station helpers.
-#[path = "autofinish_tests.rs"]
+#[path = "operating/qso/autofinish_tests.rs"]
 mod autofinish;
 // #89 WstxStrategy::FreeTxSlot Due and Waiting for the newest period (TC-089-002..004), on this
 // file's station helpers.
-#[path = "newest_rx_tests.rs"]
+#[path = "operating/qso/newest_rx_tests.rs"]
 mod newest_rx;
 
 fn rows(list: &[(&str, Option<f64>)]) -> Vec<Value> {

@@ -509,7 +509,7 @@ impl KeptPageBoot {
 
 // Proves: CL-057-03; TC-007-002 (#22). Proves: CL-050-08; TC-050-008 (#50). One page across a
 // restart and busy periods through the actual live source, modem, HTTP and browser; the driver
-// tests/receive-page.test.cjs holds the oracle. The process stays, because native capture can
+// tests/frontend/receive-page.test.cjs holds the oracle. The process stays, because native capture can
 // only be injected in-process; the listener, all connections, the receive owner and the boot go.
 #[cfg(all(windows, not(debug_assertions)))]
 #[test]
@@ -545,7 +545,7 @@ fn live_native_page_kept_across_restart() {
     std::fs::create_dir(&control).unwrap();
     let output = std::fs::File::create(control.join("node.log")).unwrap();
     let mut node = std::process::Command::new("node")
-        .args(["--test", "tests/receive-page.test.cjs"])
+        .args(["--test", "tests/frontend/receive-page.test.cjs"])
         .current_dir(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
@@ -658,7 +658,7 @@ async fn live_native_busy_period_rows_promptly() {
     };
     let outcome = tokio::task::spawn_blocking(move || {
         std::process::Command::new("node")
-            .args(["--test", "tests/receive-latency.test.cjs"])
+            .args(["--test", "tests/frontend/receive-latency.test.cjs"])
             .current_dir(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .parent()

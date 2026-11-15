@@ -6,7 +6,7 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
 const crypto=require('node:crypto');
-const {provision,verify,plan,download}=require('../tools/recording-fixtures.cjs');
+const {provision,verify,plan,download}=require('../../tools/recording-fixtures.cjs');
 function wave(){const b=Buffer.alloc(46);b.write('RIFF');b.writeUInt32LE(38,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(12000,24);b.writeUInt32LE(24000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(2,40);return b;}
 const entry=b=>({name:'audio.wav',bytes:b.length,sha256:crypto.createHash('sha256').update(b).digest('hex'),frames:1,url:'https://example.invalid/pinned.wav'});
 test('TC-018-001 fixture setup validates full pinned plan and atomic promotion without overwriting',{timeout:10000},async t=>{
@@ -16,7 +16,7 @@ test('TC-018-001 fixture setup validates full pinned plan and atomic promotion w
   await fs.writeFile(path.join(dir,e.name),Buffer.alloc(bytes.length));await assert.rejects(provision(dir,{entries:[e],fetchFile:async()=>{downloads++;return bytes;}}),/hash mismatch/);assert.equal(downloads,1);
   assert.deepEqual(await fs.readdir(dir),['audio.wav']);const pinned=await plan();assert.equal(pinned.filter(e=>e.frames).length,25);assert.ok(pinned.some(e=>e.name==='ft8_lib-LICENSE.txt'&&e.url==='https://raw.githubusercontent.com/kgoba/ft8_lib/9fec6ca39886edbf96f4f5e71edc76da5074e871/LICENSE'));assert.ok(pinned.some(e=>e.name==='ft4/official-project-COPYING.txt'));
 });
-const {openModel}=require('./model-values.cjs');
+const {openModel}=require('../model-values.cjs');
 // A bound of the profile's recordings, WstxRecordingTransfer::RecordingLimits, read from the model.
 const recordingLimit=feature=>openModel().numberWithUnit(`WstxRecordingTransfer::RecordingLimits::${feature}`);
 // Hand-parsed RIFF header: walks the chunks, independent of the server's and the setup tool's parsers.
@@ -33,8 +33,8 @@ test('TC-018-001 all 22 FT8 and 3 FT4 originals match provenance and fit the PCM
   const {execFileSync}=require('node:child_process');
   const common=path.resolve(execFileSync('git',['rev-parse','--git-common-dir'],{encoding:'utf8',windowsHide:true}).trim());
   const samples=process.env.WSTX_SAMPLE_DIR || path.join(common,'harness-parallel','resources','issue-7','downloads');
-  const ft8=JSON.parse(await fs.readFile(path.join(__dirname,'..','fixtures/decoder/manifest.json'),'utf8'));
-  const ft4=JSON.parse(await fs.readFile(path.join(__dirname,'..','fixtures/decoder/ft4-manifest.json'),'utf8'));
+  const ft8=JSON.parse(await fs.readFile(path.join(__dirname,'..','..','fixtures/decoder/manifest.json'),'utf8'));
+  const ft4=JSON.parse(await fs.readFile(path.join(__dirname,'..','..','fixtures/decoder/ft4-manifest.json'),'utf8'));
   const inputs=[...ft8.files.filter(f=>f.path.endsWith('.wav')).map(f=>({...f,file:path.join(samples,path.basename(f.path))})),...ft4.files.map(f=>({...f,file:path.join(samples,'ft4',f.relative_download_path)}))];
   assert.equal(inputs.length,25,'22 FT8 and 3 FT4 originals');
   const importCap=recordingLimit('fileBytes'),rate=recordingLimit('rateHz');
