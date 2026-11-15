@@ -278,7 +278,7 @@ package WstxContact {
     dependency contactOwner from Contact to WstxQsoPart::QsoAndLogging;
     dependency busyPartnerClause from BusyPartner to WstxContact::'CL-097-06';
     requirement CompletedContactIdentity {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::target;
+        @ModelBindings::Status { build = WstxRequirements::ImplementationState::target; }
         doc /* QSO/logging owns stable completion identity, agreed fields and explicit
              persisted-versus-unsaved outcome. Replayed completion cannot silently
              create a second contact. Each profile owns contact storage; the browser,

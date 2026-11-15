@@ -273,7 +273,7 @@ package WstxTransmit {
              (an owner not yet told) gates nothing. */
     }
     attribute def TransmitSafetyPolicy {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
+        @ModelBindings::Status { build = WstxRequirements::ImplementationState::partial; }
         attribute armedOnStartup : Boolean = false;
         attribute haltWaitsForDecode : Boolean = false;
         attribute mcpMayOverrideLossPolicy : Boolean = false;

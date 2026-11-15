@@ -286,7 +286,7 @@ package WstxFlexSession {
         }
     }
     requirement NativeFlexWireSubset {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
+        @ModelBindings::Status { build = WstxRequirements::ImplementationState::partial; }
         @Conflict {
             what = "The doc says the radio's samples enter the existing native "
                 + "queue/converter/epoch path of receive; the connection nativeSamples of "
@@ -433,7 +433,7 @@ package WstxFlexSession {
     }
     dependency nativeWireSubset from NativeFlexWireSubset to WstxRequirements::'FR-023';
     requirement NativeFlexBoundary {
-        attribute coverage : WstxRequirements::ImplementationState = WstxRequirements::ImplementationState::partial;
+        @ModelBindings::Status { build = WstxRequirements::ImplementationState::partial; }
         doc /* Phase2 optional native radio path retains standard independent audio/CAT
              and browser/DSP/QSO/MCP boundaries, without external SmartSDR desktop,
              CAT or DAX bridges. Radio-side firmware/API support still matters. Audio
