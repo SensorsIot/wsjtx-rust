@@ -143,22 +143,23 @@ package WstxOperatingChain {
         attribute periodStartUtcMs : Integer;
         attribute messageText : String;
         attribute txOffsetHz : Integer;
-        doc /* At most one request per station waits to be keyed. Admitted only
-             while armed under TransmitAuthority; the service packs messageText
-             (PackMessage), plans the start (PlanTransmitStart), encodes the 48 kHz
-             waveform, keys PTT and plays (TransmitTiming). requestSequence is a
-             strictly increasing safe integer per boot: a lower or equal sequence is
-             duplicateSequence, never transmits twice and changes nothing (a retry does
-             not disarm). A new admitted request REPLACES the pending one (replaced)
-             while its audio has not started; a keyed request is replaced only by one
-             for the same period. From keying a request for another period becomes the
-             next pending request, started after the current one completes, and from
-             audio start one for the same period is refused audioStarted (no disarm):
-             the keyed request never makes another one busy or disarms (#10).
-             Clock, alignment and lateness refusals (clockNotSynchronized,
-             misalignedPeriod, stalePeriod) and packRefused or frequencyOutOfRange are
-             checked at admission; the start is planned again at keying and at audio
-             start, so a request that became stale is refused, never replayed. A
-             request of another boot is refused at the wire (state_conflict). */
+        doc /* At most one request per station waits to be keyed. */
+        doc /* It is admitted only while armed under TransmitAuthority; the service packs
+             messageText (PackMessage), plans the start (PlanTransmitStart), encodes the 48 kHz
+             waveform, keys PTT and plays (TransmitTiming). */
+        doc /* requestSequence is a strictly increasing safe integer per boot: a lower or equal
+             sequence is duplicateSequence, never transmits twice and changes nothing (a retry
+             does not disarm). */
+        doc /* A new admitted request replaces the pending one (replaced) while its audio has not
+             started; a keyed request is replaced only by one for the same period. */
+        doc /* From keying, a request for another period becomes the next pending request,
+             started after the current one completes, and from audio start one for the same
+             period is refused audioStarted (no disarm): the keyed request never makes another
+             one busy or disarms. */
+        doc /* Clock, alignment and lateness refusals (clockNotSynchronized, misalignedPeriod,
+             stalePeriod) and packRefused or frequencyOutOfRange are checked at admission; the
+             start is planned again at keying and at audio start, so a request that became
+             stale is refused, never replayed. */
+        doc /* A request of another boot is refused at the wire (state_conflict). */
     }
 }

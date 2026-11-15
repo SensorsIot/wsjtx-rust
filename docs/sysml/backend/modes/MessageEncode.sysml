@@ -3,7 +3,6 @@ package WstxMessageEncode {
     private import WstxRequirements::ImplementationState;
     private import WstxRequirements::'FR-005';
     private import WstxRequirements::AutomationState;
-    private import WstxRequirements::'FR-006';
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
     private import ModelBindings::Status;
@@ -271,24 +270,14 @@ package WstxMessageEncode {
         }
         @TestedBy { test = "server/tests/transmit_ft4_vectors.rs"; }
     }
-    // #11 FT4 transmit preparation (slice A); detailed contract in WstxTransmit.
     requirement 'CL-011-01' {
-        doc /* Encode every supported message family for FT4 with the shared FT8 packer
-             (same 77 bits and refusals), scramble with the WSJT-X rvec, add CRC-14 and
-             LDPC(174,91) parity and map to the 103 genft4 tones; generate the native
-             WSJT-X FT4 transmit waveform (gen_ft4wave convention, 105 symbols with
-             ramps, 60480 samples at 12 kHz and 241920 at 48 kHz) within the declared
-             ft4sim tolerance; plan FT4 starts for named even/odd 7.5 s UTC periods
-             with the 300 ms audio delay and the FT8 refusals; a start is stale from
-             the earlier of 75 % of the period and the end of the waveform's audio
-             (5340 ms), deliberately not WSJT-X's fTR < 0.75 empty-start quirk.
-             The mode is explicit per request and FT8 behaviour is unchanged.
-             Mode selection and QSO/log rules are CL-011-02..04.
-             Details: WstxMessageEncode::Ft4ChannelFrame, Ft4WaveformContract, Ft4Schedule,
-             PlanTransmitStart. */
+        doc /* FT4 messages MUST be encoded with the shared packer to the same 77 bits and
+             refusals, scrambled, with CRC-14 and LDPC(174,91) parity and the 103 genft4
+             tones, and the native FT4 waveform (gen_ft4wave, 105 symbols with ramps)
+             generated at 12 kHz and 48 kHz within Ft4WaveformContract::referenceTolerance.
+             Details: WstxMessageEncode::Ft4ChannelFrame, Ft4WaveformContract. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/modes/transmit/mod.rs; server/src/modes/transmit/waveform.rs; server/src/transmit/schedule.rs"; }
+        @ImplementedIn { module = "server/src/modes/transmit/mod.rs; server/src/modes/transmit/waveform.rs"; }
     }
     dependency CL_011_01_to_FR_005 from 'CL-011-01' to 'FR-005';
-    dependency CL_011_01_to_FR_006 from 'CL-011-01' to 'FR-006';
 }

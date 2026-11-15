@@ -10,7 +10,7 @@ package WstxContact {
     private import WstxRequirements::'FR-024';
     private import WstxRequirements::'FR-006';
     private import WstxRequirements::'FR-019';
-    private import WstxMessageEncode::'CL-011-01';
+    private import WstxTransmitSchedule::'CL-011-05';
     private import WstxLogbook::'TC-007-008';
     private import WstxRequirements::'FR-010';
     private import WstxStandardQso::'TC-007-001';
@@ -156,7 +156,7 @@ package WstxContact {
              so that a change can be lost there when the program ends abnormally.
              armState is the
              read view of #9's TransmitArming, never armed by selection, entry, reconnect or startup (#10 CL-010-01,
-             TransmitSafetyPolicy armedOnStartup=false). mode: ContactMode. */
+             WstxTransmit CL-009-03). mode: ContactMode. */
     }
     attribute def ContactMode {
         doc /* #11 CL-011-03. A contact's mode is fixed when it is prepared: the selected
@@ -466,7 +466,7 @@ package WstxContact {
     dependency CL_011_02_to_FR_019 from 'CL-011-02' to 'FR-019';
     verification 'TC-006-002' {
         doc /* FT4 timing and mode changes
-             CL-011-01 (FT4 period timing), CL-011-02 (mid-workflow mode selection)
+             CL-011-05 (FT4 period timing), CL-011-02 (mid-workflow mode selection)
              Setup: virtual UTC clock values around 7.5 s boundaries, both parities,
              12 kHz and 48 kHz, every clock state, FT8 requests at the same instants;
              for CL-011-02 the actual router with the contact engine and the actual #9
@@ -495,7 +495,7 @@ package WstxContact {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective {
-            verify 'CL-011-01';
+            verify 'CL-011-05';
             verify 'CL-011-02';
         }
         @TestedBy { test = "server/tests/transmit_ft4_vectors.rs; server/src/contact_http_tests.rs"; }
