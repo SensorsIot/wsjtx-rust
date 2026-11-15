@@ -10,7 +10,7 @@ package WstxContact {
     private import WstxRequirements::'FR-024';
     private import WstxRequirements::'FR-006';
     private import WstxRequirements::'FR-019';
-    private import WstxMessageEncode::'TC-006-002';
+    private import WstxTransmitSchedule::'CL-011-05';
     private import WstxLogbook::'TC-007-008';
     private import WstxRequirements::'FR-010';
     private import WstxStandardQso::'TC-007-001';
@@ -19,7 +19,7 @@ package WstxContact {
     private import WstxRequirements::'FR-016';
     private import WstxRequirements::'FR-012';
     private import WstxOperatingLayout::'CL-039-04';
-    private import WstxTransmit::'CL-039-06';
+    private import WstxQsoTransmit::'CL-039-06';
     private import WstxOperatingLayout::'TC-055-006';
     private import WstxLogbook::'TC-110-004';
     private import WstxOperatingLayout::'CL-065-02';
@@ -156,7 +156,7 @@ package WstxContact {
              so that a change can be lost there when the program ends abnormally.
              armState is the
              read view of #9's TransmitArming, never armed by selection, entry, reconnect or startup (#10 CL-010-01,
-             TransmitSafetyPolicy armedOnStartup=false). mode: ContactMode. */
+             WstxTransmit CL-009-03). mode: ContactMode. */
     }
     attribute def ContactMode {
         doc /* #11 CL-011-03. A contact's mode is fixed when it is prepared: the selected
@@ -464,6 +464,42 @@ package WstxContact {
     dependency CL_011_02_to_FR_006 from 'CL-011-02' to 'FR-006';
     dependency CL_011_02_to_FR_007 from 'CL-011-02' to 'FR-007';
     dependency CL_011_02_to_FR_019 from 'CL-011-02' to 'FR-019';
+    verification 'TC-006-002' {
+        doc /* FT4 timing and mode changes
+             CL-011-05 (FT4 period timing), CL-011-02 (mid-workflow mode selection)
+             Setup: virtual UTC clock values around 7.5 s boundaries, both parities,
+             12 kHz and 48 kHz, every clock state, FT8 requests at the same instants;
+             for CL-011-02 the actual router with the contact engine and the actual #9
+             transmit owner on a hardware double, live FT4/FT8 jobs with hand-authored
+             rows.
+             Steps: select the next FT4 slot and plan starts before the period, at the
+             300 ms delay, late, at the 75 % boundary, after it, for unaligned periods,
+             FT4-only boundaries requested as FT8, and unsynchronized/unknown clocks.
+             CL-011-02: with an FT4 live job read station.tick and prepare a manual
+             entry; request an operating selection with action mode while Tune is on,
+             while PTT is keyed before the audio, while the FT4 waveform plays, and after
+             Tune ends; stop FT4 receive with an active FT4 contact.
+             CL-011-02 oracles (WstxQsoTransmit::StationOperatingMode, ModeChange):
+             station.tick period_ms 7500 in FT4 and 15000 in FT8; the manual contact
+             uses FT4 (Tx4 RR73); the mode selection while Tune is on, PTT keyed or
+             transmitting is 409 busy and nothing changes (operating revision, receive
+             mode ft4); after Tune it is not refused busy; after the receive stop the
+             period stays 7500 and the FT4 contact stays replying with K1ABC.
+             Oracles: WSJT-X values (Modulator.cpp FT4 delay_ms=300 and late-start m_ic,
+             TxStartPolicy.hpp 0.75, mainwindow.cpp m_TRperiod=7.5 and t mod 15 s
+             parity): exact audio start and skipped samples. Deliberately not WSJT-X's
+             fTR < 0.75 empty start: 5339 ms admitted (skip below the waveform's sample
+             count), 5340 ms and 5624 ms stale at 12 kHz and 48 kHz, also for the next
+             slot; FT8 keeps 15 s periods, 500 ms delay and its 11.25 s limit.
+             no clock, audio or radio. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::partial; }
+        objective {
+            verify 'CL-011-05';
+            verify 'CL-011-02';
+        }
+        @TestedBy { test = "server/tests/transmit_ft4_vectors.rs; server/src/contact_http_tests.rs"; }
+    }
     requirement 'CL-011-04' {
         doc /* Keep FT8 behaviour unchanged and isolate the modes: a change of the
              station's operating mode disarms #9 and cancels a calling or active

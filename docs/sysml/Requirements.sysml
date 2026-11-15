@@ -45,7 +45,7 @@ package WstxRequirements {
     }
     requirement ResponsibilityAndExchangeBoundaries {
         doc /* Architectural refinement of WstxRequirements::SharedDataOwnership,
-             ProcessingAndHaltOwnership, RemoteDeliveryPolicy and TransmitSafetyPolicy:
+             ProcessingAndHaltOwnership, RemoteDeliveryPolicy and WstxTransmit::TransmitAuthority:
              the declared owners MUST retain their separate typed/directed exchanges.
              Recording storage MUST feed the common receive path; receive and encode
              MUST connect to pure mode functions; audio and control MUST stay separate.
@@ -99,7 +99,7 @@ package WstxRequirements {
         doc /* Manual contract review on the development PC, without external effects.
              Compare this decomposition with WstxRequirements::ReleasePolicy,
              SharedDataOwnership, ProcessingAndHaltOwnership, RemoteDeliveryPolicy,
-             TransmitSafetyPolicy and NativeFlexBoundary, plus existing FR responsibility
+             WstxTransmit::TransmitAuthority and NativeFlexBoundary, plus existing FR responsibility
              dependencies below and their canonical verification cases. Independently
              expect server-owned state/results/contacts, profile-owned storage, pure
              mode calculations, one conversion owner, independent audio/CAT failure
