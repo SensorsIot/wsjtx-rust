@@ -2,11 +2,13 @@
 //! Typed receive-only radio control. Catalogue facts never grant raw-byte execution.
 pub mod actor;
 pub mod catalogue;
+#[path = "../transmit/codec.rs"]
 pub mod codec;
 pub mod executor;
 pub mod setup;
 #[cfg(windows)]
 #[allow(unsafe_code)]
+#[path = "../radioControl/windows.rs"]
 pub mod windows;
 
 use serde::{Deserialize, Serialize};

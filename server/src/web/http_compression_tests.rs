@@ -8,7 +8,7 @@ use tower::ServiceExt;
 
 // Each test module of the station executable includes the test-only reader itself.
 #[allow(dead_code, clippy::duplicate_mod)]
-#[path = "model_values.rs"]
+#[path = "../model_values.rs"]
 mod model_values;
 use model_values::{Model, Number};
 
@@ -590,16 +590,22 @@ async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwis
         login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
     };
     for (path, source) in [
-        ("/app.js", include_str!("../../client/app.js")),
+        ("/app.js", include_str!("../../../client/app.js")),
         (
             "/authorization.js",
-            include_str!("../../client/authorization.js"),
+            include_str!("../../../client/authorization.js"),
         ),
-        ("/recording.js", include_str!("../../client/recording.js")),
-        ("/logbook.js", include_str!("../../client/logbook.js")),
-        ("/contact.js", include_str!("../../client/contact.js")),
-        ("/style.css", include_str!("../../client/style.css")),
-        ("/recording.css", include_str!("../../client/recording.css")),
+        (
+            "/recording.js",
+            include_str!("../../../client/recording.js"),
+        ),
+        ("/logbook.js", include_str!("../../../client/logbook.js")),
+        ("/contact.js", include_str!("../../../client/contact.js")),
+        ("/style.css", include_str!("../../../client/style.css")),
+        (
+            "/recording.css",
+            include_str!("../../../client/recording.css"),
+        ),
     ] {
         for (accept, gzip) in [
             (Some("gzip, deflate, br"), true),

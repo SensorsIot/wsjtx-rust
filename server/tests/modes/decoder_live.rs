@@ -5,13 +5,13 @@ use wstx_rust::decoder::{
 };
 // The station sets the a-priori context; this history test does not.
 #[allow(dead_code)]
-#[path = "../src/decoder/history.rs"]
+#[path = "../../src/modes/decoder/history.rs"]
 mod history;
 use history::DecodeState;
 
 fn record(start: u64, id: &str) -> Decode {
     let vectors: serde_json::Value = serde_json::from_str(include_str!(
-        "../../fixtures/decoder/independent-vectors/manifest.json"
+        "../../../fixtures/decoder/independent-vectors/manifest.json"
     ))
     .unwrap();
     let vector = vectors["vectors"]

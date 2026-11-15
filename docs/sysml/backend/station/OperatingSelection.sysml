@@ -686,7 +686,7 @@ logical uncompressed JSON.
     requirement 'CL-008-07' {
         doc /* Coordinate receive-only operating mode and preferred band changes through the existing station/receive owner and typed CAT actor, with explicit nominal/observed truth, actual release barriers, per-query provenance and cancellation fencing. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/selection.rs; server/src/selection_http.rs; server/src/radio_http.rs; server/src/radio_control/actor.rs; client/recording.js"; }
+        @ImplementedIn { module = "server/src/station/selection.rs; server/src/selection_http.rs; server/src/radio_http.rs; server/src/radio_control/actor.rs; client/recording.js"; }
     }
     dependency CL_008_07_to_FR_002 from 'CL-008-07' to 'FR-002';
     dependency CL_008_07_to_FR_009 from 'CL-008-07' to 'FR-009';
@@ -696,7 +696,7 @@ logical uncompressed JSON.
     requirement 'CL-044-16' {
         doc /* A selection of POST /receive/select that finds the CAT lease held by the 1 s poll, a menu or AGC exchange or another transition waits for it up to 3 s, without a queue, off the async runtime, and then proceeds: a poll no longer refuses a band change. After the wait the preflight runs again as before. A lease still held at 3 s refuses busy, as does a transmit hold, at once, since a transmission lasts far longer than the wait. The busy refusal of a held lease comes at 3 s from the request, never before, with a margin of at most 250 ms for scheduling and request handling: on the development PC (HB9BLA, 2026-11-07, 35 runs) it came 2 to 82 ms after 3 s, the most beside a build, so 250 ms is about three times the worst seen and well below a 3.5 s wait. A refusal changes nothing: the operating revision and the selection stay as they were, and the Band control shows the band the station is on, with "Selection refused · busy". */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_control/actor.rs; server/src/recording.rs; server/src/selection.rs; server/src/selection_http.rs"; }
+        @ImplementedIn { module = "server/src/radio_control/actor.rs; server/src/recording.rs; server/src/station/selection.rs; server/src/selection_http.rs"; }
     }
     dependency CL_044_16_to_FR_009 from 'CL-044-16' to 'FR-009';
     verification 'TC-044-023' {

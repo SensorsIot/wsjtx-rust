@@ -592,7 +592,7 @@ fn resource_capacity_owned_child() {
         eprintln!("RESOURCE_CAPACITY {}", history_ledger);
         // Retain actual nested variant witnesses, never arbitrary padded buffers.
         let manifest: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../fixtures/decoder/independent-vectors/manifest.json"
+            "../../../../fixtures/decoder/independent-vectors/manifest.json"
         ))
         .unwrap();
         let witnesses = manifest["vectors"]
@@ -964,7 +964,7 @@ fn resource_phase_detection_observes_work_without_publishing() {
 #[test]
 fn sampled_gram_projection_matches_independent_alias_oracles() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../fixtures/decoder/fit-metric-cases.json"
+        "../../../../fixtures/decoder/fit-metric-cases.json"
     ))
     .unwrap();
     let frames = fixture["support_frames"].as_u64().unwrap() as usize;

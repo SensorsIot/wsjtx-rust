@@ -7,7 +7,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {chromium}=require('playwright');
-const {watchPage,tipChange}=require('./page-watch.cjs');
+const {watchPage,tipChange}=require('../page-watch.cjs');
 const origin=process.env.WSTX_PAGE_ORIGIN,control=process.env.WSTX_PAGE_CONTROL;
 const LIVE_STATION_PORT='18081';
 
@@ -88,7 +88,7 @@ test('the page watch fails on undefined and on a changing tip, and passes what m
 
 // The live check's two decisions, without a station: what the page may send, and when it is green.
 test('the live page check lets the page send only reads and is green only with both triggers',()=>{
-  const {allowed,missingTriggers}=require('./live-page-check.cjs');
+  const {allowed,missingTriggers}=require('../live-page-check.cjs');
   const origin='https://192.168.0.37:18081',at=p=>new URL(origin+p);
   assert.equal(allowed('GET',at('/receive'),origin),'pass');
   for(const p of ['/contact/worked','/strategy/evaluate','/authorization/v1/status'])assert.equal(allowed('POST',at(p),origin),'pass',p);

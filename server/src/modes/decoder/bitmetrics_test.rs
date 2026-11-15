@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn independent_decimal_exhaustive_metric_families() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../fixtures/decoder/physical-metric-cases.json"
+        "../../../../fixtures/decoder/physical-metric-cases.json"
     ))
     .unwrap();
     let cases = fixture["cases"].as_array().unwrap();
@@ -127,7 +127,7 @@ fn vector_word() -> Vec<u8> {
 }
 fn vector_codeword(index: usize) -> Vec<u8> {
     let manifest: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../fixtures/decoder/independent-vectors/manifest.json"
+        "../../../../fixtures/decoder/independent-vectors/manifest.json"
     ))
     .unwrap();
     manifest["vectors"][index]["codeword174"]

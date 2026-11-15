@@ -292,7 +292,7 @@ package WstxLiveReceive {
             verify 'CL-008-05';
             verify 'CL-008-07';
         }
-        @TestedBy { test = "server/tests/radio_native.rs::read_only_selected_endpoint_discovery; server/tests/radio_hardware.rs::authorized_ic7300_frequency_query_evidence; server/tests/radio_hardware.rs::authorized_ic7300_readonly_inventory_evidence; server/tests/radio_hardware.rs::authorized_ic7300_prepare_usb_data; server/tests/radio_hardware.rs::authorized_ic7300_restore_lsb_data_off; server/tests/audio_hardware.rs::selected_radio_audio_capture_evidence; server/tests/audio_listen.rs::selected_radio_audio_to_listening_wav"; }
+        @TestedBy { test = "server/tests/receive/radio_native.rs::read_only_selected_endpoint_discovery; server/tests/receive/radio_hardware.rs::authorized_ic7300_frequency_query_evidence; server/tests/receive/radio_hardware.rs::authorized_ic7300_readonly_inventory_evidence; server/tests/receive/radio_hardware.rs::authorized_ic7300_prepare_usb_data; server/tests/receive/radio_hardware.rs::authorized_ic7300_restore_lsb_data_off; server/tests/receive/audio_hardware.rs::selected_radio_audio_capture_evidence; server/tests/receive/audio_listen.rs::selected_radio_audio_to_listening_wav"; }
     }
     verification 'TC-002-003' {
         doc /* Audio without CAT

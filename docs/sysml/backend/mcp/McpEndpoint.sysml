@@ -77,7 +77,7 @@ package WstxMcpEndpoint {
             verify 'CL-012-02';
             verify 'CL-012-04';
         }
-        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp.test.cjs"; }
+        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp/mcp.test.cjs"; }
     }
     verification 'TC-020-002' {
         doc /* Validation and authority
@@ -92,7 +92,7 @@ package WstxMcpEndpoint {
             verify 'CL-012-02';
             verify 'CL-012-03';
         }
-        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp.test.cjs; server/src/automation_tests.rs"; }
+        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp/mcp.test.cjs; server/src/automation_tests.rs"; }
     }
     requirement 'CL-012-03' {
         doc /* MCP authorization is explicit and separate from the browser (#58): exactly one Authorization: Bearer field carrying an MCP client token of this station, created and revoked in Settings > General > Access & grants, shown once, stored only as its SHA-256 and compared in constant time; cookies sent to /mcp are never read, the station access token and browser grant transports are refused with a hint to the MCP client token, an MCP token is refused on every browser route and never exchanged for a browser cookie or grant, revocation takes effect at the next request, refused bearers are rate limited and every use is audited (name, action, time). Every request carries its principal (browser, mcp, automation) from its credential; only browser is an operator action. A plaintext profile has no MCP access, a present Origin must be the station's. Transmit-capable operations need the MCP client's station transport like the browser's grant. Automation is station-owned, unconfigured and stopped at every boot, starts only on an explicit start with a current grant transport and the current acknowledged safety revision, lives no longer than that transport and its maximum duration, is shown read-only in the browser station bar, never takes over an operator's CQ or contact, and stops at Halt (also one racing its arming, answered with a Halt), explicit stop, lost or replaced transport, receive context or mode change, contact change, disarm, no answer, completion or its contact limit, never replaying a transmit action or leaving a selected unarmed contact. Details: WstxMcpInterface::McpCredential, OperatingAutomation, AutomationIndicator. */
@@ -134,6 +134,6 @@ package WstxMcpEndpoint {
             verify 'CL-012-03';
             verify 'CL-039-06';
         }
-        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp.test.cjs; tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "server/src/mcp_tests.rs; tests/mcp/mcp.test.cjs; tests/ui-operating.test.cjs"; }
     }
 }

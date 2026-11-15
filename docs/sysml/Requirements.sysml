@@ -206,7 +206,7 @@ package WstxRequirements {
         doc /* Encoding
              Produce protocol-compatible messages, channel symbols, and waveforms for supported transmit modes and variants. */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/transmit/mod.rs; server/src/transmit/pack.rs; server/src/transmit/waveform.rs; server/src/transmit/schedule.rs; server/src/decoder/channel.rs"; }
+        @ImplementedIn { module = "server/src/modes/transmit/mod.rs; server/src/transmit/pack.rs; server/src/modes/transmit/waveform.rs; server/src/transmit/schedule.rs; server/src/modes/decoder/channel.rs"; }
     }
     requirement 'FR-006' {
         doc /* Time and sequencing
@@ -223,13 +223,13 @@ package WstxRequirements {
         doc /* Transmit control
              Provide clear transmit state and an immediate halt action; handle PTT, radio errors, and device loss without leaving transmit active unintentionally. */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs"; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/transmit/playback.rs"; }
     }
     requirement 'FR-009' {
         doc /* Radio control
              Support baseline radio-control capabilities, including frequency, mode, PTT, split operation, and supported device interfaces. The hardware support matrix is to be inventoried. The first hardware end-to-end test target is an Icom IC-7300 on a different PC; #8 must settle its setup and acceptance contract before the test. */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs"; }
+        @ImplementedIn { module = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/transmit/codec.rs"; }
     }
     requirement 'FR-010' {
         doc /* Displays
@@ -246,7 +246,7 @@ package WstxRequirements {
         doc /* Integrations
              Preserve required external protocols and message formats, including baseline UDP integrations and reception-reporting workflows. The WSJT-X UDP interface is specified by issue #40, CL-040-01..04 (send-only, operator 2026-11-06), contract WstxUdp; reception reporting remains target. */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/network_message.rs; server/src/udp.rs; server/src/pskr.rs"; }
+        @ImplementedIn { module = "server/src/network_message.rs; server/src/operating/qso/udp.rs; server/src/operating/qso/pskr.rs"; }
     }
     requirement 'FR-013' {
         doc /* EME
@@ -309,13 +309,13 @@ package WstxRequirements {
         doc /* Optional direct FlexRadio integration — phase 2 target
              Offer a selectable native FlexRadio TCP/UDP connection type alongside the default audio-device/optional CAT/PTT path. Native profiles operate without requiring external SmartSDR desktop/CAT/DAX applications, persist their receive intent (never a radio identity, slice index or handle) and reconcile actual resources on connection. Both paths share the browser/DSP/MCP architecture. Receive and control at isolated level 2 are delivered (WstxFlexSession::NativeFlexWireSubset); live hardware qualification TC-023-004/005 and transmit TC-023-006 remain open. */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/flex/session.rs; server/src/flex/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js"; }
+        @ImplementedIn { module = "server/src/flexAdapter/session.rs; server/src/flexAdapter/wire.rs; server/src/flex_http.rs; server/src/profile.rs; client/recording.js"; }
     }
     requirement 'FR-024' {
         doc /* Contest, special-activity and DXpedition operation — phase three
              Offer WSJT-X's special operating activities chosen by the operator, the contest exchanges, the Hound role and the nonstandard message types, each with its decode, encode, sequencing and logging, on the shared browser/modem/QSO/log/MCP services. Approved slices (issue #24, operator 2026-11-03, WSJT-X 3.3.0-beta5 reference): S1 nonstandard/compound calls, filled-in hashed calls and free text; S2a grid-exchange contests; S2b Field Day and RTTY Roundup (ADIF contest fields, no Cabrillo); S4 classic Hound. S5 SuperFox Hound moved to its own phase-two issue #77 (operator 2026-11-08); Fox (S6) was dropped; EU VHF (S3), decoded since S1a, is sent by issue #99 (operator 2026-11-09, CL-099-01/02). */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs"; }
+        @ImplementedIn { module = "server/src/modes/decoder/hashes.rs; server/src/recording.rs; server/src/contact.rs; server/src/transmit/pack.rs"; }
     }
     requirement 'FR-025' {
         subject station : StationProcess;

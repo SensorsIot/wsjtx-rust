@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
 #![cfg(windows)]
-#[path = "../src/radio_control/mod.rs"]
+#[path = "../../src/radio_control/mod.rs"]
 pub mod radio_control;
 use radio_control::{
     Error,

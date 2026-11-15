@@ -153,5 +153,5 @@ impl Subtractor {
 }
 
 #[cfg(test)]
-#[path = "subtraction_test.rs"]
+#[path = "../modes/decoder/subtraction_test.rs"]
 mod tests;

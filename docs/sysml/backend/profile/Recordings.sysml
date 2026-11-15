@@ -305,7 +305,7 @@ package WstxProfileRecordings {
             verify 'CL-006-02';
         }
         @TestedBy {
-            test = "tests/recording-fixtures.test.cjs; tests/recording.test.cjs; server/src/recording_tests.rs";
+            test = "tests/profile/recording-fixtures.test.cjs; tests/recording.test.cjs; server/src/recording_tests.rs";
         }
     }
     verification 'TC-018-002' {
@@ -335,7 +335,7 @@ package WstxProfileRecordings {
             verify 'CL-006-04';
         }
         @TestedBy {
-            test = "tests/recording-fixtures.test.cjs; tests/recording.test.cjs; server/src/recording_tests.rs";
+            test = "tests/profile/recording-fixtures.test.cjs; tests/recording.test.cjs; server/src/recording_tests.rs";
         }
     }
     part def RecordedSource {

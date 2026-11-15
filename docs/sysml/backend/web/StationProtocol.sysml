@@ -762,7 +762,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
             verify 'CL-003-06';
             verify 'FR-021';
         }
-        @TestedBy { test = "server/src/liveness_tests.rs"; }
+        @TestedBy { test = "server/src/web/liveness_tests.rs"; }
     }
 
     // #51 An open page recovers after a station update (chosen defaults: WstxStationProtocol::PageUpdate).
@@ -1054,7 +1054,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        @TestedBy { test = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/http_compression_tests.rs; server/src/recording_tests.rs; server/tests/radio_control.rs; tests/contact.test.cjs; tests/recording.test.cjs; tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "tests/radio-selection.test.cjs; server/src/selection_http_tests.rs; server/src/web/http_compression_tests.rs; server/src/recording_tests.rs; server/tests/radio_control.rs; tests/contact.test.cjs; tests/recording.test.cjs; tests/ui-operating.test.cjs"; }
     }
 
     // Reciprocal ownership is verification intent, not an execution verdict.
@@ -1252,7 +1252,7 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
     requirement 'CL-003-05' {
         doc /* The minimal profile MUST support two clients sharing the contract's 32 kbit/s link model (WstxStationLink::ThinLinkBudget). Its traffic budgets are targets of normal operation that the operator judges from the station's link byte log, and its visible-response target is watched in the live check after each deploy (operator 2026-11-09) (WstxStationLink::LinkTrafficLog); no test asserts them (operator 2026-11-09, #80). The station MUST record that log: per period and client (an enrolled browser, an MCP client or local), the bytes each way in total and by message type, and the display profile of each of the client's sockets. Page and asset loading, reconnection, authorization recovery, CAT, selection changes, recording replay or import and log maintenance carry no link budget. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/main.rs; server/src/link_log.rs; server/src/mcp.rs; client/app.js"; }
+        @ImplementedIn { module = "server/src/main.rs; server/src/web/link_log.rs; server/src/mcp.rs; client/app.js"; }
     }
     dependency CL_003_05_to_FR_021 from 'CL-003-05' to 'FR-021';
     verification 'TC-080-001' {
@@ -1266,6 +1266,6 @@ HTTP response content coding of12.1.1; no spectrum event is compressed by H1.
         objective {
             verify 'CL-003-05';
         }
-        @TestedBy { test = "server/src/link_log_tests.rs"; }
+        @TestedBy { test = "server/src/web/link_log_tests.rs"; }
     }
 }

@@ -33,7 +33,7 @@ package WstxCatLifecycle {
              after release). Explicit recovery from a failed-close quarantine is a
              station restart; no in-process action clears it. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs"; }
+        @ImplementedIn { module = "server/src/radioControl/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs"; }
     }
     dependency CL_022_04_to_FR_008 from 'CL-022-04' to 'FR-008';
     dependency CL_022_04_to_FR_009 from 'CL-022-04' to 'FR-009';
@@ -58,7 +58,7 @@ package WstxCatLifecycle {
              ever keyed). Stop/Halt clears receive/RF tokens and pending resume; background
              CAT cannot undo Stop or broaden RF ownership. Missing precondition causes
              zero native open/query/set/PTT. Confirmation itself has no native effect.
-             Delivered in server/src/cat_lifecycle.rs driven by Recording::cat_maintain;
+             Delivered in server/src/radioControl/cat_lifecycle.rs driven by Recording::cat_maintain;
              failed-close quarantine lasts until station restart. */
         in scope : WstxStationLink::SelectedRadioAuthorizationScope;
         in commissioning : WstxStationLink::RadioCommissioningRecord;

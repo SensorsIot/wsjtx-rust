@@ -16,11 +16,11 @@ pub(super) struct UnpackTableReserve {
 impl UnpackTableReserve {
     pub(super) fn new() -> Self {
         let sections: Vec<String> = serde_json::from_str(include_str!(
-            "../../../fixtures/decoder/protocol-data/arrl_rac_sections.json"
+            "../../../../fixtures/decoder/protocol-data/arrl_rac_sections.json"
         ))
         .unwrap();
         let states: Vec<String> = serde_json::from_str(include_str!(
-            "../../../fixtures/decoder/protocol-data/states_provinces.json"
+            "../../../../fixtures/decoder/protocol-data/states_provinces.json"
         ))
         .unwrap();
         for (table, count, twos, threes) in [(&sections, 86, 57, 29), (&states, 171, 70, 101)] {

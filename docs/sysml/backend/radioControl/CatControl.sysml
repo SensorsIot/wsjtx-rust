@@ -595,7 +595,7 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              selection), so no band choice by hand is needed after startup or a
              reconnect. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js"; }
+        @ImplementedIn { module = "server/src/radioControl/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js"; }
     }
     dependency CL_022_03_to_FR_008 from 'CL-022-03' to 'FR-008';
     dependency CL_022_03_to_FR_009 from 'CL-022-03' to 'FR-009';
@@ -614,7 +614,7 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
               native fixture release/cancel measurements prove unchanged250/50ms
              bounds and required four-profile workload; injected time is no substitute.
              Use R4 provider/consumer fixtures, no second native builder.
-             Automated: server/src/cat_lifecycle_tests.rs (injected-time policy:
+             Automated: server/src/radioControl/cat_lifecycle_tests.rs (injected-time policy:
              immediate startup, exact1/2/4/8/8, reset only on readback, no catch-up,
              disable/revoke/identity cancel, quarantine; scripted CI-V peer through
              the real Actor/Executor: absent/open failure/timeout/removal/return,
@@ -641,7 +641,7 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
              native release/cancel measurement. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
-        @TestedBy { test = "server/src/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs"; }
+        @TestedBy { test = "server/src/radioControl/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs"; }
         objective {
             verify 'CL-022-03';
             verify 'CL-022-04';
@@ -650,7 +650,7 @@ changes do not invalidate an in-progress control operation. CAT never opens audi
     requirement 'CL-044-11' {
         doc /* The server pushes the AGC state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.agc {v 1, type radio.agc, data {profile_id, boot_id, target, connection_generation, value, result, trigger}} once the station has an AGC target and then after each change (target the saved AGC or null; value the AGC the radio reported last or null; result unchanged, written or the radio error code, null before the first exchange; trigger connect or selection); nothing is polled. Settings > Radio, CAT group: an AGC select FAST/MID/SLOW, shown only while the form's control is CAT with an IC-7300 endpoint, saved with Apply ⟳ as settings.radio.agc (a hidden select sends no radio key), and below it the read-back line from radio.agc: "Radio AGC <value> · read back, already as set", "Radio AGC <value> · set to <target> and read back", "Radio AGC <target> not applied · <result>". Detect radio (CL-044-02) proposes radio {agc SLOW} with the IC-7300 proposal, shows the row "AGC SLOW · recommended for FT8/FT4", and "Use this setup" sets the AGC select. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_agc.rs; server/src/main.rs; server/src/radio_setup.rs; client/index.html; client/app.js; client/recording.js"; }
+        @ImplementedIn { module = "server/src/radioControl/radio_agc.rs; server/src/main.rs; server/src/radio_setup.rs; client/index.html; client/app.js; client/recording.js"; }
     }
     dependency CL_044_11_to_FR_019 from 'CL-044-11' to 'FR-019';
     dependency CL_044_11_to_FR_009 from 'CL-044-11' to 'FR-009';

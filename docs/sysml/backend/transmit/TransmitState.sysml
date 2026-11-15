@@ -304,7 +304,7 @@ package WstxTransmit {
              TransmitTiming, TransmitClock, PttControl, AudioPlayback, SetTune,
              TransmitWatchdog, TransmitWire. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/playback.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/codec.rs"; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/transmit/playback.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/transmit/codec.rs"; }
     }
     dependency CL_009_03_to_FR_008 from 'CL-009-03' to 'FR-008';
     dependency CL_009_03_to_FR_009 from 'CL-009-03' to 'FR-009';
@@ -377,7 +377,7 @@ package WstxTransmit {
             verify 'CL-009-03';
             verify 'CL-009-04';
         }
-        @TestedBy { test = "server/tests/transmit_service.rs; server/src/transmit_http_tests.rs; server/src/contact_tests.rs"; }
+        @TestedBy { test = "server/tests/transmit_service.rs; server/src/transmit/transmit_http_tests.rs; server/src/contact_tests.rs"; }
     }
     verification 'TC-008-002' {
         doc /* Physical controlled FT8 transmit
@@ -458,7 +458,7 @@ package WstxTransmit {
             verify 'CL-009-05';
             verify 'CL-009-02';
         }
-        @TestedBy { test = "server/tests/transmit_clock.rs; server/src/transmit_http_tests.rs; tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "server/tests/transmit/transmit_clock.rs; server/src/transmit/transmit_http_tests.rs; tests/ui-operating.test.cjs"; }
     }
 
     // #43 Optional clock from the air (defaults chosen on the CR, recorded in AirClock).
@@ -496,7 +496,7 @@ package WstxTransmit {
              Settings drawer opens (at most every 10 s) or the General tab is chosen,
              never on a timer, so the thin link carries no clock polling. */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/clock_http.rs; server/src/main.rs; server/src/recording.rs; server/src/transmit_http.rs; client/contact.js; client/recording.js"; }
+        @ImplementedIn { module = "server/src/transmit/clock_http.rs; server/src/main.rs; server/src/recording.rs; server/src/transmit_http.rs; client/contact.js; client/recording.js"; }
     }
     dependency CL_043_01_to_FR_006 from 'CL-043-01' to 'FR-006';
     dependency CL_043_01_to_FR_016 from 'CL-043-01' to 'FR-016';
@@ -585,7 +585,7 @@ package WstxTransmit {
              "Clock accepted (stations heard are not off to one side)" instead of the
              synchronized wording. */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/transmit/air.rs; server/src/transmit/clock.rs; server/src/transmit/windows_time.rs; server/src/clock_http.rs; server/src/recording.rs; server/src/transmit_http.rs; server/src/main.rs; client/contact.js; client/recording.js"; }
+        @ImplementedIn { module = "server/src/transmit/air.rs; server/src/transmit/clock.rs; server/src/transmit/windows_time.rs; server/src/transmit/clock_http.rs; server/src/recording.rs; server/src/transmit_http.rs; server/src/main.rs; client/contact.js; client/recording.js"; }
     }
     dependency CL_043_03_to_FR_006 from 'CL-043-03' to 'FR-006';
     dependency CL_043_03_to_FR_005 from 'CL-043-03' to 'FR-005';
@@ -665,7 +665,7 @@ package WstxTransmit {
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
-        @TestedBy { test = "server/src/clock_http_tests.rs; tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "server/src/transmit/clock_http_tests.rs; tests/ui-operating.test.cjs"; }
     }
     verification 'TC-043-004' {
         doc /* Live clock from the air on HB9BLA
@@ -786,7 +786,7 @@ package WstxTransmit {
             verify 'CL-043-03';
             verify 'CL-009-05';
         }
-        @TestedBy { test = "server/tests/transmit_air_clock.rs; server/src/clock_http_tests.rs; server/src/transmit_http_tests.rs"; }
+        @TestedBy { test = "server/tests/transmit_air_clock.rs; server/src/transmit/clock_http_tests.rs; server/src/transmit/transmit_http_tests.rs"; }
     }
     verification 'TC-092-004' {
         doc /* No clock source setting
@@ -807,7 +807,7 @@ package WstxTransmit {
         objective {
             verify 'CL-043-01';
         }
-        @TestedBy { test = "server/src/clock_http_tests.rs"; }
+        @TestedBy { test = "server/src/transmit/clock_http_tests.rs"; }
     }
     verification 'TC-092-005' {
         doc /* Clock entries in the error field and the clock status line
@@ -935,7 +935,7 @@ package WstxTransmit {
             verify 'CL-043-01';
             verify 'CL-043-03';
         }
-        @TestedBy { test = "server/src/clock_http_tests.rs"; }
+        @TestedBy { test = "server/src/transmit/clock_http_tests.rs"; }
     }
     requirement 'CL-044-13' {
         doc /* The server pushes the Tx level state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.tx_level {v 1, type radio.tx_level, data {profile_id, boot_id, managed, level_db, stored, alc unknown|available|unavailable, assistant, result, meters null|{alc, po_pct, swr_x10}, power_limit_pct, warnings [...] (CL-044-14), keying_confirmed (CL-044-15)}} after each change; nothing is polled. Settings > Radio > Audio shows, for an IC-7300 CAT control only, a Set level button, a line with the level and the last result, the last ALC, Po and SWR, and the optional Profile power field (settings.radio.power_limit_pct) saved with Apply; the Tx level slider is shown only with alc unavailable. Set level and the slider send POST /radio/tx-level; a refusal is shown on the line. */
@@ -963,7 +963,7 @@ package WstxTransmit {
         objective {
             verify 'CL-044-14';
         }
-        @TestedBy { test = "server/src/radio_level_tests.rs; server/src/transmit_http_tests.rs; server/tests/transmit_service.rs"; }
+        @TestedBy { test = "server/src/radio_level_tests.rs; server/src/transmit/transmit_http_tests.rs; server/tests/transmit_service.rs"; }
     }
     verification 'TC-044-018' {
         doc /* Tx trouble in the error field
@@ -1161,7 +1161,7 @@ package WstxTransmit {
         objective {
             verify 'CL-061-04';
         }
-        @TestedBy { test = "server/src/recording_tx_tests.rs"; }
+        @TestedBy { test = "server/src/transmit/recording_tx_tests.rs"; }
     }
     verification 'TC-061-006' {
         doc /* The browser renders Tx rows and shows level warnings only for receive periods

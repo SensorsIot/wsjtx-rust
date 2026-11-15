@@ -246,7 +246,7 @@ test('TC-010-001/003 calibrated real spectrum, source rows and accessible splitt
   await p.evaluate(()=>document.documentElement.style.zoom='2');assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
 
-// The 25-file provenance sweep is in tests/recording-fixtures.test.cjs (#70); here one real
+// The 25-file provenance sweep is in tests/profile/recording-fixtures.test.cjs (#70); here one real
 // original of each mode goes through the server's import.
 // Proves: CL-006-01/03; TC-018-001, one pinned real FT8 and one FT4 recording; level 2 read-only acquired inputs.
 test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeout:20000},async t=>{

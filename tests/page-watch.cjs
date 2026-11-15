@@ -1,6 +1,6 @@
 'use strict';
 // What a page kept open must never do, for the driver of the in-process station
-// (tests/receive-page.test.cjs) and of the running station (tests/live-page-check.cjs).
+// (tests/frontend/receive-page.test.cjs) and of the running station (tests/live-page-check.cjs).
 // Harness retrospective item 3 (SensorsIot/harness#38), from #22 and #50's live defects.
 
 // What a page shows must never read like a programming accident (#22, "Latest undefined period").

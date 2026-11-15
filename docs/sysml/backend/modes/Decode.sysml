@@ -134,10 +134,10 @@ package WstxModemDecode {
         in context : APrioriContext;
         out records : ResultRecord[0..2048];
         @ImplementedIn {
-            module = "server/src/decoder/mod.rs; server/src/decoder/apriori.rs; server/src/decoder/baseband.rs; server/src/decoder/bitmetrics.rs; server/src/decoder/channel.rs; server/src/decoder/coarse_ft4.rs; server/src/decoder/fit.rs; server/src/decoder/history.rs; server/src/decoder/parallel.rs; server/src/decoder/physical_ft4.rs; server/src/decoder/physical_sync.rs; server/src/decoder/search.rs; server/src/decoder/snr.rs; server/src/decoder/subtraction.rs; server/src/decoder/synchronization.rs; server/src/decoder/waveform.rs";
+            module = "server/src/decoder/mod.rs; server/src/modes/decoder/apriori.rs; server/src/modes/decoder/baseband.rs; server/src/modes/decoder/bitmetrics.rs; server/src/modes/decoder/channel.rs; server/src/modes/decoder/coarse_ft4.rs; server/src/modes/decoder/fit.rs; server/src/modes/decoder/history.rs; server/src/modes/decoder/parallel.rs; server/src/modes/decoder/physical_ft4.rs; server/src/modes/decoder/physical_sync.rs; server/src/decoder/search.rs; server/src/modes/decoder/snr.rs; server/src/decoder/subtraction.rs; server/src/modes/decoder/synchronization.rs; server/src/modes/decoder/waveform.rs";
         }
         @DetailTests {
-            tests = "server/src/decoder/baseband_test.rs; server/src/decoder/bitmetrics_test.rs; server/src/decoder/coarse_ft4_test.rs; server/src/decoder/physical_ft4_test.rs; server/src/decoder/subtraction_test.rs; server/src/decoder/channel_resource_test.rs; server/src/decoder/snr_test.rs; server/src/decoder/search_test.rs; server/src/decoder/apriori_test.rs; server/tests/decoder_live.rs";
+            tests = "server/src/modes/decoder/baseband_test.rs; server/src/modes/decoder/bitmetrics_test.rs; server/src/modes/decoder/coarse_ft4_test.rs; server/src/modes/decoder/physical_ft4_test.rs; server/src/modes/decoder/subtraction_test.rs; server/src/modes/decoder/channel_resource_test.rs; server/src/modes/decoder/snr_test.rs; server/src/modes/decoder/search_test.rs; server/src/modes/decoder/apriori_test.rs; server/tests/modes/decoder_live.rs";
             covers = "band limit, baseband and symbol transforms, bit metrics and their "
                 + "a-priori fixed bits, coarse FT4 search, qualified-support geometry, "
                 + "subtraction kernels, channel decoding, SNR measurement, ranked grid "
@@ -336,7 +336,7 @@ package WstxModemDecode {
             verify 'FR-018';
         }
         @TestedBy {
-            test = "server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/decoder/search_test.rs::ft4_a_priori_recovers_weak_cq_and_qso_words";
+            test = "server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/modes/decoder/search_test.rs::ft4_a_priori_recovers_weak_cq_and_qso_words";
         }
     }
     verification 'TC-004-002' {
@@ -394,7 +394,7 @@ package WstxModemDecode {
             verify 'FR-018';
         }
         @TestedBy {
-            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/decoder/search_test.rs::half_symbol_publication_boundary; server/src/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/decoder/search_test.rs::weak_word_guard_boundaries; server/src/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word; server/tests/audio_receive.rs::live_native_provider_decodes_independent_ft8_callsign";
+            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/modes/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/modes/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/modes/decoder/search_test.rs::half_symbol_publication_boundary; server/src/modes/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/modes/decoder/search_test.rs::weak_word_guard_boundaries; server/src/modes/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/modes/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/modes/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/modes/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/modes/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word; server/tests/audio_receive.rs::live_native_provider_decodes_independent_ft8_callsign";
         }
     }
     verification 'TC-004-003' {
@@ -427,13 +427,13 @@ package WstxModemDecode {
             verify 'FR-018';
         }
         @TestedBy {
-            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; server/tests/decoder_signal.rs::physical_wrong_mode_reproduction_has_no_frame_or_search_error; server/tests/decoder_signal.rs::release_runtime_and_overlapping_window_history; server/src/receive_http_tests.rs::resource_station_process_delta_and_owner_release; server/src/decoder/physical_ft4_test.rs::qualified_support_count_keeps_the_256_257_barrier";
+            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; server/tests/decoder_signal.rs::physical_wrong_mode_reproduction_has_no_frame_or_search_error; server/tests/decoder_signal.rs::release_runtime_and_overlapping_window_history; server/src/receive_http_tests.rs::resource_station_process_delta_and_owner_release; server/src/modes/decoder/physical_ft4_test.rs::qualified_support_count_keeps_the_256_257_barrier";
         }
     }
     requirement 'CL-057-02' {
         doc /* The modem decodes on all CPU cores with headroom: its parallel stages use up to the logical CPU count minus one threads (at least one; the calling thread included), scoped to each stage, so capture, display and transmit threads keep a core; the native audio capture and transmit render threads run at raised (highest) thread priority. Parallel stages are the rows of the FT8 detection spectrum, the FT8 sync-peak qualification, the verification of each pass's candidates (demodulation, channel decode, refinement, physical check and, for a supported complete FT8 frame, its SNR signal power; at most sixteen at once, each holding one 1.2 MB known-word waveform while it refines) and the synthesis of the waveforms to subtract; peak blocking, the duplicate checks, the SNR baseline (per period) and SNR value, publication and the residual subtraction stay in candidate order. The decode set and its order (payload, start frame, frequency and SNR) are identical for every thread count. At most four subtraction waveforms are built at a time: the next four are built on other threads while the previous four are subtracted, so at most eight are held, bounding their memory. The last pass's verified frames are not subtracted, because no later pass reads that residual (#57: these keep a busy FT8 prompt window at about 0.3 s of decode, well inside the CL-007-05 publication bound of period start + 15.0 s; #72: no bound from window completion to painted row is promised beyond CL-007-05 and CL-057-01). The CL-007-04 per-CPU-worker runtime, memory and four-profile budgets are measured with one decode thread per worker. Parallel work runs in rounds of about 10 ms, each started item finishing, and the decode future yields and checks cancellation between rounds, so the station worker keeps draining capture and a cancellation returns as before. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/decoder/parallel.rs; server/src/decoder/search.rs; server/src/decoder/synchronization.rs; server/src/decoder/baseband.rs; server/src/audio/windows.rs; server/src/playback/windows.rs"; }
+        @ImplementedIn { module = "server/src/modes/decoder/parallel.rs; server/src/decoder/search.rs; server/src/modes/decoder/synchronization.rs; server/src/modes/decoder/baseband.rs; server/src/audio/windows.rs; server/src/modes/playback/windows.rs"; }
     }
     dependency CL_057_02_to_FR_003 from 'CL-057-02' to 'FR-003';
     dependency CL_057_02_to_FR_004 from 'CL-057-02' to 'FR-004';
@@ -450,6 +450,6 @@ package WstxModemDecode {
             verify 'CL-057-01';
             verify 'CL-007-05';
         }
-        @TestedBy { test = "server/tests/decoder_signal.rs; server/src/decoder/parallel.rs; server/src/receive_http_tests.rs"; }
+        @TestedBy { test = "server/tests/decoder_signal.rs; server/src/modes/decoder/parallel.rs; server/src/receive_http_tests.rs"; }
     }
 }

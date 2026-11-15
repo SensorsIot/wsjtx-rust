@@ -6,9 +6,12 @@ mod authorization_http;
 mod automation;
 #[cfg(test)]
 mod automation_tests;
+#[path = "radioControl/cat_lifecycle.rs"]
 mod cat_lifecycle;
 #[cfg(test)]
+#[path = "radioControl/cat_lifecycle_tests.rs"]
 mod cat_lifecycle_tests;
+#[path = "transmit/clock_http.rs"]
 mod clock_http;
 mod contact;
 mod contact_http;
@@ -18,14 +21,19 @@ mod contact_http_tests;
 mod contact_tests;
 mod dxcc;
 mod flex_http;
+#[path = "operating/qso/freeslot.rs"]
 mod freeslot;
 mod http_compression;
 #[cfg(test)]
+#[path = "web/http_compression_tests.rs"]
 mod http_compression_tests;
+#[path = "web/link_log.rs"]
 mod link_log;
 #[cfg(test)]
+#[path = "web/link_log_tests.rs"]
 mod link_log_tests;
 #[cfg(test)]
+#[path = "web/liveness_tests.rs"]
 mod liveness_tests;
 mod logbook;
 mod logbook_http;
@@ -35,7 +43,9 @@ mod mcp_tests;
 mod profile;
 #[cfg(test)]
 mod protocol_tests;
+#[path = "operating/qso/pskr.rs"]
 mod pskr;
+#[path = "radioControl/radio_agc.rs"]
 mod radio_agc;
 mod radio_http;
 #[cfg(test)]
@@ -50,6 +60,7 @@ mod receive_http;
 mod receive_http_tests;
 mod recording;
 mod recording_http;
+#[path = "station/selection.rs"]
 mod selection;
 mod selection_http;
 #[cfg(all(test, not(debug_assertions)))]
@@ -63,7 +74,9 @@ mod strategy;
 mod test_ports;
 mod transmit_http;
 #[cfg(test)]
+#[path = "transmit/transmit_http_tests.rs"]
 mod transmit_http_tests;
+#[path = "operating/qso/udp.rs"]
 mod udp;
 use axum::{Json, body::Bytes};
 use axum::{

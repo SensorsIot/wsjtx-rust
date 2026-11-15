@@ -305,27 +305,27 @@ package WstxUdp {
     requirement 'CL-040-01' {
         doc /* Speak the WSJT-X NetworkMessage protocol (magic 0xADBCCBDA, schema 2 negotiated up to 3, Qt QDataStream big-endian) with id = the server's instance name (CL-112-01), and send to each enabled target its selected outbound messages: Heartbeat every 15 s, Status on change, on each live decoder window and with each Heartbeat pulse (CL-040-07), Decode for each new live FT8/FT4 decode, Clear when the operating band changes (CL-112-04), QSO Logged and Logged ADIF when a contact is saved, Close when a target is disabled or removed and at shutdown (CL-112-06). Details: WstxUdp::UdpWire, OutboundRules. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/network_message.rs; server/src/udp.rs; server/src/logbook_http.rs"; }
+        @ImplementedIn { module = "server/src/network_message.rs; server/src/operating/qso/udp.rs; server/src/logbook_http.rs"; }
     }
     dependency CL_040_01_to_FR_012 from 'CL-040-01' to 'FR-012';
     requirement 'CL-040-02' {
         doc /* Any number of targets up to 16, each address:port (unicast, IPv4 multicast with TTL and interface, or IPv6 multicast per CL-040-06), enabled, a per-type outbound message selection (default all), with per-target status (last send, error). The configuration is the target list only, persisted in the selected profile directory and served by GET /udp and PUT /udp; the default is one target 127.0.0.1:2237, enabled, all messages. Details: WstxUdp::UdpTarget, UdpConfiguration, TargetStatus, UdpHttp. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs; server/src/profile.rs; server/src/main.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs; server/src/profile.rs; server/src/main.rs"; }
     }
     dependency CL_040_02_to_FR_012 from 'CL-040-02' to 'FR-012';
     dependency CL_040_02_to_FR_001 from 'CL-040-02' to 'FR-001';
     requirement 'CL-040-03' {
         doc /* Send-only (operator decision 2026-11-06: "GridTracker just listens. We only react to the front end or to the MCP."; "The UI has to be able to halt the station in emergency halt."). No inbound UDP message acts on the station: Clear, Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight Callsign, Switch Configuration, Configure and unknown types from any source have no effect, change no state and are not answered. All control comes from the browser and MCP; the emergency off is the browser's HALT and MCP's halt. Only a Heartbeat from a target's own address with the configured id raises that target's header schema (2 to 3, never lowered), as the WSJT-X protocol negotiates it. A datagram too large for the receive buffer never holds back the datagrams behind it. Details: WstxUdp::InboundRules. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs; server/src/network_message.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs; server/src/network_message.rs"; }
     }
     dependency CL_040_03_to_FR_012 from 'CL-040-03' to 'FR-012';
     dependency CL_040_03_to_FR_008 from 'CL-040-03' to 'FR-008';
     requirement 'CL-040-04' {
         doc /* Decode texts use the WSJT-X form: a standard message with R before a signal report is "R-09" / "R+03", never the decoder's separated "R -09". Details: WstxUdp::OutboundRules. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs"; }
     }
     dependency CL_040_04_to_FR_012 from 'CL-040-04' to 'FR-012';
     // CL-040-05 and TC-012-005 (Location session grid) retired by the operator decision
@@ -333,7 +333,7 @@ package WstxUdp {
     requirement 'CL-040-06' {
         doc /* Issue #46: an IPv6 multicast group target (ff00::/8) with a hop limit 1..255 (multicast_ttl) and an interface index (multicast_interface as decimal text, required for interface-local and link-local scope, optional above) is admitted by PUT /udp, saved, and receives its selected outbound messages through a socket with IPV6_MULTICAST_HOPS and IPV6_MULTICAST_IF set. Reserved scopes 0 and 15 and interface names are refused. Details: WstxUdp D6, UdpTarget, OutboundRules. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs"; }
     }
     dependency CL_040_06_to_FR_012 from 'CL-040-06' to 'FR-012';
     verification 'TC-012-006' {
@@ -347,12 +347,12 @@ package WstxUdp {
         objective {
             verify 'CL-040-06';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
     requirement 'CL-040-07' {
         doc /* Issue #40 live acceptance (GridTracker, 2026-11-02): Status is sent as WSJT-X sends it, so a tool that waits for a Status sees the station within one T/R period. Its decoding field is true while the live decoder processes an analysis window and false once that decode returns (completed, abandoned, failed or cancelled); every toggle sends a Status, and a window that begins and ends between two station steps still sends one, so at least one Status goes out per decoded window and therefore per T/R period (WSJT-X v3.3.0-beta5 widgets/mainwindow.cpp MainWindow::beginDecode and endDecode call updateDecodeControls, which calls statusUpdate; MessageClient::status_update sends unconditionally). In addition, the Status is resent unchanged at each pulse, together with the Heartbeat every 15 s (MessageClient heartbeat_timer_, NetworkMessage::pulse), also to a target that selects status without heartbeat, so a tool started later learns the state within 15 s; the resend is this station's choice, WSJT-X has none. A target that does not select status receives none of these. Details: WstxUdp::OutboundRules. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs; server/src/recording.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs; server/src/recording.rs"; }
     }
     dependency CL_040_07_to_FR_012 from 'CL-040-07' to 'FR-012';
     verification 'TC-012-007' {
@@ -366,7 +366,7 @@ package WstxUdp {
         objective {
             verify 'CL-040-07';
         }
-        @TestedBy { test = "server/src/udp_tests.rs; server/src/recording_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs; server/src/recording_tests.rs"; }
     }
     // CL-040-08 and TC-012-008 (udp.display: Highlight Callsign and Clear in the browser)
     // retired by the operator decision 2026-11-06 recorded in CL-040-03 and WstxUdp; the
@@ -384,7 +384,7 @@ package WstxUdp {
             verify 'CL-040-03';
             verify 'CL-040-04';
         }
-        @TestedBy { test = "server/tests/udp_vectors.rs; server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/tests/udp_vectors.rs; server/src/log/udp_tests.rs"; }
     }
     verification 'TC-012-002' {
         doc /* Outbound messages to several targets
@@ -399,7 +399,7 @@ package WstxUdp {
             verify 'CL-040-02';
             verify 'CL-040-04';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
     verification 'TC-012-003' {
         doc /* No inbound message acts; Heartbeat negotiates the schema
@@ -412,7 +412,7 @@ package WstxUdp {
         objective {
             verify 'CL-040-03';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
     verification 'TC-012-004' {
         doc /* Target configuration and persistence
@@ -427,38 +427,38 @@ package WstxUdp {
             verify 'CL-040-02';
             verify 'CL-112-01';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
 
     // The UDP interface as WSJT-X 3.3.0-beta6 sends it (WstxUdp).
     requirement 'CL-112-01' {
         doc /* Instance name. Each server has one instance name, fixed for the life of the process and used as the id of every datagram (Heartbeat, Status, Decode, Clear, QSO Logged, Close, Logged ADIF). Base form: CAT radio "WSTX-Rust - <model>", the model of the saved CAT control ("WSTX-Rust - IC-7300"; a plain COMn endpoint is an IC-7300); no radio (control disabled, or manual operation without CAT) plain "WSTX-Rust"; native Flex profile "WSTX-Rust - <model> <slice letter>" ("WSTX-Rust - FLEX-6600 A"). A number is added only on a clash: the server takes the first form that no live server holds, the base form, then the base form followed by " 2", " 3" and so on ("WSTX-Rust - IC-7300 2", "WSTX-Rust 2"). When the name is fixed: CAT and no-radio profiles at start, after radio discovery (CL-044-15) and before the server serves; if discovery moves the profile to another radio, the name takes that radio's model. Native Flex profile: the first time its radio session is ready; before that the server sends no UDP datagram at all and GET /udp shows instance_name null; the name is kept for the process, also after a reconnect with another slice letter. A server holds its name until its process ends; a killed or crashed process frees it; two servers fixing their name at the same moment never get the same one. The name is not a setting: the UDP configuration and PUT /udp have no instance_name; GET /udp shows it read-only as top-level instance_name; Logging & Reporting shows it as text. A radio change in Settings while running does not change the name; it takes effect at the next start. Listed defaults: when the server cannot check (the lock folder cannot be created or opened) it takes the base form without a number and runs normally (as CL-044-15 without a usable lock file); with WSTX_UDP=off no name is claimed, because nothing is sent; the check sees only servers of the same Windows user (lock under %LOCALAPPDATA%), as WSJT-X's instance lock in the user's temp folder; a saved udp.json that still names instance_name keeps loading, the key is dropped, and the next save writes the file without it. Details: WstxUdp::InstanceName. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs; server/src/main.rs; client/contact.js"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs; server/src/main.rs; client/contact.js"; }
     }
     dependency CL_112_01_to_FR_012 from 'CL-112-01' to 'FR-012';
     requirement 'CL-112-02' {
         doc /* Status as WSJT-X sends it. Dial frequency: the confirmed CAT dial, else the operating selection's nominal frequency (selection.nominal_hz), else 0 (WSJT-X m_operatingFrequency, which follows the radio and, without CAT, the chosen band). Report: the contact's report, else the station's, written as WSJT-X's QString::number: "-9", "3", "0", "-24", never a "+" or a leading zero. Details: WstxUdp::OutboundRules. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs"; }
     }
     dependency CL_112_02_to_FR_012 from 'CL-112-02' to 'FR-012';
     requirement 'CL-112-03' {
         doc /* Decode delta time as WSJT-X sends it. Delta time is the record's dt_seconds rounded to one decimal: the value Band Activity shows (decimal rounding of the exact value, a tie away from zero; a magnitude below 0.05 is 0.0), sent as single precision. Unknown gives 0. This matches WSJT-X, which parses the time offset from its one-decimal decode line. A live record without a period start (uncorrelated) gives no Decode, and the cursor passes it, so it is never sent later. Details: WstxUdp::OutboundRules. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs"; }
     }
     dependency CL_112_03_to_FR_012 from 'CL-112-03' to 'FR-012';
     requirement 'CL-112-04' {
         doc /* Clear only on a band change, as WSJT-X. Clear is sent to each target that selects clear when the operating selection's band changes to another band. No Clear on: a mode change, a receive restart, a loss-only source epoch, a receive stop, a new live job on the same band, or any Erase of a browser list. Listed default (WSJT-X band_activity_cleared sends unconditionally): Clear is sent whether or not a Decode was sent since the last one. Listed default: a band change counts however it comes about: a band selection, or adoption of a CAT dial on another band (ReadbackSelectionAdoption); a frequency change within the same band is none. Details: WstxUdp::OutboundRules. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs"; }
     }
     dependency CL_112_04_to_FR_012 from 'CL-112-04' to 'FR-012';
     requirement 'CL-112-06' {
         doc /* Close at shutdown. On Ctrl+C, Ctrl+Break, console close, logoff and shutdown, the server sends one Close under its instance name to each active target that selects close. This runs after the ExitRelease transmit release and does not delay it: one non-blocking send per target, no wait. A killed process sends nothing, as WSJT-X when killed. A Flex server whose session was never ready has no name and sends nothing. Details: WstxUdp::OutboundRules, WstxTransmit::ExitRelease. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs; server/src/main.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs; server/src/main.rs"; }
     }
     dependency CL_112_06_to_FR_012 from 'CL-112-06' to 'FR-012';
     verification 'TC-112-001' {
@@ -472,7 +472,7 @@ package WstxUdp {
         objective {
             verify 'CL-112-01';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
     verification 'TC-112-002' {
         doc /* Status dial and report
@@ -485,7 +485,7 @@ package WstxUdp {
         objective {
             verify 'CL-112-02';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
     verification 'TC-112-003' {
         doc /* Decode delta time
@@ -498,7 +498,7 @@ package WstxUdp {
         objective {
             verify 'CL-112-03';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
     verification 'TC-112-004' {
         doc /* Clear on a band change only
@@ -511,7 +511,7 @@ package WstxUdp {
         objective {
             verify 'CL-112-04';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
     verification 'TC-112-006' {
         doc /* Close at shutdown
@@ -524,12 +524,12 @@ package WstxUdp {
         objective {
             verify 'CL-112-06';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
     requirement 'CL-112-05' {
         doc /* QSO Logged exchanges as WSJT-X. 1. The logged record carries its activity: when DirectLog stores a contact, the record gets the app field APP_WSTXRUST_ACTIVITY with the contact's activity at logging time, one of field_day, rtty, eu_vhf, na_vhf, ww_digi, arrl_digi, hound; it is absent for activity none, and a record without the field is activity none. In contacts.adi, the ADI export and the Logged ADIF datagram it is written after APP_WSTXRUST_CONTACT_ID and, when present, APP_WSTXRUST_SOURCE, and before any preserved unknown fields (WstxLogbook::LogRecord order). It is read back when the log loads. SaveContact accepts it; any other value is refused 400 log_invalid_field with field record.app_wstxrust_activity, as every other record field (WstxQsoControl::ContactWire), and nothing is stored. UpdateLogbook keeps a valid value and drops an invalid one, as it does for other contest values. Listed default (as for APP_WSTXRUST_SOURCE: the resave comparison covers the main field list only): a SaveContact resave of a stored contact id that differs only in the activity is 200 already_saved, with the stored record unchanged and no datagram; likewise a DirectLog store that differs only in the activity is already_saved and keeps the stored activity. Field name, values and these rules are listed defaults; the operator decided only that the activity is stored in the record. 2. Exchange sent and Exchange received are the exchange WSJT-X passes from its log dialog (widgets/mainwindow_qso.cpp captureLogQso, widgets/logqso.cpp xsent/xrcvd), chosen by the record's activity: na_vhf, ww_digi, arrl_digi: sent is the first 4 characters of MY_GRIDSQUARE, received the first 4 of GRIDSQUARE ("JN47" / "FN42"); a missing partner grid gives "", as WSJT-X with its default ZZ00 off. field_day, rtty, eu_vhf: the contact's exchange_sent / exchange_rcvd as ContestExchange / EuVhfExchange define them ("1A EMA" / "2B CT", "559 0003" / "579 MA", "550001 JN37VL" / "590003 IO91NP"), rebuilt from the stored record's contest fields, RST, grid and activity: the reverse of ContestExchange's and EuVhfExchange's log mapping. hound, none, or no field: "" / "". 3. DirectLog and SaveContact build them the same way, from the stored record, so the same record always gives the same exchanges; the explicit save exists to resend what a logging program missed. Details: WstxUdp::OutboundRules, WstxLogbook::LogRecord. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/udp.rs; server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact_http.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/udp.rs; server/src/logbook.rs; server/src/logbook_http.rs; server/src/contact_http.rs"; }
     }
     dependency CL_112_05_to_FR_012 from 'CL-112-05' to 'FR-012';
     verification 'TC-112-005' {
@@ -543,6 +543,6 @@ package WstxUdp {
         objective {
             verify 'CL-112-05';
         }
-        @TestedBy { test = "server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
 }

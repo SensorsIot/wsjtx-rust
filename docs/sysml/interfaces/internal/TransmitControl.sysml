@@ -15,7 +15,7 @@ package WstxTransmitControl {
     // #9 slice B transmit owner (delivered; consumer contract of WstxContact #10,
     // supervisor decision 2026-10-31 on #10). Implementation:
     // server/src/transmit/service.rs (owner), server/src/radio_control/actor.rs and
-    // executor.rs (PttControl), server/src/playback.rs (AudioPlayback),
+    // executor.rs (PttControl), server/src/transmit/playback.rs (AudioPlayback),
     // server/src/transmit_http.rs (station hardware, TransmitWire).
     enum def ArmState { enum disarmed; enum armed; }
     attribute def TransmitHaltUse {
