@@ -595,11 +595,17 @@ async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwis
             "/authorization.js",
             include_str!("../../../client/authorization.js"),
         ),
-        ("/recording.js", include_str!("../../../client/recording.js")),
+        (
+            "/recording.js",
+            include_str!("../../../client/recording.js"),
+        ),
         ("/logbook.js", include_str!("../../../client/logbook.js")),
         ("/contact.js", include_str!("../../../client/contact.js")),
         ("/style.css", include_str!("../../../client/style.css")),
-        ("/recording.css", include_str!("../../../client/recording.css")),
+        (
+            "/recording.css",
+            include_str!("../../../client/recording.css"),
+        ),
     ] {
         for (accept, gzip) in [
             (Some("gzip, deflate, br"), true),
