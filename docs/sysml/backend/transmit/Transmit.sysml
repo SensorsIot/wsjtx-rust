@@ -2,6 +2,7 @@ package WstxTransmitPart {
     private import ScalarValues::*;
     private import ModelNotes::Conflict;
     private import ModelBindings::ImplementedIn;
+    private import ModelBindings::DetailTests;
     private import WstxAudioStreams::AudioExchange;
     private import WstxModeProcessing::EncodeProcessing;
     private import WstxKeying::Keying;
@@ -17,6 +18,12 @@ package WstxTransmitPart {
              ProcessingAndHaltOwnership separates the priority halt from receive completion and
              cancellation and from display congestion. */
         @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs"; }
+        @DetailTests {
+            tests = "server/tests/transmit_service.rs";
+            covers = "the render fill decisions of AudioPlayback against a modelled 10 ms "
+                + "shared-mode engine with and without render delays "
+                + "(the_render_buffer_absorbs_render_delays_without_delaying_the_start_or_the_end)";
+        }
         port operations : ~TransmitControlPort;
         port contacts : ~MessageToSendPort;
         port encode : EncodeProcessing;

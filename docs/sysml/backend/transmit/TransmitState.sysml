@@ -368,9 +368,6 @@ package WstxTransmit {
              (j) A device that stops consuming half way (FT8, late FT8, FT4): released at audio
              end + 1000 ms (FT8 P+14140 <= P+14500, FT4 P+6340 <= P+7000) as audioStalled,
              disarmed deviceLost.
-             (k) The render fill decisions against a modelled 10 ms engine with and without
-             40 ms render delays: the 100 ms buffer starts the program within 30 ms and reports
-             the end within 100 ms without underrun.
              (l) A release that is not confirmed: indeterminate and recovered off-only.
              (m) A restart: disarmed (startup) with nothing pending.
              (n) Tx watchdog expiry and the Tune limit: watchdog expiry at the configured
