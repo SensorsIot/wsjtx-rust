@@ -96,6 +96,9 @@ guard:
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
 [model authoring and validation](../../tools/sysml/README.md#model-authoring-and-validation),
 run in an issue worktree by the worktree path rule under "Role: every" below.
+A definition that changes the model is written against the [finished model](Finished-Model.md),
+read before the model itself: every model text it writes meets its rules, and a statement
+that would break one comes to the coordinator as a question naming the rule.
 A browser control that writes to the radio or keys it states what it does before its
 scripts have loaded over the 32 kbit/s link and after they fail to load.
 
@@ -173,6 +176,8 @@ guard:
 The reviewer reads the candidate as [Reviews](Agent-Working-Rules.md#reviews) says, runs Node tests in the
 coder's form above, and posts its verdict in the
 posting form under "Role: every" below.
+For a candidate that changes the model it reads the [finished model](Finished-Model.md) first;
+a model text that breaks one of its rules is a finding naming the rule number.
 
 ### Role: harness-improver
 

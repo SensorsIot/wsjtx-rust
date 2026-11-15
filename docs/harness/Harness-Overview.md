@@ -8,6 +8,7 @@ contract; the references below are the constraints a change must respect.
 |---|---|
 | Product contract | [Functional model entry point](../sysml/Requirements.sysml); [exclusive authority selection](Project-Specifics.md#exclusive-functional-authority) |
 | Product component/interface boundaries | [Architecture](../sysml/Station.sysml) and its referenced behaviour/interface packages |
+| The finished model: the rules every model change and its check name (M1–M8) | [Finished model](Finished-Model.md); read first by the definer and the reviewer of a model change |
 | Product SysML artifacts and view scope | [Architecture model](../sysml/Station.sysml); [catalog and validation](../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings) |
 | Behavior baseline and provenance | [Functional model](../sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../README.md#license-and-attribution) |
 | Which machine is needed for what (HB9BLA has the transceiver) | [Machines and roles](Project-Specifics.md#machines-and-roles) |

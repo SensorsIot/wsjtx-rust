@@ -27,7 +27,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=61581a73754d5c8374b186ff55963a3d9df4b1bf50ca3ac1c7876011cee0ba3b -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=89fbbc43d51d33208e15e4d7bc5e7d34b04c26426fec6e846002dbc8a66077ae -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=bf29235135b4822ad900214d3fbaabbaeb2162eac7d70079321ba125a12f7e23 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "(python|py)(\\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\\.py( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\\.ps1( .*)?", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/experiments/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You answer one question under an issue's Open questions with an
@@ -82,4 +82,4 @@ The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for ev
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/experiments/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=1d2bbf5d1c1094fd9bed7ef2de09decaa6141d28015e9008c93c99da1735a169 -->
+<!-- harness-agent-v1 sha256=ba3f3d7877c71349faea682e0b2b178d283eb53d9a404fa02f00dd62bb106716 -->

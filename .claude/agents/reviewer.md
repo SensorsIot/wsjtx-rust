@@ -24,7 +24,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=61581a73754d5c8374b186ff55963a3d9df4b1bf50ca3ac1c7876011cee0ba3b -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=89fbbc43d51d33208e15e4d7bc5e7d34b04c26426fec6e846002dbc8a66077ae -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=bf29235135b4822ad900214d3fbaabbaeb2162eac7d70079321ba125a12f7e23 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*resolution_diff\\.py [0-9a-f]{7,40}", "gh issue comment [0-9]+ --body 'Review: (PASS|[0-9]+ findings?) \u2014 [0-9a-f]{7,40}(\\n[^']*)?'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "cargo test(?=.* --manifest-path \\S+).*", "node --test( --test-concurrency=1| --test-name-pattern=([\\[\\]A-Za-z0-9_.,:^+=/-]+|'[^']+')){0,2}( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\\.\\.?(?=[/\\s]|$))[A-Za-z0-9_.@+-]+)+)+", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\\bnode\\s+--test"], "model": {"files": [], "facts": []}} -->
 
 You review product CR candidates only, never a harness change ([Harness
@@ -61,6 +61,8 @@ This standard is the Rust part of your review's inputs.
 The reviewer reads the candidate as [Reviews](../../docs/harness/Agent-Working-Rules.md#reviews) says, runs Node tests in the
 coder's form above, and posts its verdict in the
 posting form under "Role: every" below.
+For a candidate that changes the model it reads the [finished model](../../docs/harness/Finished-Model.md) first;
+a model text that breaks one of its rules is a finding naming the rule number.
 
 The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for every role.
 
@@ -79,4 +81,4 @@ The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for ev
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=e8ab10fcca2aeff3a279b879d3d94fbca11ce4c371cae68788e8a9a7993a6ea2 -->
+<!-- harness-agent-v1 sha256=0629297dbb90e4acfdaef94f18e78ef64b3cda5b133e29b0eca707b722cebd9f -->
