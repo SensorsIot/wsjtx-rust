@@ -169,7 +169,9 @@ def stated(body: str, code: str, kind: str) -> tuple[list, list, list, set]:
     else:
         state_name, enum, status, state_feature = "coverage", "ImplementationState", "Status", "build"
         binding_name, bound, bound_feature = "implementation", "ImplementedIn", "module"
-    states = re.findall(r"\battribute\s+" + state_name + r"\s*:\s*" + enum + r"\s*=\s*" + enum + r"::(\w+)\s*;", body)
+    # The type and the value may carry package names (`WstxRequirements::ImplementationState`).
+    states = re.findall(r"\battribute\s+" + state_name + r"\s*:\s*(?:\w+::)*" + enum + r"\s*=\s*(?:\w+::)*" + enum
+                        + r"::(\w+)\s*;", body)
     bindings = re.findall(r'\battribute\s+' + binding_name + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
     methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
     # The feature word outside the read annotations, more often than the attribute form was
@@ -2179,9 +2181,10 @@ PROVEN_RULES = ("case-number", "clause-list", "cost", "dependency", "status")
 SEPARATORS = ("; ", ", ", ": ", ". ", " — ", " - ")
 STATUS_METADATA = ("Status", "Automation", "ImplementedIn", "TestedBy")
 STATUS_ATTRIBUTES = ("coverage", "automation", "method", "implementation", "executable")
-# Per kind of declaration, the attributes `stated` reads and the metadata form of each.
-STATUS_FORMS = {"requirement": {"coverage": "Status", "implementation": "ImplementedIn"},
-                "verification": {"automation": "Automation", "method": "Automation", "executable": "TestedBy"}}
+# The metadata form of each status attribute, on any element: (metadata, feature).
+STATUS_FORMS = {"coverage": ("Status", "build"), "implementation": ("ImplementedIn", "module"),
+                "automation": ("Automation", "run"), "method": ("Automation", "method"),
+                "executable": ("TestedBy", "test")}
 VERIFICATION_KINDS = ("VerificationCaseUsage", "VerificationCaseDefinition")
 QUOTED_IDENTITY = re.compile(r"'(" + IDENTITY + r")'")
 # A clause list: an optional `Proves `, then identities, each with the shorthand `references`
@@ -2365,6 +2368,77 @@ def group_level(facts: tuple, indices: list[int]):
     return int(costs[0]), places[0]
 
 
+def child_steps(facts, path: str) -> set[str]:
+    """The first path steps below `path` ("" the element itself) among `facts`."""
+    head = path + "/" if path else ""
+    return {fact[0][len(head):].split("/", 1)[0] for fact in facts
+            if fact[0] not in ("", "via") and fact[0].startswith(head) and len(fact[0]) > len(head)}
+
+
+def expression_value(facts, path: str):
+    """The value of the one feature value of the feature at `path` (raw facts): ("string",
+    text) for one string literal; ("enum", "<Enumeration>::<literal>") for a reference to an
+    enumeration literal, whatever package names it was written with; None for anything else."""
+    values = [step for step in child_steps(facts, path) if step.startswith("FeatureValue[")]
+    if len(values) != 1:
+        return None
+    value = (path + "/" if path else "") + values[0]
+    inner = child_steps(facts, value)
+    if inner == {"LiteralString[0]"}:
+        texts = [text for step, kind, feature, text in facts
+                 if step == value + "/LiteralString[0]" and kind == "attr" and feature == "value"]
+        return ("string", texts[0]) if len(texts) == 1 else None
+    if inner == {"FeatureReferenceExpression[0]"}:
+        targets = [target for step, kind, feature, target in facts if kind == "ref" and feature == "memberElement"
+                   and step == value + "/FeatureReferenceExpression[0]/Membership[0]"]
+        if len(targets) == 1 and len(targets[0]) == 1 and (literal := re.fullmatch(r"M:(?:.*::)?(\w+::\w+)", targets[0][0])):
+            return ("enum", literal[1])
+    return None
+
+
+def attribute_value(facts: tuple):
+    """The value of a status attribute from its own raw facts; None when the attribute holds
+    anything beyond its name, at most one typing, an empty multiplicity and one value."""
+    own = [(kind, feature) for path, kind, feature, _value in facts if path == ""]
+    if sorted(own) != [("attr", "declaredName"), ("kind", "")]:
+        return None
+    steps = child_steps(facts, "")
+    if sum(step.startswith("FeatureTyping[") for step in steps) > 1:
+        return None
+    for step in steps:
+        if step.startswith("OwningMembership[") and child_steps(facts, step) == {"Multiplicity[0]"} \
+                and not child_steps(facts, step + "/Multiplicity[0]"):
+            continue
+        if not step.startswith(("FeatureTyping[", "FeatureValue[")):
+            return None
+    return expression_value(facts, "")
+
+
+def metadata_values(facts: tuple, step: str, indices: list[int]) -> list:
+    """The (metadata, feature, value) of each feature of one status metadata usage (raw
+    facts), the value as `expression_value` gives it; None for a member that is no feature
+    with one value."""
+    name, usage = metadata_name(facts, step, indices), step + "/MetadataUsage[0]"
+    own = [facts[index] for index in indices]
+    if child_steps(own, step) != {"MetadataUsage[0]"}:
+        return [None]
+    found = []
+    for child in sorted(child_steps(own, usage)):
+        if child.startswith("FeatureTyping["):
+            continue
+        feature = f"{usage}/{child}/ReferenceUsage[0]"
+        redefined = [value for path, kind, attribute, value in own
+                     if path == feature + "/Redefinition[0]" and kind == "ref" and attribute == "redefinedFeature"]
+        target = re.fullmatch(r"M:(?:.*::)?" + re.escape(name or "") + r"::(\w+)", redefined[0][0]) \
+            if len(redefined) == 1 and len(redefined[0]) == 1 else None
+        if not child.startswith("FeatureMembership[") or child_steps(own, f"{usage}/{child}") != {"ReferenceUsage[0]"} \
+                or not target or any(not part.startswith(("Redefinition[", "FeatureValue[")) for part in child_steps(own, feature)):
+            found.append(None)
+            continue
+        found.append((name, target[1], expression_value(own, feature)))
+    return found
+
+
 def renumbered(facts: tuple, removed: set[str]) -> tuple:
     """`facts` without the owned elements of the first steps `removed`, the indices of the
     first steps after them moved down as if those elements were not written."""
@@ -2544,15 +2618,23 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
             docs = False
         proven_rules = set(rules) if docs else set()
         status = True
-        # A removed attribute counts only as the one the catalog reads for this kind of
-        # declaration, replaced by its own metadata form on the head.
-        replaced = STATUS_FORMS["verification" if identity and identity.startswith("TC-") else "requirement"]
-        written = {metadata_name(raw_h, step, indices) for step, indices in groups_h.items() if classes_h[step] == "status"}
-        if any(replaced.get(entries_b[member]["rel"].rsplit("::", 1)[-1]) not in written for member in attributes):
-            status = False
-        elif attributes or grouped(facts_b, groups_b, classes_b, "status") != grouped(facts_h, groups_h, classes_h, "status"):
-            stated_b = declared_facts(base, entries_b[key_b]["file"], identity) if identity else None
-            status = stated_b is not None and stated_b == declared_facts(head, entries_h[key_h]["file"], identity)
+        if attributes or grouped(facts_b, groups_b, classes_b, "status") != grouped(facts_h, groups_h, classes_h, "status"):
+            # On any element: the status metadata of the head carries the values of the base's
+            # status metadata and of each removed attribute in its metadata form, no more and
+            # no fewer, enumeration values compared without their package names.
+            values_b = [value for step, indices in groups_b.items() if classes_b[step] == "status"
+                        for value in metadata_values(raw_b, step, indices)]
+            values_b += [STATUS_FORMS[entries_b[member]["rel"].rsplit("::", 1)[-1]] + (attribute_value(entries_b[member]["facts"]),)
+                         for member in attributes]
+            values_h = [value for step, indices in groups_h.items() if classes_h[step] == "status"
+                        for value in metadata_values(raw_h, step, indices)]
+            status = all(value is not None and value[2] is not None for value in values_b + values_h) \
+                and Counter(values_b) == Counter(values_h)
+            # Where the catalog reads the declaration, what it reads stays equal; where it reads
+            # nothing of the element (no FR, CL or TC declaration), the values alone decide.
+            if status and identity:
+                status = declared_facts(base, entries_b[key_b]["file"], identity) \
+                    == declared_facts(head, entries_h[key_h]["file"], identity)
             if status:
                 proven_rules.add("status")
         return [rule for rule in PROVEN_RULES if rule in proven_rules], docs and status

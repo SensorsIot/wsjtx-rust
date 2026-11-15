@@ -306,7 +306,10 @@ class StatedOnceTests(unittest.TestCase):
                 self.assertEqual(entries["TC-001-001"], {"kind": "verification", "state": "implemented", "refs": ["FR-901", "CL-003-01"],
                                                          "bindings": ["tests/case.cjs"], "manual": False, "levels": []})
             with self.subTest("the case's own state wins over an implemented definition", definition=label):
-                for own in (automation("planned"), run("planned")):
+                # The qualified spelling of the attribute is read as the unqualified one (#219).
+                qualified = ("        attribute automation : WstxRequirements::AutomationState = "
+                             "WstxRequirements::AutomationState::planned;\n")
+                for own in (automation("planned"), run("planned"), qualified):
                     self.assertEqual(self.flat(target, own, typed, definition(stated))["TC-001-001"]["state"], "planned")
         for label, stated in (("attribute", automation("planned")), ("metadata", run("planned"))):
             for own in (automation("partial"), run("partial")):
@@ -328,7 +331,6 @@ class StatedOnceTests(unittest.TestCase):
         # A state or method the case names itself in a spelling that is not read is never
         # replaced by the definition's.
         unread_states = {
-            "attribute with a qualified state": "        attribute automation : AutomationState = WstxRequirements::AutomationState::planned;\n",
             "redefinition in the metadata": "        @Automation { :>> run = AutomationState::planned; }\n",
             "the metadata keyword": "        metadata Automation { run = AutomationState::planned; }\n",
             "the metadata keyword with a name": "        metadata own : ModelBindings::Automation { run = AutomationState::planned; }\n",

@@ -178,6 +178,66 @@ MID_BOLD = (MID_BOLD_BASE, edits(MID_BOLD_BASE, ("shown. **Level: 4 — Controll
             "proven cost 'TC-001-002' Requirements.sysml -> Requirements.sysml")
 # An attribute the catalog does not read for a case: in a base whose TC-001-002 holds one.
 FOREIGN_BASE = edits(BASE, (SECOND_AUTOMATION, '        attribute implementation : String = "server/a.rs";\n' + SECOND_AUTOMATION))
+# The status forms #205 left (#219), in a base that holds each: qualified coverage on a named
+# requirement without identity, on an attribute definition and on a clause; qualified automation
+# and an executable on a verification without identity; a free-text method.
+NAMED_COVERAGE = "        attribute coverage : ModelBindings::ImplementationState = ModelBindings::ImplementationState::partial;\n"
+POLICY_COVERAGE = "        attribute coverage : ModelBindings::ImplementationState = ModelBindings::ImplementationState::implemented;\n"
+GRAPH_AUTOMATION = "        attribute automation : ModelBindings::AutomationState = ModelBindings::AutomationState::implemented;\n"
+GRAPH_EXECUTABLE = '        attribute executable : String = "tools/sysml.py check; tools/sysml/tests/test_a.py";\n'
+OTHER_METHOD = '        attribute method : String = "manual independent contract correspondence review";\n'
+THIRD_COVERAGE = "        attribute coverage : ModelBindings::ImplementationState = ModelBindings::ImplementationState::target;\n"
+LEFT_BASE = edits(BASE, ("        doc /* Level 2 isolated model test. */\n",
+                         "        doc /* Level 2 isolated model test. */\n" + GRAPH_AUTOMATION + GRAPH_EXECUTABLE),
+                  ("        doc /* Level 2 other model test. */\n", "        doc /* Level 2 other model test. */\n" + OTHER_METHOD),
+                  ("        doc /* The third clause. */\n        attribute coverage : ImplementationState = ImplementationState::target;\n",
+                   "        doc /* The third clause. */\n" + THIRD_COVERAGE),
+                  ("    verification ResolvedArchitectureGraph {",
+                   "    requirement NamedClause {\n        doc /* A named requirement without identity. */\n" + NAMED_COVERAGE
+                   + "    }\n    attribute def Policy {\n" + POLICY_COVERAGE
+                   + "        attribute bounded : Boolean = true;\n    }\n    verification ResolvedArchitectureGraph {"))
+# P1: each left form converted alone in LEFT_BASE: (head, the one expected proven line).
+LEFT = {
+    "status qualified coverage on a named requirement": (
+        edits(LEFT_BASE, (NAMED_COVERAGE, "        @Status { build = ImplementationState::partial; }\n")),
+        "proven status NamedClause Requirements.sysml -> Requirements.sysml"),
+    "status qualified coverage on an attribute def": (
+        edits(LEFT_BASE, (POLICY_COVERAGE, "        @ModelBindings::Status { build = ModelBindings::ImplementationState::implemented; }\n")),
+        "proven status Policy Requirements.sysml -> Requirements.sysml"),
+    "status qualified coverage on a clause": (
+        edits(LEFT_BASE, (THIRD_COVERAGE, "        @Status { build = ImplementationState::target; }\n")),
+        "proven status 'CL-001-03' Requirements.sysml -> Requirements.sysml"),
+    "status qualified automation without identity": (
+        edits(LEFT_BASE, (GRAPH_AUTOMATION, "        @Automation { run = AutomationState::implemented; }\n")),
+        "proven status ResolvedArchitectureGraph Requirements.sysml -> Requirements.sysml"),
+    "status executable without identity": (
+        edits(LEFT_BASE, (GRAPH_EXECUTABLE, '        @TestedBy { test = "tools/sysml.py check; tools/sysml/tests/test_a.py"; }\n')),
+        "proven status ResolvedArchitectureGraph Requirements.sysml -> Requirements.sysml"),
+    "status free-text method": (
+        edits(LEFT_BASE, (OTHER_METHOD, '        @Automation { method = "manual independent contract correspondence review"; }\n')),
+        "proven status OtherGraph Requirements.sysml -> Requirements.sysml"),
+}
+# P2: the same conversions with a changed value, and a removal with no metadata, in LEFT_BASE:
+# (head, the start of the line that names the attribute).
+LEFT_UNPROVEN = {
+    "a named requirement's state changed": (
+        edits(LEFT_BASE, (NAMED_COVERAGE, "        @Status { build = ImplementationState::target; }\n")),
+        "missing NamedClause::coverage R Requirements.sysml"),
+    "a qualification naming another enumeration": (
+        edits(LEFT_BASE, (NAMED_COVERAGE, "        @Status { build = ModelBindings::AutomationState::partial; }\n")),
+        "missing NamedClause::coverage R Requirements.sysml"),
+    "an attribute def's state changed": (
+        edits(LEFT_BASE, (POLICY_COVERAGE, "        @Status { build = ImplementationState::partial; }\n")),
+        "missing Policy::coverage R Requirements.sysml"),
+    "an executable without identity changed": (
+        edits(LEFT_BASE, (GRAPH_EXECUTABLE, '        @TestedBy { test = "tools/sysml.py check"; }\n')),
+        "missing ResolvedArchitectureGraph::executable R Requirements.sysml"),
+    "a free-text method changed": (
+        edits(LEFT_BASE, (OTHER_METHOD, '        @Automation { method = "manual contract correspondence review"; }\n')),
+        "missing OtherGraph::method R Requirements.sysml"),
+    "a named requirement's coverage removed without its metadata": (
+        edits(LEFT_BASE, (NAMED_COVERAGE, "")), "missing NamedClause::coverage R Requirements.sysml"),
+}
 # P2: a difference as today: (base, head) with exit 1 and no proven line.
 UNPROVEN = {
     "another case's number": (BASE, edits(BASE, ("See TC-001-002 and", "See and"))),
@@ -266,6 +326,7 @@ class ProvenRemovalTests(unittest.TestCase):
         cases["clause-list shorthand"] = SHORTHAND[:2]
         cases["cost bold wording mid-line"] = MID_BOLD[:2]
         cases.update(UNPROVEN)
+        cases.update({name: (LEFT_BASE, head) for name, (head, _line) in {**LEFT, **LEFT_UNPROVEN}.items()})
         cases["all five"] = (BASE, ALL)
         names = list(cases)
         pairs = [(sha(base), sha(head)) for base, head in cases.values()]
@@ -289,6 +350,7 @@ class ProvenRemovalTests(unittest.TestCase):
         expected = {name: line for name, (_head, line) in SINGLE.items()}
         expected["clause-list shorthand"] = SHORTHAND[2]
         expected["cost bold wording mid-line"] = MID_BOLD[2]
+        expected.update({name: line for name, (_head, line) in LEFT.items()})
         for name, line in expected.items():
             with self.subTest(name):
                 code, lines = self.results[name]
@@ -299,7 +361,7 @@ class ProvenRemovalTests(unittest.TestCase):
     # P2: a difference as today, exit 1 and no proven line
     # Proves: CL-014-22; TC-DOC-020
     def test_p2_an_unproven_removal_is_a_difference(self):
-        for name in UNPROVEN:
+        for name in list(UNPROVEN) + list(LEFT_UNPROVEN):
             with self.subTest(name):
                 code, lines = self.results[name]
                 self.assertEqual(code, 1, self.shown(name))
@@ -317,7 +379,8 @@ class ProvenRemovalTests(unittest.TestCase):
                                  ("two lines joined", "changed 'TC-001-002' doc "),
                                  ("an attribute the catalog does not read for the kind",
                                   "missing 'TC-001-002'::implementation R Requirements.sysml"),
-                                 ("a bold wording at a line start with a wrong pair", "changed 'TC-001-003' ")):
+                                 ("a bold wording at a line start with a wrong pair", "changed 'TC-001-003' "),
+                                 *((name, prefix) for name, (_head, prefix) in LEFT_UNPROVEN.items())):
                 self.assertTrue(any(line.startswith(prefix) for line in self.results[name][1]), self.shown(name))
 
     # P3: all five rules in one case at once; and a marked commit doing this
