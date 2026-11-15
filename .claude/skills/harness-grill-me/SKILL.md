@@ -12,5 +12,5 @@ Filesystem path relative to this entrypoint: `../../../harness/core/skills/grill
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=a824925deaf7beffb7441aa8451822dc543ae09e5af1e009b92c948d87318e35 -->
-<!-- harness-forwarder-v1 sha256=527c79f59cfe5408f0950e97c952fe1d88c07af1706fca72183853d7d773e337 -->
+<!-- canonical-source-sha256=0fce303f2fe11d29a2e24ba2a078d2f76ce8baa98f3bd5a2a660e1177c3e9b7e -->
+<!-- harness-forwarder-v1 sha256=bda3637aba19fb3bad6501a5699123fab3937cd3d5bbf6504ed257e8d7b1372d -->
