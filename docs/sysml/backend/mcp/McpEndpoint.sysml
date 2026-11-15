@@ -6,7 +6,7 @@ package WstxMcpEndpoint {
     private import WstxRequirements::'FR-007';
     private import WstxRequirements::AutomationState;
     private import WstxRequirements::'FR-008';
-    private import WstxTransmit::'CL-039-06';
+    private import WstxQsoTransmit::'CL-039-06';
     private import WstxMcpInterface::McpEndpoint;
     private import WstxMcpInterface::ToolCatalog;
     private import WstxMcpInterface::McpCredential;

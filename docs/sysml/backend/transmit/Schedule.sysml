@@ -4,8 +4,8 @@ package WstxTransmitSchedule {
     private import WstxRequirements::'FR-006';
     private import WstxRequirements::'FR-005';
     private import WstxRequirements::AutomationState;
-    private import WstxTransmit::'TC-006-003';
-    private import WstxTransmit::ClockState;
+    private import WstxTransmitClock::'TC-006-003';
+    private import WstxPeriodTiming::ClockState;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
     private import ModelBindings::Status;

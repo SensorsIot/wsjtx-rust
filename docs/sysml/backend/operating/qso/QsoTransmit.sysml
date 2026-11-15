@@ -4,8 +4,9 @@ package WstxQsoTransmit {
     private import WstxRequirements::'FR-007';
     private import WstxRequirements::'FR-008';
     private import WstxRequirements::AutomationState;
-    private import WstxTransmit::'TC-111-015';
-    private import WstxTransmit::'CL-039-06';
+    private import WstxTransmit::'CL-111-01';
+    private import WstxTransmit::'CL-111-03';
+    private import WstxOperatingLayout::'CL-111-04';
     private import WstxOperatingChain::TxSlot;
     private import WstxQsoControl::TxWatchdog;
     private import ModelBindings::TestLevel;
@@ -300,4 +301,39 @@ package WstxQsoTransmit {
     dependency transmitOwner from TransmitSubmission to WstxTransmitPart::TransmitService;
     dependency transmitPromise from TxWatchdog to WstxRequirements::'FR-008';
     dependency busyWatchdogClause from TxWatchdog to WstxContact::'CL-097-06';
+    requirement 'CL-039-06' {
+        doc /* The Tx watchdog limits the repetitions of one message (WstxQsoControl::TxWatchdog, 2026-11-06) and is never paused by automation; only a different message, a new contact or an operator Enable Tx restarts its count, and only an Enable Tx or a strategy selection from the browser ends its stop. Only a human action in the browser is an operator action (an Enable Tx, accepted contact request or strategy selection from the browser), decided by the request principal the station reads from its credential at the auth boundary (#58: an MCP client has its own token and is never the browser principal on any route, including a direct /contact/command); commands of an automation run and MCP requests (including starting or restarting a run) never end a stop or extend the limit; their Enable Tx is refused tx_watchdog after a stop or when no browser action was seen this boot; only the browser may change the watchdog setting (set_watchdogs from MCP or automation is refused operator_required); a new target chosen by a run is a different message, so the watchdog bounds a run per message, not in total. At the limit Enable Tx goes off without a halt and a pounce or MCP policy run stops tx_watchdog, while a strategy run's own contact has no stop and is bounded by CL-039-21 instead; the station and its automation never use HALT in normal flow (HALT is the operator's emergency stop: HALT button, Alt+H, MCP wstx_transmit_halt). HALT from any source stops everything; grant, clock, period and safety-revision checks are unchanged; there is no band hopping. Details: WstxStrategy::WatchdogFromOperator; WstxQsoControl::TxWatchdog. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/automation.rs; server/src/mcp.rs; server/src/authorization.rs"; }
+    }
+    dependency CL_039_06_to_FR_008 from 'CL-039-06' to 'FR-008';
+    verification 'TC-039-005' {
+        doc /* The Tx watchdog stop is never ended by automation
+             Setup: as TC-039-004; for the unit cases the #9 Core on the hardware double; counts per WstxQsoControl::TxWatchdog (#39, 2026-11-06).
+             Steps: (1) browser limit 2; a pounce on K1ABC started from the browser (a strategy run has no stop: TC-039-022); publish CQ K1ABC at E; transmit the call at E+15 s and its repeat at E+45 s; reach E+75 s; cancel, select a strategy from the browser and publish another CQ. (2) MCP and browser: an MCP Enable Tx before any browser action; browser limit 1; an MCP Enable Tx (CQ) transmitted at E+15 s; MCP set_frequency; MCP set_watchdogs 99; reach E+45 s; a station calls HB9BLA in period E+30 s; an MCP Enable Tx; an MCP run start and a matching CQ; a browser action and an MCP Enable Tx. (3) MCP route: browser limit 1, an MCP Enable Tx and its CQ, MCP-principal commands through the tool and straight to /contact/command, then MCP Enable Tx on both. Unit: automatic arm before any operator action; activity, limit 2, automatic arm; operator arm.
+             Expected: (1) remaining calls 1 after the first call (the run's selection does not extend it), the request at E+75 s is never keyed, the run stops tx_watchdog, tx_expired true, last cause tx_watchdog and halt_state unchanged (no halt); the selection arms again. (2) refused tx_watchdog; not spent after the one CQ and the MCP command, set_watchdogs refused operator_required, the next CQ never keyed and spent, still spent after the caller (an answer after a stop ends nothing), the MCP Enable Tx refused tx_watchdog, the MCP run stops tx_watchdog unarmed with no further key; still spent after an unrelated browser action; after a browser Enable Tx not spent and the MCP Enable Tx arms. (3) after the stop spent after every MCP request, both Enable Tx refused tx_watchdog, one key in total. Unit: spent before any action; not spent after the activity; remaining 2 after the automatic arm and after the operator arm.
+             transmit double; no RF. */
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective {
+            verify 'CL-039-06';
+        }
+        @TestedBy { test = "server/src/strategy_tests.rs"; }
+    }
+    verification 'TC-111-015' {
+        doc /* Live on the transceiver
+             Setup: HB9BLA, the deployed candidate, the operator's browser, the transceiver on an antenna.
+             Steps: double-click a CQ and run a QSO to its log; Halt during a transmission; limit 1, then Reset; Enter on a typed callsign; a band change at the radio's dial during a QSO; Tune with the state off.
+             Expected (observation, the radio's Tx indicator): "Tx off · QSO complete", nothing keyed in the next 4 own periods; "Tx off · halted"; the second send is not keyed, Reset sends it once more; the typed callsign is called in the next own period; "Tx off · band changed", nothing keyed on the new band for 2 own periods; Tune keys with the state off.
+             Not run by the automated gate. */
+        @TestLevel { cost = 5; location = TestLocation::station; }
+        @Automation { run = AutomationState::planned; method = "manual"; }
+        objective {
+            verify 'CL-111-01';
+            verify 'CL-111-02';
+            verify 'CL-111-03';
+            verify 'CL-111-04';
+            verify 'CL-111-08';
+        }
+    }
 }
