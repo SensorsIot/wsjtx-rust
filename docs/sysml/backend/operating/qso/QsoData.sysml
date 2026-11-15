@@ -290,14 +290,14 @@ package WstxContact {
     requirement 'CL-039-21' {
         doc /* A strategy or contest run never stops its own contact for the Tx watchdog; the leave rule bounds it instead (CL-039-23, CL-097-04), and while the target has not answered Tx moves by the Tx move rule per PSK case (CL-097-05); a target that has answered keeps its slot for the whole exchange. WD:n is the Tx watchdog only: the run's own contact shows the leave label instead (CL-097-04). Manual operation, a pounce and an MCP policy run keep the stop at N, and so does a run's CQ; unattended or past the run limit the stop at N is back at once. Details: WstxStrategy::StrategyWatchdog, TxMoveRule, HearingFeed, FreeTxSlot, LeaveCountLabel; WstxQsoControl::TxWatchdog. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/automation.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/freeslot.rs; server/src/pskr.rs"; }
+        @ImplementedIn { module = "server/src/automation.rs; server/src/contact.rs; server/src/contact_http.rs; server/src/operating/qso/freeslot.rs; server/src/operating/qso/pskr.rs"; }
     }
     dependency CL_039_21_to_FR_007 from 'CL-039-21' to 'FR-007';
     dependency CL_039_21_to_FR_008 from 'CL-039-21' to 'FR-008';
     requirement 'CL-039-23' {
         doc /* Exit (operator grill 2026-11-07, Q6, Q7, Q13-Q16, Q19-Q28). A repetition is a fresh complete publication of the target's parity after an own transmission without progress; any message of the target to my call is progress, also a repeated one, except a selected caller repeating the message it was selected on. Both situations count alike: he repeats, because he does not hear us (decoded, a CQ again or another station), and we repeat, because we do not hear him (not decoded). The run leaves a station by the strategy's leave mode and gives it the retry pause (CL-097-04); a busy target's calls are paused (CL-097-06). Nothing changes before an exit criterion, even for a more valuable station; a caller of my call (in a contest only a non-dupe caller) is answered at once while the target has not answered, with Calling stations are answered on. A contest dupe caller never ends a stay. Details: WstxStrategy::LeaveRule, QuietTime, StrategyRun; WstxAutoControl::ContestRun. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/automation.rs; server/src/strategy.rs; server/src/contest.rs; server/src/pskr.rs"; }
+        @ImplementedIn { module = "server/src/automation.rs; server/src/strategy.rs; server/src/contest.rs; server/src/operating/qso/pskr.rs"; }
     }
     dependency CL_039_23_to_FR_007 from 'CL-039-23' to 'FR-007';
     dependency CL_039_23_to_FR_020 from 'CL-039-23' to 'FR-020';
@@ -311,7 +311,7 @@ package WstxContact {
         objective {
             verify 'CL-039-21';
         }
-        @TestedBy { test = "server/src/strategy_tests.rs; server/src/contact_tests.rs; server/src/freeslot_tests.rs; tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "server/src/strategy_tests.rs; server/src/contact_tests.rs; server/src/operating/qso/freeslot_tests.rs; tests/ui-operating.test.cjs"; }
     }
     // ---------------------------------------------------------------- #55 DXCC from cty.dat
     requirement 'CL-055-01' {
@@ -410,7 +410,7 @@ package WstxContact {
     }
     requirement 'CL-097-05' {
         doc /* (#97 decision 6, operator #94 and #90) Tx frequency while a run calls a target that has not answered, per PSK Reporter case (he reports and hears us; he reports and does not hear us; he does not report or it is unknown): stay, move every call, or move every n-th call (a busy-paused call not counted). A move goes to another quiet slot (never the current one), never within 50 Hz of a frequency he reports decoding in my Tx parity (no fallback: with none left Tx stays and it is tried at the next call), never below 500 Hz; Hold Tx on moves Tx alone, off Rx and Tx together; after his answer Tx never moves in that exchange. Auto never chooses a slot below 500 Hz; the upper edge (a signal reaching above 2400 Hz) is allowed but loses every tie. The open-slot marks still mark from 300 Hz. Details: WstxStrategy::TxMoveRule, FreeTxSlot, HearingFeed, PskrUse. */
-        @ImplementedIn { module = "server/src/automation.rs; server/src/freeslot.rs; server/src/pskr.rs"; }
+        @ImplementedIn { module = "server/src/automation.rs; server/src/operating/qso/freeslot.rs; server/src/operating/qso/pskr.rs"; }
         @Status { build = ImplementationState::partial; }
     }
     dependency CL_097_05_to_FR_007 from 'CL-097-05' to 'FR-007';
@@ -440,7 +440,7 @@ package WstxContact {
         objective {
             verify 'CL-097-05';
         }
-        @TestedBy { test = "server/src/strategy97_tests.rs; server/src/freeslot_tests.rs; server/src/pskr_tests.rs"; }
+        @TestedBy { test = "server/src/strategy97_tests.rs; server/src/operating/qso/freeslot_tests.rs; server/src/operating/qso/pskr_tests.rs"; }
     }
     // #11 slice B (CL-011-02..04): FT4 in the operating workflow through the shared
     // contact engine; detailed contract in WstxContact (StationOperatingMode,
@@ -606,7 +606,7 @@ package WstxContact {
     requirement 'CL-039-20' {
         doc /* A read-only PSK Reporter MQTT feed tells the station whether the current target hears my call (with the SNR it reported) and which frequencies it decodes, with their parity: two exact subscriptions (my call as sender; the strategy or contest target as receiver while Use PSK Reporter is on, replaced when the target changes), never a wildcard from a decoded call, TLS against compiled-in roots, an identifiable client id, bounded reconnect backoff, bounded memory, spots expiring after 600 s, a spot of another band or mode ignored. Settings shows the master switch (on by default) and the status, pushed; the Use PSK Reporter toggle next to Auto (on by default, kept across restarts) decides whether runs use the feed, and while it is on the QSO pane shows "hears us" (spot age and reported SNR, or no, or unknown) and "open at his end" with the chosen slot. It sends nothing but the handshake, keep-alive and subscriptions; everything works without it: no connection is unknown, never an operator error, and receive and the 50 ms station step never wait on it. Details: WstxHearingFeed::HearingFeed, PskrUse. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/pskr.rs; server/src/main.rs; server/src/contact_http.rs; server/src/recording.rs; client/contact.js"; }
+        @ImplementedIn { module = "server/src/operating/qso/pskr.rs; server/src/main.rs; server/src/contact_http.rs; server/src/recording.rs; client/contact.js"; }
     }
     dependency CL_039_20_to_FR_007 from 'CL-039-20' to 'FR-007';
     dependency CL_039_20_to_FR_012 from 'CL-039-20' to 'FR-012';
@@ -621,7 +621,7 @@ package WstxContact {
         objective {
             verify 'CL-039-20';
         }
-        @TestedBy { test = "server/src/pskr_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/pskr_tests.rs"; }
     }
     verification 'TC-039-021' {
         doc /* Settings shows the PSK Reporter status, pushed
@@ -639,7 +639,7 @@ package WstxContact {
     requirement 'CL-039-08' {
         doc /* Hold Tx is on by default (operator decision 2026-11-04, #39; consistent with the split-frequency rule): a station starts with settings.hold_tx true, in manual operation and for a strategy alike, so selecting or answering a station moves Rx and never Tx; Tx stays on the operator's chosen slot until an explicit Tx action (the Tx input, a waterfall Tx pointer action, MCP set_frequency, the Hound's own rule). Automation (#39 holdtx, operator 2026-11-07: "Hold Tx on: the automation never moves Tx", corrected to "if the other station does not hear us we are allowed to change the frequency to a quiet place, but never to the Rx frequency"; this replaces "a run's free slot" as an explicit Tx action): with Hold Tx on a strategy or contest run or a pounce keeps Tx at a selection, before its CQ and when answering a caller from it, and moves Tx in exactly two cases: the station selected or answered is within 50 Hz of Tx (then Tx goes to the nearest slot 50 Hz away from it, round 1 Q2), and a Tx move of the Tx move rule (CL-097-05); Rx stays on the station. The operator may switch it off with set_hold_tx; the choice lasts for the station's running session, since Hold Tx is not saved (CL-110-01 point 8); the run reads it at each decision. Details: WstxStrategy::FreeTxSlot. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/contact.rs; client/contact.js; server/src/automation.rs; server/src/freeslot.rs"; }
+        @ImplementedIn { module = "server/src/contact.rs; client/contact.js; server/src/automation.rs; server/src/operating/qso/freeslot.rs"; }
     }
     dependency CL_039_08_to_FR_007 from 'CL-039-08' to 'FR-007';
     verification 'TC-039-009' {
@@ -658,7 +658,7 @@ package WstxContact {
     requirement 'CL-039-09' {
         doc /* A strategy or contest run or a pounce calls from the quietest Tx slot: the slot where the target can answer us, a free slot on my side, judged in every decision (a selection, a slot check, a CQ) in my Rx periods only (his Tx parity; #66 operator 2026-11-08 "judge the parity I will receive in"), and only in recent ones: the counted periods among the last 4 periods of my Rx parity that are due: ended on the clock, or earlier, while in progress, once their complete decodes are published, never before they start (#66 "Only if recent"; #89 operator 2026-11-09 "Count once decoded": a decision on the publication of my newest Rx period counts it; every contest Run CQ decided in waiting without a fresh publication, at Auto on, when a reason ends, when a manual contact ends or Esc gives a caller up, after a completion or a leaving, waits for that publication and decides at once when it arrives, at the latest when the period in progress ends, CL-039-05 decision timing), periods I transmitted in never counted. Slots are compared with each other across the whole passband (#66, operator 2026-11-08 "We want to have the quiet slots overall. Across the entire bandwidth of FT8."), not by their own usual level: in each counted period a slot's rise is its level minus the WSJT-X passband floor fitted to that period (so the receive filter's roll-off does not favour the edges), and its value is its largest rise over the counted periods clamped at 0 (#66, operator 2026-11-08 "At or under floor = free": a slot at or below the floor is free, so a sharp filter knee the floor cannot follow never makes the edges win); compared in whole dB, the lowest value winning; a tie keeps the current Tx when it is among the quietest, else goes nearer the current Tx, then lower; there is no threshold. A slot whose signal overlaps a station decoded in a counted period (less than one signal width from his decoded frequency) is left out while any other is free. Where known it is free at his end: at least 50 Hz from every frequency his PSK Reporter spots show him decoding, counting only spots from my Tx parity (ignored when that leaves no slot). Hold Tx off: Rx = Tx, the slot sets both, decided at each selection, before a CQ and at each move of the Tx move rule (CL-097-05). Hold Tx on (CL-039-08): Rx stays on the station and the slot sets Tx alone, only at a move of the Tx move rule, or as the nearest slot 50 Hz away when the station is within 50 Hz of Tx; a CQ goes out on the held Tx. Every slot the run chooses lies from 500 Hz inside the Tx range (FT8 500..2650, FT4 500..2610), a slot reaching above 2400 Hz losing every tie, and at least 50 Hz from the called station's signal and from Rx; without power data the current Tx is kept. Details: WstxStrategy::FreeTxSlot. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js"; }
+        @ImplementedIn { module = "server/src/operating/qso/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js"; }
     }
     dependency CL_039_09_to_FR_007 from 'CL-039-09' to 'FR-007';
     dependency CL_039_09_to_FR_020 from 'CL-039-09' to 'FR-020';
@@ -673,7 +673,7 @@ package WstxContact {
         objective {
             verify 'CL-039-09';
         }
-        @TestedBy { test = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs; server/src/automation_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/freeslot_tests.rs; server/src/strategy_tests.rs; server/src/automation_tests.rs"; }
     }
     verification 'TC-039-030' {
         doc /* Goals, windows, value order, callers and the WPX prefix
@@ -810,7 +810,7 @@ package WstxContact {
             verify 'CL-039-23';
             verify 'CL-039-09';
         }
-        @TestedBy { test = "server/src/pskr_tests.rs; server/src/strategy_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/pskr_tests.rs; server/src/strategy_tests.rs"; }
     }
     verification 'TC-039-049' {
         doc /* Hold Tx on in a run: Tx stays, Rx on the station, Tx alone moves when he does not hear us
@@ -840,7 +840,7 @@ package WstxContact {
         objective {
             verify 'CL-039-09';
         }
-        @TestedBy { test = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/freeslot_tests.rs; server/src/strategy_tests.rs"; }
     }
     verification 'TC-039-051' {
         doc /* Live Hold Tx in Auto on HB9BLA
@@ -1220,7 +1220,7 @@ package WstxContact {
     requirement 'CL-065-01' {
         doc /* (#65, replaced by #82, operator 2026-11-09: "open slots are shown all the time as a part of the waterfall"; "we want to signal the other station a free frequency on our side when he will be transmitting"; "we just want to mark open slots, nothing else on screen. auto mode could use a quality ranking for its decision which of them to select") Open Tx slots: the station builds, with or without an automation run, a QSO or Auto, the open slots of my Rx parity, the periods the other station transmits in: in a QSO (Enable Tx on, my own CQ included, or a contact in progress; by a run or by hand) the contact's Rx parity; otherwise, while only listening, the parity of the period in progress, the Rx parity for transmitting in the next period, so it alternates every period. Counted periods, floor and value are #66's (WstxStrategy::FreeTxSlot: the last 4 periods of that parity that are due, ended or in progress with their complete decodes published (#89),the largest rise above the WSJT-X passband floor clamped at 0 in whole dB), of the station's live job and operating mode, from the last station band change on. A Tx frequency of the 10 Hz candidate grid inside the Tx range (FT8 300..2650, FT4 300..2610) is open when its value is 0 and its signal (FT8 50 Hz, FT4 90 Hz wide) overlaps no station decoded in a counted period; no other filter, no fallback, no ranking, no limit. The open signals join into open ranges [lo_hz, hi_hz) (overlapping ones join, touching ones stay separate). It is built at each period start, again when the decodes of a counted period are published (operator 2026-11-09, "Rebuild on decodes": the build at a period start counts the period just ended before its decodes exist), also the complete publication of the period in progress of the judged parity (#89), and at once when a QSO starts or ends or the live job, mode or band changes. The value null (no live receive) or {at_utc_ms, mode, rx_parity, qso, periods (the counted number), open [[lo_hz, hi_hz], ...]} is the top-level free_tx_slots of GET /automation and the MCP automation view, and is pushed at each build as free_tx_slots.state to every Detailed and Thin peer (at most 1024 bytes; once as null when it becomes null; once to a peer that subscribes while a value exists; never to Off), also while automation is never used, within the Thin link envelope. Auto's choice and tx_slot are unchanged (its own ranking, not shown); #65's five best of each run decision, its run_id and "no list without a run" go. Details: WstxAutoControl::FreeTxSlots (D18), WstxMcp::AutomationWire, WstxStationLink::PushedStationState. */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/freeslot.rs; server/src/automation.rs; server/src/main.rs; server/src/contact_http.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/freeslot.rs; server/src/automation.rs; server/src/main.rs; server/src/contact_http.rs"; }
     }
     dependency CL_065_01_to_FR_020 from 'CL-065-01' to 'FR-020';
     dependency CL_065_01_to_FR_007 from 'CL-065-01' to 'FR-007';
@@ -1237,7 +1237,7 @@ package WstxContact {
         objective {
             verify 'CL-065-01';
         }
-        @TestedBy { test = "server/src/freeslot_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/freeslot_tests.rs"; }
     }
     verification 'TC-065-002' {
         doc /* free_tx_slots in the snapshot and on the socket
@@ -1298,7 +1298,7 @@ package WstxContact {
             verify 'CL-065-01';
             verify 'CL-039-22';
         }
-        @TestedBy { test = "server/src/freeslot_tests.rs; server/src/strategy_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/freeslot_tests.rs; server/src/strategy_tests.rs"; }
     }
     verification 'TC-066-003' {
         doc /* Live quiet slots on HB9BLA
@@ -1327,7 +1327,7 @@ package WstxContact {
         objective {
             verify 'CL-065-01';
         }
-        @TestedBy { test = "server/src/freeslot_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/freeslot_tests.rs"; }
     }
     verification 'TC-082-002' {
         doc /* The judged parity and when the value is built
@@ -1394,7 +1394,7 @@ package WstxContact {
             verify 'CL-039-09';
             verify 'CL-065-01';
         }
-        @TestedBy { test = "server/src/freeslot_tests.rs; server/src/newest_rx_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/freeslot_tests.rs; server/src/operating/qso/newest_rx_tests.rs"; }
     }
     verification 'TC-089-002' {
         doc /* Decisions on the newest Rx period (the 12:24:29 reproduction)
@@ -1407,7 +1407,7 @@ package WstxContact {
         objective {
             verify 'CL-039-09';
         }
-        @TestedBy { test = "server/src/newest_rx_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/newest_rx_tests.rs"; }
     }
     verification 'TC-089-003' {
         doc /* Open slots rebuilt on the publication of the period in progress
@@ -1420,7 +1420,7 @@ package WstxContact {
         objective {
             verify 'CL-065-01';
         }
-        @TestedBy { test = "server/src/newest_rx_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/newest_rx_tests.rs"; }
     }
     verification 'TC-089-004' {
         doc /* A contest strategy's CQ waits for the newest Rx period
@@ -1434,7 +1434,7 @@ package WstxContact {
             verify 'CL-039-09';
             verify 'CL-039-05';
         }
-        @TestedBy { test = "server/src/newest_rx_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/newest_rx_tests.rs"; }
     }
     verification 'TC-089-005' {
         doc /* Live decisions on the newest Rx period on HB9BLA
@@ -1579,7 +1579,7 @@ package WstxContact {
         objective {
             verify 'CL-081-01';
         }
-        @TestedBy { test = "server/src/autofinish_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/autofinish_tests.rs"; }
     }
     verification 'TC-081-002' {
         doc /* What is a started QSO
@@ -1592,7 +1592,7 @@ package WstxContact {
         objective {
             verify 'CL-081-01';
         }
-        @TestedBy { test = "server/src/autofinish_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/autofinish_tests.rs"; }
     }
     verification 'TC-081-003' {
         doc /* Every run end that lets a started QSO finish
@@ -1605,7 +1605,7 @@ package WstxContact {
         objective {
             verify 'CL-081-01';
         }
-        @TestedBy { test = "server/src/autofinish_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/autofinish_tests.rs"; }
     }
     verification 'TC-081-004' {
         doc /* The finishing QSO is bounded by the Tx watchdog, not by the run
@@ -1618,7 +1618,7 @@ package WstxContact {
         objective {
             verify 'CL-081-01';
         }
-        @TestedBy { test = "server/src/autofinish_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/autofinish_tests.rs"; }
     }
     verification 'TC-081-005' {
         doc /* What still ends a finishing QSO at once
@@ -1631,7 +1631,7 @@ package WstxContact {
         objective {
             verify 'CL-081-01';
         }
-        @TestedBy { test = "server/src/autofinish_tests.rs"; }
+        @TestedBy { test = "server/src/operating/qso/autofinish_tests.rs"; }
     }
     verification 'TC-081-006' {
         doc /* The Auto button says what Auto off does
@@ -1677,7 +1677,7 @@ package WstxContact {
     dependency CL_097_04_to_FR_008 from 'CL-097-04' to 'FR-008';
     requirement 'CL-097-06' {
         doc /* (#97 decision 7, operator #93 "we pause counting ... till the called station finishes its other qso") Busy pause: the called station is busy from his message to another call carrying a grid, report or R-report (a hashed call not filled with my call is another call) until he ends that QSO with RR73, RRR or 73 to another call, a CQ, free text or a message to my call, however long he is not decoded. The station keeps calling, on a split frequency: when he sends to another call and my signal is not 50 Hz clear of his (FT8 100 Hz, FT4 140 Hz between the lower edges), Tx moves to the nearest clear candidate from 500 Hz (also clear of decoded stations and of his PSK Reporter frequencies while one is free), Rx stays on him, also with Hold Tx on; a refused move stops as the WSJT-X rule does; an operator's own Tx wins until his next message to another call. This replaces the WSJT-X stop for every contact that pauses (a manual contact; a run's own contact with busy pause on), also while it is not pausing. A call is paused when he is busy at its stop point (1.2 s into the period) and is not counted: in a run with busy pause on, not toward leaving or Tx moves; in a manual contact, not toward the Tx watchdog. At most N paused calls per message (N the Tx watchdog limit), so nothing the partner does extends the bound; a pounce, an MCP policy run and a run with busy pause off never pause and keep the WSJT-X stop; unattended there is no pause. The contact snapshot carries busy_with and paused_calls within GET /contact's 4096 bytes, and the QSO pane shows "<call> busy with <other>, not counted (k/N)". Details: WstxOperatingChain::BusyPartner, TxWatchdog, AutoSequence; WstxStrategy::BusyPause, FreeTxSlot. */
-        @ImplementedIn { module = "server/src/contact.rs; server/src/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js"; }
+        @ImplementedIn { module = "server/src/contact.rs; server/src/operating/qso/freeslot.rs; server/src/automation.rs; server/src/contact_http.rs; client/contact.js"; }
         @Status { build = ImplementationState::partial; }
     }
     dependency CL_097_06_to_FR_007 from 'CL-097-06' to 'FR-007';

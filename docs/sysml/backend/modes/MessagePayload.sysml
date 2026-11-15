@@ -65,7 +65,7 @@ package WstxOfflineDecode {
         in payload77 : String;
         out record : ResultRecord;
         @ImplementedIn {
-            module = "server/src/decoder/payload.rs; server/src/decoder/hashes.rs";
+            module = "server/src/decoder/payload.rs; server/src/modes/decoder/hashes.rs";
         }
         @FollowsSource {
             reference = "QEX FT4/FT8 sections 2 to 5 and appendix A; WSJT-X 3.3.0-beta5 packjt77";
@@ -124,7 +124,7 @@ package WstxOfflineDecode {
     requirement 'CL-024-01' {
         doc /* #24 S1. The station keeps one session hash table per station instance, fed by every concrete call decoded or sent and by my own call, and shows a hashed call as <CALL> once it resolves, otherwise <...>, as packjt77 does (this reverses the earlier rule of the payload function WstxOfflineDecode::UnpackPayload that a hash is never filled in). It generates and accepts the WSJT-X message sets for exactly one nonstandard or compound call with the bracket rules of genStdMsgs and refuses two nonstandard calls. It accepts free text of at most 13 characters (0.0) in an operator-edited slot. Every transmitted text packs unaltered. Slice S1a: the hash table and fill-in (WstxOfflineDecode::HashResolution); slice S1b: compound/nonstandard QSOs through the contact engine (WstxStandardQso::StandardMessageSet, SelectDecodedRow, EnterDxStation), the nonstandard DX-call fill-in rule, free text in an operator-edited slot with Tx5 editable from the operating screen, and Band Activity marking <MYCALL> rows as to me. The 0.1 DXpedition DX-call rule (hashdx10) is #24 S4a, TC-024-010. Station automation (Auto Call, Auto CQ, Pounce, the strategy) and Call 1st stay standard-only: a run does not start with a nonstandard profile callsign (not_ready call). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/decoder/hashes.rs; server/src/decoder/payload.rs; server/src/recording.rs; server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; client/contact.js; client/recording.js"; }
+        @ImplementedIn { module = "server/src/modes/decoder/hashes.rs; server/src/decoder/payload.rs; server/src/recording.rs; server/src/transmit/service.rs; server/src/contact.rs; server/src/contact_http.rs; client/contact.js; client/recording.js"; }
     }
     dependency CL_024_01_to_FR_024 from 'CL-024-01' to 'FR-024';
     dependency CL_024_01_to_FR_004 from 'CL-024-01' to 'FR-004';
@@ -139,7 +139,7 @@ package WstxOfflineDecode {
         objective {
             verify 'CL-024-01';
         }
-        @TestedBy { test = "server/src/decoder/hashes_test.rs; server/tests/transmit_service.rs"; }
+        @TestedBy { test = "server/src/modes/decoder/hashes_test.rs; server/tests/transmit_service.rs"; }
     }
     verification 'TC-024-002' {
         doc /* The station's live publication fills in hashed calls
@@ -166,7 +166,7 @@ package WstxOfflineDecode {
         objective {
             verify 'CL-024-01';
         }
-        @TestedBy { test = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; server/src/decoder/hashes_test.rs; server/src/strategy_tests.rs"; }
+        @TestedBy { test = "server/src/contact_tests.rs; server/src/contact_http_tests.rs; server/src/modes/decoder/hashes_test.rs; server/src/strategy_tests.rs"; }
     }
     verification 'TC-024-010' {
         doc /* The 0.1 DXpedition DX-call rule (hashdx10)
@@ -179,7 +179,7 @@ package WstxOfflineDecode {
         objective {
             verify 'CL-024-01';
         }
-        @TestedBy { test = "server/src/decoder/hashes_test.rs"; }
+        @TestedBy { test = "server/src/modes/decoder/hashes_test.rs"; }
     }
     verification 'TC-024-004' {
         doc /* Tx5 free text and <MYCALL> rows in the operating screen

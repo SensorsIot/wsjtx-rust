@@ -1052,7 +1052,7 @@ attribute def ActivityOrdering {
         objective {
             verify 'CL-050-08';
         }
-        @TestedBy { test = "tests/ui-operating.test.cjs; tests/receive-page.test.cjs; server/src/receive_http_tests.rs"; }
+        @TestedBy { test = "tests/ui-operating.test.cjs; tests/frontend/receive-page.test.cjs; server/src/receive_http_tests.rs"; }
     }
     verification 'TC-054-002' {
         doc /* Fixed level mapping, Zero/Gain sliders, Flatten and the spectrum line option
@@ -1459,7 +1459,7 @@ attribute def ActivityOrdering {
             verify 'CL-010-07';
             verify 'CL-010-08';
         }
-        @TestedBy { test = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs; tests/contact.test.cjs; tests/receive-page.test.cjs; server/src/receive_http_tests.rs"; }
+        @TestedBy { test = "tests/receive-integration.test.cjs; tests/ui-operating.test.cjs; tests/contact.test.cjs; tests/frontend/receive-page.test.cjs; server/src/receive_http_tests.rs"; }
     }
     verification 'TC-007-009' {
         doc /* Laptop operating screen (#37)
@@ -1768,7 +1768,7 @@ attribute def ActivityOrdering {
              covers browser logout and revoke-all) and server/src/auth_tests.rs, including
              plaintext runtime-token operating access, logout/revoke fencing of every
              operating HTTP route and WS upgrade, foreign grant refusal and commission
-             receipts; station-authority unit tests in server/src/authorization_tests.rs.
+             receipts; station-authority unit tests in server/src/frontend/authorization_tests.rs.
              Injected-time restart: the store-level cases there use an injected clock (a
              transport usable at 28799 s and refused at exactly 28800 s, a challenge 400 days
              on, a reopen keeping grants and receipts with no transport), and
@@ -1778,7 +1778,7 @@ attribute def ActivityOrdering {
              unautomated, and TC-022-010 observes controlled cookie expiry live. */
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
-        @TestedBy { test = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/authorization_tests.rs"; }
+        @TestedBy { test = "tests/profiles.test.cjs; server/src/auth_tests.rs; server/src/frontend/authorization_tests.rs"; }
         objective {
             verify 'CL-022-01';
             verify 'CL-022-02';
@@ -1899,7 +1899,7 @@ attribute def ActivityOrdering {
         objective {
             verify 'CL-057-01';
         }
-        @TestedBy { test = "server/src/receive_http_tests.rs; tests/receive-latency.test.cjs"; }
+        @TestedBy { test = "server/src/receive_http_tests.rs; tests/frontend/receive-latency.test.cjs"; }
     }
     verification 'TC-057-003' {
         doc /* Live decode display on HB9BLA
@@ -2024,7 +2024,7 @@ attribute def ActivityOrdering {
     dependency CL_074_01_to_FR_019 from 'CL-074-01' to 'FR-019';
     verification 'TC-074-001' {
         doc /* Reproduction: a page open across a station restart
-             Setup: the actual isolated candidate server restarted under the test's control with the page left open (as the #22 restart in tests/receive-page.test.cjs), Chromium at 1366x768, no radio; the page's GET /strategy of the new socket held back 2 s by the test (the order a thin link gives), other requests unchanged; requests recorded.
+             Setup: the actual isolated candidate server restarted under the test's control with the page left open (as the #22 restart in tests/frontend/receive-page.test.cjs), Chromium at 1366x768, no radio; the page's GET /strategy of the new socket held back 2 s by the test (the order a thin link gives), other requests unchanged; requests recorded.
              Steps: select "Farthest new on band" with Auto off and wait for "Strategy Farthest new on band · Auto off"; restart the server; record the line #station-automation, the selector and the Auto button at each change from the reconnect until 3 s after GET /strategy answered; then open a second page on the same server and read the same three.
              Expected (oracles: the station's state after a restart, active None and Auto off, WstxStrategy D2; the freshly opened second page): the line never shows "Strategy Farthest new on band" after the new boot is learned; at the end the line is "Automation idle", the selector None, and line, selector value and Auto pressed state, disabled state and title equal those of the second page; no GET /automation after the restart (no automation.state while automation is unused); no page error. Red on the parent: the line keeps "Strategy Farthest new on band · Auto off".
              no radio or RF. */

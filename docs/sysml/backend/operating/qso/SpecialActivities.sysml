@@ -40,7 +40,7 @@ package WstxSpecialActivities {
     requirement 'CL-024-02' {
         doc /* #24 S2a. An operator-chosen special activity of none, WW Digi, ARRL Digi or NA VHF generates "CQ WW"/"CQ TEST" and the grid exchange (Tx2 grid, Tx3 "R grid"), sequences on the received grid and R+grid, logs on RRR/RR73/73 like any contact and shows dupes through the existing worked-before indication per band and mode; UDP Status carries the activity as WSJT-X's special operation value; station automation does not start in a contest activity (observe only). Details: WstxSpecialActivities::GridExchangeContest. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/contact.rs; server/src/contact_http.rs; server/src/udp.rs; client/contact.js"; }
+        @ImplementedIn { module = "server/src/contact.rs; server/src/contact_http.rs; server/src/operating/qso/udp.rs; client/contact.js"; }
     }
     dependency CL_024_02_to_FR_024 from 'CL-024-02' to 'FR-024';
     verification 'TC-024-005' {

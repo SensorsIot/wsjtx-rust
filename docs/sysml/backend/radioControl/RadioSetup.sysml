@@ -22,7 +22,7 @@ package WstxRadioSetup {
     requirement 'CL-044-01' {
         doc /* POST /radio/detect {v 1, profile_id, boot_id, keying_inhibit_confirmed} (operating access and Origin as POST /receive/stop, exact keys, empty query) enumerates the present COM ports (port, friendly name, USB VID/PID, device instance), at most one detection at a time (a second is refused busy). Opening a port can pulse DTR/RTS before they are disabled (RadioIO: no guarantee of no initial USB-line glitch; USB SEND/CW/RTTY OFF or an independent inhibit before open), so detection is refused confirmation_required unless keying_inhibit_confirmed is true, the operator's confirmation that USB SEND and USB keying are OFF or the radio is on a dummy load; and only ports of a known radio USB bridge (Silicon Labs CP210x, VID 10C4 PID EA60) are opened, others are reported not_radio_bridge and never opened. Each such port is probed read-only: it is opened exclusively under the same per-device ownership claim as the CAT owner, with DTR and RTS disabled before the first byte and kept disabled, at 9600, 19200, 38400 and 115200 baud; at each rate it sends the CI-V broadcast "read transceiver ID" FE FE 00 E0 19 00 FD and, when no reply arrives, the same command addressed to each address of the model table. A reply FE FE E0 <address> 19 00 <id> FD identifies the address, the model and the rate; the station's own echo, collision (FC) frames, other traffic, garbage and timeouts are not replies. Probing never writes any other frame than these ID reads and the menu reads of CL-044-03: never a transmit, frequency, mode or setting command. Model table: 94h IC-7300 (station CAT supported), A4h IC-705, A2h IC-9700, 98h IC-7610 (identified, configured manually); Yaesu, Kenwood and Elecraft text CAT is not probed (listed as manual). A port held by another program or station reports in_use; the port of this station's running CAT owner (CL-022-03/04) is never opened a second time: it is reported from that owner, whose ID and menu reads go through the owner's single I/O lease. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_control/setup.rs; server/src/radio_control/windows.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/radio_setup.rs; server/src/main.rs"; }
+        @ImplementedIn { module = "server/src/radio_control/setup.rs; server/src/radioControl/windows.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/radio_setup.rs; server/src/main.rs"; }
     }
     dependency CL_044_01_to_FR_009 from 'CL-044-01' to 'FR-009';
     dependency CL_044_01_to_FR_001 from 'CL-044-01' to 'FR-001';
@@ -30,7 +30,7 @@ package WstxRadioSetup {
     requirement 'CL-044-02' {
         doc /* For each identified radio the detection matches the USB audio endpoints to its serial port by the shared USB parent: an active capture or render endpoint matches when its device has the same Windows container ID as the serial device (not the null container), or when the nearest USB device of both has the same parent hub and that parent is not a root hub. Exactly one matching capture and one matching render endpoint are proposed by their WASAPI endpoint IDs with their friendly names for display; none or several leave that side unproposed (state none or ambiguous). The response holds the proposal of the single supported radio found (none or several: proposal null): {port COMn, model, civ_address, baud, control {mode cat, endpoint icom7300://COMn?baud=<rate>&radio=<address>&controller=e0, ptt cat}, audio {input_device, output_device}}. Applying it is the operator's PUT /profile and the existing receive-only confirmation (CL-022-03); detection writes nothing. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_control/setup.rs; server/src/radio_control/windows.rs; server/src/audio/windows.rs; server/src/radio_setup.rs"; }
+        @ImplementedIn { module = "server/src/radio_control/setup.rs; server/src/radioControl/windows.rs; server/src/audio/windows.rs; server/src/radio_setup.rs"; }
     }
     dependency CL_044_02_to_FR_002 from 'CL-044-02' to 'FR-002';
     dependency CL_044_02_to_FR_001 from 'CL-044-02' to 'FR-001';
@@ -105,7 +105,7 @@ package WstxRadioSetup {
     requirement 'CL-044-10' {
         doc /* The radio profile holds the radio settings the station manages: settings.radio {agc FAST|MID|SLOW}, present exactly when settings.control is CAT with an endpoint that is a supported IC-7300 CI-V configuration (the only radio with a known CI-V AGC command; every other control has no settings.radio key and the setting is hidden). GET /profile and the PUT response carry it; PUT /profile refuses settings.radio for an unmanaged control (400 invalid_settings, field radio) and settings.radio.agc outside FAST/MID/SLOW (400 invalid_settings, field settings.radio.agc); a PUT without settings.radio keeps the saved value, or takes SLOW for a newly managed radio. settings.radio is not part of settings.control, so changing it never changes the receive-only CAT confirmation's checked control (CL-022-03); like every profile save it advances the revision, which reconnects CAT. Migration: a profile saved without radio whose control is IC-7300 CAT is read with agc SLOW (the FT8/FT4 default); other profiles stay without it; the file is rewritten only by a later save. The station applies the saved AGC with one read-compare-write-verify exchange (CL-044-09; CI-V read FE FE <address> E0 16 12 FD, write FE FE <address> E0 16 12 <01|02|03> FD) through its CAT owner: once per ready connection (a refusal busy, e.g. the lease held or the radio reporting TX, is tried again after 2 s; any other outcome ends the attempt for that connection) and on each FT8 or FT4 mode selection inside the selection's CAT reservation, after its receive setup and before receive restarts. Nothing is sent while the transmitter is armed, tuning or transmitting (the connection attempt waits for disarm). An AGC failure never fails the selection. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/profile.rs; server/src/main.rs; server/src/radio_agc.rs; server/src/radio_control/setup.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/recording.rs; server/src/authorization_http.rs"; }
+        @ImplementedIn { module = "server/src/profile.rs; server/src/main.rs; server/src/radioControl/radio_agc.rs; server/src/radio_control/setup.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/recording.rs; server/src/authorization_http.rs"; }
     }
     dependency CL_044_10_to_FR_009 from 'CL-044-10' to 'FR-009';
     dependency CL_044_10_to_FR_001 from 'CL-044-10' to 'FR-001';
@@ -121,7 +121,7 @@ package WstxRadioSetup {
             verify 'CL-044-09';
             verify 'CL-044-10';
         }
-        @TestedBy { test = "server/src/radio_agc_tests.rs"; }
+        @TestedBy { test = "server/src/radioControl/radio_agc_tests.rs"; }
     }
     // Operator requirement 2026-11-06 (#44 comment 6679345317, from #22): pragmatic discovery.
     requirement 'CL-044-15' {
@@ -212,7 +212,7 @@ package WstxRadioSetup {
             verify 'CL-044-10';
             verify 'CL-044-11';
         }
-        @TestedBy { test = "server/src/radio_agc_tests.rs; server/src/radio_setup_tests.rs"; }
+        @TestedBy { test = "server/src/radioControl/radio_agc_tests.rs; server/src/radio_setup_tests.rs"; }
     }
     verification 'TC-044-011' {
         doc /* AGC on HB9BLA

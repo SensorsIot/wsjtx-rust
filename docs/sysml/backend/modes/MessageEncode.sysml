@@ -216,7 +216,7 @@ package WstxMessageEncode {
              invalid or altered messages and out-of-range audio frequencies are
              explicit refusals. Details: WstxMessageEncode::PackMessage, ChannelFrame, Ft8WaveformContract. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/transmit/mod.rs; server/src/transmit/pack.rs; server/src/transmit/waveform.rs"; }
+        @ImplementedIn { module = "server/src/modes/transmit/mod.rs; server/src/transmit/pack.rs; server/src/modes/transmit/waveform.rs"; }
     }
     dependency CL_009_01_to_FR_005 from 'CL-009-01' to 'FR-005';
 
@@ -288,7 +288,7 @@ package WstxMessageEncode {
              Details: WstxMessageEncode::Ft4ChannelFrame, Ft4WaveformContract, Ft4Schedule,
              PlanTransmitStart. */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/transmit/mod.rs; server/src/transmit/waveform.rs; server/src/transmit/schedule.rs"; }
+        @ImplementedIn { module = "server/src/modes/transmit/mod.rs; server/src/modes/transmit/waveform.rs; server/src/transmit/schedule.rs"; }
     }
     dependency CL_011_01_to_FR_005 from 'CL-011-01' to 'FR-005';
     dependency CL_011_01_to_FR_006 from 'CL-011-01' to 'FR-006';

@@ -61,7 +61,7 @@ package WstxLogbook {
         objective {
             verify 'CL-010-04';
         }
-        @TestedBy { test = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs; server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; server/src/contact_tests.rs; server/src/contact_http_tests.rs; tests/contact.test.cjs; tests/ui-operating.test.cjs; server/src/log/udp_tests.rs"; }
     }
     verification 'TC-011-002' {
         doc /* ADI interchange, Update logbook from ADIF and boundaries
@@ -73,7 +73,7 @@ package WstxLogbook {
         objective {
             verify 'CL-010-04';
         }
-        @TestedBy { test = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs; server/src/udp_tests.rs"; }
+        @TestedBy { test = "server/src/logbook_tests.rs; server/src/logbook_http_tests.rs; tests/ui-operating.test.cjs; server/src/log/udp_tests.rs"; }
     }
 
     // ---------------------------------------------------------------- the same station again
