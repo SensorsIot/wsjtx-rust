@@ -175,7 +175,7 @@ alex:
   buffer_per_coder: 2
   fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60, test: 120}
   spend_per_day_usd: 200
-  first: [136, 138, 141, 139, 140, 143]   # the product stop (#205 comment 6882277210): the conversions without a product prerequisite, in the stop's order; #142 and #144-#147 after their prerequisites (operator first)
+  first: [136, 221, 138, 141, 139, 140, 143]   # the product stop (#205 comment 6882277210): the conversions without a product prerequisite, in the stop's order; #142 and #144-#147 after their prerequisites (operator first)
   only_first: true
   priority_labels: [P1, P2, P3]
   skip_labels: [paused]
