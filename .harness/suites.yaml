@@ -67,8 +67,9 @@
   select:
   - docs/sysml/
   - server/src/decoder/
+  - server/src/modes/decoder/
   - server/src/transmit/pack.rs
-  - server/src/transmit/mod.rs
+  - server/src/modes/transmit/mod.rs
   - server/src/lib.rs
   - server/src/model_values.rs
   - server/Cargo.toml
@@ -102,7 +103,7 @@
   - package-lock.json
   select:
   - server/src/main.rs
-  - server/src/link_log.rs
+  - server/src/web/link_log.rs
   - client/app.js
   - client/index.html
   - client/style.css
@@ -125,7 +126,7 @@
   timing: true
   timing_inputs:
   - server/src/main.rs
-  - server/src/link_log.rs
+  - server/src/web/link_log.rs
   - server/src/http_compression.rs
   - client/app.js
   - client/index.html
@@ -273,9 +274,9 @@
 
 - suite: recording-fixtures
   cost: 2
-  run: node --test --test-concurrency=1 tests/recording-fixtures.test.cjs
+  run: node --test --test-concurrency=1 tests/profile/recording-fixtures.test.cjs
   paths:
-  - tests/recording-fixtures.test.cjs
+  - tests/profile/recording-fixtures.test.cjs
   - tools/recording-fixtures.cjs
   - fixtures/decoder/
   - package.json
@@ -287,7 +288,7 @@
   - docs/sysml/shared/Units.sysml
   - tests/model-values.cjs
   select:
-  - tests/recording-fixtures.test.cjs
+  - tests/profile/recording-fixtures.test.cjs
   - tools/recording-fixtures.cjs
   - fixtures/decoder/
   - package.json
@@ -531,6 +532,7 @@
     --skip live_busy_period_publishes_every_decode_promptly
   paths:
   - server/src/decoder/
+  - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/decoder_signal.rs
   - fixtures/decoder/
@@ -577,6 +579,7 @@
     parsers: [text, json]
   paths:
   - server/src/decoder/
+  - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/decoder_signal.rs
   - fixtures/decoder/
@@ -601,23 +604,23 @@
   timing_inputs:
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/shared/Units.sysml
-  - server/src/decoder/apriori.rs
-  - server/src/decoder/baseband.rs
-  - server/src/decoder/bitmetrics.rs
-  - server/src/decoder/channel.rs
-  - server/src/decoder/coarse_ft4.rs
-  - server/src/decoder/fit.rs
-  - server/src/decoder/history.rs
+  - server/src/modes/decoder/apriori.rs
+  - server/src/modes/decoder/baseband.rs
+  - server/src/modes/decoder/bitmetrics.rs
+  - server/src/modes/decoder/channel.rs
+  - server/src/modes/decoder/coarse_ft4.rs
+  - server/src/modes/decoder/fit.rs
+  - server/src/modes/decoder/history.rs
   - server/src/decoder/mod.rs
-  - server/src/decoder/parallel.rs
+  - server/src/modes/decoder/parallel.rs
   - server/src/decoder/payload.rs
-  - server/src/decoder/physical_ft4.rs
-  - server/src/decoder/physical_sync.rs
+  - server/src/modes/decoder/physical_ft4.rs
+  - server/src/modes/decoder/physical_sync.rs
   - server/src/decoder/search.rs
-  - server/src/decoder/snr.rs
+  - server/src/modes/decoder/snr.rs
   - server/src/decoder/subtraction.rs
-  - server/src/decoder/synchronization.rs
-  - server/src/decoder/waveform.rs
+  - server/src/modes/decoder/synchronization.rs
+  - server/src/modes/decoder/waveform.rs
   - server/tests/decoder_signal.rs
   - fixtures/decoder/quality-cases.json
   - fixtures/decoder/manifest.json
@@ -647,6 +650,7 @@
   - server/src/audio/
   - server/src/receive.rs
   - server/src/decoder/
+  - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/audio_receive.rs
   - fixtures/radio/native_ft8_fixture.rs
@@ -661,6 +665,7 @@
   - server/src/audio/
   - server/src/receive.rs
   - server/src/decoder/
+  - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/audio_receive.rs
   - fixtures/radio/native_ft8_fixture.rs
@@ -687,11 +692,12 @@
   - server/src/audio.rs
   - server/src/audio/
   - server/src/decoder/
+  - server/src/modes/decoder/
   - server/src/lib.rs
   - client/
   - tests/receive-integration.test.cjs
-  - tests/receive-latency.test.cjs
-  - tests/receive-page.test.cjs
+  - tests/frontend/receive-latency.test.cjs
+  - tests/frontend/receive-page.test.cjs
   - tests/page-watch.cjs
   - tests/live-page-check.cjs
   - fixtures/radio/native_ft8_fixture.rs
@@ -714,11 +720,12 @@
   - server/src/audio.rs
   - server/src/audio/
   - server/src/decoder/
+  - server/src/modes/decoder/
   - server/src/lib.rs
   - client/
   - tests/receive-integration.test.cjs
-  - tests/receive-latency.test.cjs
-  - tests/receive-page.test.cjs
+  - tests/frontend/receive-latency.test.cjs
+  - tests/frontend/receive-page.test.cjs
   - tests/page-watch.cjs
   - tests/live-page-check.cjs
   - fixtures/radio/native_ft8_fixture.rs
@@ -730,7 +737,7 @@
   - package.json
   - package-lock.json
   build: cargo test --release --locked --bin wstx-rust --no-run
-  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. WSTX_SAMPLE_DIR names the busy recording of the page kept across a restart and periods (tests/receive-page.test.cjs, its own loopback server, no transmit). Cheap seeded manager/epoch/ring cases remain in debug. The #57 busy-period latency case runs in live-station-latency."
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. WSTX_SAMPLE_DIR names the busy recording of the page kept across a restart and periods (tests/frontend/receive-page.test.cjs, its own loopback server, no transmit). Cheap seeded manager/epoch/ring cases remain in debug. The #57 busy-period latency case runs in live-station-latency."
 
 - suite: live-station-latency
   cost: 2
@@ -744,8 +751,9 @@
   - server/src/audio.rs
   - server/src/audio/
   - server/src/decoder/
+  - server/src/modes/decoder/
   - client/recording.js
-  - tests/receive-latency.test.cjs
+  - tests/frontend/receive-latency.test.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -760,10 +768,10 @@
   build: cargo test --release --locked --bin wstx-rust --no-run
   run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture && cargo test --release --locked --bin wstx-rust receive_http_tests::resource_station_process_delta_and_owner_release -- --exact --ignored --nocapture"
   # Reachability (harness reachability.py): the busy-period case starts
-  # tests/receive-latency.test.cjs and prints its output only when it fails.
+  # tests/frontend/receive-latency.test.cjs and prints its output only when it fails.
   reach:
     launches:
-      live_native_busy_period_rows_promptly: [tests/receive-latency.test.cjs]
+      live_native_busy_period_rows_promptly: [tests/frontend/receive-latency.test.cjs]
   paths:
   - server/src/main.rs
   - server/src/profile.rs
@@ -776,10 +784,11 @@
   - server/src/audio.rs
   - server/src/audio/
   - server/src/decoder/
+  - server/src/modes/decoder/
   - server/src/lib.rs
   - client/
   - tests/receive-integration.test.cjs
-  - tests/receive-latency.test.cjs
+  - tests/frontend/receive-latency.test.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
@@ -795,14 +804,15 @@
 
 - suite: native-flex
   cost: 2
-  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/native-flex.test.cjs
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/flexAdapter/native-flex.test.cjs
   paths: *browser-inputs
   select:
   - server/src/flex/
+  - server/src/flexAdapter/
   - server/src/profile.rs
   - server/src/recording.rs
   - server/src/selection_http.rs
-  - server/src/receive_startup.rs
+  - server/src/receive/receive_startup.rs
   - client/recording.js
   - server/src/flex_http.rs
   - server/src/authorization.rs
@@ -813,7 +823,7 @@
   - client/app.js
   - client/contact.js
   - client/index.html
-  - tests/native-flex.test.cjs
+  - tests/flexAdapter/native-flex.test.cjs
   - tests/flex-emulator.cjs
   - tests/flex-live-check.cjs
   needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; real candidate stations with disposable HTTPS profiles against the independent loopback native-API emulator (TCP/UDP on 127.0.0.1 only, discovery on per-test loopback ports) and the verified WSTX_DECODER_VECTORS for one FT8 period. No FlexRadio, SmartSDR/CAT/DAX program, audio device, broadcast, LAN discovery or network service.
@@ -828,15 +838,15 @@
   - server/src/recording.rs
   - server/src/receive.rs
   - server/src/receive_http.rs
-  - server/src/receive_diagnostics.rs
-  - server/src/receive_startup.rs
+  - server/src/receive/receive_diagnostics.rs
+  - server/src/receive/receive_startup.rs
   - server/src/contact_http.rs
   - server/src/logbook.rs
   - server/src/logbook_http.rs
   - server/src/strategy.rs
   - server/src/contest.rs
-  - server/src/freeslot.rs
-  - server/src/udp.rs
+  - server/src/operating/qso/freeslot.rs
+  - server/src/operating/qso/udp.rs
   - server/src/transmit_http.rs
   - client/app.js
   - client/index.html
@@ -879,6 +889,7 @@
   - server/src/logbook_http.rs
   - server/src/transmit_http.rs
   - server/src/transmit/
+  - server/src/modes/transmit/
   - client/contact.js
   - client/logbook.js
   - client/recording.js
@@ -932,13 +943,15 @@
   - docs/sysml/
   - server/src/main.rs
   - server/src/http_compression.rs
-  - server/src/selection.rs
+  - server/src/station/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
   - server/src/radio_http.rs
   - server/src/radio_http_tests.rs
   - server/src/radio_control/
-  - server/src/cat_lifecycle.rs
+  - server/src/radioControl/
+  - server/src/transmit/codec.rs
+  - server/src/radioControl/cat_lifecycle.rs
   - server/src/recording.rs
   - server/src/receive.rs
   - server/src/receive_http.rs
@@ -979,11 +992,13 @@
   timing_inputs:
   - server/src/main.rs
   - server/src/http_compression.rs
-  - server/src/selection.rs
+  - server/src/station/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
-  - server/src/cat_lifecycle.rs
+  - server/src/radioControl/cat_lifecycle.rs
   - server/src/radio_control/
+  - server/src/radioControl/
+  - server/src/transmit/codec.rs
   - server/src/receive.rs
   - server/src/receive_http.rs
   - server/src/spectrum.rs
@@ -1005,11 +1020,11 @@
 
 - suite: mcp
   cost: 2
-  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/mcp.test.cjs
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/mcp/mcp.test.cjs
   paths:
   - server/
   - client/
-  - tests/mcp.test.cjs
+  - tests/mcp/mcp.test.cjs
   - tests/support.cjs
   - Cargo.toml
   - Cargo.lock
@@ -1020,11 +1035,11 @@
   - server/src/main.rs
   - server/src/mcp.rs
   - server/src/automation.rs
-  - server/src/freeslot.rs
+  - server/src/operating/qso/freeslot.rs
   - server/src/authorization.rs
   - server/src/authorization_http.rs
   - client/authorization.js
-  - tests/mcp.test.cjs
+  - tests/mcp/mcp.test.cjs
   - tests/support.cjs
   - Cargo.toml
   - Cargo.lock
