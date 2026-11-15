@@ -124,6 +124,7 @@ guard:
     - 'python -m unittest discover -s \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml/tests( -t \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?'
     - 'python -m unittest discover -s \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/deploy/tests( -t \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?'
     - 'python \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\.py oracle'
+    - 'python \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\.py paths \S+'
   deny:
     - '^(?!(python3?|py)(\.exe)? \S*red_on_parent\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
 ```

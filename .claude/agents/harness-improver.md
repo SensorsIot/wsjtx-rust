@@ -26,7 +26,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=c53021eb7ded71cc13835515bd10a3c300298949ca5f63a97135d720cb1f8c63 -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=ed35bf5c1e9c435db60de15c41e61b6a31290ccf6bc3853d4a5887c343be578c -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=89fbbc43d51d33208e15e4d7bc5e7d34b04c26426fec6e846002dbc8a66077ae -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (log|show|diff)( .*)?", "gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py history( --flakes| --conflicts)?( --json)?", "(python3?|py)(\\.exe)? \\S*report_cr\\.py (--meter|--gate)( --(since|until) [0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?| --period (all|day|week)| --json)*", "gh issue comment [0-9]+ --repo [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+ --body '[^']*'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "\\s(--repo(?=[\\s=]|$)|-R)(?!\\sSensorsIot/harness(\\s|$))"], "model": {"files": [], "facts": []}} -->
 
 You run the [improvement](../../harness/core/skills/improvement/SKILL.md) review of the harness; the
@@ -74,4 +74,4 @@ The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for ev
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `\s(--repo(?=[\s=]|$)|-R)(?!\sSensorsIot/harness(\s|$))`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=255cb12d911414a8a0f6c6c9c5dba810ff0edbb31f0c43ed81b6169ab0457416 -->
+<!-- harness-agent-v1 sha256=4010d34e62d49b6e88fd5f38bf888a7f0f8a576e39ded627054e2f778fa8eb0d -->

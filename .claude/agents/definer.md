@@ -28,7 +28,7 @@ hooks:
 <!-- source harness/core/agents/roles.md sha256=c53021eb7ded71cc13835515bd10a3c300298949ca5f63a97135d720cb1f8c63 -->
 <!-- source harness/lang/rust/standard.md sha256=aca19c7c31f2c63e8f136bbed51cda2bf1566ec5202c347a5aaee5416d998267 -->
 <!-- source harness/lang/rust-supply-chain/standard.md sha256=9e11daeff9a4d71a75bfd2b9ed8590ef6be74e433aedd597b4bf6c6e324b3da3 -->
-<!-- source docs/harness/Agent-Working-Rules.md sha256=ed35bf5c1e9c435db60de15c41e61b6a31290ccf6bc3853d4a5887c343be578c -->
+<!-- source docs/harness/Agent-Working-Rules.md sha256=89fbbc43d51d33208e15e4d7bc5e7d34b04c26426fec6e846002dbc8a66077ae -->
 <!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "gh api repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[0-9]+/comments( --paginate)?( (--jq|-q) '[^']*')?", "git grep(?!.*\\s(-[A-Za-z]*O|--open-files-in-pager))( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "git (log|show|diff|rev-parse|merge-base|ls-tree|cat-file)(?!.*--output)( .*)?"], "writes": ["docs/**", ".git/harness-parallel/worktrees/*/docs/**"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": ["**/*.sysml"], "facts": []}} -->
 
 You define one issue: from its recorded problem to the complete issue of
@@ -140,4 +140,4 @@ The [agent working rules](../../docs/harness/Agent-Working-Rules.md) hold for ev
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `docs/**`, `.git/harness-parallel/worktrees/*/docs/**`
 - Model files among them, where each changed line must match a delivery fact (none): `**/*.sysml`
-<!-- harness-agent-v1 sha256=540ced773a26d71139f2d2430ab271e01146820f750d92c67df1e52897b41fca -->
+<!-- harness-agent-v1 sha256=0577f9243c053f61ee6fa304ac1062e9745fc9937078d1b0424b2d98117c8bf0 -->
