@@ -15,7 +15,9 @@ package WstxTransmitSchedule {
     private import ModelNotes::FollowsSource;
     private import ModelNotes::DiffersFromSource;
     private import RequirementDerivation::*;
-    enum def ScheduleRefusal { enum clockNotSynchronized; enum misalignedPeriod; enum stalePeriod; }
+    enum def ScheduleRefusal {
+        enum clockNotSynchronized; enum misalignedPeriod; enum stalePeriod;
+    }
     attribute def Ft8Schedule {
         attribute periodMs : Integer = 15000;
         attribute audioDelayMs : Integer = 500;

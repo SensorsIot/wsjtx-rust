@@ -69,6 +69,7 @@ package WstxTransmitControl {
         doc /* The station and its automation never send HaltTransmit in normal flow: a
              completed contact and ending a run disarm, and the partner-works-other stop and
              Abort QSO use AbortTransmission. */
+        doc /* Both rules belong to the qso clause CL-010-03. */
         @Conflict {
             what = "This element says only the operator sends HaltTransmit. CL-044-14 and "
                 + "server/src/radio_level.rs halt on a clear SWR fault, and "
