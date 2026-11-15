@@ -237,6 +237,22 @@ LEFT_UNPROVEN = {
         "missing OtherGraph::method R Requirements.sysml"),
     "a named requirement's coverage removed without its metadata": (
         edits(LEFT_BASE, (NAMED_COVERAGE, "")), "missing NamedClause::coverage R Requirements.sysml"),
+    # An empty status usage states no value (review of dc4d39c03, finding 1).
+    "an empty status metadata added": (
+        edits(LEFT_BASE, ("        doc /* Level 2 other model test. */\n",
+                          "        doc /* Level 2 other model test. */\n        @Status {}\n")),
+        "changed OtherGraph "),
+}
+# P2: a removed attribute holding more than its name, one typing and one value proves nothing
+# (review of dc4d39c03, finding 3): (base, head, the start of the line naming the attribute).
+NAMED_STATUS = "        @Status { build = ImplementationState::partial; }\n"
+NAMED_WITH_DOC = NAMED_COVERAGE[:-len(";\n")] + " { doc /* x */ }\n"
+NAMED_WITH_BOUNDS = NAMED_COVERAGE.replace("ModelBindings::ImplementationState =", "ModelBindings::ImplementationState[0..1] =")
+LEFT_EXTRA = {
+    label: (edits(LEFT_BASE, (NAMED_COVERAGE, line)), edits(LEFT_BASE, (NAMED_COVERAGE, NAMED_STATUS)),
+            "missing NamedClause::coverage R Requirements.sysml")
+    for label, line in (("a removed attribute with a doc", NAMED_WITH_DOC),
+                        ("a removed attribute with a multiplicity", NAMED_WITH_BOUNDS))
 }
 # P2: a difference as today: (base, head) with exit 1 and no proven line.
 UNPROVEN = {
@@ -327,6 +343,7 @@ class ProvenRemovalTests(unittest.TestCase):
         cases["cost bold wording mid-line"] = MID_BOLD[:2]
         cases.update(UNPROVEN)
         cases.update({name: (LEFT_BASE, head) for name, (head, _line) in {**LEFT, **LEFT_UNPROVEN}.items()})
+        cases.update({name: (base, head) for name, (base, head, _prefix) in LEFT_EXTRA.items()})
         cases["all five"] = (BASE, ALL)
         names = list(cases)
         pairs = [(sha(base), sha(head)) for base, head in cases.values()]
@@ -361,7 +378,7 @@ class ProvenRemovalTests(unittest.TestCase):
     # P2: a difference as today, exit 1 and no proven line
     # Proves: CL-014-22; TC-DOC-020
     def test_p2_an_unproven_removal_is_a_difference(self):
-        for name in list(UNPROVEN) + list(LEFT_UNPROVEN):
+        for name in list(UNPROVEN) + list(LEFT_UNPROVEN) + list(LEFT_EXTRA):
             with self.subTest(name):
                 code, lines = self.results[name]
                 self.assertEqual(code, 1, self.shown(name))
@@ -380,7 +397,8 @@ class ProvenRemovalTests(unittest.TestCase):
                                  ("an attribute the catalog does not read for the kind",
                                   "missing 'TC-001-002'::implementation R Requirements.sysml"),
                                  ("a bold wording at a line start with a wrong pair", "changed 'TC-001-003' "),
-                                 *((name, prefix) for name, (_head, prefix) in LEFT_UNPROVEN.items())):
+                                 *((name, prefix) for name, (_head, prefix) in LEFT_UNPROVEN.items()),
+                                 *((name, prefix) for name, (_base, _head, prefix) in LEFT_EXTRA.items())):
                 self.assertTrue(any(line.startswith(prefix) for line in self.results[name][1]), self.shown(name))
 
     # P3: all five rules in one case at once; and a marked commit doing this

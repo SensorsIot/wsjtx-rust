@@ -2417,7 +2417,7 @@ def attribute_value(facts: tuple):
 def metadata_values(facts: tuple, step: str, indices: list[int]) -> list:
     """The (metadata, feature, value) of each feature of one status metadata usage (raw
     facts), the value as `expression_value` gives it; None for a member that is no feature
-    with one value."""
+    with one value, and [None] for a usage with no feature."""
     name, usage = metadata_name(facts, step, indices), step + "/MetadataUsage[0]"
     own = [facts[index] for index in indices]
     if child_steps(own, step) != {"MetadataUsage[0]"}:
@@ -2436,7 +2436,8 @@ def metadata_values(facts: tuple, step: str, indices: list[int]) -> list:
             found.append(None)
             continue
         found.append((name, target[1], expression_value(own, feature)))
-    return found
+    # A usage without a feature states no value: it proves nothing.
+    return found or [None]
 
 
 def renumbered(facts: tuple, removed: set[str]) -> tuple:
