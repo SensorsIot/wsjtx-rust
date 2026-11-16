@@ -1,0 +1,5 @@
+{
+  "eval_name": "settings-three-stores",
+  "prompt": "Create an issue for the code change (draft only, do not post): the station's settings are sorted. One config for each station holds everything the operator sets; one hidden store holds what the software keeps across sessions and never shows; each frontend has a config of its own; definition files (strategies, lists, country file) and data files (logbook, recording) stay files of their own. A setting belongs to the part that uses it. The Settings page groups by object and has an Advanced menu with Diagnostics. The operator decided this on 2026-11-15; the rebuilt model under docs/sysmlV2 already states it.",
+  "assertions": []
+}

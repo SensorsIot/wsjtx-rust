@@ -1,0 +1,5 @@
+{
+  "eval_name": "operating-owns-strategies",
+  "prompt": "Create an issue for the code change (draft only, do not post): strategies and contests get one owner. A part 'operating' owns them (what a strategy is, the built-ins, the contest table, defining and selecting) and holds ranking, Auto and qso, giving each its share: ranking what to prefer, Auto when to act, qso the contest's exchange. The operator decided this on 2026-11-15; the rebuilt model's rules under docs/sysmlV2/Foundation already say so, the part itself is not built in the model yet.",
+  "assertions": []
+}
