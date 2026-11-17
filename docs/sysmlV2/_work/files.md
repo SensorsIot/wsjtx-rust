@@ -5,6 +5,7 @@
 | Context.sysml | taken over |
 | Requirements.sysml | to build (old file of this name is pending) |
 | Shack.sysml | taken over |
+| UseCases.sysml | built |
 | interfaces/internal/StationLink.sysml | built (the wire, derived from the boundary) |
 | interfaces/internal/WebControl.sysml | built (web's control interface) |
 | interfaces/internal/StationCommands.sysml | built (the supervisor's control interface) |
@@ -25,8 +26,8 @@
 | interfaces/internal/ModeProcessing.sysml | built |
 | interfaces/internal/ProfileAccess.sysml | built |
 | interfaces/internal/RecordingTransfer.sysml | built |
-| interfaces/external/OperatorInteraction.sysml | taken over |
-| interfaces/external/Mcp.sysml | taken over |
+| interfaces/external/OperatorInteraction.sysml | built |
+| interfaces/external/Mcp.sysml | built |
 | interfaces/external/Cat.sysml | built |
 | interfaces/external/RadioProperties.sysml | built |
 | interfaces/external/FlexApi.sysml | built |
@@ -40,11 +41,12 @@
 | backend/supervisor/OperatingSelection.sysml | built |
 | backend/supervisor/StationAuthority.sysml | built |
 | backend/supervisor/Startup.sysml | built |
+| backend/supervisor/SettingsCheck.sysml | built |
 | backend/web/Web.sysml | built |
 | backend/web/Listener.sysml | built |
 | backend/web/ContentCoding.sysml | built |
-| backend/mcp/Mcp.sysml | to build (old file of this name is pending) |
-| backend/mcp/McpEndpoint.sysml | to build (old file of this name is pending) |
+| backend/mcp/Mcp.sysml | built |
+| backend/mcp/McpEndpoint.sysml | built |
 | backend/profile/Profile.sysml | built |
 | backend/profile/ProfileDocument.sysml | built |
 | backend/profile/Recordings.sysml | built |
@@ -106,15 +108,14 @@
 | backend/radioControl/RadioSetup.sysml | built |
 | backend/flexAdapter/FlexAdapter.sysml | built |
 | backend/flexAdapter/FlexSession.sysml | built |
-| frontend/BrowserClient.sysml | to build (old file of this name is pending) |
-| frontend/OperatingScreen.sysml | to build (old file of this name is pending) |
-| frontend/BandActivityPane.sysml | to build (old file of this name is pending) |
-| frontend/SignalArea.sysml | to build (old file of this name is pending) |
-| frontend/QsoPane.sysml | to build (old file of this name is pending) |
-| frontend/LowerPanel.sysml | to build (old file of this name is pending) |
-| frontend/Settings.sysml | to build (old file of this name is pending) |
+| frontend/BrowserClient.sysml | built |
+| frontend/OperatingScreen.sysml | built |
+| frontend/BandActivityPane.sysml | built |
+| frontend/SignalArea.sysml | built |
+| frontend/QsoPane.sysml | built |
+| frontend/LowerPanel.sysml | built |
+| frontend/Settings.sysml | built |
 | shared/Units.sysml | taken over |
-| shared/Quantities.sysml | to build (new file) |
 | shared/ModelBindings.sysml | taken over |
 | shared/ModelNotes.sysml | taken over |
 

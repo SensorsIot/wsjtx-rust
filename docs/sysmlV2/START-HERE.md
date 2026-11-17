@@ -62,12 +62,11 @@ the factory: no implementer session, no agents, no issues, no gate.
 
 ## State at the end of 2026-11-17
 
-Measured: seventeen parts pass `part_done.py` (tests 1 to 5); web is the seventeenth
-(main session, 2026-11-17); the top files pass tests 1, 2, 4 and 5. The ledger has 605
-rows: 385 arrived, 40 handed over, 42 not carried, 37 retired, none "TO PLACE" and 101
-waiting for a part not yet built. The validator on the model tree (without `Foundation/`
-and `_work/`, whose example files define a second `ModelBindings`) gives 10 errors, all in
-`Shack.sysml` and `Context.sysml` on lines that name mcp and the browser client.
+Measured: all twenty parts pass `part_done.py` (tests 1 to 5), `top` included (with
+`UseCases.sysml`), after the WSJT-X comparison and the use cases (2026-11-17). The validator on the model tree (without
+`Foundation/` and `_work/`, whose example files define a second `ModelBindings`) gives no
+error; `check.py` on the whole tree has no finding. The ledger is complete: 612 identities,
+495 arrived, 63 not carried, 54 retired, none handed over, waiting or to place.
 
 | Part | State |
 |---|---|
@@ -87,9 +86,11 @@ and `_work/`, whose example files define a second `ModelBindings`) gives 10 erro
 | auto | main session; tests pass; `AutoControl`, `TargetChoice` with `QsoProgress`; six function files; report `_work/auto-report.md` with 7 operator decisions; inside operating |
 | qso | main session; tests pass; `QsoControl`; six files; report `_work/qso-report.md`; inside operating |
 | supervisor | main session; tests pass; `StationCommands` (its control interface, with the boundary list `StationOperations`); four files in `backend/supervisor/`; report `_work/station-report.md` (written before the rename, as "the station service") |
+| frontend | main session; tests pass; `BrowserClient` (with `FrontendConfig`), `OperatingScreen`, `SignalArea`, `BandActivityPane`, `QsoPane`, `LowerPanel`, `Settings`; interface `OperatorInteraction`; report `_work/frontend-report.md` |
+| mcp | main session; tests pass; `Mcp`, `McpEndpoint`; interface `Mcp` (the tools derived from the boundary); report `_work/mcp-report.md` |
 | web | main session; tests pass; `Web`, `Listener`, `ContentCoding`; interfaces `StationLink` (the wire derived from the boundary) and `WebControl`; report `_work/web-report.md` |
 
-Not built: mcp, the frontend (see "Next"). Every other model file is a copy of the old one ("taken
+Every part is built. Every other model file is a copy of the old one ("taken
 over"), rebuilt with its part.
 
 The main session has read the model files of the eight subagent parts against their
@@ -148,6 +149,25 @@ carries the contact's commands to transmit.
   station's address and gets the same tools from each; each station names itself to the
   agent (server name and instructions carry its `display_name` and profile id). No
   shack-level process.
+- **MCP and the UI behave the same** (operator): no audit of MCP's requests, as none of the
+  browser's; `mcp-audit.log` and its Settings list go.
+- **The frontend states what the operator relies on** (operator, option A, "no
+  shortcuts"): each region and the view it shows, each control and the command it gives,
+  the states the operator tells apart (stale, waiting, refused with the reason), the labels
+  and messages, the meaning of the colours (which rows, which priority, why), the keyboard
+  shortcuts, the deliberate differences from WSJT-X; colour values that follow WSJT-X by
+  reference. Pixel sizes, fonts, spacing and the look of a control are the client's code.
+- **The frontend is an app without browser elements** (operator; #103, #118 Q6 and Q7,
+  #149): the station page runs in its own window without tabs, address bar or toolbars,
+  installed from the station's web app manifest or opened by a shortcut as an app window;
+  on a single PC the station opens its own app window (`--app-window`). The full-screen
+  button goes.
+- **Use cases** (operator): after the frontend, a file `UseCases.sysml` beside
+  `Requirements.sysml` holds the end-to-end processes of the actors (operator, agent,
+  partner station): goal, steps naming the clauses that carry them, variants, outcome
+  (SysML `use case def`, the first link of the chain of the authoring standard). M2.1, M3.1
+  (after Shack and Context) and M4 get a row for it. The list of use cases goes to the
+  operator before anything is written.
 - **Done in one pass** (2026-11-17): `Station.sysml` is `Shack.sysml` (package
   `WstxShack`), `Context` has `ShackContext` with `part shack`, the station service's files
   stand in `backend/supervisor/` (package `WstxSupervisorPart`, part `Supervisor`), every
@@ -336,7 +356,24 @@ carries the contact's commands to transmit.
    list in `StationCommands`, the wire derived from it (`StationLink`), `WebControl`, qso's
    one item per command, `ReceiptRule` at the gate; report `_work/web-report.md` with
    three points "For the operator"; plan and progress in `_work/web-plan.md`.
-   Next: mcp, then the frontend (main session; not for a subagent).
+   **mcp is built** (2026-11-17, all five tests pass): no token, no audit, the tools by
+   function, one server per station; report `_work/mcp-report.md`.
+   **The frontend is built** (2026-11-17, all five tests pass); report
+   `_work/frontend-report.md`.
+   **The comparison with the WSJT-X UI is done** (2026-11-17, `_work/wsjtx-ui-comparison.md`):
+   all 21 gaps decided, the eleven additions written into the model as targets (Tx macros,
+   split, filters through the strategy, azimuth and miles, period lines, alerts and the
+   call ring, ALL.TXT, Cabrillo, Log automatically, working frequencies, hover help), with
+   the work for the code listed there. Also decided and written: output power set on the
+   radio per band, the audio drive kept below the ALC (CL-044-18; "Tx level" is the audio
+   drive); a function the rig lacks is greyed out with the reason on hover (`RadioAbility`).
+   **The use cases are written** (2026-11-17, `UseCases.sysml`, plan and decisions in
+   `_work/usecases-plan.md`): 16 use case defs, each step subsets the clauses that carry it;
+   the settings check built as a target (`SettingsCheck.sysml`, CL-001-01, CL-001-02);
+   M2.1, M3.1, M4.9, M6.11 and M7.1 updated; debugging functions carry `@Debugging` and
+   need no use case; `check.py` checks M6.11. Coverage: 235 of 239 clauses carried, 4
+   debugging.
+   Next: the operator's choice.
    They take up the rows of `_work/handover.md` addressed to them and the "TO PLACE" rows
    of the ledger.
 4. **The issue-writing skill:** a draft is in `_work/skill-draft/issue-writing/`

@@ -37,6 +37,7 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-007-11 | requirement | new: the capture clock, from CL-007-05 and CL-043-03 | backend/audio/Capture.sysml | yes |
 | TC-007-011 | verification | new: the capture steps of TC-004-004 and TC-092-003 | backend/audio/Capture.sysml | yes |
 | CL-009-06 | requirement | new: the playback half of CL-009-03 | backend/audio/Playback.sysml | yes |
+| CL-009-07 | requirement | new: the tone of a split operation (WSJT-X comparison, operator 2026-11-17) | backend/transmit/TransmitState.sysml | yes |
 | TC-008-004 | verification | new: the playback steps of TC-008-003 | backend/audio/Playback.sysml | yes |
 | CL-043-02 | requirement | backend/clock/StationClock.sysml | backend/clock/StationClock.sysml | yes |
 | TC-043-001 | verification | backend/clock/StationClock.sysml | backend/clock/StationClock.sysml | yes |
@@ -57,6 +58,8 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-010-04 | requirement | backend/log/Logbook.sysml | backend/log/Logbook.sysml | yes |
 | CL-010-18 | requirement | new: the update from another program's file, the export and the history, from CL-010-04 | backend/log/Logbook.sysml | yes |
 | CL-010-19 | requirement | new: Log QSO gives the newest record again to the logging programs (operator 2026-11-16; from CL-010-04) | backend/log/Logbook.sysml | yes |
+| CL-010-20 | requirement | new: ALL.TXT, every decode and sent message (WSJT-X comparison, operator 2026-11-17) | backend/log/Logbook.sysml | yes |
+| CL-010-21 | requirement | new: the Cabrillo export of a contest's period (WSJT-X comparison, operator 2026-11-17) | backend/log/Logbook.sysml | yes |
 | CL-011-03 | requirement | backend/log/Logbook.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | CL-085-01 | requirement | backend/log/Logbook.sysml | backend/log/Logbook.sysml | yes |
 | CL-110-01 | requirement | backend/log/Logbook.sysml | retired: qso's settings are in the station config, no qso-settings.json (handover row 192); work for the code | - |
@@ -66,22 +69,22 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-085-001 | verification | backend/log/Logbook.sysml | backend/log/Logbook.sysml | yes |
 | TC-085-002 | verification | backend/log/Logbook.sysml | backend/log/Logbook.sysml | yes |
 | TC-085-003 | verification | backend/log/Logbook.sysml | backend/log/Logbook.sysml | yes |
-| TC-085-005 | verification | backend/log/Logbook.sysml | handed over: frontend (its condition on the latest log attempt is TC-085-001 (a)) |  |
+| TC-085-005 | verification | backend/log/Logbook.sysml | frontend/QsoPane.sysml | yes |
 | TC-085-006 | verification | backend/log/Logbook.sysml | not carried: planned, no test exists | - |
 | TC-110-001 | verification | backend/log/Logbook.sysml | retired: qso's settings are in the station config, no qso-settings.json (handover row 192); work for the code | - |
 | TC-110-002 | verification | backend/log/Logbook.sysml | retired: qso's settings are in the station config, no qso-settings.json (handover row 192); work for the code | - |
 | TC-110-003 | verification | backend/log/Logbook.sysml | retired: qso's settings are in the station config, no qso-settings.json (handover row 192); work for the code | - |
 | TC-110-004 | verification | backend/log/Logbook.sysml | retired: qso's settings are in the station config, no qso-settings.json (handover row 192); work for the code | - |
-| TC-110-005 | verification | backend/log/Logbook.sysml | handed over: frontend |  |
+| TC-110-005 | verification | backend/log/Logbook.sysml | frontend/Settings.sysml | yes |
 | TC-110-006 | verification | backend/log/Logbook.sysml | not carried: planned, no test exists | - |
-| CL-012-01 | requirement | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml  (same name; rebuilt) |  |
-| CL-012-02 | requirement | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml  (same name; rebuilt) |  |
-| CL-012-03 | requirement | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml  (same name; rebuilt) |  |
-| CL-012-04 | requirement | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml  (same name; rebuilt) |  |
-| TC-020-001 | verification | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml  (same name; rebuilt) |  |
-| TC-020-002 | verification | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml  (same name; rebuilt) |  |
-| TC-020-003 | verification | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml  (same name; rebuilt) |  |
-| TC-020-004 | verification | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml  (same name; rebuilt) |  |
+| CL-012-01 | requirement | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml | yes |
+| CL-012-02 | requirement | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml (the tools by WstxMcp::ToolRule) | yes |
+| CL-012-03 | requirement | backend/mcp/McpEndpoint.sysml | retired: MCP's token, principal and audit go (operator 2026-11-17, #226 question 1; MCP and the UI behave the same); the Origin rule stands in WstxMcp::McpEndpoint | - |
+| CL-012-04 | requirement | backend/mcp/McpEndpoint.sysml | retired: the MCP policy run goes (#122); Auto is auto's | - |
+| TC-020-001 | verification | backend/mcp/McpEndpoint.sysml | backend/mcp/McpEndpoint.sysml | yes |
+| TC-020-002 | verification | backend/mcp/McpEndpoint.sysml | not carried: its test asserts the token refusals, which go; a test of the endpoint's checks without them is work for the code | - |
+| TC-020-003 | verification | backend/mcp/McpEndpoint.sysml | retired: the MCP policy run goes (#122) | - |
+| TC-020-004 | verification | backend/mcp/McpEndpoint.sysml | retired: MCP's token goes (operator 2026-11-17) | - |
 | CL-007-03 | requirement | backend/modes/Decode.sysml | backend/modes/Decode.sysml | yes |
 | CL-007-04 | requirement | backend/modes/Decode.sysml | backend/modes/Decode.sysml | yes |
 | CL-007-06 | requirement | backend/modes/Decode.sysml | backend/modes/Decode.sysml | yes |
@@ -104,13 +107,13 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-024-001 | verification | backend/modes/MessagePayload.sysml | backend/modes/MessagePayload.sysml | yes |
 | TC-024-002 | verification | backend/modes/MessagePayload.sysml | backend/modes/MessagePayload.sysml | yes |
 | TC-024-003 | verification | backend/modes/MessagePayload.sysml | backend/operating/qso/MessageChoice.sysml | yes |
-| TC-024-004 | verification | backend/modes/MessagePayload.sysml | handed over: frontend |  |
+| TC-024-004 | verification | backend/modes/MessagePayload.sysml | frontend/BandActivityPane.sysml | yes |
 | TC-024-010 | verification | backend/modes/MessagePayload.sysml | backend/modes/MessagePayload.sysml | yes |
 | CL-010-03 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/QsoTransmit.sysml | yes |
 | CL-010-10 | requirement | backend/operating/qso/QsoData.sysml | retired: its repetition half into CL-039-06; the Tune limit is transmit's (TransmitConfig::tuneSeconds) | - |
 | CL-010-11 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/HoldTx.sysml | yes |
 | CL-010-13 | requirement | backend/operating/qso/QsoData.sysml | backend/log/Logbook.sysml | yes |
-| CL-010-14 | requirement | backend/operating/qso/QsoData.sysml | handed over: frontend (the clock, the Tx period bar and the Rx level meter); the station link carries the views and clock.time | - |
+| CL-010-14 | requirement | backend/operating/qso/QsoData.sysml | frontend/OperatingScreen.sysml | yes |
 | CL-010-17 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | CL-011-02 | requirement | backend/operating/qso/QsoData.sysml | backend/supervisor/OperatingSelection.sysml | yes |
 | CL-011-04 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
@@ -129,11 +132,12 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-039-22 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/auto/AutoMode.sysml | yes |
 | CL-039-23 | requirement | backend/operating/qso/QsoData.sysml | retired: into CL-097-04 (leaving and the retry pause) and CL-119-04 (nothing else ends the contact); the caller exception goes (issue 119) | - |
 | CL-039-24 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
-| CL-039-25 | requirement | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
+| CL-039-25 | requirement | backend/operating/qso/QsoData.sysml | frontend/Settings.sysml | yes |
 | CL-042-03 | requirement | backend/operating/qso/QsoData.sysml | retired: pounce removed (issue 123) | - |
-| CL-042-05 | requirement | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
-| CL-042-06 | requirement | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
-| CL-042-07 | requirement | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
+| CL-042-05 | requirement | backend/operating/qso/QsoData.sysml | retired: merged into CL-097-12 (WstxSettings::StrategyEditor) | - |
+| CL-042-06 | requirement | backend/operating/qso/QsoData.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-042-07 | requirement | backend/operating/qso/QsoData.sysml | frontend/Settings.sysml | yes |
+| CL-042-08 | requirement | new: the ring of a station calling (WSJT-X comparison, operator 2026-11-17) | frontend/Settings.sysml | yes |
 | CL-050-04 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | CL-050-06 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | CL-055-01 | requirement | backend/operating/qso/QsoData.sysml | backend/log/CountryFile.sysml | yes |
@@ -144,7 +148,7 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-063-05 | requirement | backend/operating/qso/QsoData.sysml | retired: into CL-039-05; a contest is a strategy of class contest that Auto applies as any (issue 119) | - |
 | CL-063-06 | requirement | backend/operating/qso/QsoData.sysml | retired: into CL-119-05 (what switches Auto off) | - |
 | CL-063-07 | requirement | backend/operating/qso/QsoData.sysml | retired: into CL-039-24 (the activity's own CQ word) | - |
-| CL-063-08 | requirement | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
+| CL-063-08 | requirement | backend/operating/qso/QsoData.sysml | frontend/BandActivityPane.sysml | yes |
 | CL-065-01 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/HoldTx.sysml | yes |
 | CL-081-01 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/auto/AutoMode.sysml | yes |
 | CL-097-01 | requirement | backend/operating/qso/QsoData.sysml | backend/profile/ProfileDocument.sysml | yes |
@@ -164,22 +168,22 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-097-11 | requirement | new: the CQ pause after a CQ nobody answered (operator 2026-11-16, decision 2) | backend/operating/auto/CqWhenIdle.sysml | yes |
 | CL-111-07 | requirement | backend/operating/qso/QsoData.sysml | backend/operating/qso/QsoTransmit.sysml | yes |
 | TC-008-001 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/QsoTransmit.sysml | yes |
-| TC-010-008 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (browser tests) | - |
-| TC-010-009 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (the displays of CL-010-14) | - |
+| TC-010-008 | verification | backend/operating/qso/QsoData.sysml | frontend/SignalArea.sysml | yes |
+| TC-010-009 | verification | backend/operating/qso/QsoData.sysml | frontend/OperatingScreen.sysml | yes |
 | TC-010-010 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | TC-011-003 | verification | backend/operating/qso/QsoData.sysml | backend/log/Logbook.sysml | yes |
 | TC-039-001 | verification | backend/operating/qso/QsoData.sysml | backend/profile/ProfileDocument.sysml | yes |
 | TC-039-002 | verification | backend/operating/qso/QsoData.sysml | backend/operating/ranking/ValueOrder.sysml | yes |
 | TC-039-003 | verification | backend/operating/qso/QsoData.sysml | backend/profile/ProfileDocument.sysml | yes |
 | TC-039-004 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/TargetChoice.sysml | yes |
-| TC-039-006 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
+| TC-039-006 | verification | backend/operating/qso/QsoData.sysml | frontend/BandActivityPane.sysml | yes |
 | TC-039-007 | verification | backend/operating/qso/QsoData.sysml | not carried: planned, live, no test exists | - |
 | TC-039-008 | verification | backend/operating/qso/QsoData.sysml | retired: with CL-039-07 | - |
 | TC-039-009 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/HoldTx.sysml | yes |
 | TC-039-010 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/HoldTx.sysml | yes |
 | TC-039-020 | verification | backend/operating/qso/QsoData.sysml | backend/spots/HearingFeed.sysml | yes |
 | TC-039-052 | verification | new: the session steps of TC-039-020 | interfaces/external/PskReporter.sysml | yes |
-| TC-039-021 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (browser tests) | - |
+| TC-039-021 | verification | backend/operating/qso/QsoData.sysml | frontend/Settings.sysml | yes |
 | TC-039-022 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/TxSlot.sysml | yes |
 | TC-039-030 | verification | backend/operating/qso/QsoData.sysml | backend/operating/ranking/ValueOrder.sysml | yes |
 | TC-039-032 | verification | backend/operating/qso/QsoData.sysml | backend/operating/StrategySelection.sysml | yes |
@@ -195,17 +199,17 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-039-051 | verification | backend/operating/qso/QsoData.sysml | not carried: planned, no test | - |
 | TC-042-001 | verification | backend/operating/qso/QsoData.sysml | backend/operating/ranking/ValueOrder.sysml | yes |
 | TC-042-002 | verification | backend/operating/qso/QsoData.sysml | backend/operating/ranking/IgnoreLists.sysml | yes |
-| TC-042-003 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
+| TC-042-003 | verification | backend/operating/qso/QsoData.sysml | not carried: its test asserts the two Settings ignore lists; the one list is CL-042-06's | - |
 | TC-042-004 | verification | backend/operating/qso/QsoData.sysml | retired: pounce removed (issue 123) | - |
 | TC-042-005 | verification | backend/operating/qso/QsoData.sysml | retired: pounce removed (issue 123) | - |
 | TC-042-006 | verification | backend/operating/qso/QsoData.sysml | backend/operating/ranking/Alert.sysml | yes |
-| TC-042-007 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
+| TC-042-007 | verification | backend/operating/qso/QsoData.sysml | frontend/Settings.sysml | yes |
 | TC-050-004 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | TC-050-006 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | TC-055-001 | verification | backend/operating/qso/QsoData.sysml | backend/log/CountryFile.sysml | yes |
 | TC-055-002 | verification | backend/operating/qso/QsoData.sysml | backend/operating/ranking/ValueOrder.sysml | yes |
 | TC-055-003 | verification | backend/operating/qso/QsoData.sysml | not carried: its test uploads a file; the settings function downloads the file instead (operator 2026-11-16); work for the code | - |
-| TC-055-004 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (browser tests) | - |
+| TC-055-004 | verification | backend/operating/qso/QsoData.sysml | frontend/BandActivityPane.sysml | yes |
 | TC-055-005 | verification | backend/operating/qso/QsoData.sysml | not carried: planned, live, no test exists | - |
 | TC-063-001 | verification | backend/operating/qso/QsoData.sysml | backend/operating/StrategySelection.sysml | yes |
 | TC-063-002 | verification | backend/operating/qso/QsoData.sysml | backend/operating/StrategySelection.sysml | yes |
@@ -214,11 +218,11 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-063-005 | verification | backend/operating/qso/QsoData.sysml | backend/operating/ranking/ContestRanking.sysml | yes |
 | TC-063-006 | verification | backend/operating/qso/QsoData.sysml | backend/operating/ranking/ContestRanking.sysml | yes |
 | TC-063-007 | verification | backend/operating/qso/QsoData.sysml | backend/operating/StrategySelection.sysml | yes |
-| TC-063-008 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
+| TC-063-008 | verification | backend/operating/qso/QsoData.sysml | frontend/BandActivityPane.sysml | yes |
 | TC-063-009 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/TargetChoice.sysml | yes |
 | TC-063-010 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/CqWhenIdle.sysml | yes |
 | TC-063-011 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/AutoMode.sysml | yes |
-| TC-063-012 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (browser tests) | - |
+| TC-063-012 | verification | backend/operating/qso/QsoData.sysml | not carried: its test asserts the MCP run's automation view, which goes (#122) | - |
 | TC-065-001 | verification | backend/operating/qso/QsoData.sysml | retired: replaced by TC-082-001 (the test says so) | - |
 | TC-065-002 | verification | backend/operating/qso/QsoData.sysml | retired: replaced by TC-082-003 (the test says so) | - |
 | TC-065-004 | verification | backend/operating/qso/QsoData.sysml | not carried: planned, no test | - |
@@ -230,7 +234,7 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-081-003 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/AutoMode.sysml | yes |
 | TC-081-004 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/AutoMode.sysml | yes |
 | TC-081-005 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/AutoMode.sysml | yes |
-| TC-081-006 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (browser tests) | - |
+| TC-081-006 | verification | backend/operating/qso/QsoData.sysml | frontend/QsoPane.sysml | yes |
 | TC-081-007 | verification | backend/operating/qso/QsoData.sysml | not carried: planned, no test | - |
 | TC-082-001 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/HoldTx.sysml | yes |
 | TC-082-002 | verification | backend/operating/qso/QsoData.sysml | not carried: its tests assert the free offsets from 300 Hz, which qso decision 4b removes (qso report); work for the code | - |
@@ -251,14 +255,14 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-097-011 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | TC-097-012 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | TC-097-013 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/Leave.sysml | yes |
-| TC-097-014 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (browser tests) | - |
+| TC-097-014 | verification | backend/operating/qso/QsoData.sysml | not carried: its test asserts the whole-configuration save of the editor, which goes | - |
 | TC-097-015 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/CqWhenIdle.sysml | yes |
 | TC-097-016 | verification | backend/operating/qso/QsoData.sysml | not carried: planned, live, no test exists | - |
 | TC-097-017 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | TC-097-018 | verification | backend/operating/qso/QsoData.sysml | backend/operating/auto/CqWhenIdle.sysml | yes |
 | TC-097-019 | verification | backend/operating/qso/QsoData.sysml | not carried: its test reads the wording of the old model; work for the code | - |
 | TC-111-011 | verification | backend/operating/qso/QsoData.sysml | backend/operating/qso/QsoTransmit.sysml | yes |
-| TC-125-002 | verification | backend/operating/qso/QsoData.sysml | handed over: frontend (screens) | - |
+| TC-125-002 | verification | backend/operating/qso/QsoData.sysml | not carried: its test asserts the Settings ignore lists; the one list is CL-042-06's | - |
 | CL-111-02 | requirement | backend/operating/qso/QsoTransmit.sysml | backend/operating/qso/QsoTransmit.sysml | yes |
 | CL-111-05 | requirement | backend/operating/qso/QsoTransmit.sysml | backend/operating/qso/QsoTransmit.sysml | yes |
 | CL-111-08 | requirement | backend/operating/qso/QsoTransmit.sysml | backend/operating/qso/QsoTransmit.sysml | yes |
@@ -273,29 +277,30 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-024-03 | requirement | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
 | CL-024-04 | requirement | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
 | CL-085-03 | requirement | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
+| CL-085-04 | requirement | new: the confirmation of logging by hand (WSJT-X comparison, operator 2026-11-17) | backend/operating/qso/StandardQso.sysml | yes |
 | CL-099-01 | requirement | backend/operating/qso/SpecialActivities.sysml | retired: into CL-009-01 (WstxMessageEncode::PackMessage) | - |
 | CL-099-02 | requirement | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
 | CL-111-10 | requirement | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
 | TC-024-005 | verification | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
-| TC-024-006 | verification | backend/operating/qso/SpecialActivities.sysml | handed over: frontend (browser tests) | - |
+| TC-024-006 | verification | backend/operating/qso/SpecialActivities.sysml | frontend/QsoPane.sysml | yes |
 | TC-024-007 | verification | backend/operating/qso/SpecialActivities.sysml | retired: into TC-005-001 and TC-005-002 of modes, whose bound test files hold its tests (CL-009-01) | - |
 | TC-024-008 | verification | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
-| TC-024-009 | verification | backend/operating/qso/SpecialActivities.sysml | handed over: frontend (browser tests) | - |
+| TC-024-009 | verification | backend/operating/qso/SpecialActivities.sysml | frontend/QsoPane.sysml | yes |
 | TC-024-011 | verification | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
 | TC-024-012 | verification | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
-| TC-024-013 | verification | backend/operating/qso/SpecialActivities.sysml | handed over: frontend (browser tests) | - |
+| TC-024-013 | verification | backend/operating/qso/SpecialActivities.sysml | frontend/QsoPane.sysml | yes |
 | TC-024-014 | verification | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
 | TC-085-004 | verification | backend/operating/qso/SpecialActivities.sysml | not carried: its test reaches the serial through Log QSO, which hands nothing over (log, 2026-11-16); work for the code | - |
 | TC-099-001 | verification | backend/operating/qso/SpecialActivities.sysml | retired: into TC-005-001 and TC-005-002 of modes, whose bound test files hold its tests (CL-009-01) | - |
 | TC-099-002 | verification | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
-| TC-099-003 | verification | backend/operating/qso/SpecialActivities.sysml | handed over: frontend (browser tests) | - |
+| TC-099-003 | verification | backend/operating/qso/SpecialActivities.sysml | frontend/QsoPane.sysml | yes |
 | TC-099-004 | verification | backend/operating/qso/SpecialActivities.sysml | not carried: planned, live, no test exists | - |
 | TC-111-016 | verification | backend/operating/qso/SpecialActivities.sysml | backend/operating/qso/SpecialActivities.sysml | yes |
 | CL-010-01 | requirement | backend/operating/qso/StandardQso.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | CL-010-02 | requirement | backend/operating/qso/StandardQso.sysml | backend/operating/qso/StandardQso.sysml | yes |
 | CL-010-12 | requirement | backend/operating/qso/StandardQso.sysml | backend/operating/qso/MessageChoice.sysml | yes |
 | TC-007-001 | verification | backend/operating/qso/StandardQso.sysml | backend/operating/qso/StandardQso.sysml | yes |
-| TC-007-003 | verification | backend/operating/qso/StandardQso.sysml | handed over: frontend (browser tests) | - |
+| TC-007-003 | verification | backend/operating/qso/StandardQso.sysml | frontend/QsoPane.sysml | yes |
 | TC-007-004 | verification | backend/operating/qso/StandardQso.sysml | backend/operating/qso/QsoTransmit.sysml | yes |
 | TC-007-007 | verification | backend/operating/qso/StandardQso.sysml | not carried: planned, live, no test exists | - |
 | TC-007-010 | verification | backend/operating/qso/StandardQso.sysml | backend/operating/qso/StandardQso.sysml | yes |
@@ -331,7 +336,7 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-022-002 | verification | backend/profile/Profile.sysml | backend/profile/ProfileDocument.sysml | yes |
 | TC-022-003 | verification | backend/profile/Profile.sysml | backend/profile/ProfileDocument.sysml | yes |
 | TC-022-011 | verification | new: the shack's settings (operator 2026-11-16; callsign and locator conditions from TC-022-001) | backend/profile/ProfileDocument.sysml | yes |
-| TC-022-005 | verification | backend/profile/Profile.sysml | handed over: frontend (the status shown while a profile read is held); its fixture's grants go (#226) | - |
+| TC-022-005 | verification | backend/profile/Profile.sysml | not carried: its fixture is the grants of the authorization (#226) | - |
 | CL-006-01 | requirement | backend/profile/Recordings.sysml | backend/profile/Recordings.sysml | yes |
 | TC-018-001 | verification | backend/profile/Recordings.sysml | backend/profile/Recordings.sysml | yes |
 | TC-018-002 | verification | backend/profile/Recordings.sysml | backend/profile/Recordings.sysml | yes |
@@ -346,7 +351,7 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-044-11 | requirement | backend/radioControl/CatControl.sysml | backend/radioControl/RadioSetup.sysml | yes |
 | TC-009-003 | verification | backend/radioControl/CatControl.sysml | backend/radioControl/CatControl.sysml | yes |
 | TC-022-009 | verification | backend/radioControl/CatControl.sysml | backend/radioControl/CatLifecycle.sysml | yes |
-| TC-044-010 | verification | backend/radioControl/CatControl.sysml | handed over: frontend (the AGC field and its line in Settings; a browser test) | - |
+| TC-044-010 | verification | backend/radioControl/CatControl.sysml | frontend/Settings.sysml | yes |
 | CL-022-04 | requirement | backend/radioControl/CatLifecycle.sysml | backend/radioControl/CatLifecycle.sysml | yes |
 | CL-044-01 | requirement | backend/radioControl/RadioSetup.sysml | backend/radioControl/RadioSetup.sysml | yes |
 | CL-044-02 | requirement | backend/radioControl/RadioSetup.sysml | backend/radioControl/RadioSetup.sysml | yes |
@@ -355,6 +360,9 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-044-09 | requirement | backend/radioControl/RadioSetup.sysml | backend/radioControl/CatControl.sysml | yes |
 | CL-044-10 | requirement | backend/radioControl/RadioSetup.sysml | backend/radioControl/RadioSetup.sysml | yes |
 | CL-044-15 | requirement | backend/radioControl/RadioSetup.sysml | backend/radioControl/RadioSetup.sysml | yes |
+| CL-001-01 | requirement | new: the settings check (use case SettingsCheck, operator 2026-11-17) | backend/supervisor/SettingsCheck.sysml | yes |
+| CL-001-02 | requirement | new: the settings check on the screen (use case SettingsCheck, operator 2026-11-17) | frontend/Settings.sysml | yes |
+| CL-044-18 | requirement | new: the output power set on the radio (operator 2026-11-17, option A) | backend/radioControl/RadioSetup.sysml | yes |
 | TC-044-001 | verification | backend/radioControl/RadioSetup.sysml | backend/radioControl/RadioSetup.sysml | yes |
 | TC-044-002 | verification | backend/radioControl/RadioSetup.sysml | backend/radioControl/RadioSetup.sysml | yes |
 | TC-044-003 | verification | backend/radioControl/RadioSetup.sysml | backend/radioControl/RadioSetup.sysml | yes |
@@ -365,7 +373,7 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-044-012 | verification | backend/radioControl/RadioSetup.sysml | backend/radioControl/CatControl.sysml | yes |
 | TC-044-020 | verification | backend/radioControl/RadioSetup.sysml | backend/radioControl/RadioSetup.sysml | yes |
 | TC-044-021 | verification | backend/radioControl/RadioSetup.sysml | not carried: planned, live on the station's radio, no test exists | - |
-| TC-044-022 | verification | backend/radioControl/RadioSetup.sysml | handed over: frontend (the line on the confirmation in Settings; a browser test) | - |
+| TC-044-022 | verification | backend/radioControl/RadioSetup.sysml | frontend/Settings.sysml | yes |
 | CL-007-01 | requirement | backend/receive/LiveReceive.sysml | backend/receive/LiveReceive.sysml | yes |
 | CL-007-05 | requirement | backend/receive/LiveReceive.sysml | backend/receive/LiveReceive.sysml | yes |
 | CL-008-02 | requirement | backend/receive/LiveReceive.sysml | backend/audio/Capture.sysml | yes |
@@ -383,11 +391,11 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-009-004 | verification | backend/receive/ReceiveJob.sysml | backend/receive/ReceiveJob.sysml | yes |
 | TC-010-001 | verification | backend/receive/ReceiveJob.sysml | backend/receive/Spectrum.sysml | yes |
 | TC-010-002 | verification | backend/receive/ReceiveJob.sysml | backend/web/Listener.sysml (the rows to the sockets; CL-003-02) | yes |
-| TC-010-003 | verification | backend/receive/ReceiveJob.sysml | handed over: frontend | - |
+| TC-010-003 | verification | backend/receive/ReceiveJob.sysml | frontend/SignalArea.sysml | yes |
 | TC-010-004 | verification | backend/receive/ReceiveJob.sysml | backend/receive/Spectrum.sysml | yes |
 | TC-010-005 | verification | backend/receive/ReceiveJob.sysml | backend/web/Listener.sysml (the detailed rows on the wire; CL-003-02) | yes |
-| TC-010-006 | verification | backend/receive/ReceiveJob.sysml | handed over: frontend | - |
-| TC-010-007 | verification | backend/receive/ReceiveJob.sysml | handed over: frontend | - |
+| TC-010-006 | verification | backend/receive/ReceiveJob.sysml | frontend/SignalArea.sysml | yes |
+| TC-010-007 | verification | backend/receive/ReceiveJob.sysml | frontend/SignalArea.sysml | yes |
 | TC-018-003 | verification | backend/receive/ReceiveJob.sysml | backend/receive/ReceiveJob.sysml | yes |
 | TC-052-001 | verification | backend/receive/ReceiveJob.sysml | backend/receive/ReceiveJob.sysml | yes |
 | CL-045-01 | requirement | backend/receive/Startup.sysml | backend/supervisor/Startup.sysml | yes |
@@ -400,6 +408,7 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-008-10 | requirement | new: the cancel of a selection (from CL-008-07) | backend/supervisor/OperatingSelection.sysml | yes |
 | CL-008-11 | requirement | new: the station's band (handover rows of transmit, ranking, spots) | backend/supervisor/OperatingSelection.sysml | yes |
 | CL-008-12 | requirement | new: the dial taken as the selection (handover row of radio control; from CL-008-07) | backend/supervisor/OperatingSelection.sysml | yes |
+| CL-008-13 | requirement | new: the transmit frequency of a split operation (WSJT-X comparison, operator 2026-11-17) | backend/radioControl/CatControl.sysml | yes |
 | TC-009-008 | verification | new: the dial taken as the selection, two tests of cat_lifecycle_tests.rs | backend/supervisor/OperatingSelection.sysml | yes |
 | TC-011-004 | verification | new: the operating mode, three tests of contact_http_tests.rs (handover row of qso) | backend/supervisor/OperatingSelection.sysml | yes |
 | CL-006-07 | requirement | new: the gate of the supervisor (handover rows of receive, profile, operating; from CL-006-04) | backend/supervisor/StationAuthority.sysml | yes |
@@ -429,20 +438,20 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | TC-008-005 | verification | new: Halt, the failures and the releases of TC-008-003 | backend/transmit/TransmitState.sysml | yes |
 | TC-039-005 | verification | backend/transmit/TransmitState.sysml | not carried: its tests assert the operator barrier (issue 122) and transmit's count; work for the code | - |
 | TC-043-002 | verification | backend/transmit/TransmitState.sysml | backend/clock/StationClock.sysml | yes |
-| TC-043-003 | verification | backend/transmit/TransmitState.sysml | handed over: frontend (the clock's view on the screen); its wire is the derived wire | - |
+| TC-043-003 | verification | backend/transmit/TransmitState.sysml | frontend/Settings.sysml | yes |
 | TC-043-004 | verification | backend/transmit/TransmitState.sysml | not carried: planned, no test exists | - |
-| TC-044-015 | verification | backend/transmit/TransmitState.sysml | handed over: frontend | - |
+| TC-044-015 | verification | backend/transmit/TransmitState.sysml | not carried: its test asserts the Set level button, which goes | - |
 | TC-044-017 | verification | backend/transmit/TransmitState.sysml | backend/transmit/TxLevel.sysml | yes |
-| TC-044-018 | verification | backend/transmit/TransmitState.sysml | handed over: frontend | - |
+| TC-044-018 | verification | backend/transmit/TransmitState.sysml | frontend/LowerPanel.sysml | yes |
 | TC-044-019 | verification | backend/transmit/TransmitState.sysml | retired: a planned live case on the radio without a test (operator 2026-11-15) | - |
 | TC-061-005 | verification | backend/transmit/TransmitState.sysml | backend/receive/LiveReceive.sysml | yes |
 | TC-007-012 | verification | new: the receive half of TC-007-006 and the window tests bound to TC-002-001 | backend/receive/LiveReceive.sysml | yes |
-| TC-061-006 | verification | backend/transmit/TransmitState.sysml | handed over: frontend | - |
+| TC-061-006 | verification | backend/transmit/TransmitState.sysml | frontend/SignalArea.sysml | yes |
 | TC-061-007 | verification | backend/transmit/TransmitState.sysml | not carried: planned, no test exists | - |
 | TC-092-002 | verification | backend/transmit/TransmitState.sysml | backend/clock/StationClock.sysml | yes |
 | TC-092-003 | verification | backend/transmit/TransmitState.sysml | backend/clock/StationClock.sysml | yes |
 | TC-092-004 | verification | backend/transmit/TransmitState.sysml | not carried: it asserts only negatives, no clock source setting and no POST /clock (the rule on negatives) | - |
-| TC-092-005 | verification | backend/transmit/TransmitState.sysml | handed over: frontend |  |
+| TC-092-005 | verification | backend/transmit/TransmitState.sysml | frontend/LowerPanel.sysml | yes |
 | TC-092-006 | verification | backend/transmit/TransmitState.sysml | not carried: planned, no test exists | - |
 | TC-092-007 | verification | backend/transmit/TransmitState.sysml | not carried: planned, no test exists | - |
 | TC-092-008 | verification | backend/transmit/TransmitState.sysml | not carried: planned, no test exists | - |
@@ -469,114 +478,121 @@ Source: docs/sysml on master bbab58190. One row per FR, clause and test case. "A
 | CL-003-08 | requirement | backend/web/StationProtocol.sysml | backend/web/Listener.sysml (the views by GET and as events, WstxStationLink::WireRule) | yes |
 | CL-005-03 | requirement | backend/web/StationProtocol.sysml | retired: the sessions and their cookies go (operator 2026-11-17, #226 question 2); that profiles are independent is the profile's (CL-005-04) | - |
 | CL-022-02 | requirement | backend/web/StationProtocol.sysml | retired: the radio authorization goes (#226) | - |
-| CL-022-05 | requirement | backend/web/StationProtocol.sysml | handed over: frontend (CAT, audio and decoder health shown apart; the port in use named); the session part goes with the authorization (#226) | - |
+| CL-022-05 | requirement | backend/web/StationProtocol.sysml | retired: merged into CL-010-07 (WstxOperatingScreen::HealthRule); the session part goes with the authorization (#226) | - |
 | CL-033-01 | requirement | backend/web/StationProtocol.sysml | backend/web/Listener.sysml | yes |
 | CL-051-01 | requirement | backend/web/StationProtocol.sysml | backend/web/Listener.sysml | yes |
 | TC-009-005 | verification | backend/web/StationProtocol.sysml | backend/supervisor/OperatingSelection.sysml (the selection and the cancel; its other clauses are those of web, radio control and the frontend) | yes |
 | TC-021-005 | verification | backend/web/StationProtocol.sysml | backend/web/Listener.sysml | yes |
-| TC-021-006 | verification | backend/web/StationProtocol.sysml | handed over: frontend (a real browser, two clients, desktop and phone layout; CL-003-04) | - |
+| TC-021-006 | verification | backend/web/StationProtocol.sysml | not carried: its test asserts the old status's radio text, which goes; the layout at two widths is TC-007-002's | - |
 | TC-021-008 | verification | backend/web/StationProtocol.sysml | backend/web/Listener.sysml | yes |
 | TC-021-009 | verification | backend/web/StationProtocol.sysml | not carried: its test asserts the token login, which goes (operator 2026-11-17); a test of TLS and the origin is work for the code | - |
 | TC-022-004 | verification | backend/web/StationProtocol.sysml | retired: the sessions and their cookies go (operator 2026-11-17, #226) | - |
 | TC-022-008 | verification | backend/web/StationProtocol.sysml | retired: the authorization's status route goes (#226) | - |
 | TC-033-001 | verification | backend/web/StationProtocol.sysml | backend/web/Listener.sysml | yes |
 | TC-051-001 | verification | backend/web/StationProtocol.sysml | backend/web/Listener.sysml (CL-051-01; CL-051-02 is the frontend's) | yes |
-| TC-051-003 | verification | backend/web/StationProtocol.sysml | handed over: frontend (the open page reloads after an update, live; CL-051-02) | - |
+| TC-051-003 | verification | backend/web/StationProtocol.sysml | not carried: planned, live, no test | - |
 | TC-080-001 | verification | backend/web/StationProtocol.sysml | backend/web/Listener.sysml | yes |
 | CL-003-09 | requirement | new: the content coding of the answers (old WstxHttpContentCoding, unnumbered) | backend/web/ContentCoding.sysml | yes |
-| CL-003-04 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-007-02 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-010-05 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-010-06 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-010-07 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-010-08 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-010-09 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-010-16 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-022-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-037-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-037-02 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-037-03 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-037-04 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-037-05 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-039-04 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-044-06 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-044-08 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-050-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-050-02 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-050-03 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-050-05 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-050-07 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-050-08 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-051-02 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-051-03 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-054-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-054-02 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-055-04 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-055-05 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-057-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-057-03 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-060-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-061-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-061-02 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-061-03 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-061-05 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-065-02 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-068-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-073-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-074-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-096-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-111-04 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| CL-111-09 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-007-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-007-006 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-007-009 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-021-007 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-022-006 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-022-010 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-037-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-037-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-037-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-037-004 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-039-046 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-044-005 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-044-007 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-050-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-050-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-050-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-050-005 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-050-007 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-050-008 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-051-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-054-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-054-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-054-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-055-006 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-055-007 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-057-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-057-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-057-004 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-060-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-061-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-061-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-061-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-061-004 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-061-008 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-061-009 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-065-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-068-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-068-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-073-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-073-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-073-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-074-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-074-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-074-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-074-004 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-082-004 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-096-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-096-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-111-005 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
-| TC-111-014 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml  (same name; rebuilt) |  |
+| CL-006-08 | requirement | new: the display half of CL-006-03 (handover row of receive) | frontend/SignalArea.sysml | yes |
+| CL-103-01 | requirement | new: the app window (#103, #118 Q6/Q7, #149; operator 2026-11-17) | frontend/OperatingScreen.sysml | yes |
+| CL-017-01 | requirement | new: the help, version, license and notice (FR-017 had no clause) | frontend/OperatingScreen.sysml | yes |
+| CL-039-31 | requirement | new: Auto and PSK on the screen (handover rows of auto and spots) | frontend/QsoPane.sysml | yes |
+| CL-037-06 | requirement | new: the QSO pane's direct buttons (from CL-037-03) | frontend/QsoPane.sysml | yes |
+| CL-097-12 | requirement | new: the strategy editor's screen (handover row of operating) | frontend/Settings.sysml | yes |
+| CL-227-01 | requirement | new: the settings drawer of the two levels (#227) | frontend/Settings.sysml | yes |
+| CL-003-04 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-007-02 | requirement | frontend/OperatingScreen.sysml | retired: merged into CL-010-09 (WstxBandActivityPane::RowFields) | - |
+| CL-010-05 | requirement | frontend/OperatingScreen.sysml | retired: merged into CL-010-16 (the screen's layout) | - |
+| CL-010-06 | requirement | frontend/OperatingScreen.sysml | retired: merged into CL-037-04 (WstxQsoPane::PaneLayout) | - |
+| CL-010-07 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-010-08 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-010-09 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-010-16 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-022-01 | requirement | frontend/OperatingScreen.sysml | retired: the radio authorization goes (#226) | - |
+| CL-037-01 | requirement | frontend/OperatingScreen.sysml | frontend/LowerPanel.sysml | yes |
+| CL-037-02 | requirement | frontend/OperatingScreen.sysml | frontend/LowerPanel.sysml | yes |
+| CL-037-03 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-037-04 | requirement | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| CL-037-05 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-039-04 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-044-06 | requirement | frontend/OperatingScreen.sysml | frontend/Settings.sysml | yes |
+| CL-044-08 | requirement | frontend/OperatingScreen.sysml | frontend/Settings.sysml | yes |
+| CL-050-01 | requirement | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| CL-050-02 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-050-03 | requirement | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| CL-050-05 | requirement | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| CL-050-07 | requirement | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| CL-050-08 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-051-02 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-051-03 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-054-01 | requirement | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| CL-054-02 | requirement | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| CL-055-04 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-055-05 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-057-01 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-057-03 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-060-01 | requirement | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| CL-061-01 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-061-02 | requirement | frontend/OperatingScreen.sysml | retired: the commands carry no contact revision, so nothing is retried for one | - |
+| CL-061-03 | requirement | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| CL-061-05 | requirement | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| CL-065-02 | requirement | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| CL-068-01 | requirement | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| CL-073-01 | requirement | frontend/OperatingScreen.sysml | frontend/Settings.sysml | yes |
+| CL-074-01 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-096-01 | requirement | frontend/OperatingScreen.sysml | retired: the full-screen button goes; the screen is an app window (CL-103-01, #103) | - |
+| CL-111-04 | requirement | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| CL-111-09 | requirement | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| TC-007-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| TC-007-006 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-007-009 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| TC-021-007 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| TC-022-006 | verification | frontend/OperatingScreen.sysml | retired: the radio authorization goes (#226) | - |
+| TC-022-010 | verification | frontend/OperatingScreen.sysml | retired: the radio authorization goes (#226) | - |
+| TC-037-001 | verification | frontend/OperatingScreen.sysml | frontend/LowerPanel.sysml | yes |
+| TC-037-002 | verification | frontend/OperatingScreen.sysml | frontend/LowerPanel.sysml | yes |
+| TC-037-003 | verification | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| TC-037-004 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-039-046 | verification | frontend/OperatingScreen.sysml | not carried: its test asserts the whole-configuration save, which goes (one member at a time) | - |
+| TC-044-005 | verification | frontend/OperatingScreen.sysml | frontend/Settings.sysml | yes |
+| TC-044-007 | verification | frontend/OperatingScreen.sysml | frontend/Settings.sysml | yes |
+| TC-050-001 | verification | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| TC-050-002 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-050-003 | verification | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| TC-050-005 | verification | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| TC-050-007 | verification | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| TC-050-008 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-051-002 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| TC-054-001 | verification | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| TC-054-002 | verification | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| TC-054-003 | verification | frontend/OperatingScreen.sysml | not carried: planned, live, no test | - |
+| TC-055-006 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-055-007 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-057-001 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-057-003 | verification | frontend/OperatingScreen.sysml | not carried: planned, live, no test | - |
+| TC-057-004 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-060-001 | verification | frontend/OperatingScreen.sysml | frontend/QsoPane.sysml | yes |
+| TC-061-001 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-061-002 | verification | frontend/OperatingScreen.sysml | not carried: planned, live, no test | - |
+| TC-061-003 | verification | frontend/OperatingScreen.sysml | retired: with CL-061-02 | - |
+| TC-061-004 | verification | frontend/OperatingScreen.sysml | frontend/BandActivityPane.sysml | yes |
+| TC-061-008 | verification | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| TC-061-009 | verification | frontend/OperatingScreen.sysml | not carried: planned, live, no test | - |
+| TC-065-003 | verification | frontend/OperatingScreen.sysml | not carried: its test asserts the Settings checkbox the marks no longer have; TC-082-004 shows the marks | - |
+| TC-068-001 | verification | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| TC-068-002 | verification | frontend/OperatingScreen.sysml | not carried: planned, live, no test | - |
+| TC-073-001 | verification | frontend/OperatingScreen.sysml | frontend/Settings.sysml | yes |
+| TC-073-002 | verification | frontend/OperatingScreen.sysml | frontend/Settings.sysml | yes |
+| TC-073-003 | verification | frontend/OperatingScreen.sysml | not carried: planned, live, no test | - |
+| TC-074-001 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| TC-074-002 | verification | frontend/OperatingScreen.sysml | not carried: its test asserts the MCP run's automation line, which goes (#122) | - |
+| TC-074-003 | verification | frontend/OperatingScreen.sysml | frontend/OperatingScreen.sysml | yes |
+| TC-074-004 | verification | frontend/OperatingScreen.sysml | not carried: planned, live, no test | - |
+| TC-082-004 | verification | frontend/OperatingScreen.sysml | frontend/SignalArea.sysml | yes |
+| TC-096-001 | verification | frontend/OperatingScreen.sysml | retired: the full-screen button goes (#103) | - |
+| TC-096-002 | verification | frontend/OperatingScreen.sysml | retired: the full-screen button goes (#103) | - |
+| TC-111-005 | verification | frontend/OperatingScreen.sysml | not carried: planned, no test | - |
+| TC-111-014 | verification | frontend/OperatingScreen.sysml | not carried: planned, no test | - |
 | CL-040-01 | requirement | interfaces/external/Udp.sysml | interfaces/external/Udp.sysml | yes |
 | CL-040-02 | requirement | interfaces/external/Udp.sysml | backend/udp/UdpSender.sysml | yes |
 | CL-040-03 | requirement | interfaces/external/Udp.sysml | interfaces/external/Udp.sysml | yes |

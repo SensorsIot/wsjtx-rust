@@ -220,6 +220,28 @@ package WstxRadioSetup {
              connection and gives the error. */
     }
 
+    requirement 'CL-044-18' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST set the output power of the station's band on the
+             radio and report what came of it, as ManagedPower says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-18'; }
+
+    attribute def ManagedPower {
+        doc /* The band's entry of RadioConfig::powers is set on the radio's RF power
+             (Hamlib's level RFPOWER), each time by ReadCompareWriteVerify: once for
+             every connection that becomes ready, once more when the assignment names
+             another power for the band, when the dial radio control confirms lies on
+             another band, and on ApplyPower inside the reservation of the supervisor at
+             once. It waits while the transmitter is not at rest (TransmitterActivity);
+             an attempt that ends with busy is made again after
+             ManagedAgc::retrySeconds. A band without an entry, and a radio whose RF
+             power cannot be set, leave the power to the radio. What comes of it is
+             reported as PowerStatus, as AgcReport says for the AGC, and does not fail
+             the change it belongs to. */
+    }
+
     verification 'TC-044-009' {
         doc /* The wanted AGC is set at a connection and within a change of the selection, and
              reported. */

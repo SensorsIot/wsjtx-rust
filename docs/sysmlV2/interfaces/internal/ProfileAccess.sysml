@@ -14,6 +14,8 @@ package WstxProfileAccess {
     private import WstxAutoControl::AutoConfig;
     private import WstxClubLog::MostWantedRow;
     private import WstxQsoControl::QsoConfig;
+    private import WstxQsoControl::QsoShared;
+    private import WstxQsoControl::TxMacro;
     private import WstxLogControl::Continent;
     private import WstxStationCommands::StartupRecords;
     private import ModelNotes::FollowsSource;
@@ -168,12 +170,16 @@ package WstxProfileAccess {
         attribute spots : SpotsConfig;
         attribute udp : UdpConfiguration;
         attribute auto : AutoConfig;
+        attribute qso : QsoShared;
+        attribute frequencies : WstxStationCommands::WorkingFrequencies;
+        attribute log : WstxLogControl::LogShared;
     }
     attribute def ShackDocument {
         doc /* The shack's saved settings: the content of the file shack.json in
              the shack's folder, one JSON object of UTF-8 with the keys
              schema_version, revision, callsign, locator, continent and cq_words of
-             ShackConfig, and spots, udp and auto for the configurations of these parts,
+             ShackConfig, and spots, udp, auto, qso, frequencies and log for the
+             configurations of these parts,
              each an object with the names of its values as keys. continent is left out
              when absent. A key that is absent, given twice or not named, a value of
              another type and a value outside its rule make the file unusable. */
@@ -323,10 +329,17 @@ package WstxProfileAccess {
              udpTargets: UdpConfiguration::targets of the shack's settings, keyed by
              UdpTarget::address; held to the rules of UdpTarget and UdpConfiguration.
              wantedList: DefinitionsSnapshot::wanted, keyed by WantedEntry::call as it is
-             written; held to the rules of WantedEntry. */
+             written; held to the rules of WantedEntry.
+             txMacros: QsoShared::macros of the shack's settings, keyed by TxMacro::text;
+             held to the rules of TxMacro.
+             workingFrequencies: WorkingFrequencies::entries of the shack's settings,
+             keyed by mode, band and frequency written as FT8 20m 14074000; held to the
+             rules of WorkingFrequency and WorkingFrequencies. */
         enum strategies;
         enum udpTargets;
         enum wantedList;
+        enum txMacros;
+        enum workingFrequencies;
     }
     item def CreateEntry {
         doc /* Add this member to a collection; a copy is a member made from another.
@@ -338,6 +351,9 @@ package WstxProfileAccess {
         attribute target : UdpTarget[0..1] { doc /* For udpTargets. */ }
         attribute wanted : WantedEntry[0..1] {
             doc /* For wantedList; its addedUtcMs is set by the profile. */ }
+        attribute macro : TxMacro[0..1] { doc /* For txMacros. */ }
+        attribute frequency : WstxStationCommands::WorkingFrequency[0..1] {
+            doc /* For workingFrequencies. */ }
     }
     item def UpdateEntry {
         doc /* Put this member in the place of the member with the key; its own key may
@@ -348,6 +364,9 @@ package WstxProfileAccess {
         attribute key : String;
         attribute strategy : Strategy[0..1] { doc /* For strategies. */ }
         attribute target : UdpTarget[0..1] { doc /* For udpTargets. */ }
+        attribute macro : TxMacro[0..1] { doc /* For txMacros. */ }
+        attribute frequency : WstxStationCommands::WorkingFrequency[0..1] {
+            doc /* For workingFrequencies. */ }
     }
     item def DeleteEntry {
         doc /* Remove the member with the key. Answered by the snapshot of the
@@ -356,6 +375,12 @@ package WstxProfileAccess {
         attribute expectedRevision : Integer {
             doc /* The revision of the collection's file the command was made from. */ }
         attribute key : String;
+    }
+    item def ResetFrequencies {
+        doc /* Put WSJT-X's default list in the place of the working frequencies.
+             Answered by the snapshot of the collection or by SaveRefused. */
+        attribute expectedRevision : Integer {
+            doc /* The revision of the shack's file the command was made from. */ }
     }
     attribute def RenamedEntry {
         doc /* A member read under another key than its file gives it. */

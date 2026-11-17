@@ -49,6 +49,24 @@ package WstxRadioControl {
         attribute id : String { doc /* The catalogue's name of the rig: icom.ic7300. */ }
         attribute hamlibModel : Integer {
             doc /* Hamlib's number of the rig: 3073 for the IC-7300. */ }
+        attribute abilities : RadioAbility[0..*] {
+            doc /* What the rig can do over CAT, as its catalogue entry gives it from
+                 Hamlib's capabilities of the rig. */ }
+    }
+    enum def RadioAbility {
+        doc /* A function of the radio that not every rig has over CAT.
+             keyOverCat: key the transmitter. setPower: set the RF power.
+             split: use a second VFO for transmit. setAgc: set the AGC.
+             dataMode: switch the data mode. readAlc, readPower, readSwr: read the ALC,
+             the output power and the SWR meter. */
+        enum keyOverCat;
+        enum setPower;
+        enum split;
+        enum setAgc;
+        enum dataMode;
+        enum readAlc;
+        enum readPower;
+        enum readSwr;
     }
     attribute def RadioConfig {
         doc /* The configuration of radio control: what the operator sets of the radio
@@ -60,6 +78,16 @@ package WstxRadioControl {
             doc /* The AGC radio control sets on the radio at every connection and
                  within a change of the operating selection. Present exactly for a
                  managed radio, and slow until the operator sets another. */ }
+        attribute powers : BandPower[0..*] {
+            doc /* The output power of each band that radio control sets on the radio
+                 (WstxRadioSetup::ManagedPower), at most one entry for a band. A band
+                 without one leaves the radio's power as it is. */ }
+    }
+    attribute def BandPower {
+        doc /* The output power of one band. */
+        attribute band : String { doc /* An ADIF band name in lower case. */ }
+        attribute powerPct : Integer {
+            doc /* In percent of the radio's full power, from 1 to 100. */ }
     }
     attribute def RadioRecords {
         doc /* What radio control wants kept across the sessions of the station. No
@@ -214,6 +242,9 @@ package WstxRadioControl {
         attribute model : String[0..1] {
             doc /* The name of ControlSelection::rig; absent while the profile controls
                  none by CAT. */ }
+        attribute abilities : RadioAbility[0..*] {
+            doc /* RigModel::abilities of the rig; empty while the profile controls none
+                 by CAT. */ }
         attribute facts : RadioFacts;
         attribute automatic : AutomaticCatStatus;
         attribute place : RadioPlace[0..1] {
@@ -223,17 +254,21 @@ package WstxRadioControl {
         attribute keyingConfirmed : Boolean {
             doc /* RadioRecords::keyingConfirmed. */ }
     }
-    enum def AgcOutcome {
-        doc /* unchanged: the radio already had the wanted AGC.
+    enum def SettingOutcome {
+        doc /* What came of setting a value radio control keeps on the radio.
+             unchanged: the radio already had the wanted value.
              written: it was set and read back.
-             notApplied: it could not be read or set; AgcStatus::error says why. */
+             notApplied: it could not be read or set; the status's error says why. */
         enum unchanged;
         enum written;
         enum notApplied;
     }
-    enum def AgcTrigger {
+    enum def SettingTrigger {
+        doc /* connect: a connection became ready. selection: ApplyAgc or ApplyPower.
+             band: the dial radio control confirmed lies on another band. */
         enum 'connect';
         enum selection;
+        enum band;
     }
     item def AgcStatus {
         doc /* The AGC the station wants on the radio and what came of setting it. */
@@ -241,10 +276,23 @@ package WstxRadioControl {
             doc /* RadioConfig::agc; absent while the configuration has none. */ }
         attribute connectionNumber : Integer[0..1];
         attribute value : Agc[0..1] { doc /* What the radio reported last. */ }
-        attribute outcome : AgcOutcome[0..1] {
+        attribute outcome : SettingOutcome[0..1] {
             doc /* Absent until the radio has been asked. */ }
         attribute error : ControlError[0..1];
-        attribute trigger : AgcTrigger[0..1];
+        attribute trigger : SettingTrigger[0..1];
+    }
+    item def PowerStatus {
+        doc /* The output power the station wants on the radio and what came of setting
+             it. */
+        attribute band : String[0..1] { doc /* The station's band. */ }
+        attribute targetPct : Integer[0..1] {
+            doc /* The band's entry of RadioConfig::powers; absent without one. */ }
+        attribute connectionNumber : Integer[0..1];
+        attribute valuePct : Integer[0..1] { doc /* What the radio reported last. */ }
+        attribute outcome : SettingOutcome[0..1] {
+            doc /* Absent until the radio has been asked. */ }
+        attribute error : ControlError[0..1];
+        attribute trigger : SettingTrigger[0..1];
     }
 
     enum def ControlOperation {
@@ -297,6 +345,11 @@ package WstxRadioControl {
     item def ApplyAgc {
         doc /* Set RadioConfig::agc now, inside a reservation. The answer is the next
              AgcStatus. */
+    }
+    item def ApplyPower {
+        doc /* Set the output power of the band now, inside a reservation. The answer is
+             the next PowerStatus. */
+        attribute band : String { doc /* An ADIF band name in lower case. */ }
     }
 
     enum def PortState {
@@ -439,7 +492,7 @@ package WstxRadioControl {
              DetectRefused; ApplyRecommended by SettingsOutcome or
              SettingsRefused; DiscoverRadio by RadioDiscovered or RadioKept; a
              RadioMemory of radio control by a RadioMemory of the supervisor.
-             RadioStatus and AgcStatus are given at every change. */
+             RadioStatus, AgcStatus and PowerStatus are given at every change. */
         out item assignment : ControlAssignment;
         out item kept : RadioMemory;
         out item transmitter : TransmitterActivity;
@@ -448,6 +501,7 @@ package WstxRadioControl {
         out item request : OperationRequest;
         out item withdraw : WithdrawRequest;
         out item applyAgc : ApplyAgc;
+        out item applyPower : ApplyPower;
         out item detect : DetectRadios;
         out item applyRecommended : ApplyRecommended;
         out item discover : DiscoverRadio;
@@ -462,6 +516,7 @@ package WstxRadioControl {
         in item radioKept : RadioKept;
         in item status : RadioStatus;
         in item agc : AgcStatus;
+        in item power : PowerStatus;
         in item keep : RadioMemory;
     }
     interface def StationRadioControl {

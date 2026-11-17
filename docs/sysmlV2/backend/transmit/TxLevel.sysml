@@ -16,7 +16,7 @@ package WstxTxLevel {
 
     requirement 'CL-044-12' {
         subject transmit : TransmitService;
-        doc /* Transmit MUST play its audio at the Tx level of the station's band, set by
+        doc /* Transmit MUST play its audio at the audio drive of the station's band, set by
              the operator in manual and found with the Tune tone in automatic (TxLevel,
              LevelFinding). */
         @Status { build = ImplementationState::implemented; }
@@ -24,7 +24,7 @@ package WstxTxLevel {
     #derivation connection { end #original ::> 'FR-008'; end #derive ::> 'CL-044-12'; }
 
     attribute def TxLevel {
-        doc /* The Tx level: how far the audio of the station is turned down, in whole
+        doc /* The audio drive: how far the audio of the station is turned down, in whole
              dB from levelMinDb to levelMaxDb.
              The scale of a program (PlayProgram::scale) is playbackScale times 10 to
              the power of the level divided by 20.
@@ -64,8 +64,7 @@ package WstxTxLevel {
              the meters and decides by the first of these that holds.
              No ALC value: the finding ends with no_alc.
              An SWR of swrFaultX10 or more: it ends with high_swr.
-             An ALC above 0, or an output power above TransmitConfig::powerLimitPct:
-             the level one step below the present one, and not below
+             An ALC above 0: the level one step below the present one, and not below
              TxLevel::levelMinDb, is found; the result is stored.
              The present level is TxLevel::levelMaxDb: that level is found; the result
              is max_without_alc.
@@ -127,7 +126,7 @@ package WstxTxLevel {
     requirement 'CL-044-14' {
         subject transmit : TransmitService;
         doc /* Transmit MUST read the radio's meters once in every transmission, correct
-             the Tx level in automatic by at most one step for the next one, report
+             the audio drive in automatic by at most one step for the next one, report
              trouble that lasts, and halt on an SWR fault (LevelMonitor). */
         @Status { build = ImplementationState::implemented; }
     }
@@ -144,23 +143,21 @@ package WstxTxLevel {
              With LevelMode automatic the level moves by one step at most from a
              reading; with manual, or while the radio does not report its ALC, it does
              not move.
-             Down, and not below TxLevel::levelMinDb: the ALC is above alcLimit, or
-             the output power is above TransmitConfig::powerLimitPct.
+             Down, and not below TxLevel::levelMinDb: the ALC is above alcLimit.
              Up, and not above TxLevel::levelMaxDb: the ALC is 0, the output power is
-             below stepUpBelowPct percent of the profile power, and the level above is
-             below the ceiling.
-             Without a profile power the output power is neither above nor below it,
-             and the level does not go up.
+             below stepUpBelowPct percent of the band's output power
+             (TransmitProfile::powerPct), and the level above is below the ceiling.
+             Without an output power for the band the level does not go up.
              A level that is lowered by the reading directly after the one that raised
              it is the ceiling: the level does not go up to it again. The ceiling ends
-             with a level found with the Tune tone, with another profile power and with
+             with a level found with the Tune tone, with another output power and with
              a station start.
              The changed level is stored for the station's band and taken as TxLevel
              says; the transmission that plays keeps its level.
              In both modes a LevelWarning is shown from the reading that makes
              persistentReadings readings in a row with its condition, until the first
              reading without it: alc_high for an ALC of alcHigh or more, po_low for an
-             output power below poLowPct percent of the profile power, swr_high for an
+             output power below poLowPct percent of the band's output power, swr_high for an
              SWR of swrHighX10 or more.
              In both modes an SWR of LevelFinding::swrFaultX10 or more is a fault:
              transmit halts as for a Halt, so that the cause is halt, and shows

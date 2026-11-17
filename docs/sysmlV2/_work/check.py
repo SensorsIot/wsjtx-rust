@@ -23,6 +23,7 @@ RULES = {
     "M6.4a": "a clause that is not one sentence",
     "M6.4b": "a clause without MUST, SHOULD or MAY",
     "M6.10": "a clause whose sentence names no element defined in its file",
+    "M6.11": "a clause no use case step carries and that is not @Debugging",
     "M7.1": "a dependency",
     "M7.3": "a text that restates its own identity",
     "M7.4": "history in a text: a date, an issue number or a history word",
@@ -147,7 +148,12 @@ def check_file(key, findings):
             add("M6.2b", n, line.strip()[:70])
         if re.search(r"\busers?\b", line, re.I):
             add("M5.10", n, line.strip()[:70])
-        m = HISTORY.search(line)
+        # A quoted value of an attribute or of a source reference names a version of a
+        # source (MCP's versions are dates), not history.
+        scan = line
+        if re.search(r"\battribute\b[^=]*=|\breference\s*=", line):
+            scan = re.sub(r'"[^"]*"', '""', line)
+        m = HISTORY.search(scan)
         if m:
             add("M7.4", n, m.group(0))
 
@@ -180,6 +186,21 @@ def check_file(key, findings):
                 add("M6.10", at, ident)
 
 
+def check_use_cases(files, findings):
+    path = os.path.join(ROOT, "UseCases.sysml")
+    if not os.path.exists(path):
+        return
+    carried = set(re.findall(r"requirement :> \w+::'(CL-[\d-]+)'", io.open(path, encoding="utf-8").read()))
+    for key in files:
+        if key == "UseCases.sysml":
+            continue
+        text = io.open(os.path.join(ROOT, key), encoding="utf-8").read()
+        for m in re.finditer(r"^    requirement '(CL-[\d-]+)' \{(.*?)\n    \}", text, re.S | re.M):
+            if m.group(1) not in carried and "@Debugging" not in m.group(2):
+                line = text[:m.start()].count("\n") + 1
+                findings.append(("M6.11", key, line, m.group(1)))
+
+
 def main(argv):
     verbose = "-v" in argv
     prefixes = [a for a in argv if not a.startswith("-")]
@@ -191,6 +212,7 @@ def main(argv):
             findings.append(("M2.1", key, 0, "not in the target tree"))
         for key in sorted(target - set(files)):
             findings.append(("M2.1", key, 0, "missing"))
+        check_use_cases(files, findings)
     for key in files:
         if prefixes and not any(key.startswith(p) for p in prefixes):
             continue

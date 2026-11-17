@@ -337,6 +337,56 @@ package WstxLogbook {
              part. */
     }
 
+    requirement 'CL-010-20' {
+        subject log : LogService;
+        doc /* The log MUST keep every decode and every sent message of the station as
+             HeardFile says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-010-20'; }
+
+    attribute def HeardFile {
+        doc /* The log appends one line for each ResultRecord of a live job and for each
+             SentMessage to the file yyyy-MM-ALL.TXT of the month of the line's time in
+             LogContext::stationFolder, made when it does not exist. A line is the time
+             yyMMdd_hhmmss, the dial in MHz with three decimals right-aligned in 10
+             characters and a space, Rx or Tx, a space, the mode left-aligned in 6
+             characters, the SNR in 4, the DT with one decimal in 5, the audio frequency
+             in Hz in 5, a space and the message. An Rx line has the period's start, the
+             dial of LogContext::dialHz and the record's values; a Tx line has the
+             period's start, the dial, SNR 0, DT 0.0 and the Tx offset. A line that cannot
+             be written is lost, and nothing else waits for it. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: MainWindow::write_all, with "
+                + "Split ALL.TXT monthly";
+        }
+    }
+
+    requirement 'CL-010-21' {
+        subject log : LogService;
+        doc /* The log MUST give the records of a contest's period as a Cabrillo file as
+             CabrilloExport says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-010-21'; }
+
+    attribute def CabrilloExport {
+        doc /* An ExportCabrillo is answered by a Cabrillo 3.0 file in parts (ExportChunk):
+             START-OF-LOG: 3.0; LOCATION, CONTEST (the contest's name in the Cabrillo
+             format), CALLSIGN (the profile's callsign), the categories, CLAIMED-SCORE
+             (ExportCabrillo::claimedScore, else empty), OPERATORS, CLUB, NAME and ADDRESS
+             from LogShared::cabrillo; one line QSO: for each record whose start lies in
+             the period and that carries the contest's id, in the order of the starts,
+             with the frequency in kHz, DG, the date and time of the start, the station's
+             call, the exchange sent, the call and the exchange received, as the contest's
+             exchange names their fields; END-OF-LOG:. An unknown contest or a period
+             whose end is not after its start is refused with invalidRequest. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: ExportCabrillo, "
+                + "CabrilloLog::export_qsos";
+        }
+    }
+
     attribute def ContactHistory {
         doc /* How the logbook is read page by page.
              A page holds the records from ReadHistory::cursor on, in the order of the

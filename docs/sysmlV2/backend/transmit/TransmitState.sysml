@@ -165,7 +165,7 @@ package WstxTransmitState {
              is in use refuses the request with busy.
              From the audio delay after the period start on, the start is planned once
              more and the waveform is played (PlayProgram) from the sample the plan
-             gives, at the scale of the Tx level; a plan that fails refuses the request
+             gives, at the scale of the audio drive; a plan that fails refuses the request
              as above, and the radio is released.
              The start of the audio sets last_text and last_period_utc_ms and gives the
              outcome started with the station time of that moment.
@@ -349,6 +349,25 @@ package WstxTransmitState {
         }
     }
 
+    requirement 'CL-009-07' {
+        subject transmit : TransmitService;
+        doc /* Transmit MUST shift the tone of a split operation as SplitRule says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-008'; end #derive ::> 'CL-009-07'; }
+
+    attribute def SplitRule {
+        doc /* With TransmitConfig::split rig or fakeIt on a profile that keys the radio
+             over CAT (TransmitProfile::configured), the shift is the Tx offset rounded
+             down to a multiple of 500 Hz, less 1500 Hz. Transmit gives the split and the
+             shift with the KeyRequest, and plays the waveform and the Tune tone at the
+             Tx offset less the shift, from 1500 to 1999 Hz. Otherwise the shift is 0. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: MainWindow::setXIT, "
+                + "requested_xit = (n/500)*500 - 1500";
+        }
+    }
+
     requirement 'CL-111-06' {
         subject transmit : TransmitService;
         doc /* Transmit MUST play the Tune tone on request, whatever the transmit state
@@ -359,7 +378,7 @@ package WstxTransmitState {
 
     attribute def TuneTone {
         doc /* The Tune tone: an unmodulated tone at SetTune::txOffsetHz, at the scale of
-             the Tx level.
+             the audio drive.
              SetTune to switch on is refused with the first of these that holds:
              transmitUnsupported for the Capability unsupported; radioUnavailable while
              the Capability is not available, TransmitStatus::ptt is indeterminate,

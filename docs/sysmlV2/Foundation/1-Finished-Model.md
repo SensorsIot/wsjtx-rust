@@ -40,6 +40,7 @@ docs/sysml/
 ├── Context.sysml
 ├── Requirements.sysml
 ├── Shack.sysml
+├── UseCases.sysml
 ├── interfaces/
 │   ├── internal/   StationLink, StationCommands, Strategies, RankingControl, AutoControl,
 │   │               QsoControl, LogControl, ReceiveControl, TransmitControl, AudioControl,
@@ -49,7 +50,8 @@ docs/sysml/
 │   └── external/   OperatorInteraction, Mcp, Cat, RadioProperties, FlexApi, SoundDevice,
 │                   Udp, PskReporter, ClubLog, CountryFiles, TimeSource
 ├── backend/
-│   ├── supervisor/     Supervisor*, OperatingSelection, StationAuthority, Startup
+│   ├── supervisor/     Supervisor*, OperatingSelection, StationAuthority, Startup,
+│   │                   SettingsCheck
 │   ├── web/            Web*, Listener, ContentCoding
 │   ├── mcp/            Mcp*, McpEndpoint
 │   ├── profile/        Profile*, ProfileDocument, Recordings
@@ -71,7 +73,7 @@ docs/sysml/
 │   └── flexAdapter/    FlexAdapter*, FlexSession
 ├── frontend/           BrowserClient*, OperatingScreen, BandActivityPane, SignalArea,
 │                       QsoPane, LowerPanel, Settings
-└── shared/             Units, Quantities, ModelBindings, ModelNotes
+└── shared/             Units, ModelBindings, ModelNotes
 ```
 
 `*` marks a part's own file. `operating` is a part: it owns the strategies and contests
@@ -85,7 +87,7 @@ and holds the parts ranking, auto and qso.
 ## M3. Layers
 
 - **M3.1** The order of the layers is: shared, interfaces, parts (`backend/*`, `frontend`),
-  Shack, Context.
+  Shack, Context, UseCases.
 - **M3.2** A file imports only from layers before it, and from Requirements.
 - **M3.3** A part never imports another part. What two parts share stands in their interface.
 - **M3.4** A transport file (StationLink, Mcp) and the operating chain's interface file may
@@ -105,6 +107,7 @@ and holds the parts ranking, auto and qso.
 | **M4.6** | A control interface | the commands and state data of its function, defined once | |
 | **M4.7** | A transport file | routes, wire field names, byte limits, the error body, the MCP tool catalogue, and data no single function owns (heartbeat, session); a view where the wire carries less than the function holds | no copy of a field its function defines |
 | **M4.8** | Any other interface file | the port type, the two ends it joins, what crosses, and the clauses about the exchange itself | |
+| **M4.9** | UseCases | the end-to-end processes of the actors of Context with the shack: goal, actors, steps and variants, each step subsetting the clauses that carry it, and the outcome | no rule, no value, no clause; no step that names a clause only in text |
 
 ## M5. Architecture
 
@@ -118,7 +121,7 @@ and holds the parts ranking, auto and qso.
   the file's lock and revision. Every fact has exactly one owning function.
 - **M5.2** The browser and agents hold copies only: a snapshot, pushed changes and
   requests. A request is not a fact until the station has accepted it. The browser is the
-  origin of two things only: its identity key and its presentation preferences.
+  origin of one thing only: its presentation preferences.
 - **M5.3** Commands and state pass through the supervisor, which is the only gate
   through which a change from outside enters. Commands reach a function only from the
   supervisor.
@@ -161,11 +164,14 @@ and holds the parts ranking, auto and qso.
 - **M6.7** Model and code are bound in both directions by stable names.
 - **M6.8** A contract test takes its values from the model.
 - **M6.9** Every clause names its subject.
+- **M6.11** Every clause is carried by a step of a use case (`UseCases`), except a clause of
+  a debugging function, which carries `@Debugging`.
 
 ## M7. Notation
 
-- **M7.1** The links are `satisfy` (an FR by a part), `verify` (a clause by a test case)
-  and derivation (a clause from an FR). There is no `dependency`.
+- **M7.1** The links are `satisfy` (an FR by a part), `verify` (a clause by a test case),
+  derivation (a clause from an FR) and the subsetting of a clause by a step of a use case.
+  There is no `dependency`.
 - **M7.2** Status, test level and test location are typed values, not sentences.
 - **M7.3** No text restates what the structure already says: its own number, its clause
   list, its cost.
@@ -179,7 +185,7 @@ and holds the parts ranking, auto and qso.
 
 | Check | Covers |
 |---|---|
-| The script `docs/sysmlV2/_work/check.py`, run after every part | M2.1, M4.2, M5.10, M6.2, M6.4, M6.10, M7.1, M7.3, M7.4, and lines over 100 characters |
+| The script `docs/sysmlV2/_work/check.py`, run after every part | M2.1, M4.2, M5.10, M6.2, M6.4, M6.10, M6.11, M7.1, M7.3, M7.4, and lines over 100 characters |
 | The operator's reading of the part and its report | M0.2, M0.3, M1.1 to M1.4, which are judgements; the report lists what was dropped as code |
 
   The structure rules M3, M4.1, M4.3 and M5 are checked by the model tools.

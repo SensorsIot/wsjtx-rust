@@ -16,6 +16,7 @@ package WstxReceiveJob {
     private import WstxAudioStreams::CaptureMarks;
     private import WstxRecordingTransfer::RecordingUnreadable;
     private import WstxRecordingTransfer::OpenRecording;
+    private import ModelNotes::Debugging;
     private import ModelBindings::ImplementationState;
     private import ModelBindings::AutomationState;
     private import ModelBindings::Status;
@@ -193,6 +194,7 @@ package WstxReceiveJob {
         doc /* Receive MUST keep the counters of its latest decode windows and, while the
              window dump is switched on, write each prompt window of FT8 to a file
              (WindowDiagnostics). */
+        @Debugging;
         @Status { build = ImplementationState::implemented; }
     }
     #derivation connection { end #original ::> 'FR-003'; end #derive ::> 'CL-052-01'; }

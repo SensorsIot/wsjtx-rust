@@ -142,7 +142,9 @@
       "model literal OpenRefusal::unsupported_schema": "matched by reading: the text unsupported_schema in server/src/profile.rs; the tool reads no text literal",
       "model literal OpenRefusal::invalid_runtime_configuration": "matched by reading: the text invalid_runtime_configuration of create_native in server/src/profile.rs",
       "code env WSTX_BIND": "a difference: environment mode goes (operator 2026-11-17); main.rs still reads it for a start without arguments and refuses it beside --profile; work for the code",
-      "code env WSTX_ORIGIN": "a difference: environment mode goes (operator 2026-11-17); main.rs still reads it for a start without arguments and refuses it beside --profile; work for the code"
+      "code env WSTX_ORIGIN": "a difference: environment mode goes (operator 2026-11-17); main.rs still reads it for a start without arguments and refuses it beside --profile; work for the code",
+      "model literal SettingsCollection::txMacros": "difference in the code: no Tx macros exist; decided 2026-11-17 from the comparison with WSJT-X (its Tx Macros tab), a target",
+      "model literal SettingsCollection::workingFrequencies": "difference in the code: the working frequencies are a fixed table; editable like WSJT-X decided 2026-11-17 from the comparison with WSJT-X (its Frequencies tab), a target"
     }
   },
   "transmit": {
@@ -320,7 +322,11 @@
       "model literal PointsRule::one_plus_per_500_km_up": "matched by reading: Points::OnePlusPer500KmUp => \"one_plus_per_500_km_up\" in contest.rs",
       "model literal RankingRefusal::notConfigured": "matched by reading: the refusal \"not_configured\" of Owner::evaluate (strategy.rs), a text and no enumeration",
       "model literal RankingRefusal::staleRequest": "matched by reading: the refusal \"stale_request\" of Owner::evaluate",
-      "code const ENTRIES_MAX": "matched by reading: WstxClubLog::MostWantedDownload::entriesMax = 1000, in the profile's file ClubLog.sysml; work for the code: the fetch is the profile's"
+      "code const ENTRIES_MAX": "matched by reading: WstxClubLog::MostWantedDownload::entriesMax = 1000, in the profile's file ClubLog.sysml; work for the code: the fetch is the profile's",
+      "model literal AlertSound::oldPhone": "difference in the code: alerts have one tone; the sounds decided 2026-11-17 from the comparison with WSJT-X (its Alerts tab), a target",
+      "model literal AlertSound::bell": "difference in the code: alerts have one tone; the sounds decided 2026-11-17 from the comparison with WSJT-X (its Alerts tab), a target",
+      "model literal AlertSound::chime": "difference in the code: alerts have one tone; the sounds decided 2026-11-17 from the comparison with WSJT-X (its Alerts tab), a target",
+      "model literal AlertSound::beep": "difference in the code: alerts have one tone; the sounds decided 2026-11-17 from the comparison with WSJT-X (its Alerts tab), a target"
     }
   },
   "clock": {
@@ -791,9 +797,9 @@
       "model literal AutomaticCatCondition::retryWaiting": "matched by reading: the condition texts in Lifecycle::status of server/src/radioControl/cat_lifecycle.rs and the variants of Gate there (a pub(crate) enumeration); the tool reads public enumerations and no text literal. AutomaticCatCondition has seven of the nine texts of the code; for the other two see the verdict of AutomaticCatCondition::disabled",
       "model literal AutomaticCatCondition::waitingForDevice": "matched by reading: the condition texts in Lifecycle::status of server/src/radioControl/cat_lifecycle.rs and the variants of Gate there (a pub(crate) enumeration); the tool reads public enumerations and no text literal. AutomaticCatCondition has seven of the nine texts of the code; for the other two see the verdict of AutomaticCatCondition::disabled",
       "model literal DetectRefusal::confirmationRequired": "matched by reading: the text confirmation_required in detect_route of server/src/radio_setup.rs; busy and invalid_request are texts of detect, radio_unavailable of its call of Owner::hardware. The tool reads no text literal",
-      "model literal AgcTrigger::connect": "matched by reading: the texts connect and selection given to Owner::record in tick and on_selection of server/src/radioControl/radio_agc.rs; the tool reads no text literal",
-      "model literal AgcTrigger::selection": "matched by reading: the texts connect and selection given to Owner::record in tick and on_selection of server/src/radioControl/radio_agc.rs; the tool reads no text literal",
-      "model literal AgcOutcome::notApplied": "a difference in form: the code's result is the text unchanged or written, or else the error code of the radio (Owner::record, radio_agc.rs); the model gives the outcome notApplied and the error apart. The tool matched unchanged and written with names of other enumerations; both are texts of Owner::record",
+      "model literal SettingTrigger::connect": "matched by reading: the texts connect and selection given to Owner::record in tick and on_selection of server/src/radioControl/radio_agc.rs; the tool reads no text literal",
+      "model literal SettingTrigger::selection": "matched by reading: the texts connect and selection given to Owner::record in tick and on_selection of server/src/radioControl/radio_agc.rs; the tool reads no text literal",
+      "model literal SettingOutcome::notApplied": "a difference in form: the code's result is the text unchanged or written, or else the error code of the radio (Owner::record, radio_agc.rs); the model gives the outcome notApplied and the error apart. The tool matched unchanged and written with names of other enumerations; both are texts of Owner::record",
       "model literal PortState::identified": "matched by reading: the texts station_cat, not_probed, not_radio_bridge, in_use, unavailable, no_reply and identified set as port_state in detect of server/src/radio_setup.rs; the tool reads no text literal",
       "model literal PortState::inUse": "matched by reading: the texts station_cat, not_probed, not_radio_bridge, in_use, unavailable, no_reply and identified set as port_state in detect of server/src/radio_setup.rs; the tool reads no text literal",
       "model literal PortState::noReply": "matched by reading: the texts station_cat, not_probed, not_radio_bridge, in_use, unavailable, no_reply and identified set as port_state in detect of server/src/radio_setup.rs; the tool reads no text literal",
@@ -832,7 +838,18 @@
       "code name ProbeFrame::ReadSetting": "matched by reading: the three frames detection sends, the read of the identity to all and to one address, and the read of a menu item; RadioDetection says so in a sentence",
       "code name wire name \"port_in_use\"": "the station link's: the text the status gives for ControlError::resourceInUse of a failed attempt (reason in cat_lifecycle.rs); AutomaticCatStatus::error names the literal. Handed over",
       "code name Operation::frequency_hz": "matched by reading: a field of Operation::SetFrequency and ReceiveSetup, which the tool reads as a variant; it is OperationRequest::frequencyHz",
-      "code const MAX_READ": "inside: the most bytes radio control takes from the port in one read (server/src/transmit/codec.rs); what is noticed outside are the limits of a frame and of an exchange (CivFrame::maxFrameBytes, ControlExchange)"
+      "code const MAX_READ": "inside: the most bytes radio control takes from the port in one read (server/src/transmit/codec.rs); what is noticed outside are the limits of a frame and of an exchange (CivFrame::maxFrameBytes, ControlExchange)",
+      "model value KeyRequest::shiftHz": "difference in the code: no split operation exists; split operation decided 2026-11-17 from the comparison with WSJT-X (Settings > Radio, Split Operation), a target",
+      "model literal SplitOperation::fakeIt": "difference in the code: no split operation exists; split operation decided 2026-11-17 from the comparison with WSJT-X (Settings > Radio, Split Operation), a target",
+      "model literal SplitOperation::rig": "difference in the code: no split operation exists; split operation decided 2026-11-17 from the comparison with WSJT-X (Settings > Radio, Split Operation), a target",
+      "model literal SettingTrigger::band": "difference in the code: the output power is not set; decided 2026-11-17 (operator, option A: output power set on the radio, audio drive by the ALC), a target",
+      "model literal RadioAbility::dataMode": "difference in the code: the catalogue states no abilities and the screen disables nothing by the rig; decided 2026-11-17 (operator: a function the rig lacks is greyed out, the hover says why), a target",
+      "model literal RadioAbility::keyOverCat": "difference in the code: the catalogue states no abilities and the screen disables nothing by the rig; decided 2026-11-17 (operator: a function the rig lacks is greyed out, the hover says why), a target",
+      "model literal RadioAbility::readAlc": "difference in the code: the catalogue states no abilities and the screen disables nothing by the rig; decided 2026-11-17 (operator: a function the rig lacks is greyed out, the hover says why), a target",
+      "model literal RadioAbility::readPower": "difference in the code: the catalogue states no abilities and the screen disables nothing by the rig; decided 2026-11-17 (operator: a function the rig lacks is greyed out, the hover says why), a target",
+      "model literal RadioAbility::readSwr": "difference in the code: the catalogue states no abilities and the screen disables nothing by the rig; decided 2026-11-17 (operator: a function the rig lacks is greyed out, the hover says why), a target",
+      "model literal RadioAbility::setAgc": "difference in the code: the catalogue states no abilities and the screen disables nothing by the rig; decided 2026-11-17 (operator: a function the rig lacks is greyed out, the hover says why), a target",
+      "model literal RadioAbility::setPower": "difference in the code: the catalogue states no abilities and the screen disables nothing by the rig; decided 2026-11-17 (operator: a function the rig lacks is greyed out, the hover says why), a target"
     }
   },
   "flexAdapter": {
@@ -956,7 +973,11 @@
       "code name wire name \"not_confirmed\"": "difference in the code: the code has no unit operating and keeps the strategy store in ranking's module server/src/strategy.rs; the name is ranking's, WstxRankingControl::Needed::not_confirmed, written by Strategy::json",
       "code name wire name \"not_worked\"": "difference in the code: the code has no unit operating and keeps the strategy store in ranking's module server/src/strategy.rs; the name is ranking's, WstxRankingControl::Needed::not_worked, written by Strategy::json",
       "code name wire name \"permanent\"": "difference in the code: Tier::name of the permanent ignore list (server/src/strategy.rs ignore_why, Owner::snapshot), in the strategy store's module; the model has one ignore list, ranking's, and no tier (operator 2026-11-15), issue 228",
-      "code name wire name \"session\"": "difference in the code: Tier::name of the session ignore list (server/src/strategy.rs ignore_why, Owner::snapshot), in the strategy store's module; the model has one ignore list, ranking's, and no tier (operator 2026-11-15), issue 228"
+      "code name wire name \"session\"": "difference in the code: Tier::name of the session ignore list (server/src/strategy.rs ignore_why, Owner::snapshot), in the strategy store's module; the model has one ignore list, ranking's, and no tier (operator 2026-11-15), issue 228",
+      "model literal AlertSound::oldPhone": "difference in the code: alerts have one tone; the sounds decided 2026-11-17 from the comparison with WSJT-X (its Alerts tab), a target",
+      "model literal AlertSound::bell": "difference in the code: alerts have one tone; the sounds decided 2026-11-17 from the comparison with WSJT-X (its Alerts tab), a target",
+      "model literal AlertSound::chime": "difference in the code: alerts have one tone; the sounds decided 2026-11-17 from the comparison with WSJT-X (its Alerts tab), a target",
+      "model literal AlertSound::beep": "difference in the code: alerts have one tone; the sounds decided 2026-11-17 from the comparison with WSJT-X (its Alerts tab), a target"
     }
   },
   "auto": {
@@ -1123,7 +1144,8 @@
       "code name wire name \"yes\"": "code only: freeslot's HisEnd of a chosen offset; QuietSpace has the step at his end, no reported value",
       "code name wire name \"no\"": "code only: freeslot's HisEnd of a chosen offset; QuietSpace has the step at his end, no reported value",
       "code name wire name \"unknown\"": "code only: freeslot's HisEnd of a chosen offset; QuietSpace has the step at his end, no reported value",
-      "code name Command::SelectRow": "matched by reading: one item per command in WstxQsoControl (SelectRow, EnterDx, Reply, CallCq, CallDx, SendNext, ResetRepetitions, CancelContact, HaltQso, ChooseNext, EditMessage, SetReport, SetTx1Skip, SetTx4, SetFrequency, SetHoldTx, SetParity, Tune) for the variants of Command in server/src/contact.rs; the tool compares enumeration literals and stops at the first variant with fields"
+      "code name Command::SelectRow": "matched by reading: one item per command in WstxQsoControl (SelectRow, EnterDx, Reply, CallCq, CallDx, SendNext, ResetRepetitions, CancelContact, HaltQso, ChooseNext, EditMessage, SetReport, SetTx1Skip, SetTx4, SetFrequency, SetHoldTx, SetParity, Tune) for the variants of Command in server/src/contact.rs; the tool compares enumeration literals and stops at the first variant with fields",
+      "model literal QsoRefusal::log_pending": "difference in the code: logging is always automatic; Log automatically decided 2026-11-17 from the comparison with WSJT-X (its Reporting tab), a target"
     }
   },
   "top": {
@@ -1133,7 +1155,8 @@
       "Requirements.sysml",
       "shared/Units.sysml",
       "shared/ModelBindings.sysml",
-      "shared/ModelNotes.sysml"
+      "shared/ModelNotes.sysml",
+      "UseCases.sysml"
     ],
     "validate_with": [
       "backend/audio/Audio.sysml",
@@ -1232,7 +1255,19 @@
       "backend/supervisor/OperatingSelection.sysml",
       "backend/supervisor/Startup.sysml",
       "interfaces/internal/WebControl.sysml",
-      "backend/web/Web.sysml"
+      "backend/web/Web.sysml",
+      "backend/mcp/Mcp.sysml",
+      "frontend/BrowserClient.sysml",
+      "backend/mcp/McpEndpoint.sysml",
+      "backend/supervisor/SettingsCheck.sysml",
+      "backend/web/ContentCoding.sysml",
+      "backend/web/Listener.sysml",
+      "frontend/BandActivityPane.sysml",
+      "frontend/LowerPanel.sysml",
+      "frontend/OperatingScreen.sysml",
+      "frontend/QsoPane.sysml",
+      "frontend/Settings.sysml",
+      "frontend/SignalArea.sysml"
     ],
     "verdicts": {
       "model literal UnitSuffix::Bytes": "model only: a unit suffix of the model's own naming rule (shared/Units.sysml); no code",
@@ -1258,6 +1293,7 @@
       "backend/supervisor/StationAuthority.sysml",
       "backend/supervisor/OperatingSelection.sysml",
       "backend/supervisor/Startup.sysml",
+      "backend/supervisor/SettingsCheck.sysml",
       "interfaces/internal/StationCommands.sysml"
     ],
     "validate_with": [
@@ -1372,7 +1408,16 @@
       "model literal EndpointMatch::ambiguous": "matched by reading: the state ambiguous in audio_json of server/src/radio_setup.rs, radio control's module, where the code pairs the endpoints with the detection itself; the pairing is the supervisor's (work for the code)",
       "model literal StationRefusal::auto_on": "difference in the code: no code refuses a command while Auto is on (issue 119, CL-119-09 target); work for the code",
       "code env WSTX_BIND": "a difference: environment mode goes (operator 2026-11-17); main.rs still reads it for a start without arguments and refuses it beside --profile; work for the code",
-      "code env WSTX_ORIGIN": "a difference: environment mode goes (operator 2026-11-17); main.rs still reads it for a start without arguments and refuses it beside --profile; work for the code"
+      "code env WSTX_ORIGIN": "a difference: environment mode goes (operator 2026-11-17); main.rs still reads it for a start without arguments and refuses it beside --profile; work for the code",
+      "model literal CheckArea::station": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target",
+      "model literal CheckArea::radio": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target",
+      "model literal CheckArea::power": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target",
+      "model literal CheckArea::audio": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target",
+      "model literal CheckArea::clock": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target",
+      "model literal CheckArea::operating": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target",
+      "model literal CheckArea::files": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target",
+      "model literal CheckArea::destinations": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target",
+      "model literal CheckOutcome::passed": "difference in the code: no settings check exists; decided 2026-11-17 (use case SettingsCheck, operator option B), a target"
     }
   },
   "web": {
@@ -1473,6 +1518,170 @@
       "code env WSTX_RADIO_DISCOVERY": "another part: the supervisor's launch (WstxStartup::LaunchRule)",
       "code env WSTX_SNTP_SERVERS": "another part: the clock's (WstxStationClock); main.rs reads it when it starts the clock",
       "code env WSTX_UDP": "another part: udp's (WstxUdpSender::TargetList)"
+    }
+  },
+  "mcp": {
+    "files": [
+      "backend/mcp/Mcp.sysml",
+      "backend/mcp/McpEndpoint.sysml",
+      "interfaces/external/Mcp.sysml"
+    ],
+    "validate_with": [
+      "Requirements.sysml",
+      "backend/supervisor/OperatingSelection.sysml",
+      "backend/supervisor/Startup.sysml",
+      "backend/supervisor/StationAuthority.sysml",
+      "backend/supervisor/Supervisor.sysml",
+      "interfaces/external/Cat.sysml",
+      "interfaces/external/ClubLog.sysml",
+      "interfaces/external/CountryFiles.sysml",
+      "interfaces/external/FlexApi.sysml",
+      "interfaces/external/OperatorInteraction.sysml",
+      "interfaces/external/PskReporter.sysml",
+      "interfaces/external/RadioProperties.sysml",
+      "interfaces/external/SoundDevice.sysml",
+      "interfaces/external/TimeSource.sysml",
+      "interfaces/external/Udp.sysml",
+      "interfaces/internal/AudioControl.sysml",
+      "interfaces/internal/AudioStreams.sysml",
+      "interfaces/internal/AutoControl.sysml",
+      "interfaces/internal/Decodes.sysml",
+      "interfaces/internal/DisplayData.sysml",
+      "interfaces/internal/Hearing.sysml",
+      "interfaces/internal/Keying.sysml",
+      "interfaces/internal/LogControl.sysml",
+      "interfaces/internal/ModeProcessing.sysml",
+      "interfaces/internal/OperatingChain.sysml",
+      "interfaces/internal/ProfileAccess.sysml",
+      "interfaces/internal/QsoControl.sysml",
+      "interfaces/internal/RadioControl.sysml",
+      "interfaces/internal/RankingControl.sysml",
+      "interfaces/internal/ReceiveControl.sysml",
+      "interfaces/internal/RecordingTransfer.sysml",
+      "interfaces/internal/StationCommands.sysml",
+      "interfaces/internal/StationTime.sysml",
+      "interfaces/internal/Strategies.sysml",
+      "interfaces/internal/TransmitControl.sysml",
+      "interfaces/internal/UdpControl.sysml",
+      "shared/ModelBindings.sysml",
+      "shared/ModelNotes.sysml",
+      "shared/Units.sysml"
+    ],
+    "verdicts": {}
+  },
+  "frontend": {
+    "files": [
+      "frontend/BrowserClient.sysml",
+      "frontend/OperatingScreen.sysml",
+      "frontend/SignalArea.sysml",
+      "frontend/BandActivityPane.sysml",
+      "frontend/QsoPane.sysml",
+      "frontend/LowerPanel.sysml",
+      "frontend/Settings.sysml",
+      "interfaces/external/OperatorInteraction.sysml"
+    ],
+    "validate_with": [
+      "Requirements.sysml",
+      "backend/supervisor/OperatingSelection.sysml",
+      "backend/supervisor/Startup.sysml",
+      "backend/supervisor/StationAuthority.sysml",
+      "backend/supervisor/Supervisor.sysml",
+      "interfaces/external/Cat.sysml",
+      "interfaces/external/ClubLog.sysml",
+      "interfaces/external/CountryFiles.sysml",
+      "interfaces/external/FlexApi.sysml",
+      "interfaces/external/Mcp.sysml",
+      "interfaces/external/PskReporter.sysml",
+      "interfaces/external/RadioProperties.sysml",
+      "interfaces/external/SoundDevice.sysml",
+      "interfaces/external/TimeSource.sysml",
+      "interfaces/external/Udp.sysml",
+      "interfaces/internal/AudioControl.sysml",
+      "interfaces/internal/AudioStreams.sysml",
+      "interfaces/internal/AutoControl.sysml",
+      "interfaces/internal/Decodes.sysml",
+      "interfaces/internal/DisplayData.sysml",
+      "interfaces/internal/Hearing.sysml",
+      "interfaces/internal/Keying.sysml",
+      "interfaces/internal/LogControl.sysml",
+      "interfaces/internal/ModeProcessing.sysml",
+      "interfaces/internal/OperatingChain.sysml",
+      "interfaces/internal/ProfileAccess.sysml",
+      "interfaces/internal/QsoControl.sysml",
+      "interfaces/internal/RadioControl.sysml",
+      "interfaces/internal/RankingControl.sysml",
+      "interfaces/internal/ReceiveControl.sysml",
+      "interfaces/internal/RecordingTransfer.sysml",
+      "interfaces/internal/StationCommands.sysml",
+      "interfaces/internal/StationLink.sysml",
+      "interfaces/internal/StationTime.sysml",
+      "interfaces/internal/Strategies.sysml",
+      "interfaces/internal/TransmitControl.sysml",
+      "interfaces/internal/UdpControl.sysml",
+      "interfaces/internal/WebControl.sysml",
+      "shared/ModelBindings.sysml",
+      "shared/ModelNotes.sysml",
+      "shared/Units.sysml"
+    ],
+    "verdicts": {
+      "model value CallingMe::callingLines": "matched by reading: OTHER_LINES = 8 in client/contact.js",
+      "model value CallingMe::crowdingHz": "matched by reading: the ±50 Hz of the Calling me rule in client/contact.js",
+      "model value DisplayLevels::referenceDbfs": "matched by reading: displayBlack = -85 in client/recording.js",
+      "model value DisplayLevels::speedStep": "matched by reading: the speed slider step 0.5 (min 0.5, max 8) in client/recording.js",
+      "model value FrontendConfig::rangeDb": "matched by reading: displayRange = 50 and the range slider 10 to 80 in client/recording.js",
+      "model value FrontendConfig::sensitivityDb": "matched by reading: the sensitivity slider -30 to 30, value 0, in client/recording.js",
+      "model value FrontendConfig::speed": "matched by reading: the speed slider's value 1 (10 px/s) in client/recording.js",
+      "model value KeyRule::txStepFt8Hz": "matched by reading: Shift+F11/F12 Tx 60 Hz (FT4 90) in client/contact.js",
+      "model value KeyRule::txStepFt4Hz": "matched by reading: Shift+F11/F12 Tx 60 Hz (FT4 90) in client/contact.js",
+      "model value LinkRule::connectMs": "matched by reading: the opening timeout 5000 in client/app.js",
+      "model value LinkRule::retryMaxMs": "matched by reading: retry = Math.min(retry * 2, 4000) in client/app.js",
+      "model value LinkRule::retryMs": "matched by reading: retry = 1000 in client/app.js",
+      "model value LinkRule::silenceMs": "matched by reading: the watchdog's 12000 ms of silence, checked every 1000 ms, in client/app.js; the code allows 30000 while a deferred download is pending, a detail of the code",
+      "model value MessageLines::loggedSeconds": "matched by reading: LOGGED_NOTICE_MS = 8000 in client/contact.js",
+      "model value PaneLayout::callingRows": "matched by reading: the Calling me area of 6 rows (header and 5) in client/recording.css",
+      "model value PaneLayout::narrowQsoRows": "matched by reading: the QSO area of 7 rows (header and 6) at most 48em wide in client/recording.css",
+      "model value PaneLayout::qsoRows": "matched by reading: the QSO area of 13 rows (header and 12) in client/recording.css",
+      "model value Promptness::paintMs": "a bound of the promise (rows within 0.3 s on a LAN); no constant: the client reads a new period at once and paints on arrival",
+      "model value RxTxStrip::shiftStepHz": "matched by reading: event.shiftKey ? 10 : 1 in client/contact.js",
+      "model value RxTxStrip::stepHz": "matched by reading: event.shiftKey ? 10 : 1 in client/contact.js",
+      "model value ScreenLayout::minHeightPx": "a bound of the promise (the one screen at 1366 by 768); the styles hold it by their layout, no constant",
+      "model value ScreenLayout::minWidthPx": "a bound of the promise (the one screen at 1366 by 768); the styles hold it by their layout, no constant",
+      "model value ScreenLayout::phoneWidthPx": "a bound of the promise (no sideways scroll at 360 px); the styles hold it by their layout, no constant",
+      "model value SwrValue::redAboveSwr": "matched by reading: SWR_RED_ABOVE_X10 = 20 in client/recording.js",
+      "model literal ThemeSwitch::bySun": "matched by reading: the theme switch values manual, time and sun in client/contact.js",
+      "model literal ThemeSwitch::byTime": "matched by reading: the theme switch values manual, time and sun in client/contact.js",
+      "model literal ThemeSwitch::manual": "matched by reading: the theme switch values manual, time and sun in client/contact.js",
+      "model literal Theme::day": "matched by reading: the theme values dark, day and night in client/contact.js",
+      "model literal Theme::dark": "matched by reading: the theme values dark, day and night in client/contact.js",
+      "model literal Theme::night": "matched by reading: the theme values dark, day and night in client/contact.js",
+      "model literal LinkState::connected": "matched by reading: connection.dataset.state in client/app.js and client/contact.js",
+      "model literal LinkState::connecting": "matched by reading: connection.dataset.state in client/app.js and client/contact.js",
+      "model literal LinkState::stale": "matched by reading: connection.dataset.state in client/app.js and client/contact.js",
+      "model literal EntrySeverity::error": "matched by reading: the severities of chip() in client/contact.js",
+      "model literal EntrySeverity::warn": "matched by reading: the severities of chip() in client/contact.js",
+      "model literal SortField::dt": "matched by reading: the sort fields of sortHeader and the value header in client/recording.js",
+      "model literal SortField::frequency": "matched by reading: the sort fields of sortHeader and the value header in client/recording.js",
+      "model literal SortField::message": "matched by reading: the sort fields of sortHeader and the value header in client/recording.js",
+      "model literal SortField::value": "matched by reading: the sort fields of sortHeader and the value header in client/recording.js",
+      "model literal SortField::snr": "a difference: the client names the field signal; the model names what is sorted, the SNR",
+      "model literal HighlightSlot::myCall": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newCall": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newCallBand": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newContinent": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newContinentBand": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newCqZone": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newCqZoneBand": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newDxcc": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newDxccBand": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newGrid": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newGridBand": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newItuZone": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal HighlightSlot::newItuZoneBand": "matched by reading: the slots of client/contact.js and client/recording.js in snake_case (mycall, new_dxcc, ...)",
+      "model literal RowMark::partner": "matched by reading: the marks of the Band Activity rows in client/recording.js (ba-partner, the calling-me row, the whole row, senderOnly, none)",
+      "model literal RowMark::callsMe": "matched by reading: the marks of the Band Activity rows in client/recording.js (ba-partner, the calling-me row, the whole row, senderOnly, none)",
+      "model literal RowMark::newWholeRow": "matched by reading: the marks of the Band Activity rows in client/recording.js (ba-partner, the calling-me row, the whole row, senderOnly, none)",
+      "model literal RowMark::newSenderOnly": "matched by reading: the marks of the Band Activity rows in client/recording.js (ba-partner, the calling-me row, the whole row, senderOnly, none)",
+      "model literal RowMark::plain": "matched by reading: the marks of the Band Activity rows in client/recording.js (ba-partner, the calling-me row, the whole row, senderOnly, none)"
     }
   }
 }

@@ -51,8 +51,10 @@ package WstxOperatingSelection {
              while the transmitter is keyed, plays a transmission or tunes
              (TransmitStatus): busy.
              The band is the band of SelectBand, else the band of the selection, else
-             the one band whose frequency for a mode (BandFrequency) is the dial radio
-             control confirms on its ready connection; without one: select_band_first.
+             the band of a working frequency of the mode (BandFrequency) that is the dial
+             radio control confirms on its ready connection; without one:
+             select_band_first. A nominalHz that is no working frequency of the mode on the
+             band: selection_unavailable.
              The mode is the mode of SelectMode, else the station's operating mode
              (OperatingModeRule): a band keeps the mode and a mode keeps the band.
              A band without a frequency for the mode: selection_unavailable. The native
@@ -69,7 +71,8 @@ package WstxOperatingSelection {
              Applying: radio control reads whether the radio transmits, and a radio that
              transmits ends it with radio_unavailable; radio control sets the radio
              (OperationRequest receiveSetup: the frequency, USB with filter 1, the data
-             mode on with filter 1), sets the AGC (ApplyAgc) and the reservation is
+             mode on with filter 1), sets the AGC (ApplyAgc) and the output power of the
+             band (ApplyPower), and the reservation is
              released. On a native profile radio control tunes the radio's slice.
              Restarting: the selection becomes the mode, band and frequency asked for,
              with the origin native_readback, cat_readback, or manual without a radio,
@@ -93,12 +96,16 @@ package WstxOperatingSelection {
              The state is given as SelectionState at every change. */
     }
     attribute def BandFrequency {
-        doc /* The dial frequency of a band for a mode: the preferred entry of the mode on
-             the band in WSJT-X's default list of frequencies, of the region ALL; on 4 m of
-             region 1. 160 m and 4 m have none for FT4. */
+        doc /* The dial frequency of a band for a mode: SelectBand::nominalHz, else the
+             first working frequency of the mode on the band in the shack's
+             WstxStationCommands::WorkingFrequencies. A band with none has no frequency
+             for the mode.
+             WSJT-X's default list: the FT8 and FT4 entries of WSJT-X's default list of
+             frequencies for the bands of OperatingBand, of the region ALL, on 4 m of
+             region 1, in its order, the preferred entry of a mode on a band first. */
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: models/FrequencyList.cpp, the "
-                + "preferred FT8 and FT4 entries of the default frequency list";
+                + "FT8 and FT4 entries of the default frequency list";
         }
     }
 
@@ -192,8 +199,8 @@ package WstxOperatingSelection {
     attribute def ReadbackRule {
         doc /* While the selection has no band and no selection is pending, a dial that
              radio control confirms on its ready connection, made under the current
-             profile revision, and that is the frequency of the operating mode on exactly
-             one band (BandFrequency), becomes the selection with the origin cat_readback
+             profile revision, and that is a working frequency of the operating mode
+             (BandFrequency), becomes the selection with the origin cat_readback
              and no command id. It changes neither the operating mode nor the operating
              revision, sets nothing on the radio and starts nothing in receive. At
              station start and after every new connection it is taken again; a band

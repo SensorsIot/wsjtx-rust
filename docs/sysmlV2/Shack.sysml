@@ -166,6 +166,7 @@ package WstxShack {
         interface decodesQso : Decodes connect receive.decodes to operating.qso.decodes;
         interface decodesUdp : Decodes connect receive.decodes to udp.decodes;
         interface decodesSpots : Decodes connect receive.decodes to spots.decodes;
+        interface decodesLog : Decodes connect receive.decodes to log.decodes;
         interface displayWeb : DisplayData connect receive.display to web.display;
         interface displayQso : DisplayData connect receive.display to operating.qso.display;
 

@@ -22,6 +22,10 @@ package ModelNotes {
         doc /* The external reference a rule follows, with its version. */
         attribute reference : String;
     }
+    metadata def Debugging {
+        doc /* A clause of a debugging function: it serves finding faults, not operating,
+             and no use case carries it. */
+    }
     metadata def DiffersFromSource {
         doc /* A deliberate difference from that reference. */
         attribute what : String;

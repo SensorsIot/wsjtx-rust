@@ -120,7 +120,27 @@ package WstxStationCommands {
         attribute operatingRevision : Integer;
     }
     item def SelectMode :> SelectionRequest { attribute mode : Mode; }
-    item def SelectBand :> SelectionRequest { attribute band : OperatingBand; }
+    item def SelectBand :> SelectionRequest {
+        attribute band : OperatingBand;
+        attribute nominalHz : Integer[0..1] {
+            doc /* A working frequency of the mode on the band; absent: the first
+                 (WstxOperatingSelection::BandFrequency). */ }
+    }
+    attribute def WorkingFrequency {
+        doc /* A dial frequency the band selector offers. */
+        attribute mode : Mode;
+        attribute band : OperatingBand;
+        attribute nominalHz : Integer {
+            doc /* Within the band's limits as ADIF gives them. A mode, band and frequency
+                 stand once in the list. */ }
+    }
+    attribute def WorkingFrequencies {
+        doc /* The supervisor's part of the shack's settings
+             (WstxProfileAccess::ShackSettings). */
+        attribute entries : WorkingFrequency[0..200] ordered {
+            doc /* At first, and after ResetFrequencies, WSJT-X's default list
+                 (WstxOperatingSelection::BandFrequency). */ }
+    }
     item def CancelSelection :> StationRequest {
         doc /* End a selection, or keep one from being carried out
              (WstxOperatingSelection::CancelRule). */
@@ -222,6 +242,53 @@ package WstxStationCommands {
         attribute revision : Integer;
         attribute result : CancelResult;
     }
+    item def CheckSettings :> StationRequest {
+        doc /* Check the station's settings (WstxSettingsCheck::CheckRule). */
+        attribute withTune : Boolean = false {
+            doc /* The operator has agreed that the check keys the radio for a Tune
+                 tone. */ }
+    }
+    enum def CheckArea {
+        doc /* The areas of the settings check, in the order of the settings drawer. */
+        enum station;
+        enum radio;
+        enum power;
+        enum audio;
+        enum clock;
+        enum operating;
+        enum files;
+        enum destinations;
+    }
+    enum def CheckOutcome {
+        enum passed;
+        enum failed;
+        enum skipped;
+    }
+    attribute def CheckLine {
+        doc /* One check of the settings check. */
+        attribute area : CheckArea;
+        attribute checked : String { doc /* What was checked, as the settings name it. */ }
+        attribute outcome : CheckOutcome;
+        attribute reason : String[0..1] {
+            doc /* Present for failed and skipped: why, and where to change it. */ }
+    }
+    item def SettingsCheckReport {
+        doc /* The latest settings check, given after each line and at its end. */
+        attribute commandId : String { doc /* The CheckSettings it answers. */ }
+        attribute running : Boolean;
+        attribute lines : CheckLine[0..*] ordered;
+        attribute ready : Boolean[0..1] {
+            doc /* At the end: true when no line failed. */ }
+    }
+    enum def CheckError {
+        doc /* busy: a contact is in progress, the transmitter is not at rest, a
+             selection is pending or a check runs. */
+        enum busy;
+    }
+    item def CheckRefused :> StationOutcome {
+        doc /* A settings check that was not started. */
+        attribute error : CheckError;
+    }
     item def SelectionAdmitted :> StationOutcome {
         doc /* The answer to an admitted SelectMode or SelectBand, and to an accepted
              CancelSelection (phase cancelled). */
@@ -302,6 +369,7 @@ package WstxStationCommands {
         out item selectMode : SelectMode :> commands;
         out item selectBand : SelectBand :> commands;
         out item cancelSelection : CancelSelection :> commands;
+        out item checkSettings : CheckSettings :> commands;
         out item selectRow : WstxQsoControl::SelectRow :> commands;
         out item enterDx : WstxQsoControl::EnterDx :> commands;
         out item reply : WstxQsoControl::Reply :> commands;
@@ -320,6 +388,8 @@ package WstxStationCommands {
         out item setHoldTx : WstxQsoControl::SetHoldTx :> commands;
         out item setParity : WstxQsoControl::SetParity :> commands;
         out item tune : WstxQsoControl::Tune :> commands;
+        out item confirmLog : WstxQsoControl::ConfirmLog :> commands;
+        out item discardLog : WstxQsoControl::DiscardLog :> commands;
         out item switchAuto : WstxAutoControl::SwitchAuto :> commands;
         out item evaluate : WstxRankingControl::EvaluateRequest :> commands;
         out item ignore : WstxRankingControl::IgnoreCommand :> commands;
@@ -335,6 +405,7 @@ package WstxStationCommands {
         out item reserveImport : WstxLogControl::ReserveImport :> commands;
         out item importChunk : WstxLogControl::ImportChunk :> commands;
         out item resendLast : WstxLogControl::ResendLast :> commands;
+        out item exportCabrillo : WstxLogControl::ExportCabrillo :> commands;
         out item detectRadios : WstxRadioControl::DetectRadios :> commands;
         out item applyRecommended : WstxRadioControl::ApplyRecommended :> commands;
         out item saveConfig : WstxProfileAccess::SaveProfile :> commands;
@@ -342,6 +413,7 @@ package WstxStationCommands {
         out item createEntry : WstxProfileAccess::CreateEntry :> commands;
         out item updateEntry : WstxProfileAccess::UpdateEntry :> commands;
         out item deleteEntry : WstxProfileAccess::DeleteEntry :> commands;
+        out item resetFrequencies : WstxProfileAccess::ResetFrequencies :> commands;
         out item updateMostWanted : WstxProfileAccess::UpdateMostWanted :> commands;
         out item updateCountryFile : WstxProfileAccess::UpdateCountryFile :> commands;
         out item reserveRecording : WstxRecordingTransfer::ReserveImport :> commands;
@@ -363,6 +435,7 @@ package WstxStationCommands {
         in item stationRefused : StationRefused :> answers;
         in item selectionAdmitted : SelectionAdmitted :> answers;
         in item selectionRefused : SelectionRefused :> answers;
+        in item checkRefused : CheckRefused :> answers;
         in item radioDetection : RadioDetection :> answers;
         in item qsoAnswer : WstxQsoControl::QsoAnswer :> answers;
         in item autoRefused : WstxAutoControl::AutoRefused :> answers;
@@ -397,6 +470,7 @@ package WstxStationCommands {
 
         in item selection : SelectionState :> views;
         in item startup : StartupState :> views;
+        in item settingsCheck : SettingsCheckReport :> views;
         in item qso : WstxQsoControl::QsoState :> views;
         in item openSlots : WstxQsoControl::OpenSlots :> views;
         in item auto : WstxAutoControl::AutoActivity :> views;
@@ -410,6 +484,7 @@ package WstxStationCommands {
         in item logAttempt : WstxLogControl::LogAttempt :> views;
         in item radio : WstxRadioControl::RadioStatus :> views;
         in item agc : WstxRadioControl::AgcStatus :> views;
+        in item power : WstxRadioControl::PowerStatus :> views;
         in item audio : WstxAudioControl::AudioStatus :> views;
         in item spots : WstxHearing::FeedReport :> views;
         in item target : WstxHearing::TargetReport :> views;

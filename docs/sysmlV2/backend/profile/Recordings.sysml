@@ -6,6 +6,7 @@ package WstxRecordings {
     private import WstxRecordingTransfer::*;
     private import ModelNotes::FollowsSource;
     private import ModelNotes::DiffersFromSource;
+    private import ModelNotes::Debugging;
     private import ModelBindings::ImplementationState;
     private import ModelBindings::AutomationState;
     private import ModelBindings::Status;
@@ -20,6 +21,7 @@ package WstxRecordings {
         doc /* Profile MUST take in only a recording whose file is a WAV file of the one
              form and within the limits, keep that file byte for byte, and give receive
              its samples from it (WavForm, StoredRecording). */
+        @Debugging;
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn { module = "server/src/recording.rs"; }
     }
@@ -116,6 +118,7 @@ package WstxRecordings {
         doc /* Profile MUST put a recording in the place of the stored one only when its
              import is whole and valid, and keep the stored one through every import
              that fails, is cancelled or runs out of time (ImportLifecycle). */
+        @Debugging;
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn { module = "server/src/recording.rs"; }
     }
@@ -168,6 +171,7 @@ package WstxRecordings {
         subject profile : PersistedProfile;
         doc /* Profile MUST run one import at a time and answer every command of an
              import that it does not carry out with the reason (ImportAdmission). */
+        @Debugging;
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn { module = "server/src/recording.rs; server/src/recording_http.rs"; }
     }

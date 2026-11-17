@@ -6,6 +6,7 @@ package WstxRankingControl {
     private import WstxLogControl::Continent;
     private import WstxLogControl::WorkedStatus;
     private import WstxProfileAccess::MostWantedList;
+    private import WstxStrategies::AlertSound;
 
     doc /* What the supervisor gives the ranking function (what the profile and the
          radio say, and the operator's commands); the rules operating gives it of the
@@ -348,6 +349,7 @@ package WstxRankingControl {
         attribute dxcc : String[0..1] {
             doc /* The sender's entity as the country file writes it. Absent without an
                  entity. */ }
+        attribute sound : AlertSound { doc /* The active strategy's Strategy::alert. */ }
     }
     item def Alert {
         doc /* The alert history: the newest RankingLimits::alertHistoryMax alerts in the

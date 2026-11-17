@@ -256,7 +256,25 @@ package WstxStandardQso {
              ReopenRule, and an own CQ, are not. The log answers it (LogAnswer) before the
              contest serial counts for it (WstxSpecialActivities::ContestSerialRule). A
              refusal changes nothing else in the contact. Log QSO is the log's: it gives
-             the newest record again and changes no contact. */
+             the newest record again and changes no contact. A contact that LogConfirmRule
+             holds is given at ConfirmLog instead. */
+    }
+
+    requirement 'CL-085-04' {
+        subject qso : QsoService;
+        doc /* qso MUST let the operator confirm the logging of a contact by hand as
+             LogConfirmRule says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-007'; end #derive ::> 'CL-085-04'; }
+
+    attribute def LogConfirmRule {
+        doc /* While QsoShared::logAutomatically is off, a contact the operator started that
+             completes is not given to the log: it waits as QsoState::logPending. ConfirmLog
+             gives it to the log as HandOverRule says; DiscardLog drops it, and nothing is
+             logged. At most one contact waits: a start by the operator while one waits is
+             refused with log_pending. A contact Auto started is given to the log at its
+             completion whatever the setting. */
     }
 
     attribute def LogTimes {

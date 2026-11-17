@@ -75,6 +75,16 @@ package WstxStrategies {
             doc /* For class contest: the id of its contest in ContestTable. Absent for
                  class strategy. */ }
         attribute auto : AutoKeys;
+        attribute alert : AlertSound[0..1] {
+            doc /* The sound of the strategy's alerts (WstxAlert::AlertRule); absent: Off,
+                 the strategy alerts not. */ }
+    }
+    enum def AlertSound {
+        doc /* The sounds of the station's alerts, distinct from one another. */
+        enum oldPhone;
+        enum bell;
+        enum chime;
+        enum beep;
     }
     attribute def BuiltinStrategies {
         doc /* The strategies the station offers beside the saved ones. They cannot be
@@ -85,7 +95,7 @@ package WstxStrategies {
              leaving after 4 calls and after 8 while heard; the transmit frequency moved
              never, at every call and at every 2nd call for the three cases in the order
              of AutoKeys; no CQ when idle; a CQ wait of 2 periods; a
-             retry pause of 10 minutes; a CQ pause of 8 periods.
+             retry pause of 10 minutes; a CQ pause of 8 periods; no alert.
              DXCC all: new dxcc per band_mode, not_confirmed; order most_wanted, snr;
              leaving until_logged after 10 minutes.
              New DXCC on band: as DXCC all, per band.
@@ -99,7 +109,7 @@ package WstxStrategies {
              calling stations answered; leaving in the mode contest after 2 Tx changes;
              the transmit frequency moved never, at every 2nd call and at every 2nd
              call; CQ when idle with a CQ wait of 2 periods; a retry
-             pause of 10 minutes; a CQ pause of 8 periods. */
+             pause of 10 minutes; a CQ pause of 8 periods; no alert. */
     }
     attribute def StrategyConfiguration {
         doc /* The strategies of a profile and what is selected. The saved strategies are
@@ -128,7 +138,8 @@ package WstxStrategies {
              say that no contest is selected. Its keys are profile, start and end.
              A strategy has the keys name, class, bands, filters, order, contest,
              callers_first, leave, tx_move_every, cq_when_idle,
-             cq_wait_periods, retry_minutes and cq_quiet_periods.
+             cq_wait_periods, retry_minutes, cq_quiet_periods and alert. alert may be
+             left out; left out and null both say Off.
              bands, order and callers_first are those of RankingKeys. filters holds
              the other features of RankingKeys: for class strategy new, new_per,
              new_means, region with kind and for selected continents, min_snr_db,

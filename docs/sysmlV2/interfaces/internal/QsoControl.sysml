@@ -31,6 +31,8 @@ package WstxQsoControl {
         out item setHoldTx : SetHoldTx;
         out item setParity : SetParity;
         out item tune : Tune;
+        out item confirmLog : ConfirmLog;
+        out item discardLog : DiscardLog;
         in item answer : QsoAnswer;
         in item 'state' : QsoState;
         in item openSlots : OpenSlots;
@@ -62,10 +64,27 @@ package WstxQsoControl {
         assert constraint limitRange { repetitionLimit >= 1 and repetitionLimit <= 99 }
     }
 
+    attribute def TxMacro {
+        doc /* A free text the operator keeps for Tx5, the same in every station of the
+             shack. */
+        attribute text : String {
+            doc /* At most 13 characters of the free-text alphabet
+                 (WstxMessageEncode::EncodeRule), in capitals; it stands once in the list. */ }
+    }
+    attribute def QsoShared {
+        doc /* qso's part of the shack's settings (WstxProfileAccess::ShackSettings). */
+        attribute macros : TxMacro[0..*] ordered {
+            doc /* The free texts Tx5 offers; at first one, TNX 73 GL. */ }
+        attribute logAutomatically : Boolean = true {
+            doc /* A contact by hand is logged at its completion; off, it waits for the
+                 operator (WstxStandardQso::LogConfirmRule). */ }
+    }
+
     item def QsoContext {
         doc /* qso's configuration and the station's facts that qso uses. The supervisor
              gives them at station start and whenever one changes. */
         attribute config : QsoConfig;
+        attribute shared : QsoShared { doc /* qso's part of the shack's settings. */ }
         attribute call : String[0..1] { doc /* The profile's callsign. */ }
         attribute locator : String[0..1] { doc /* The profile's locator. */ }
         attribute band : String[0..1] {
@@ -196,6 +215,10 @@ package WstxQsoControl {
         doc /* Switch the Tune tone of transmit on or off. */
         attribute enabled : Boolean;
     }
+    item def ConfirmLog {
+        doc /* Log the completed contact that waits (WstxStandardQso::LogConfirmRule). */ }
+    item def DiscardLog {
+        doc /* Drop the completed contact that waits; nothing is logged. */ }
 
     enum def QsoRefusal {
         doc /* Why qso refuses a command. A refused command changes nothing.
@@ -212,7 +235,9 @@ package WstxQsoControl {
              state_conflict: the command does not fit the contact's state.
              directive_not_answerable: a CQ not for the station, not confirmed.
              transmit_unavailable, busy, clock_not_synchronized: transmission is not
-             possible (WstxQsoTransmit::BlockedStartRule). */
+             possible (WstxQsoTransmit::BlockedStartRule).
+             log_pending: a completed contact waits to be logged or discarded
+             (WstxStandardQso::LogConfirmRule). */
         enum contact_active;
         enum no_contact;
         enum row_not_standard;
@@ -228,6 +253,7 @@ package WstxQsoControl {
         enum transmit_unavailable;
         enum busy;
         enum clock_not_synchronized;
+        enum log_pending;
     }
     item def QsoAnswer {
         doc /* The answer to each command of the operator or an agent: accepted, or
@@ -280,6 +306,8 @@ package WstxQsoControl {
         attribute txSlot : TxChoice[0..1] {
             doc /* qso's last choice of a Tx offset. Absent before the first. */ }
         attribute contact : QsoContact[0..1];
+        attribute logPending : QsoContact[0..1] {
+            doc /* A completed contact by hand that waits for ConfirmLog or DiscardLog. */ }
         attribute repetitionsLeft : Integer[0..1] {
             doc /* The sends left of the message due while transmission is on, 0 while it
                  is off; absent while the limit does not bound the contact

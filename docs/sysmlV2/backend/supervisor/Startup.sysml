@@ -38,7 +38,8 @@ package WstxStartup {
 
     attribute def LaunchRule {
         doc /* The arguments of the process are exactly one of: --profile and a folder,
-             with at most one --shack and a folder; --create-profile and a folder;
+             with at most one --shack and a folder and at most one --app-window;
+             --create-profile and a folder;
              --create-native-flex-profile with a folder, a receive antenna and at most an
              address. Other arguments, also none, end the start with
              invalid_runtime_configuration: every station starts with its profile.
@@ -60,12 +61,15 @@ package WstxStartup {
              unless WSTX_RADIO_DISCOVERY is off. A RadioDiscovered is saved as the
              profile's control (SaveProfile), with the input and the output device audio
              lists for that radio when there is exactly one of each and none otherwise,
-             and without Tx levels (WstxTransmitControl::TransmitConfig::levels); the line
+             and without audio drives (WstxTransmitControl::TransmitConfig::levels); the line
              radio discovery:, the port, the model in brackets and is this station's radio
              is written to the output of the process.
              Every function is given its configuration and its records
              (WstxStationAuthority::ContextRule), the resume of receive begins
-             (ResumeRule), and the station serves: the outcome ready.
+             (ResumeRule), and the station serves: the outcome ready. With --app-window
+             and an origin on loopback, the station then opens one app window of the
+             browser on its origin (WstxOperatingScreen::AppWindow); a window that does not
+             open is written to the output and changes nothing else.
              An outcome other than ready and created is written to the output of the
              process, beginning with its name and a colon, followed by the words
              selected profile and the folder as it was named when a folder was named;

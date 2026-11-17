@@ -269,7 +269,8 @@ package WstxProfileDocument {
              The first of these that holds refuses it (SaveRefused).
              invalid_settings with the field: the first value of ShackSettings
              outside the rule its definition gives, by its key in the file: callsign,
-             locator, continent, cq_words, then the values of spots and udp, each named
+             locator, continent, cq_words, then the values of spots, udp, auto, qso,
+             frequencies and log, each named
              as the part's key, a dot and the value's name.
              revision_conflict: expectedRevision is not the revision of shack.json.
              storage_unavailable: the file cannot be written.
@@ -307,8 +308,9 @@ package WstxProfileDocument {
     #derivation connection { end #original ::> 'FR-016'; end #derive ::> 'CL-039-01'; }
 
     attribute def CollectionRule {
-        doc /* What the profile does with a CreateEntry, an UpdateEntry and a DeleteEntry
-             (SettingsCollection).
+        doc /* What the profile does with a CreateEntry, an UpdateEntry, a DeleteEntry
+             (SettingsCollection) and a ResetFrequencies, after which
+             workingFrequencies holds WSJT-X's default list alone.
              The member is held to the rules its part states for it and for its
              collection; the profile applies them and has no rules of its own for a
              member. A member outside them is refused with invalid_settings and one
@@ -328,8 +330,8 @@ package WstxProfileDocument {
              be written refuses it with storage_unavailable.
              Only then is the command answered, with the snapshot of the collection:
              DefinitionsSnapshot for strategies and wantedList, ShackSnapshot for
-             udpTargets. A created wanted entry takes as addedUtcMs the moment the
-             profile carries the command out.
+             udpTargets, txMacros and workingFrequencies. A created wanted entry takes as
+             addedUtcMs the moment the profile carries the command out.
              A refused command changes nothing. A member keeps its place in its
              collection; a new one is added at the end.
              A rule that needs a fact of another part takes it from the last RuleFacts:

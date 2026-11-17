@@ -135,6 +135,47 @@ package WstxLogControl {
             doc /* The shack's folder (WstxProfileAccess::ProfileFolder,
                  its shackPath), in which the log keeps the logbook and the operator's
                  country file, shared by the shack's stations. */ }
+        attribute stationFolder : String {
+            doc /* The profile's folder (WstxProfileAccess::ProfileFolder::path), in
+                 which the log keeps the station's heard files (HeardFile). */ }
+        attribute shared : LogShared { doc /* The log's part of the shack's settings. */ }
+    }
+    attribute def CabrilloHeader {
+        doc /* What the operator states once for a Cabrillo log, as WSJT-X's Export
+             Cabrillo asks it. Each is a text of at most 70 printable ASCII characters,
+             empty when not stated. */
+        attribute location : String = "";
+        attribute categoryOperator : String = "";
+        attribute categoryTransmitter : String = "";
+        attribute categoryPower : String = "";
+        attribute categoryAssisted : String = "";
+        attribute categoryBand : String = "";
+        attribute operators : String = "";
+        attribute club : String = "";
+        attribute name : String = "";
+        attribute address : String[0..2] ordered;
+    }
+    attribute def LogShared {
+        doc /* The log's part of the shack's settings (WstxProfileAccess::ShackSettings). */
+        attribute cabrillo : CabrilloHeader;
+    }
+    item def SentMessage {
+        doc /* A message that went on the air. The supervisor gives it when transmit
+             reports the start of a transmission (WstxTransmitControl::TransmitStatus). */
+        attribute periodStartUtcMs : Integer;
+        attribute mode : WstxModeProcessing::Mode;
+        attribute txOffsetHz : Integer;
+        attribute text : String;
+    }
+    item def ExportCabrillo {
+        doc /* Give the records of a contest's period as a Cabrillo file
+             (WstxLogbook::CabrilloExport). Answered by ExportChunk, as many as the file
+             needs, or by LogRefused. */
+        attribute contestId : String { doc /* A contest of WstxStrategies::ContestTable. */ }
+        attribute startUtc : String { doc /* The start of the period, YYYY-MM-DDTHH:MMZ. */ }
+        attribute endUtc : String { doc /* The end of the period, YYYY-MM-DDTHH:MMZ. */ }
+        attribute claimedScore : Integer[0..1] {
+            doc /* The score ranking counts for the period, when it has one. */ }
     }
     item def SaveRecord {
         doc /* Store this record. Answered by SaveAnswer or LogRefused. */
@@ -402,6 +443,8 @@ package WstxLogControl {
         out item chunk : ImportChunk;
         out item readImport : ReadImport;
         out item export : ExportLog;
+        out item exportCabrillo : ExportCabrillo;
+        out item sent : SentMessage;
         out item readHistory : ReadHistory;
         out item readCountryFile : ReadCountryFile;
         out item replaceCountryFile : ReplaceCountryFile;

@@ -25,11 +25,24 @@ package WstxKeying {
         enum indeterminate;
     }
 
+    enum def SplitOperation {
+        doc /* How the radio transmits a tone shifted into 1500 to 1999 Hz.
+             none: on the dial, without a shift.
+             rig: on the radio's second VFO, the dial plus the shift.
+             fakeIt: the dial moved by the shift while the radio is keyed. */
+        enum none;
+        enum rig;
+        enum fakeIt;
+    }
     item def KeyRequest {
         doc /* Switch the transmitter on. */
         attribute withinMs : Integer {
             doc /* The time radio control has for it, its wait for a running exchange
                  included. */ }
+        attribute split : SplitOperation = SplitOperation::none;
+        attribute shiftHz : Integer = 0 {
+            doc /* The shift of the transmit frequency from the dial, a multiple of 500;
+                 0 with none. */ }
     }
     item def WithdrawKey {
         doc /* Withdraw the KeyRequest that waits. A request whose command has not gone

@@ -7,7 +7,7 @@ package WstxTransmitControl {
 
     doc /* The configuration of the transmit function, its commands, their answers, and
          what transmit reports: the transmit state with its causes, the outcome of every
-         request, and the Tx level. The supervisor gives the configuration, Halt
+         request, and the audio drive. The supervisor gives the configuration, Halt
          and the station's facts over TransmitControlPort. Arm,
          Disarm, Abort, SetTune and StepBegins come from qso
          alone, over the operating chain (MessageToSend); the operator's starts and Tune
@@ -17,20 +17,17 @@ package WstxTransmitControl {
         doc /* The configuration of the transmit function: what the operator sets of
              transmitting. */
         attribute levelMode : LevelMode = LevelMode::automatic {
-            doc /* How the Tx level is set. */ }
+            doc /* How the audio drive is set. */ }
         attribute levels : BandLevel[0..*] {
-            doc /* The transmit audio level (the Tx level) of each band, at most one
-                 entry for a band. A band has none until the operator has set one or
-                 transmit has found one. */ }
-        attribute powerLimitPct : Integer[0..1] {
-            doc /* The power limit (the profile power): the output power, in percent of
-                 the radio's full scale, the Tx level is not to drive above. From 1 to
-                 100. Absent: no such limit. */ }
+            doc /* The audio drive of each band, at most one entry for a band. A band has
+                 none until the operator has set one or transmit has found one. */ }
         attribute tuneSeconds : Integer = 90 {
             doc /* The Tune limit: how long a Tune tone may last. From 1 to 300. */ }
+        attribute split : WstxKeying::SplitOperation = WstxKeying::SplitOperation::none {
+            doc /* Split operation (WstxTransmitState::SplitRule). */ }
     }
     enum def LevelMode {
-        doc /* How the Tx level is set.
+        doc /* How the audio drive is set.
              manual: the operator sets it, with a slider as WSJT-X's Pwr.
              automatic: transmit finds it when the Tune tone is switched on and corrects
              it in each transmission; the operator sets none. */
@@ -38,11 +35,11 @@ package WstxTransmitControl {
         enum automatic;
     }
     attribute def BandLevel {
-        doc /* The Tx level of one band. */
+        doc /* The audio drive of one band. */
         attribute band : String { doc /* An ADIF band name in lower case. */ }
         attribute levelDb : Integer {
             doc /* How far transmit turns its audio down, in whole dB, within the range
-                 of the Tx level. */ }
+                 of the audio drive. */ }
     }
 
     enum def ArmState {
@@ -271,9 +268,12 @@ package WstxTransmitControl {
                  false. */ }
         attribute levelManaged : Boolean {
             doc /* True when the radio of the profile is one the station manages. */ }
+        attribute powerPct : Integer[0..1] {
+            doc /* The output power of the station's band
+                 (WstxRadioControl::RadioConfig::powers); absent without one. */ }
     }
     item def LevelFound {
-        doc /* Transmit has found a Tx level, with the Tune tone or by the supervision
+        doc /* Transmit has found an audio drive, with the Tune tone or by the supervision
              of a transmission, and gives it to be saved as the band's entry of
              TransmitConfig::levels. The supervisor answers with a
              TransmitProfile: with that level when the profile has saved it, with the
@@ -305,6 +305,8 @@ package WstxTransmitControl {
                  whose audio has not started. Absent without one. */ }
         attribute last_text : String[0..1] {
             doc /* The message last put on the air, as a receiver shows it. */ }
+        attribute last_tx_offset_hz : Integer[0..1] {
+            doc /* The Tx offset of last_text. */ }
         attribute last_period_utc_ms : Integer[0..1] {
             doc /* The start, in station time, of the period of the transmission whose
                  audio started last. Absent before the first one. */ }
@@ -338,10 +340,8 @@ package WstxTransmitControl {
     }
     enum def LevelResult {
         doc /* How the last finding of the level with the Tune tone ended.
-             stored: the ALC rose or the profile power was passed; the level one step
-             below is stored.
-             max_without_alc: the highest level was reached without either; it is
-             stored.
+             stored: the ALC rose; the level one step below is stored.
+             max_without_alc: the highest level was reached without it; it is stored.
              no_alc: the radio refused the ALC reading.
              high_swr: the SWR reached the fault value.
              aborted: Halt, the tone's limit or another end of the tone.
@@ -359,7 +359,7 @@ package WstxTransmitControl {
     enum def LevelWarning {
         doc /* Trouble of the Tx signal that lasts (LevelMonitor in the transmit part).
              alc_high: the ALC is high.
-             po_low: the output power is far below the profile power.
+             po_low: the output power is far below the output power of the band.
              swr_high: the SWR is high.
              swr_fault: the SWR stopped the station. */
         enum alc_high;
@@ -377,12 +377,12 @@ package WstxTransmitControl {
         attribute swr_x10 : Integer[0..1] { doc /* Ten times the SWR. */ }
     }
     item def TxLevelStatus {
-        doc /* The Tx level and its supervision, at the moment it is read. */
+        doc /* The audio drive and its supervision, at the moment it is read. */
         attribute managed : Boolean { doc /* TransmitProfile::levelManaged. */ }
         attribute mode : LevelMode { doc /* TransmitConfig::levelMode. */ }
         attribute level_db : Integer {
-            doc /* The Tx level that counts; while the level is found, the level of the
-                 tone. */ }
+            doc /* The audio drive that counts; while the level is found, the level of
+                 the tone. */ }
         attribute stored : Boolean {
             doc /* True when the station's band has an entry in TransmitConfig::levels. */ }
         attribute alc : AlcKnown;
@@ -397,8 +397,7 @@ package WstxTransmitControl {
             }
         }
         attribute meters : MeterView[0..1] { doc /* Absent before the first reading. */ }
-        attribute power_limit_pct : Integer[0..1] {
-            doc /* TransmitConfig::powerLimitPct. */ }
+        attribute power_pct : Integer[0..1] { doc /* TransmitProfile::powerPct. */ }
         attribute warnings : LevelWarning[0..*];
     }
 

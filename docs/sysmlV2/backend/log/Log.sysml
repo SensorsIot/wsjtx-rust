@@ -4,6 +4,7 @@ package WstxLogPart {
     private import WstxOperatingChain::CompletedContactPort;
     private import WstxOperatingChain::LoggedContactPort;
     private import WstxOperatingChain::WorkedBeforePort;
+    private import WstxDecodes::DecodesPort;
     private import ModelBindings::ImplementedIn;
 
     part def LogService {
@@ -17,5 +18,6 @@ package WstxLogPart {
         port completed : ~CompletedContactPort;
         port logged : LoggedContactPort;
         port workedBefore : WorkedBeforePort;
+        port decodes : ~DecodesPort;
     }
 }

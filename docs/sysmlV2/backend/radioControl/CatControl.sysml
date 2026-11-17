@@ -9,6 +9,7 @@ package WstxCatControl {
     private import WstxRadioProperties::ModeValue;
     private import WstxRadioProperties::Meter;
     private import WstxCat::CivFrame;
+    private import ModelNotes::FollowsSource;
     private import ModelBindings::ImplementationState;
     private import ModelBindings::AutomationState;
     private import ModelBindings::Status;
@@ -148,8 +149,8 @@ package WstxCatControl {
 
     attribute def ReadCompareWriteVerify {
         doc /* The steps of every change: of frequency, mode and data mode
-             (ControlOperation), of the AGC (ApplyAgc and at a new connection) and of a
-             menu item (ApplyRecommended).
+             (ControlOperation), of the AGC (ApplyAgc and at a new connection), of the
+             output power (ManagedPower) and of a menu item (ApplyRecommended).
              1. The value is read. A read the radio refuses ends the change with
              rejected.
              2. A value that is the wanted one is not written; the read is the
@@ -232,6 +233,30 @@ package WstxCatControl {
              unavailable for every ControlError that KeyFailure does not name. */
         attribute closingUnkeyMaxMs : Integer = 250 {
             doc /* The time for the unkey of a connection that closes. */ }
+    }
+
+    requirement 'CL-008-13' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST set the transmit frequency of a split operation around
+             the key as SplitKeying says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-008-13'; }
+
+    attribute def SplitKeying {
+        doc /* A KeyRequest with KeyRequest::split rig or fakeIt, before its key command:
+             rig sets the radio's split on with the transmit VFO at the dial radio control
+             confirmed last plus KeyRequest::shiftHz; fakeIt sets the dial to that
+             frequency. Each is read back; one that fails answers the KeyRequest with
+             KeyFailed as the key would fail, and nothing is keyed. After the confirmed
+             unkey of a key with fakeIt the dial is set back and read back. The facts of
+             the radio are not read between the setting and the setting back, and the
+             dial fact keeps the dial from before. With none, split stays as the radio
+             has it. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: Settings > Radio, Split Operation; "
+                + "MainWindow::setXIT";
+        }
     }
 
     verification 'TC-009-007' {

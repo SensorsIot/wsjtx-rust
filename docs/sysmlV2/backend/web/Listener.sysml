@@ -54,7 +54,10 @@ package WstxListener {
         doc /* The GET of / gives the page; the GET of the file name of each of its scripts
              and styles gives that file. The client's files are built into the station's
              program; they hold no state of the station. The page carries the build it was
-             served with as data-build of its body (ClientBuild). */
+             served with as data-build of its body (ClientBuild). web serves the web app
+             manifest of the page with the station's display_name, its origin as start and
+             scope and the display standalone, so that the page installs as an app
+             (WstxOperatingScreen::AppWindow). */
     }
 
     requirement 'CL-051-01' {
