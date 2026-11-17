@@ -148,3 +148,9 @@ migrations; README in #235 or #231; where harness issues live.
    (spending-limit text); this project #238 (factory restart: decisions 1 to 6, Agent-Working-Rules,
    MEMORY). After #235, as product issues: the deploy command that takes a commit alone (tool
    change), and one issue each for the flaky TC-096-001 and `clock_state_is_pushed_to_every_profile`.
+
+## History decisions (phase 1.6)
+
+1. Code comments (operator 2026-11-18, A): Agent-Working-Rules gains "A comment states what the
+   code does now: no issue number, date or change story" (with #238); one product CR right after
+   #235 cleans every comment before the restructurings start.
