@@ -172,6 +172,18 @@ identities (except the dependency part), the oracle file mechanism, rules 8 and 
   The same holds for the product: a clause that prevents something (a refusal, a disabled
   control, a MUST NOT) is shown by a test that tries it and sees it refused; the CR's test
   plan lists these clauses and their negative tests.
+- **#232 split** (operator 2026-11-17): its "one home for the finished-model rules" is done by
+  harness change 1 (named in its issue, commented on #232); the product facts of
+  Project-Specifics ("Communication verification model", "Recording fixture acquisition",
+  "Native Windows FFI boundary") go into the product CR, each checked against the new model,
+  and leave Project-Specifics in harness change 3; "Product model maintenance", "Exclusive
+  functional authority" and "Project model documentation contract" are method rules and stay
+  (updated by change 1). #232 closes when the CR and change 3 have landed.
+- **#231 held** (operator 2026-11-17): the user documentation waits until the product CR has
+  landed and is then traced once, to the model that stays.
+- **Later sweep:** the CRs overtaken by the rebuild (model conversions and rewrites #147, #164,
+  #168, #187, #194, #199, #208, #221, #222, #224) and the 13 code-split CRs (#151 to #169,
+  to be checked against M2.3), one list for the operator after the CR.
 - **By the foundation's rules** (not asked):
   - one writing-rule check: `check.py`'s rules join `tools/sysml.py check` (M8.2, M8.3);
   - the tool's method clauses CL-014-xx and TC-DOC-xxx leave the CL and TC series, which mean
