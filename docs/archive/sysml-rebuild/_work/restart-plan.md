@@ -157,3 +157,6 @@ migrations; README in #235 or #231; where harness issues live.
 2. Deploy code for old versions (operator 2026-11-18, A): removed in one product CR once the
    station's running and previous versions are both after #230 (`active.json`), with the pins,
    drill cases, tests and the matching harness lines (MEMORY, Project-Specifics).
+3. Deploy authority (operator 2026-11-18, A): #188 is carried out now: `harness/project/deploy/
+   authority/`, its test and the two Project-Specifics sections go (harness change); the station
+   drill's approval cases go in a product CR after #235. #188 drops its `cr` labels.
