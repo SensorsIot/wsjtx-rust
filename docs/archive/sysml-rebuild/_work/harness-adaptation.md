@@ -146,12 +146,32 @@ identities (except the dependency part), the oracle file mechanism, rules 8 and 
   to (`// Proves: TC-022-004`): no FR, no clause, no shorthand, no issue number; the tool
   refuses any other identity in a tag; a detail test has no tag. The CR rewrites the 2,315
   mentions mechanically.
-- **Red tests** (operator 2026-11-17: "do not forget the red tests"): every new or changed
-  test of the CR is proven red on the parent (CR-Process Implement; a tool change "is proven
-  by the unit tests of the tool, each red on the parent"): the new checks of `tools/sysml.py`
-  (layer rule, joined values, code-link inheritance, reuse guard from git, tag identities,
-  model–code differences, code structure, empty items, FR status) each get a unit test that
-  fails on the parent tool and passes on the candidate, with the red run recorded on the CR.
+- **Negative tests** (operator 2026-11-17: "do not forget the red tests … negative tests that
+  do not prove that something works, but that something prevents"): every check of
+  `tools/sysml.py`, new or kept, has besides its accepted case one negative test per way the
+  rule can be broken, each on a fixture model that breaks it once and is refused with the
+  check's message, file and line. For the new checks at least:
+  - layer rule: a function file importing another function's file; an external interface
+    importing a control interface; a control interface importing a transport file;
+  - context: a file other than Context and UseCases naming `WstxContext`;
+  - joined values: a path or test name split inside by `+`;
+  - code links: a clause with two inherited candidates; a delivered clause without a link;
+  - reuse guard: an identity that an earlier commit declared, declared again with other text;
+  - tags: a tag naming an FR, a clause, a shorthand, an issue number, an undeclared case, a
+    case whose binding does not hold the test;
+  - model–code: a difference without a target or partial clause and without `@CodeDiffers`;
+    a `@CodeDiffers` where the code matches;
+  - code structure: a module of no part; a module of two parts; a part's module outside its
+    folder without `@CodeDiffers`;
+  - empty items: an untyped item; a type with neither doc nor feature; an abstract grouping
+    item that no typed item subsets;
+  - FR status: no stated status on an FR; the computed value for all, some and no clauses;
+  - naming (M7.5): a name with an underscore; a definition in lowerCamelCase;
+  - use cases (M6.11): a clause no step carries and that is not `@Debugging`.
+  Each negative test is also red on the parent where the rule is new (CR-Process Implement).
+  The same holds for the product: a clause that prevents something (a refusal, a disabled
+  control, a MUST NOT) is shown by a test that tries it and sees it refused; the CR's test
+  plan lists these clauses and their negative tests.
 - **By the foundation's rules** (not asked):
   - one writing-rule check: `check.py`'s rules join `tools/sysml.py check` (M8.2, M8.3);
   - the tool's method clauses CL-014-xx and TC-DOC-xxx leave the CL and TC series, which mean
