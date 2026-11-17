@@ -154,3 +154,6 @@ migrations; README in #235 or #231; where harness issues live.
 1. Code comments (operator 2026-11-18, A): Agent-Working-Rules gains "A comment states what the
    code does now: no issue number, date or change story" (with #238); one product CR right after
    #235 cleans every comment before the restructurings start.
+2. Deploy code for old versions (operator 2026-11-18, A): removed in one product CR once the
+   station's running and previous versions are both after #230 (`active.json`), with the pins,
+   drill cases, tests and the matching harness lines (MEMORY, Project-Specifics).
