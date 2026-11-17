@@ -165,3 +165,5 @@ migrations; README in #235 or #231; where harness issues live.
    folders nothing reads are deleted; the tests' fallback to `issue-7/downloads` goes.
 5. Issue pointers in harness texts (operator 2026-11-18, A): every pointer that only names a
    rule's origin goes; a pointer whose rule depends on the issue's state stays.
+6. Approval records (operator 2026-11-18, A): a standing policy keeps one issue pointer and its
+   quoted principle; dates and comment ids go.
