@@ -152,9 +152,19 @@ function Switch-Back($from,$to,[bool]$restoreProfile) {
 # The pins a commit states (Project-Specifics.md, section Deploy pins, read with git show), in
 # their order, or $null when it states none. The file is harness/project/docs/Project-Specifics.md;
 # only a commit without it (one from before #230) is read at docs/harness/Project-Specifics.md.
+# Which one exists is asked with git ls-tree, which writes nothing to stderr for an absent path:
+# a git show of a missing file would, and a caller capturing stderr under Stop would end here.
+function Specifics-Path([string]$Commit) {
+  foreach ($p in @('harness/project/docs/Project-Specifics.md','docs/harness/Project-Specifics.md')) {
+    $found=@(& git -C $Repo ls-tree --name-only $Commit -- $p)
+    if ($LASTEXITCODE -eq 0 -and $found -contains $p) { return $p }
+  }
+  return $null
+}
 function Read-Pins([string]$Commit) {
-  $text=@(& git -C $Repo show "${Commit}:harness/project/docs/Project-Specifics.md")
-  if ($LASTEXITCODE -ne 0) { $text=@(& git -C $Repo show "${Commit}:docs/harness/Project-Specifics.md") }
+  $path=Specifics-Path $Commit
+  if (-not $path) { return $null }
+  $text=@(& git -C $Repo show "${Commit}:$path")
   if ($LASTEXITCODE -ne 0) { return $null }
   $pins=@(); $in=$false
   foreach ($line in $text) {

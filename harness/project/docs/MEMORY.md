@@ -180,9 +180,11 @@ sequence (`git checkout -q --detach -f <commit>`, `git clean -q -fd`,
 `git submodule update --init --recursive -q`) only after a one-time step, because the sequence
 alone leaves the other layout's submodule behind:
 
-- **Old layout to new** (every checkout and worktree of the clone, the merge queue's worktree
-  included, before the queue gates #230): `git -C <checkout> submodule deinit -f harness`, then
-  the sequence. Without it the gitfile `harness/.git` stays, and every git call from
+- **Old layout to new**: `git -C <checkout> submodule deinit -f harness` at the moment that
+  checkout switches, then the sequence: the merge queue's worktree right before it takes #230's
+  candidate (the queue idle), the main checkout when it takes master after #230 landed, and every
+  other worktree when it rebases or merges onto master after #230. A checkout that stays on a
+  branch from before #230 is not touched: the deinit would take its harness away. Without it the gitfile `harness/.git` stays, and every git call from
   `harness/project/` (the radio preflight's lease folder among them) resolves to the old
   submodule instead of the checkout. A checkout that already moved without the step: delete the
   file `harness/.git`; `git -C <checkout>/harness/project rev-parse --show-toplevel` then names

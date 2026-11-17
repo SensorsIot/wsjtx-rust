@@ -48,6 +48,10 @@ function Get-NetFirewallAddressFilter { process { [pscustomobject]@{ LocalAddres
 function Get-NetFirewallPortFilter { process { [pscustomobject]@{ Protocol = 'TCP'; LocalPort = '18081' } } }
 function git {
   if ($args -contains 'fetch' -or $args -contains 'merge-base') { $global:LASTEXITCODE = 0; return }
+  if ($args -contains 'ls-tree') {
+    $path = [string]$args[$args.Count - 1]; $commit = [string]$args[[array]::IndexOf($args, '--') - 1]
+    if (Test-Path -LiteralPath (Join-Path (Join-Path $env:DRILL_GIT_STORE $commit) ($path -replace '/', '\')) -PathType Leaf) { $path }
+    $global:LASTEXITCODE = 0; return }
   if ($args -contains 'show') {
     $spec = [string]$args[$args.Count - 1]; $i = $spec.IndexOf(':')
     $file = Join-Path (Join-Path $env:DRILL_GIT_STORE $spec.Substring(0, $i)) ($spec.Substring($i + 1) -replace '/', '\')

@@ -120,12 +120,20 @@ function Get-NetFirewallPortFilter { process { [pscustomobject]@{ Protocol = 'TC
 function git {
   if ($args -contains 'fetch') { $global:LASTEXITCODE = $(if ($env:DRILL_FETCH_FAIL) { 1 } else { 0 }); return }
   if ($args -contains 'merge-base') { $c = $args[$args.Count - 2]; $global:LASTEXITCODE = $(if (($env:DRILL_ON_MASTER -split ',') -contains $c) { 0 } else { 1 }); return }
+  if ($args -contains 'ls-tree') { Drill-LsTree $args; return }
   if ($args -contains 'show') {
     $spec = [string]$args[$args.Count - 1]; $i = $spec.IndexOf(':')
     $file = Join-Path (Join-Path $env:DRILL_GIT_STORE $spec.Substring(0, $i)) ($spec.Substring($i + 1) -replace '/', '\')
     if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file; $global:LASTEXITCODE = 0 } else { $global:LASTEXITCODE = 128 }
     return }
   Drill-Mutation "git $args" }
+# git ls-tree --name-only <commit> -- <path>: the path when the commit's store holds it, else
+# nothing; exit 0 either way and nothing on stderr, as git does.
+function Drill-LsTree($a) {
+  $path = [string]$a[$a.Count - 1]; $commit = [string]$a[[array]::IndexOf($a, '--') - 1]
+  $file = Join-Path (Join-Path $env:DRILL_GIT_STORE $commit) ($path -replace '/', '\')
+  if (Test-Path -LiteralPath $file -PathType Leaf) { $path }
+  $global:LASTEXITCODE = 0 }
 function gh { Drill-Mutation "gh $args" }
 function python { Drill-Mutation "python $args" }
 function powershell.exe {
@@ -297,7 +305,7 @@ class Sandbox:
         return [(sha256(os.path.join(self.pkg, "deploy", *p.split("/"))), p) for p in MECHANISM]
 
     def specifics(self, commit, old=False):
-        """The file `git show <commit>:<path>` reads: harness/project/docs/Project-Specifics.md,
+        """The file `git ls-tree` finds and `git show <commit>:<path>` reads: harness/project/docs/Project-Specifics.md,
         or with `old` docs/harness/Project-Specifics.md (a commit from before #230)."""
         rel = ("docs", "harness") if old else ("harness", "project", "docs")
         return os.path.join(self.store, commit, *rel, "Project-Specifics.md")

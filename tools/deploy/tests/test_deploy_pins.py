@@ -91,5 +91,84 @@ class DeployPinTests(unittest.TestCase):
         self.assertIn(b"\r\n", exported[CONTROL], "the CRLF settings did not reach the export")
 
 
+# Read-Pins and Specifics-Path of station-update.ps1, taken from the script by the PowerShell
+# parser and run alone under Stop, as a caller that captures stderr (`& script 2>&1`) runs them.
+PROBE = r"""
+param([string]$Repo, [string]$Script, [string]$Commit, [switch]$OldForm)
+$ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
+$tokens = $null; $errs = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($Script, [ref]$tokens, [ref]$errs)
+$wanted = @('Specifics-Path', 'Read-Pins')
+foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $wanted -contains $n.Name }, $true)) {
+  . ([scriptblock]::Create($f.Extent.Text)) }
+if ($OldForm) { $text = @(& git -C $Repo show "${Commit}:harness/project/docs/Project-Specifics.md"); 'old form returned'; exit 0 }
+"path=$(Specifics-Path $Commit)"
+$pins = Read-Pins $Commit
+if ($null -eq $pins) { 'pins=none' } else { 'pins=' + (@($pins | ForEach-Object { $_.path }) -join ',') }
+"""
+
+
+class ReadPinsStderrTests(unittest.TestCase):
+    """#230 item 10: which Project-Specifics.md a commit has is asked without writing to stderr,
+    so a caller that captures stderr under Stop gets the fallback, not a NativeCommandError."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = os.path.join(self.tmp.name, "repo")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        self.env = env
+
+        def g(*args):
+            return subprocess.run(["git", "-C", self.repo, "-c", "user.name=drill", "-c", "user.email=drill@invalid",
+                                   "-c", "commit.gpgsign=false", *args], check=True, capture_output=True,
+                                  env=env).stdout.decode().strip()
+        os.makedirs(self.repo)
+        g("init", "-q")
+        self.commits = {}
+        for name, rel, pin in (("old", "docs/harness/Project-Specifics.md", "old/path.ps1"),
+                               ("new", "harness/project/docs/Project-Specifics.md", "new/path.ps1"),
+                               ("neither", None, None)):
+            g("rm", "-q", "-r", "--ignore-unmatch", ".")
+            if rel:
+                station_drill.write(os.path.join(self.repo, *rel.split("/")), station_drill.pins_text([("a" * 64, pin)]))
+            station_drill.write(os.path.join(self.repo, "README.md"), name + "\n")
+            g("add", "-A")
+            g("commit", "-q", "-m", name)
+            self.commits[name] = g("rev-parse", "HEAD")
+        self.probe = os.path.join(self.tmp.name, "probe.ps1")
+        with open(self.probe, "w", encoding="utf-8-sig") as f:
+            f.write(PROBE)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_probe(self, commit, old_form=False):
+        call = (f"& '{self.probe}' -Repo '{self.repo}' -Script '{STATION_UPDATE}' -Commit {commit}"
+                + (" -OldForm" if old_form else "") + " 2>&1")
+        proc = subprocess.run([station_drill.POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                               "-Command", f"$ErrorActionPreference = 'Stop'; {call}; exit $LASTEXITCODE"],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env, timeout=120)
+        return proc.returncode, proc.stdout + proc.stderr
+
+    def test_the_old_form_ends_at_a_missing_file_when_stderr_is_captured(self):
+        """The control: this harness turns a git show of a missing file into a terminating error."""
+        rc, out = self.run_probe(self.commits["old"], old_form=True)
+        self.assertNotEqual(rc, 0, out)
+        self.assertNotIn("old form returned", out)
+
+    def test_each_commit_gets_its_file_or_none_without_an_error(self):
+        expected = {"new": ("harness/project/docs/Project-Specifics.md", "new/path.ps1"),
+                    "old": ("docs/harness/Project-Specifics.md", "old/path.ps1"),
+                    "neither": ("", "none")}
+        for name, (path, pins) in expected.items():
+            with self.subTest(name):
+                rc, out = self.run_probe(self.commits[name])
+                self.assertEqual(rc, 0, out)
+                self.assertIn(f"path={path}\n", out)
+                self.assertIn(f"pins={pins}", out)
+                self.assertNotIn("NativeCommandError", out)
+
+
 if __name__ == "__main__":
     unittest.main()
