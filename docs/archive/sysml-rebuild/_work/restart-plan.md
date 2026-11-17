@@ -100,3 +100,25 @@ project: restart the factory, Agent-Working-Rules, items after #235, optional In
 the second PC's records). Questions: the radio restriction; the stale Alex; #235 through Alex or
 by hand; fuses for #235; Install and Accept; the meter's baseline date; the second PC; closing
 harness#120; `queue.flake_issue`; #230 and #85.
+
+## History inventory of master, 2026-11-18 (read only)
+
+Files to remove (P): `docs/reference/Hamlib-Rust-Model.md` (an audit report, no reader),
+`fixtures/radio/catalogue-proposal.json` and `ic7300-manifest.json` (proposals, no reader; the
+catalogue `ic7300-catalogue.json` stays), `fixtures/decoder/likelihood-cases.json` and
+`fixtures/decoder/pair-chain/` (oracles of removed tests), `client/.gitkeep`,
+`tools/deploy/tests/test_references.py` (a migration guard), two legacy fields of
+`fit-metric-cases.json`. With #188 (H, and P for the drill's approval cases): the prepared deploy
+authority. Kept: Escapes-Ledger (a rule's input), MEMORY (trimmed), provenance data, protocol
+vectors. Passages: README (status, broken links, branch `original` that does not exist, licence
+wording), AGENTS.md (archive sentence), MEMORY (dated quotes, migration handoff, #7–#12, the
+layout section), Harness-Overview (dates, archive wording, "harness issues live in
+SensorsIot/harness" against practice), Agent-Working-Rules, Project-Specifics, config.yaml,
+suites.yaml and the deploy scripts (issue pointers, dates, measurement histories). Code comments:
+issue numbers and narratives 1,306 lines in 155 files, dates 125, change-history words 173,
+slice labels 33, old paths or FSD 13, old model package names 239. Code paths kept for old states
+in the deploy mechanism (pre-#230, pre-#33) and product data migrations (strategy schemas 2 and
+3, device names, authorization hint). Questions: the code-comment cleanup (one CR or with each
+restructuring); the deploy mechanism's old-layout code; #188 now; data folders with history in
+their names; issue pointers in harness texts; approval records of standing policies; product data
+migrations; README in #235 or #231; where harness issues live.
