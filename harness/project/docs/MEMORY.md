@@ -21,8 +21,8 @@ follows the pointers, from [Start](#start) to [Inputs and unfinished work](#inpu
   runtime receipt, never a remembered version.
 - **The harness layout (#230):** everything under `harness/` is the harness: the general
   harness (the submodule `harness-general`) at `harness/general/`, the project harness at
-  `harness/project/`. A branch from before #230 has the submodule at `harness/` and the project
-  harness at `.harness/` and `docs/harness/`; see [the layout change](#the-layout-change).
+  `harness/project/`. A branch from before #230 has the submodule at `harness` and the project
+  harness at its old places; see [the layout change](#the-layout-change).
 
 ## Start
 
@@ -175,6 +175,24 @@ install Fortran locally.
 
 #230 moved the general harness from the submodule path `harness` to `harness/general` (submodule
 name `harness-general`, its own module store `.git/modules/harness-general`) and the project
-harness under `harness/project/`. A checkout moves between the layouts, in either direction, by
-the merge queue's sequence: `git checkout -q --detach -f <commit>`, `git clean -q -fd`,
-`git submodule update --init --recursive -q`.
+harness under `harness/project/`. A checkout moves between the layouts by the merge queue's
+sequence (`git checkout -q --detach -f <commit>`, `git clean -q -fd`,
+`git submodule update --init --recursive -q`) only after a one-time step, because the sequence
+alone leaves the other layout's submodule behind:
+
+- **Old layout to new** (every checkout and worktree of the clone, the merge queue's worktree
+  included, before the queue gates #230): `git -C <checkout> submodule deinit -f harness`, then
+  the sequence. Without it the gitfile `harness/.git` stays, and every git call from
+  `harness/project/` (the radio preflight's lease folder among them) resolves to the old
+  submodule instead of the checkout. A checkout that already moved without the step: delete the
+  file `harness/.git`; `git -C <checkout>/harness/project rev-parse --show-toplevel` then names
+  the checkout itself.
+- **New layout to old** (a parent checked out by hand, a branch older than #230):
+  `git -C <checkout> submodule deinit -f harness/general`, then the sequence. Without it
+  `harness/general` stays inside the old submodule and the old submodule's files stay deleted;
+  the repair is `git -C <checkout> submodule update --init --force` and
+  `git -C <checkout>/harness clean -ffdq`.
+
+Then, once per clone, `install_hooks.py` of the new pin (the operator's; its hooks enter
+through shims in the clone's git directory, harness#136, so each checkout and worktree runs
+its own pre-push in either layout), and `secrets.md` moves to `harness/project/secrets.md`.
