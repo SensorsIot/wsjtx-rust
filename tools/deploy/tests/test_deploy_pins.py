@@ -151,11 +151,12 @@ class ReadPinsStderrTests(unittest.TestCase):
                               capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env, timeout=120)
         return proc.returncode, proc.stdout + proc.stderr
 
-    def test_the_old_form_ends_at_a_missing_file_when_stderr_is_captured(self):
-        """The control: this harness turns a git show of a missing file into a terminating error."""
+    def test_the_old_form_writes_to_stderr_for_a_missing_file(self):
+        """The control: a git show of a missing file writes to stderr, which a caller capturing
+        stderr under Stop in Windows PowerShell 5.1 receives as a terminating NativeCommandError
+        (whether this host does so as well is not what the test relies on)."""
         rc, out = self.run_probe(self.commits["old"], old_form=True)
-        self.assertNotEqual(rc, 0, out)
-        self.assertNotIn("old form returned", out)
+        self.assertIn("fatal: path 'harness/project/docs/Project-Specifics.md' does not exist", out)
 
     def test_each_commit_gets_its_file_or_none_without_an_error(self):
         expected = {"new": ("harness/project/docs/Project-Specifics.md", "new/path.ps1"),
@@ -168,6 +169,7 @@ class ReadPinsStderrTests(unittest.TestCase):
                 self.assertIn(f"path={path}\n", out)
                 self.assertIn(f"pins={pins}", out)
                 self.assertNotIn("NativeCommandError", out)
+                self.assertNotIn("fatal:", out, "nothing on stderr, so nothing for Stop to end on")
 
 
 if __name__ == "__main__":

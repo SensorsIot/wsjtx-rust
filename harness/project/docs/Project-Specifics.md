@@ -517,7 +517,7 @@ CR (policy item 4). Suite `deploy-tooling`
 (`test_deploy_pins.py`) recomputes every pin from git.
 
 ```text
-c2789efa767c96938b742d0dff7865e2f083001ef78505e720383c6705ef1f1a  tools/deploy/station-update/station-update.ps1
+3e6a1b30a8e1565074f16ba6c9104c83d6556c1dc63d379b7117b313077020d5  tools/deploy/station-update/station-update.ps1
 0d1fb5e9676faafc71a3c1ab3c694793485a0513fe416d2eac0372719b8aa044  tools/deploy/station-update/make_package.py
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1

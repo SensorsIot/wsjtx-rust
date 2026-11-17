@@ -70,7 +70,7 @@ LOCAL = {"Set-StrictMode", "Join-Path", "Split-Path", "Test-Path", "Get-Item", "
          "Push-Location", "Pop-Location", "ForEach-Object", "(dot-source-agent-client)",
          "Safe-Child", "Station-Processes", "Assert-Setup", "Firewall-Scope", "Send-CtrlC", "Stop-Station",
          "Start-Ready", "Write-Active", "Save-Profile", "Restore-Profile", "Restore-Launcher", "Switch-Back", "Step",
-         "Hash", "Now", "Read-Pins", "Pins-Text", "Issue-Skip", "Take-Lock", "Read-State", "Station-Busy",
+         "Hash", "Now", "Specifics-Path", "Read-Pins", "Pins-Text", "Issue-Skip", "Take-Lock", "Read-State", "Station-Busy",
          "Busy-Reason", "Clean", "Last-Line", "Move-Installed", "Issues-Named"}
 # .NET types the script may name; file and path methods act on the same sandbox paths.
 TYPES = {"[Convert]", "[DateTime]", "[IO.FileAttributes]", "[IO.File]", "[IO.Path]", "[NullString]", "[StringComparison]",
