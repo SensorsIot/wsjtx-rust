@@ -24,8 +24,9 @@ The operator gains a contract that says what holds now and what the code does no
 **Functionality**
 
 Already covered:
-- The rebuilt model: `docs/sysml/` on `sysmlv2-rebuild` (116 files, M2.1); valid for the pinned
-  Pilot; the rebuild's text checks find nothing (`docs/archive/sysml-rebuild/_work/check.py`).
+- The rebuilt model: `docs/sysml/` on the branch `sysmlv2-rebuild` (116 files, M2.1); valid for
+  the pinned Pilot; the rebuild's text checks find nothing (`check.py` in the rebuild's working
+  folder, `docs/archive/sysml-rebuild/_work/` on that branch).
 - The rules it is checked against: `harness/project/docs/Finished-Model.md` (#233, #234).
 - The model tool's general machinery: the authority marker, identity patterns, derivation
   ownership, test levels and locations, markers, Proves-tag agreement, model values, the
@@ -48,8 +49,8 @@ To do:
 7. `shared/ModelNotes.sysml` defines `CodeDiffers` (a doc of what the code does today). Every
    difference of a constant, enumeration value, wire name or environment variable that no
    target or partial clause carries stands as `@CodeDiffers` on its element; the differences
-   are listed in `docs/archive/sysml-rebuild/_work/parts.json` (verdicts "difference in the
-   code"). Every part definition whose modules stand outside its folder (M2.3) carries
+   are listed in `docs/archive/sysml-rebuild/_work/parts.json` on the branch `sysmlv2-rebuild`
+   (verdicts "difference in the code"). Every part definition whose modules stand outside its folder (M2.3) carries
    `@CodeDiffers` naming them.
 8. A path or a test name inside a joined value is not split (M7.6).
 9. `docs/sysml/` holds nothing but the model files and `data/` (M2.1): `reference/` and
@@ -95,17 +96,20 @@ To do:
 15. The architecture oracle is regenerated from the rebuilt model by `oracle`.
 16. `tools/sysml/README.md` states the tool's contract as built; its own clauses and tests take
     a series of the tool's own (not CL or TC, which are a clause and a case of an FR).
-17. The writing rules of `docs/archive/sysml-rebuild/_work/check.py` are part of `check`.
+17. The writing rules of the rebuild's `check.py` (on the branch `sysmlv2-rebuild`) are part of
+    `check`.
+18. The candidate holds no history: the rebuild's working folder `docs/archive/sysml-rebuild/`
+    stays on its branch and does not land.
 
 *Tests and code*
-18. `tools/sysml/tests/test_radio_properties.py` and its two `.tsv` files go (the property
+19. `tools/sysml/tests/test_radio_properties.py` and its two `.tsv` files go (the property
     catalogue is not part of the model); `test_stated_once` T10 goes; `test_architecture_context`
     checks `ShackContext` against an owner table of its own; the real-model tests name
     `Shack.sysml` and `WstxShack`.
-19. Every `// Proves:` tag in `server/`, `client/` and `tests/` names only the test cases its
+20. Every `// Proves:` tag in `server/`, `client/` and `tests/` names only the test cases its
     test belongs to: no FR, no clause, no shorthand, no issue number. A tag naming no declared
     case, or a case whose binding lacks the test, is resolved by binding or untagging.
-20. The test readers name the rebuilt model's elements (`WstxStartup`, `WstxDecode`,
+21. The test readers name the rebuilt model's elements (`WstxStartup`, `WstxDecode`,
     `WstxModeProcessing`, and those that replace `WstxOperatingReceive`, `WstxHttpContentCoding`,
     `WstxStrategy`, `WstxContest`).
 
@@ -131,15 +135,14 @@ code restructuring M2.3 asks for (one issue per part, after this); the user docu
 - `docs/sysml/` on `sysmlv2-rebuild`, in particular `Shack.sysml`, `Context.sysml`,
   `UseCases.sysml`, `shared/ModelBindings.sysml`, `shared/ModelNotes.sysml`,
   `interfaces/internal/StationLink.sysml` (`WireNames`).
-- `docs/archive/sysml-rebuild/_work/harness-adaptation.md` (the inventory of the tool and its
-  tests, with file and line) and `parts.json` (the code differences).
+- On the branch `sysmlv2-rebuild` only: `docs/archive/sysml-rebuild/_work/harness-adaptation.md`
+  (the inventory of the tool and its tests, with file and line) and `parts.json` (the code
+  differences).
 - `tools/sysml.py`, `tools/sysml/README.md`, `tools/sysml/architecture-oracle.json`,
   `tools/sysml/pending-structure.json`, `tools/sysml/tests/`.
 - `harness/project/suites.yaml` (read only: the model suites and their commands).
 
 **Open questions**
-1. Does `docs/archive/sysml-rebuild/` land on the main branch with this issue (the rebuild's
-   reports, ledger and decisions), or stay on its branch only?
 
 **Sequence**
 After #233 and #234 (landed). Before the harness change for the paths, #232's closing, #231 and
@@ -164,8 +167,9 @@ does not change.
 <details><summary>Technical details</summary>
 
 The rebuilt model was written part by part against the former model, the code and its tests;
-each part's report, the identity ledger and the decisions are in `docs/archive/sysml-rebuild/`.
-The model is already in place on `sysmlv2-rebuild`; the coordinator writes model text, the coder
-the tool, the tests and the tags.
+each part's report, the identity ledger and the decisions stay on the branch `sysmlv2-rebuild`
+(`docs/archive/sysml-rebuild/`). The candidate is cut from the main branch and takes
+`docs/sysml/` from that branch; the coordinator writes model text, the coder the tool, the tests
+and the tags.
 
 </details>
