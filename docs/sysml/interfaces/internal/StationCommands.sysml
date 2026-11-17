@@ -1,53 +1,520 @@
 package WstxStationCommands {
     private import ScalarValues::*;
+    private import WstxModeProcessing::Mode;
+    private import WstxReceiveControl::ReceiveMode;
+    private import WstxRadioControl::DetectionReport;
+
+    doc /* The supervisor's control interface: the commands the operator (through web)
+         and an agent (through mcp) give the station, the same for both, the answers, and
+         the supervisor's own state and records. */
+
+    enum def Requester {
+        doc /* Who gave a command. operator: through the browser. agent: through MCP. */
+        enum operator;
+        enum agent;
+    }
+    item def StationRequest {
+        doc /* A command for the station: one of the supervisor's own commands below,
+             or a command of a function's control interface that the supervisor
+             passes on (WstxStationAuthority::GateRule). */
+        attribute profileId : String { doc /* The profile of the station it is meant for. */ }
+        attribute bootId : String {
+            doc /* The start of the station process it was made in. */ }
+        attribute commandId : String {
+            doc /* Names the command: a UUID of version 4 in lower case, chosen by the
+                 requester (WstxStationAuthority::ReceiptRule). */ }
+        attribute requester : Requester;
+    }
+    item def StationOutcome {
+        doc /* The answer to one StationRequest: the answer of the function the command was
+             passed to, the answer of the supervisor to one of its own commands, or
+             StationRefused. */
+    }
+    enum def StationRefusal {
+        doc /* Why the supervisor refuses a command before it reaches a function.
+             wrongProfile: the command names another profile.
+             stateConflict: it names another start of the station process, or a profile
+             revision the station has left.
+             swrFault: an agent's start, Tune or Auto on while the SWR barrier holds
+             (WstxStationAuthority::SwrBarrier).
+             autoOn: a command for the contact while Auto is on
+             (WstxStationAuthority::AutoOnRule).
+             audioUnconfigured: a live start on a profile without an input device.
+             radioUnavailable: a live start on a profile of a radio's native connection
+             whose session is not ready. */
+        enum wrongProfile;
+        enum stateConflict;
+        enum swrFault;
+        enum autoOn;
+        enum audioUnconfigured;
+        enum radioUnavailable;
+    }
+    item def StationRefused :> StationOutcome {
+        doc /* A command refused by the supervisor. Nothing has changed. */
+        attribute reason : StationRefusal;
+    }
+
+    enum def EndpointMatch {
+        doc /* How many sound endpoints of one direction audio lists at a radio's place.
+             one: exactly one. none: none. ambiguous: more than one. */
+        enum one;
+        enum 'none';
+        enum ambiguous;
+    }
+    attribute def ProposedEndpoint {
+        attribute match : EndpointMatch;
+        attribute endpointId : String[0..1] { doc /* With one. */ }
+        attribute name : String[0..1] { doc /* With one: its name as audio lists it. */ }
+        attribute count : Integer[0..1] { doc /* With ambiguous. */ }
+    }
+    item def RadioDetection :> StationOutcome {
+        doc /* The answer to a DetectRadios: radio control's report and, when it proposes
+             a radio, the input and output endpoint audio lists at the radio's place
+             (WstxStationAuthority::GateRule). */
+        item report : DetectionReport;
+        attribute input : ProposedEndpoint[0..1];
+        attribute output : ProposedEndpoint[0..1];
+    }
+
+    enum def OperatingBand {
+        doc /* The bands the station operates on, in this order. */
+        enum '160m';
+        enum '80m';
+        enum '60m';
+        enum '40m';
+        enum '30m';
+        enum '20m';
+        enum '17m';
+        enum '15m';
+        enum '12m';
+        enum '10m';
+        enum '6m';
+        enum '4m';
+        enum '2m';
+        enum '1.25m';
+        enum '70cm';
+        enum '23cm';
+    }
+    enum def IaruRegion {
+        doc /* An IARU region; 'all' stands for every region. */
+        enum 'all';
+        enum r1;
+        enum r2;
+        enum r3;
+    }
+    enum def NominalOrigin {
+        doc /* Where the dial frequency of the selection comes from.
+             unknown: there is none.
+             manual: a selection without radio control; the dial is not known to be there.
+             catReadback: radio control set it and read it back, or read it
+             (WstxOperatingSelection::ReadbackRule).
+             nativeReadback: the radio's native session tuned to it and confirmed it. */
+        enum unknown;
+        enum manual;
+        enum catReadback;
+        enum nativeReadback;
+    }
+    attribute def OperatingSelection {
+        doc /* The mode, band and dial frequency the station operates on. Band and dial
+             frequency are both absent or both present. */
+        attribute mode : Mode;
+        attribute band : OperatingBand[0..1];
+        attribute nominalHz : Integer[0..1] { doc /* The dial frequency. */ }
+        attribute origin : NominalOrigin;
+        attribute confirmedCommandId : String[0..1] {
+            doc /* The selection that set it; absent for unknown and for a dial read. */ }
+    }
+    item def SelectionRequest :> StationRequest {
+        doc /* A change of the operating mode or band. It names the state it was made from
+             (WstxOperatingSelection::SelectionRule). */
+        attribute profileRevision : Integer;
+        attribute operatingRevision : Integer;
+    }
+    item def SelectMode :> SelectionRequest { attribute mode : Mode; }
+    item def SelectBand :> SelectionRequest {
+        attribute band : OperatingBand;
+        attribute nominalHz : Integer[0..1] {
+            doc /* A working frequency of the mode on the band; absent: the first
+                 (WstxOperatingSelection::BandFrequency). */ }
+    }
+    attribute def WorkingFrequency {
+        doc /* A dial frequency the band selector offers. */
+        attribute mode : Mode;
+        attribute band : OperatingBand;
+        attribute nominalHz : Integer {
+            doc /* Within the band's limits as ADIF gives them. A mode, band and frequency
+                 stand once in the list. */ }
+        attribute region : IaruRegion { doc /* The region the frequency is used in. */ }
+    }
+    attribute def WorkingFrequencies {
+        doc /* The supervisor's part of the shack's settings
+             (WstxProfileAccess::ShackSettings). */
+        attribute entries : WorkingFrequency[0..200] ordered {
+            doc /* At first, and after ResetFrequencies, WSJT-X's default list
+                 (WstxOperatingSelection::BandFrequency). */ }
+        attribute region : IaruRegion = IaruRegion::'all' {
+            doc /* The station's IARU region, as the operator sets it: the station uses the
+                 entries of this region and of the region 'all'; with 'all', every entry. */ }
+    }
+    item def CancelSelection :> StationRequest {
+        doc /* End a selection, or keep one from being carried out
+             (WstxOperatingSelection::CancelRule). */
+        attribute operatingRevision : Integer;
+        attribute targetCommandId : String;
+    }
+    enum def SelectionPhase {
+        doc /* Where a selection stands.
+             releasing: receive gives up its live job.
+             applying: the radio is set.
+             restarting: the selection is set and receive starts again.
+             applied: done.
+             failed: it ended with an error.
+             releaseBlocked: receive did not give up its job.
+             cancelled: it was cancelled. */
+        enum releasing;
+        enum applying;
+        enum restarting;
+        enum applied;
+        enum failed;
+        enum releaseBlocked;
+        enum cancelled;
+    }
+    enum def SelectionResult {
+        enum pending;
+        enum success;
+        enum failed;
+        enum cancelled;
+    }
+    enum def SelectionError {
+        doc /* Why a selection is refused, or ended without success.
+             selectBandFirst: a mode with no band known.
+             selectionUnavailable: the band has no frequency for the mode, or radio
+             control has no such operation for this radio.
+             busy: another selection, an import or a replay has not ended; a mode while
+             the transmitter is keyed, plays or tunes; radio control kept by another
+             exchange.
+             radioUnavailable: the radio connection is not ready, the radio transmits,
+             or the native session is not ready.
+             counterExhausted: the operating revision has reached its end.
+             operationSuperseded: a later selection or cancel has come after the one a
+             cancel names.
+             stateConflict: the profile was saved while the selection ran.
+             releaseFailed: receive did not give up its job.
+             audioUnconfigured: the profile names no input device.
+             audioUnavailable: receive could not start again.
+             cancelled, radioTimeout, radioRejected, readbackMismatch,
+             radioFailedClose, invalidRequest: radio control's error
+             (WstxOperatingSelection::SelectionRule). */
+        enum selectBandFirst;
+        enum selectionUnavailable;
+        enum busy;
+        enum radioUnavailable;
+        enum counterExhausted;
+        enum operationSuperseded;
+        enum stateConflict;
+        enum releaseFailed;
+        enum audioUnconfigured;
+        enum audioUnavailable;
+        enum cancelled;
+        enum radioTimeout;
+        enum radioRejected;
+        enum readbackMismatch;
+        enum radioFailedClose;
+        enum invalidRequest;
+    }
+    attribute def RequestedSelection {
+        attribute mode : Mode;
+        attribute band : OperatingBand;
+        attribute nominalHz : Integer;
+    }
+    attribute def SelectionOperation {
+        doc /* The latest selection admitted since station start. */
+        attribute commandId : String;
+        attribute baseRevision : Integer {
+            doc /* The operating revision it was made from. */ }
+        attribute revision : Integer { doc /* The operating revision it was admitted at. */ }
+        attribute requested : RequestedSelection;
+        attribute phase : SelectionPhase;
+        attribute result : SelectionResult;
+        attribute error : SelectionError[0..1];
+        attribute monitorBefore : Boolean {
+            doc /* A live job of receive ran when it was admitted. */ }
+        attribute monitorWanted : Boolean {
+            doc /* Receive is to run when it ends; false once it failed or was
+                 cancelled. */ }
+        attribute oldJobId : String[0..1];
+        attribute newJobId : String[0..1];
+    }
+    enum def CancelResult {
+        enum cancelled;
+        enum fenced;
+        enum alreadyCancelled;
+    }
+    attribute def SelectionCancellation {
+        doc /* The latest cancel accepted since station start. */
+        attribute commandId : String;
+        attribute targetCommandId : String;
+        attribute revision : Integer;
+        attribute result : CancelResult;
+    }
+    item def CheckSettings :> StationRequest {
+        doc /* Check the station's settings (WstxSettingsCheck::CheckRule). */
+        attribute withTune : Boolean = false {
+            doc /* The operator has agreed that the check keys the radio for a Tune
+                 tone. */ }
+    }
+    enum def CheckArea {
+        doc /* The areas of the settings check, in the order of the settings drawer. */
+        enum station;
+        enum radio;
+        enum power;
+        enum audio;
+        enum clock;
+        enum operating;
+        enum files;
+        enum destinations;
+    }
+    enum def CheckOutcome {
+        enum passed;
+        enum failed;
+        enum skipped;
+    }
+    attribute def CheckLine {
+        doc /* One check of the settings check. */
+        attribute area : CheckArea;
+        attribute checked : String { doc /* What was checked, as the settings name it. */ }
+        attribute outcome : CheckOutcome;
+        attribute reason : String[0..1] {
+            doc /* Present for failed and skipped: why, and where to change it. */ }
+    }
+    item def SettingsCheckReport {
+        doc /* The latest settings check, given after each line and at its end. */
+        attribute commandId : String { doc /* The CheckSettings it answers. */ }
+        attribute running : Boolean;
+        attribute lines : CheckLine[0..*] ordered;
+        attribute ready : Boolean[0..1] {
+            doc /* At the end: true when no line failed. */ }
+    }
+    enum def CheckError {
+        doc /* busy: a contact is in progress, the transmitter is not at rest, a
+             selection is pending or a check runs. */
+        enum busy;
+    }
+    item def CheckRefused :> StationOutcome {
+        doc /* A settings check that was not started. */
+        attribute error : CheckError;
+    }
+    item def SelectionAdmitted :> StationOutcome {
+        doc /* The answer to an admitted SelectMode or SelectBand, and to an accepted
+             CancelSelection (phase cancelled). */
+        attribute commandId : String;
+        attribute operatingRevision : Integer;
+        attribute phase : SelectionPhase;
+    }
+    item def SelectionRefused :> StationOutcome {
+        doc /* A selection or a cancel that was not admitted. Nothing has changed. */
+        attribute error : SelectionError;
+    }
+    item def SelectionState {
+        doc /* The selection as the supervisor holds it, given at every change. */
+        attribute profileRevision : Integer;
+        attribute operatingRevision : Integer {
+            doc /* Counts the admitted selections and accepted cancels since station start,
+                 from 0. */ }
+        attribute selection : OperatingSelection;
+        attribute availableBands : OperatingBand[0..*] ordered {
+            doc /* The bands with a frequency for the mode of the selection
+                 (WstxOperatingSelection::BandFrequency). */ }
+        attribute operation : SelectionOperation[0..1];
+        attribute cancellation : SelectionCancellation[0..1];
+    }
+
+    attribute def ReceiveChoice {
+        doc /* A receive the station started. */
+        attribute mode : ReceiveMode;
+        attribute band : OperatingBand[0..1];
+        attribute inputDevice : String { doc /* The input device it was started on. */ }
+    }
+    attribute def StartupRecords {
+        doc /* What the supervisor wants kept across the sessions of the station.
+             No menu shows a record. */
+        attribute lastReceive : ReceiveChoice[0..1] {
+            doc /* The receive to resume at the next start (WstxStartup::ResumeRule). */ }
+    }
+    enum def ResumeState {
+        doc /* Where the resume of receive at station start stands.
+             idle: there is nothing to resume.
+             waiting: it waits for the radio.
+             started: receive runs on the remembered band and mode.
+             startedUntuned: receive runs in the remembered mode on the radio's present
+             dial.
+             skipped: receive was started by a command before the resume.
+             failed: receive could not be started. */
+        enum idle;
+        enum waiting;
+        enum started;
+        enum startedUntuned;
+        enum skipped;
+        enum failed;
+    }
+    item def StartupState {
+        doc /* The resume of this start, given at every change. */
+        attribute 'state' : ResumeState;
+        attribute error : String[0..1] {
+            doc /* With failed: the error of receive or audioUnconfigured. */ }
+        attribute lastReceive : ReceiveChoice[0..1];
+    }
 
     port def StationOperations {
-        out item request : StationRequest;
-        in item outcome : StationOutcome;
-    }
+        doc /* The station boundary: every command the operator and agents give the
+             station, every read, every answer and every view the station gives back,
+             each typed by the item of the function it belongs to. Web and mcp give the
+             same features (WstxStationLink::WireRule). Written from the requester's
+             side; the supervisor uses the conjugate. */
+        out abstract item commands[0..*] {
+            doc /* A command: it comes with a StationRequest, may change the station, and
+                 is answered by its function's answer or by StationRefused. */ }
+        out abstract item reads[0..*] {
+            doc /* A read: it comes with a StationRequest, changes nothing, and is answered
+                 by the view it asks for. */ }
+        in abstract item answers[0..*] { doc /* The answer to one command or read. */ }
+        in abstract item views[0..*] {
+            doc /* A view of the station's state, given at station start and whenever a
+                 value changes. */ }
 
+        out item selectMode : SelectMode :> commands;
+        out item selectBand : SelectBand :> commands;
+        out item cancelSelection : CancelSelection :> commands;
+        out item checkSettings : CheckSettings :> commands;
+        out item selectRow : WstxQsoControl::SelectRow :> commands;
+        out item enterDx : WstxQsoControl::EnterDx :> commands;
+        out item reply : WstxQsoControl::Reply :> commands;
+        out item callCq : WstxQsoControl::CallCq :> commands;
+        out item callDx : WstxQsoControl::CallDx :> commands;
+        out item sendNext : WstxQsoControl::SendNext :> commands;
+        out item resetRepetitions : WstxQsoControl::ResetRepetitions :> commands;
+        out item cancelContact : WstxQsoControl::CancelContact :> commands;
+        out item haltQso : WstxQsoControl::HaltQso :> commands;
+        out item chooseNext : WstxQsoControl::ChooseNext :> commands;
+        out item editMessage : WstxQsoControl::EditMessage :> commands;
+        out item setReport : WstxQsoControl::SetReport :> commands;
+        out item setTx1Skip : WstxQsoControl::SetTx1Skip :> commands;
+        out item setTx4 : WstxQsoControl::SetTx4 :> commands;
+        out item setFrequency : WstxQsoControl::SetFrequency :> commands;
+        out item setHoldTx : WstxQsoControl::SetHoldTx :> commands;
+        out item setParity : WstxQsoControl::SetParity :> commands;
+        out item tune : WstxQsoControl::Tune :> commands;
+        out item confirmLog : WstxQsoControl::ConfirmLog :> commands;
+        out item discardLog : WstxQsoControl::DiscardLog :> commands;
+        out item switchAuto : WstxAutoControl::SwitchAuto :> commands;
+        out item evaluate : WstxRankingControl::EvaluateRequest :> commands;
+        out item ignore : WstxRankingControl::IgnoreCommand :> commands;
+        out item clearIgnore : WstxRankingControl::ClearIgnoreList :> commands;
+        out item clearAlerts : WstxRankingControl::ClearAlerts :> commands;
+        out item selectStrategy : WstxStrategies::SelectStrategy :> commands;
+        out item startLive : WstxReceiveControl::StartLive :> commands;
+        out item stopLive : WstxReceiveControl::StopLive :> commands;
+        out item startReplay : WstxReceiveControl::StartReplay :> commands;
+        out item cancelJob : WstxReceiveControl::CancelJob :> commands;
+        out item halt : WstxTransmitControl::Halt :> commands;
+        out item saveRecord : WstxLogControl::SaveRecord :> commands;
+        out item reserveImport : WstxLogControl::ReserveImport :> commands;
+        out item importChunk : WstxLogControl::ImportChunk :> commands;
+        out item resendLast : WstxLogControl::ResendLast :> commands;
+        out item exportCabrillo : WstxLogControl::ExportCabrillo :> commands;
+        out item detectRadios : WstxRadioControl::DetectRadios :> commands;
+        out item applyRecommended : WstxRadioControl::ApplyRecommended :> commands;
+        out item saveConfig : WstxProfileAccess::SaveProfile :> commands;
+        out item saveShack : WstxProfileAccess::SaveShack :> commands;
+        out item createEntry : WstxProfileAccess::CreateEntry :> commands;
+        out item updateEntry : WstxProfileAccess::UpdateEntry :> commands;
+        out item deleteEntry : WstxProfileAccess::DeleteEntry :> commands;
+        out item resetFrequencies : WstxProfileAccess::ResetFrequencies :> commands;
+        out item updateMostWanted : WstxProfileAccess::UpdateMostWanted :> commands;
+        out item updateCountryFile : WstxProfileAccess::UpdateCountryFile :> commands;
+        out item reserveRecording : WstxRecordingTransfer::ReserveImport :> commands;
+        out item recordingChunk : WstxRecordingTransfer::ImportChunk :> commands;
+        out item cancelRecording : WstxRecordingTransfer::CancelImport :> commands;
+
+        out item records : WstxReceiveControl::ReadRecords :> reads;
+        out item diagnostics : WstxReceiveControl::ReadDiagnostics :> reads;
+        out item history : WstxLogControl::ReadHistory :> reads;
+        out item logImport : WstxLogControl::ReadImport :> reads;
+        out item export : WstxLogControl::ExportLog :> reads;
+        out item countryFile : WstxLogControl::ReadCountryFile :> reads;
+        out item ranking : WstxRankingControl::ReadRankingState :> reads;
+        out item operating : WstxStrategies::ReadStrategies :> reads;
+        out item contests : WstxStrategies::ReadContests :> reads;
+        out item endpoints : WstxAudioControl::ListEndpoints :> reads;
+        out item recordingImport : WstxRecordingTransfer::ReadImport :> reads;
+
+        in item stationRefused : StationRefused :> answers;
+        in item selectionAdmitted : SelectionAdmitted :> answers;
+        in item selectionRefused : SelectionRefused :> answers;
+        in item checkRefused : CheckRefused :> answers;
+        in item radioDetection : RadioDetection :> answers;
+        in item qsoAnswer : WstxQsoControl::QsoAnswer :> answers;
+        in item autoRefused : WstxAutoControl::AutoRefused :> answers;
+        in item evaluateReply : WstxRankingControl::EvaluateReply :> answers;
+        in item rankingState : WstxRankingControl::RankingState :> answers;
+        in item rankingRefused : WstxRankingControl::RankingRefused :> answers;
+        in item strategiesState : WstxStrategies::StrategiesState :> answers;
+        in item contestList : WstxStrategies::ContestList :> answers;
+        in item strategiesRefused : WstxStrategies::StrategiesRefused :> answers;
+        in item jobAccepted : WstxReceiveControl::JobAccepted :> answers;
+        in item receiveRefused : WstxReceiveControl::Refused :> answers;
+        in item recordsPage : WstxReceiveControl::RecordsPage :> answers;
+        in item cursorExpired : WstxReceiveControl::CursorExpired :> answers;
+        in item diagnosticsView : WstxReceiveControl::DiagnosticsView :> answers;
+        in item haltReceipt : WstxTransmitControl::HaltReceipt :> answers;
+        in item saveAnswer : WstxLogControl::SaveAnswer :> answers;
+        in item resent : WstxLogControl::Resent :> answers;
+        in item logImportView : WstxLogControl::ImportView :> answers;
+        in item exportChunk : WstxLogControl::ExportChunk :> answers;
+        in item historyPage : WstxLogControl::HistoryPage :> answers;
+        in item countryFileState : WstxLogControl::CountryFileState :> answers;
+        in item logRefused : WstxLogControl::LogRefused :> answers;
+        in item settingsOutcome : WstxRadioControl::SettingsOutcome :> answers;
+        in item settingsRefused : WstxRadioControl::SettingsRefused :> answers;
+        in item detectRefused : WstxRadioControl::DetectRefused :> answers;
+        in item endpointList : WstxAudioControl::EndpointList :> answers;
+        in item listRefused : WstxAudioControl::ListRefused :> answers;
+        in item saveRefused : WstxProfileAccess::SaveRefused :> answers;
+        in item recordingReserved : WstxRecordingTransfer::ImportReserved :> answers;
+        in item recordingImportView : WstxRecordingTransfer::ImportView :> answers;
+        in item recordingRefused : WstxRecordingTransfer::ImportRefused :> answers;
+
+        in item selection : SelectionState :> views;
+        in item startup : StartupState :> views;
+        in item settingsCheck : SettingsCheckReport :> views;
+        in item qso : WstxQsoControl::QsoState :> views;
+        in item openSlots : WstxQsoControl::OpenSlots :> views;
+        in item auto : WstxAutoControl::AutoActivity :> views;
+        in item ranked : WstxRankingControl::RankedList :> views;
+        in item decodedFacts : WstxRankingControl::DecodedFacts :> views;
+        in item alerts : WstxRankingControl::Alert :> views;
+        in item receive : WstxReceiveControl::ReceiveStatus :> views;
+        in item transmit : WstxTransmitControl::TransmitStatus :> views;
+        in item txLevel : WstxTransmitControl::TxLevelStatus :> views;
+        in item transmitOutcome : WstxTransmitControl::TransmitOutcome :> views;
+        in item logAttempt : WstxLogControl::LogAttempt :> views;
+        in item radio : WstxRadioControl::RadioStatus :> views;
+        in item agc : WstxRadioControl::AgcStatus :> views;
+        in item power : WstxRadioControl::PowerStatus :> views;
+        in item audio : WstxAudioControl::AudioStatus :> views;
+        in item spots : WstxHearing::FeedReport :> views;
+        in item target : WstxHearing::TargetReport :> views;
+        in item udp : WstxUdpControl::UdpSnapshot :> views;
+        in item clock : WstxStationTime::ClockQuality :> views;
+        in item config : WstxProfileAccess::ProfileSnapshot :> views;
+        in item shack : WstxProfileAccess::ShackSnapshot :> views;
+        in item definitions : WstxProfileAccess::DefinitionsSnapshot :> views;
+        in item recording : WstxRecordingTransfer::RecordingStatus :> views;
+    }
     interface def StationCommands {
-        doc /* Operator and agent requests to the station service, and the station's outcomes. */
+        doc /* The operator's or an agent's commands and reads, given to the
+             supervisor, and the station's answers and views. */
         end requester : StationOperations;
         end station : ~StationOperations;
-    }
-    port def StationStatusPort { out item 'state' : StationState; }
-    item def StationState { doc /* The station state for the Status message. */ }
-    interface def StationStatus {
-        doc /* The station state offered to the UDP sender, which enters nothing into the
-             station. */
-        end station : StationStatusPort;
-        end udp : ~StationStatusPort;
-    }
-
-    item def StationRequest;
-    item def StationOutcome;
-    // CombinedLinkEvidence retired by #80 (operator 2026-11-09): no test measures the 32 kbit/s
-    // link; its budget is a target judged from WstxStationProtocol::LinkTrafficLog.
-    attribute def SelectionStateEvent {
-        attribute maximumBytes : Integer = 2048;
-        attribute radioDatesDetailedMs : Integer = 2000;
-        attribute radioDatesBelowDetailedMs : Integer = 30000;
-        doc /* selection.state (WstxStationLink::PushedStationState, #10): exactly
-             {v:1,type:"selection.state",data:{profile_id,boot_id,snapshot_sequence,monotonic_ms,changed}}
-             to a display-subscribed peer, checked once per second. changed holds the top-level
-             fields of the GET /receive/selection snapshot this peer does not hold (a socket's
-             first event: all of them), at most maximumBytes per event; what does not fit goes at the next
-             check, so a snapshot near its 3072 B cap comes in two events and the browser waits for all fields. Each CAT poll dates the
-             radio facts anew: a change of the radio field in query_sequence or observed_at_ms alone
-             goes at most every radioDatesDetailedMs on Detailed and every
-             radioDatesBelowDetailedMs below it; any other change goes at the next check. The
-             browser builds its view of a socket from that socket's events alone and accepts it
-             like a read: not with a snapshot_sequence older than the state shown, and only for the
-             identity of its current status. It has no timer read. It reads GET /receive/selection
-             once per socket, on a saved profile revision or boot change, on the operator's Refresh
-             and after a command whose outcome is unknown; a pushed state never clears the barrier
-             of an unknown outcome, also not while the command's POST is pending. A read lost on
-             the link before its answer changes nothing while this socket's events hold the state. */
-    }
-    attribute def AuthStatusRequest {
-        doc /* Strict read-only POST /authorization/v1/status JSON {version:1};
-             no scope/operation/extra keys. GET on this new path405/no effects. */
-        attribute version : Integer = 1;
     }
 }

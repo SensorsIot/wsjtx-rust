@@ -1,7 +1,7 @@
 """Is a part of the new model done?  (Foundation/3-Method.md, "What must hold for a finished part")
 
 Usage, from the repository root:
-    python docs/sysmlV2/_work/part_done.py <part> [-v]
+    python docs/archive/sysml-rebuild/_work/part_done.py <part> [-v]
 
 It runs five tests and prints one line each. It reads only.
   1 ledger    every identity of the part is accounted for
@@ -21,8 +21,8 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-V2 = os.path.normpath(os.path.join(HERE, ".."))
-REPO = os.path.normpath(os.path.join(V2, "..", ".."))
+REPO = os.path.normpath(os.path.join(HERE, "..", "..", "..", ".."))
+V2 = os.path.join(REPO, "docs", "sysml")
 sys.path.insert(0, HERE)
 import check  # noqa: E402
 
@@ -218,7 +218,7 @@ def test_rules(files):
 
 
 def test_valid(files, extra):
-    args = [os.path.join("docs", "sysmlV2", f) for f in extra + files]
+    args = [os.path.join("docs", "sysml", f) for f in extra + files]
     try:
         out = subprocess.run([sys.executable, "tools/sysml.py", "validate"] + args, cwd=REPO,
                              capture_output=True, text=True, timeout=600)

@@ -1,7 +1,17 @@
 package ModelBindings {
     private import ScalarValues::*;
-    private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::AutomationState;
+    enum def ImplementationState {
+        doc /* How far a clause is built. */
+        enum target;
+        enum partial;
+        enum implemented;
+    }
+    enum def AutomationState {
+        doc /* How far a test case is automated. */
+        enum planned;
+        enum partial;
+        enum implemented;
+    }
     metadata def Status { attribute build : ImplementationState; }
     metadata def Automation { attribute run : AutomationState; attribute method : String[0..1]; }
     metadata def ImplementedIn { attribute module : String; }

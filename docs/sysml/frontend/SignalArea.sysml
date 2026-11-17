@@ -1,192 +1,290 @@
 package WstxSignalArea {
     private import ScalarValues::*;
-    attribute def DisplayLevels {
-        attribute blackDbfs : Integer = -85;
-        attribute rangeDb : Integer = 50;
-        attribute sensitivityDb : Integer = 0;
-        attribute speedMultiplier : Real = 1;
-        attribute flatten : Boolean = false;
-        attribute spectrumLine : Boolean = false;
-        assert constraint localSliders { sensitivityDb >= -30 and sensitivityDb <= 30 and speedMultiplier >= 0.5 and speedMultiplier <= 8 }
-        assert constraint displayRange { rangeDb >= 10 and rangeDb <= 80 and blackDbfs == -85 }
-        doc /* #54 (CL-054-02), as WSJT-X's Wide Graph: a fixed dBFS-to-colour mapping; no level
-             follows the signal over time and nothing resets it on a new job, source or profile.
-             B is the fixed reference -85 dBFS. Sensitivity g (WSJT-X Zero, -30..+30, default 0)
-             moves the scale: effective black E=clamp(B-g,-120,-R). Range R (WSJT-X Gain, a slider
-             10..80 dB, default 50) is the span [E,E+R]. Speed sets 10*speedMultiplier CSS px per
-             source second (default 1: about two FT8 periods in the default height); fixed source
-             intervals move down independent of history length, clip at bottom; unobserved pixels
-             dark/no-measurement. Sensitivity, Range, Speed, Flatten and the spectrum line are
-             per-browser settings that apply at once and persist in browser storage. Flatten
-             (default off, WSJT-X flat4 equivalent) subtracts per row the lower envelope across
-             frequency (20th percentile of 32 blocks, linearly interpolated) and adds back its
-             median: it evens out the passband shape, never a level change over time; the readout
-             keeps the original native levels. Original calibrated levels unchanged.
-             Rounding, exact RGB palette, ruler/readout/geometry and all actions
-             remain normative in PresentStation/CalculateSpectrum source contract. */
+    private import RequirementDerivation::*;
+    private import WstxRequirements::'FR-010';
+    private import WstxBrowserClientPart::BrowserClient;
+    private import WstxBrowserClientPart::FrontendConfig;
+    private import ModelNotes::FollowsSource;
+    private import ModelNotes::DiffersFromSource;
+    private import ModelBindings::ImplementationState;
+    private import ModelBindings::AutomationState;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::TestedBy;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
+
+    doc /* The signal area: the spectrum and the waterfall of 0 to 3000 Hz, the pointer and
+         the Rx and Tx lines on them, the Rx/Tx strip and the marks of the open slots. */
+
+    requirement 'CL-006-08' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST show the station's rows as SignalLayout says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-006-08'; }
+
+    attribute def SignalLayout {
+        doc /* The signal area spans the screen's width above the workspace: the frequency
+             ruler of 0 to 3000 Hz, the waterfall below it with a ruler of seconds at its
+             side, the spectrum line above it when FrontendConfig::spectrumLine is on, and the
+             Rx/Tx strip below (RxTxStrip). The whole span of 0 to 3000 Hz fits the width at
+             every width; the divider below the area sets its height by pointer and by keys,
+             kept as FrontendConfig::signalHeight. At the default height and speed the
+             waterfall holds about two FT8 periods.
+             The waterfall asks for the rows of FrontendConfig::display: detail the detailed
+             rows, thin the thin rows, off none (WstxStationLink::DisplayRows); newest at the
+             top, older rows moving down at the time scale of DisplayLevels, so a row's height
+             is its time. A row is drawn as the station gave it, each level in its own cell,
+             without smoothing; a row the station did not give within its window is a grey
+             gap, and only such a row. On live receive a thin line crosses the waterfall at
+             the start of each period, without text. A new job, a new profile and a new start of the
+             station begin an empty waterfall. The pointer over the waterfall reads the
+             frequency and the level under it. */
     }
 
-    attribute def SplitGeometry {
-        attribute signalAboveWorkspace : Boolean = true;
-        attribute lowerWorkspaceScrollable : Boolean = true;
-        attribute horizontalPageOverflow : Boolean = false;
-        attribute minimumSignalPixels : Integer = 160;
-        attribute minimumWorkspacePixels : Integer = 200;
-        doc /* Signal then keyboard/mouse separator then operating workspace, within
-             the same page under the station bar. ArrowUp/Down change height16CSSpx;
-             Home chooses the minimum, End maximum with workspace retained.
-             ARIA min/max/current follow the clamped actual signal height.
-             360CSSpx and 200% zoom stack lower panes; text remains reachable.
-             Existing 0..3000Hz, palette, optional 1:5 curve/waterfall (#54) and native bin contracts
-             are unchanged. Secondary in-page disclosures reuse existing forms,
-             preserve login and never obscure the station bar or disabled Halt Tx. */
+    requirement 'CL-054-02' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST colour the waterfall as DisplayLevels says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-054-02'; }
+
+    attribute def DisplayLevels {
+        doc /* A fixed mapping of level to colour, as WSJT-X's Wide Graph: the black of the
+             scale lies referenceDbfs below full scale, moved by Sensitivity
+             (FrontendConfig::sensitivityDb, as WSJT-X's Zero), and the scale spans Range
+             (rangeDb, as WSJT-X's Gain). No level follows the signal over time, and a new
+             job, source or profile changes none. Below the scale is dark, above it the
+             strongest colour; a gap is grey. Flatten (FrontendConfig::flatten) evens out the
+             passband's shape across frequency in each row, as WSJT-X's flattening; it
+             changes no level over time, and the readout keeps the station's level. The
+             spectrum line's scale runs from the scale's black to full scale. Speed
+             (FrontendConfig::speed, in steps of speedStep) sets the time scale of the
+             waterfall. Sensitivity, Range and Speed sit in a corner of the waterfall, each
+             with its value; Flatten and the spectrum line in Settings; every choice applies
+             at once and is kept for this browser. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: the Wide Graph (Zero, Gain, Flatten)";
+        }
+        attribute referenceDbfs : Integer = -85;
+        attribute speedStep : Real = 0.5;
+    }
+
+    requirement 'CL-054-01' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST draw the rows in their order as RowOrder says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-054-01'; }
+
+    attribute def RowOrder {
+        doc /* Rows are drawn in the order of their sequence. A detailed row that comes late
+             after a stall of the station is drawn in its place, so a stall delays rows and
+             loses none within the station's window (WstxStationLink::DisplayRows); a thin row
+             the station paces out between two sent rows is drawn with the next. */
+    }
+
+    requirement 'CL-061-05' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST show a transmitted period in the waterfall as TxBand
+             says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-061-05'; }
+
+    attribute def TxBand {
+        doc /* Each run of rows the station marks tx is one thin dark red band instead of its
+             time, so the waterfall holds still while the station transmits and receive rows
+             keep the time scale. The ruler of seconds stays true beyond the band: a time
+             below the band counts without the band's time. A row missing between two tx
+             rows of one transmitted period belongs to the band, not to a gap. In every
+             theme the waterfall keeps its dark ground and the band its dark red. */
+        @DiffersFromSource {
+            what = "WSJT-X's waterfall shows the transmitted period at its full time; the "
+                + "station collapses it to a thin band.";
+        }
+    }
+
+    requirement 'CL-050-01' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST set the Rx and Tx offsets from the waterfall and the
+             strip as PointerRule says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-050-01'; }
+
+    attribute def PointerRule {
+        doc /* In the waterfall a click sets Tx, and a double-click sets Rx and Tx with one
+             SetFrequency (WstxQsoControl); a key held with the click changes nothing, and
+             a click of the other mouse button sets nothing. The Rx line (green) and the Tx
+             line (red) run over the waterfall's height without text; each is dragged to a
+             new place, and its release gives one SetFrequency. The help names this mapping
+             (WstxOperatingScreen::HelpRule). No pointer action switches transmission on. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: the Wide Graph's mouse use";
+        }
     }
     attribute def RxTxStrip {
+        doc /* Below the waterfall, in one line: Rx with its offset and - and + buttons, Tx
+             with its offset and - and + buttons, Tx=Rx, Rx=Tx, and SwrValue. An offset is
+             typed exactly in Hz, or stepped by stepHz with the buttons, the mouse wheel or
+             the arrow keys, by shiftStepHz with Shift. Each change gives one SetFrequency;
+             the fields show the offsets of the view qso only, so a value typed is shown as
+             set once the station has it. */
         attribute stepHz : Integer = 1;
         attribute shiftStepHz : Integer = 10;
-        attribute hasHoldTx : Boolean = true;
-        attribute hasTxFromRx : Boolean = true;
-        attribute hasRxFromTx : Boolean = true;
-        attribute markersDraggable : Boolean = true;
-        attribute hasSwrValue : Boolean = true;
-        attribute swrRedAboveX10 : Integer = 20;
-        doc /* `Rx [Hz] [-][+]  Tx [Hz] [-][+]  [Tx=Rx] [Rx=Tx]  SWR x.x` under the waterfall
-             (SWR x.x since #68, CL-068-01: the last pushed radio.tx_level SWR, hidden without
-             one, red above swrRedAboveX10 = 20, i.e. 2.1 and up, display only); Hold Tx
-             (hasHoldTx) is in the ControlPanel below the QSO pane since #37 (operator
-             2026-11-03); the frequencies themselves stay here.
-             Exact Hz can be typed; the buttons, the mouse wheel and the arrow keys step
-             1 Hz, with Shift 10 Hz. Each change is one WstxContact set_frequency or
-             set_hold_tx request; the fields show only server-confirmed values (a typed
-             value is not shown as applied until confirmed). Waterfall pointer (#50): click Tx,
-             double-click Rx and Tx (WstxContact::PointerEffect). The Rx and Tx markers are 3 px
-             green (Rx) and red (Tx) lines over the full waterfall height, without text, and can be
-             dragged; the release sends one set_frequency. No strip or
-             pointer action enables transmission.
-             Frequency mapping (#50, CL-050-07): the waterfall canvas's own box carries the fixed
-             0..3000 Hz span, 0 Hz at its left edge and 3000 Hz at its right edge (the time ruler
-             beside it is outside the span). The pointer frequency, the Rx and Tx lines, their
-             brackets and the frequency axis ticks all use this one mapping, so a line and an
-             axis tick of a frequency lie within 1 px of the pointer position that selects it, at
-             every width, display option and devicePixelRatio. Each line marks the signal's
-             lowest tone and carries a WSJT-X bracket (goalpost) of the line's colour at the top
-             of the waterfall over the occupied width to its right: FT8 8 x 6.25 = 50 Hz, FT4
-             4 x 20.833 = 83.3 Hz, following the station's operating mode (station.tick period,
-             15 s FT8, 7.5 s FT4). The bracket takes no pointer input. */
     }
-    attribute def FreeTxSlotMarks {
-        attribute marksTakePointer : Boolean = false;
-        attribute alwaysShown : Boolean = true;
-        attribute hasLabels : Boolean = false;
-        attribute barHeightPx : Integer = 8;
-        attribute endInsetPx : Integer = 2;
-        attribute minColourDifference : Integer = 40;
-        assert constraint marksRules { not marksTakePointer and alwaysShown and not hasLabels }
-        doc /* CL-065-02 (#65, operator 2026-11-08: "show it above the waterfall as
-             visually that I can place the TX frequency according to that"; #82, operator
-             2026-11-09: "open slots are shown all the time as a part of the waterfall", "we
-             just want to mark open slots, nothing else on screen"; WstxStrategy D18). Part of
-             the waterfall, with no setting (#82 removes the Settings > Expert checkbox "Show
-             free Tx slots"; its browser storage key is no longer read): on every page with
-             the waterfall, each open range [lo_hz, hi_hz) of the latest held free_tx_slots
-             (WstxAutoControl::FreeTxSlots) is a bar in the frequency ruler directly above the
-             waterfall over lo to hi, on the waterfall's one frequency mapping (RxTxStrip,
-             CL-050-07), with or without a run, a QSO or Auto (no run_id match). The held
-             value: each free_tx_slots.state replaces it in socket order; a GET /automation
-             reply (read only after automation.state, #74) replaces it only with a value whose
-             at_utc_ms is later than the held one's (its null or an older value never does); a
-             new boot and switching the page's display to Off drop it (#74, #82). No other request or poll; an Off peer has no waterfall
-             and receives no value.
-             Look (#76, operator 2026-11-08: "shorten the mark a bit so that it has a space
-             in between two adjacent ones", "in green and a little bit thicker", "We do not
-             need any text on the open slots, just the sign"): each bar is barHeightPx (8)
-             CSS px high at the bottom of the ruler and is shortened by endInsetPx (2) CSS px
-             at each end, from x(lo) + 2 to x(hi) - 2 (edges within 1 px), so two touching
-             ranges (FT8 [2110, 2160) and [2160, 2210)) show a gap of 4 px; where a range is
-             narrower than both insets (a phone) the bar may vanish. The marks
-             carry no text (hasLabels false: no rank, no rise, no number). The colour is one pale green in
-             the base (dark) theme that the Day and Night themes remap like the rest of the
-             page; as drawn, in each theme a bar's pixel differs from the drawn Rx line's,
-             the Tx line's and the ruler background's by at least minColourDifference (40)
-             in the sum of the R, G and B differences. Bars take no pointer input (click,
-             double-click and marker drag act as without them); the Rx and Tx lines are
-             unchanged; the marks fit inside the ruler and never move the waterfall.
-             They are redrawn on every new held value (every period) and go when the value is
-             null, when open is [] and at a new boot. No horizontal overflow at 360 px. Auto's
-             ranking and the chosen slot are not drawn (the Tx line shows where Tx is). */
+
+    requirement 'CL-050-07' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST place the pointer, the lines and the ruler on one
+             frequency scale as FrequencyMapping says. */
+        @Status { build = ImplementationState::implemented; }
     }
-    dependency freeTxSlotMarksClause from FreeTxSlotMarks to WstxOperatingLayout::'CL-065-02';
-    dependency freeTxSlotMarksMapping from FreeTxSlotMarks to RxTxStrip;
-    dependency rxTxStripSwrClause from RxTxStrip to WstxOperatingLayout::'CL-068-01';
-    enum def ReceiveMode { enum spectrum; enum ft4; enum ft8; }
-    enum def ReceiveState { enum stopped; enum running; enum cancelling; enum failed; }
-    enum def MutationState { enum idle; enum pending; enum outcomeUnknown; }
-    enum def ReceiveIntent { enum monitor; enum stop; enum chooseNextMode; }
-    enum def ExistingOperation { enum none; enum start; enum stop; }
-    calc def MapToolbarIntent {
-        in intent : ReceiveIntent;
-        in current : ReceiveState;
-        in mutation : MutationState;
-        in receiveCapability : Boolean;
-        in currentContextValidated : Boolean;
-        in previousOwnershipReleased : Boolean;
-        return operation : ExistingOperation =
-            if not receiveCapability or not currentContextValidated or mutation != MutationState::idle ? ExistingOperation::none else
-            if intent == ReceiveIntent::chooseNextMode ? ExistingOperation::none else
-            if intent == ReceiveIntent::stop and current == ReceiveState::running ? ExistingOperation::stop else
-            if intent == ReceiveIntent::monitor and current == ReceiveState::running ? ExistingOperation::stop else
-            if intent == ReceiveIntent::monitor and previousOwnershipReleased and (current == ReceiveState::stopped or current == ReceiveState::failed) ? ExistingOperation::start else
-            ExistingOperation::none;
-        doc /* contract 4.7.51/2/3/4/6. Existing server guards still decide admission; none does
-             not claim success. Observed Monitor-off and Stop share receive-only stopped indications
-             and retained texts; Receiving may remain green transitionally. Hidden
-             loop/wait/TX effects and native release are unobserved. Abstract stopped
-             maps absent/completed/cancelled job. Failed job does not prove ownership
-             released. previousOwnershipReleased is confirmed prior-owner release;
-             currentContextValidated includes validated current station/profile/boot
-             snapshot even if job absent. No first/stale snapshot request permitted. No PTT, disarm, QSO cancellation or CAT. */
-    }
-    attribute def ReceivePresentation {
-        attribute activeMode : ReceiveMode;
-        attribute nextMode : ReceiveMode;
-        attribute receive : ReceiveState;
-        attribute mutation : MutationState;
-        attribute currentTupleValidated : Boolean;
-        attribute canMutate : Boolean;
-        assert constraint mutationAuthority {
-            canMutate implies (currentTupleValidated and mutation == MutationState::idle and receive != ReceiveState::cancelling)
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-050-07'; }
+
+    attribute def FrequencyMapping {
+        doc /* The waterfall's own width carries 0 Hz at its left edge and 3000 Hz at its
+             right edge; the pointer, the Rx and Tx lines and the ticks of the ruler use this
+             one scale, so a line and the tick of a frequency stand where the pointer that
+             chose it stood, at every width, display choice and pixel density. Each line marks
+             the lowest tone of the signal and carries WSJT-X's bracket of its colour at the
+             top of the waterfall over the width the signal takes to its right, by the
+             station's operating mode. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: the Wide Graph's Rx and Tx markers";
         }
-        doc /* Existing profile/boot/source/job/generation and revision are retained,
-             not replaced with a new ownership scheme. Next selection starts no device
-             and never changes activeMode. Active mode and running/released state come
-             from authoritative receive snapshot. Partial results remain explicit. */
     }
-    enum def MutationEvent {
-        enum submitted; enum confirmed; enum rejected; enum responseLost;
-        enum laterAuthoritativeReconciliation;
+
+    requirement 'CL-068-01' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST show the last SWR in the strip as SwrValue says. */
+        @Status { build = ImplementationState::implemented; }
     }
-    state def ExistingMutationBarrier {
-        attribute acceptedEvent : MutationEvent;
-        entry; then idle;
-        state idle; state pending; state outcomeUnknown;
-        transition submit first idle if acceptedEvent == MutationEvent::submitted then pending;
-        transition complete first pending if acceptedEvent == MutationEvent::confirmed or acceptedEvent == MutationEvent::rejected then idle;
-        transition uncertain first pending if acceptedEvent == MutationEvent::responseLost then outcomeUnknown;
-        transition reconcile first outcomeUnknown if acceptedEvent == MutationEvent::laterAuthoritativeReconciliation then idle;
-        doc /* contract 4.7.54. Old/pre-intent reads never emit laterAuthoritativeReconciliation.
-             This names the legacy Start/Stop browser barrier only; coordinated selection
-             uses MayClearUnknown and explicit12.8.1 fencing; it adds no mutation queue/retry.
-             Reconciliation determines real state, not automatic desired success. */
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-068-01'; }
+
+    attribute def SwrValue {
+        doc /* The strip ends with SWR and the last SWR reading of the view txLevel
+             (WstxTransmitControl::TxLevelStatus), with one decimal, while that view has a
+             managed level and a reading; otherwise it shows none. The reading stays until a
+             newer one, also after the transmission or Tune that made it and across a change
+             of the band. It is in the error colour above redAboveSwr. It takes no input. */
+        attribute redAboveSwr : Real = 2.0;
     }
-    action def StartWithExistingReceiveAPI {
-        in nextMode : ReceiveMode;
-        doc /* contract 4.7.51/3: POST /receive/start with unchanged contract 12.8 exact shape,
-             saved input/current revision/current context. One receive owner and
-             actual decoder; no audio selection fallback or radio command. */
+
+    requirement 'CL-065-02' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST mark the open Tx slots above the waterfall as
+             OpenSlotMarks says. */
+        @Status { build = ImplementationState::implemented; }
     }
-    action def StopWithExistingReceiveAPI {
-        doc /* contract 4.7.52/5: exact current-job Stop, publication invalid before ACK;
-             existing cancellation/release bounds and failure ownership preserved.
-             Verified partial results remain; stale callbacks cannot publish. */
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-065-02'; }
+
+    attribute def OpenSlotMarks {
+        doc /* Each open range of the view openSlots (WstxQsoControl::OpenSlots) is a green
+             bar in the frequency ruler directly above the waterfall over that range, on the
+             scale of FrequencyMapping, always, whoever runs the contact. Two touching ranges
+             show a gap between their bars; the bars carry no text and take no input; their
+             green stands clearly apart from the Rx and Tx lines and from the ruler in every
+             theme. Each new view redraws them; an absent view, a view without ranges, a new
+             start of the station and the display off remove them. */
+    }
+
+    verification 'TC-010-003' {
+        doc /* The signal area, its divider and its regions at every size. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-006-08'; }
+        @TestedBy { test = "tests/recording.test.cjs"; }
+    }
+    verification 'TC-010-007' {
+        doc /* Rows move down by their time at each speed; gaps and stops. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-006-08'; }
+        @TestedBy { test = "tests/recording.test.cjs"; }
+    }
+    verification 'TC-010-006' {
+        doc /* The colours of known levels under each Sensitivity, Range and Speed. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-054-02'; }
+        @TestedBy { test = "tests/recording.test.cjs"; }
+    }
+    verification 'TC-054-002' {
+        doc /* The fixed mapping, Zero and Gain, Flatten and the spectrum line. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-054-02'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-054-001' {
+        doc /* Detailed rows in order after a stall; gaps only for real gaps. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-054-01'; }
+        @TestedBy { test = "server/src/protocol_tests.rs; tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-061-008' {
+        doc /* A transmitted period is a thin band, and the ruler stays true. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-061-05'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-061-006' {
+        doc /* Transmitted rows, and the level warnings of receive periods only. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-061-05'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-050-001' {
+        doc /* The pointer, the lines and a double-click on a row. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-050-01'; }
+        @TestedBy { test = "tests/contact.test.cjs; tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-010-008' {
+        doc /* The pointer in the waterfall and the offsets of the strip. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-050-01'; }
+        @TestedBy { test = "tests/contact.test.cjs"; }
+    }
+    verification 'TC-050-007' {
+        doc /* The pointer, the lines and the ruler on one scale; the brackets. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-050-07'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-068-001' {
+        doc /* The SWR at the end of the strip. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-068-01'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-082-004' {
+        doc /* The open slot marks always above the waterfall. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-065-02'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
 }

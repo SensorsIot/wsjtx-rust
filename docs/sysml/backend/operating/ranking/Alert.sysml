@@ -1,48 +1,62 @@
 package WstxAlert {
     private import ScalarValues::*;
+    private import RequirementDerivation::*;
     private import WstxRequirements::'FR-026';
-    private import WstxRequirements::ImplementationState;
-    private import ModelBindings::ImplementedIn;
     private import WstxRankingPart::RankingService;
+    private import WstxRankingControl::*;
+    private import WstxDecodes::ResultRecord;
+    private import ModelBindings::ImplementationState;
+    private import ModelBindings::AutomationState;
     private import ModelBindings::Status;
     private import ModelBindings::Automation;
     private import ModelBindings::TestedBy;
-    private import RequirementDerivation::*;
-
-    attribute def AlertRule {
-        doc /* Without a setting. Each record of the current live job is judged once (a job not
-             seen before from its first retained record), also while no strategy is active, so a
-             later selection never alerts on older decodes. With an active strategy, each new
-             record that is a Candidate of it (Verdict, its window and list) records an alert; a
-             caller of my call, an ignored sender and a CQ greyed by DirectedCqRule never alert.
-             Dedupe: no alert when the station recorded one for the same call and the same
-             station band (station_band at that time; unknown counts as its own band) whose
-             period start lies less than 10 minutes before this record's period start (exactly
-             10 minutes later alerts again); this memory is kept apart from the history, so
-             Clear does not reset it. An alert never transmits, never selects, arms or changes a
-             contact, the automation run, the Tx watchdog or the strategy store. */
-    }
-
-    attribute alertRule : AlertRule;
-
-    satisfy 'CL-042-04' by alertRule;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
 
     requirement 'CL-042-04' {
         subject ranking : RankingService;
-        doc /* Alert has no setting: for each new candidate of the active strategy (an ignored
-             sender, a directed CQ not for me and a caller of my call never alert), the station
-             records an alert (time, call, message, strategy name, band, mode, SNR, DXCC entity)
-             in a history of the last 100 alerts in station memory (kept across page reloads,
-             empty after a station restart), at most one per call and band in 10 minutes, and
-             announces it to the browser. An alert never transmits or changes a contact or
-             automation run. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn {
-            module = "server/src/strategy.rs; server/src/contact_http.rs; server/src/main.rs; server/src/mcp.rs; client/contact.js";
-        }
+        doc /* Ranking MUST record one alert for each newly decoded station worth calling
+             under an active strategy with an alert, once for a call and band within the dedupe
+             time, and keep the latest alerts as a history (AlertRule). */
+        @Status { build = ImplementationState::partial; }
     }
-    #derivation connection {
-        end #original ::> 'FR-026';
-        end #derive ::> 'CL-042-04';
+    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-042-04'; }
+
+    attribute def AlertRule {
+        doc /* When an alert is recorded.
+             Each ResultRecord of the station's current job is judged once, in the
+             order of the records, also while no strategy is active: a record decoded
+             before a strategy became active alerts no more. While no strategy is active,
+             or the active one has no Strategy::alert, no alert is recorded.
+             Under a strategy of class strategy a record alerts when its Verdict has
+             the VerdictKind candidate or wanted. Under a strategy of class contest it
+             alerts when its Verdict (WstxContestRanking::ContestVerdictRule) has the
+             VerdictKind wanted, or the VerdictKind candidate with
+             ContestVerdict::newMultiplier true. A caller, an ignored sender and a grey CQ do not
+             alert.
+             No alert is recorded when one was recorded for the same call on the same
+             station band, an unknown band counting as a band of its own, whose
+             record's period started less than RankingLimits::alertDedupeMinutes
+             before the period of this record. A record without a period start counts
+             with the time at which it is judged.
+             An alert is one AlertEntry, with the strategy's sound, at the end of
+             Alert::history; with RankingLimits::alertHistoryMax alerts kept, one more drops
+             the oldest.
+             ClearAlerts empties the history. It does not change which call alerted
+             when on which band, and the ids go on.
+             The history and that memory are held by ranking and are empty at station
+             start. */
+    }
+
+    verification 'TC-042-006' {
+        doc /* Alerts at the station. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-042-04'; }
+        @TestedBy {
+            test = "server/src/strategy_tests.rs::"
+                + "tc_042_006_alert_records_one_alert_per_call_and_band_and_never_transmits";
+        }
     }
 }

@@ -1,16 +1,17 @@
 package WstxModesPart {
     private import ScalarValues::*;
-    private import WstxModeProcessing::EncodeProcessing;
     private import WstxModeProcessing::ReceiveProcessing;
+    private import WstxModeProcessing::EncodeProcessing;
+    private import WstxModeProcessing::PackProcessing;
+
     part def ModeFunctions {
-        attribute currentReceiveSettings : WstxModeProcessing::Settings[0..1];
-        attribute intendedModeCapabilities : WstxRequirements::ModeCapability[*];
-        doc /* Pure protocol/symbol/waveform and decoding calculations with independent vectors; no filesystem/hardware/network/wall-clock dependency. */
-        doc /* Pure receive calculations and encoding/waveform generation depend on no
-             device, filesystem, wall-clock or network. WstxModemDecode and
-             WstxOfflineDecode own concrete mode contracts and status; hardware format
-             adaptation and common rate conversion remain outside this boundary. */
+        doc /* The FT8 and FT4 protocol functions of the station. It decodes the frames in
+             a window of samples, turns each payload into a message with its fields, and
+             turns a message into its waveform. */
         port receive : ~ReceiveProcessing;
         port encode : ~EncodeProcessing;
+        port pack : ~PackProcessing {
+            doc /* qso's texts, answered by PackMessage. */
+        }
     }
 }

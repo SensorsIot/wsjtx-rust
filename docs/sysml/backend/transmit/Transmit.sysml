@@ -1,41 +1,38 @@
 package WstxTransmitPart {
     private import ScalarValues::*;
-    private import ModelNotes::Conflict;
+    private import WstxTransmitControl::TransmitControlPort;
+    private import WstxTransmitControl::TransmitConfig;
+    private import WstxOperatingChain::MessageToSendPort;
+    private import WstxModeProcessing::EncodeProcessing;
+    private import WstxAudioStreams::Playback;
+    private import WstxStationTime::StationTimePort;
+    private import WstxKeying::Keying;
     private import ModelBindings::ImplementedIn;
     private import ModelBindings::DetailTests;
-    private import WstxAudioStreams::AudioExchange;
-    private import WstxModeProcessing::EncodeProcessing;
-    private import WstxKeying::Keying;
-    private import WstxTransmitControl::TransmitControlPort;
-    private import WstxOperatingChain::MessageToSendPort;
-    private import WstxPeriodTiming::PeriodTimingPort;
+
     part def TransmitService {
-        doc /* The transmit function: UTC scheduling, the transmit state, audio and PTT
-             coordination and the priority halt, with no browser timer or visualization-queue
-             dependency. */
-        doc /* Its rules are WstxTransmit::TransmitAuthority, TransmitArming, TransmitTiming and
-             HaltTransmit, on the common resource context; WstxRequirements::
-             ProcessingAndHaltOwnership separates the priority halt from receive completion and
-             cancellation and from display congestion. */
-        @ImplementedIn { module = "server/src/transmit/service.rs; server/src/transmit_http.rs"; }
-        @DetailTests {
-            tests = "server/tests/transmit_service.rs";
-            covers = "the render fill decisions of AudioPlayback against a modelled 10 ms "
-                + "shared-mode engine with and without render delays "
-                + "(the_render_buffer_absorbs_render_delays_without_delaying_the_start_or_the_end)";
+        doc /* The transmit function of the station. It holds the transmit state, takes
+             the requests of the contact, and puts each admitted request on the air in
+             its period: it has the modes part make the waveform, keys the radio through
+             radio control, plays the waveform through audio and releases the radio. It
+             stops at once on Halt, plays the Tune tone, and keeps the level of its
+             audio. It knows neither the radio type nor the output device. */
+        @ImplementedIn {
+            module = "server/src/transmit/service.rs; server/src/transmit/schedule.rs; "
+                + "server/src/transmit_http.rs; server/src/radio_level.rs";
         }
+        @DetailTests {
+            tests = "server/src/radio_level_tests.rs";
+            covers = "the bound of one meter reading and the seam that lengthens it in a "
+                + "test";
+        }
+        attribute config : TransmitConfig {
+            doc /* Its configuration, as the last TransmitProfile gave it. */ }
         port operations : ~TransmitControlPort;
         port contacts : ~MessageToSendPort;
         port encode : EncodeProcessing;
-        port audio : AudioExchange;
+        port audio : Playback;
         port control : Keying;
-        port timing : ~PeriodTimingPort;
-        @Conflict {
-            what = "The doc below says contacts carries arm/disarm, TransmitRequest and halt "
-                + "requests and returns TransmitOutcome; contacts is typed ~MessageToSendPort, "
-                + "which carries only the TransmitRequest.";
-        }
-        doc /* contacts receives QsoAndLogging's arm/disarm, TransmitRequest and halt requests
-             and returns TransmitOutcome. It is the only RF path of the contact workflow. */
+        port time : ~StationTimePort;
     }
 }

@@ -1,13 +1,11 @@
 package WstxContext {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::Conflict;
-    private import WstxArchitecture::Station;
+    private import WstxShack::Shack;
     private import WstxRadioProperties::Radio;
     private import WstxOperatorInteraction::OperatorInteractionPort;
     private import WstxOperatorInteraction::OperatorInteraction;
-    private import WstxMcpInterface::McpPort;
-    private import WstxMcpInterface::Mcp;
+    private import WstxMcp::McpPort;
+    private import WstxMcp::Mcp;
     private import WstxCat::CatPort;
     private import WstxCat::Cat;
     private import WstxSoundDevice::SoundDevicePort;
@@ -18,118 +16,32 @@ package WstxContext {
     private import WstxUdp::Udp;
     private import WstxPskReporter::PskReporterPort;
     private import WstxPskReporter::PskReporter;
+    private import WstxPskReporter::ReportCollectorPort;
+    private import WstxPskReporter::ReportCollector;
     private import WstxClubLog::ClubLogPort;
     private import WstxClubLog::ClubLog;
+    private import WstxCountryFiles::CountryFilesPort;
+    private import WstxCountryFiles::CountryFiles;
     private import WstxTimeSource::TimeSourcePort;
     private import WstxTimeSource::TimeSource;
 
-    enum def OutsideThing {
-        @Conflict {
-            what = "This doc says no outside thing is a part or has a port; "
-                + "StationContext declares each as a black-box part, nine of them with a port.";
-        }
-        doc /* The outside things the server opens a socket, device or file to. None is a
-             part or has a port. The function that owns each carries its information and
-             state on the ports it offers to other functions; the wire protocol is that
-             function's inside. */
-        enum catRadio {
-            doc /* The transceiver's CAT serial link, a COM port found by device enumeration. */
-            @FollowsSource {
-                reference = "Icom IC-7300 Full Manual A7292-4EX-12a, CI-V command table";
-            }
-        }
-        enum flexRadio {
-            doc /* A FlexRadio through its native API: a TCP command channel and UDP VITA-49
-                 streams. */
-            @FollowsSource {
-                reference = "SmartSDR TCP/IP API and FlexLib, as "
-                    + "WstxProductScope::NativeFlexWireSubset pins them";
-            }
-        }
-        enum soundDevice {
-            doc /* The sound-card capture and playback endpoints. */
-            @FollowsSource { reference = "Windows Core Audio WASAPI, shared event-driven mode"; }
-        }
-        enum browser {
-            doc /* The operator's browser, over HTTPS and WebSocket on the station listener.
-                 WstxStationProtocol is the product's own protocol over them. */
-            @FollowsSource {
-                reference = "RFC 9110 HTTP, RFC 6455 WebSocket, TLS 1.2 and 1.3 "
-                    + "(RFC 5246, RFC 8446)";
-            }
-        }
-        enum mcpClient {
-            doc /* MCP clients, POST /mcp on the same listener. A client reaches one station's
-                 McpAdapter over that station's own HTTPS listener with its own auth-v1 grant
-                 (WstxMcpInterface::McpEndpoint, McpCredential); it may run on any authorized
-                 computer. */
-            @FollowsSource {
-                reference = "Model Context Protocol, Streamable HTTP, "
-                    + "the eras WstxMcp::ProtocolEras names";
-            }
-        }
-        enum udpPeer {
-            doc /* The configured WSJT-X UDP targets, send-only. */
-            @FollowsSource {
-                reference = "WSJT-X Network/NetworkMessage.hpp, the version WstxUdp names";
-            }
-        }
-        enum pskReporter {
-            doc /* The PSK Reporter MQTT broker, subscribe-only over TLS. */
-            @FollowsSource { reference = "MQTT 3.1.1 (OASIS), PSK Reporter MQTT feed"; }
-        }
-        enum clubLog {
-            doc /* The Club Log Most Wanted download, on request. */
-            @FollowsSource { reference = "Club Log mostwanted.php API, JSON"; }
-        }
-        enum timeServer {
-            doc /* The SNTP servers. */
-            @FollowsSource { reference = "RFC 4330 SNTP client, RFC 5905 packet"; }
-        }
-        enum windowsTime {
-            doc /* The Windows Time service, its state read only. */
-            @FollowsSource { reference = "Win32 Service Control Manager API"; }
-        }
-        enum profileFiles {
-            doc /* The profile directory and its files. */
-            @FollowsSource {
-                reference = "ADIF 3.1.8 ADI (contacts.adi); RIFF WAVE PCM (recordings); "
-                    + "AD1C cty.dat; the other files are the product's own formats "
-                    + "of their owning packages";
-            }
-        }
-        enum tlsFiles {
-            doc /* The TLS certificate and key files named at launch. */
-            @FollowsSource { reference = "RFC 7468 PEM, X.509 certificate, PKCS#8 key"; }
-        }
-        enum resourceLocks {
-            doc /* The radio identity lock files under %LOCALAPPDATA%. */
-            @FollowsSource { reference = "Windows file locking through std::fs::File::try_lock"; }
-        }
-    }
-
-    part def StationContext {
-        doc /* The station and the outside things around it. An outside thing is a black box:
-             it has no inner structure and no requirement names it as its subject. The
-             function that owns it is the one its port is joined to; for the five without a
-             port, the function its doc names. */
-        @Conflict {
-            what = "The doc of WstxArchitecture::Station says outside things are not parts; "
-                + "the usages below are black-box parts.";
-        }
-        part station : Station;
+    part def ShackContext {
+        doc /* The shack and what it exchanges messages with. An outside thing is a black
+             box. The function that owns it is the one its port is joined to. */
+        part shack : Shack;
 
         part operator {
-            doc /* The licensed person who operates the station through the browser. */
+            doc /* The licensed person who operates the shack's stations through their
+                 browsers. */
             port link : ~OperatorInteractionPort;
         }
-        part mcpClient {
-            doc /* An MCP client, a program that operates the station with the operator's
-                 rights. */
+        part agent {
+            doc /* A program that operates a station through its MCP, with the rights of the
+                 operator. */
             port link : ~McpPort;
         }
         part catRadio : Radio {
-            doc /* The transceiver reached through its CAT serial link. */
+            doc /* A transceiver reached through its CAT serial link. */
             port link : ~CatPort;
         }
         part flexRadio : Radio {
@@ -137,64 +49,57 @@ package WstxContext {
             port link : ~FlexApiPort;
         }
         part soundDevice {
-            doc /* The sound-card capture and playback endpoints. */
+            doc /* The capture and playback endpoints of a sound card. */
             port link : ~SoundDevicePort;
         }
         part udpPeer {
-            doc /* The configured WSJT-X UDP targets, send-only. */
+            doc /* A configured target of the WSJT-X UDP messages. */
             port link : ~UdpPort;
         }
         part pskReporter {
-            doc /* The PSK Reporter MQTT broker, subscribe-only. */
+            doc /* PSK Reporter: the broker of the feed and the collector of reception
+                 reports. */
             port link : ~PskReporterPort;
+            port collector : ~ReportCollectorPort;
         }
         part clubLog {
-            doc /* The Club Log most-wanted download. */
+            doc /* The Club Log service that gives the most-wanted list. */
             port link : ~ClubLogPort;
         }
+        part countryFiles {
+            doc /* country-files.com, which gives the newest country file of AD1C. */
+            port link : ~CountryFilesPort;
+        }
         part timeServer {
-            doc /* The SNTP time servers. */
+            doc /* An SNTP time server. */
             port link : ~TimeSourcePort;
         }
-        part browser {
-            doc /* The operator's browser program, over HTTPS and WebSocket on the station
-                 listener. Its owner is the web function. */
-        }
-        part windowsTime {
-            doc /* The Windows Time service, its state read only. Its owner is the transmit
-                 function. */
-        }
-        part profileFiles {
-            doc /* The profile directory and its files. Its owner is the profile function. */
-        }
-        part tlsFiles {
-            doc /* The TLS certificate and key files named at launch. Its owner is the web
-                 function. */
-        }
-        part resourceLocks {
-            doc /* The radio identity lock files. Its owner is the radio authority. */
-        }
 
-        interface operatorInteractionLink : OperatorInteraction
-            connect station.frontend.browsers.operator to operator.link;
-        interface mcpLink : Mcp connect station.backend.stations.mcp.agent to mcpClient.link;
-        interface catLink : Cat connect station.backend.stations.catAdapter.radio to catRadio.link;
+        interface operatorLink : OperatorInteraction
+            connect shack.stations.frontend.browsers.operator to operator.link;
+        interface agentLink : Mcp connect shack.stations.backend.mcp.agent to agent.link;
+        interface catLink : Cat connect shack.stations.backend.catAdapter.radio to catRadio.link;
         interface soundDeviceLink : SoundDevice
-            connect station.backend.stations.audioAdapter.device to soundDevice.link;
+            connect shack.stations.backend.audioAdapter.device to soundDevice.link;
         interface flexApiLink : FlexApi
-            connect station.backend.stations.flexAdapter.radio to flexRadio.link;
-        interface udpLink : Udp connect station.backend.stations.udp.peers to udpPeer.link;
+            connect shack.stations.backend.flexAdapter.radio to flexRadio.link;
+        interface udpLink : Udp connect shack.stations.backend.udp.peers to udpPeer.link;
         interface pskReporterLink : PskReporter
-            connect station.backend.stations.spots.pskReporter to pskReporter.link;
+            connect shack.stations.backend.spots.pskReporter to pskReporter.link;
+        interface reportCollectorLink : ReportCollector
+            connect shack.stations.backend.spots.collector to pskReporter.collector;
         interface clubLogLink : ClubLog
-            connect station.backend.stations.ranking.clubLog to clubLog.link;
+            connect shack.stations.backend.profile.clubLog to clubLog.link;
+        interface countryFilesLink : CountryFiles
+            connect shack.stations.backend.profile.countryFiles to countryFiles.link;
         interface timeSourceLink : TimeSource
-            connect station.backend.stations.clock.timeSource to timeServer.link;
+            connect shack.stations.backend.clock.timeSource to timeServer.link;
+
     }
 
-    part context : StationContext;
+    part context : ShackContext;
 
     view physicalInterconnection : StandardViewDefinitions::InterconnectionView {
-        expose context::station::*;
+        expose context::shack::*;
     }
 }

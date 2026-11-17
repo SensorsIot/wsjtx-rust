@@ -1,6 +1,6 @@
-"""Text checks of the new model under docs/sysmlV2 (Foundation/1-Finished-Model.md, M8.3).
+"""Text checks of the new model under docs/sysml (Foundation/1-Finished-Model.md, M8.3).
 
-Usage:  python docs/sysmlV2/_work/check.py [-v] [path-prefix ...]
+Usage:  python docs/archive/sysml-rebuild/_work/check.py [-v] [path-prefix ...]
         -v lists every finding; a path prefix limits the files, e.g. backend/clock
 
 It reads only; it changes nothing. Exit 0 when no finding, 1 otherwise.
@@ -10,7 +10,7 @@ import os
 import re
 import sys
 
-ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "sysml"))
 SKIP = ("Foundation", "_work")
 LIMIT = 100
 
@@ -71,7 +71,7 @@ ELEMENT = re.compile(r"^\s*(requirement|verification)\s+(?:def\s+)?(?:<)?'((?:FR
 
 
 def target_files():
-    path = os.path.join(ROOT, "_work", "files.md")
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "files.md")
     names = set()
     for line in io.open(path, encoding="utf-8"):
         m = re.match(r"\| ([^| ]+\.sysml) \|", line)
@@ -228,7 +228,7 @@ def main(argv):
         check_file(key, findings)
 
     checked = [k for k in files if not prefixes or any(k.startswith(p) for p in prefixes)]
-    print("Checked %d model files under docs/sysmlV2" % len(checked))
+    print("Checked %d model files under docs/sysml" % len(checked))
     for rule, text in RULES.items():
         hits = [f for f in findings if f[0] == rule]
         print("  %-6s %5d  %s" % (rule, len(hits), text))

@@ -1,49 +1,52 @@
 package WstxDisplayData {
     private import ScalarValues::*;
+    private import WstxDecodes::JobIdentity;
+
+    doc /* The spectrum rows receive makes from the samples of its job: a thin row for
+         each second and a detailed row for each fifth of a second. A row is for
+         display; a consumer may leave rows out. */
+
+    item def SpectrumFrame {
+        doc /* The thin row: 128 levels over 0 to 3000 Hz for one second of samples. */
+        attribute identity : JobIdentity;
+        attribute sequence : Integer;
+        attribute firstFrame : Integer { doc /* The first sample of the row. */ }
+        attribute endFrame : Integer {
+            doc /* The sample after the last one of the row. A row is shorter than a
+                 second only at the end of a recording. */ }
+        attribute levels : Integer[128] {
+            doc /* Each from 0 to 120: the level in dB above -120 dBFS. */ }
+        attribute tx : Boolean {
+            doc /* True for a row of a period the station transmitted in. */ }
+        assert constraint interval {
+            sequence >= 0 and firstFrame == 12000 * sequence and endFrame > firstFrame
+            and endFrame <= firstFrame + 12000
+        }
+    }
+    item def DetailedSpectrumFrame {
+        doc /* The detailed row: 1024 levels over 0 to 3000 Hz for 0.2 s of samples. */
+        attribute identity : JobIdentity;
+        attribute sequence : Integer;
+        attribute firstFrame : Integer;
+        attribute endFrame : Integer {
+            doc /* As in SpectrumFrame; a row is shorter than 0.2 s only at the end of a
+                 recording. */ }
+        attribute levels : Integer[1024] { doc /* As in SpectrumFrame. */ }
+        attribute tx : Boolean { doc /* As in SpectrumFrame. */ }
+        assert constraint interval {
+            sequence >= 0 and firstFrame == 2400 * sequence and endFrame > firstFrame
+            and endFrame <= firstFrame + 2400
+        }
+    }
+
     port def DisplayDataPort {
+        doc /* Written from receive's side. */
         out item spectrum : SpectrumFrame;
         out item detailedSpectrum : DetailedSpectrumFrame;
     }
     interface def DisplayData {
-        doc /* Spectrum and waterfall rows from receive; discardable. */
+        doc /* The spectrum rows from receive to a consumer. */
         end receive : DisplayDataPort;
         end consumer : ~DisplayDataPort;
-    }
-    item def SpectrumFrame :> WstxModeProcessing::ProcessingResult {
-        attribute v : Integer = 1;
-        attribute boot_id : String;
-        attribute source_id : String;
-        attribute job_id : String;
-        attribute generation : Integer;
-        attribute sequence : Integer;
-        attribute first_frame : Integer;
-        attribute end_frame : Integer;
-        attribute levels : Integer[128];
-        assert constraint interval { sequence >= 0 and first_frame == 12000 * sequence and end_frame > first_frame and end_frame <= first_frame + 12000 }
-        doc /* Exact envelope v1,type spectrum.frame,data with fields above except v;
-             levels each0..120,q-120dBFS. end=min(first+12000,source_frames). sequence0
-             per replay,advances despite droppedrows. Immutable producer-owned frame,
-             <=1replaceable pending/peer,<=1send/s;browser120rows*128values,1pendingpaint.
-             groupb[b*23.4375,(b+1)*23.4375)Hz. Ignore obsolete tuple/socket callbacks,
-             show gaps,clear newsource/job. Required decode results never share drop rule. */
-    }
-
-    item def DetailedSpectrumFrame :> WstxModeProcessing::ProcessingResult {
-        attribute v : Integer = 1;
-        attribute boot_id : String;
-        attribute source_id : String;
-        attribute job_id : String;
-        attribute generation : Integer;
-        attribute sequence : Integer;
-        attribute first_frame : Integer;
-        attribute end_frame : Integer;
-        attribute levels_b64 : String;
-        assert constraint interval { sequence >= 0 and first_frame == 2400 * sequence and end_frame > first_frame and end_frame <= first_frame + 2400 and end_frame <= (900719925 * 10000000 + 4740991) }
-        doc /* Exact spectrum.detail.frame envelope, <=2048 UTF8bytes; same current UUID/
-             safe-integer tuple as Thin. Canonical padded standard RFC4648 base64 exactly
-             1368chars decodes1024 bytes each0..120. Unknown/missing fields,
-             noncanonical encoding, bad bounds/identities/socket are rejected atomically.
-             Retain one latest immutable frame per profile in existing station state;
-             per peer one replaceable selected frame, not two queues or another job. */
     }
 }
