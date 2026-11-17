@@ -16,7 +16,7 @@ Resolve the canonical skill's own references from its source directory, not this
 If the source is missing, stop and report it; do not substitute another checkout.
 
 <!-- canonical-source-sha256=499b4f47d898bd4b89c481e544fcd5b9c35ae0698075eebff41c51a23dd44b9d -->
-<!-- source harness/project/docs/Finished-Model.md sha256=27e18b2cff33dfca93adf912f9f4aea76c560158cd96e632c303bdd2fc452ada -->
+<!-- source harness/project/docs/Finished-Model.md sha256=8822b7eda3a8d788fe5f587dcf3bfbbae73827f8ee2829364daf248cb0759356 -->
 
 ## This project
 
@@ -128,11 +128,12 @@ and holds the parts ranking, auto and qso.
 - **M3.2** A file imports only from layers before it, and from Requirements. UseCases takes
   its actors from Context.
 - **M3.3** A part never imports another part. What two parts share stands in their interface.
-- **M3.4** A transport file (StationLink, Mcp) and the operating chain's interface file may
-  import a control interface. A control interface imports none of them, and no other file
-  imports a control interface. StationCommands is the supervisor's control interface: the
-  one set of commands that web and mcp both give, and the supervisor's own state and
-  records.
+- **M3.4** Within `interfaces/`, a control interface is imported only by a transport file
+  (StationLink, Mcp), the operating chain's interface file (OperatingChain), StationCommands,
+  Strategies (operating's interface) and ProfileAccess (which stores each function's
+  settings). A control interface imports no transport file. StationCommands is the
+  supervisor's control interface: the one set of commands that web and mcp both give, and
+  the supervisor's own state and records.
 
 ## M4. What each kind of file holds
 
@@ -295,4 +296,4 @@ How a statement gets into the model. These rules apply wherever the model is wri
 - **A9 Names.** A name that no longer says what the thing is, is renamed, and what cites it
   is changed in the same change.
 
-<!-- harness-forwarder-v1 sha256=ead45e1f339f358c131607e7317293acbdde036d9b65ac52c0e42ea195cca393 -->
+<!-- harness-forwarder-v1 sha256=5c8998fd8fe7d1e2beeb71d64d44a9c6193f58dd60bff65bb2b524776bd34c85 -->
