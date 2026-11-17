@@ -42,16 +42,13 @@ product issues; harness issues can be managed much simpler"):
    (closed with a pointer), overtaken (closed), still valid and rewritten against the new model,
    code split matched to M2.3 and `@CodeDiffers`, or kept. The harness issues (#172, #188) stand
    in a short list of their own and go through no CR state.
-2. Branches and worktrees, checked 2026-11-18 for work not on master:
-   - no unique work: cr70-slowtests, cr80-traffic, cr97-strategy (local and remote),
-     harness-issue/106, 126, 184, 203; harness-issue/136 (its worktree holds one change of the
-     former model's `ReceiveJob.sysml`, for the model conversion #136); the backup branch (all
-     its commits are in `sysmlv2-rebuild`); the temporary red-on-parent worktree (clean);
-   - unique work, decided with its issue in the sweep: cr98-contest (4 commits, the contest data
-     of #98 in the former model and a WIP), harness-issue/105 (one WIP commit for #105),
-     pilot/band-activity-pane (6 model pilot commits), wip-old (2 commits of the model skeleton
-     #194);
-   - kept: the merge queue's worktree; `sysmlv2-rebuild`, the archive.
+2. Branches and worktrees: done 2026-11-18 (operator's OK). Removed after the check for work not
+   on master: cr70-slowtests, cr80-traffic, cr97-strategy (with their worktrees; cr97 also on
+   GitHub), harness-issue/106, 126, 184, 203, 136 (its workspace stopped and cleaned by
+   `parallel.py`, its one old-model edit discarded), backup/sysmlv2-pre-master-merge, wip-old,
+   pilot/band-activity-pane (GitHub), the temporary red-on-parent worktree; #230's workspace
+   entry retired. Left: cr98-contest (local, GitHub, worktree) and harness-issue/105 (GitHub),
+   decided with #98 and #105 in the sweep; the merge queue's worktree; `sysmlv2-rebuild`.
 3. The factory: `alex.first` in `harness/project/config.yaml` takes the new order from the sweep,
    with #235 first; its restrictions (#192) are checked. #172: its open points and its meter are
    gone through, what is done is closed, the rest stays as single issues; harness#120 stays
