@@ -163,3 +163,5 @@ migrations; README in #235 or #231; where harness issues live.
 4. Data folders (operator 2026-11-18, A): one `.git/test-inputs/` holds the test inputs and the
    simulator samples, renamed in one harness change with the handover manifest after #235;
    folders nothing reads are deleted; the tests' fallback to `issue-7/downloads` goes.
+5. Issue pointers in harness texts (operator 2026-11-18, A): every pointer that only names a
+   rule's origin goes; a pointer whose rule depends on the issue's state stays.
