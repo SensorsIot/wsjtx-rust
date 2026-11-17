@@ -140,6 +140,11 @@ carries the contact's commands to transmit.
   `wstx_profile`, ...), 11 tools; the argument `command` names the feature, the schema gives
   each command its item's attributes. Origin on `POST /mcp` (#175), by the MCP
   specification: a present Origin must be the station's, an absent one passes.
+- **One agent for the whole shack, one MCP server per station** (operator, option A): each
+  station serves its own MCP at its own address; an agent working the shack is given every
+  station's address and gets the same tools from each; each station names itself to the
+  agent (server name and instructions carry its `display_name` and profile id). No
+  shack-level process.
 - **Done in one pass** (2026-11-17): `Station.sysml` is `Shack.sysml` (package
   `WstxShack`), `Context` has `ShackContext` with `part shack`, the station service's files
   stand in `backend/supervisor/` (package `WstxSupervisorPart`, part `Supervisor`), every
