@@ -129,3 +129,6 @@ migrations; README in #235 or #231; where harness issues live.
    the IC-7300 emulator (SIM-IC7300) and the band simulator. The real IC-7300 is keyed once the
    operator has decided so in #<new decision issue>." `restrictions` is tied to that new issue;
    Project-Specifics' "until #192 is accepted" follows.
+2. Install and Accept through Alex (operator 2026-11-18, A): the deploy gets a command that takes
+   only the commit; `alex.install` and `alex.accept` are switched on; #235 installs by hand. The
+   goal: "a completely automated factory run by Alex and optimized by Jonah".
