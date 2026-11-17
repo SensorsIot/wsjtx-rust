@@ -10,8 +10,8 @@ rule. If a line ever conflicts with that document, the document wins.
 ## Architecture and data
 
 - **MUST NOT** add a writer to a data store beyond its declared writers without an
-  architecture change. → [Functional model](../../../docs/sysml/Requirements.sysml)
-- **MUST NOT** silently change architecture, a public contract or a fail-safe. → [Functional model](../../../docs/sysml/Requirements.sysml)
+  architecture change. → [Finished model M5.1](Finished-Model.md#m5-architecture)
+- **MUST NOT** silently change architecture, a public contract or a fail-safe. → [Required sequence](Project-Specifics.md#required-sequence-for-functional-issues)
 
 ## Security and data handling
 
@@ -33,4 +33,4 @@ rule. If a line ever conflicts with that document, the document wins.
 - **MUST NOT** use `unsafe` without listing the crate in these bindings. → [Rust standard](../../general/lang/rust/standard.md)
 - **MUST NOT** `unwrap()` or `expect()` on external input (audio, files, network, arguments). → [Rust standard](../../general/lang/rust/standard.md)
 - **MUST NOT** add a dependency without naming it and its purpose in the commit body. → [Rust standard](../../general/lang/rust/standard.md)
-- **MUST NOT** adapt upstream code outside the approved scope or without preserving its declared provenance and licensing obligations. → [Functional scope](../../../docs/sysml/Requirements.sysml)
+- **MUST NOT** adapt upstream code outside the approved scope or without preserving its declared provenance and licensing obligations. → [License and attribution](../../../README.md#license-and-attribution)
