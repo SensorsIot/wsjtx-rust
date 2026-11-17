@@ -145,6 +145,9 @@ To do:
 23. The test readers name the rebuilt model's elements (`WstxStartup`, `WstxDecode`,
     `WstxModeProcessing`, and those that replace `WstxOperatingReceive`, `WstxHttpContentCoding`,
     `WstxStrategy`, `WstxContest`).
+24. Every model value the code holds stands in a constant of its code named as the value's
+    feature in upper snake case, with the unit of the name's suffix; an inline number that
+    holds a model value becomes such a constant. The code's behaviour does not change.
 
 Not in this issue: the suites' select lists, `test_trace_selection.py`'s probe paths, the harness
 documents' links, the removal of the moved sections and of the archive's sentence from
@@ -168,8 +171,8 @@ issue per part, after this); the user documentation (#231).
      string literal;
    - each attribute value: compared with the constants (`const`, `static`) of its code
      named as the value's feature in upper snake case, read in the unit of the name's suffix
-     (`Duration::from_secs`/`from_millis` in its unit, `_` separators dropped); without such
-     a constant it is not compared (Open question 1).
+     (`Duration::from_secs`/`from_millis` in its unit, `_` separators dropped); a value whose
+     code holds no such constant is a difference (item 24).
    A difference stands when a target or partial clause of the same file names the element
    or a definition that owns it, or when the element carries `@CodeDiffers`; otherwise
    `Model and code differ: <element>: <what>: <key>:<line>`. A `@CodeDiffers` on a compared
@@ -204,7 +207,7 @@ issue per part, after this); the user documentation (#231).
    `Invalid Proves tag: <path>:<line>`.
 7. *Pinned tests.* The equivalence tests pinned to history stay. The P5 guard on `f80c243c9`
    goes with the proven removals. The mutation tests on `1df1ba3a5` run on a fixture tree in
-   the finished form (Open question 3).
+   the finished form.
 
 **Test cases**
 
@@ -222,7 +225,7 @@ or new `test_a_*.py` files (sysml-architecture); real-model tests are `test_real
 | TR-01 authority | marker, no FSD | no marker; two markers; FSD with and without marker |
 | TR-02 validation (kept: TC-DOC-003, -004) | valid tree | syntax error; unresolved name; missing Java, JAR hash, library |
 | TR-03 tree | M2.1 tree with `data/` | extra model file; listed file missing; other file in `docs/sysml/` (`reference/README.md`); required package missing; declared twice |
-| TR-04 layers | each layer importing earlier ones; UseCases naming Context's actors | function file importing another part's file; interface importing a part; part importing Shack; Shack importing Context; external interface importing a control interface; control interface importing StationLink, Mcp, OperatingChain; Requirements importing a part; a file other than Context and UseCases naming `WstxContext` |
+| TR-04 layers | each layer importing earlier ones; UseCases naming Context's actors | function file importing another part's file; interface importing a part; part importing Shack; Shack importing Context; an interface file other than StationLink, Mcp, OperatingChain, StationCommands, Strategies and ProfileAccess importing a control interface; control interface importing StationLink, Mcp, OperatingChain; Requirements importing a part; a file other than Context and UseCases naming `WstxContext` |
 | TR-05 file contents | Context, Requirements, Shack, UseCases as M4.1-4.3, M4.9 | FR with subject, `@Status`, `@ImplementedIn`, `#40`; Shack with a clause, an attribute; satisfy of a clause; UseCases with a value; a step naming a clause only in text |
 | TR-06 roles | the finished deployment | each role missing; stations `1..1`; second `catAdapter`; `ranking` outside `operating`; second deployment; second browser port toward the station; StationLink port to `receive`; frontend connection to `receive`; a view adding a part |
 | TR-07 context | ten boxes, ports only | outside part with a part, an action; port joined twice; joined by an internal interface; joined to nothing; outside thing as subject |
@@ -267,19 +270,6 @@ decodes FT8 on the operating screen.
 - `harness/project/suites.yaml` (read only: the model suites and their run patterns).
 
 **Open questions**
-1. A model value is compared with the code constant named as its feature in upper snake case;
-   a value without one is not compared (written so above). Alternatives: (b) the CR renames
-   the code's constants to that form and names inline numbers, so every value is compared;
-   (c) a value without its constant carries `@CodeDiffers` naming how the code holds it.
-2. M3.4 lets only StationLink, Mcp and OperatingChain import a control interface. Within the
-   interface layer, StationCommands (nine control interfaces), Strategies (RankingControl,
-   QsoControl) and ProfileAccess (nine, the settings of each function) import them too.
-   (a) M3.4 names them among the importers (a harness change before this CR), the tool
-   checks that list; (b) M3.4 as written: the three files are repaired in this CR.
-3. The mutation tests on `1df1ba3a5` judge a model typed `StationProcess` with a
-   `RadioAuthority`; the rewritten fixed rules refuse that model before any mutation is
-   judged. (a) Their cases move to a fixture tree in the finished form (written so above);
-   (b) the tool keeps the former fixed rules for pinned commits beside the new ones.
 
 **Sequence**
 After #233 and #234 (landed). Before the harness change for the paths, #232's closing, #231 and

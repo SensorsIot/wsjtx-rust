@@ -122,3 +122,10 @@ in the deploy mechanism (pre-#230, pre-#33) and product data migrations (strateg
 restructuring); the deploy mechanism's old-layout code; #188 now; data folders with history in
 their names; issue pointers in harness texts; approval records of standing policies; product data
 migrations; README in #235 or #231; where harness issues live.
+
+## Factory decisions (phase 1.3, one harness change)
+
+1. Radio restriction (operator 2026-11-18, A, stated positively): "Live tests key the simulator:
+   the IC-7300 emulator (SIM-IC7300) and the band simulator. The real IC-7300 is keyed once the
+   operator has decided so in #<new decision issue>." `restrictions` is tied to that new issue;
+   Project-Specifics' "until #192 is accepted" follows.
