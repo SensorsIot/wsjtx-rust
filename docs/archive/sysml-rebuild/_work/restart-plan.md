@@ -132,3 +132,6 @@ migrations; README in #235 or #231; where harness issues live.
 2. Install and Accept through Alex (operator 2026-11-18, A): the deploy gets a command that takes
    only the commit; `alex.install` and `alex.accept` are switched on; #235 installs by hand. The
    goal: "a completely automated factory run by Alex and optimized by Jonah".
+3. The meter's baseline (operator 2026-11-18, A): `meter: rules_start` is the day the polished
+   Alex takes its first job; the queue history and the refusal log are pruned to it that day;
+   Jonah counts his 10 CRs from then.
