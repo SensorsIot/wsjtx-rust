@@ -143,3 +143,8 @@ migrations; README in #235 or #231; where harness issues live.
 6. #230 and #85 at `landed` (operator 2026-11-18, A): before Alex starts, #230 installs and is
    accepted with the next deploy (#235's install); #85 is accepted live on the emulator; both
    slots of `queued_landed` are free when Alex starts.
+7. #172 and harness#120 closed (operator 2026-11-18, A). Remainders: general harness#146 (usage
+   limit), #147 (settings re-read), #148 (stale workspaces), #149 (`queued_landed` count), #150
+   (spending-limit text); this project #238 (factory restart: decisions 1 to 6, Agent-Working-Rules,
+   MEMORY). After #235, as product issues: the deploy command that takes a commit alone (tool
+   change), and one issue each for the flaky TC-096-001 and `clock_state_is_pushed_to_every_profile`.
