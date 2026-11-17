@@ -27,6 +27,11 @@ Work order proposed for alex.first after #235: #198, #201; #192; #226; #229; the
 #227, #195, #228; the Auto/QSO line; the radio line; remote and app; Band Activity; tests and
 timing; #231; contests; Flex (parked).
 
+Closed 2026-11-18 (operator's OK), each with its pointer: 136, 221, 222, 138, 139, 224, 140, 141,
+142, 144, 145, 146, 187, 194, 168, 208, 125, 99, 104, 111, 75, 174, 175, 176, 196 (done), 147,
+199, 164, 209, 112, 155 (overtaken). #232 stays open until #235 and harness change 2 have landed
+(operator 2026-11-17).
+
 ## Per issue (merged results)
 
 ## A
