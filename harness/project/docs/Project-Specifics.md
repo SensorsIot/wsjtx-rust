@@ -787,7 +787,10 @@ enforced by the platform.
 ## Product model maintenance
 
 The reusable [SysML authoring instruction](../../general/core/docs/standards/sysml-v2.md)
-explains how to write models without project-specific assumptions. This binding selects the exclusive authority policy below and the local toolchain. The
+explains how to write models without project-specific assumptions. The project harness
+selects the exclusive authority policy below and the local toolchain. The rules of this
+project's model are the [finished model](Finished-Model.md) (M0 to M8 and its authoring
+rules); where they differ from the general skill and standard, they win. The
 functional entry point is [Requirements.sysml](../../../docs/sysml/Requirements.sysml), with the
 [architecture](../../../docs/sysml/Station.sysml) and the model packages it references.
 Harness instructions are not represented in product SysML.
@@ -795,13 +798,14 @@ Harness instructions are not represented in product SysML.
 ### Exclusive functional authority
 
 `Requirements.sysml` declares SysML authority with the exact first-level comment
-`// Canonical authority: SysML`. Canonical SysML requires the active
+`// Canonical authority: SysML`, the one comment a model file holds (M7.6). Canonical SysML requires the active
 `docs/WSTX Rust FSD.md` to be absent. `check`, `traces` and `fingerprints` refuse a
 missing or invalid marker and refuse an active FSD, with or without the marker; there is no Markdown
 authority or projection path.
 
 When the marker is present, only SysML owns functional requirements, architecture,
-behaviour, interfaces, constraints and durable verification definitions. Functional
+behaviour, interfaces, constraints and the test cases (skeleton and title, M6.5) bound to
+their tests. Functional
 Markdown is historical archive material: it is not edited, regenerated, synchronized
 or read by preparation, implementation or validation. There is no replacement Markdown
 FSD. Optional views present existing model facts and carry no additional authority.
@@ -816,9 +820,11 @@ The model tools' contract (toolchain pins, commands, validation limits, the meth
 ### Required sequence for functional issues
 
 1. Identify the current canonical contract, implemented baseline and affected owners.
-2. Define changed requirements and independent verification expectations in the canonical
-   artifact. For SysML authority, update the model directly; do not edit archived Markdown.
-   An issue that changes the architecture lists its added and removed parts, ports and
+2. Settle the changed promises in the issue, in the model's wording: each clause with the
+   FR it derives from and the use-case step that carries it (M6.2, M6.11), each test case
+   by identity and title (M6.5), and a negative test for each clause that prevents
+   something. The coder writes them into the model with the code; archived Markdown is not
+   edited. An issue that changes the architecture lists its added and removed parts, ports and
    connections, written before `python tools/sysml.py oracle` runs and never from its
    output; its acceptance compares that list with `oracle`'s change lines.
 3. Settle open decisions on behaviour, data, ownership, states, timing, errors and test
@@ -833,8 +839,8 @@ The model tools' contract (toolchain pins, commands, validation limits, the meth
    review; long or unattended on-air running waits for it). Only when the function is OK,
    independently review the exact candidate to find undesired behaviour; then the gate.
    Keep test existence, actual execution, model readiness and live acceptance separate.
-6. Before issue closure reconcile delivered functionality, durable cases and model/source
-   bindings. Current issues retain approval, review, deployment and dated execution evidence.
+6. Before issue closure reconcile delivered functionality, test cases and model/source
+   bindings, and the `@CodeDiffers` markers the change resolves (M6.13). Current issues retain approval, review, deployment and dated execution evidence.
 
 ### Limits for experiments
 
