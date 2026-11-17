@@ -346,3 +346,12 @@ simulator, for the feed and for the reports alike. FR-027 is spots'.
 | `Station.sysml`, `Context.sysml` | connections | `decodesSpots`; `reportCollectorLink` to PSK Reporter's new port `collector` |
 
 No test case: no test exists. The code: issue #195, revised to this model.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-039-020 (`HearingFeed.sysml`): a report is given at once while the feed waits on the network.
+- TC-039-048 (`HearingFeed.sysml`): a contact the operator starts with K1ABC makes K1ABC the target, as Auto's contact does, and the station service is given the same TargetReport as auto.
+- TC-039-052 (`PskReporter.sysml`): the default broker is mqtts://mqtt.pskreporter.info:1884; mqtt://127.0.0.1:1883 speaks to that peer without TLS; a changed broker ends the session and forgets every Spot; mqtt://name@host:1883, ftp://host:1883, a port 0 and a path are not admitted.

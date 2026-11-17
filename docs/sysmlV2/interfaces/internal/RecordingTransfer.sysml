@@ -5,8 +5,6 @@ package WstxRecordingTransfer {
     doc /* How a recording comes into the profile (the import, part by part) and how the
          stored recording goes to the receive function as samples. */
 
-    // ---- The limits -----------------------------------------------------------------------
-
     attribute def RecordingLimits {
         doc /* The bounds of an import and of the stored recording. */
         attribute rateHz : Integer = 12000 {
@@ -35,8 +33,6 @@ package WstxRecordingTransfer {
                  reservation. */
         }
     }
-
-    // ---- The import, from the station service to the profile ------------------------------
 
     enum def ImportState {
         doc /* reserved: the import has a place and no part of its file.
@@ -173,7 +169,7 @@ package WstxRecordingTransfer {
     }
     item def ReceiveBusy {
         doc /* Whether receive holds the station's one place for a job or an import.
-             The station service gives it at station start and whenever one of the two
+             The supervisor gives it at station start and whenever one of the two
              values changes. */
         attribute notReleased : Boolean {
             doc /* A live job that has ended has not yet given up everything it held,
@@ -203,8 +199,6 @@ package WstxRecordingTransfer {
         end sender : RecordingTransfer;
         end receiver : ~RecordingTransfer;
     }
-
-    // ---- The stored recording as samples, from the profile to receive ----------------------
 
     item def OpenRecording {
         doc /* Receive asks for the samples of the stored recording. */

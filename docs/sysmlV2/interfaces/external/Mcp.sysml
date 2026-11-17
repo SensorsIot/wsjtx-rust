@@ -76,7 +76,7 @@ package WstxMcp {
              WstxStationLink::AlertWire, read-only; clearing stays in the browser). wstx_results
              {source_id, job_id: UUID; generation, cursor: safe
              integer; limit optional 1..16} -> GET /receive/results. wstx_contact_command
-             {command: WstxQsoControl::ContactCommand} -> POST /contact/command; its description
+             {command: WstxStationLink::ContactCommand} -> POST /contact/command; its description
              states that open_log (WstxLogbook::DirectLog) closes an unfinished contact
              (completed, Enable Tx off, nothing queued, #37).
              wstx_transmit_halt {halt: HaltTransmit body} -> POST /transmit/halt.

@@ -38,9 +38,9 @@ package WstxRadioControlPart {
         attribute config : RadioConfig {
             doc /* Its configuration, as the last ControlAssignment gave it. */ }
         attribute records : RadioRecords {
-            doc /* Its records, as the last RadioMemory of the station service gave
+            doc /* Its records, as the last RadioMemory of the supervisor gave
                  them. */ }
-        port station : ~RadioControl;
+        port supervisor : ~RadioControl;
         port transmit : ~Keying;
         port backend : RadioAccess;
         port native : NativeControlPort;

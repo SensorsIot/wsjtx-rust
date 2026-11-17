@@ -211,6 +211,13 @@ decides the cases the rule does not spell out. The
     Name a module, a function or a test, never a line number. A detail test whose failure
     would be noticed outside the part shows a missing promise: add the requirement and
     make it a contract test.
+12. **Keep the files clean.** A model file holds model elements and nothing else: no
+    comment, neither `//` nor a plain `/* */`; what describes an element is its `doc`. The
+    only exception is a marker a project's tools read, which the binding names. When a
+    change supersedes a statement, or finds a duplicate, a contradiction or a stale
+    reference, it removes or repairs it in the same change, also in another part's file;
+    a note in a report or an issue is no repair. A comment and a leftover are read as the
+    model and contradict it; the model is the canonical source.
 
 ## Rules by kind of content
 
@@ -231,6 +238,8 @@ Run over the model files the change touched, and repair every hit the change add
 - History: `grep -nE "20[0-9]{2}-[0-9]{2}-[0-9]{2}|#[0-9]+" <files>`, and read the hits for
   "replaces", "formerly", "existing", "remains".
 - Long lines: `grep -nE ".{101,}" <files>`
+- Comments: `grep -nE "^\s*//|//\s|(^|[^c])\s/\*" <files>`, and read every hit that is not
+  inside a `doc` or a string (rule 12).
 - Then read each changed element once more:
   - Is each fact defined once, and named everywhere else?
   - Is every owner, satisfier, verifier and used value a relationship, and is there no

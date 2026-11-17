@@ -601,3 +601,14 @@ Handover rows added: frontend (the mode, the slider only in manual or without AL
 level button), station link (`/radio/tx-level` goes, `mode` in the push), station
 (`StationBand`), radio control (the ALC in percent). `settings.csv`: the level per band and
 the mode.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-008-003 (`TransmitState.sysml`): the outcome that follows keptOutcomes others; on_air and last_period_utc_ms as the station service gives them to receive.
+- TC-008-005 (`TransmitState.sysml`): the release at the end of the process within exitReleaseMaxMs; the receipt of the 17th Halt before a repeated commandId.
+- TC-111-010 (`TransmitState.sysml`): SetTune to switch on with the Capability unsupported: transmitUnsupported; with unavailable: radioUnavailable; not keyed.
+- TC-044-014 (`TxLevel.sysml`): after a finding the tone goes on at the level found, and at the level before after a finding without one, until it is switched off or reaches its limit; the transmit state and its causes do not change; a finding ended by the limit of the tone; with LevelMode manual a tone finds nothing; a StationBand of a band with an entry plays at its level, of a band without one at the level before; a level found is given for the station's band.
+- TC-044-017 (`TxLevel.sysml`): with LevelMode manual, an ALC of 50 three times leaves the level and shows alc_high from the third reading, and an SWR of 3.0 halts as in (d).

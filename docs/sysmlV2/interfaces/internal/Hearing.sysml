@@ -4,11 +4,11 @@ package WstxHearing {
     private import WstxModeProcessing::Mode;
     private import WstxPskReporter::FeedError;
 
-    doc /* What spots tells ranking and auto: which stations hear us (HeardByReport), and
-         what the station being called hears (TargetReport).
-         Everything in a report is about the station's band and mode: the band of the dial
-         that radio control confirms, else the band of the operating selection, and the
-         station's operating mode. */
+    doc /* What spots tells ranking, auto, qso and the supervisor: which stations hear us
+         (HeardByReport), and what the station of the contact in progress hears
+         (TargetReport).
+         Everything in a report is about the station's band
+         (WstxOperatingSelection::StationBandRule) and the station's operating mode. */
 
     enum def HearingState {
         doc /* Whether the target hears the station.
@@ -34,7 +34,7 @@ package WstxHearing {
         attribute offsets : DecodedOffset[0..32] ordered;
     }
     attribute def TargetHearing {
-        doc /* What the feed says about the target of a run. */
+        doc /* What the feed says about the target. */
         attribute call : String;
         attribute 'state' : HearingState;
         attribute spotSeconds : Integer[0..1] {
@@ -59,10 +59,10 @@ package WstxHearing {
                  counts. */ }
     }
     item def TargetReport {
-        doc /* What the station being called hears: whether it hears us and how strong,
-             and the frequencies it already decodes in each period, for the automatic
-             choice of the transmit frequency. Given at once from what the feed has
-             delivered so far. */
+        doc /* What the station of the contact in progress hears: whether it hears us and
+             how strong, and the frequencies it already decodes in each period, for
+             Auto's Tx moves, for qso's quiet space and for the screen. Given at once
+             from what the feed has delivered so far. */
         attribute inUse : Boolean {
             doc /* The operator's two switches of the feed are on. While this is false
                  there is no target. */ }
@@ -80,16 +80,14 @@ package WstxHearing {
         end ranking : ~HeardByPort;
     }
     port def TargetHearingPort {
-        doc /* Written from the side of spots; auto has the conjugate. */
+        doc /* Written from the side of spots; auto and qso have the conjugate. */
         out item report : TargetReport;
     }
     interface def TargetHearingLink {
-        doc /* What the station being called hears, from spots to auto. */
+        doc /* What the station being called hears, from spots to auto and to qso. */
         end spots : TargetHearingPort;
-        end auto : ~TargetHearingPort;
+        end reader : ~TargetHearingPort;
     }
-
-    // ---- The station service and spots --------------------------------------------------
 
     enum def FeedState {
         doc /* The state of the connection to the broker.
@@ -139,23 +137,22 @@ package WstxHearing {
                  Absent until one arrives after the feed was switched on. */ }
     }
     item def SpotsConfiguration {
-        doc /* The configuration of spots, one of the operator's settings. The station
-             service gives it at station start and whenever they change. */
+        doc /* The configuration of spots, one of the shack's settings. The supervisor
+             gives it at station start and whenever they change. */
         attribute config : SpotsConfig;
     }
     item def FeedContext {
-        doc /* What spots needs to know of the station. The station service gives it at
+        doc /* What spots needs to know of the station. The supervisor gives it at
              station start and whenever one of its values changes. */
         attribute call : String[0..1] {
             doc /* The profile's call. Absent while the profile has none. */ }
         attribute locator : String[0..1] {
             doc /* The profile's locator. Absent while the profile has none. */ }
         attribute target : String[0..1] {
-            doc /* The call of the station a run's own contact is with. Absent while no
-                 such contact is active. */ }
+            doc /* The call of the station of the contact in progress, made by hand or by
+                 Auto. Absent while no contact is active. */ }
         attribute band : String[0..1] {
-            doc /* The station's band: that of the dial radio control confirms, else
-                 that of the operating selection. Absent without either. */ }
+            doc /* The station's band (WstxOperatingSelection::StationBandRule). */ }
         attribute mode : Mode { doc /* The station's operating mode. */ }
         attribute dialHz : Integer[0..1] {
             doc /* The dial radio control confirms. Absent while none is confirmed. */ }
@@ -165,14 +162,17 @@ package WstxHearing {
         attribute status : FeedStatus;
     }
     port def SpotsControlPort {
-        doc /* Written from the station service's side; spots uses the conjugate.
-             SpotsConfiguration and FeedContext have no answer. */
+        doc /* Written from the supervisor's side; spots uses the conjugate.
+             SpotsConfiguration and FeedContext have no answer. FeedReport and
+             TargetReport are given whenever they change. */
         out item configuration : SpotsConfiguration;
         out item context : FeedContext;
         in item report : FeedReport;
+        in item target : TargetReport;
     }
     interface def SpotsControl {
-        doc /* The station service commands spots; spots reports the state of the feed. */
+        doc /* The supervisor commands spots; spots reports the state of the feed and
+             what the station of the contact in progress hears. */
         end station : SpotsControlPort;
         end spots : ~SpotsControlPort;
     }

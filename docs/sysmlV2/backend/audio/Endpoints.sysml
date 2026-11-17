@@ -52,26 +52,7 @@ package WstxEndpoints {
     }
 
     verification 'TC-044-006' {
-        doc /* The endpoint list: names, labels and remembered names.
-             Setup: hand-written lists of endpoints and ports, and the station on a
-             throw-away profile with a scripted list; no sound device and no radio.
-             (a) "Microphone (USB Audio CODEC )" on the radio's USB hub: the name
-             "Microphone (USB Audio CODEC)", the label
-             "Microphone (USB Audio CODEC) — IC-7300", radio IC-7300.
-             (b) Two inputs named "Headset Microphone (Sennheiser Communication Audio)",
-             one of them written with two blanks after Headset:
-             the labels end with " #" and the numbers 1 and 2, in the order of their ids.
-             (c) Without a radio in the profile: the same names, no radio and no ending.
-             (d) The profile's input not present, with a remembered name: the label
-             "Microphone (USB Audio CODEC) · not present"; without one:
-             "Unknown device · not present".
-             (e) After a list AudioRecords holds the name of the profile's input only.
-             With that input unplugged the list shows it as in (d). At station start,
-             with no endpoint readable, the names of the record are known and no
-             other.
-             (f) Endpoints that cannot be read: refused with audioUnavailable.
-             (g) Planned, no test yet: 65 inputs, and an endpoint whose name has 257
-             characters: refused with deviceLimit. */
+        doc /* The endpoint list: names, labels and remembered names. */
         subject audio : AudioInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

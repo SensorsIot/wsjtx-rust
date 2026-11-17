@@ -9,12 +9,10 @@ package WstxRadioControl {
     private import WstxAudioControl::RadioPlace;
     private import WstxCat::CivFrame;
 
-    doc /* The configuration and the records of radio control; what the station service
-         gives radio control and what radio control reports; the access of radio control
+    doc /* The configuration and the records of radio control; what the supervisor
+        gives radio control and what radio control reports; the access of radio control
          to the serial port of a radio through the CAT adapter; and the control
          of a radio on its native network connection. */
-
-    // ---- The configuration and the records of radio control -----------------------------
 
     enum def ControlMode {
         enum disabled;
@@ -81,9 +79,9 @@ package WstxRadioControl {
         attribute config : RadioConfig;
     }
     item def RadioMemory {
-        doc /* The records of radio control. The station service gives them at station
+        doc /* The records of radio control. The supervisor gives them at station
              start, as the profile holds them. Radio control gives them whenever it
-             has changed one, and the station service answers with the records as the
+             has changed one, and the supervisor answers with the records as the
              profile holds them then: the changed ones when the profile has kept them,
              the ones before when it could not. A changed record counts only when it
              has come back. */
@@ -97,8 +95,6 @@ package WstxRadioControl {
         attribute tuning : Boolean;
         attribute transmitting : Boolean;
     }
-
-    // ---- What radio control knows of the radio ------------------------------------------
 
     enum def CatState {
         doc /* The state of the connection to the radio.
@@ -251,10 +247,8 @@ package WstxRadioControl {
         attribute trigger : AgcTrigger[0..1];
     }
 
-    // ---- Operations on the connected radio ----------------------------------------------
-
     enum def ControlOperation {
-        doc /* What the station service can ask of the connected radio.
+        doc /* What the supervisor can ask of the connected radio.
              The five reads ask the radio for one fact each.
              setFrequency, setMode and setData change one value.
              receiveSetup sets mode, data mode and frequency in this order. */
@@ -282,7 +276,7 @@ package WstxRadioControl {
         attribute operation : ControlOperation;
         attribute connectionNumber : Integer;
         attribute withinMs : Integer {
-            doc /* The time the station service gives the operation. */ }
+            doc /* The time the supervisor gives the operation. */ }
         attribute frequencyHz : Integer[0..1];
         attribute sideband : Sideband[0..1];
         attribute filterNumber : Integer[0..1];
@@ -304,8 +298,6 @@ package WstxRadioControl {
         doc /* Set RadioConfig::agc now, inside a reservation. The answer is the next
              AgcStatus. */
     }
-
-    // ---- Finding and setting up a radio -------------------------------------------------
 
     enum def PortState {
         doc /* What detection found on one serial port.
@@ -430,8 +422,8 @@ package WstxRadioControl {
              which radio is the profile's. */
     }
     item def RadioDiscovered {
-        doc /* Another radio than the profile names is this station's. The station
-             service saves it as the profile's control. */
+        doc /* Another radio than the profile names is this station's. The supervisor
+             saves it as the profile's control. */
         attribute control : ControlSelection;
         attribute model : String;
         attribute place : RadioPlace[0..1];
@@ -441,12 +433,12 @@ package WstxRadioControl {
     }
 
     port def RadioControl {
-        doc /* Written from the station service's side; radio control uses the conjugate.
+        doc /* Written from the supervisor's side; radio control uses the conjugate.
              ReserveRadio is answered by RadioReserved or ControlRefused; OperationRequest
              by OperationDone or ControlRefused; DetectRadios by DetectionReport or
              DetectRefused; ApplyRecommended by SettingsOutcome or
              SettingsRefused; DiscoverRadio by RadioDiscovered or RadioKept; a
-             RadioMemory of radio control by a RadioMemory of the station service.
+             RadioMemory of radio control by a RadioMemory of the supervisor.
              RadioStatus and AgcStatus are given at every change. */
         out item assignment : ControlAssignment;
         out item kept : RadioMemory;
@@ -473,13 +465,11 @@ package WstxRadioControl {
         in item keep : RadioMemory;
     }
     interface def StationRadioControl {
-        doc /* The station service commands radio control; radio control reports the
+        doc /* The supervisor commands radio control; radio control reports the
              radio. */
         end station : RadioControl;
         end radioControl : ~RadioControl;
     }
-
-    // ---- The access to the serial port of a radio ---------------------------------------
 
     item def OpenRadio {
         doc /* Open the serial port for this station alone. */
@@ -535,8 +525,6 @@ package WstxRadioControl {
         end radioControl : RadioAccess;
         end catAdapter : ~RadioAccess;
     }
-
-    // ---- A radio on its native network connection ---------------------------------------
 
     item def TuneRadio {
         doc /* Bring the radio's receiver to this frequency. */

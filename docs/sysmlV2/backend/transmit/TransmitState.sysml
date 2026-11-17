@@ -28,8 +28,6 @@ package WstxTransmitState {
     private import ModelBindings::TestLocation;
     private import ModelNotes::FollowsSource;
 
-    // ---- The transmit state -----------------------------------------------------------------
-
     requirement 'CL-111-01' {
         subject transmit : TransmitService;
         doc /* Transmit MUST hold the one transmit state of the station, off at every
@@ -82,7 +80,7 @@ package WstxTransmitState {
              The shown cause, TransmitStatus::last_disarm_cause, is that of the stop
              standing first in this order, whichever came first: halt; deviceLost;
              failed; refused; contactCancelled given by Abort; txWatchdog;
-             partnerWorksOther; bandChanged; modeChanged; contactCancelled given by
+             bandChanged; modeChanged; contactCancelled given by
              Disarm; contactCompleted.
              The stops compared are those since the later of the last StepBegins and
              the last admitted Arm.
@@ -91,31 +89,8 @@ package WstxTransmitState {
     }
 
     verification 'TC-111-013' {
-        doc /* What a stop leaves, and the cause shown of two stops within one step of
-             the contact.
-             Setup: for (c) to (g) the contact against the transmit function on a given
-             clock, with a scripted radio and output; a QSO with K1ABC on 20 m in which
-             the first message was sent once and the transmit state is on. For (h) and
-             (i) the transmit function alone; FT8, P an even period start. No sound
-             device, no radio.
-             (c) The radio lost, then Halt: deviceLost, then halt. Halt, then the radio
-             lost: halt.
-             (d) The radio lost, then an Abort with contactCancelled: deviceLost.
-             (e) The repetition limit, then an Abort with contactCancelled:
-             contactCancelled. The repetition limit, then a Disarm with
-             contactCancelled: txWatchdog.
-             (f) The repetition limit and an Abort with partnerWorksOther in the step in
-             which the limit is due: txWatchdog.
-             (g) An Abort with partnerWorksOther and a band change in one step:
-             partnerWorksOther. A band change and the completion of the QSO in one
-             step: bandChanged.
-             (h) Two transmissions, in P and in P + 30 s, each keyed and released. A
-             request for P + 60 s and then a Disarm with txWatchdog: disarmed with the
-             cause txWatchdog, halt_state idle, ptt released; the radio is not keyed in
-             that period and no outcome is halted.
-             (i) Every release would fail; a request waits; a Disarm with txWatchdog:
-             the cause txWatchdog, halt_state idle, ptt released, and the radio's switch
-             has received no command since the transmission before. */
+        doc /* What a stop leaves, and the cause shown of two stops within one step of the contact.
+             */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -128,8 +103,6 @@ package WstxTransmitState {
                 + "server/tests/transmit_service.rs::watchdog_stop_never_touches_ptt";
         }
     }
-
-    // ---- A request and its transmission -----------------------------------------------------
 
     requirement 'CL-009-03' {
         subject transmit : TransmitService;
@@ -215,56 +188,7 @@ package WstxTransmitState {
     }
 
     verification 'TC-008-003' {
-        doc /* The transmit state, the admission of a request and its transmission.
-             Setup: the transmit function on a given clock with a scripted radio and
-             output that record every opening, key, play and stop, for (a) to (i); for
-             (j) the transmit function of a station with radio control on a scripted
-             IC-7300. FT8, P an even period start, the message CQ HB9BLA JN47 at
-             1500 Hz unless said otherwise; no sound device, no radio.
-             (a) At station start: disarmed with the cause startup. A request: refused
-             with notArmed, and through the next period nothing is opened, keyed or
-             played. Arm with the Capability unsupported: transmitUnsupported; with
-             unavailable: radioUnavailable; the state stays off.
-             (b) Armed 3 s before P, one request for P: accepted; nothing before P; at P
-             the output is opened and then the radio keyed; at P + 500 ms the waveform
-             of 606720 samples plays from sample 0, the outcome is started with that
-             time, transmitting is true and last_text is the message. The output
-             finished at P + 13140 ms: released then; the outcomes are accepted,
-             started and completed; armed, released, not transmitting.
-             (c) Armed and requested 2000 ms after P: opened and keyed at once; at
-             P + 2010 ms the waveform plays from sample 72480.
-             (d) Requested 11250 ms after P: stalePeriod, the cause refused, and nothing
-             is keyed through P + 31 s. Station time not synchronized:
-             clockNotSynchronized, disarmed. A period 1 ms after P: misalignedPeriod.
-             An offset of 2951 Hz: frequencyOutOfRange. The text CQ;X: packRefused. A
-             sequence used before: duplicateSequence, and the state stays on.
-             (e) Requests 1 and 2 for P before P, and request 3 for P 100 ms after P,
-             while keyed: each accepted, 1 and 2 replaced, and the audio at P + 500 ms
-             is that of request 3. Then request 4 for P: audioStarted, still armed.
-             Request 5 for P + 30 s: accepted and pending. The output finished at
-             P + 13200 ms: request 3 completed; request 5 is keyed at P + 30 s and
-             started.
-             (f) Request 1 for P keyed, then request 2 for P + 15 s at P + 100 ms:
-             accepted, armed, pending; request 1 plays at P + 500 ms and is released at
-             P + 13200 ms; request 2 is keyed at P + 15 s and started.
-             (h) The station mode FT8 and a request pending; the station mode becomes
-             FT4: through 3 s of its period nothing is keyed or played, the state is
-             off, and the outcome is refused with staleRequest. Armed again, an FT8
-             request: refused with staleRequest, disarmed.
-             (i) A request held, then a new start of the transmit function: disarmed
-             with the cause startup, nothing pending, nothing keyed through the period.
-             (j) A profile whose PTT is disabled: unsupported, and Arm is refused with
-             transmitUnsupported. A profile with CAT PTT and an output device, the
-             radio ready: available and disarmed, and the radio has received no PTT
-             command. Armed, a request whose output device does not open: disarmed, and
-             still no PTT command.
-             (k) The output reports the end 300 ms and 900 ms after the end of the
-             audio at P + 13140 ms: released at that moment, completed, armed; a
-             request for P + 30 s is keyed there and started. The end seen only at
-             P + 14190 ms: completed, released then, armed.
-             (l) Planned, no test yet: the outcome that follows keptOutcomes others;
-             on_air and last_period_utc_ms as the station service gives them to
-             receive. */
+        doc /* The transmit state, the admission of a request and its transmission. */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -298,8 +222,6 @@ package WstxTransmitState {
         }
     }
 
-    // ---- Halt, failures and the releases outside a transmission ---------------------------
-
     requirement 'CL-009-04' {
         subject transmit : TransmitService;
         doc /* Transmit MUST end a transmission or a tone at once on Halt, release the
@@ -324,8 +246,6 @@ package WstxTransmitState {
              HaltReceipt::halt_state is idle when nothing was keyed, stopped when the
              release was confirmed, and pending when it was not confirmed within
              haltBoundMs; TransmitStatus::halt_state shows the same.
-             A Halt with a commandId of one of the latest keptReceipts Halts is answered
-             with the receipt of that one and does nothing.
              Abort does what Halt does, with these differences: it waits for a step of
              transmit that is under way, the outcome is aborted, the cause is the one
              it names, halt_state stays as it is, and a release that is not confirmed
@@ -335,7 +255,6 @@ package WstxTransmitState {
         attribute haltBoundMs : Integer = 250 {
             doc /* From the Halt to the stopped output and the confirmed release, while
                  radio control answers. */ }
-        attribute keptReceipts : Integer = 16;
     }
 
     attribute def Failures {
@@ -386,64 +305,7 @@ package WstxTransmitState {
     }
 
     verification 'TC-008-005' {
-        doc /* Halt, the failures of a transmission and the releases outside one.
-             Setup: as TC-008-003 (a) to (i); for (c) the key and
-             the release through radio control on a scripted IC-7300; for (m) the
-             transmit function of a station with radio control on a scripted IC-7300
-             that transmits at station start. FT8, P an even period start; no sound
-             device, no radio.
-             (a) A transmission playing since P + 500 ms and a request for P + 30 s
-             waiting; Halt at P + 6000 ms: the output is stopped and then the radio
-             released, both at that moment; halt_state stopped, the cause halt, ptt
-             released, the outcome halted; nothing is keyed through P + 45 s. A second
-             Halt: idle.
-             (b) Each exchange with the radio takes 30 ms; Halt during the audio:
-             stopped within 250 ms, the output stopped without waiting for transmit's
-             step, the radio released. The same commandId again: stopped.
-             (c) Halt during the audio through radio control: stopped within 250 ms; the
-             radio is in receive and has received one key and one release command.
-             (d) The output takes 300 ms to open; Halt during the opening: the radio is
-             not keyed, halt_state is not stopped, disarmed.
-             (e) The key takes 80 ms; Halt while it runs: answered within 270 ms and not
-             pending; a key is followed by a release; no audio is played.
-             (f) The key waits for the radio; Halt: answered within 270 ms and not
-             pending, the radio is not keyed, disarmed.
-             (g) The output lost at P + 3000 ms: failed with audioDeviceLost, released
-             at that moment, the cause deviceLost.
-             (h) The Capability unavailable during the audio and a release that is not
-             confirmed: failed with radioLost, ptt indeterminate, the cause deviceLost,
-             the output stopped, and Arm is refused with radioUnavailable. The radio
-             back: the release is confirmed, ptt released, and the radio was keyed once
-             in all.
-             (i) A key that is not confirmed in time: no audio, a key and a release at
-             P, failed with pttTimeout, disarmed. An output that does not open: not
-             keyed, failed with audioUnavailable.
-             (j) The output never reports the end, and a Disarm during the audio: keyed
-             at P + 14139 ms, released at P + 14140 ms, failed.
-             (k) The output stops taking samples half way: an FT8 transmission on time,
-             and one started 3000 ms after P, are released at P + 14140 ms; an FT4
-             transmission at P + 6340 ms; each failed with audioStalled, disarmed with
-             the cause deviceLost, ptt released.
-             (l) Transmit fails during the audio: the radio is released, disarmed, not
-             transmitting; Halt is answered within 250 ms and not with pending; Arm is
-             refused.
-             (m) Halt with a release that the radio rejects: pending, ptt indeterminate,
-             and Arm is refused with radioUnavailable while the Capability is
-             available.
-             (n) No report from the radio: startup_release pending, nothing sent. The
-             radio reports that it transmits: one release, released. The radio in
-             receive at first and transmitting later: nothing sent, notNeeded. Keyed by
-             this run first: notNeeded, nothing more sent. A release that is not
-             confirmed: one attempt, failed, and Arm is refused with radioUnavailable.
-             (o) The station of the setup, on a profile whose PTT is disabled: the radio
-             receives exactly one release command, followed by a reading of its switch;
-             it is in receive; startup_release is released.
-             (p) Abort during the audio with a release that is not confirmed: ptt
-             indeterminate, a refusal is shown, halt_state idle. Abort during the tone:
-             the tone is off, ptt released, halt_state idle.
-             (q) Planned, no test yet: the release at the end of the process within
-             exitReleaseMaxMs; the receipt of the 17th Halt before a repeated
-             commandId. */
+        doc /* Halt, the failures of a transmission and the releases outside one. */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -487,8 +349,6 @@ package WstxTransmitState {
         }
     }
 
-    // ---- The Tune tone ----------------------------------------------------------------------
-
     requirement 'CL-111-06' {
         subject transmit : TransmitService;
         doc /* Transmit MUST play the Tune tone on request, whatever the transmit state
@@ -529,21 +389,7 @@ package WstxTransmitState {
     }
 
     verification 'TC-111-010' {
-        doc /* The Tune tone.
-             Setup: for (a) and (c) the contact against the transmit function on a
-             given clock with a scripted radio and output; for (f) the transmit
-             function alone. No sound device, no radio.
-             (a) The state off, the radio ready; the tone on: keyed, tune true, the
-             state and both causes as before. The tone off: released, the state and
-             the causes as before.
-             (c) The tone on while a request waits, and while a transmission plays:
-             busy; no tone, and the state stays on.
-             (f) A limit of 2 s, the state on, the tone on at the moment t: on at
-             t + 1999 ms; off and released at t + 2000 ms. A tone, then Halt: stopped,
-             no tone.
-             (h) Planned, no test yet: SetTune to switch on with the Capability
-             unsupported: transmitUnsupported; with unavailable: radioUnavailable;
-             not keyed. */
+        doc /* The Tune tone. */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

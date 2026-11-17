@@ -3,8 +3,8 @@ package WstxAudioControl {
     private import WstxAudioStreams::SourceError;
     private import ModelNotes::FollowsSource;
 
-    doc /* The configuration and the records of the audio function; what the station
-         service gives audio (its configuration, its records, the request for the
+    doc /* The configuration and the records of the audio function; what the supervisor
+         gives audio (its configuration, its records, the request for the
          endpoint list) and the state audio reports. */
 
     enum def AudioState {
@@ -71,9 +71,9 @@ package WstxAudioControl {
         attribute config : AudioConfig;
     }
     item def AudioMemory {
-        doc /* The records of audio. The station service gives them at station start,
+        doc /* The records of audio. The supervisor gives them at station start,
              as the profile holds them. Audio gives them whenever it has changed one,
-             and the station service answers with the records as the profile holds
+             and the supervisor answers with the records as the profile holds
              them then. */
         attribute records : AudioRecords;
     }
@@ -126,9 +126,9 @@ package WstxAudioControl {
     }
 
     port def AudioStatusPort {
-        doc /* Written from audio's side; the station service uses the conjugate.
+        doc /* Written from audio's side; the supervisor uses the conjugate.
              ListEndpoints is answered by EndpointList or by a refusal; an AudioMemory
-             of audio by an AudioMemory of the station service. */
+             of audio by an AudioMemory of the supervisor. */
         in item devices : AudioDevices;
         in item kept : AudioMemory;
         out item keep : AudioMemory;
@@ -145,7 +145,7 @@ package WstxAudioControl {
         attribute reason : ListRefusal;
     }
     interface def AudioControl {
-        doc /* The station service commands the audio function; audio reports its
+        doc /* The supervisor commands the audio function; audio reports its
              state. */
         end station : ~AudioStatusPort;
         end audio : AudioStatusPort;

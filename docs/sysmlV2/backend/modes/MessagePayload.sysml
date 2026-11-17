@@ -20,8 +20,6 @@ package WstxMessagePayload {
          is the one of the published protocol; this file states the product's choices
          over it. */
 
-    // ---- From payload to fields -----------------------------------------------------------
-
     requirement 'CL-007-09' {
         subject modes : ModeFunctions;
         doc /* The payload function MUST give every returned frame exactly the fields of
@@ -49,8 +47,6 @@ package WstxMessagePayload {
                 + "of 86 sections and 171 states and provinces";
         }
     }
-
-    // ---- Hashed calls ---------------------------------------------------------------------
 
     requirement 'CL-024-01' {
         subject modes : ModeFunctions;
@@ -104,22 +100,8 @@ package WstxMessagePayload {
         attribute minCallLength : Integer = 3;
     }
 
-    // ---- Test cases -----------------------------------------------------------------------
-
     verification 'TC-004-005' {
-        doc /* Payloads and their fields.
-             Setup: the payload function alone, on payloads with known text and fields
-             and on payloads built at the borders of each field.
-             (a) Every payload of the vector set unpacks to its text and fields.
-             (b) A standard message with grid value 32399 decodes as grid RR99; with
-             32400 it is invalid_payload.
-             (c) A CQ with modifier value 1002 decodes as "CQ 999"; with 1003 it is
-             invalid_payload.
-             (d) A free text of blanks only, and one outside the 42 characters of free
-             text, is invalid_payload.
-             (e) A frame with a payload that is unsupported or invalid_payload is
-             returned with that status, its exact 77 bits, and no text and no
-             fields. */
+        doc /* Payloads and their fields. */
         subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -133,23 +115,7 @@ package WstxMessagePayload {
     }
 
     verification 'TC-024-001' {
-        doc /* What the table learns and fills in.
-             Setup: the payload function with one table; transmit on a double of the
-             radio for (g).
-             (a) Without a known call "<PJ4/K1ABC> W9XYZ -05" reads "<...> W9XYZ -05";
-             its addressed call has the kind hash, 22 bits and no text.
-             (b) After "CQ PJ4/K1ABC", "CQ K1ABC/R FN42" and "W9XYZ DL1ABC JO62" were
-             returned, the messages read "<PJ4/K1ABC> W9XYZ -05", "<K1ABC/R> W9XYZ" and
-             "<DL1ABC> PA/K1XX".
-             (c) W9XYZ, only addressed in "W9XYZ DL1ABC JO62", is not learned:
-             "<...> PA/K1XX".
-             (d) With my call HB9BLA: "<HB9BLA> PJ4/K1ABC" and "<HB9BLA> K1ABC -05";
-             the sending hash of a nonstandard message stays "PJ4/K1ABC <...> RR73".
-             (e) After 1000 more calls my call is still filled in, and the call learned
-             first reads "<...>".
-             (f) Of two calls with the same 12-bit hash the later one is shown.
-             (g) The accepted messages "<VP2X/K1JT> HB9BLA" and "CQ YW18FIFA" teach
-             VP2X/K1JT and YW18FIFA; a refused message teaches nothing. */
+        doc /* What the table learns and fills in. */
         subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -161,16 +127,7 @@ package WstxMessagePayload {
     }
 
     verification 'TC-024-002' {
-        doc /* Hashed calls in the frames a station publishes.
-             Setup: receive with a live FT8 job and frames given by hand; my call
-             HB9BLA.
-             (a) "<VP2X/K1JT> W9XYZ -05" published before the call is known reads
-             "<...> W9XYZ -05" and keeps that text.
-             (b) After "CQ VP2X/K1JT" the same message reads "<VP2X/K1JT> W9XYZ -05",
-             and its addressed call has the kind hash and the text VP2X/K1JT.
-             (c) "<HB9BLA> VP2X/K1JT" shows my call; "<DL/K1ABC> W9XYZ" reads
-             "<...> W9XYZ" with no text.
-             (d) After my call changes to HB9BLB: "<HB9BLB> VP2X/K1JT". */
+        doc /* Hashed calls in the frames a station publishes. */
         subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -179,17 +136,7 @@ package WstxMessagePayload {
     }
 
     verification 'TC-024-010' {
-        doc /* The DX call in a DXpedition message.
-             Setup: the payload function with one table, on the message
-             "K1ABC RR73; W9XYZ <KH1/KH7Z> -12".
-             (a) Without a DX call the hash reads "<...>".
-             (b) With the DX call KH1/KH7Z it reads "<KH1/KH7Z>", also when another call
-             with the same 10-bit hash was learned.
-             (c) With the DX call K1ABC it reads the learned call of that hash, or
-             "<...>" when none was learned.
-             (d) A DX call of two characters whose hash matches is not filled in.
-             (e) My call HB9BLA is not filled into the hash of a received DXpedition
-             message. */
+        doc /* The DX call in a DXpedition message. */
         subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

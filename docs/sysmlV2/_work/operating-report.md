@@ -721,3 +721,12 @@ operator's folder, the rules applied). Operating reads them as `SavedStrategies`
 Differences in the code: operating's module (`strategy.rs`) keeps, checks and writes the
 strategies with the whole configuration (`put`); the bound tests of the moved cases
 assert that form.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-063-001 (`StrategySelection.sysml`): the CQ words: WW for ww_digi, TEST for arrl_digi, arrl_vhf_jan, arrl_vhf_jun and arrl_vhf_sep, FD for arrl_field_day, none for iaru_50_mgm, iaru_70_mgm and ft8_activity.
+- TC-063-003 (`StrategySelection.sysml`): asked of the station while station time is one minute before the end of a round and the clock of the PC is past it: that round is offered.
+- TC-063-007 (`StrategySelection.sysml`): Auto is given AutoRules and the contact ContestActivity, at station start and at a change of the selection.

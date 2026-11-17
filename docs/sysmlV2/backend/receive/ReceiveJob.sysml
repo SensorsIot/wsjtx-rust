@@ -24,8 +24,6 @@ package WstxReceiveJob {
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
 
-    // ---- The job and its end ----------------------------------------------------------------
-
     requirement 'CL-006-02' {
         subject receive : ReceiveService;
         doc /* Receive MUST report the state of its job at every moment and give a job its
@@ -91,24 +89,7 @@ package WstxReceiveJob {
     }
 
     verification 'TC-018-003' {
-        doc /* The states of a job and the admission of a start.
-             Setup: the receive function on a disposable profile folder, with a stored
-             recording for (a) and (b) and a scripted receive stream for (c) to (e); no
-             sound device and no radio.
-             (a) A replay whose work has failed while every sample is processed and
-             which still holds its recording: the job reads running and an import is
-             refused with busy; after it lets go: failed, not completed.
-             (b) A replay of 1200 samples that is held across the moment its row is
-             due: completed, and an import is admitted.
-             (c) A live job after StopLive while its stream is not closed: cancelling,
-             and an import is refused with busy; once the stream is closed: cancelled.
-             (d) A StartLive whose stream cannot be started: audio_unavailable and the
-             job failed; the next start is admitted with a new job id.
-             (e) A live job whose second epoch cannot be given a source id: failed with
-             storage_unavailable under the same job id; an import is
-             then admitted.
-             (f) Planned, no test yet: StartReplay refused with no_recording, not_found
-             and recording_unavailable. */
+        doc /* The states of a job and the admission of a start. */
         subject receive : ReceiveService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -126,8 +107,6 @@ package WstxReceiveJob {
                 + "live_second_epoch_source_uuid_failure_releases_original_admission";
         }
     }
-
-    // ---- The records of a live job ------------------------------------------------------------
 
     requirement 'CL-008-03' {
         subject receive : ReceiveService;
@@ -192,33 +171,7 @@ package WstxReceiveJob {
     }
 
     verification 'TC-009-004' {
-        doc /* The records of a live job, and the job across a loss in the capture.
-             Setup: the receive function with a live job, frames published by hand for
-             (a) to (d), and a scripted capture for (e) to (g); no sound device and no
-             radio.
-             (a) 2054 records, one after the other: after record n, next_sequence is n,
-             the kept records are the lesser of n and 2048, and first_sequence is the
-             greater of n - 2048 and 0.
-             (b) Then ReadRecords with cursor 5: CursorExpired with first_sequence 6
-             and next_sequence 2054; cursor 7 and limit 1: the record 7, more true;
-             cursor 2054: no record, more false; cursor 2055: invalid_request; another
-             source: not_found.
-             (c) One record kept and the kept bytes at exactly 2 MiB, then one more
-             record: the oldest leaves, first_sequence 1 and next_sequence 2.
-             (d) A frame whose frequency is not a number: refused, next_sequence
-             unchanged; the sequence count at its end: counter_exhausted; a frame of
-             another job: no record.
-             (e) A first packet without an arrival time: the job keeps its id; the
-             first view has the id 1. A flagged packet after a gap of known length:
-             the job and the one record stay, the view is gone,
-             and the next view has the id 2.
-             (f) Then an oversize packet and a good one: a new job id and source id,
-             next_sequence 0 and no view; ReadRecords for the old source: not_found;
-             StopLive for the old job: not_found; a frame of the old job: no record.
-             (g) 300 packets of which every 50th is flagged and continues in time: the
-             same job, loss_epochs 0 and no last_loss; then an oversize packet: a new
-             job id, loss_epochs 1 and
-             last_loss invalidPacket. */
+        doc /* The records of a live job, and the job across a loss in the capture. */
         subject receive : ReceiveService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -234,8 +187,6 @@ package WstxReceiveJob {
                 + "live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs";
         }
     }
-
-    // ---- The counters of the decode windows -------------------------------------------------
 
     requirement 'CL-052-01' {
         subject receive : ReceiveService;
@@ -277,24 +228,7 @@ package WstxReceiveJob {
     }
 
     verification 'TC-052-001' {
-        doc /* The counters of a window and the window dump.
-             Setup: the diagnostics of the receive function on a disposable profile
-             folder, with hand-built windows; no sound device and no radio.
-             (a) A window of 20 samples from sample 100 with zeros at its places 2, 3,
-             4, 10, 18 and 19 and a period start at sample 104: 6 zeros, the longest run
-             3, 4 early ones; without a period start no early count; a period that
-             ended before the window: 0 early ones; an empty window: 0, 0 and 0.
-             (b) The samples 0, 0.5, -1 and 1 written: a WAV file of 52 bytes, mono,
-             12000 Hz, 16 bit, with the values 0, 16384, -32768 and 32767.
-             (c) The window dump off, as it is until it is switched on: no window.
-             (d) Windows while the dump is off, and a window that is not a prompt
-             window of FT8: nothing written. Then a window of origin 3 in the period of
-             09:16:00 UTC on 2 November 2026: the files
-             000000000000003-20261102T0916000000000Z.wav and .json, the JSON file with
-             rate_hz 12000 and the window's counters. After the windows of origin 4 to
-             29: the folder holds 20 pairs, from origin 10 on; the view holds 20
-             windows, from origin 10 on; dumped_windows is 27; no dump_error.
-             (e) Five windows of a third of dumpMiB each: the two newest stay. */
+        doc /* The counters of a window and the window dump. */
         subject receive : ReceiveService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

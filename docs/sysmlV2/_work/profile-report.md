@@ -661,3 +661,51 @@ TC-022-002 (f) assert the revision; those of TC-039-001, -003 and TC-097-001 the
 save of the strategies.
 
 Not done: `_descriptions/profile.md` is not yet rewritten to these elements.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-022-001 (`ProfileDocument.sysml`): a document whose output is Speakers (USB Audio CODEC ): it stays as it is, also with a present output of that name.
+- TC-022-002 (`ProfileDocument.sysml`): the configurations of transmit and receive saved in the document and the same after the station is stopped and started; a record of radio control and of audio kept in the hidden store and the same after the station is stopped and started.
+- TC-022-011 (`ProfileDocument.sysml`): two stations of one operator's folder. A save of the operator's settings on one: the other gives the new settings. A save on the other made from the revision before: revision_conflict, the file unchanged. A QSO logged on one is in the worked set of the other. Without the folder, a station start makes it; --operator names another, and the strategies file, the logbook, the country file and the Most Wanted list lie there.
+- TC-039-003 (`ProfileDocument.sysml`): an update of Test calls with leaving after 5 calls: the file holds the new value; a delete of Test calls: the file holds no strategy; an update or delete of Other: entry_unknown.
+- TC-097-002 (`ProfileDocument.sysml`): of that file of version 1, and of one of version 4 with the keys continent, ignore_calls and session_ignore_minutes, neither the continent nor the ignore list is taken over; a file of version 1 with the continent XX is usable; a strategy of version 4 without cq_quiet_periods is read with a CQ pause of 8.
+- TC-097-001 (`ProfileDocument.sysml`): a CQ pause of 0 and of 40 is taken; one of -1, of 41, as a text, null and left out is refused, naming cq_quiet_periods.
+
+## Changed after the report: the Most Wanted list goes to the settings function (operator 2026-11-16)
+
+Decided (operator 2026-11-16, "Profile fetches", by the rule that data, management and use are
+divided): the profile fetches the Most Wanted list from Club Log and keeps it; ranking only
+ranks by it.
+
+| Element | What changed |
+|---|---|
+| CL-039-10 (`MostWanted.sysml`, ranking) | ranks by the list the settings function keeps; `MostWantedListRule` keeps the use only |
+| CL-039-30 (new, `ProfileDocument.sysml`) | the fetch and the keeping: `MostWantedFetch`, `MostWantedFile` (keys schema_version, date, list; no profile_id, since the operator's folder is shared) |
+| TC-039-031 | keeps `tc_039_031_every_bundled_entity_has_its_adif_number` |
+| TC-039-055 (new) | `tc_039_031_parser_refuses_all_but_the_exact_list`, `tc_039_031_response_body` |
+| `ClubLog.sysml` | the profile's end; the attribution line moved here; the file is the profile's |
+| `ProfileAccess` | `MostWantedList`, `UpdateMostWanted`, `DefinitionsSnapshot::mostWanted` and `mostWantedUnusable`, `SaveRefusal::download_failed`, `SaveRefused::detail` |
+| `RankingControl` | `RankingContext::mostWanted` in place of `folder`; `UpdateMostWanted`, `downloadFailed`, `storageUnavailable`, `RankingRefused::reason`, `mostWantedUnreadable`, the attribution gone |
+| `Context.sysml` | Club Log connects to `profile.clubLog` |
+
+Not bound any more: `strategy_tests.rs::tc_039_031_update_most_wanted_status_failures_and_mcp_refusal`
+asserts that an agent may not update the list (issue 122: an agent is the operator).
+Work for the code: the fetch lives in `most_wanted.rs` and `strategy.rs` (ranking's code), the
+file in the profile's folder with profile_id, an agent is refused.
+
+## Done: cty.dat is downloaded by the settings function (operator 2026-11-16, "Download, as WSJT-X")
+
+| Element | What changed |
+|---|---|
+| `interfaces/external/CountryFiles.sysml` (new; M2.1 and `Context.sysml` name it) | `CtyQuery` (the source of WSJT-X), `CtyDownload` (`bytesMax` 1048576), `CountryFilesPort`, `CountryFiles` |
+| CL-055-06 (new, `ProfileDocument.sysml`) | `CountryFileFetch`, `CountryFileStore` (cty.dat in the operator's folder, read by `CountryFile`); target, no test |
+| `ProfileAccess` | `UpdateCountryFile`, `DefinitionsSnapshot::countryFile` and `countryFileUnusable`, `SaveRefusal::invalid_country_file` |
+| CL-055-03 (`CountryFile.sysml`, log) | uses the file the settings function keeps; `ProfileCountryFile` says only which file is in use; partial |
+| `LogControl` | `ReplaceCountryFile` carries the profile's file; `invalidCty`, `LogRefused::line`, `countryFileBytesMax`, `uploadUnreadable` gone; `CountryFileSource` bundled, downloaded |
+| TC-055-003 | not carried: its test uploads a file |
+
+Work for the code: no download (dxcc.rs takes an upload over the logbook routes); the check and the
+file are the log's in the code.

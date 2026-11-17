@@ -71,51 +71,7 @@ package WstxCatLifecycle {
     }
 
     verification 'TC-022-009' {
-        doc /* The radio connection is kept by itself.
-             Setup: the keeping of the connection with time given by the test; the
-             station with a scripted radio that counts every opening, frame and close;
-             for (m) and (o) the station on a throw-away profile. The control is CAT
-             with an endpoint that is taken unless said otherwise. No radio.
-             (a) No radio: one attempt at once. After each of seven failures the next
-             attempt follows after 1, 2, 4, 8, 8, 8 and 8 s, not 10 ms earlier;
-             meanwhile retryWaiting with unavailable. An hour without a look: one
-             attempt.
-             (b) Three failures, an attempt that is still connecting, a failure: the
-             wait is 8 s. Then ready, and a failure 60 s later: 1 s.
-             (c) Disabled and an endpoint that is not taken, 600 s each: no attempt;
-             on the station no port opened and no frame. A connection that is
-             connecting, ready or failed: closed. Then an endpoint that is taken and
-             the port closed: one attempt at once.
-             (d) Another assignment while connecting to a silent radio: closed within
-             250 ms, then one attempt, and RadioStatus::connectionNumber is another.
-             (e) A port that does not close: quarantined with failedClose over
-             7200 s; disabled and then another assignment: still no attempt. On the
-             station over 4000 s: the attempts stay at one.
-             (f) No radio, then a radio from 3 s on: attempts at 0, 1.1 and 3.2 s;
-             ready with 7074000 Hz. The cable removed: retryWaiting with 1000 ms. The
-             radio back: four openings in all, and every frame sent was one of the
-             five reads.
-             (g) A port another program holds: retryWaiting with resourceInUse and
-             1000 ms after one opening and no close. A silent radio: timeout after
-             one opening and one close.
-             (h) Ready, then disabled: closed within 250 ms; over 200 s no attempt and
-             no frame. CAT again: one attempt at once.
-             (i) An attempt refused before a port is opened: retryWaiting with
-             invalidRequest and 1000 ms; the next after 1 s, then 2000 ms; no
-             opening.
-             (j) An attempt that cannot start, four times within 0.2 s: tried again
-             each time. The first failure after it waits 1 s.
-             (k) A change of the frequency by the station service on the ready
-             connection, with the connection looked at and its status read all the
-             while: no attempt, one opening and no close; afterwards only reads; no
-             key command in all of it.
-             (l) The control disabled while such a change waits for a silent radio:
-             closed within 250 ms, the change ends with unavailable; then no opening
-             and no frame, and the radio's frequency is as before.
-             (m) Ready with 7074000 Hz after one opening. The profile renamed:
-             waitingForDevice, then a second opening. Every frame was a read.
-             (o) No radio: retryWaiting with unavailable and 1 to 1000 ms; the state
-             unavailable, the frequency not confirmed. */
+        doc /* The radio connection is kept by itself. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

@@ -24,6 +24,9 @@ package WstxClubLog {
              rank as its name and the number as its value. Only an answer with the
              status 200 is a list. */
         attribute entriesMax : Integer = 1000;
+        attribute attribution : String =
+            "Club Log Most Wanted list, Club Log (c) Michael Wells G7VJR, clublog.org" {
+            doc /* The source line the station shows with the list. */ }
         attribute rows : MostWantedRow[1..*] {
             doc /* At most entriesMax rows; no number stands twice. */ }
         @FollowsSource {
@@ -32,14 +35,14 @@ package WstxClubLog {
         }
     }
     port def ClubLogPort {
-        doc /* Written from ranking's side; the service has the conjugate. A
+        doc /* Written from the profile's side; the service has the conjugate. A
              MostWantedQuery is answered by one MostWantedDownload. */
         out item query : MostWantedQuery;
         in item mostWanted : MostWantedDownload;
     }
     interface def ClubLog {
-        doc /* The ranking function and the Club Log service. */
-        end ranking : ClubLogPort;
+        doc /* The profile, the settings function, and the Club Log service. */
+        end profile : ClubLogPort;
         end service : ~ClubLogPort;
     }
 }

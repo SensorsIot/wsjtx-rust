@@ -15,11 +15,11 @@ package WstxUdpPart {
             module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
         }
         port control : ~UdpControlPort {
-            doc /* The station service: the configuration and the station's state in,
+            doc /* The supervisor: the configuration and the station's state in,
                  the snapshot of the targets out. */
         }
         attribute configuration : UdpConfiguration {
-            doc /* Its configuration, as the station service last gave it. */ }
+            doc /* Its configuration, as the supervisor last gave it. */ }
         port decodes : ~DecodesPort {
             doc /* A record with the sequence 0 begins a new job, and PeriodView::job names
                  the job. A replay of a recording gives no record. */

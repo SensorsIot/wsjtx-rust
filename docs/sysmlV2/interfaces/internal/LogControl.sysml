@@ -4,10 +4,8 @@ package WstxLogControl {
     private import ModelNotes::FollowsSource;
     private import ModelNotes::DiffersFromSource;
 
-    doc /* What the station service gives the log function (what the profile and the radio
+    doc /* What the supervisor gives the log function (what the profile and the radio
          say, the operator's log commands) and what the log answers and reports. */
-
-    // ---- The record -----------------------------------------------------------------------
 
     attribute def LogRecord {
         doc /* One QSO of the logbook, as its ADIF fields.
@@ -117,11 +115,7 @@ package WstxLogControl {
             doc /* The size of a page of the history as the station link sends it. */ }
         attribute exportChunkRecords : Integer = 128 {
             doc /* The records in one part of an export. */ }
-        attribute countryFileBytesMax : Integer = 1048576 {
-            doc /* The largest country file the operator may give. */ }
     }
-
-    // ---- What the station service gives ---------------------------------------------------
 
     item def LogContext {
         doc /* What the log needs to know of the station, given at station start and
@@ -138,9 +132,9 @@ package WstxLogControl {
             doc /* The dupe rule of the contest in force; absent while the active
                  strategy is not a contest strategy. */ }
         attribute folder : String {
-            doc /* The operator's folder (WstxProfileAccess::ProfileFolder,
-                 its operatorPath), in which the log keeps the logbook and the operator's
-                 country file, shared by the operator's stations. */ }
+            doc /* The shack's folder (WstxProfileAccess::ProfileFolder,
+                 its shackPath), in which the log keeps the logbook and the operator's
+                 country file, shared by the shack's stations. */ }
     }
     item def SaveRecord {
         doc /* Store this record. Answered by SaveAnswer or LogRefused. */
@@ -181,11 +175,12 @@ package WstxLogControl {
         doc /* Read which country file is in use. Answered by CountryFileState. */
     }
     item def ReplaceCountryFile {
-        doc /* Use this country file for the profile. Answered by CountryFileState or
-             LogRefused. */
+        doc /* Use this country file. The supervisor gives it at station start and
+             whenever the profile's file changes. Answered by CountryFileState. */
         attribute text : String[0..1] {
-            doc /* The file, of at most LogLimits::countryFileBytesMax bytes; absent to
-                 return to the bundled file. */ }
+            doc /* The country file the settings function keeps
+                 (WstxProfileAccess::DefinitionsSnapshot::countryFile); absent: the bundled
+                 file. */ }
     }
     item def EntityRequest {
         doc /* Resolve this call to its entity. Answered by EntityAnswer. */
@@ -195,8 +190,6 @@ package WstxLogControl {
         doc /* Give the newest record of the logbook again to the programs that are told
              of logged QSOs: the operator's Log QSO. Answered by Resent or LogRefused. */
     }
-
-    // ---- What the log answers and reports -------------------------------------------------
 
     enum def SaveOutcome {
         doc /* saved: the record is stored.
@@ -227,12 +220,10 @@ package WstxLogControl {
              next one of an update that is being received.
              busy: another update is being received.
              notFound: no update of this id.
-             invalidRequest: a part reaches beyond the end of the file, or the text of
-             a country file is over its limit.
+             invalidRequest: a part reaches beyond the end of the file.
              tooLarge: the file of an update, or a part of it, is over its limit.
              importFailed: the file is refused as a whole; ImportView::error says why.
-             outOfRange: a number of the command is outside its range.
-             invalidCty: the text is not a country file. */
+             outOfRange: a number of the command is outside its range. */
         enum storageUnavailable;
         enum profileIncomplete;
         enum logInvalidField;
@@ -243,15 +234,12 @@ package WstxLogControl {
         enum tooLarge;
         enum importFailed;
         enum outOfRange;
-        enum invalidCty;
     }
     item def LogRefused {
         attribute reason : LogRefusal;
         attribute field : String[0..1] {
             doc /* The field refused, for logInvalidField, profileIncomplete and
                  outOfRange. */ }
-        attribute line : Integer[0..1] {
-            doc /* The line that failed, counted from 1, for invalidCty. */ }
     }
     enum def ImportState {
         enum receiving;
@@ -338,7 +326,7 @@ package WstxLogControl {
     }
     enum def CountryFileSource {
         enum bundled;
-        enum uploaded;
+        enum downloaded;
     }
     item def CountryFileState {
         doc /* The country file in use. */
@@ -349,8 +337,6 @@ package WstxLogControl {
         attribute entities : Integer { doc /* The number of entities. */ }
         attribute entityNames : String[1..*] {
             doc /* The names of the entities, as the file writes them. */ }
-        attribute uploadUnreadable : Boolean {
-            doc /* The profile holds a file of the operator that the log cannot use. */ }
     }
     enum def Continent {
         enum AF;
@@ -407,7 +393,7 @@ package WstxLogControl {
     }
 
     port def LogControlPort {
-        doc /* Written from the station service's side; the log uses the conjugate.
+        doc /* Written from the supervisor's side; the log uses the conjugate.
              A command and its answer are one exchange: the answer goes to the one
              command it belongs to. */
         out item context : LogContext;
@@ -432,7 +418,7 @@ package WstxLogControl {
         in item attempt : LogAttempt;
     }
     interface def LogControl {
-        doc /* The station service commands the log function; the log answers and
+        doc /* The supervisor commands the log function; the log answers and
              reports what became of the latest finished contact. */
         end station : LogControlPort;
         end log : ~LogControlPort;

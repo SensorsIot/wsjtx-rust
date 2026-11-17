@@ -7,13 +7,11 @@ package WstxTransmitControl {
 
     doc /* The configuration of the transmit function, its commands, their answers, and
          what transmit reports: the transmit state with its causes, the outcome of every
-         request, and the Tx level. The station service gives the configuration, Halt
+         request, and the Tx level. The supervisor gives the configuration, Halt
          and the station's facts over TransmitControlPort. Arm,
          Disarm, Abort, SetTune and StepBegins come from qso
          alone, over the operating chain (MessageToSend); the operator's starts and Tune
          reach transmit that way too. */
-
-    // ---- The configuration of transmit ------------------------------------------------------
 
     attribute def TransmitConfig {
         doc /* The configuration of the transmit function: what the operator sets of
@@ -47,8 +45,6 @@ package WstxTransmitControl {
                  of the Tx level. */ }
     }
 
-    // ---- The transmit state -----------------------------------------------------------------
-
     enum def ArmState {
         doc /* The transmit state of the station.
              disarmed: off; no request is admitted.
@@ -67,8 +63,8 @@ package WstxTransmitControl {
         doc /* Why the transmit state went off.
              startup: the station started.
              halt: Halt.
-             contactCompleted, contactCancelled, partnerWorksOther, modeChanged,
-             bandChanged, txWatchdog: the stop the contact gives with Disarm or Abort;
+             contactCompleted, contactCancelled, modeChanged, bandChanged,
+             txWatchdog: the stop the contact gives with Disarm or Abort;
              txWatchdog is the contact's Tx watchdog, its repetition limit.
              refused: a request was refused.
              failed: a transmission failed at the radio's switch, or transmit itself
@@ -83,7 +79,6 @@ package WstxTransmitControl {
         enum failed;
         enum deviceLost;
         enum startup;
-        enum partnerWorksOther;
         enum modeChanged;
         enum bandChanged;
     }
@@ -124,8 +119,6 @@ package WstxTransmitControl {
         enum released;
         enum failed;
     }
-
-    // ---- Requests and their outcomes ----------------------------------------------------------
 
     enum def TransmitRefusal {
         doc /* Why transmit refuses a request or a command.
@@ -229,8 +222,6 @@ package WstxTransmitControl {
         attribute latestStartPct : Integer = 75;
     }
 
-    // ---- Commands -----------------------------------------------------------------------------
-
     item def Arm {
         doc /* Switch the transmit state on. */
         attribute cause : ArmCause;
@@ -245,9 +236,6 @@ package WstxTransmitControl {
     }
     item def Halt {
         doc /* The emergency stop. */
-        attribute commandId : String {
-            doc /* Names the command; a Halt that repeats one of the latest ids is
-                 answered with the receipt of the first. */ }
     }
     item def HaltReceipt {
         doc /* The answer to Halt. */
@@ -263,19 +251,18 @@ package WstxTransmitControl {
         doc /* The contact begins a step: it has seen every stop before this moment. */
     }
     item def StationMode {
-        doc /* The operating mode of the station. The station service gives it at every
-             change. */
-        attribute mode : Mode[0..1] { doc /* Absent until the station has one. */ }
+        doc /* The station's operating mode (WstxOperatingSelection::OperatingModeRule),
+             given at station start and at every change. */
+        attribute mode : Mode;
     }
     item def StationBand {
-        doc /* The band of the station, as the station service holds it. The station
-             service gives it at every change. */
-        attribute band : String[0..1] {
-            doc /* An ADIF band name in lower case. Absent while the band is unknown. */ }
+        doc /* The station's band (WstxOperatingSelection::StationBandRule), given at every
+             change. */
+        attribute band : String[0..1];
     }
     item def TransmitProfile {
         doc /* The configuration of transmit and what the configurations of radio
-             control and audio mean for transmitting. The station service gives it at
+             control and audio mean for transmitting. The supervisor gives it at
              station start and whenever the station config changes. */
         attribute config : TransmitConfig;
         attribute configured : Boolean {
@@ -288,7 +275,7 @@ package WstxTransmitControl {
     item def LevelFound {
         doc /* Transmit has found a Tx level, with the Tune tone or by the supervision
              of a transmission, and gives it to be saved as the band's entry of
-             TransmitConfig::levels. The station service answers with a
+             TransmitConfig::levels. The supervisor answers with a
              TransmitProfile: with that level when the profile has saved it, with the
              level before when it could not. */
         attribute level : BandLevel;
@@ -302,8 +289,6 @@ package WstxTransmitControl {
         attribute refusal : TransmitRefusal[0..1] {
             doc /* Present when the command was not carried out. */ }
     }
-
-    // ---- The state transmit reports ---------------------------------------------------------
 
     item def TransmitStatus {
         doc /* The state of transmit at the moment it is read. */
@@ -332,7 +317,7 @@ package WstxTransmitControl {
             doc /* True while the audio of a transmission runs or the tone is on. */ }
         attribute on_air : Boolean {
             doc /* True while ptt is not released, the audio of a transmission runs or
-                 the tone is on. The station service gives it, with last_period_utc_ms,
+                 the tone is on. The supervisor gives it, with last_period_utc_ms,
                  to receive. */ }
         attribute tune_remaining_seconds : Integer {
             doc /* What is left of the running tone before its limit, rounded up; 0
@@ -341,8 +326,6 @@ package WstxTransmitControl {
             doc /* The latest outcomes, the oldest first. */ }
         attribute startup_release : StartupRelease;
     }
-
-    // ---- The Tx level -------------------------------------------------------------------------
 
     enum def AlcKnown {
         doc /* Whether the radio reports its ALC.
@@ -420,7 +403,7 @@ package WstxTransmitControl {
     }
 
     port def TransmitControlPort {
-        doc /* Written from the station service's side; transmit uses the conjugate.
+        doc /* Written from the supervisor's side; transmit uses the conjugate.
              Halt is answered by HaltReceipt; a LevelFound of transmit by a
              TransmitProfile. StationMode, StationBand, TransmitProfile
              and ProcessEnds have no answer. */
@@ -436,7 +419,7 @@ package WstxTransmitControl {
         in item levelFound : LevelFound;
     }
     interface def TransmitControl {
-        doc /* The station service commands the transmit function; transmit reports its
+        doc /* The supervisor commands the transmit function; transmit reports its
              state. */
         end station : TransmitControlPort;
         end transmit : ~TransmitControlPort;

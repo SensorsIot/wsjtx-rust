@@ -50,17 +50,14 @@ and what it puts into its interfaces.
    clause it came from. That part takes it up when it is built.
 6. **Fill the ledger:** every identity of the part has arrived, or is listed as retired
    with its reason.
-7. **Write the part's functional description** by `Authoring/fsd-from-model.md`, from the
-   new files alone. Every gap it lists is repaired in the model or becomes a marker.
-8. **Write the part's report:** what was dropped as code, which test cases retire, which
+7. **Write the part's report:** what was dropped as code, which test cases retire, which
    elements were renamed, every marker (`@NotStated`, `@Conflict`, `@LeftOpen`) added, and
    the size before and after.
-9. **The operator reads the part,** its description and its report, and decides the open
-   lines.
+8. **The operator reads the part** and its report, and decides the open lines.
 
 ## What must hold for a finished part
 
-Seven tests. The first five are run by `_work/part_done.py <part>`; a part is offered to
+Six tests. The first five are run by `_work/part_done.py <part>`; a part is offered to
 the operator for reading only when all five pass.
 
 | # | Test | How |
@@ -70,11 +67,10 @@ the operator for reading only when all five pass.
 | 3 | **It is valid SysML.** | the pinned validator: no error in the part's files |
 | 4 | **The model matches the code, both ways.** Model to code: every value, enumeration literal and name the model states exists in the part's modules; what does not is stale and is dropped. Code to model: every constant, enumeration, wire name and environment variable of those modules is in the model, or is the inside of the part. A number that differs fails. Every line on one side only needs a verdict in `_work/parts.json`: matched by reading, inside, or a difference with what is done about it. | the program lists; the verdicts are written and the operator sees the differences |
 | 5 | **Every test case has its test.** A named test (`path::name`) is defined in the file it names. A whole file exists and carries the case's number. | the program |
-| 6 | **The description has no gap** that is not a marker (M0.3). | reading |
-| 7 | **The cut is right:** what was dropped as code, what was handed over, what was renamed. A part is larger than its old text only where it needs to be; the report then says, measured, what the growth consists of. | the operator's reading of the report |
+| 6 | **The cut is right:** what was dropped as code, what was handed over, what was renamed. A part is larger than its old text only where it needs to be; the report then says, measured, what the growth consists of. | the operator's reading of the report |
 
-No test shows that a rewritten sentence promises the same as the old one. Tests 4 and 6
-catch a wrong value, a wrong name and a missing fact; the operator's reading guards the rest.
+No test shows that a rewritten sentence promises the same as the old one. Test 4 catches a
+wrong value and a wrong name; the operator's reading guards the rest.
 
 ## When the rebuild is finished
 
@@ -86,7 +82,7 @@ catch a wrong value, a wrong name and a missing fact; the operator's reading gua
 ## The order of the parts
 
 modes, audio, receive, transmit, radioControl (with the CAT adapter and `Keying`),
-flexAdapter, profile, log, spots and udp, ranking, auto, qso, the station service, web and
+flexAdapter, profile, log, spots and udp, ranking, auto, qso, the supervisor, web and
 the station link, mcp, frontend. An interface file is rebuilt with the part that owns it.
 The clock and the top files are done.
 
@@ -96,6 +92,13 @@ The clock and the top files are done.
 
 ## Decided
 
+- **The goal is clean files** (operator 2026-11-16): the model files are the canonical source
+  of the project, without contradictions, without duplications, without omissions, without
+  comments and without old text. A defect found is repaired in the model files at once, also
+  in a part already built; a note in a report is no repair. A model file holds model elements
+  only: no `//` comment and no `/* */` outside a `doc`.
+- No functional descriptions are kept (operator 2026-11-16): the model is the canonical
+  source. An FSD is written only on request, by `Authoring/fsd-from-model.md`.
 - Nothing satisfies a clause formally; its subject names its owner (M6.2, M6.10).
 - A clause is written with MUST, SHOULD or MAY (M6.4).
 - There is no `dependency` (M7.1).
@@ -105,8 +108,8 @@ The clock and the top files are done.
   station time, is corrected from the air, is checked against a time server and publishes
   time. A model file follows the thing, not the code's modules.
 - A package is named `Wstx` followed by its file's name. A part's own file adds `Part`
-  (`WstxClockPart`), because four parts share their file name with an interface: Station,
-  Udp, Mcp and RadioControl.
+  (`WstxClockPart`), because three parts share their file name with an interface: Udp, Mcp
+  and RadioControl.
 - A name that no longer says what the thing is, is renamed; the report lists what cites
   it (the clock: package `WstxStationClock`, element `TimeServerCheck`).
 - A test case is written only when a test for it exists in the code. A planned case
@@ -125,9 +128,14 @@ The clock and the top files are done.
   from (operator 2026-11-15, on audio).
 - A part may be larger than its old text if it needs to be (operator 2026-11-15, on
   audio).
-- A promise that no test shows is noted in the model for the implementer: one line in
-  its test case, marked "Planned, no test yet" (operator 2026-11-15, on audio).
-- A function learns what the profile says from the station service, over its control
+- **A test case is skeleton and a title** (operator 2026-11-16, harness issue
+  SensorsIot/harness#129): its identity, a one-line title, `subject`, `verify`,
+  `@TestLevel`, `@Automation` and `@TestedBy`. It has no setup, no lettered conditions and
+  no planned lines: the bound test is the description of the test. A promise that no test
+  shows is visible by the clause's status; the part's report lists it under "Work for the
+  code". A test case is bound only to tests that show what its clause promises; a test
+  that asserts behaviour the model removes is not bound and the report names it.
+- A function learns what the profile says from the supervisor, over its control
   interface. A stream is opened and closed by the function that takes it, on the
   stream's own connection (operator 2026-11-15, on audio; M5.3, M5.4).
 - The capture clock belongs to audio alone (operator 2026-11-15).
@@ -135,7 +143,7 @@ The clock and the top files are done.
   built-ins, the contest table, defining and selecting) and holds ranking, auto and qso,
   to each of which it gives its share: ranking what to prefer, auto when to act, qso the
   contest's exchange. The profile stores the definitions; commands come through the
-  station service (operator 2026-11-15; M2.1 and M2.2 changed).
+  supervisor (operator 2026-11-15; M2.1 and M2.2 changed).
 - The settings: a setting is defined as configuration of the part that uses it; the
   profile stores the station config and the station's hidden store as collections of
   the parts' types; a frontend has its own config; definition files and data files are
@@ -143,13 +151,13 @@ The clock and the top files are done.
 - The radio authorization is not part of the model: no grant, no confirmation of the
   setup, no safety revision; a station works only with its own UI by its address, the
   Origin check and the profile id (operator 2026-11-15; the code change is issue #226).
-- The resume of receive at station start belongs to the station service, whole: the
+- The resume of receive at station start belongs to the supervisor, whole: the
   stored choice, the Monitor-off setting and the resume. `Startup` stands in
-  `backend/station/` (operator 2026-11-15, on receive; M2.1 changed).
+  `backend/supervisor/` (operator 2026-11-15, on receive; M2.1 changed).
 - The contact's commands to transmit (Arm, Disarm, Abort, the tone, the repetition
   limit's stop and count, the step) come only from qso over the operating chain; the
-  operator's starts and Tune enter through the station service to qso. The station
-  service gives transmit Halt and the station's facts (operator
+  operator's starts and Tune enter through the supervisor to qso. The supervisor
+  gives transmit Halt and the station's facts (operator
   2026-11-15, on transmit; M5.3 for what enters, M5.7 inside the chain).
 - The Tx level (operator 2026-11-15, on transmit): the ALC is a reading of radio control
   like the output power, in percent of the radio's ALC zone. The level is kept per band,
@@ -161,7 +169,7 @@ The clock and the top files are done.
 - "Tx watchdog" names the repetition limit only, and it is qso's: the limit, the count, the
   calls left and "expired"; at the limit qso gives Disarm with txWatchdog. There is no
   barrier for starts after it or at boot (#119: Auto goes off; #122: an agent is the
-  operator). The one barrier is the SWR fault's, held by the station service, refusal
+  operator). The one barrier is the SWR fault's, held by the supervisor, refusal
   code `swr_fault`. Transmit keeps only the Tune limit (operator 2026-11-15, on
   transmit).
 - The product's scope is the rigs Hamlib supports, the rig chosen by the operator as in
@@ -181,12 +189,12 @@ The clock and the top files are done.
   downloaded Most Wanted list stay with their parts. Create, update and delete one
   member exist only for collections whose members the operator adds, copies or deletes
   (strategies, UDP targets, the wanted list); a thing of stable structure has one save
-  and one read. The parts that use a setting read it; the station service gives it.
+  and one read. The parts that use a setting read it; the supervisor gives it.
   This replaces "operating defines the strategies" of 2026-11-15: operating offers the
   built-ins and the contests and selects.
-- **Two levels of settings, one logbook** (operator 2026-11-16): up to six station
-  processes (for example six FlexRadio slices) share one logbook. The settings have an
-  operator level, one shared folder per PC (callsign, locator, continent, CQ words,
+- **Two levels of settings, one logbook** (operator 2026-11-16): up to six stations
+  (for example six FlexRadio slices) share one logbook. The settings have a shack
+  level, the shack's folder, one per PC (callsign, locator, continent, CQ words,
   strategies, wanted list, country file, Most Wanted list, and the logbook), and a
   station level, the profile folder (name, rig or slice, connection, audio, CAT and PTT,
   Tx level per band, receive settings, listener address, hidden store). Session state

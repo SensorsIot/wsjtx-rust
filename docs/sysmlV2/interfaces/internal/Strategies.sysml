@@ -1,17 +1,16 @@
 package WstxStrategies {
+    private import WstxQsoControl::Activity;
     private import ScalarValues::*;
     private import WstxRankingControl::RankingKeys;
     private import WstxRankingControl::RankingRules;
     private import ModelNotes::FollowsSource;
 
-    doc /* What a strategy and a contest are; what the station service commands the
+    doc /* What a strategy and a contest are; what the supervisor commands the
          operating function and what operating answers; and what operating gives
          ranking, Auto and the contact of the active strategy.
          A strategy is a named set of rules: the rules by which ranking orders the
          decoded stations, the rules Auto executes, and for a contest the facts of its
          official rules. It decides and does nothing itself. */
-
-    // ---- A strategy ---------------------------------------------------------------------
 
     enum def StrategyClass {
         doc /* strategy: the ranking rules are the strategy's own.
@@ -51,8 +50,6 @@ package WstxStrategies {
             doc /* The same while it reports and does not hear the station. */ }
         attribute moveEveryNoReports : Integer {
             doc /* The same while it does not report, or that is unknown. */ }
-        attribute busyPause : Boolean {
-            doc /* Calls to a station that is in another QSO are not counted. */ }
         attribute cqWhenIdle : Boolean {
             doc /* CQ is called when nothing can be called. */ }
         attribute cqWaitPeriods : Integer {
@@ -61,6 +58,9 @@ package WstxStrategies {
         attribute retryMinutes : Integer {
             doc /* The pause before a station that was left is called again: 1 to
                  120. */ }
+        attribute cqQuietPeriods : Integer {
+            doc /* The periods without a CQ after a CQ that nobody answered: 0 to 40.
+                 It is held also while cqWhenIdle is off. */ }
     }
     attribute def Strategy {
         doc /* One strategy. Every strategy has every setting; the class says where its
@@ -84,8 +84,8 @@ package WstxStrategies {
              empty country, US state and CQ target lists; calling stations answered;
              leaving after 4 calls and after 8 while heard; the transmit frequency moved
              never, at every call and at every 2nd call for the three cases in the order
-             of AutoKeys; the busy pause on; no CQ when idle; a CQ wait of 2 periods; a
-             retry pause of 10 minutes.
+             of AutoKeys; no CQ when idle; a CQ wait of 2 periods; a
+             retry pause of 10 minutes; a CQ pause of 8 periods.
              DXCC all: new dxcc per band_mode, not_confirmed; order most_wanted, snr;
              leaving until_logged after 10 minutes.
              New DXCC on band: as DXCC all, per band.
@@ -98,8 +98,8 @@ package WstxStrategies {
              order, with the name of the contest: every band; empty lists; no order;
              calling stations answered; leaving in the mode contest after 2 Tx changes;
              the transmit frequency moved never, at every 2nd call and at every 2nd
-             call; the busy pause off; CQ when idle with a CQ wait of 2 periods; a retry
-             pause of 10 minutes. */
+             call; CQ when idle with a CQ wait of 2 periods; a retry
+             pause of 10 minutes; a CQ pause of 8 periods. */
     }
     attribute def StrategyConfiguration {
         doc /* The strategies of a profile and what is selected. The saved strategies are
@@ -127,8 +127,8 @@ package WstxStrategies {
              may be left out; left out and null both
              say that no contest is selected. Its keys are profile, start and end.
              A strategy has the keys name, class, bands, filters, order, contest,
-             callers_first, leave, tx_move_every, busy_pause, cq_when_idle,
-             cq_wait_periods and retry_minutes.
+             callers_first, leave, tx_move_every, cq_when_idle,
+             cq_wait_periods, retry_minutes and cq_quiet_periods.
              bands, order and callers_first are those of RankingKeys. filters holds
              the other features of RankingKeys: for class strategy new, new_per,
              new_means, region with kind and for selected continents, min_snr_db,
@@ -142,7 +142,8 @@ package WstxStrategies {
              YYYY-MM-DD, an instant YYYY-MM-DDTHH:MMZ.
              Every object has exactly its keys. One with a key missing or with another
              key is named as a whole, with two exceptions: a strategy without
-             cq_wait_periods is named by that key, and so is a contest selection that
+             cq_wait_periods or cq_quiet_periods is named by that key, and so is a
+             contest selection that
              carries one of the keys automation_confirmed, operation, repetitions and
              quiet_minutes.
              A list that is too long or too short is named as a whole; a member of it
@@ -167,7 +168,9 @@ package WstxStrategies {
     attribute def StrategyReading {
         doc /* How saved strategies are read from the strategies file, also from the
              forms of its older schema versions 1, 2 and 3.
-             A strategy without cq_wait_periods is read with a CQ wait of 2. A
+             A strategy without cq_wait_periods is read with a CQ wait of 2, and one
+             without cq_quiet_periods with a CQ pause of 8; a strategy that holds
+             busy_pause is read without it. A
              configuration that also holds one of the keys continent, ignore_calls and
              session_ignore_minutes is read without them: their values are not taken
              over and are not checked. A country entry is read as it stands.
@@ -190,8 +193,8 @@ package WstxStrategies {
              new_dxcc_band_mode; region, min_snr_db, treat_73_as_cq and callers_first
              are taken as they are. It is left after repetitions calls and after twice
              as many while heard; the transmit frequency moves never, at every call
-             and at every 2nd call for the three cases in the order of AutoKeys; the
-             busy pause is on; cq_when_no_target is CQ when idle, with a CQ wait of 2;
+             and at every 2nd call for the three cases in the order of AutoKeys;
+             cq_when_no_target is CQ when idle, with a CQ wait of 2;
              quiet_minutes is the retry pause.
              Version 2. A strategy has calls_per_station, from 1 to 20, in the place
              of value, callers_first, cq_when_no_target, repetitions and
@@ -202,8 +205,6 @@ package WstxStrategies {
              A file of another version, and one of whose strategies is not of its
              version's form or outside StrategyForm, cannot be used. */
     }
-
-    // ---- The facts of a contest -----------------------------------------------------------
 
     enum def DupeRule {
         doc /* When a second QSO with a station counts nothing.
@@ -282,7 +283,7 @@ package WstxStrategies {
              texts for the operator. */
         attribute id : String;
         attribute name : String;
-        attribute activity : String[0..1] {
+        attribute activity : Activity[0..1] {
             doc /* The special activity of the station that goes with the contest. */ }
         attribute cqWords : String[0..*] {
             doc /* The contest's own CQ words: a CQ that carries one of them is for the
@@ -343,11 +344,9 @@ package WstxStrategies {
                  periodDaysMax days after it. */ }
     }
 
-    // ---- What the station service commands operating --------------------------------------
-
     item def SavedStrategies {
         doc /* The strategies the operator has saved, as the settings function keeps
-             them (WstxProfileAccess::StrategyDefinitions). The station service gives
+             them (WstxProfileAccess::StrategyDefinitions). The supervisor gives
              them at station start and after every change. */
         attribute strategies : Strategy[0..*] ordered;
     }
@@ -364,8 +363,6 @@ package WstxStrategies {
     item def ReadContests {
         doc /* Ask for the contests with the period of each. Answered by ContestList. */
     }
-
-    // ---- What operating answers --------------------------------------------------------------
 
     item def StrategiesState {
         doc /* What operating holds, at the moment it is given. */
@@ -398,8 +395,6 @@ package WstxStrategies {
             doc /* That value, named as ConfigurationKeys says. */ }
     }
 
-    // ---- What operating gives ranking, Auto and the contact ---------------------------------
-
     attribute def AutoStrategy {
         doc /* What Auto needs of one strategy. */
         attribute name : String;
@@ -407,6 +402,9 @@ package WstxStrategies {
         attribute contest : ContestSelection[0..1] {
             doc /* Present for a strategy of class contest: its contest and the period
                  in force. */ }
+        attribute automation : AutomationClause[0..1] {
+            doc /* Present for a strategy of class contest: what the rules of its
+                 contest say of automatic operation (ContestProfile::automation). */ }
     }
     item def AutoRules {
         doc /* The rules Auto executes. Operating gives them at station start and
@@ -415,22 +413,17 @@ package WstxStrategies {
             doc /* The active strategy. Absent while none is active. */ }
     }
     item def ContestActivity {
-        doc /* The special activity that goes with the contest in force, and with it the
-             number exchange of the contest in the QSO. Operating gives it at station
-             start and whenever it changes.
-             While a contest is in force the contact uses this activity in the place
-             of the special activity the operator has set, and no special activity for
-             a contest without one; when no contest is in force the operator's setting
-             holds again. The exchange text of Field Day and of RTTY Roundup stays the
-             operator's value. */
+        doc /* The special activity that goes with the contest in force. Operating gives it
+             at station start and whenever it changes; the contact uses it as
+             WstxSpecialActivities::ActivityRule says. */
         attribute inForce : Boolean { doc /* A contest is in force. */ }
-        attribute activity : String[0..1] {
+        attribute activity : Activity[0..1] {
             doc /* ContestProfile::activity of the contest in force. Absent while no
                  contest is in force, and for a contest without an activity. */ }
     }
 
     port def StrategiesPort {
-        doc /* Written from the station service's side; operating uses the conjugate.
+        doc /* Written from the supervisor's side; operating uses the conjugate.
              SavedStrategies has no answer. An answer goes to the one command it
              belongs to. */
         out item saved : SavedStrategies;
@@ -442,7 +435,7 @@ package WstxStrategies {
         in item refused : StrategiesRefused;
     }
     interface def StrategiesControl {
-        doc /* The station service commands the operating function; operating answers
+        doc /* The supervisor commands the operating function; operating answers
              with what it holds. */
         end station : StrategiesPort;
         end operating : ~StrategiesPort;

@@ -127,6 +127,10 @@ def compare(part, mv, me, files, modules, verdicts):
     used = set()
     for full, value in sorted(mv.items()):
         name = full.split("::")[-1]
+        if "model value " + full in verdicts:
+            # A written verdict says which constant matches; the name guess is not used.
+            put("open", "model value " + full, "model value %s = %g" % (full, value))
+            continue
         fits = []
         for cname in cv:
             a, b = core(name), core(cname)
@@ -195,6 +199,14 @@ def test_ledger(part, files, idents):
                 problems.append("%s is marked arrived and is not in the part's files" % ident)
             elif not settled:
                 problems.append("%s is not accounted for (%s)" % (ident, target or "no target"))
+    known = {r[0] for r in rows}
+    seen = set()
+    for r in rows:
+        if r[0] in seen and r[0] in mine:
+            problems.append("%s has more than one row in the ledger" % r[0])
+        seen.add(r[0])
+    for ident in sorted(idents - known if isinstance(idents, set) else set(idents) - known):
+        problems.append("%s stands in the part and has no row in the ledger" % ident)
     return problems, "%d identities" % len(mine)
 
 
@@ -232,7 +244,12 @@ def test_tests(cases):
             elif "::" in t:
                 # A named test: the file defines it. The number in the file is not asked.
                 name = t.split("::")[-1]
-                if re.search(r"\bfn %s\b" % re.escape(name), read(path)):
+                if path.endswith((".cjs", ".js")):
+                    # A JavaScript test is named by its title: test('title', ...).
+                    pattern = r"\btest\(\s*['\"`]%s['\"`]" % re.escape(name)
+                else:
+                    pattern = r"\bfn %s\b" % re.escape(name)
+                if re.search(pattern, read(path)):
                     found = True
                 else:
                     problems.append("%s names %s, which the file does not define" % (ident, t))

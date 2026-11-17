@@ -7,12 +7,10 @@ package WstxReceiveControl {
     private import WstxDecodes::PeriodView;
     private import WstxModeProcessing::APrioriContext;
 
-    doc /* The configuration of the receive function; what the station service gives
+    doc /* The configuration of the receive function; what the supervisor gives
          receive (its configuration, its commands, and when the station is on the air)
          and what receive reports: its job, the state of live receive, the records it
          keeps and the counters of its decode windows. */
-
-    // ---- The configuration of receive -------------------------------------------------------
 
     attribute def ReceiveConfig {
         doc /* The configuration of the receive function. */
@@ -21,15 +19,13 @@ package WstxReceiveControl {
                  of FT8 to a file, for the diagnosis of the decoder. */ }
     }
     item def ReceiveConfiguration {
-        doc /* The configuration of receive. The station service gives it at station
+        doc /* The configuration of receive. The supervisor gives it at station
              start and whenever the station config changes. */
         attribute config : ReceiveConfig;
         attribute folder : String {
             doc /* The profile's folder (WstxProfileAccess::ProfileFolder), in which
                  receive writes the dumped decode windows. */ }
     }
-
-    // ---- The job ----------------------------------------------------------------------------
 
     enum def ReceiveMode {
         doc /* What a live job does with the receive stream.
@@ -105,8 +101,6 @@ package WstxReceiveControl {
         attribute error : ErrorCode[0..1] { doc /* Present in the state failed. */ }
     }
 
-    // ---- Commands ---------------------------------------------------------------------------
-
     item def StartLive {
         doc /* Start a live job in this mode. */
         attribute mode : ReceiveMode;
@@ -134,7 +128,7 @@ package WstxReceiveControl {
     }
     item def OnAir {
         doc /* Whether the station is on the air: it keys the radio, plays a
-             transmission or tunes. The station service gives it whenever one of the two
+             transmission or tunes. The supervisor gives it whenever one of the two
              values changes; they are on_air and last_period_utc_ms of the transmit
              function's TransmitStatus. */
         attribute onAir : Boolean;
@@ -145,12 +139,10 @@ package WstxReceiveControl {
 
     item def ContactContext {
         doc /* What the station knows about its calls and its contact, for the decoding
-             of the next windows. The station service gives it at station start and
+             of the next windows. The supervisor gives it at station start and
              whenever it changes. */
         attribute context : APrioriContext;
     }
-
-    // ---- The records receive keeps ------------------------------------------------------------
 
     item def ReadRecords {
         doc /* Ask for the kept records of the live job from a sequence on. */
@@ -176,8 +168,6 @@ package WstxReceiveControl {
         attribute first_sequence : Integer;
         attribute next_sequence : Integer;
     }
-
-    // ---- The state receive reports --------------------------------------------------------
 
     attribute def FrameSpan {
         doc /* A run of samples of the stream, from first_frame up to, and not including,
@@ -225,8 +215,6 @@ package WstxReceiveControl {
                  start. */ }
     }
 
-    // ---- The counters of the decode windows -------------------------------------------------
-
     attribute def WindowCounters {
         doc /* What receive counted in one window it gave to the decoder. */
         attribute mode : ReceiveMode;
@@ -273,7 +261,7 @@ package WstxReceiveControl {
     }
 
     port def ReceiveControlPort {
-        doc /* Written from the station service's side; receive uses the conjugate.
+        doc /* Written from the supervisor's side; receive uses the conjugate.
              StartLive, StopLive, StartReplay and CancelJob are answered by JobAccepted
              or Refused; ReadRecords by RecordsPage, CursorExpired or Refused;
              ReadDiagnostics by DiagnosticsView. ReceiveConfiguration, OnAir and
@@ -295,7 +283,7 @@ package WstxReceiveControl {
         in item status : ReceiveStatus;
     }
     interface def ReceiveControl {
-        doc /* The station service commands the receive function; receive reports its
+        doc /* The supervisor commands the receive function; receive reports its
              state. */
         end station : ReceiveControlPort;
         end receive : ~ReceiveControlPort;

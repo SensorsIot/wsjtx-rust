@@ -43,27 +43,7 @@ package WstxRadioFacts {
     }
 
     verification 'TC-009-006' {
-        doc /* The facts follow the radio's answers and nothing else.
-             Setup: radio control on a scripted port; for (d) the station with a
-             scripted radio and time given by the test. No radio.
-             (a) After connecting: the frequency fact has sequence 1, the others are
-             empty. After a read of the mode: the mode fact has sequence 2, USB with
-             filter 2, confirmed, and the frequency fact is unchanged. After a read
-             of the data mode: sequence 3, the two others unchanged, the transmit fact
-             still empty.
-             (b) Then receiveSetup to 7074000 Hz, USB filter 1, data mode on with
-             filter 1, the radio refusing the write of the data mode: rejected;
-             frequency, mode and data mode are not confirmed; the frequency keeps its
-             value and its time; the mode fact has sequence 5 and the data fact 6: the
-             reads count, the acknowledgement and the refusal do not.
-             (c) A connection asked to close, then a mode answer and a report of
-             ready: the state stays closing, the mode value is kept and is not
-             confirmed.
-             (d) A radio that answers 7074000 Hz: confirmed. Its cable removed: the
-             state unavailable, the frequency not confirmed. The radio back and the
-             next attempt made: confirmed again.
-             (e) An exchange without an answer on a port that does not close: the
-             state is closing with failedClose, not unavailable. */
+        doc /* The facts follow the radio's answers and nothing else. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

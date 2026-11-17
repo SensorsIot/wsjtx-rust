@@ -1,6 +1,6 @@
 package WstxContext {
     private import ScalarValues::*;
-    private import WstxStation::Station;
+    private import WstxShack::Shack;
     private import WstxRadioProperties::Radio;
     private import WstxOperatorInteraction::OperatorInteractionPort;
     private import WstxOperatorInteraction::OperatorInteraction;
@@ -20,20 +20,23 @@ package WstxContext {
     private import WstxPskReporter::ReportCollector;
     private import WstxClubLog::ClubLogPort;
     private import WstxClubLog::ClubLog;
+    private import WstxCountryFiles::CountryFilesPort;
+    private import WstxCountryFiles::CountryFiles;
     private import WstxTimeSource::TimeSourcePort;
     private import WstxTimeSource::TimeSource;
 
-    part def StationContext {
-        doc /* The station and what it exchanges messages with. An outside thing is a black
+    part def ShackContext {
+        doc /* The shack and what it exchanges messages with. An outside thing is a black
              box. The function that owns it is the one its port is joined to. */
-        part station : Station;
+        part shack : Shack;
 
         part operator {
-            doc /* The licensed person who operates the station through the browser. */
+            doc /* The licensed person who operates the shack's stations through their
+                 browsers. */
             port link : ~OperatorInteractionPort;
         }
         part agent {
-            doc /* A program that operates the station through MCP, with the rights of the
+            doc /* A program that operates a station through its MCP, with the rights of the
                  operator. */
             port link : ~McpPort;
         }
@@ -63,34 +66,40 @@ package WstxContext {
             doc /* The Club Log service that gives the most-wanted list. */
             port link : ~ClubLogPort;
         }
+        part countryFiles {
+            doc /* country-files.com, which gives the newest country file of AD1C. */
+            port link : ~CountryFilesPort;
+        }
         part timeServer {
             doc /* An SNTP time server. */
             port link : ~TimeSourcePort;
         }
 
         interface operatorLink : OperatorInteraction
-            connect station.frontend.browsers.operator to operator.link;
-        interface agentLink : Mcp connect station.backend.stations.mcp.agent to agent.link;
-        interface catLink : Cat connect station.backend.stations.catAdapter.radio to catRadio.link;
+            connect shack.stations.frontend.browsers.operator to operator.link;
+        interface agentLink : Mcp connect shack.stations.backend.mcp.agent to agent.link;
+        interface catLink : Cat connect shack.stations.backend.catAdapter.radio to catRadio.link;
         interface soundDeviceLink : SoundDevice
-            connect station.backend.stations.audioAdapter.device to soundDevice.link;
+            connect shack.stations.backend.audioAdapter.device to soundDevice.link;
         interface flexApiLink : FlexApi
-            connect station.backend.stations.flexAdapter.radio to flexRadio.link;
-        interface udpLink : Udp connect station.backend.stations.udp.peers to udpPeer.link;
+            connect shack.stations.backend.flexAdapter.radio to flexRadio.link;
+        interface udpLink : Udp connect shack.stations.backend.udp.peers to udpPeer.link;
         interface pskReporterLink : PskReporter
-            connect station.backend.stations.spots.pskReporter to pskReporter.link;
+            connect shack.stations.backend.spots.pskReporter to pskReporter.link;
         interface reportCollectorLink : ReportCollector
-            connect station.backend.stations.spots.collector to pskReporter.collector;
+            connect shack.stations.backend.spots.collector to pskReporter.collector;
         interface clubLogLink : ClubLog
-            connect station.backend.stations.ranking.clubLog to clubLog.link;
+            connect shack.stations.backend.profile.clubLog to clubLog.link;
+        interface countryFilesLink : CountryFiles
+            connect shack.stations.backend.profile.countryFiles to countryFiles.link;
         interface timeSourceLink : TimeSource
-            connect station.backend.stations.clock.timeSource to timeServer.link;
+            connect shack.stations.backend.clock.timeSource to timeServer.link;
 
     }
 
-    part context : StationContext;
+    part context : ShackContext;
 
     view physicalInterconnection : StandardViewDefinitions::InterconnectionView {
-        expose context::station::*;
+        expose context::shack::*;
     }
 }

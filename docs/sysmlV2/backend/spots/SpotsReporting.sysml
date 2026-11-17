@@ -11,8 +11,6 @@ package WstxSpotsReporting {
     private import ModelBindings::Status;
     private import ModelNotes::FollowsSource;
 
-    // ---- Reception reports to PSK Reporter ------------------------------------------------
-
     requirement 'CL-039-28' {
         subject spots : SpotsService;
         doc /* Spots MUST report the stations the live receive job decodes to the PSK

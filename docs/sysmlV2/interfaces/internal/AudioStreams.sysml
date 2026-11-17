@@ -6,8 +6,6 @@ package WstxAudioStreams {
          audio, the receive stream audio gives to receive, and the program transmit
          gives to audio for playing. */
 
-    // ---- From a radio connection to audio -----------------------------------------------
-
     item def NativeFormat {
         doc /* The form of the packets of one connection, fixed while it is open. */
         attribute rate : Integer { doc /* 44100 or 48000 Hz. */ }
@@ -50,8 +48,6 @@ package WstxAudioStreams {
         end session : CaptureSamples;
     }
 
-    // ---- From audio to its sound device adapter -----------------------------------------
-
     item def RenderFrames {
         doc /* Frames for the opened render endpoint, in its own format. */
     }
@@ -67,8 +63,6 @@ package WstxAudioStreams {
         end audio : ~AudioExchange;
         end adapter : AudioExchange;
     }
-
-    // ---- From audio to receive ------------------------------------------------------------
 
     enum def EpochReason {
         enum captureStart;
@@ -201,8 +195,6 @@ package WstxAudioStreams {
         end source : ReceiveSamples;
         end receive : ~ReceiveSamples;
     }
-
-    // ---- From transmit to audio -----------------------------------------------------------
 
     enum def OutputState {
         doc /* opening: the output device is being opened.

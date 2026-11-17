@@ -20,8 +20,6 @@ package WstxDecode {
          decoded in it come out. The payload, the channel code and the waveform are those
          of the published protocol; this file states the product's choices over it. */
 
-    // ---- Decoding a window -------------------------------------------------------------
-
     requirement 'CL-007-03' {
         subject modes : ModeFunctions;
         doc /* The decoder MUST decode the FT8 and FT4 frames of a window as the published
@@ -97,8 +95,6 @@ package WstxDecode {
         }
     }
 
-    // ---- How many frames decode --------------------------------------------------------
-
     requirement 'CL-007-06' {
         subject modes : ModeFunctions;
         doc /* The decoder MUST decode at least the share of frames of each mode, with the
@@ -156,8 +152,6 @@ package WstxDecode {
         }
     }
 
-    // ---- What is never a frame ---------------------------------------------------------
-
     requirement 'CL-007-07' {
         subject modes : ModeFunctions;
         doc /* The decoder MUST return no frame from noise, from silence, from a signal of
@@ -171,8 +165,6 @@ package WstxDecode {
              A word of zeros only is not a frame.
              A window that holds no frame ends without an error. */
     }
-
-    // ---- The same result every time ----------------------------------------------------
 
     requirement 'CL-007-08' {
         subject modes : ModeFunctions;
@@ -190,8 +182,6 @@ package WstxDecode {
         attribute ft8RepeatToleranceHz : Real = 0.2;
         attribute ft4RepeatToleranceHz : Real = 0.5;
     }
-
-    // ---- Time, memory and processors ---------------------------------------------------
 
     requirement 'CL-007-04' {
         subject modes : ModeFunctions;
@@ -255,8 +245,6 @@ package WstxDecode {
         attribute sparedProcessors : Integer = 1;
     }
 
-    // ---- Decoding with what the station knows ------------------------------------------
-
     requirement 'CL-007-10' {
         subject modes : ModeFunctions;
         doc /* The decoder MUST try the messages the station expects, by its context, on
@@ -300,25 +288,8 @@ package WstxDecode {
         attribute minConfidence : Real = 0.17;
     }
 
-    // ---- Test cases --------------------------------------------------------------------
-
     verification 'TC-004-001' {
-        doc /* Decoding FT4.
-             Setup: the decoder alone, on FT4 waveforms made by a separate encoder and
-             on the FT4 sample recording of WSJT-X with the report of its decoder.
-             (a) A waveform of every supported family decodes to its text, and carriers
-             at 200 Hz, 200.5 Hz, 1000.3 Hz, 3499 Hz and 3500 Hz decode, the start within
-             144 frames and the frequency within 3 Hz.
-             (b) Of 40 signals at -10 dB at least 36 decode, and of 40 at -13 dB at
-             least 20; the SNR of each strong signal lies within 3 dB of -10 dB.
-             (c) Of 20 pairs two tone spacings apart at least 18 decode both; of 20
-             pairs one spacing and 6 dB apart the stronger decodes in at least 18 and
-             the weaker in at least 10.
-             (d) At least 16 of the 19 messages of the sample recording decode, each SNR
-             a whole number within 1 dB of the reference and at least -21 dB.
-             (e) A weak CQ decodes through type 1 without calls; a weak
-             "HB9BLA K1ABC RR73" decodes through type 6 only with my call HB9BLA and
-             the DX call K1ABC. */
+        doc /* Decoding FT4. */
         subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -333,28 +304,7 @@ package WstxDecode {
     }
 
     verification 'TC-004-002' {
-        doc /* Decoding FT8.
-             Setup: the decoder alone, on FT8 waveforms made by a separate encoder, on
-             the FT8 sample recording of WSJT-X and on recordings from the air, each
-             with the report of the decoder of WSJT-X.
-             (a) Carriers at 200 Hz, 200.5 Hz, 1000.3 Hz, 3499 Hz and 3500 Hz decode,
-             the start within 240 frames and the frequency within 1 Hz.
-             (b) Of 40 signals at -15 dB at least 36 decode, and of 40 at -18 dB at
-             least 20; the SNR of each strong signal lies within 3 dB of -15 dB.
-             (c) Of 20 pairs two tone spacings apart at least 18 decode both; of 20
-             pairs one spacing and 6 dB apart the stronger decodes in at least 18 and
-             the weaker in at least 10.
-             (d) At least 12 of the 14 messages of the sample recording decode, each SNR
-             within 1 dB of the reference and at least -25 dB.
-             (e) At least 401 of the 409 frames that the decoder of WSJT-X finds in the
-             recordings from the air decode.
-             (f) A frame that starts 960 frames before the window is returned with the
-             window's first sample as its start; one that starts earlier, and one that
-             runs past the end, is not returned, and a weaker frame under it decodes.
-             (g) A payload sent on two carriers more than 50 Hz apart is returned once.
-             (h) A weak "HB9BLA K1ABC FN42" decodes with a_priori 3 and a weak
-             "HB9BLA K1ABC RR73" with a_priori 6, only with the right calls and
-             progress; with a wrong DX call, and from noise, no frame is returned. */
+        doc /* Decoding FT8. */
         subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -379,22 +329,7 @@ package WstxDecode {
     }
 
     verification 'TC-004-003' {
-        doc /* No false frame, the limits and the resources.
-             Setup: the decoder alone on noise, silence, signals of the other mode and
-             words with a wrong CRC; for (e), a release build on the reference PC.
-             (a) 1000 windows of noise per mode give no frame.
-             (b) Silence, an unmodulated carrier and an FT8 signal decoded as FT4 give
-             no frame and no error.
-             (c) A word that passes the parity check and fails the CRC gives no frame.
-             (d) A window with 256 candidates is searched; with 257 it ends with
-             searchLimited.
-             (e) An FT8 window decodes within 5 s, an FT4 window within 3 s and a
-             recording of 120 s within 40 s; one decode uses at most 64 MiB and the
-             station process grows by at most 96 MiB; a cancelled request ends within
-             250 ms.
-             (f) A second run of a request gives the same payloads in the same order,
-             each start within 1 frame and each frequency within 0.2 Hz for FT8 and
-             0.5 Hz for FT4. */
+        doc /* No false frame, the limits and the resources. */
         subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -416,15 +351,7 @@ package WstxDecode {
     }
 
     verification 'TC-057-002' {
-        doc /* The same frames on any number of threads.
-             Setup: a release build; one busy FT8 period from a recording, as one
-             window.
-             (a) The window decoded on 4 and on 12 threads gives the frames of the
-             decode on 1 thread, equal in every field and in order, and at least 25 of
-             them.
-             (b) 200 pieces of work shared among 1, 2, 4 and 8 threads, one of them
-             slow, each come back once and in their order.
-             (c) A request cancelled during shared work ends with cancelled. */
+        doc /* The same frames on any number of threads. */
         subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

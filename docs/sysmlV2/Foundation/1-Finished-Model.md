@@ -39,20 +39,20 @@ the operator as a question. It is not resolved silently in either direction.
 docs/sysml/
 ├── Context.sysml
 ├── Requirements.sysml
-├── Station.sysml
+├── Shack.sysml
 ├── interfaces/
 │   ├── internal/   StationLink, StationCommands, Strategies, RankingControl, AutoControl,
 │   │               QsoControl, LogControl, ReceiveControl, TransmitControl, AudioControl,
 │   │               RadioControl, Keying, Decodes, DisplayData, StationTime, OperatingChain,
 │   │               Hearing, AudioStreams, ModeProcessing, ProfileAccess, RecordingTransfer,
-│   │               UdpControl
+│   │               UdpControl, WebControl
 │   └── external/   OperatorInteraction, Mcp, Cat, RadioProperties, FlexApi, SoundDevice,
-│                   Udp, PskReporter, ClubLog, TimeSource
+│                   Udp, PskReporter, ClubLog, CountryFiles, TimeSource
 ├── backend/
-│   ├── station/        Station*, OperatingSelection, StationAuthority, Startup
+│   ├── supervisor/     Supervisor*, OperatingSelection, StationAuthority, Startup
 │   ├── web/            Web*, Listener, ContentCoding
 │   ├── mcp/            Mcp*, McpEndpoint
-│   ├── profile/        Profile*, Recordings
+│   ├── profile/        Profile*, ProfileDocument, Recordings
 │   ├── receive/        Receive*, ReceiveJob, Spectrum, LiveReceive
 │   ├── modes/          Modes*, Decode, MessageEncode, MessagePayload
 │   ├── clock/          Clock*, StationClock
@@ -60,11 +60,12 @@ docs/sysml/
 │   ├── operating/      Operating*, StrategySelection
 │   │   ├── ranking/    Ranking*, ValueOrder, ContestRanking, IgnoreLists, WantedList,
 │   │   │               MostWanted, Alert
-│   │   ├── auto/       Auto*, TargetChoice, CqWhenIdle, TxSlot, BusyPause, Leave, Watchdog
-│   │   └── qso/        Qso*, StandardQso, SpecialActivities, MessageChoice, HoldTx
+│   │   ├── auto/       Auto*, TargetChoice, CqWhenIdle, TxSlot, Leave, AutoMode
+│   │   └── qso/        Qso*, StandardQso, SpecialActivities, MessageChoice, QsoTransmit,
+│   │                   HoldTx
 │   ├── log/            Log*, Logbook, CountryFile
-│   ├── spots/          Spots*, HearingFeed
-│   ├── udp/            Udp*
+│   ├── spots/          Spots*, HearingFeed, SpotsReporting
+│   ├── udp/            Udp*, UdpSender
 │   ├── audio/          Audio*, AudioDevice, Capture, Endpoints, Playback
 │   ├── radioControl/   RadioControl*, CatControl, CatLifecycle, RadioFacts, RadioSetup
 │   └── flexAdapter/    FlexAdapter*, FlexSession
@@ -76,7 +77,7 @@ docs/sysml/
 `*` marks a part's own file. `operating` is a part: it owns the strategies and contests
 and holds the parts ranking, auto and qso.
 
-- **M2.2** A station process has eighteen function parts: station, web, mcp, profile,
+- **M2.2** A station's backend has eighteen function parts: supervisor, web, mcp, profile,
   receive, modes, clock, transmit, operating with ranking, auto and qso inside it, log,
   spots, udp, audio, radioControl and flexAdapter. The adapters and bindings toward the outside
   (audioAdapter, catAdapter) stand beside them.
@@ -84,11 +85,13 @@ and holds the parts ranking, auto and qso.
 ## M3. Layers
 
 - **M3.1** The order of the layers is: shared, interfaces, parts (`backend/*`, `frontend`),
-  Station, Context.
+  Shack, Context.
 - **M3.2** A file imports only from layers before it, and from Requirements.
 - **M3.3** A part never imports another part. What two parts share stands in their interface.
-- **M3.4** A transport file (StationLink, StationCommands, Mcp) and the operating chain's
-  interface file may import a control interface. A control interface imports none of them.
+- **M3.4** A transport file (StationLink, Mcp) and the operating chain's interface file may
+  import a control interface. A control interface imports none of them. StationCommands is
+  the supervisor's control interface: the one set of commands that web and mcp both
+  give, and the supervisor's own state and records.
 
 ## M4. What each kind of file holds
 
@@ -96,7 +99,7 @@ and holds the parts ranking, auto and qso.
 |---|---|---|---|
 | **M4.1** | Context | the things the station exchanges messages with (people, programs, radios, services), each as a black-box part with a port and a connection | no inner structure of an outside thing; no requirement names one as subject; no file or operating-system service that one function reads or writes by itself: that is described with the function that uses it |
 | **M4.2** | Requirements | each FR: number, title, one sentence; the behaviour baseline (the WSJT-X release the product is compared with) | no status, code link, issue reference, phase or date; no subject; no clause, test case or other requirement; no import of a part, an interface or `Station` |
-| **M4.3** | Station | composition, connections, and the allocation of FRs to parts | no clause, no data |
+| **M4.3** | Shack | composition, connections, and the allocation of FRs to parts | no clause, no data |
 | **M4.4** | A part's own file | its part definition and its ports | |
 | **M4.5** | A function file | one function of the part: its clauses, behaviour, data and test cases | |
 | **M4.6** | A control interface | the commands and state data of its function, defined once | |
@@ -105,18 +108,20 @@ and holds the parts ranking, auto and qso.
 
 ## M5. Architecture
 
-- **M5.1** The station process (one per profile) is the single source of truth for
-  everything about its own station. What the stations of one operator share (the
-  operator's settings, the strategies, the UDP and PSK Reporter configuration, the
-  logbook) stands in one shared folder of the operator: each station reads it, and
-  changes it only under the file's lock and revision. Every fact has exactly one owning
-  function.
+- **M5.1** The shack is the setup on one PC: one operator, and the stations, each with
+  its own profile, its saved configuration. A station is the program that operates one radio, or one slice of a FlexRadio,
+  with its UI: its frontend (the browser clients) and its backend (its process). The word
+  "station" names nothing else. The station is the single source of truth for everything
+  about itself. What the stations of the shack share (the shack's settings with the call
+  sign and the locator, the strategies, the UDP and PSK Reporter configuration, the
+  logbook) stands in the shack's folder: each station reads it, and changes it only under
+  the file's lock and revision. Every fact has exactly one owning function.
 - **M5.2** The browser and agents hold copies only: a snapshot, pushed changes and
   requests. A request is not a fact until the station has accepted it. The browser is the
   origin of two things only: its identity key and its presentation preferences.
-- **M5.3** Commands and state pass through the station service, which is the only gate
+- **M5.3** Commands and state pass through the supervisor, which is the only gate
   through which a change from outside enters. Commands reach a function only from the
-  station service.
+  supervisor.
 - **M5.4** A stream connects its producer and its consumer directly inside the station
   process.
 - **M5.5** StationLink is the only connection between the browser and the server. The
@@ -129,13 +134,14 @@ and holds the parts ranking, auto and qso.
   what flows over it, and carries no empty item.
 - **M5.9** Receive and transmit do not know which radio type is in use: samples pass
   through audio, control passes through radio control.
-- **M5.10** The operator is the licensed person who operates the station through the
-  browser. An agent is a program that operates it through MCP, with equal rights. The word
+- **M5.10** The operator is the licensed person who operates the shack's stations
+  through their browsers. An agent is a program that operates a station through its MCP,
+  with equal rights. The word
   "user" does not occur.
 
 ## M6. Requirements, clauses and tests
 
-- **M6.1** An FR is about the station as a whole and names no subject; `Station.sysml` gives
+- **M6.1** An FR is about the station as a whole and names no subject; `Shack.sysml` gives
   it to the part that carries it. Its status is computed: implemented when all its
   clauses are, partial when some are, target when none is or it has no clause.
 - **M6.2** A clause stands in the function file of its part, names that part as its
@@ -169,13 +175,12 @@ and holds the parts ranking, auto and qso.
 
 - **M8.1** The model is finished when every rule above holds on main.
 - **M8.2** Every rule that a tool can check is checked in the gate, with no exemption list.
-- **M8.3** Every rule names its check. During the rebuild there are three:
+- **M8.3** Every rule names its check. During the rebuild there are two:
 
 | Check | Covers |
 |---|---|
 | The script `docs/sysmlV2/_work/check.py`, run after every part | M2.1, M4.2, M5.10, M6.2, M6.4, M6.10, M7.1, M7.3, M7.4, and lines over 100 characters |
-| The part's functional description, written from the new files alone | M0.3, M1.2, M1.3, M1.4: a table cell that no model element fills is a gap, and two elements that disagree are listed |
-| The operator's reading of the part, its description and its report | M0.2 and M1.1, which are judgements; the report lists what was dropped as code |
+| The operator's reading of the part and its report | M0.2, M0.3, M1.1 to M1.4, which are judgements; the report lists what was dropped as code |
 
   The structure rules M3, M4.1, M4.3 and M5 are checked by the model tools.
 

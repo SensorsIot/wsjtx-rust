@@ -11,7 +11,11 @@ package WstxProfileAccess {
     private import WstxUdpControl::UdpTarget;
     private import WstxStrategies::Strategy;
     private import WstxRankingControl::WantedEntry;
+    private import WstxAutoControl::AutoConfig;
+    private import WstxClubLog::MostWantedRow;
+    private import WstxQsoControl::QsoConfig;
     private import WstxLogControl::Continent;
+    private import WstxStationCommands::StartupRecords;
     private import ModelNotes::FollowsSource;
     private import ModelNotes::NotStated;
 
@@ -20,8 +24,8 @@ package WstxProfileAccess {
          the hidden store and the places of the two folders from the profile, and the
          changes to them.
          The settings have two levels. The station config holds what the operator sets
-         of this station, in the profile's folder. The operator's settings hold what
-         the operator's stations share, in the operator's folder (up to six stations
+         of this station, in the profile's folder. The shack's settings hold what
+         the shack's stations share, in the shack's folder (up to six stations
          of one operator, for example the slices of one FlexRadio, share it). The
          hidden store holds what the software keeps of this station across sessions
          and no menu shows. The display choices of a frontend are that frontend's own
@@ -32,8 +36,6 @@ package WstxProfileAccess {
          creates, reads, changes and deletes them, keeps their files and applies the
          rules of their parts. This file refers to each by its type and defines the
          profile's own. */
-
-    // ---- The profile's own configuration ----------------------------------------------------
 
     enum def ConnectionType {
         doc /* How the station reaches its radio.
@@ -87,10 +89,10 @@ package WstxProfileAccess {
             doc /* Chosen when the profile is created. No save changes it. */
         }
     }
-    attribute def OperatorConfig {
-        doc /* What the operator sets of the operator's own station identity, shared by
-             all the operator's stations. No value is altered on the way in: a value
-             outside its rule is refused. */
+    attribute def ShackConfig {
+        doc /* What the operator sets of the shack's identity, shared by all its
+             stations. No value is altered on the way in: a value outside its rule is
+             refused. */
         attribute callsign : String = "" {
             doc /* The call the station transmits and logs under. Empty, or 3 to 12
                  characters of A to Z, 0 to 9 and "/" with at least one letter and one
@@ -144,8 +146,6 @@ package WstxProfileAccess {
         }
     }
 
-    // ---- The stores ---------------------------------------------------------------------------
-
     attribute def StationConfig {
         doc /* The config of one station: every value the operator sets of this
              station, as the collection of the configurations of the station's parts.
@@ -155,30 +155,32 @@ package WstxProfileAccess {
         attribute audio : AudioConfig;
         attribute transmit : TransmitConfig;
         attribute receive : ReceiveConfig;
+        attribute qso : QsoConfig;
         attribute native : NativeIntent[0..1] {
             doc /* Present exactly with ConnectionType::native_flex. */
         }
     }
-    attribute def OperatorSettings {
-        doc /* The settings the operator's stations share, as the collection of the
-             configurations of their parts. The profile keeps them in the operator's
+    attribute def ShackSettings {
+        doc /* The settings the shack's stations share, as the collection of the
+             configurations of their parts. The profile keeps them in the shack's
              folder and defines none of the values of another part. */
-        attribute operator : OperatorConfig;
+        attribute shack : ShackConfig;
         attribute spots : SpotsConfig;
         attribute udp : UdpConfiguration;
+        attribute auto : AutoConfig;
     }
-    attribute def OperatorDocument {
-        doc /* The saved operator's settings: the content of the file operator.json in
-             the operator's folder, one JSON object of UTF-8 with the keys
+    attribute def ShackDocument {
+        doc /* The shack's saved settings: the content of the file shack.json in
+             the shack's folder, one JSON object of UTF-8 with the keys
              schema_version, revision, callsign, locator, continent and cq_words of
-             OperatorConfig, and spots and udp for the configurations of these parts,
+             ShackConfig, and spots, udp and auto for the configurations of these parts,
              each an object with the names of its values as keys. continent is left out
              when absent. A key that is absent, given twice or not named, a value of
              another type and a value outside its rule make the file unusable. */
         attribute schema_version : Integer = 1;
         attribute revision : Integer = 0 {
             doc /* The count of the saves of the file. */ }
-        attribute settings : OperatorSettings;
+        attribute settings : ShackSettings;
     }
     attribute def StationMemory {
         doc /* The hidden store of one station: the records its parts want kept across
@@ -186,6 +188,7 @@ package WstxProfileAccess {
              part. No menu shows it. The profile keeps it and defines no record. */
         attribute radio : RadioRecords;
         attribute audio : AudioRecords;
+        attribute station : StartupRecords;
     }
     attribute def StrategyDefinitions {
         doc /* The saved strategies of the station. The profile keeps them in a
@@ -199,8 +202,8 @@ package WstxProfileAccess {
              The object has the keys schema_version and profile_id; the keys
              display_name, endpoint and connection_type of ProfileConfig; audio for
              AudioConfig; control for RadioConfig::control and, for a managed radio,
-             radio for RadioConfig::agc; transmit and receive for the configurations of
-             these parts, each an object with the names of its values as keys; and
+             radio for RadioConfig::agc; transmit, receive and qso for the configurations
+             of these parts, each an object with the names of its values as keys; and
              native for the native connection. A file that also holds revision,
              callsign, locator, continent, cq_words, spots or udp is read without them:
              their values are not taken over.
@@ -220,47 +223,82 @@ package WstxProfileAccess {
         @FollowsSource { reference = "RFC 9562 section 5.4 (UUID version 4); RFC 8259 (JSON)"; }
     }
 
-    // ---- What crosses ---------------------------------------------------------------------
-
+    item def OpenRequest {
+        doc /* Open the profile of this folder, at station start
+             (WstxProfileDocument::OpenProfile). Answered by ProfileFolder and the
+             snapshots, or by OpenRefused. */
+        attribute folder : String { doc /* The folder as the launch named it. */ }
+        attribute shackFolder : String[0..1] {
+            doc /* The shack's folder the launch named; absent: the default
+                 (WstxProfileDocument::ShackFolder). */ }
+    }
+    item def CreateRequest {
+        doc /* Make a profile in this folder (WstxProfileDocument::CreateProfile).
+             Answered by ProfileCreated or OpenRefused. */
+        attribute folder : String;
+        attribute native : NativeIntent[0..1] {
+            doc /* For a profile of the native connection: the receive antenna and at
+                 most an address (WstxProfileDocument::NativeProfile); its client_id is
+                 made by the profile. */ }
+    }
+    item def ProfileCreated { doc /* The profile is made. */ }
+    enum def OpenRefusal {
+        doc /* Why the profile cannot be opened or made. Nothing has been changed.
+             resource_unavailable: the folder, a file or a lock cannot be had.
+             invalid_profile: profile.json is not a ProfileDocument.
+             invalid_runtime_configuration: the NativeIntent of a CreateRequest is
+             outside its rules.
+             unsupported_schema: the schema_version is none the station knows.
+             unsupported_connection_type: the connection type does not go with the
+             schema_version.
+             profile_in_use: another station process holds the profile. */
+        enum resource_unavailable;
+        enum invalid_profile;
+        enum invalid_runtime_configuration;
+        enum unsupported_schema;
+        enum unsupported_connection_type;
+        enum profile_in_use;
+    }
+    item def OpenRefused { attribute reason : OpenRefusal; }
     item def ProfileFolder {
         doc /* The two folders, in which a function of the station keeps its definition
              files and its data files by itself. The profile gives them once, at
-             station start, to the station service, which gives each function the
+             station start, to the supervisor, which gives each function the
              folder of its files with its context. */
         attribute path : String {
             doc /* The profile's folder. While the station runs, no other station
                  process uses it. */ }
-        attribute operatorPath : String {
-            doc /* The operator's folder (WstxProfileDocument::OperatorFolder), which the
-                 operator's stations share. */ }
+        attribute shackPath : String {
+            doc /* The shack's folder (WstxProfileDocument::ShackFolder), which the
+                 shack's stations share. */ }
     }
-    item def OperatorSnapshot {
-        doc /* The operator's settings as they are saved. The profile gives it at station
+    item def ShackSnapshot {
+        doc /* The shack's settings as they are saved. The profile gives it at station
              start, after every save of them, and when another station has saved them.
-             The station service gives each part its configuration from it, over that
+             The supervisor gives each part its configuration from it, over that
              part's control interface. */
-        attribute document : OperatorDocument;
+        attribute document : ShackDocument;
         attribute unusable : Boolean {
-            doc /* operator.json cannot be used; document holds the settings as their
+            doc /* shack.json cannot be used; document holds the settings as their
                  definitions give them. */ }
     }
-    item def SaveOperator {
-        doc /* Save these operator's settings in the place of the saved ones. It is the
+    item def SaveShack {
+        doc /* Save these shack's settings in the place of the saved ones. It is the
              one way a change of a shared setting takes. */
         attribute expectedRevision : Integer {
-            doc /* The revision of operator.json the save was made from. */ }
-        attribute settings : OperatorSettings;
+            doc /* The revision of shack.json the save was made from. */ }
+        attribute settings : ShackSettings;
     }
     item def ProfileSnapshot {
         doc /* The profile as it is saved. The profile gives it at station start and
-             after every change of the document. The station service gives each part
+             after every change of the document. The supervisor gives each part
              its configuration from it, over that part's control interface. */
         attribute document : ProfileDocument;
     }
     item def MemorySnapshot {
         doc /* The hidden store as it is kept. The profile gives it at station start and
              in answer to every SaveMemory: the new store when it is durable, the one
-             before when it could not be kept. The station service gives each part its
+             before when it could not be kept. The supervisor gives each part its
              records from it, over that part's control interface. */
         attribute memory : StationMemory;
         attribute unreadable : Boolean {
@@ -269,14 +307,11 @@ package WstxProfileAccess {
     }
     item def SaveProfile {
         doc /* Save this station config in the place of the saved one. It is the one way
-             a change of a setting takes: the operator's change reaches the station
-             service, which brings it here.
+             a change of a setting takes: the operator's change reaches the supervisor,
+             which brings it here.
              ProfileConfig::endpoint, ProfileConfig::connection_type and
              StationConfig::native are not taken from it. Without RadioConfig::agc for
              a managed radio, the saved one stays. */
-        attribute profileId : String {
-            doc /* The profile the save was made for. */
-        }
         attribute config : StationConfig;
     }
     enum def SettingsCollection {
@@ -285,7 +320,7 @@ package WstxProfileAccess {
              in its collection.
              strategies: StrategyDefinitions::strategies, keyed by Strategy::name
              without regard to letter case; held to WstxStrategies::StrategyForm.
-             udpTargets: UdpConfiguration::targets of the operator's settings, keyed by
+             udpTargets: UdpConfiguration::targets of the shack's settings, keyed by
              UdpTarget::address; held to the rules of UdpTarget and UdpConfiguration.
              wantedList: DefinitionsSnapshot::wanted, keyed by WantedEntry::call as it is
              written; held to the rules of WantedEntry. */
@@ -329,7 +364,7 @@ package WstxProfileAccess {
     }
     item def DefinitionsSnapshot {
         doc /* The definition files as the profile keeps them. The profile gives it at
-             station start and after every change of them. The station service gives
+             station start and after every change of them. The supervisor gives
              each part its definitions from it, over that part's control interface. */
         attribute definitions : StrategyDefinitions;
         attribute revision : Integer {
@@ -342,13 +377,35 @@ package WstxProfileAccess {
                  that can be used. */ }
         attribute unusable : Boolean {
             doc /* The strategies file cannot be used; definitions holds no strategy. */ }
+        attribute mostWanted : MostWantedList[0..1] {
+            doc /* The Most Wanted list. Absent while the profile holds none. */ }
+        attribute mostWantedUnusable : Boolean {
+            doc /* The Most Wanted file cannot be used. */ }
+        attribute countryFile : String[0..1] {
+            doc /* The text of the country file the profile keeps
+                 (WstxProfileDocument::CountryFileStore). Absent while it keeps none. */ }
+        attribute countryFileUnusable : Boolean {
+            doc /* The kept country file cannot be used. */ }
         attribute renamed : RenamedEntry[0..*] ordered {
             doc /* The strategies read under another name, in the order of the file.
                  Empty from the next change of the strategies. */ }
     }
+    attribute def MostWantedList {
+        doc /* The Most Wanted list the profile keeps (WstxProfileDocument::MostWantedFile). */
+        attribute date : String { doc /* The UTC date of the download. */ }
+        attribute rows : MostWantedRow[1..*] ordered;
+    }
+    item def UpdateCountryFile {
+        doc /* Fetch the newest country file (WstxProfileDocument::CountryFileFetch).
+             Answered by a DefinitionsSnapshot or a SaveRefused. */
+    }
+    item def UpdateMostWanted {
+        doc /* Fetch the Most Wanted list anew (WstxProfileDocument::MostWantedFetch).
+             Answered by a DefinitionsSnapshot or a SaveRefused. */
+    }
     item def RuleFacts {
         doc /* The facts of other parts that the rules of a settings collection need when
-             the profile applies them. The station service gives them at station start
+             the profile applies them. The supervisor gives them at station start
              and whenever one changes. */
         attribute entityNames : String[0..*] {
             doc /* The names of the entities of the country file in use
@@ -358,7 +415,7 @@ package WstxProfileAccess {
                  (WstxStrategies::StrategiesState::builtins). */ }
     }
     item def SaveMemory {
-        doc /* Keep this hidden store in the place of the kept one. The station service
+        doc /* Keep this hidden store in the place of the kept one. The supervisor
              brings it when a part has changed a record. */
         attribute memory : StationMemory;
     }
@@ -367,8 +424,7 @@ package WstxProfileAccess {
              invalid_settings: a value of the settings is outside its rule.
              audio_device_not_endpoint: an audio device is no endpoint id of its
              direction.
-             wrong_profile: the save names another profile.
-             revision_conflict: a SaveOperator or a command for a collection was made
+             revision_conflict: a SaveShack or a command for a collection was made
              from another revision than that of its shared file.
              storage_unavailable: the file cannot be written.
              entry_exists: a CreateEntry, or an UpdateEntry to another key, names a key
@@ -376,19 +432,24 @@ package WstxProfileAccess {
              entry_unknown: an UpdateEntry or a DeleteEntry names a key the collection
              does not hold.
              collection_full: a CreateEntry for a collection that holds as many members
-             as its rules allow. */
+             as its rules allow.
+             download_failed: an UpdateMostWanted or an UpdateCountryFile got no list or
+             no file.
+             invalid_country_file: the downloaded text does not read as a country file. */
         enum invalid_settings;
         enum audio_device_not_endpoint;
-        enum wrong_profile;
         enum revision_conflict;
         enum storage_unavailable;
         enum entry_exists;
         enum entry_unknown;
         enum collection_full;
+        enum download_failed;
+        enum invalid_country_file;
     }
     item def SaveRefused {
-        doc /* The answer to a SaveProfile, a SaveOperator, a CreateEntry, an
-             UpdateEntry or a DeleteEntry the profile does not carry out. */
+        doc /* The answer to a SaveProfile, a SaveShack, a CreateEntry, an
+             UpdateEntry, a DeleteEntry, an UpdateMostWanted or an UpdateCountryFile the
+             profile does not carry out. */
         attribute reason : SaveRefusal;
         attribute field : String[0..1] {
             doc /* For invalid_settings and audio_device_not_endpoint, the value that
@@ -397,27 +458,40 @@ package WstxProfileAccess {
                  control.endpoint, control.ptt or radio; for a member, by its keys as
              its part names them. */
         }
+        attribute detail : String[0..1] {
+            doc /* For download_failed: what failed; for invalid_country_file: the line,
+                 counted from 1. */ }
     }
 
     port def ProfileAccess {
         doc /* Written from the side of the function that uses the profile; the profile
              uses the conjugate.
+             An OpenRequest is answered by ProfileFolder and then the snapshots, or by
+             OpenRefused; a CreateRequest by ProfileCreated or OpenRefused.
              Each SaveProfile is answered by one ProfileSnapshot with the saved document
-             or by one SaveRefused, each SaveOperator by one OperatorSnapshot or one
-             SaveRefused; each SaveMemory by one MemorySnapshot. The profile
+             or by one SaveRefused, each SaveShack by one ShackSnapshot or one
+             SaveRefused; each SaveMemory by one MemorySnapshot; each UpdateMostWanted and
+             each UpdateCountryFile by one DefinitionsSnapshot or one SaveRefused. The
+             profile
              deals with one command after the other. */
+        out item open : OpenRequest;
+        out item make : CreateRequest;
+        in item created : ProfileCreated;
+        in item openRefused : OpenRefused;
         in item folder : ProfileFolder;
         in item saved : ProfileSnapshot;
-        in item operatorSettings : OperatorSnapshot;
+        in item shackSettings : ShackSnapshot;
         in item definitions : DefinitionsSnapshot;
         in item memory : MemorySnapshot;
         out item save : SaveProfile;
-        out item saveOperator : SaveOperator;
+        out item saveShack : SaveShack;
         out item create : CreateEntry;
         out item update : UpdateEntry;
         out item delete : DeleteEntry;
         out item facts : RuleFacts;
         out item keep : SaveMemory;
+        out item updateMostWanted : UpdateMostWanted;
+        out item updateCountryFile : UpdateCountryFile;
         in item refused : SaveRefused;
     }
     interface def ProfileAccessLink {

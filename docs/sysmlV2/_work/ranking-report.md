@@ -731,3 +731,38 @@ CL-097-03 is `partial`: new_cq_zone, new_itu_zone and new_prefix have no test as
 criteria, nor has the tie by the lower audio frequency (`exact_tie`), and the wanted
 records first is not built; TC-097-008 (f) is planned for them. TC-039-040 (k) is
 completed from its test (new_dxcc_band, new_call, new_grid_band with the band unknown).
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-039-002 (`ValueOrder.sysml`): with the CQ words EU and CH, CQ CH is for the station whatever its continent; under a strategy of class contest whose included CQ targets hold POTA, CQ POTA is for it.
+- TC-097-008 (`ValueOrder.sysml`): the criteria new_cq_zone, new_itu_zone and new_prefix each put a sender for which it is new first; two records equal in every criterion and in the SNR are ordered by the lower audio frequency; a wanted record stands before a caller and a candidate.
+- TC-063-004 (`ContestRanking.sysml`): CQ WW K1ABC FN42 under a strategy of class strategy, with the special activity ww_digi set by the operator: grey and without a rank; CQ RU under the activity rtty: grey.
+- TC-063-004 (`ContestRanking.sysml`): CQ TEST under a contest with the word TEST, one minute before its period and at the first minute after it: grey; in its first minute: not grey.
+- TC-042-002 (`IgnoreLists.sysml`): after the station's band changes to 20m, and to and from an unknown band, the list is as before and W1AW and DL1XYZ are ignored still; ClearIgnoreList leaves the list empty; after a stop and a start of the station the list is empty; with 20 entries listed a 21st is refused with ignoreListFull and the list is as before, and one of the 20 put on again moves to the end.
+- TC-125-001 (`IgnoreLists.sysml`): "K1?BC" is put on, matches K1ABC and K1XBC and neither K1BC nor K1ABBC, and gives "K1ABC is ignored (ignore list: K1?BC)"; "?", "??", "?+", "1+" and "+/1" are refused, as is every entry without a letter.
+- TC-042-006 (`Alert.sysml`): under the contest ww_digi, CQ K1ABC that brings a new multiplier: an alert; CQ W1AW that brings none: no alert; a wanted station's CQ: an alert.
+
+## Changed after the report: the Most Wanted list goes to the settings function (operator 2026-11-16)
+
+Decided (operator 2026-11-16, "Profile fetches", by the rule that data, management and use are
+divided): the profile fetches the Most Wanted list from Club Log and keeps it; ranking only
+ranks by it.
+
+| Element | What changed |
+|---|---|
+| CL-039-10 (`MostWanted.sysml`, ranking) | ranks by the list the settings function keeps; `MostWantedListRule` keeps the use only |
+| CL-039-30 (new, `ProfileDocument.sysml`) | the fetch and the keeping: `MostWantedFetch`, `MostWantedFile` (keys schema_version, date, list; no profile_id, since the operator's folder is shared) |
+| TC-039-031 | keeps `tc_039_031_every_bundled_entity_has_its_adif_number` |
+| TC-039-055 (new) | `tc_039_031_parser_refuses_all_but_the_exact_list`, `tc_039_031_response_body` |
+| `ClubLog.sysml` | the profile's end; the attribution line moved here; the file is the profile's |
+| `ProfileAccess` | `MostWantedList`, `UpdateMostWanted`, `DefinitionsSnapshot::mostWanted` and `mostWantedUnusable`, `SaveRefusal::download_failed`, `SaveRefused::detail` |
+| `RankingControl` | `RankingContext::mostWanted` in place of `folder`; `UpdateMostWanted`, `downloadFailed`, `storageUnavailable`, `RankingRefused::reason`, `mostWantedUnreadable`, the attribution gone |
+| `Context.sysml` | Club Log connects to `profile.clubLog` |
+
+Not bound any more: `strategy_tests.rs::tc_039_031_update_most_wanted_status_failures_and_mcp_refusal`
+asserts that an agent may not update the list (issue 122: an agent is the operator).
+Work for the code: the fetch lives in `most_wanted.rs` and `strategy.rs` (ranking's code), the
+file in the profile's folder with profile_id, an agent is refused.

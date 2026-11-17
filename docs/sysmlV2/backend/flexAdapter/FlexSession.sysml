@@ -15,8 +15,6 @@ package WstxFlexSession {
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
 
-    // ---- The session and its state ---------------------------------------------------------
-
     requirement 'CL-013-01' {
         subject adapter : FlexAdapter;
         doc /* The Flex adapter MUST hold one session with the radio over the radio's own
@@ -190,8 +188,6 @@ package WstxFlexSession {
                  and conflict. */ }
     }
 
-    // ---- Which radio ----------------------------------------------------------------------
-
     requirement 'CL-013-02' {
         subject adapter : FlexAdapter;
         doc /* The Flex adapter MUST take up a radio only when the radio speaks the
@@ -297,8 +293,6 @@ package WstxFlexSession {
         out status : SessionStatus;
     }
 
-    // ---- What is the adapter's own --------------------------------------------------------
-
     requirement 'CL-013-04' {
         subject adapter : FlexAdapter;
         doc /* The Flex adapter MUST change only the slice it created and take samples
@@ -340,8 +334,6 @@ package WstxFlexSession {
              receiver and gives it up. */
         attribute commands : Command[1..*];
     }
-
-    // ---- The stream to audio --------------------------------------------------------------
 
     requirement 'CL-013-06' {
         subject adapter : FlexAdapter;
@@ -395,8 +387,6 @@ package WstxFlexSession {
         attribute groupMs : Integer = 10;
     }
 
-    // ---- Tuning ---------------------------------------------------------------------------
-
     requirement 'CL-013-07' {
         subject adapter : FlexAdapter;
         doc /* The Flex adapter MUST tune its own slice on request and give a frequency
@@ -440,82 +430,8 @@ package WstxFlexSession {
         out refusal : TuneRefusal[0..1];
     }
 
-    // ---- Test cases -----------------------------------------------------------------------
-
     verification 'TC-023-001' {
-        doc /* The session, the stream and the tuning on a radio that several stations
-             share.
-             Setup: stations on throw-away profiles of the native connection and an
-             emulator of the radio on the PC that shares no code with the station; no
-             radio and no sound device. Each slice of the emulator
-             carries a 1 kHz tone of its own level. For (s) to (w) the adapter's
-             functions with scripted counts, a scripted radio and packets written apart
-             from them.
-             (a) Four stations, the radio numbering its slices 5, 2, 7, 0 and showing a
-             DAX channel 300 ms late: all ready; each holds one client, one slice and
-             one stream; SliceFacts repeats the number of its slice and the identity of
-             its stream; four DAX channels.
-             (b) Every eighth packet comes again with the level 0.95, once under another
-             client's stream identity and once from another address: lastPeak of each
-             station is its own level within 0.0001; foreign above 5, invalid 0.
-             (c) The four stations tune to 7074000, 10136000, 14074000 and 18100000 Hz
-             at the same time: each confirmed; the radio has each slice at its
-             frequency under its owner.
-             (d) The same frequency again: confirmed, and no sliceTune, sliceSet or
-             subSliceAll is sent.
-             (e) A radio that answers a tune and keeps the frequency: radioTimeout.
-             (f) The receive stream of each station runs, is tied to the PC clock, and
-             its newest frame stands within 2 s of the PC clock.
-             (g) For 1 s only packets under the station's own stream identity from
-             another address: accepted unchanged, foreign more than 50 higher.
-             (h) Over all of it: every slice command named a slice of the client that
-             sent it, and no command held xmit, transmit, ptt, tx, txant, client
-             disconnect, start_persistence on or load_from.
-             (i) A radio of the model FLEX-8400 on the admitted version: ready, with its
-             announced model, serial and firmware in RadioFacts.
-             (j) A saved address, a radio that announces nothing and sends its stream
-             only to a registered port: ready; RadioFacts from the answer to info;
-             packets accepted; a Registration from the stream's port, and another
-             within 8 s; no command names an address of the PC.
-             (k) The FT8 signal CQ K1ABC FN42 on the UTC period for 40 s, one packet in
-             64 lost: that message decoded with a median DT within 0.3 s; lost within
-             0.5 of 1.56 % of the packets; after the station's end the radio has no
-             client and no slice.
-             (l) Every second packet lost: no new epoch. Then a pause of 400 ms: a new
-             epoch that names nativeDiscontinuity.
-             (m) A pause of 400 ms after which the count comes back 9 further: a new
-             epoch that names nativeDiscontinuity; lost and late unchanged.
-             (n) A saved address, every Reply and StatusLine 130 ms late, a radio that
-             reports a tune only when asked: 14074000 Hz confirmed.
-             (o) One packet in 60 delayed by 4 places for 4 s: lost 0, late 0, no new
-             epoch, the receive stream within 10 % of 12000 frames a second. Delayed by
-             6 places: late at least 10, lost within 1 of late, no new epoch.
-             (p) One packet in 4 lost for 5 s: lost between 22 and 28 % of the packets,
-             the receive stream above 10800 frames a second, no new epoch. Then a pause
-             of 120 ms: jitterMaxMs at least 90, jitterMeanMs below it.
-             (q) timestampKind 1 and hostMinusRadioMs within 5 s of the PC clock minus
-             the radio's time stamp; in a new session without a packet of its own both
-             and the jitter are absent.
-             (r) Two stations and a radio that shows a DAX channel 300 ms late: they end
-             on different channels.
-             (s) Counts 14, 15, 1, 0, 2, 4, 5, 3, 6: given on in the order of the
-             count, no turn given up. Counts 0, 2, 3, 4, 5, 1, 6: likewise. Counts 0,
-             2, 3, 4, 5, 6, 1, 7: one turn given up before 2, and 1 discarded.
-             (t) Counts 0, 8, 9, 10, 11, 12, 13: seven turns given up before 8. Counts
-             0, 9 to 15, 0, 1, 2: 9 to 15 and the second 0 discarded, 1 and 2 given on.
-             Counts 0, 1, 1, 2 and 0, 2, 2, 1, 3: the second copy discarded.
-             (u) Counts 0, 1, 3, then 14 after a pause: 3 given on with one turn given
-             up, then 14 and 15 with none.
-             (v) A tune from 7000000 to 14074000 Hz against a radio that reports only
-             when asked: SliceFacts shows 14074000 Hz when the confirmation is given.
-             The radio refuses the tune: no confirmation, SliceFacts shows 7000000 Hz.
-             A session that becomes ready: session one higher, StreamDiagnosis empty.
-             (w) A packet as a FLEX-6600 sent it, 128 frames with two equal channels:
-             taken. A packet at 48 kHz, of another type, with an odd number of samples,
-             with a sample that is not finite, cut short, or of another length than its
-             header says: refused.
-             (x) Planned, no test yet: a tune withdrawn before the radio's report:
-             cancelled; a tune outside the state ready: radioUnavailable. */
+        doc /* The session, the stream and the tuning on a radio that several stations share. */
         subject adapter : FlexAdapter;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -548,37 +464,7 @@ package WstxFlexSession {
     }
 
     verification 'TC-023-002' {
-        doc /* A session from the profile's intent alone.
-             Setup: as the emulator cases of the session, the stream and the tuning,
-             with two stations A and B.
-             (a) The radio starts again with other client handles, its slices numbered
-             the other way round and other stream identities, and still sends packets
-             under the old stream identities: both stations show transportLost, then
-             are ready with a higher session number, each on one slice of its own whose
-             number SliceFacts repeats and with a stream identity that is none of the
-             old; lastPeak is the level of that slice; the slice of A has another
-             number than before.
-             (b) The receive stream of A, running before: unavailable while the session
-             is lost, then running again without a request, in a new epoch that names
-             nativeDiscontinuity.
-             (c) Another client of the radio carries the client identity of A: A has
-             conflict with clientIdentityInUse, sends no clientGui and has no slice,
-             while B is ready; once that client is gone A is ready. The same when the
-             radio answers subClientAll before it lists its clients.
-             (d) A slice that the radio attributes to the new handle of A: conflict
-             with ownershipAmbiguous; A sends no slice and no stream command; B is
-             ready.
-             (e) Two radios, the first announcing 0 free clients: no connection to the
-             first; both stations ready on the second, whose serial RadioFacts shows.
-             (f) No radio announces itself: radioNotFound, and no connection.
-             (g) After 7074000 Hz was confirmed the radio starts again with other
-             handles: transportLost, then ready with the slice at 7074000 Hz on the
-             radio and in SliceFacts.
-             (i) An antenna that is empty or in small letters, and a client identity of
-             one character: no valid NativeIntent.
-             (j) Planned, no test yet: attempts that keep failing follow after 1000,
-             2000, 4000 and 4000 ms; after a session that was ready the next follows
-             after 1000 ms. */
+        doc /* A session from the profile's intent alone. */
         subject adapter : FlexAdapter;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -592,25 +478,7 @@ package WstxFlexSession {
     }
 
     verification 'TC-023-003' {
-        doc /* What the radio cannot give.
-             Setup: as the emulator cases of the session, the stream and the tuning.
-             (a) A radio with two slices and three stations: two ready, the third
-             unavailable with capacitySlices; 3 s later the two slices are as they
-             were, and the radio has two.
-             (b) A radio announcing 0 free clients: capacityClients, and no connection.
-             (c) A radio stating the version 1.5.0.0: incompatibleApi; RadioFacts shows
-             1.5.0.0; the radio got a connection and no command.
-             (d) A saved address and a radio that takes no further client:
-             radioRefused with the radioCode 50000005, and no slice on the radio.
-             (e) Planned, no test yet: a radio that gives the slice another antenna
-             than asked: the slice removed, antennaUnavailable.
-             (f) Planned, no test yet: every DAX channel in use: the slice removed,
-             capacityDax.
-             (g) Planned, no test yet: the radio reports the created slice under
-             another handle: sliceOwnership; it takes the slice or the stream from a
-             ready session: resourceLost.
-             (h) Planned, no test yet: the adapter cannot listen for announcements:
-             discoveryUnavailable. */
+        doc /* What the radio cannot give. */
         subject adapter : FlexAdapter;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

@@ -12,8 +12,6 @@ package WstxRadioProperties {
             doc /* The model the radio answered with; absent until it answered. */ }
     }
 
-    // ---- What a radio is tuned to -------------------------------------------------------
-
     enum def Sideband {
         doc /* The sideband of the voice mode the station sets. */
         enum lsb;
@@ -43,8 +41,6 @@ package WstxRadioProperties {
         attribute highestHz : Integer = 74800000;
     }
 
-    // ---- Settings of the radio the station looks after ----------------------------------
-
     enum def Agc {
         doc /* The time constant of the receiver's automatic gain control. */
         enum fast;
@@ -69,8 +65,6 @@ package WstxRadioProperties {
         enum usbKeyingCw;
         enum usbKeyingRtty;
     }
-
-    // ---- What a radio measures while it transmits ---------------------------------------
 
     enum def Meter {
         doc /* alc: the automatic level control.

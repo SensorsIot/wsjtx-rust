@@ -6,7 +6,6 @@ package WstxRankingPart {
     private import WstxOperatingChain::RankedActivityPort;
     private import WstxOperatingChain::WorkedBeforePort;
     private import WstxHearing::HeardByPort;
-    private import WstxClubLog::ClubLogPort;
     private import ModelBindings::ImplementedIn;
     private import ModelBindings::DetailTests;
 
@@ -32,6 +31,5 @@ package WstxRankingPart {
         port ranked : RankedActivityPort;
         port workedBefore : ~WorkedBeforePort;
         port hearing : ~HeardByPort;
-        port clubLog : ClubLogPort;
     }
 }

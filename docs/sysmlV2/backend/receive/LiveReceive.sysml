@@ -28,8 +28,6 @@ package WstxLiveReceive {
     private import ModelNotes::DiffersFromSource;
     private import ModelNotes::FollowsSource;
 
-    // ---- Decoding the receive stream ----------------------------------------------------------
-
     requirement 'CL-007-01' {
         subject receive : ReceiveService;
         doc /* Receive MUST, in a live job of the mode FT4 or FT8, give the receive stream
@@ -109,45 +107,7 @@ package WstxLiveReceive {
     }
 
     verification 'TC-007-012' {
-        doc /* Windows, the timing of records and the view of a period.
-             Setup: the window cutting of the receive function with scripted blocks
-             for (a) and (b); the receive function with a live job, a tie set by hand
-             and frames published by hand for (c) to (i); no sound device and no radio.
-             (a) FT8 without a tie, in blocks of 240 samples and in blocks of 239, 1,
-             117 and 240: the same four windows, ending at the samples 180000, 360000,
-             540000 and 720000, each beginning 360000 before its end and not before 0,
-             with every sample at its place. FT4: windows ending at 90000 to 360000,
-             each beginning 180000 before its end.
-             (b) FT4, blocks up to sample 90000, then a marked block at 170000: no
-             window at 180000; the next window ends at 270000 and begins at 170000.
-             (c) A tie of sample 0 to 12:00:00 UTC. FT8 frames that start at the
-             samples 3600, 6000 and 8400: period 12:00:00 and DT -0.2, 0.0 and +0.2 s.
-             FT4 frames at 3024, 5424 and 7824: the same; at 95424: period 12:00:07.5
-             and DT 0.0.
-             (d) A frame exactly between two periods, FT8 at sample 96000 and FT4 at
-             50424: the later period, DT -7.5 and -3.75 s. A tie 0.0001 s later: DT
-             0.0001 s. Without a tie: no period and no DT.
-             (e) A tie of sample 100000 to 19:23:07.5 UTC: for FT8 the period of the
-             samples 100000 and 172000 begins at sample 10000, that of sample 196000
-             at 190000; a period that began before sample 0, and no tie: no
-             periodStartFrame.
-             (f) One record in the period 12:00:00 and 18 in the next, then a window
-             of 30 s from sample 0: the view has the id 1, first_sequence 1,
-             next_sequence 19, complete true and the period 12:00:15; ReadRecords from
-             cursor 1 with limit 16 gives 16 records and that view. A window from
-             sample 180000: the view has the id 2, first_sequence and next_sequence
-             19, and the period 12:00:30.
-             (g) A window of 15 s from sample 0 is being decoded when the next comes
-             due: its view has the id 1 and complete false, last_overrun names the
-             samples 0 to 180000; the view of the next window has the id 2, complete
-             true and the period 12:00:15.
-             (h) The id count at its end: the next view is refused with
-             counter_exhausted and the view stays; a job that ends cancelled, and one
-             that ends failed: the view stays as it was.
-             (i) A frame of K1ABC that starts 17.0 s after the tie at 00:00:00, the
-             tie moved by 0.5 s and a correction of -2 s: period 00:00:15 and DT 0.0 s;
-             without the correction: the same period and DT 2.0 s. In both cases the
-             clock is given K1ABC with a DT of 2000 ms. */
+        doc /* Windows, the timing of records and the view of a period. */
         subject receive : ReceiveService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -173,8 +133,6 @@ package WstxLiveReceive {
                 + "air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate";
         }
     }
-
-    // ---- The windows on the periods of station time ---------------------------------------
 
     requirement 'CL-007-05' {
         subject receive : ReceiveService;
@@ -213,47 +171,7 @@ package WstxLiveReceive {
     }
 
     verification 'TC-004-004' {
-        doc /* The decode windows on the periods of station time.
-             Setup: the schedule and the window cutting of the receive function with
-             scripted blocks for (a), (b), (e) and (f); the receive function with a
-             live job, a scripted capture and frames published by hand for the others;
-             no sound device and no radio.
-             (a) A tie of sample 1000 to 19:23:07.5 UTC. FT8: the prompt window ends
-             where the sample count leaves 76600 on division by 180000, the late
-             window where it leaves 99400, both 180000 samples long. FT4: 79000 and
-             5800 on division by 90000, both 90000 long. A tie of sample 179000 to
-             19:23:14.0: FT8 176600 and 19400. Without a tie: no schedule.
-             (b) The FT8 schedule of (a) with blocks cut in two ways: windows end at
-             the samples 256600, 279400, 436600 and 459400, each 180000 long; the two
-             ends before them hold less than a frame and give no window.
-             (c) The late window comes due while the prompt window is decoded: it
-             waits; every view is complete and last_overrun stays absent.
-             (d) The prompt window of the period 12:00:15 with one frame: a view with
-             first_sequence 0 and next_sequence 1. Its late window without a new
-             frame: the state of receive is unchanged. With a frame of DT +1.2 s: the
-             same view id, next_sequence 2, and the record has that period and DT
-             1.2 s. The same samples as a window that is not the late one: no view.
-             (e) The schedule of (b) moved by +0.5 s after the window that ends at
-             436600, and by -1 s before 639400: the windows end at 256600, 279400,
-             436600, 465400, 622600, 636001, 790600 and 813400, in turn prompt and
-             late.
-             (f) Station time stepping 0.06 s before a prompt end, by +2 s, by -2 s
-             and by +8 s: each time one prompt and then one late window for every
-             period, in order; for +2 s they end at 435841, 436081, 592600 and
-             615400.
-             (g) A PC clock 2 s ahead of the stations and a capture clock 300 ppm slow,
-             over 301 s: the correction reaches -2000 ms; 20 prompt windows, one for
-             each period; from the second on each ends within 0.1 s of its period
-             start + 13.8 s of station time.
-             (h) A PC clock 2 s slow with a correction of +2 s: the prompt window of
-             the period 12:00:30 has the same period, period_start_frame 360000 and
-             window_offset_ms -1200 as with a right clock and no correction.
-             (i) A busy recording of FT8 as the capture of two periods 30 s apart,
-             through the capture, the windows and the decoder: the view of each period
-             holds at least 25 records and is published not later than its period
-             start + 15.0 s.
-             (j) Planned, no test yet: the prompt and the late end of FT4 through the
-             live job, and its views by the period start + 7.5 s. */
+        doc /* The decode windows on the periods of station time. */
         subject receive : ReceiveService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -278,8 +196,6 @@ package WstxLiveReceive {
                 + "server/src/receive_http_tests.rs::live_native_busy_period_rows_promptly";
         }
     }
-
-    // ---- The periods the station transmits in ------------------------------------------------
 
     requirement 'CL-061-04' {
         subject receive : ReceiveService;
@@ -326,25 +242,7 @@ package WstxLiveReceive {
     }
 
     verification 'TC-061-005' {
-        doc /* Receive in a period the station transmitted in.
-             Setup: the receive function with a live FT8 job and a tie of sample 0 to
-             12:00:00 UTC; the transmit periods given by hand for (a) and (b), and by
-             the transmit function on a scripted radio for (c); no sound device and no
-             radio.
-             (a) The period 12:00:15 was transmitted in. Its prompt window: a view of
-             that period with transmitted true, complete false and first_sequence
-             equal to next_sequence; no window was given to the decoder. Its late
-             window: the same view. The prompt window of 12:00:30: decoded, complete
-             true, not transmitted, and ReadRecords gives that view.
-             (b) A level of 60 before. Blocks at 0.9 of full scale in the rest of the
-             transmit period, after the station has left the air: no level, and every
-             detailed row has tx true. Blocks at 0.01 in the period 12:00:30: rows
-             without tx, and after one second a level of 50. On the air again: no
-             level at once, and the rows have tx true. The capture reads running and
-             loss_epochs 0 throughout.
-             (c) The station tunes at 12:00:23: no level at once, and a block of that
-             time adds nothing to the next value. After the tuning the one transmit
-             period remembered is 12:00:15 in FT8 and 12:00:22.5 in FT4. */
+        doc /* Receive in a period the station transmitted in. */
         subject receive : ReceiveService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

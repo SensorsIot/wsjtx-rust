@@ -50,29 +50,7 @@ package WstxIgnoreLists {
     }
 
     verification 'TC-042-002' {
-        doc /* The ignore list.
-             Setup: the evaluator and the list alone, for HB9BLA in EU on 40m with an
-             empty logbook and new call; for (c) the station on a throw-away profile on
-             40m with decodes written by hand.
-             (a) CQ K1ABC FN42 at -12 dB, CQ DL1XYZ JO62 at -3, CQ NA W1AW FN31 and
-             HB9BLA VK2ABC QF56. With K1ABC and W1AW on the list: K1ABC has no rank and
-             "K1ABC is ignored (ignore list)"; W1AW has no rank, is not grey and has
-             "W1AW is ignored (ignore list)"; VK2ABC has rank 0, DL1XYZ 1. With VK2ABC
-             on the list it has no rank. The entry K1 does not ignore K1ABC.
-             (b) K1ABC and then DL1XYZ put on: the list reads K1ABC, DL1XYZ. K1ABC put
-             on again stands after DL1XYZ. Taking off an entry that is not listed
-             changes nothing.
-             (c) At station start the list is empty. K1ABC put on: listed, and the
-             revision of the strategies is 0 still. W1AW put on and K1ABC taken off:
-             the list holds W1AW. With DL1XYZ also on the list, CQs of K1ABC, W1AW and
-             DL1XYZ: K1ABC has rank 0, W1AW "W1AW is ignored (ignore list)", DL1XYZ
-             "DL1XYZ is ignored (ignore list)".
-             (d) Planned, no test yet: after the station's band changes to 20m, and to
-             and from an unknown band, the list is as before and W1AW and DL1XYZ are
-             ignored still; ClearIgnoreList leaves the list empty; after a stop and a
-             start of the station the list is empty; with 20 entries listed a 21st is
-             refused with ignoreListFull and the list is as before, and one of the 20
-             put on again moves to the end. */
+        doc /* The ignore list. */
         subject ranking : RankingService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -87,34 +65,7 @@ package WstxIgnoreLists {
     }
 
     verification 'TC-125-001' {
-        doc /* Patterns in the ignore list.
-             Setup: as for the ignore list; for (a), (d) and (e) the station on a
-             throw-away profile on 40m with decodes written by hand. The star of a
-             pattern is written here as "+".
-             (a) Put on: "K+1ABC", "+K1ABCDEFGHI+", "BY+", "+/MM" and "K+1A". Refused:
-             "+", "++", "+++", "k1+", "k1abc", "K1ABCDEFGHIJK+" of 14 characters and an
-             empty entry.
-             (b) "+/MM" matches DL1ABC/MM and not DL1ABC/M; "BY+" matches BY1AA and
-             BYA1B and not ABY1A; "+K1ABC+" matches K1ABC and K1ABC/P; K1ABC matches
-             K1ABC and neither K1ABC/P nor AK1ABC; "K+1ABC" matches K1ABC and KW1ABC
-             and not K1ABD; "A+B+C" matches AXBYC and not ACB; "EA8/+" and "+/DL1ABC"
-             match EA8/DL1ABC, "DL1+" does not.
-             (c) "BY+" on the list: "BY1AA is ignored (ignore list: BY+)". "BY+" and
-             BY1AA: "BY1AA is ignored (ignore list)". "BY+" and "JA+": for BY1AA
-             "BY1AA is ignored (ignore list: BY+)", for JA1ABC "JA1ABC is ignored
-             (ignore list: JA+)".
-             (d) "BY+", "+/MM", "K+1A" and "BY+" again put on: the list reads "+/MM",
-             "K+1A", "BY+"; with "+/MM" taken off "K+1A", "BY+". With "BY+" and "JA+"
-             on the list, CQ BY1AA OM89 at +9 dB, CQ JA1ABC PM95 at +5 and CQ DL1XYZ
-             JO62 at -10: DL1XYZ has rank 0; BY1AA has no rank and "BY1AA is ignored
-             (ignore list: BY+)"; JA1ABC has "JA1ABC is ignored (ignore list: JA+)".
-             (e) Under the built-in of WW Digi with its contest in force and "BY+" on
-             the list: CQ WW BY1AA OM89 has no rank and "BY1AA is ignored (ignore
-             list: BY+)"; CQ WW JA1XYZ PM95 has rank 0.
-             (f) Planned, no test yet: "K1?BC" is put on, matches K1ABC and K1XBC and
-             neither K1BC nor K1ABBC, and gives "K1ABC is ignored (ignore list:
-             K1?BC)"; "?", "??", "?+", "1+" and "+/1" are refused, as is every entry
-             without a letter. */
+        doc /* Patterns in the ignore list. */
         subject ranking : RankingService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

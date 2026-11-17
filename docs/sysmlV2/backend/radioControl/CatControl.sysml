@@ -17,8 +17,6 @@ package WstxCatControl {
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
 
-    // ---- The connection to the radio ----------------------------------------------------
-
     requirement 'CL-008-04' {
         subject radioControl : RadioControlInterface;
         doc /* Radio control MUST control the rig icom.ic7300, an Icom IC-7300, over its
@@ -61,26 +59,7 @@ package WstxCatControl {
     }
 
     verification 'TC-009-003' {
-        doc /* The connection to the radio on a scripted serial port.
-             Setup: radio control on a port that answers from hand-written bytes and
-             records every frame, rate and close; for (f) two processes of the test on
-             one PC. No radio.
-             (a) The endpoint "com3": port 3, rate auto, radio 94, controller E0.
-             "COM0", "COM257", "COM03", "COM3/other", the keys in another order, the
-             radio address FF, the same address twice, a fourth key and a fragment:
-             invalidConfiguration.
-             (b) Rate auto, the radio silent at 9600 and answering at 19200: the rates
-             set are 9600 and 19200, the effective rate is 19200, the endpoint still
-             says auto.
-             (c) A request to close while an exchange is in work: that exchange ends
-             with cancelled and the port is closed within 250 ms.
-             (d) One reading of the five facts, then another within the second: busy,
-             no frame.
-             (e) No answer and a port that does not close: failedClose, the state
-             closing.
-             (f) A device one process holds: a second process is refused with
-             resourceInUse, also when it writes the device's name in other capitals;
-             after the release it is granted. */
+        doc /* The connection to the radio on a scripted serial port. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -93,28 +72,13 @@ package WstxCatControl {
     }
 
     verification 'TC-009-002' {
-        doc /* The station's own IC-7300, read and set by hand.
-             Setup: the station PC with its IC-7300 on COM3; the test is started by
-             hand, with the radio's keying lines confirmed off or with the operator's
-             word that the radio may be used without that check.
-             (a) Without either: no port is opened.
-             (b) The five reads are answered, and the port is given up within 500 ms
-             of the request to close.
-             (c) With the radio at 7074000 Hz, LSB, filter 1, data mode off, receiving
-             and without split: receiveSetup to USB, filter 1, data mode on with
-             filter 1 is confirmed by the radio; the way back to LSB with the data
-             mode off likewise.
-             (d) On a scripted port the first question of the connection and the two
-             changes of (c) give 21 frames, and the frequency, which already fits, is
-             read and not written. */
+        doc /* The station's own IC-7300, read and set by hand. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 4; location = TestLocation::station; }
         @Automation { run = AutomationState::partial; method = "started by hand"; }
         objective { verify 'CL-008-04'; }
         @TestedBy { test = "server/tests/receive/radio_hardware.rs"; }
     }
-
-    // ---- What reaches the radio ---------------------------------------------------------
 
     requirement 'CL-008-06' {
         subject radioControl : RadioControlInterface;
@@ -162,40 +126,16 @@ package WstxCatControl {
     }
 
     verification 'TC-009-001' {
-        doc /* The exchanges with the radio on a scripted serial port.
-             Setup: radio control on a port that answers from hand-written bytes and
-             records every frame. No radio.
-             (a) Set frequency 14074000 Hz goes out as the source's command 05 with the
-             bytes 00 40 07 14 00; the answer 03 with these bytes reads 14074000.
-             (b) 29999 and 74800001 Hz, the filter numbers 0 and 4, the data mode off
-             with filter 1 and on with filter 0 or 4: invalidRequest. 30000 and
-             74800000 Hz are taken.
-             (c) A mode answer with the code 77 and filter 1: kept as code 77. The
-             station's own frame coming back, and an acknowledgement to a read: not an
-             answer.
-             (d) An answer that arrives one byte at a time: taken, and the time limit
-             of its exchange does not move. 64 frames in an exchange: taken; one more:
-             limit. 4096 bytes: taken; one more: limit. A frame of 32 bytes: taken; of
-             33: limit.
-             (e) A request while another is in work: busy, and no frame for it.
-             (f) A request naming another connection: staleContext. A request
-             withdrawn before it is taken: cancelled. No frame for either.
-             (g) A request withdrawn while the answer is awaited: cancelled, no mode
-             is recorded, the state is unavailable and the port closed once; the next
-             request: unavailable, and no frame.
-             (h) A port that takes one byte of a frame: partialWrite, the state
-             unavailable.
-             (i) During a reservation a request of another origin: busy; the requests
-             of the reservation are carried out; 1.1 s pass without a frame of the
-             regular reading; after the release a request is taken. */
+        doc /* The exchanges with the radio on a scripted serial port. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-06'; }
-        @TestedBy { test = "server/tests/radio_control.rs"; }
+        @TestedBy {
+            test = "server/tests/radio_control.rs; "
+                + "server/src/radio_level_tests.rs::a_transmit_hold_refuses_the_lease_at_once";
+        }
     }
-
-    // ---- Changing a value of the radio --------------------------------------------------
 
     requirement 'CL-044-09' {
         subject radioControl : RadioControlInterface;
@@ -230,33 +170,7 @@ package WstxCatControl {
     }
 
     verification 'TC-044-012' {
-        doc /* Frequency, mode, data mode and a menu item are read before they are set.
-             Setup: radio control on a scripted port that records every frame; no
-             radio.
-             (a) Set frequency 14074000 Hz, set mode USB with filter 2 and set data
-             mode on with filter 2, the radio already there: one read each and no
-             write.
-             (b) The same three with the read refused: rejected, that one frame, the
-             state ready and the port open.
-             (c) Set frequency 14074000 Hz with the radio at 7074000 Hz: read, write,
-             read. The frequency fact is not confirmed while the write goes out and is
-             confirmed with 14074000 Hz after the second read.
-             (d) receiveSetup to 14074000 Hz, USB, filter 2, data mode on with filter
-             2, the radio already there: the reads of mode, data mode and frequency
-             and no other frame.
-             (e) The same with the radio at USB filter 1, data mode off and
-             7074000 Hz: read, write and read for the mode, the data mode and the
-             frequency, then the three reads again; twelve frames.
-             (f) As (e), the last read giving 14074001 Hz: readbackMismatch, the fact
-             shows 14074001 Hz, and no further frame.
-             (g) Set mode whose write the radio refuses: rejected after the read and
-             the write. Set frequency whose second read is refused: indeterminate.
-             Set mode LSB acknowledged by a radio that stays in USB: readbackMismatch,
-             and the fact shows USB. Set data mode whose second read gets no answer:
-             indeterminate, the state unavailable and the port closed.
-             (h) The menu item usbSend to OFF: already OFF: its read alone. The read
-             refused: rejected, its read alone. At DTR: its read, the read of the
-             transmit state, the write, its read. */
+        doc /* Frequency, mode, data mode and a menu item are read before they are set. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -267,31 +181,13 @@ package WstxCatControl {
     }
 
     verification 'TC-044-008' {
-        doc /* The AGC is read before it is set.
-             Setup: the station with its radio connection ready on a scripted IC-7300
-             that echoes every frame; the wanted AGC is SLOW. No radio.
-             (a) The radio at SLOW: the read of the AGC alone; not written.
-             (b) The radio at MID: the read of the AGC, the read of the transmit
-             state, the write of SLOW, the read of the AGC; written, and the radio is
-             at SLOW.
-             (c) The radio at MID and transmitting: busy after the two reads, no
-             write, the state ready.
-             (d) The radio refuses the write: rejected, the radio stays at MID, the
-             state ready.
-             (e) The radio acknowledges and stays at MID: readbackMismatch, the state
-             ready.
-             (f) The radio refuses the read: rejected, the read alone, the state
-             ready.
-             (g) The source's codes 1, 2 and 3 read FAST, MID and SLOW; 0 and 4 are no
-             AGC; the station's own frame coming back is not an answer. */
+        doc /* The AGC is read before it is set. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-09'; }
         @TestedBy { test = "server/src/radioControl/radio_agc_tests.rs"; }
     }
-
-    // ---- Keying the transmitter ---------------------------------------------------------
 
     requirement 'CL-008-09' {
         subject radioControl : RadioControlInterface;
@@ -339,34 +235,7 @@ package WstxCatControl {
     }
 
     verification 'TC-009-007' {
-        doc /* Keying and unkeying on a scripted IC-7300.
-             Setup: radio control with its connection ready on a scripted radio that
-             records every frame with its time; for (e) the station with that radio.
-             No radio.
-             (a) 1.3 s without a request: only reads go out.
-             (b) A KeyRequest, 1.5 s, an UnkeyRequest: the frames are the key command,
-             the read of the transmit state, the unkey command, the read of the
-             transmit state; no other frame between the key and the unkey; the radio
-             is keyed in between and unkeyed after; mayBeKeyed is false at the end.
-             (c) A request to close while keyed: one unkey command, the radio
-             unkeyed.
-             (d) A key whose acknowledgement does not come within 300 ms: timeout,
-             mayBeKeyed stays true, and the state is not ready any more.
-             (e) A KeyRequest of 2 s during a reservation, withdrawn after 50 ms:
-             busy within 250 ms, no key command, mayBeKeyed false.
-             (f) ReadMeters while the radio may not be keyed: busy and no frame.
-             After a KeyRequest: the reads of alc, po and swr in this order and no
-             other frame, and the UnkeyRequest after it is confirmed. A radio that
-             refuses the read of alc: alc absent, po read.
-             (g) A meter read of 60 ms on a radio that does not answer: timeout, and
-             the state stays ready. An UnkeyRequest while a meter read waits for the
-             radio: confirmed within 250 ms; the meter read is ended and the state
-             stays ready.
-             (h) The radio's counts 0, 143 and 213 of the output power: 0, 50 and
-             100 percent. Its counts 0, 48, 80 and 120 of the SWR: 1.0, 1.5, 2.0 and
-             3.0.
-             (i) Planned, no test yet: its counts 0, 10, 60 and 120 of the ALC: 0, 8,
-             50 and 100 percent. */
+        doc /* Keying and unkeying on a scripted IC-7300. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

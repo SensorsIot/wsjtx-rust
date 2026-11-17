@@ -71,21 +71,7 @@ package WstxSpectrum {
     }
 
     verification 'TC-010-001' {
-        doc /* The thin spectrum against a transform computed apart.
-             Setup: the spectrum of the receive function with hand-made samples, each
-             with both transforms the code has, and for (d) a replay of a stored
-             recording; no sound device and no radio.
-             (a) Silence, a constant 0.5, a tone of 0.5 at 750 Hz, a tone of 0.25 at
-             1500 Hz with one of 0.5 at 2250 Hz, and 1700 samples of a tone of 0.5 at
-             750.3 Hz: each of the 128 values within 0.000002 of the largest of its
-             four bins, and each level within 0.55 of 20 log10 of the value plus 120.
-             (b) The tone of 0.5 at 750 Hz: -6.0206 dB within 0.05 dB.
-             (c) 2049 samples for one window: refused.
-             (d) A recording of 12120 samples, silent up to sample 11800 and then a
-             tone of 1234.5 Hz at half of full scale: the replay completes, not earlier
-             than 1.01 s after its start; its last thin row has the sequence 1,
-             first_frame 12000 and end_frame 12120, and its levels are those of the
-             one window that starts in the row, at sample 12032, filled with zeros. */
+        doc /* The thin spectrum against a transform computed apart. */
         subject receive : ReceiveService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -99,21 +85,7 @@ package WstxSpectrum {
     }
 
     verification 'TC-010-004' {
-        doc /* The detailed spectrum against a transform computed apart.
-             Setup: as for the thin spectrum; the samples are 16-bit values.
-             (a) Tones at a quarter of full scale: 750 Hz, 752.9296875 Hz, both
-             together, and 750 Hz with 756.25 Hz: each of the 1024 values within
-             0.000002 of the transform computed apart, and within 0.05 dB of it where
-             the value is above 0.0001.
-             (b) 4097 samples for one window, and a sample that is not a number:
-             refused.
-             (c) Recordings of 1, 2399, 2400, 2401, 2879, 2880, 2881 and 6000 samples,
-             silent up to sample 1920 and then a tone of 756.25 Hz: each replay
-             completes; its last detailed row starts at the last multiple of 2400
-             below the length and ends at the length; the levels of the bins 0, 1, 255
-             to 258 and 1023 are within 1 of the mean power of the windows that start
-             in the row, as 10 log10 limited to -120 to 0, plus 120.
-             (d) For 2401 samples every level of the last row is 0. */
+        doc /* The detailed spectrum against a transform computed apart. */
         subject receive : ReceiveService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

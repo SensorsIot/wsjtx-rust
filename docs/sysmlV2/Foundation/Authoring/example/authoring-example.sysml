@@ -18,8 +18,8 @@ package WritingExample {
     }
     part plant : Plant;
 
-    /* Data that several functions of the controller share: defined once, with the part. */
     attribute def TankLimits {
+        doc /* The tank's limits, which several functions of the controller share. */
         attribute fullPercent : Integer = 95;
         attribute samplePeriodSeconds : Integer = 2;
     }

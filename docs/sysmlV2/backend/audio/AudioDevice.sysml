@@ -47,23 +47,7 @@ package WstxAudioDevice {
     }
 
     verification 'TC-002-003' {
-        doc /* The capture from a sound device: its state, its loss and its end.
-             Setup: the audio function with scripted devices and an explicit clock; no
-             sound device and no radio.
-             (a) A device that fails five times with unavailable: the next attempts
-             follow after 1000, 2000, 4000, 8000 and 8000 ms, none a millisecond
-             earlier.
-             (b) After a stop no attempt follows; the state is closed.
-             (c) A failure with any other SourceError: no further attempt.
-             (d) Two captures on the endpoints radio-A at 48000 Hz and radio-B at
-             44100 Hz: both running within 250 ms; a packet for A gives nothing on B;
-             stopping A is answered with closed within 250 ms while B keeps running.
-             (e) A device whose stop fails: unavailable with failedClose and no attempt
-             planned; a start is refused; the device is released only when a later stop
-             succeeds.
-             (f) Formats of 44100 and 48000 Hz, one and two channels, in the four
-             encodings: taken; a rate of 12000 Hz, three channels, and a format
-             description that is cut short or contradicts itself: refused. */
+        doc /* The capture from a sound device: its state, its loss and its end. */
         subject audio : AudioInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

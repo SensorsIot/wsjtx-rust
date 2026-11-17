@@ -4,11 +4,8 @@ package WstxCountryFile {
     private import WstxRequirements::'FR-011';
     private import WstxLogPart::LogService;
     private import WstxLogControl::CallEntity;
-    private import WstxLogControl::CountryFileState;
     private import WstxLogControl::ReplaceCountryFile;
     private import WstxLogControl::EntityRequest;
-    private import WstxLogControl::LogRefusal;
-    private import WstxLogControl::LogLimits;
     private import WstxOperatingChain::WorkedSet;
     private import ModelNotes::FollowsSource;
     private import ModelBindings::ImplementationState;
@@ -18,8 +15,6 @@ package WstxCountryFile {
     private import ModelBindings::TestedBy;
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
-
-    // ---- The entity of a call -------------------------------------------------------------
 
     requirement 'CL-055-01' {
         subject log : LogService;
@@ -80,37 +75,7 @@ package WstxCountryFile {
     }
 
     verification 'TC-055-001' {
-        doc /* Calls resolved against known answers.
-             Setup: the bundled country file, and country files written by hand.
-             (a) The effective prefix of K1ABC is K1ABC; of EA8/K1ABC, K1ABC/EA8 and
-             EA8/K1A it is EA8, each also with /P, /QRP and /P/QRP behind it; of W1AW/4
-             it is W1AW; of DL/HB9BLA/M it is DL; of HB9BLA/LGT it is HB9BLA.
-             (b) The bundled file, VER20250115 with 346 entities. HB9BLA and hb9bla:
-             Switzerland, EU, zones 14 and 28. K1ABC: United States, shown U.S.A., NA,
-             5 and 8, at 37.60 north and 91.87 west. DL1XYZ: Fed. Rep. of Germany,
-             shown Germany. EA8ABC: Canary Islands, shown Canary Is., AF, 33 and 36.
-             HB9BLA/P, HB9BLA/QRP and HB9BLA/P/QRP: Switzerland. W1AW/4: United States.
-             DL/HB9BLA and HB9BLA/DL: Germany. EA8/K1ABC and K1ABC/EA8: Canary Islands.
-             HB9BLA/MM and K1ABC/AM: none. KG4AB and W1AW/KG4: Guantanamo Bay, 8 and
-             11. KG4ABC and KG4AB/P: United States. 3D2CR: Conway Reef. 3D2CR/P and
-             3D2ABC: Fiji. 3D2AG/P: Rotuma Island, shown Rotuma Is. RA0DAA: Asiatic
-             Russia, shown AS Russia, 19 and 33; RA0ABC: 18 and 32; RA9ABC: 17 and 30.
-             KG4IJS/0: United States, 4 and 7. IT9ABC: Sicily, shown Italy. 4U1VIC:
-             Vienna Intl Ctr, shown Austria. 2M0BDR: Shetland Islands, shown Scotland.
-             GB3LER: Scotland. FO5ABC: French Polynesia, shown Fr.Polynesia. UA3ABC:
-             European Russia, shown EU Russia. Q1ABC, an empty call and a call with a
-             letter outside ASCII: none.
-             (c) A file with the entities Alpha Islands, zones 10 and 20 at 10 north,
-             and Beta with the primary prefix *BB. AA5Q: shown Alpha Is., CQ zone 10.
-             AB5Q under the entry AB(3)[4]: zones 3 and 4. AA1X under the exact entry
-             with the position 1.5/-2.5: 1.5 north, 2.5 east; AA1XY: 10 north. AC1A
-             under AC{SA}: SA. AA2B under Beta's entry AA2: Beta with the prefix BB.
-             AB, listed again under Beta: Alpha Islands. No version.
-             (d) Refused with line 1: the continent XX; the entry X(a); entries without
-             ";"; a text without an entity; the CQ zone 41; the ITU zone 91; the
-             entries X(41) and X[91]; an empty name; a name of 41 characters; a name
-             outside ASCII. Refused with line 3: a second entity with the ITU zone
-             z. */
+        doc /* Calls resolved against known answers. */
         subject log : LogService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -123,57 +88,18 @@ package WstxCountryFile {
         }
     }
 
-    // ---- The operator's country file ------------------------------------------------------
-
     requirement 'CL-055-03' {
         subject log : LogService;
-        doc /* Log MUST use, in the place of the bundled country file, a file the
-             operator gives for the profile once it has read it without a fault, and
-             return to the bundled file on request (ProfileCountryFile). */
-        @Status { build = ImplementationState::implemented; }
+        doc /* Log MUST use the country file the settings function keeps in the place of
+             the bundled one (ProfileCountryFile). */
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-055-03'; }
 
     attribute def ProfileCountryFile {
-        doc /* What the log does with a ReplaceCountryFile, and which file is in use.
-             A text that reads as CountryFile is stored as cty.dat in the operator's
-             folder, under the file's lock, written anew, made durable and put in place in one step.
-             It is
-             in use from then on, also after a station start, for every EntityRequest
-             and every WorkedSet made afterwards.
-             A text that does not read so is refused (LogRefusal::invalidCty) with the
-             line; a text over LogLimits::countryFileBytesMax is refused
-             (LogRefusal::invalidRequest); a file that cannot be stored is refused
-             (LogRefusal::storageUnavailable). A refusal changes neither the stored
-             file nor the file in use.
-             An absent text takes the stored file away; the bundled file is in use.
-             At station start a stored file that cannot be read, or does not read as
-             CountryFile, is left as it is; the bundled file is in use and
-             CountryFileState::uploadUnreadable says so. */
-    }
-
-    verification 'TC-055-003' {
-        doc /* The operator's country file in the place of the bundled one.
-             Setup: the station on a throw-away profile; the log is asked through the
-             station service.
-             (a) At first: bundled, VER20250115, 346 entities, nothing unreadable.
-             HB9BLA: Switzerland. DL/HB9BLA: Germany. K1ABC/MM: none.
-             (b) A file with the one entity Testland, its entries TT and HB, and the
-             version VER20991231: uploaded, that version, 1 entity; cty.dat holds the
-             text; HB9BLA: Testland.
-             (c) A file with the continent XX and an empty text: invalidCty with line
-             1. A number, and a text of 1048577 bytes: refused. cty.dat is unchanged.
-             (d) After a station start: uploaded, HB9BLA: Testland.
-             (e) An absent text: bundled, cty.dat gone, HB9BLA: Switzerland.
-             (f) cty.dat holding "not a country file", then a station start: bundled,
-             uploadUnreadable; cty.dat unchanged. */
-        subject log : LogService;
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::implemented; }
-        objective { verify 'CL-055-03'; }
-        @TestedBy {
-            test = "server/src/logbook_http_tests.rs::"
-                + "cty_upload_replaces_the_country_table_and_refusals_change_nothing";
-        }
+        doc /* Which file is in use. A ReplaceCountryFile with a text puts that file in use,
+             read as CountryFile, from then on for every EntityRequest and every WorkedSet
+             made afterwards; without a text the bundled file is in use. The settings
+             function fetches and checks the file (WstxProfileDocument::CountryFileFetch). */
     }
 }

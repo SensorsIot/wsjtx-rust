@@ -7,8 +7,6 @@ package WstxModeProcessing {
          and gets its waveform. It also holds the facts of each mode that several parts
          read: the mode, its period and the band in which frames are decoded. */
 
-    // ---- The mode and its period ------------------------------------------------------
-
     enum def Mode {
         doc /* The modes the station decodes and sends. */
         enum ft4;
@@ -46,8 +44,6 @@ package WstxModeProcessing {
         attribute decodeBandLowHz : Integer = 200;
         attribute decodeBandHighHz : Integer = 3500;
     }
-
-    // ---- Receive: a window to decode --------------------------------------------------
 
     port def ReceiveProcessing {
         doc /* Written from receive's side; the modes part uses the conjugate.
@@ -142,8 +138,6 @@ package WstxModeProcessing {
         attribute error : DecodeError[0..1] {
             doc /* Absent when the whole window was searched. */ }
     }
-
-    // ---- A decoded frame ----------------------------------------------------------------
 
     enum def FrameStatus {
         doc /* decoded: a payload of a supported family with valid content.
@@ -291,8 +285,6 @@ package WstxModeProcessing {
         }
     }
 
-    // ---- Transmit: a message to encode --------------------------------------------------
-
     port def EncodeProcessing {
         doc /* Written from transmit's side; the modes part uses the conjugate.
              Every request is answered at once by its waveform or by its refusal. */
@@ -305,6 +297,28 @@ package WstxModeProcessing {
         doc /* A message to encode, and its waveform back. */
         end transmit : EncodeProcessing;
         end modes : ~EncodeProcessing;
+    }
+
+    port def PackProcessing {
+        doc /* Written from qso's side; the modes part uses the conjugate. Every request is
+             answered at once. */
+        out item request : PackRequest;
+        in item answer : PackAnswer;
+    }
+    interface def PackProcessingLink {
+        doc /* Whether a text can be sent, and as which message: from qso to modes. */
+        end qso : PackProcessing;
+        end modes : ~PackProcessing;
+    }
+    item def PackRequest {
+        doc /* A text qso would send. */
+        attribute text : String;
+    }
+    item def PackAnswer {
+        doc /* What WstxMessageEncode::PackMessage gives for the text: the packed message
+             or the refusal, exactly one of the two. */
+        attribute packed : PackedMessage[0..1];
+        attribute refusal : EncodeRefusalReason[0..1];
     }
 
     enum def SampleRate {

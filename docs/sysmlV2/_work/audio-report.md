@@ -355,3 +355,13 @@ Not decided, for the operator: nothing of audio's own.
 
 Not verified: the body of the test of TC-044-006 (e) was searched for the file name (lines
 922 and 960 of `radio_setup_tests.rs`), not read in full again.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-044-006 (`Endpoints.sysml`): 65 inputs, and an endpoint whose name has 257 characters: refused with deviceLimit.
+- TC-008-004 (`Playback.sysml`): a PlayProgram while a program plays and after it has finished: PlayRefused with unavailable.
+- TC-008-004 (`Playback.sysml`): a device that does not open: unavailable after 1000 ms.
+- TC-008-004 (`Playback.sysml`): StopOutput returns within 250 ms also when the device does not close.

@@ -1,12 +1,11 @@
 package WstxUdpControl {
     private import ScalarValues::*;
     private import WstxModeProcessing::Mode;
+    private import WstxTransmitControl::ProcessEnds;
 
     doc /* The configuration of the UDP sender, the state of the station it reports in
-         Status, and what it reports back: the control interface between the station
-         service and udp. */
-
-    // ---- The configuration ------------------------------------------------------------------
+         Status, and what it reports back: the control interface between the supervisor
+         and udp. */
 
     enum def OutboundMessage {
         doc /* The messages a target can select, by the names of the configuration. */
@@ -49,17 +48,15 @@ package WstxUdpControl {
         attribute targetsMax : Integer = 16;
     }
     item def UdpConfigured {
-        doc /* The configuration of udp, one of the operator's settings. The station
-             service gives it at station start and whenever they change. */
+        doc /* The configuration of udp, one of the shack's settings. The supervisor
+             gives it at station start and whenever they change. */
         attribute config : UdpConfiguration;
     }
 
-    // ---- The state of the station for Status ---------------------------------------------
-
     item def UdpStationState {
         doc /* What udp reports of the station in Status (WstxUdp::StatusFields). The
-             station service gives it at station start and whenever a value changes. Each
-             value is the fact of the part named, as the station service holds it. */
+             supervisor gives it at station start and whenever a value changes. Each
+             value is the fact of the part named, as the supervisor holds it. */
         attribute stationName : String {
             doc /* The station's name, WstxProfileAccess::ProfileConfig::display_name. */ }
         attribute callsign : String[0..1] { doc /* The profile's call; absent without one. */ }
@@ -89,8 +86,6 @@ package WstxUdpControl {
             doc /* How many decode windows receive has begun since station start. */ }
     }
 
-    // ---- What udp reports -------------------------------------------------------------------
-
     enum def TargetError {
         doc /* socketUnavailable: the socket of an enabled target could not be opened with
              its settings.
@@ -111,7 +106,7 @@ package WstxUdpControl {
         attribute error : TargetError[0..1] { doc /* Absent while none holds. */ }
     }
     item def UdpSnapshot {
-        doc /* What the station service reads of the UDP sender. */
+        doc /* What the supervisor reads of the UDP sender. */
         attribute instanceName : String { doc /* WstxUdpSender::InstanceName. */ }
         attribute configuration : UdpConfiguration;
         attribute status : TargetStatus[0..*] ordered {
@@ -119,15 +114,17 @@ package WstxUdpControl {
     }
 
     port def UdpControlPort {
-        doc /* Written from the station service's side; udp uses the conjugate.
-             UdpConfigured and UdpStationState have no answer; udp gives UdpSnapshot at
-             every change of it. */
+        doc /* Written from the supervisor's side; udp uses the conjugate.
+             UdpConfigured, UdpStationState and ProcessEnds have no answer; udp gives
+             UdpSnapshot at every change of it. ProcessEnds starts the Close of
+             WstxUdp::CloseRule. */
         out item configuration : UdpConfigured;
         out item 'state' : UdpStationState;
+        out item processEnds : ProcessEnds;
         in item report : UdpSnapshot;
     }
     interface def UdpControl {
-        doc /* The station service gives udp its configuration and the station's state;
+        doc /* The supervisor gives udp its configuration and the station's state;
              udp reports its targets. */
         end station : UdpControlPort;
         end udp : ~UdpControlPort;

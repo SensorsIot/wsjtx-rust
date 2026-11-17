@@ -127,48 +127,7 @@ package WstxPskReporter {
     }
 
     verification 'TC-039-052' {
-        doc /* The session with a broker.
-             Setup: a peer on the loopback address that answers as a broker, with its
-             packets written by hand from the tables of MQTT 3.1.1; shortened waits;
-             no network.
-             (a) The call HB9BLA and the target K1ABC: the filters
-             pskr/filter/v2/+/+/HB9BLA/+/# and pskr/filter/v2/+/+/+/K1ABC/#. No filter
-             for an empty call, "+", "K1#", "K1ABC/P", "k1abc", "K1 AB", a call with
-             a control or a non-ASCII character and a call of 17 characters.
-             (b) The call HB9BLA and the boot identity 1a2b3c4d-0000: the client
-             identifier wstxHB9BLA1a2b. The call HB9BLA/QRP/ABCDEFGH: at most 23
-             letters and digits.
-             (c) The greeting with keep-alive 60, a subscription and its removal equal
-             the bytes written by hand.
-             (d) A packet length of five bytes, a packet beyond 4096 bytes, a spot at
-             QoS 1, a topic longer than its packet, a greeting from the broker and a
-             reserved packet type: protocolError.
-             (e) Nine waits in a row: 5, 10, 20, 40, 80, 160, 300, 300, 300 s; after a
-             stable session 5 s.
-             (f) Before the profile's call is known the state is off. With HB9BLA: the
-             greeting with the identifier wstxHB9BLAb00t, clean session and nothing
-             else set, then the subscription for HB9BLA. Target K1ABC: its subscription.
-             Target "K1+/#": the subscription of K1ABC removed, none made. Target W1AW:
-             its subscription. A ping goes out and the state stays connected. Switched
-             off: the farewell is sent and the state is off.
-             (g) A peer that drops five connections and takes the sixth: the attempts
-             are apart by at least the growing wait, the state shows error on the way
-             and connected at the end, without an error.
-             (h) Switched off and on again faster than the session looks: the state is
-             connecting, never off, and a second connection is made. Where no connection
-             is allowed, switched on shows off.
-             (i) A refused greeting: connectionRefused. A refused subscription:
-             subscribeRefused. A reserved packet after the greeting: protocolError.
-             (j) Planned, no test yet: the default broker is
-             mqtts://mqtt.pskreporter.info:1884; mqtt://127.0.0.1:1883 speaks to that
-             peer without TLS; a changed broker ends the session and forgets every
-             Spot; mqtt://name@host:1883, ftp://host:1883, a port 0 and a path are not
-             admitted.
-             (k) The chain of certificates the broker once presented, kept as a file:
-             accepted for mqtt.pskreporter.info at the time it was taken; refused for
-             mqtt.example.org and 200 days later.
-             (l) A peer that answers in plain text: tlsFailed, and the station has sent
-             the TLS greeting first. */
+        doc /* The session with a broker. */
         subject feed : PskReporter;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -194,8 +153,6 @@ package WstxPskReporter {
                 + "server/src/operating/qso/pskr_tests.rs::a_peer_without_tls_is_refused";
         }
     }
-
-    // ---- The reception reports ------------------------------------------------------------
 
     attribute def ReportedStation {
         doc /* One station the station has decoded, as it is reported. */

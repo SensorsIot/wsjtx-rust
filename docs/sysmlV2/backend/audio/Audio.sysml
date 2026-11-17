@@ -27,7 +27,7 @@ package WstxAudioPart {
         attribute config : AudioConfig {
             doc /* Its configuration, as the last AudioDevices gave it. */ }
         attribute records : AudioRecords {
-            doc /* Its records, as the last AudioMemory of the station service gave
+            doc /* Its records, as the last AudioMemory of the supervisor gave
                  them. */ }
         port status : AudioStatusPort;
         port time : ~StationTimePort;

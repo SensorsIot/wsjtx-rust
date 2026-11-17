@@ -4,10 +4,16 @@ package WstxProfileDocument {
     private import WstxRequirements::'FR-001';
     private import WstxRequirements::'FR-016';
     private import WstxRequirements::'FR-022';
+    private import WstxClubLog::MostWantedQuery;
+    private import WstxClubLog::MostWantedDownload;
+    private import WstxCountryFiles::CtyQuery;
+    private import WstxCountryFiles::CtyDownload;
+    private import WstxCountryFile::CountryFile;
     private import WstxProfileAccess::*;
     private import WstxStrategies::StrategyForm;
     private import WstxStrategies::StrategyReading;
     private import ModelNotes::DiffersFromSource;
+    private import ModelNotes::FollowsSource;
     private import ModelBindings::ImplementationState;
     private import ModelBindings::AutomationState;
     private import ModelBindings::Status;
@@ -19,11 +25,9 @@ package WstxProfileDocument {
     private import WstxProfilePart::PersistedProfile;
 
     doc /* The profile's functions: one station process for a profile, the start, the
-         saved document and its save, the hidden store, the operator's folder and
+         saved document and its save, the hidden store, the shack's folder and
          settings, the collections of settings, the creation of a profile, the
          endpoint ids and the profile of a radio's native connection. */
-
-    // ---- One station process for a profile ------------------------------------------------
 
     requirement 'CL-005-01' {
         subject profile : PersistedProfile;
@@ -50,16 +54,16 @@ package WstxProfileDocument {
              the folder, and one on the file named by the profile_id and .lock in the
              folder wstx-rust-profile-locks of the account's local application data
              (LOCALAPPDATA), or of the temporary folder when the account has none.
-             A lock that another process holds refuses the start with
-             StartupOutcome::profile_in_use: the same folder under any name, and a copy
+             A lock that another process holds refuses the OpenRequest with
+             OpenRefusal::profile_in_use: the same folder under any name, and a copy
              of the folder with the same profile_id.
-             A lock that cannot be taken for another reason refuses the start with
-             StartupOutcome::resource_unavailable.
+             A lock that cannot be taken for another reason refuses it with
+             OpenRefusal::resource_unavailable.
              A lock file that a process left behind holds nothing: the profile can be
              opened again as soon as that process has ended.
              A station process has one profile, and a profile shares no file, no lock
-             and no state with another profile but the operator's folder
-             (OperatorFolder). */
+             and no state with another profile but the shack's folder
+             (ShackFolder). */
         @DiffersFromSource {
             what = "WSJT-X at the behaviour baseline keeps one lock file in the temporary "
                 + "folder, named by the application and its rig name, and offers to "
@@ -68,56 +72,18 @@ package WstxProfileDocument {
         }
     }
 
-    // ---- Starting with a profile ------------------------------------------------------------
-
     requirement 'CL-005-04' {
         subject profile : PersistedProfile;
-        doc /* Profile MUST end a start or a creation it cannot carry out with its
-             reason and leave the saved profile as it is (OpenProfile, StartupOutcome). */
+        doc /* Profile MUST refuse an OpenRequest or a CreateRequest it cannot carry out
+             with its reason and leave the saved profile as it is (OpenProfile). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn { module = "server/src/main.rs"; }
     }
     #derivation connection { end #original ::> 'FR-022'; end #derive ::> 'CL-005-04'; }
 
-    enum def StartupOutcome {
-        doc /* How a start of the station with a profile, or a creation, ends.
-             ready: the station runs with the profile.
-             created: the profile is made.
-             invalid_runtime_configuration: the arguments or the environment of the
-             process are not ones the station takes.
-             resource_unavailable: the folder, a file or a lock cannot be had.
-             invalid_profile: profile.json is not a ProfileDocument.
-             unsupported_schema: the schema_version is none the station knows.
-             unsupported_connection_type: the connection type does not go with the
-             schema_version.
-             profile_in_use: another station process holds the profile.
-             endpoint_in_use: another process listens where the profile says.
-             ready is the one outcome with which the process goes on; created ends it
-             with the exit code 0. Every other outcome is written to the output of the
-             process, beginning with its name and a colon, and ends the process with
-             another exit code, before the station listens. A start that named a folder
-             writes the words selected profile and the folder as it was named after the
-             colon. */
-        enum ready;
-        enum created;
-        enum invalid_runtime_configuration;
-        enum resource_unavailable;
-        enum invalid_profile;
-        enum unsupported_schema;
-        enum unsupported_connection_type;
-        enum profile_in_use;
-        enum endpoint_in_use;
-    }
-
     attribute def OpenProfile {
-        doc /* How the profile is opened when the station starts with --profile and a
-             folder. The first of these that holds ends the start; a start that ends so
-             changes no file.
-             invalid_runtime_configuration: the arguments are not exactly one of
-             --profile with a folder, --create-profile with a folder, and
-             --create-native-flex-profile with a folder, a receive antenna and at most
-             an address, with at most one --operator and a folder beside --profile; or
-             the environment holds WSTX_BIND or WSTX_ORIGIN.
+        doc /* How the profile answers an OpenRequest. The first of these that holds
+             refuses it (OpenRefused, OpenRefusal); a refused request changes no file.
              resource_unavailable: the folder does not exist, or profile.json cannot be
              opened or read.
              invalid_profile: profile.json is larger than
@@ -142,12 +108,8 @@ package WstxProfileDocument {
              (EndpointIds).
              A document of a managed radio without radio is read with RadioConfig::agc
              slow; the file changes with the next save.
-             Only profile.json is read: a temporary file left beside it is not used.
-             The web adapter and the station service add their own reasons to end a
-             start, with the outcomes of StartupOutcome. */
+             Only profile.json is read: a temporary file left beside it is not used. */
     }
-
-    // ---- Saving -------------------------------------------------------------------------------
 
     requirement 'CL-005-02' {
         subject profile : PersistedProfile;
@@ -162,7 +124,6 @@ package WstxProfileDocument {
     attribute def SaveSettings {
         doc /* What the profile does with a SaveProfile. The first of these that holds
              refuses it (SaveRefused).
-             invalid_settings without a field: a profileId that is no UUID.
              invalid_settings with the field: the first value of StationConfig outside
              the rule its definition gives. The values are looked at in the order
              display_name, audio.input_device, audio.output_device, control.mode,
@@ -175,7 +136,6 @@ package WstxProfileDocument {
              invalid_settings with the field: on a profile of the native connection, a
              value NativeProfile does not allow.
              audio_device_not_endpoint with the field: EndpointIds.
-             wrong_profile: profileId is not the profile_id of the document.
              storage_unavailable: the file cannot be written.
              A StationConfig without RadioConfig::agc for a managed radio takes the
              saved one, or slow when none is saved.
@@ -219,7 +179,8 @@ package WstxProfileDocument {
              The profile reads no record: what a record means is its part's.
              The store is the file memory.json beside profile.json: one JSON object of
              UTF-8 with the key schema_version, 1, and one key for each part that has
-             records (radio for RadioRecords, audio for AudioRecords). It is written as
+             records (radio for RadioRecords, audio for AudioRecords, station for
+             StartupRecords). It is written as
              the document is: the whole file anew, made durable, and put in its place
              in one step.
              A file that cannot be read, or is of another schema, gives every record
@@ -228,42 +189,8 @@ package WstxProfileDocument {
     }
 
     verification 'TC-022-001' {
-        doc /* The settings of a profile: what is taken, what is refused, and that a
-             save of one profile touches no other.
-             Setup: four profiles in folders of their own, with the ids
-             00000000-0000-4000-8000-000000000001 to -000000000004, the names Station 1
-             to 4, the callsigns TEST1 to TEST4, the locator JN47AA, an input and an
-             output endpoint id each and no radio control; four stations on the
-             loopback interface; the profile is asked through the station service.
-             For (b), (i) and (k) the profile alone.
-             (a) Each station gives its own profile_id and settings.
-             (b) A document whose endpoint has a key the profile does not know, whose
-             revision is given twice, or that lacks control.mode, control.endpoint or
-             audio.input_device: not a ProfileDocument.
-             (c) A save of profile 1 with the name Edited station 1, another input
-             endpoint id and the control cat with the endpoint fixture-cat-1: taken;
-             the files of the other three profiles are byte for byte as before.
-             (d) Refused with invalid_settings, the file unchanged. Names: empty, 65
-             characters, a space at the beginning, a space at the end, a line break.
-             An input device that is empty, has 257 characters or holds
-             U+0085. The control disabled with ptt cat; cat without an endpoint; the
-             mode native_flex. A profileId that is no UUID.
-             (e) Refused with audio_device_not_endpoint: the input Microphone (USB
-             Audio CODEC ); the output Speakers (USB Audio CODEC ); an output endpoint
-             id as input; an input endpoint id as output.
-             (f) The profileId of profile 2: wrong_profile.
-             (g) Taken, each: a name of 64 characters; the name X with no device; an
-             output endpoint id alone; the control cat with an endpoint of 256
-             characters and ptt cat.
-             (i) A name of 32 times the letter e with an accent, 64 bytes:
-             taken; one character more: refused. No device with the control disabled:
-             taken. The control cat with an endpoint and ptt cat, without a device:
-             taken.
-             (j) The name <img src=x onerror=alert(1)>: saved and given back as it is.
-             An input device <script>alert(1)</script> written into the file by hand:
-             the station starts and gives it as it is.
-             (k) Planned, no test yet: a document whose output is Speakers (USB Audio
-             CODEC ): it stays as it is, also with a present output of that name. */
+        doc /* The settings of a profile: what is taken, what is refused, and that a save of one
+             profile touches no other. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -278,57 +205,8 @@ package WstxProfileDocument {
     }
 
     verification 'TC-022-002' {
-        doc /* A saved profile outlasts its station, and a file that is no profile is
-             refused and left as it is.
-             Setup: as TC-022-001; for (h) and (i) the profile alone on a folder of its
-             own, with a fault set at one step of its writing.
-             (a) --create-profile with a folder that does not exist: the exit code 0,
-             no station; profile.json holds schema_version 1, a UUID of version 4 in
-             lower case, revision 0, the name New station, an empty callsign and
-             locator, the endpoint 127.0.0.1:8080 without an origin, the connection type
-             'standard', no device, the control disabled, and neither radio nor native.
-             (b) One save for each of the four profiles and a second one for profile
-             1, then every station stopped and started: each with its last saved name;
-             the four files byte for byte as before the stop.
-             (c) With a temporary file left in the folder, profile.json holding in
-             turn: {; one byte 0xFF; the schema_version -1, 0 and 2; the profile_id bad;
-             one more key; the connection type native_flex; the ports 0 and 65536 in
-             bind; revision given twice; one byte more than
-             ProfileLimits::profileFileMaxBytes. The start ends with unsupported_schema
-             for the three schema versions, with unsupported_connection_type for
-             native_flex and with invalid_profile for the others; the file is byte for
-             byte as it was written each time.
-             (d) Without profile.json: resource_unavailable. With the saved file filled
-             up with spaces to exactly ProfileLimits::profileFileMaxBytes: the station
-             starts.
-             (e) The folder named from another working directory, not absolute: the
-             station starts.
-             (g) --create-profile on the folder made in (a), on an empty folder that
-             exists, and on a folder whose parent does not exist:
-             resource_unavailable. The arguments --unknown, --profile twice, and
-             --create-profile beside --profile: invalid_runtime_configuration. WSTX_BIND
-             or WSTX_ORIGIN in the environment of a start with --profile:
-             invalid_runtime_configuration.
-             (h) A save that fails while the file is written, made durable or put in
-             place: refused; the document has its settings of before, and the profile
-             opened anew finds the file byte for byte as before. The process stopped
-             before the file is put in place: opened anew, the file as before. Stopped
-             after it: opened anew, the new settings.
-             (i) A whole other document left beside profile.json as a temporary file:
-             opened anew, profile.json unchanged. Then a save, and the profile opened
-             anew: the saved settings.
-             (j) A file with every value of ProfileConfig, AudioConfig and
-             RadioConfig at its longest and an origin of the length with which
-             the largest ProfileSnapshot has exactly
-             ProfileLimits::profileHttpMaxBytes: the station starts and gives a snapshot
-             of that size. With an origin one byte longer, and with a host of 9000
-             characters: invalid_profile before the station listens, the file
-             unchanged, the other three stations in use as before.
-             (k) Planned, no test yet: the configurations of transmit and receive
-             saved in the document and the same after the station is stopped and
-             started; a record of radio
-             control and of audio kept in the hidden store and the same after the
-             station is stopped and started. */
+        doc /* A saved profile outlasts its station, and a file that is no profile is refused and
+             left as it is. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -343,26 +221,8 @@ package WstxProfileDocument {
     }
 
     verification 'TC-022-003' {
-        doc /* One station process for a profile, and what a start that cannot be
-             carried out leaves behind.
-             Setup: as TC-022-001; each fault alone. A start counts as ended when its
-             process has ended within 10 s with an exit code other than 0, the name of
-             the outcome in its output and no line that says it listens.
-             (a) Station 1 stopped: the other three answer as before. Station 1
-             started again: it runs.
-             (b) While station 1 runs, a second start with the same folder, with
-             another name of that folder, and with a copy of the folder:
-             profile_in_use.
-             (c) The profile opened twice in one process: the second is refused with
-             profile_in_use; once the first is given up, it opens.
-             (d) Two stations whose documents have the same profile_id, each with its
-             own local application data: both run.
-             (e) profile.json that the account may not read: resource_unavailable; the
-             file is byte for byte as before.
-             (f) An origin whose port is one above the port of bind: invalid_profile.
-             (g) While station 1 runs and profile.json cannot be written: a save is
-             refused with storage_unavailable, and the four files are byte for byte
-             as before. */
+        doc /* One station process for a profile, and what a start that cannot be carried out leaves
+             behind. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -374,73 +234,57 @@ package WstxProfileDocument {
         }
     }
 
-    // ---- The operator's folder and settings ------------------------------------------------
-
     requirement 'CL-005-07' {
         subject profile : PersistedProfile;
-        doc /* Profile MUST keep the settings and files the operator's stations share in
-             one folder of the operator, change a shared file only under its lock and
+        doc /* Profile MUST keep the settings and files the shack's stations share in
+             one folder of the shack, change a shared file only under its lock and
              from its revision, and give its station a change another station has made
-             (OperatorFolder, SaveOperatorSettings). */
+             (ShackFolder, SaveShackSettings). */
         @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-016'; end #derive ::> 'CL-005-07'; }
 
-    attribute def OperatorFolder {
-        doc /* The folder the operator's stations share, and how a station uses it.
-             It is the folder WSTX-Rust\operator in the account's local application
-             data (LOCALAPPDATA), or the folder the launch argument --operator names;
+    attribute def ShackFolder {
+        doc /* The folder the shack's stations share, and how a station uses it.
+             It is the folder WSTX-Rust\shack in the account's local application
+             data (LOCALAPPDATA), or the folder OpenRequest::shackFolder names;
              a name that is not absolute counts from the working directory. A folder
              that does not exist is made at station start; one that cannot be made or
-             used ends the start with StartupOutcome::resource_unavailable.
-             It holds operator.json (OperatorDocument), the strategies file
+             used refuses the OpenRequest with OpenRefusal::resource_unavailable.
+             It holds shack.json (ShackDocument), the strategies file
              (StrategiesFile), and the files the functions of the stations keep there:
              the logbook and the operator's country file (the log's) and the Most
              Wanted list (ranking's).
              A station changes a file of the folder only while it holds that file's
              lock, for the change alone; a station waits while another holds it. A
              shared file with a revision is changed only from its revision
-             (SaveOperatorSettings, CollectionRule).
-             When another station has changed operator.json or the strategies file,
-             the profile reads it anew and gives its snapshot (OperatorSnapshot,
+             (SaveShackSettings, CollectionRule).
+             When another station has changed shack.json or the strategies file,
+             the profile reads it anew and gives its snapshot (ShackSnapshot,
              DefinitionsSnapshot); how soon is a value of the code. */
     }
 
-    attribute def SaveOperatorSettings {
-        doc /* What the profile does with a SaveOperator, and how operator.json is read.
+    attribute def SaveShackSettings {
+        doc /* What the profile does with a SaveShack, and how shack.json is read.
              The first of these that holds refuses it (SaveRefused).
-             invalid_settings with the field: the first value of OperatorSettings
+             invalid_settings with the field: the first value of ShackSettings
              outside the rule its definition gives, by its key in the file: callsign,
              locator, continent, cq_words, then the values of spots and udp, each named
              as the part's key, a dot and the value's name.
-             revision_conflict: expectedRevision is not the revision of operator.json.
+             revision_conflict: expectedRevision is not the revision of shack.json.
              storage_unavailable: the file cannot be written.
-             A save that is not refused writes operator.json with the new settings and
+             A save that is not refused writes shack.json with the new settings and
              the revision one higher, under the file's lock: the whole file anew, made
              durable, and put in its place in one step. Only then is it answered, with
-             the new OperatorSnapshot. A refused save changes nothing.
-             At station start the profile reads operator.json. Without the file the
+             the new ShackSnapshot. A refused save changes nothing.
+             At station start the profile reads shack.json. Without the file the
              settings are as their definitions give them, at revision 0. A file that
-             cannot be used gives those settings with OperatorSnapshot::unusable true,
+             cannot be used gives those settings with ShackSnapshot::unusable true,
              and is left as it is until the next save is written in its place. */
     }
 
     verification 'TC-022-011' {
-        doc /* The operator's settings, shared by the operator's stations.
-             Setup: as TC-022-001.
-             (a) Refused with invalid_settings, the file unchanged: the callsigns AB,
-             13 characters, abc1, ABC and 123; the locators JN4, SN47, JN47YY,
-             JN47AA9, jn47 and A000.
-             (b) Taken: the callsign A12345678901 with the locator RR99XX99; an empty
-             callsign and an empty locator; the callsign A1B with the locator JN47;
-             the locators AA00AA and RR99XX99.
-             (c) Planned, no test yet: two stations of one operator's folder. A save of
-             the operator's settings on one: the other gives the new settings. A save
-             on the other made from the revision before: revision_conflict, the file
-             unchanged. A QSO logged on one is in the worked set of the other. Without
-             the folder, a station start makes it; --operator names another, and the
-             strategies file, the logbook, the country file and the Most Wanted list
-             lie there. */
+        doc /* The shack's settings, shared by the shack's stations. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -451,8 +295,6 @@ package WstxProfileDocument {
                 + "settings_validation_uses_utf8_bytes_and_independent_audio_control_domains";
         }
     }
-
-    // ---- The collections of settings -----------------------------------------------------
 
     requirement 'CL-039-01' {
         subject profile : PersistedProfile;
@@ -479,13 +321,13 @@ package WstxProfileDocument {
              held.
              A command made from another revision than that of the collection's file
              is refused with revision_conflict: the collections are shared by the
-             stations of the operator, and a change made from an older state would undo
+             stations of the shack, and a change made from an older state would undo
              another's. A command that is not refused writes the file of its
              collection with the change and the revision one higher: the whole file
              anew, made durable, and put in its place in one step. A file that cannot
              be written refuses it with storage_unavailable.
              Only then is the command answered, with the snapshot of the collection:
-             DefinitionsSnapshot for strategies and wantedList, OperatorSnapshot for
+             DefinitionsSnapshot for strategies and wantedList, ShackSnapshot for
              udpTargets. A created wanted entry takes as addedUtcMs the moment the
              profile carries the command out.
              A refused command changes nothing. A member keeps its place in its
@@ -497,7 +339,7 @@ package WstxProfileDocument {
 
     attribute def StrategiesFile {
         doc /* The definition file in which the profile keeps the saved strategies: the
-             file strategy.json in the operator's folder (OperatorFolder), one JSON
+             file strategy.json in the shack's folder (ShackFolder), one JSON
              object of UTF-8 with exactly the keys schema_version, revision and
              configuration. schema_version is 4. revision counts the changes
              (DefinitionsSnapshot::revision).
@@ -518,7 +360,7 @@ package WstxProfileDocument {
 
     attribute def WantedFile {
         doc /* The definition file in which the profile keeps the wanted list: the file
-             wanted.json in the operator's folder (OperatorFolder), one JSON object of
+             wanted.json in the shack's folder (ShackFolder), one JSON object of
              UTF-8 with exactly the keys schema_version, revision and entries.
              schema_version is 1. revision counts the changes
              (DefinitionsSnapshot::wantedRevision). entries is the list in the order of
@@ -528,15 +370,86 @@ package WstxProfileDocument {
              place. */
     }
 
+    requirement 'CL-039-30' {
+        subject profile : PersistedProfile;
+        doc /* Profile MUST fetch the Most Wanted list of Club Log when the supervisor
+             asks for it and keep the last good list for the operator (MostWantedFetch). */
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/most_wanted.rs"; }
+    }
+    #derivation connection { end #original ::> 'FR-016'; end #derive ::> 'CL-039-30'; }
+
+    action def MostWantedFetch {
+        out item query : MostWantedQuery;
+        in item download : MostWantedDownload;
+        doc /* An UpdateMostWanted sends one MostWantedQuery. The MostWantedDownload is
+             taken as a list when it is what that item says, each row with its limits.
+             Everything else is refused with download_failed and a detail: for an answer
+             with another status than 200 "status" and that status, for an answer that
+             is no list "the reply is not a Most Wanted list". A list that is taken is
+             written to MostWantedFile with the UTC date of the download, and the
+             DefinitionsSnapshot gives it; a list that cannot be written is refused with
+             storage_unavailable. A refused update leaves the kept list as it is. */
+    }
+
+    attribute def MostWantedFile {
+        doc /* The file in which the profile keeps the list: most_wanted.json in the
+             shack's folder (ShackFolder), under the file's lock, one JSON object of
+             UTF-8 with exactly the keys schema_version, date and list. schema_version is
+             1; list is the download's object from rank to number. Without the file there
+             is no list. A file that cannot be read or holds no list gives no list, and
+             DefinitionsSnapshot::mostWantedUnusable is true. */
+    }
+
+    requirement 'CL-055-06' {
+        subject profile : PersistedProfile;
+        doc /* Profile MUST fetch the newest country file when the supervisor asks for
+             it and keep the last good one for the operator (CountryFileFetch). */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-016'; end #derive ::> 'CL-055-06'; }
+
+    action def CountryFileFetch {
+        out item query : CtyQuery;
+        in item download : CtyDownload;
+        doc /* An UpdateCountryFile sends one CtyQuery. An answer that is no file is refused
+             with download_failed and a detail ("status" and the status, or "the reply is
+             too large"). A text that does not read as a country file (CountryFileStore) is
+             refused with invalid_country_file and its line. A text that reads is written
+             to CountryFileStore, and the DefinitionsSnapshot gives it; a file that cannot
+             be written is refused with storage_unavailable. A refused update leaves the
+             kept file as it is. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: Download Latest CTY.dat in "
+                + "Settings; the downloaded file in place of the installed one";
+        }
+    }
+
+    attribute def CountryFileStore {
+        doc /* The file in which the profile keeps the country file: cty.dat in the
+             shack's folder (ShackFolder), under the file's lock, written anew and put
+             in place in one step. A text is kept only when it reads by format. Without the
+             file none is kept. At station start a file that does not read by format is
+             left as it is, none is given, and DefinitionsSnapshot::countryFileUnusable is
+             true. */
+        attribute format : CountryFile;
+    }
+
+    verification 'TC-039-055' {
+        doc /* What is a Most Wanted list, and the answer of the service. */
+        subject profile : PersistedProfile;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-039-30'; }
+        @TestedBy {
+            test = "server/src/most_wanted.rs::"
+                + "tc_039_031_parser_refuses_all_but_the_exact_list; "
+                + "server/src/most_wanted.rs::tc_039_031_response_body";
+        }
+    }
+
     verification 'TC-039-001' {
-        doc /* A strategy is created, changed and deleted by its name.
-             Setup: the profile alone on a throw-away folder.
-             (a) A create of the strategy Test calls: taken, and given back value for
-             value.
-             (b) A create of a strategy with one key more: refused, naming the strategy
-             as a whole.
-             (c) A create of a after A: entry_exists.
-             (d) A 17th create: collection_full. */
+        doc /* A strategy is created, changed and deleted by its name. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -547,17 +460,7 @@ package WstxProfileDocument {
     }
 
     verification 'TC-039-003' {
-        doc /* The strategies file.
-             Setup: the station on a throw-away profile of HB9BLA in JN47 without a
-             strategies file.
-             (a) Read: no saved strategy.
-             (b) A create of the one strategy Test calls: the strategies file holds
-             schema_version 4 and that strategy. A profile opened with the same
-             operator's folder holds the same strategy.
-             (d) A create of a strategy of the class award: refused, naming class.
-             (h) Planned, no test yet: an update of Test calls with leaving after 5
-             calls: the file holds the new value; a delete of Test calls: the file
-             holds no strategy; an update or delete of Other: entry_unknown. */
+        doc /* The strategies file. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -568,49 +471,7 @@ package WstxProfileDocument {
     }
 
     verification 'TC-097-002' {
-        doc /* The strategies files of the older versions.
-             Setup: the station on a throw-away profile, with strategies files written
-             by hand.
-             (a) Version 3 with Mine (goals dxcc_band and new_call, needed
-             not_confirmed, region dx, value new_dxcc_slot and snr, cq_when_no_target
-             on, 5 repetitions, 15 quiet minutes, Treat 73 as CQ off, window today),
-             Grid (goal grid), DXCC all, dxcc all copy and Casual: read. Mine is of
-             class strategy for every band: new dxcc and call per band, not_confirmed,
-             region dx, worked since today, Treat 73 as CQ off, empty lists, order
-             new_dxcc_band_mode and snr, calling stations answered, leaving after 5
-             calls and 10 while heard, the frequency moved never, at every call and at
-             every 2nd call, the busy pause on, CQ when idle with a CQ wait of 2, a
-             retry pause of 15. Grid is new grid per ever. The names read are Mine,
-             Grid, DXCC all copy 2, dxcc all copy and Casual copy; renamed lists DXCC
-             all as DXCC all copy 2 and Casual as Casual copy.
-             (b) A change of the strategies after that: the file has schema_version 4,
-             and renamed is empty.
-             (c) Version 3 with a strategy whose value names the criterion rarest:
-             unusable, with no saved strategy.
-             (d) The eight goals, each alone: dxcc gives dxcc per ever, dxcc_band dxcc
-             per band, dxcc_slot dxcc per band_mode, waz cq_zone per ever, wpx prefix
-             per ever, grid grid per ever, new_call call per ever, new_call_band call
-             per band.
-             (e) Version 2 with Mine (goal new_call, needed not_worked, region all,
-             5 calls_per_station, Treat 73 as CQ on, window all): read as new call per
-             ever, not_worked, order most_wanted, calling stations answered, leaving
-             after 4 calls and 8 while heard, the frequency moved never, at every call
-             and at every 2nd call, the busy pause on, no CQ when idle, a CQ wait of 2,
-             a retry pause of 10. A change after that writes schema_version 4.
-             (f) Version 2 with 0 or 21 calls_per_station, without it, with the region
-             east, or with a key value: unusable. Version 3 with that strategy of
-             version 2: unusable.
-             (g) Version 4 with a strategy without cq_wait_periods and one with 5: read
-             with 2 and with 5. Version 4 with the saved strategies New calls and
-             Casual: usable, and read as New calls and Casual copy.
-             (h) Version 1 with one strategy, an active name, the continent AS, the
-             ignore list K1ABC and 45 session minutes: read with no saved strategy. A
-             file of version 5: unusable. Version 4 with an active name: read, and the
-             name is not taken over.
-             (i) Planned, no test yet: of that file of version 1, and of one of
-             version 4 with the keys continent, ignore_calls and
-             session_ignore_minutes, neither the continent nor the ignore list is
-             taken over; a file of version 1 with the continent XX is usable. */
+        doc /* The strategies files of the older versions. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -644,49 +505,7 @@ package WstxProfileDocument {
     }
 
     verification 'TC-097-001' {
-        doc /* The bounds of a strategy and the value each refusal names.
-             Setup: the rules alone, with strategies written by hand; for (f) the
-             station on a throw-away profile. A refused value is named below from the
-             strategy down.
-             (a) A strategy of class strategy with every value at its upper bound, and
-             a strategy of class contest for ww_digi: 32 bands; all seven of new, per
-             band_mode, not_confirmed; region selected with the seven continents; a
-             minimum SNR of -50; worked since 1 January 1930 to 31 December 2099; 64
-             entries in each country list, one a prefix of 13 characters and one with
-             32 bands; the 51 states; 32 CQ targets of 8 characters in each list; the
-             16 criteria; leaving after 20 calls and 40 while heard; the frequency
-             moved at every 20th call while heard; a CQ wait of 20; a retry pause of
-             120: taken, and given back value for value.
-             (b) Leaving after 1 call and 1 while heard; until_logged with 1 and with
-             60 minutes; contest with 1 and with 20 Tx changes; a retry pause of 1;
-             a CQ wait of 1; the frequency never moved: taken.
-             (c) The band 11m: bands[0]. 20m twice: bands[1]. 33 bands: bands. No new:
-             filters.new. dxcc twice: filters.new[1]. The scope slot: filters.new_per.
-             A country entry of the kind call: filters.countries.include[0].kind; the
-             prefix VK-9, a prefix of 14 characters and the country Atlantis: its
-             value; with 33 bands: its bands. 65 entries:
-             filters.countries.include. The states XX and PR:
-             filters.states.include[0]. 52 states: filters.states.include. A CQ
-             target of 9 characters and PO-TA: filters.cq_targets.include[0]. 33 CQ
-             targets: filters.cq_targets.include. snr twice: order[1]. 17 criteria:
-             order.
-             (d) 0 and 21 calls: leave.calls. 3 calls while heard after 4 calls, and
-             41: leave.calls_heard. 0 and 61 minutes: leave.gone_minutes. 0 and 21 Tx
-             changes: leave.tx_changes. The mode never: leave.mode. A move at every
-             -1st and 21st call: tx_move_every.heard; a move without one of its three
-             cases: tx_move_every. A retry pause of 0 and of 121: retry_minutes. A CQ
-             wait of 0, of 21, as a text, null and left out: cq_wait_periods.
-             (e) Class contest with a criterion in its order: order; with new among
-             its filters: filters; with no contest and with an unknown one: contest.
-             Class strategy with the contest ww_digi: contest. The classes award and
-             casual: class. The names DXCC all and casual: name. A strategy with one
-             key more: the strategy as a whole.
-             (f) A create of one strategy of each class: given back value for value.
-             An update of one with the country Atlantis: refused with its value, and
-             the strategies file as before.
-             (g) A strategy named New DXCC or new dxcc, and one named Casual: name. A
-             strategy with the key builtin: the strategy as a whole. One named New
-             DXCC copy: taken. */
+        doc /* The bounds of a strategy and the value each refusal names. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -701,8 +520,6 @@ package WstxProfileDocument {
         }
     }
 
-    // ---- A new profile, its devices and its radio control ----------------------------------
-
     requirement 'CL-005-05' {
         subject profile : PersistedProfile;
         doc /* Profile MUST store the audio devices and the radio control of a profile
@@ -714,9 +531,8 @@ package WstxProfileDocument {
     #derivation connection { end #original ::> 'FR-001'; end #derive ::> 'CL-005-05'; }
 
     attribute def CreateProfile {
-        doc /* How a profile is made: the station is started with --create-profile and
-             a folder, makes the profile and ends (StartupOutcome::created) without
-             running a station.
+        doc /* How a CreateRequest is carried out: the profile is made and the request
+             answered by ProfileCreated; no station runs (WstxStartup::LaunchRule).
              The folder is made new, and profile.json is written into it with the
              values each feature of ProfileDocument, of Endpoint and of the
              configurations of StationConfig is given in its definition, a new
@@ -724,8 +540,7 @@ package WstxProfileDocument {
              A folder that exists, also an empty one, a folder whose parent does not
              exist, and a file that cannot be written end the creation with
              resource_unavailable; what exists is left as it is.
-             Other arguments end it with invalid_runtime_configuration (OpenProfile).
-             A start with --profile makes no profile.
+             An OpenRequest makes no profile.
              StationConfig::audio and RadioConfig::control are saved as SaveSettings
              says: each of the two devices and the radio control can be set and taken
              away without the others. */
@@ -758,8 +573,6 @@ package WstxProfileDocument {
              the device again. */
     }
 
-    // ---- The profile of the native connection -----------------------------------------------
-
     requirement 'CL-013-08' {
         subject profile : PersistedProfile;
         doc /* Profile MUST store, for a profile of the native connection, the station's
@@ -773,12 +586,11 @@ package WstxProfileDocument {
     attribute def NativeProfile {
         doc /* The profile of a station that uses a FlexRadio through its native
              interface.
-             It is made by --create-native-flex-profile with a folder, a receive
-             antenna and at most an address: as CreateProfile, with schema_version 2,
-             the connection type native_flex and a NativeIntent of a new client_id, that
-             antenna and that address.
-             An antenna or an address outside the rules of NativeIntent ends the
-             creation with invalid_runtime_configuration, and no folder is made.
+             It is made by a CreateRequest with a NativeIntent: as CreateProfile, with
+             schema_version 2, the connection type native_flex and a NativeIntent of a
+             new client_id and the request's antenna and address.
+             An antenna or an address outside the rules of NativeIntent refuses the
+             request with invalid_runtime_configuration, and no folder is made.
              Its document has no input_device, no output_device, the control mode
              disabled without an endpoint, and ptt disabled. A SaveProfile with another
              value in one of these is refused with SaveRefusal::invalid_settings and
@@ -788,30 +600,7 @@ package WstxProfileDocument {
     }
 
     verification 'TC-023-007' {
-        doc /* What a profile of the native connection stores.
-             Setup: the profile alone, on documents written by hand and on folders of
-             its own.
-             (a) A document with schema_version 2, native_flex, no device, the control
-             disabled and the native client_id 72e8c7f3-5766-4ade-9286-ebf2f525c77a
-             with rx_antenna ANT1: taken, and written back key for key. With
-             radio_address 192.0.2.10:4992: taken and written back with it. A document
-             of the connection type 'standard' is written without native.
-             (b) invalid_profile: native null; in native a key radio_serial,
-             slice_index or stream_id; a client_id with a capital letter; the antenna
-             ant1; the input device X; radio_address null, radio.local:4992,
-             192.0.2.10, 192.0.2.10:0 and [::1]:4992; the control mode cat; the
-             connection type 'standard'; a document of schema_version 1 with native.
-             (c) unsupported_connection_type: schema_version 1 with native_flex, with
-             and without native. unsupported_schema: schema_version 3; schema_version
-             2 without native.
-             (d) Created with the antenna "ant 1", and with ANT1 and the address
-             radio.local:4992: invalid_runtime_configuration, and no folder.
-             (e) Created with ANT1: profile.json holds rx_antenna ANT1 and a client_id
-             that is a UUID, and none of the words serial, slice, stream, handle, dax
-             and frequency. A save with an output device X is refused, and the file is
-             byte for byte as before.
-             (f) Created with ANT1 and 192.0.2.10:4992: the address is stored and read
-             back. */
+        doc /* What a profile of the native connection stores. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

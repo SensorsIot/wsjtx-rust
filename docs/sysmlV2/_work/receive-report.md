@@ -563,3 +563,11 @@ written (see the session's final message).
 Not verified: of `receive_diagnostics_tests.rs` the test
 `window_dump_setting_defaults_off_and_persists` was read in full; the others were not read
 again.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-018-003 (`ReceiveJob.sysml`): StartReplay refused with no_recording, not_found and recording_unavailable.
+- TC-004-004 (`LiveReceive.sysml`): the prompt and the late end of FT4 through the live job, and its views by the period start + 7.5 s.

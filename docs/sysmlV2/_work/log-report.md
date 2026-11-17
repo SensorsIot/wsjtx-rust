@@ -438,3 +438,27 @@ the logbook under the file's lock and take in the others' records before they us
 logbook writes the whole file anew" left: a record is appended, as WSJT-X does.
 Difference in the code: the logbook lies in each profile's folder, every change writes
 it whole, no lock between stations.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-011-001 (`Logbook.sysml`): a fault of the file that lasts beyond the tries again: the contact is given up, the logbook does not hold it, and it is not given.
+- TC-011-001 (`Logbook.sysml`): after (a), a ResendLast: the record of K1ABC is given once more, Resent names its contact, contacts.adi is byte for byte as before. On an empty logbook: nothing is given, Resent has no contactId.
+- TC-011-003 (`Logbook.sysml`): the US state of a call, and the QSOs of a ContestPeriod.
+
+
+## Done: cty.dat is downloaded by the settings function (operator 2026-11-16, "Download, as WSJT-X")
+
+| Element | What changed |
+|---|---|
+| `interfaces/external/CountryFiles.sysml` (new; M2.1 and `Context.sysml` name it) | `CtyQuery` (the source of WSJT-X), `CtyDownload` (`bytesMax` 1048576), `CountryFilesPort`, `CountryFiles` |
+| CL-055-06 (new, `ProfileDocument.sysml`) | `CountryFileFetch`, `CountryFileStore` (cty.dat in the operator's folder, read by `CountryFile`); target, no test |
+| `ProfileAccess` | `UpdateCountryFile`, `DefinitionsSnapshot::countryFile` and `countryFileUnusable`, `SaveRefusal::invalid_country_file` |
+| CL-055-03 (`CountryFile.sysml`, log) | uses the file the settings function keeps; `ProfileCountryFile` says only which file is in use; partial |
+| `LogControl` | `ReplaceCountryFile` carries the profile's file; `invalidCty`, `LogRefused::line`, `countryFileBytesMax`, `uploadUnreadable` gone; `CountryFileSource` bundled, downloaded |
+| TC-055-003 | not carried: its test uploads a file |
+
+Work for the code: no download (dxcc.rs takes an upload over the logbook routes); the check and the
+file are the log's in the code.

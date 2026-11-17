@@ -12,8 +12,6 @@ package WstxFlexApi {
         attribute admitted : String = "1.4.0.0";
     }
 
-    // ---- From the radio, unasked -----------------------------------------------------------
-
     item def Announcement {
         doc /* What a radio says about itself on the local network (the source's discovery
              packet). The station sends none and asks for none.
@@ -24,8 +22,6 @@ package WstxFlexApi {
             doc /* How many more clients the radio takes. Absent when the radio does not
                  say. */ }
     }
-
-    // ---- The control connection -----------------------------------------------------------
 
     item def Greeting {
         doc /* What the radio states when the control connection opens. */
@@ -86,8 +82,6 @@ package WstxFlexApi {
              removed.
              Every other object, field and line of the radio is passed over. */
     }
-
-    // ---- The receive stream ---------------------------------------------------------------
 
     item def Registration {
         doc /* A datagram from the UDP port the stream goes to, naming the client's handle

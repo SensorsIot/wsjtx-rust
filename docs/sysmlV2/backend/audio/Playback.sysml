@@ -56,26 +56,7 @@ package WstxPlayback {
     }
 
     verification 'TC-008-004' {
-        doc /* A program on a scripted output device.
-             Setup: the playback function writing into buffers and a modelled device
-             with a period of 10 ms; no sound device and no radio.
-             (a) The waveform 0, 0.25, -0.5, 1.0 with skip 1 and scale 0.5 on two 16-bit
-             channels: 4096, -8192 and 16384 on both channels, then silence.
-             (b) A tone of 12000 Hz with scale 1: 0, 1, 0, -1; it does not end.
-             (c) No program and 100 of 480 frames queued: 380 frames of silence. A
-             program and 470 queued: 10 frames of it. After its last sample with 300
-             queued: nothing written; with none queued: finished.
-             (d) A device that takes no sample for 501 ms while a program plays: lost;
-             one that takes samples again within that time: not lost.
-             (e) A waveform through the device, undisturbed and with the station delayed
-             40 ms once a second: its first sample within 30 ms of PlayProgram, its end
-             reported within 100 ms of its length, no interruption.
-             (f) Planned, no test yet: a PlayProgram while a program plays and after it
-             has finished: PlayRefused with unavailable.
-             (g) Planned, no test yet: a device that does not open: unavailable after
-             1000 ms.
-             (h) Planned, no test yet: StopOutput returns within 250 ms also when the
-             device does not close. */
+        doc /* A program on a scripted output device. */
         subject audio : AudioInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

@@ -94,8 +94,7 @@ package WstxStationTime {
     }
     port def ClockStatusPort { out item quality : ClockQuality; }
     interface def ClockStatus {
-        doc /* Written from the clock's side: the clock gives its quality to the station
-             service. */
+        doc /* Written from the clock's side: the clock gives its quality to the supervisor. */
         end clock : ClockStatusPort;
         end station : ~ClockStatusPort;
     }

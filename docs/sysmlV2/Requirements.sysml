@@ -4,7 +4,7 @@ package WstxRequirements {
     private import ModelNotes::Conflict;
 
     doc /* What the station is required to do. Each functional requirement is about the
-         station as a whole; Station.sysml gives each to the part that carries it, and its
+         station as a whole; Shack.sysml gives each to the part that carries it, and its
          status follows from the clauses derived from it. */
 
     attribute def BehaviorBaseline {

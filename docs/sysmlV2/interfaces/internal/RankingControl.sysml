@@ -5,13 +5,12 @@ package WstxRankingControl {
     private import WstxDecodes::PeriodView;
     private import WstxLogControl::Continent;
     private import WstxLogControl::WorkedStatus;
+    private import WstxProfileAccess::MostWantedList;
 
-    doc /* What the station service gives the ranking function (what the profile and the
+    doc /* What the supervisor gives the ranking function (what the profile and the
          radio say, and the operator's commands); the rules operating gives it of the
          active strategy; and what ranking answers and reports: the ranked list, the
          facts of each decoded record, its lists and the alerts. */
-
-    // ---- The ranking rules of a strategy --------------------------------------------------
 
     enum def NewWhat {
         doc /* What must be new.
@@ -172,8 +171,6 @@ package WstxRankingControl {
             doc /* Present for a strategy of class contest. */ }
     }
 
-    // ---- What the station service gives ranking -------------------------------------------
-
     attribute def RankingLimits {
         attribute orderMax : Integer = 16 { doc /* Criteria in an order. */ }
         attribute bandsMax : Integer = 32 { doc /* Bands in a StrategyBands. */ }
@@ -189,7 +186,7 @@ package WstxRankingControl {
     }
     attribute def WantedEntry {
         doc /* One entry of the wanted list (WstxWantedList::WantedRule). The settings
-             function keeps the list for the operator's stations: at most
+             function keeps the list for the shack's stations: at most
              RankingLimits::wantedListMax entries in the order they were added, each
              call once. */
         attribute call : String {
@@ -199,28 +196,27 @@ package WstxRankingControl {
                  the settings function when it adds the entry. */ }
     }
     item def RankingContext {
-        doc /* What ranking needs to know of the station. The station service gives it
+        doc /* What ranking needs to know of the station. The supervisor gives it
              at station start and whenever one of its values changes. */
         attribute call : String[0..1] {
             doc /* The profile's call. Absent while the profile has none. */ }
         attribute locator : String[0..1] { doc /* The profile's locator. */ }
         attribute band : String[0..1] {
-            doc /* The station's band: that of the dial radio control confirms, else that
-                 of the operating selection. Absent without either. */ }
+            doc /* The station's band (WstxOperatingSelection::StationBandRule). */ }
         attribute mode : Mode { doc /* The station's operating mode. */ }
         attribute continent : Continent[0..1] {
             doc /* The continent the operator has set for the station,
-                 WstxProfileAccess::OperatorConfig::continent. Absent: ranking derives
+                 WstxProfileAccess::ShackConfig::continent. Absent: ranking derives
                  it. */ }
         attribute cqWords : String[0..*] {
             doc /* The CQ words for this station,
-                 WstxProfileAccess::OperatorConfig::cq_words. */ }
+                 WstxProfileAccess::ShackConfig::cq_words. */ }
         attribute wanted : WantedEntry[0..*] ordered {
             doc /* The wanted list, as the settings function keeps it
                  (WstxProfileAccess::DefinitionsSnapshot::wanted). */ }
-        attribute folder : String {
-            doc /* The operator's folder (WstxProfileAccess::ProfileFolder,
-                 its operatorPath), in which ranking keeps the Most Wanted list. */ }
+        attribute mostWanted : MostWantedList[0..1] {
+            doc /* The Most Wanted list, as the settings function keeps it
+                 (WstxProfileAccess::DefinitionsSnapshot::mostWanted). */ }
     }
     item def RankingRules {
         doc /* The rules ranking works by. Operating gives them at station start and
@@ -255,12 +251,6 @@ package WstxRankingControl {
     item def ReadRankingState { doc /* Ask for the lists. Answered by RankingState. */ }
     item def ReadAlerts { doc /* Ask for the alert history. Answered by Alert. */ }
     item def ClearAlerts { doc /* Empty the alert history. Answered by Alert. */ }
-    item def UpdateMostWanted {
-        doc /* Fetch the Most Wanted list anew. Answered by RankingState or
-             RankingRefused. */
-    }
-
-    // ---- What ranking answers and reports -------------------------------------------------
 
     enum def VerdictKind {
         doc /* What a ranked record is.
@@ -300,6 +290,9 @@ package WstxRankingControl {
             doc /* The period view whose records were evaluated; it names the job and
                  says whether the period is complete. */ }
         attribute verdicts : Verdict[0..*] ordered;
+        attribute offBand : Boolean {
+            doc /* The station's band is none of the bands of the active strategy, or of
+                 the contest in force; then no verdict has a rank. */ }
     }
     attribute def ContestTally {
         doc /* What the logbook holds of the contest's period. */
@@ -334,10 +327,6 @@ package WstxRankingControl {
                  on it. */ }
         attribute mostWanted : MostWantedStatus[0..1] {
             doc /* Absent while ranking has no list. */ }
-        attribute mostWantedUnreadable : Boolean {
-            doc /* The profile holds a list that ranking cannot use. */ }
-        attribute mostWantedAttribution : String =
-            "Club Log Most Wanted list, Club Log (c) Michael Wells G7VJR, clublog.org";
         attribute myContinent : Continent[0..1] {
             doc /* The station's continent as ranking uses it. */ }
         attribute derivedContinent : Continent[0..1] {
@@ -412,32 +401,26 @@ package WstxRankingControl {
         doc /* Why a command is refused.
              notConfigured: no strategy is active and the request names none.
              staleRequest: the job of the request is not the station's current job.
-             downloadFailed: the Most Wanted list could not be fetched or is no list.
-             storageUnavailable: the list could not be stored.
              ignoreListFull: the ignore list holds RankingLimits::ignoreListMax entries
              and the entry is not among them. */
         enum notConfigured;
         enum staleRequest;
-        enum downloadFailed;
-        enum storageUnavailable;
         enum ignoreListFull;
     }
     item def RankingRefused {
-        doc /* The answer to an EvaluateRequest, an IgnoreCommand or an UpdateMostWanted
-             that is refused. A refused command changes nothing. */
+        doc /* The answer to an EvaluateRequest or an IgnoreCommand that is refused. A
+             refused command changes nothing. */
         attribute refusal : RankingRefusal;
-        attribute reason : String[0..1] {
-            doc /* With downloadFailed: what failed. */ }
     }
 
     item def WantedWorked {
         doc /* An exact entry of the wanted list with whose call a QSO has been logged
-             after it was added (WstxWantedList::WantedRemoval). The station service
+             after it was added (WstxWantedList::WantedRemoval). The supervisor
              removes it from the list (WstxProfileAccess::DeleteEntry). */
         attribute call : String;
     }
     port def RankingControlPort {
-        doc /* Written from the station service's side; ranking uses the conjugate.
+        doc /* Written from the supervisor's side; ranking uses the conjugate.
              RankingContext has no answer. An answer goes to the one command it belongs
              to. RankedList, DecodedFacts and Alert are also given without a command,
              when ranking has made them. */
@@ -448,7 +431,6 @@ package WstxRankingControl {
         out item readState : ReadRankingState;
         out item readAlerts : ReadAlerts;
         out item clearAlerts : ClearAlerts;
-        out item updateMostWanted : UpdateMostWanted;
         in item ranked : RankedList;
         in item reply : EvaluateReply;
         in item lists : RankingState;
@@ -458,7 +440,7 @@ package WstxRankingControl {
         in item wantedWorked : WantedWorked;
     }
     interface def RankingControl {
-        doc /* The station service commands the ranking function; ranking reports the
+        doc /* The supervisor commands the ranking function; ranking reports the
              ranked list, what it knows of each decoded record, its lists and its
              alerts. */
         end station : RankingControlPort;

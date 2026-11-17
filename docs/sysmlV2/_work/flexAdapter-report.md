@@ -506,3 +506,15 @@ need 2 is void, and of the handover row "station" nothing changes.
 Not verified: `FlexSession.sysml` was searched for the terms and the elements around the
 hits were read, not the whole file; `session.rs` was read at `State`, `Error`, `run` and
 `set_allowed`, not in full; `native-flex.test.cjs` was searched, not read.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-023-001 (`FlexSession.sysml`): a tune withdrawn before the radio's report: cancelled; a tune outside the state ready: radioUnavailable.
+- TC-023-002 (`FlexSession.sysml`): attempts that keep failing follow after 1000, 2000, 4000 and 4000 ms; after a session that was ready the next follows after 1000 ms.
+- TC-023-003 (`FlexSession.sysml`): a radio that gives the slice another antenna than asked: the slice removed, antennaUnavailable.
+- TC-023-003 (`FlexSession.sysml`): every DAX channel in use: the slice removed, capacityDax.
+- TC-023-003 (`FlexSession.sysml`): the radio reports the created slice under another handle: sliceOwnership; it takes the slice or the stream from a ready session: resourceLost.
+- TC-023-003 (`FlexSession.sysml`): the adapter cannot listen for announcements: discoveryUnavailable.

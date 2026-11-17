@@ -25,8 +25,6 @@ package WstxContestRanking {
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
 
-    // ---- The CQ words of the contest ------------------------------------------------------
-
     requirement 'CL-063-02' {
         subject ranking : RankingService;
         doc /* Ranking MUST take a CQ that carries a CQ word of the contest it ranks by as
@@ -46,23 +44,7 @@ package WstxContestRanking {
     }
 
     verification 'TC-063-004' {
-        doc /* The CQ words of the contest.
-             Setup: the evaluator alone, for a station in EU with the CQ word EU and a
-             sender in NA.
-             (a) CQ TEST is for the station under a contest with the CQ word TEST, and
-             not without a contest or under one with the word WW. CQ WW is for it with
-             WW, not with TEST. CQ FD is for it with FD, not with WW.
-             (b) Under a contest with the word WW: CQ NA is not for the station, CQ EU
-             is, CQ POTA is not, a CQ without a directive is. CQ WW is for it also while
-             both continents are unknown.
-             (c) CQ WW K1ABC FN42 under a strategy of class strategy for a new call,
-             without a special activity: grey and without a rank.
-             (d) Planned, no test yet: CQ WW K1ABC FN42 under a strategy of class
-             strategy, with the special activity ww_digi set by the operator: grey and
-             without a rank; CQ RU under the activity rtty: grey.
-             (e) Planned, no test yet: CQ TEST under a contest with the word TEST, one
-             minute before its period and at the first minute after it: grey; in its
-             first minute: not grey. */
+        doc /* The CQ words of the contest. */
         subject ranking : RankingService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -72,8 +54,6 @@ package WstxContestRanking {
                 + "tc_063_004_the_directive_table_in_a_contest_activity";
         }
     }
-
-    // ---- What the logbook holds of the contest --------------------------------------------
 
     requirement 'CL-063-09' {
         subject ranking : RankingService;
@@ -120,20 +100,7 @@ package WstxContestRanking {
     }
 
     verification 'TC-063-005' {
-        doc /* The points and the multipliers, by hand.
-             Setup: the rules alone; the distances worked out apart from the code.
-             (a) From JN37 to FN42, JO62, JN38 and PM95: one_plus_per_3000_km gives 2,
-             1, 1 and 4; one_plus_per_500_km_up 13, 3, 2 and 21; kilometres 5895, 702,
-             112 and 9625.
-             (b) From JN37VL to JN37: kilometres 50; one_plus_per_500_km_up 2.
-             (c) Without one of the two grids one_plus_per_3000_km gives no points;
-             one_per_call gives 1 without any grid.
-             (d) vhf_january and vhf_june_september: 1 and 1 on 6m and 2m; 2 and 2 on
-             1.25m and 70cm; 4 and 3 on 33cm and 23cm; 8 and 4 on 13cm, 3cm and
-             submm.
-             (e) field_day: 2 in a digital mode and in CW, 1 in phone.
-             (f) field_per_band for fn42 on 20m: the key FN on 20m. grid_per_band for
-             FN42 on 6m: FN42 on 6m. none, and a QSO without a grid: no key. */
+        doc /* The points and the multipliers, by hand. */
         subject ranking : RankingService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -142,8 +109,6 @@ package WstxContestRanking {
             test = "server/src/contest_tests.rs::tc_063_005_the_points_rules_by_hand";
         }
     }
-
-    // ---- The verdict and the order under a contest ----------------------------------------
 
     requirement 'CL-063-04' {
         subject ranking : RankingService;
@@ -207,43 +172,7 @@ package WstxContestRanking {
     }
 
     verification 'TC-063-006' {
-        doc /* The count of a period, the dupes and the verdicts.
-             Setup: the rules and the evaluator alone, with QSOs and decodes written
-             by hand, for HB9BLA in EU with the locator JN37; for (j) the station on a
-             throw-away profile with a logbook taken from a file.
-             (a) WW Digi from 12:00 on a Saturday to 12:00 on the Sunday. K1OUT one
-             second before the period; K1END at its end; K1ABC in FN42 on 20m in FT8,
-             on 20m in FT4 and on 40m in FT8; W1SSB in SSB; W1WRC on 30m: 2 QSOs, 2
-             multipliers, 4 points, score 8. A sender K1ABC is a dupe on 20m and none
-             on 15m; K1OUT and K1END are none.
-             (b) ARRL June VHF with K1ABC/R logged in FN42 on 6m: a dupe from FN42 and
-             without a grid, none from FN43. With K1NOG logged without a grid: a dupe
-             from FN42.
-             (c) ARRL Field Day with K1ABC logged on 20m in SSB: 1 point, and no dupe
-             for a sender in a digital mode.
-             (d) FT8 Activity with DL1ABC logged on 2m: a dupe on 70cm; score 1.
-             (e) ARRL Digi with W1RTY in RTTY and K1ABC in FN42 in FT8: 1 QSO, 13
-             points, score 13.
-             (f) WW Digi on 20m with W1DUP in EM12 and K1OLD in FN20 counted. CQ WW
-             K1ABC FN42 at +5 dB, CQ WW JA1XYZ PM95 at -18, CQ WW OH1AA KP20 at -3, CQ
-             WW W1DUP EM12, CQ NA W1AW FN31, DL1ABC K1ZZZ FN42, DL1ABC W1RRR RR73 at
-             -9, HB9BLA VK2ABC QF56 at -20 and HB9BLA K1OLD FN20 at +9: VK2ABC has
-             rank 0, JA1XYZ 1, OH1AA 2, K1ABC 3, W1RRR 4. JA1XYZ is a new multiplier
-             with 4 points and "new multiplier · 4 points"; K1ABC is none, with 2
-             points. W1DUP and K1OLD are dupes without a rank, W1DUP with "dupe". W1AW
-             is grey with "CQ NA — not for EU". K1ZZZ has "not a CQ".
-             (g) The same on 30m: no record has a rank, JA1XYZ with "band not in the
-             contest". Without a count: no record has a rank.
-             (h) CQ K1ABC/R FN42 on 6m: under ARRL June VHF rank 0; under IARU R1 50
-             MHz MGM "callsign guard".
-             (i) ARRL Field Day on 20m with K1OLD counted. A Field Day exchange of
-             W9XYZ to HB9BLA: a caller with rank 0 and 2 points; of K1OLD to HB9BLA:
-             "dupe"; of W9ABC to K1ABC: "not a CQ".
-             (j) WW Digi on 40m for a station in JN47, with W1DUP in EM12 logged in
-             the period and K1OLD in FN20 before it. CQ WW of W1DUP, K1OLD and JA1XYZ
-             in PM95 at -15 dB: the tally is 1 QSO, 1 multiplier, 3 points, score 3;
-             JA1XYZ has rank 0, a new multiplier and 4 points; K1OLD rank 1, a new
-             multiplier and 3 points; W1DUP no rank, a dupe, no points. */
+        doc /* The count of a period, the dupes and the verdicts. */
         subject ranking : RankingService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

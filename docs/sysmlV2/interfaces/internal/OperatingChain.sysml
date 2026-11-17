@@ -16,11 +16,6 @@ package WstxOperatingChain {
     private import WstxTransmitControl::TransmitOutcome;
     private import WstxTransmitControl::TransmitStatus;
     private import ModelNotes::FollowsSource;
-    private import WstxRequirements::'FR-011';
-    private import ModelBindings::ImplementationState;
-    private import RequirementDerivation::*;
-    private import ModelBindings::Status;
-    private import ModelBindings::ImplementedIn;
     port def RankedActivityPort {
         doc /* Written from ranking's side; auto uses the conjugate. */
         out item ranked : RankedList;
@@ -31,20 +26,42 @@ package WstxOperatingChain {
         end auto : ~RankedActivityPort;
     }
     port def TargetChoicePort {
+        doc /* Written from auto's side; qso uses the conjugate. A CallTarget of the kinds
+             reply, call_cq and send_next is answered by a StartAnswer. QsoProgress is
+             given for a contact or a CQ Auto started, whenever one of its values
+             changes. */
         out item target : CallTarget;
-        out attribute slot : TxSlot;
         in item answer : StartAnswer;
         in item progress : QsoProgress;
     }
-    item def CallTarget { doc /* The station to call, or CQ. */ }
+    enum def TargetKind {
+        doc /* What Auto asks of qso. reply, call_cq and send_next are the starts of
+             those names that the operator has, carried out with the cause auto: reply
+             calls the station of a record, call_cq calls CQ, send_next sends the message
+             due of a started QSO; qso takes each one's Tx offset from its quiet space.
+             move asks qso for a new Tx offset of Auto's contact or CQ, from the same
+             space. cancel ends Auto's contact or CQ. */
+        enum reply;
+        enum call_cq;
+        enum send_next;
+        enum move;
+        enum cancel;
+    }
+    item def CallTarget {
+        doc /* A start, a move or an end of Auto's contact or CQ. */
+        attribute kind : TargetKind;
+        attribute sequence : Integer[0..1] {
+            doc /* With reply: the record of the station to call. Rx goes onto it. */ }
+    }
     item def StartAnswer {
         attribute blockedBy : TransmitRefusal[0..1];
         doc /* The answer to a start: absent when the start will happen, otherwise the arm
              condition that blocks it, one of clockNotSynchronized, busy by Tune,
-             radioUnavailable and transmitUnsupported. */
+             radioUnavailable and transmitUnsupported. A blocked start prepares no
+             contact, counts no repetition and sets no message. */
     }
     interface def TargetChoice {
-        doc /* The station Auto chooses, from auto to qso, and what qso answers. */
+        doc /* What Auto asks of qso, from auto to qso, and what qso answers. */
         end auto : TargetChoicePort;
         end qso : ~TargetChoicePort;
     }
@@ -71,7 +88,30 @@ package WstxOperatingChain {
         out item contact : FinishedContact;
         in item answer : LogAnswer;
     }
-    item def FinishedContact { doc /* The finished contact; the logged contact. */ }
+    item def FinishedContact {
+        doc /* A completed contact that qso hands to the log (WstxStandardQso::HandOverRule).
+             Its values have the form of the LogRecord features of the same name. */
+        attribute contactId : String;
+        attribute call : String;
+        attribute gridsquare : String[0..1];
+        attribute mode : WstxModeProcessing::Mode;
+        attribute rstSent : String[0..1] {
+            doc /* The report of the last sent Tx2 or Tx3; for rtty the 5n9 and for
+                 eu_vhf the RS of the exchange sent (WstxSpecialActivities::ContestLogFields). */ }
+        attribute rstRcvd : String[0..1] { doc /* The same of the partner. */ }
+        attribute startUtcMs : Integer { doc /* WstxStandardQso::LogTimes. */ }
+        attribute endUtcMs : Integer { doc /* WstxStandardQso::LogTimes. */ }
+        attribute txHz : Integer { doc /* The Tx offset of the contact. */ }
+        attribute activity : WstxQsoControl::Activity;
+        attribute stx : String[0..1] { doc /* WstxSpecialActivities::ContestLogFields. */ }
+        attribute stxString : String[0..1];
+        attribute srx : String[0..1];
+        attribute srxString : String[0..1];
+        attribute contestId : String[0..1];
+        attribute contestClass : String[0..1];
+        attribute arrlSect : String[0..1];
+        attribute usState : String[0..1];
+    }
     enum def LogAnswerKind {
         enum accepted;
         enum refused;
@@ -84,26 +124,9 @@ package WstxOperatingChain {
                  when its record waits or cannot be stored. */ }
     }
     interface def CompletedContact {
-        doc /* A finished contact, and the log's answer; the hand-over and its order are
-             'CL-085-02'. */
+        doc /* A finished contact, and the log's answer (WstxStandardQso::HandOverRule). */
         end producer : CompletedContactPort;
         end consumer : ~CompletedContactPort;
-    }
-    requirement 'CL-085-02' {
-        subject handover : CompletedContact;
-        doc /* qso hands each completed contact to the log once, at its completion or by Log
-             QSO. The log answers each one with accepted or refused: refused when CL-085-01
-             refuses it, accepted otherwise. The answer is given before qso counts the contest
-             serial for that contact. A refusal changes nothing else in the QSO: it completes,
-             transmission goes off with cause contactCompleted, and a Log QSO of a running QSO
-             still closes it (completed, Tx6). Details: WstxOperatingChain::LogAnswer,
-             WstxSpecialActivities::ContestSerialRule. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/contact.rs; server/src/contact_http.rs"; }
-    }
-    #derivation connection {
-        end #original ::> 'FR-011';
-        end #derive ::> 'CL-085-02';
     }
     port def LoggedContactPort {
         doc /* Written from the log's side; the consumer uses the conjugate. */
@@ -119,8 +142,6 @@ package WstxOperatingChain {
         end log : LoggedContactPort;
         end consumer : ~LoggedContactPort;
     }
-
-    // ---- What has been worked: from log to ranking ---------------------------------------
 
     enum def WorkedCategory {
         doc /* What a logged QSO counts for.
@@ -201,56 +222,18 @@ package WstxOperatingChain {
         end ranking : ~WorkedBeforePort;
     }
 
-    // ---------------------------------------------------------------- messages
-    enum def TxSlot { enum tx1; enum tx2; enum tx3; enum tx4; enum tx5; enum tx6; }
     attribute def BusyPartner {
-        attribute busyPausedCallsMax : Integer = 6;
-        doc /* #97 decision 7 (operator #93 2026-11-09; it replaces the WSJT-X stop of
-             partnerWorksOther for the contacts that pause, AutoSequence; the #93 draft fca9822fe
-             compared). Starts: a decoded standard message from the partner (the contact's DX
-             call) to another call than mine that carries a grid, a report or an R-report (his QSO
-             with that station in progress, also his own Tx1 to it); a hashed call "<...>" that is
-             not filled with my call (WstxContact's hash table does not resolve it to my call) is
-             another call. Holds (operator #93: "we pause counting ... till the called station
-             finishes its other qso"): from then on, however long he is not decoded and also when
-             he goes on with a further station, until he ends it: his RR73, RRR or 73 to another
-             call, his CQ, his free text (a free text has no sender: it counts as his when decoded in
-             his period within 10 Hz of his last decode; #97 coordinator default), or any message from him to my call (progress,
-             AutoSequence); a new contact or the end of the contact clears it. Nothing but his own
-             messages ends it, and the bound of TxWatchdog (N paused calls per message, #97 Q5)
-             keeps it from extending a call without limit.
-             When it counts: a send is paused when he is busy at its stop point, 1.2 s into its
-             period (TxWatchdog): a publication that ends or starts it arriving before the stop
-             point (1.1 s) counts for that send, one arriving after it (1.3 s) for the next.
-             Split frequency ("check if we are not on his transmit frequency"; it applies to every
-             contact that pauses, also while it is not pausing: an unattended run with busy_pause
-             on, or a message whose N paused calls are used up): when he sends a decoded message to
-             another call (any, busy or not; the trigger of partnerWorksOther, in replying and in a
-             Tx1-skipped report) and my Tx signal is not clear of his signal, Tx moves before my next
-             own period to the nearest candidate clear of it. Clear: my signal [f, f + width) keeps
-             50 Hz from his [d, d + width): |f - d| at least width + 50, FT8 100 Hz, FT4 140 Hz
-             (FT8 99 moves, 100 stays; FT4 139 moves, 140 stays). Candidates: WstxStrategy::FreeTxSlot's
-             grid from 500 Hz inside the Tx range, clear of his signal and of decoded stations while
-             one is free, at least 50 Hz from a frequency his PSK Reporter spots show him decoding in
-             my Tx parity while one is free (else that is not used), the nearest to the current Tx,
-             the lower on a tie; Rx stays on him. His decode arriving before the audio start of my
-             next send moves the pending request (WstxQsoTransmit::TransmitSubmission replaces it); one
-             arriving after the audio start lets that send finish where it is and moves the next. A
-             refused move (set_frequency refused) falls back to the stop of partnerWorksOther (the
-             transmit state off, cause partnerWorksOther), so Tx never stays on his signal. In
-             manual operation this is the one automatic Tx move besides Hold Tx's rules, also with Hold Tx on (operator
-             2026-11-09, #97 Q7 "yes, both"; an exception to CL-039-08); an explicit Tx action of the
-             operator (also a click onto his signal) wins until his next message to another call,
-             which moves it again. A contact that does not pause (a pounce, an MCP policy run, a run
-             with busy_pause off) keeps partnerWorksOther's stop.
-             Shown: the contact snapshot's watchdog carries busy_with (null, or the other call as
-             decoded, at most 13 characters, "<...>" for an unresolved hash) and paused_calls (the
-             paused calls of the message due next); GET /contact stays within its 4096 bytes in the
-             maximum shape with a 13-character busy_with. The browser appends " · <call> busy with
-             <other>, not counted (<k>/<N>)" to WD:n in the QSO pane and the station bar while
-             busy_with is set (in a run's own contact the leave label carries it,
-             WstxStrategy::LeaveCountLabel). busyPausedCallsMax is the default limit; the bound is
-             the operator's current limitCalls. */
+        doc /* When the partner of a contact is in another QSO. It starts with a decoded
+             standard message from the partner (the contact's DX call) to another call
+             that carries a grid, a report or an R-report; a hashed call that is not
+             filled with the profile's call is another call. It holds, however long he is
+             not decoded and also when he goes on with a further station, until he ends it:
+             his RR73, RRR or 73 to another call, his CQ, his free text, or any message from
+             him to the profile's call. A free text has no sender: it counts as his when it
+             is decoded in his period within freeTextHz of his last decode. A new contact
+             or the end of the contact clears it. The other call is given as decoded, at
+             most 13 characters, <...> for an unresolved hash. */
+        attribute freeTextHz : Integer = 10;
     }
     item def TransmitRequest {
         attribute contactId : String[0..1];

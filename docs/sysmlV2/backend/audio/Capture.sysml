@@ -13,8 +13,6 @@ package WstxCapture {
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
 
-    // ---- The receive stream ---------------------------------------------------------------
-
     requirement 'CL-008-02' {
         subject audio : AudioInterface;
         doc /* Audio MUST give receive the audio of the radio connection as one mono stream
@@ -63,55 +61,13 @@ package WstxCapture {
     }
 
     verification 'TC-002-001' {
-        doc /* The receive stream from scripted packets.
-             Setup: the audio function fed with hand-built packets and tones computed
-             apart from it; no sound device and no radio.
-             (a) Tones of 100, 1000, 3000 and 3500 Hz at 44100 and 48000 Hz: level
-             within 0.1 dB; tones of 5500, 6000 and 9000 Hz: at most 0.001 of full
-             scale.
-             (b) One second of a 1000 Hz tone cut into packets of 8192 frames, and into
-             packets of 1, 441, 37 and 2048 frames: the same number of samples, equal to
-             within 0.00002.
-             (c) An impulse at frame 2000: its peak in the stream within one frame of
-             that place.
-             (d) Float samples 0.25 and -1.0: unchanged; the lowest value of each
-             integer encoding: -1.0; a sample that is not finite: refused.
-             (e) A packet at frame 1000, then a flagged packet at frame 1960: one epoch,
-             the second block at frame 240 and marked.
-             (f) A packet without an arrival time: a new epoch that names
-             timestampError, its frames counted from 0.
-             (g) A flagged packet at the expected frame whose arrival time is 50 ms off:
-             a new epoch that names nativeDiscontinuity; an oversize packet: invalidPacket;
-             a packet that steps back: frameBackstep.
-             (h) A flagged packet at the expected frame, 0.55 ms and 2 ms early or late:
-             no epoch and no mark; 2.1 ms early or late: a new epoch.
-             (i) 400 packets of which five are flagged, the first packet among them, and
-             all continue in time: one epoch, no gap in the frame count, five counted.
-             (j) Packets of 500 ms that receive does not take, then one more: refused,
-             and the next epoch names queueFull; 64 packets of one frame, then one
-             more: refused.
-             (k) 100 packets with packets 10 and 11 silent and 40 and 70 flagged in
-             time: 240 zero-filled and 240 glitch frames in the first 12000; none after
-             a new epoch. 600 silent packets: 72000 zero-filled frames.
-             (l) After a stop the stream fails with cancelled.
-             (m) 720480 silent frames at 48000 Hz cut into packets of 8192 frames, and
-             into packets of 441, 1024, 37 and 1920 frames: one epoch and 180056
-             samples each time.
-             (n) 1024 frames at frame 0, then a flagged packet at frame 48000: one
-             epoch; the block after the gap stands at frame 12000 and is marked.
-             (o) After a loss of unknown length, taking up the old epoch is refused with
-             staleAcknowledgement; the new epoch counts from 0.
-             (p) A two-channel FT8 signal of CQ K1ABC FN42 at 1000 Hz through the
-             stream and the decoder: that message, within 1 Hz and within 240 frames
-             of its start. */
+        doc /* The receive stream from scripted packets. */
         subject audio : AudioInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-02'; }
         @TestedBy { test = "server/tests/audio_contract.rs; server/tests/audio_receive.rs"; }
     }
-
-    // ---- The capture clock ----------------------------------------------------------------
 
     requirement 'CL-007-11' {
         subject audio : AudioInterface;
@@ -153,22 +109,7 @@ package WstxCapture {
     }
 
     verification 'TC-007-011' {
-        doc /* The tie of the receive stream to station time.
-             Setup: the audio function with scripted clock readings; for (c) a scripted
-             capture through the live receive path; for (d) the station with a scripted
-             capture clock. No sound device and no radio.
-             (a) The PC clock read within 4 ms around the monotonic reading: tied, with
-             2 ms of uncertainty; within 4.0001 ms: not tied.
-             (b) The PC clock 20 ms off its last reading: no jump; 20.0001 ms: a jump. A
-             reading that is not tied keeps the last one for this comparison.
-             (c) A capture clock 2000 ppm slow over 600 s with a PC clock step of
-             +0.4 s: from the third period on every prompt window of FT8 ends within
-             0.1 s of its period start + 13.8 s; the drift reads at least 1500 ms and
-             between 1800 and 2200 ppm. With the tie left unmoved the last window ends
-             more than 1.2 s late.
-             (d) Before the first epoch: no warning. Tied with a rate of 1000.0 and
-             -1000.0 ppm: none; 1000.1 ppm: driftHigh; a rate not yet known: none. Not
-             tied: uncorrelated. Capture stopped at 1500 ppm: none. */
+        doc /* The tie of the receive stream to station time. */
         subject audio : AudioInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

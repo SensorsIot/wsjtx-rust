@@ -15,8 +15,6 @@ package WstxRadioSetup {
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
 
-    // ---- Finding the radios of the PC ---------------------------------------------------
-
     requirement 'CL-044-01' {
         subject radioControl : RadioControlInterface;
         doc /* Radio control MUST find the radios on the serial ports of the PC by
@@ -115,35 +113,7 @@ package WstxRadioSetup {
     }
 
     verification 'TC-044-001' {
-        doc /* Detection reads and does not write.
-             Setup: the asking of a port on scripted serial ports that record every
-             rate and frame; for (h) the station with its radio connection ready on a
-             scripted IC-7300 on COM3 and a scripted list of ports. No radio.
-             (a) An IC-7300 at 94 that answers the question to all at 19200 only,
-             with the echo of every frame: found at 94 and 19200, a model the station
-             can control; 9600 is set first and 38400 is not set.
-             (b) An IC-705 at A4 that answers only its own address at 115200: found at
-             A4 and 115200, a model the station names only; the rates set are 9600,
-             19200, 38400 and 115200.
-             (c) A collision frame and noise before the answer: one radio, at 94 and
-             9600.
-             (d) A silent port, and a port whose reads end with timeout: nothing
-             found after four rates and twenty frames, one to all and four to the
-             known addresses at each rate.
-             (e) The identity 99 from the address 70: reported with both, no model.
-             (f) The menu items usbSend DTR, usbKeyingCw OFF, usbKeyingRtty RTS,
-             dataOffMod MIC, dataMod USB, civTransceive ON, and usbModLevel refused:
-             blocking, ok, blocking, information, ok, advice, unreadable.
-             (g) usbModLevel 0: blocking. dataMod MIC/USB: advice; MIC: blocking.
-             (h) The station's own port COM3, an IC-705 on COM5, COM7 held by another
-             program, COM8 silent, COM9 on another serial adapter: the ports opened
-             are 5, 7 and 8; the states are stationCat, identified, inUse, noReply and
-             notRadioBridge; the seven items of COM3 are read through the connection;
-             no menu item is written.
-             (i) In (a) to (d), (f) and (h) every frame sent is a read of the
-             identity or of one of the seven menu items.
-             (j) The serial line at 9600, 19200, 38400 and 115200: DTR and RTS off,
-             no handshake. */
+        doc /* Detection reads and does not write. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -160,27 +130,7 @@ package WstxRadioSetup {
     }
 
     verification 'TC-044-002' {
-        doc /* The place of a radio's port, the proposal and the refusals.
-             Setup: hand-written lists of ports and sound endpoints with their
-             containers and hubs; the station on a throw-away profile with a scripted
-             list of ports. No radio.
-             (a) The station's own IC-7300 on COM3 at 9600: the proposal is COM3,
-             IC-7300, the endpoint "icom7300://COM3?baud=9600&radio=94&controller=e0",
-             PTT by CAT, AGC slow; the capture and the render endpoint under the
-             port's hub go with it and a microphone under another hub does not. The
-             endpoint is one RadioConnection takes.
-             (b) No own connection, an IC-7300 on COM4 that answers at 19200: the
-             endpoint "icom7300://COM4?baud=19200&radio=94&controller=e0"; its menu
-             items are read on the opened port.
-             (c) Two IC-7300: two radios the station can control, no proposal.
-             (d) An endpoint under the hub of the port: at the radio's place. Two
-             capture endpoints under that hub: neither is the radio's, the one render
-             endpoint is. The same container under different hubs: at the radio's
-             place. Only a root hub in common, and the container Windows gives a
-             device without one: not at the radio's place.
-             (e) DetectRadios without the confirmation: confirmationRequired. While
-             a detection runs: busy. No port on the PC: an empty report without a
-             proposal. */
+        doc /* The place of a radio's port, the proposal and the refusals. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -193,8 +143,6 @@ package WstxRadioSetup {
                 + "server/src/radio_setup_tests.rs";
         }
     }
-
-    // ---- The recommended menu items -----------------------------------------------------
 
     requirement 'CL-044-04' {
         subject radioControl : RadioControlInterface;
@@ -221,26 +169,7 @@ package WstxRadioSetup {
     }
 
     verification 'TC-044-003' {
-        doc /* The recommended menu items are set.
-             Setup: the station on a throw-away profile, its radio connection ready on
-             a scripted IC-7300 with usbSend DTR, usbKeyingCw OFF, usbKeyingRtty RTS,
-             dataMod MIC and civTransceive ON. No radio.
-             (a) Apply: usbSend OFF, usbKeyingRtty OFF, dataMod USB and civTransceive
-             OFF are written in this order, each followed by its read; usbKeyingCw is
-             not written.
-             (b) Apply again: nothing is written.
-             (d) The radio reports that it transmits: the outcome names usbSend and
-             busy, and nothing is written. Another connection
-             number: stateConflict. The transmitter armed: transmitArmed, nothing
-             written.
-             (e) The radio refuses the write of usbKeyingRtty: the outcome names it
-             and rejected; usbSend was written.
-             (f) The radio acknowledges dataMod and keeps MIC: the outcome names
-             dataMod and readbackMismatch.
-             (g) The radio answers with the identity A4: unsupportedRadio, nothing
-             written.
-             (h) In (a), (b) and (g) no key command and no write of frequency, mode
-             or data mode goes out. */
+        doc /* The recommended menu items are set. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -248,12 +177,10 @@ package WstxRadioSetup {
         @TestedBy { test = "server/src/radio_setup_tests.rs"; }
     }
 
-    // ---- The AGC ------------------------------------------------------------------------
-
     requirement 'CL-044-10' {
         subject radioControl : RadioControlInterface;
         doc /* Radio control MUST set the AGC of its configuration on the radio whenever
-             a connection becomes ready and whenever the station service asks for it
+             a connection becomes ready and whenever the supervisor asks for it
              within a change of the operating selection (ManagedAgc). */
         @Status { build = ImplementationState::implemented; }
     }
@@ -267,7 +194,7 @@ package WstxRadioSetup {
              transmitter is not at rest (TransmitterActivity). An attempt that ends with
              busy is made again after retrySeconds; every other end is final for that
              connection. An attempt the radio does not answer in time ends with timeout.
-             On ApplyAgc, inside the reservation of the station service, at once.
+             On ApplyAgc, inside the reservation of the supervisor, at once.
              Nothing is sent while the transmitter is not at rest. What comes of it
              is reported and does not fail the change it belongs to.
              Without an AGC in the configuration nothing is read or set. */
@@ -294,23 +221,8 @@ package WstxRadioSetup {
     }
 
     verification 'TC-044-009' {
-        doc /* The wanted AGC is set at a connection and within a change of the
-             selection, and reported.
-             Setup: the station on a throw-away profile that wants the AGC SLOW, its
-             radio connection ready on a scripted IC-7300. No radio.
-             (a) The radio at MID: before the first look no status. Then the read,
-             the write of SLOW and the read; the status is target SLOW, value SLOW,
-             written, connect, with the number of the connection. A further look
-             sends nothing.
-             (b) The radio at SLOW: the read alone; unchanged.
-             (c) The radio transmitting: busy and no write; 100 ms later still none;
-             2 s later, the radio receiving: written.
-             (d) The transmitter armed: no frame of the AGC and no status.
-             (e) The radio turned to FAST, then a band change to 20 m in FT8: SLOW is
-             written after the frequency; written, selection.
-             (f) A change of the mode to FT4 with the radio at SLOW: the read of the
-             AGC alone; unchanged, selection.
-             (g) The proposal of a detection carries the AGC slow. */
+        doc /* The wanted AGC is set at a connection and within a change of the selection, and
+             reported. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -323,8 +235,6 @@ package WstxRadioSetup {
                 + "server/src/radio_setup_tests.rs";
         }
     }
-
-    // ---- The radio of the profile at station start --------------------------------------
 
     requirement 'CL-044-15' {
         subject radioControl : RadioControlInterface;
@@ -365,34 +275,7 @@ package WstxRadioSetup {
     }
 
     verification 'TC-044-020' {
-        doc /* The radio of the profile at station start.
-             Setup: the station on a throw-away profile with
-             RadioRecords::keyingConfirmed true, and a scripted list of ports, held
-             ports and radios that records every opening and frame. No radio.
-             (a) The profile's COM3 answers, and so does COM5: kept; COM3 alone is
-             opened.
-             (b) The profile's COM3 and COM4 held, COM5 silent, an IC-7300 on COM6 at
-             19200: RadioDiscovered with the endpoint
-             "icom7300://COM6?baud=19200&radio=94&controller=e0" and the PTT the
-             profile had, disabled; the ports opened are 3, 4, 5 and 6.
-             (c) The profile's COM3 silent and COM4 held: kept.
-             (d) A profile saved with the mode disabled, a radio present: no port is
-             opened.
-             (e) A profile never saved, a port on another serial adapter, an IC-705
-             on COM5 and an IC-7300 on COM6 at 9600: COM6 with PTT by CAT; the ports
-             opened are 5 and 6.
-             (f) Three stations in turn, IC-7300 on COM3 and COM6: the first takes
-             COM3, the second COM6; the third, whose profile names COM3, keeps its
-             control. A port reserved by one holder is refused to a second, another
-             port is granted, and the first is granted again after the release.
-             (g) Without the KeyingConfirmation, on a profile never saved and on one
-             that names COM3: no port is opened and keyingConfirmed is false.
-             DetectRadios without the confirmation: refused, and no record. With it:
-             the record is there and keyingConfirmed is true; the next DiscoverRadio
-             opens COM3.
-             (h) Three silent ports and 200 ms in all: the first alone is opened,
-             and it ends within 2 s.
-             (i) In (a), (b) and (e) every frame sent is a read of the identity. */
+        doc /* The radio of the profile at station start. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

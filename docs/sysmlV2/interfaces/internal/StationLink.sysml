@@ -1,394 +1,228 @@
 package WstxStationLink {
     private import ScalarValues::*;
-    private import WstxRecordingTransfer::Recording;
     private import WstxStationCommands::StationOperations;
-    private import WstxReceiveControl::ErrorCode;
+    private import WstxDisplayData::SpectrumFrame;
+    private import WstxDisplayData::DetailedSpectrumFrame;
+    private import WstxStationTime::StationTime;
+    private import ModelNotes::FollowsSource;
+
+    doc /* How the features of the station boundary (WstxStationCommands::StationOperations)
+         travel between a station's browser clients and its web function, by HTTP and on
+         the one WebSocket of each browser, with the display rows and what the connection
+         holds of its own. */
+
     port def BrowserExchange :> StationOperations {
-        out item upload : Recording;
+        doc /* Written from the browser's side; web uses the conjugate. */
+        in item spectrum : SpectrumFrame;
+        in item detailedSpectrum : DetailedSpectrumFrame;
+        in item time : StationTime;
     }
     interface def StationLink {
-        doc /* The one front-to-back connection: a browser client and the web function of the
-             station process it is attached to. */
+        doc /* A browser client and the web function of its station. */
         end client : BrowserExchange;
         end web : ~BrowserExchange;
     }
-    attribute def Limits {
-        attribute controlBytes : Integer = 1024;
+
+    attribute def WireNames {
+        doc /* Every name on the wire is a model name in snake_case: each capital letter
+             becomes an underscore and its small letter, digits stay (setTx1Skip:
+             set_tx1_skip). This holds for the keys of JSON objects, the route segments,
+             the query parameters and the event types.
+             The function of a feature of StationOperations is the part whose control
+             interface defines the feature's item: supervisor for WstxStationCommands, qso
+             for WstxQsoControl, auto for WstxAutoControl, ranking for WstxRankingControl,
+             operating for WstxStrategies, receive for WstxReceiveControl, transmit for
+             WstxTransmitControl, log for WstxLogControl, radio_control for
+             WstxRadioControl, audio for WstxAudioControl, spots for WstxHearing, udp for
+             WstxUdpControl, clock for WstxStationTime, profile for WstxProfileAccess and
+             WstxRecordingTransfer.
+             The route of a feature is /, its function, / and the feature's name; a feature
+             named as its function has the route / and its function. */
+    }
+
+    attribute def JsonValues {
+        doc /* A value travels as JSON: an Integer as a JSON integer from 0 up to
+             safeIntegerMax, or a negative one where the attribute allows it; a Real as a
+             JSON number; a Boolean as true or false; a String as a JSON string; an
+             enumeration literal as its name; an attribute or item typed by a definition
+             as an object of its attributes; a multiplicity above one as an array, in the
+             order of the attribute when it is ordered; an absent optional value as null.
+             An object has exactly its keys: a key that is missing, unknown or given twice
+             makes the request invalid_request with that key as field. */
+        @FollowsSource { reference = "RFC 8259 (JSON); UTF-8 (RFC 3629)"; }
         attribute safeIntegerMax : Integer = 900719925 * 10000000 + 4740991;
-        attribute socketCount : Integer = 16;
-        attribute writeBufferBytes : Integer = 4096;
-        attribute sendDeadlineMs : Integer = 2000;
+    }
+
+    attribute def WireRule {
+        doc /* A command is the POST of its route. Its body is one JSON object: v (1),
+             profile_id, boot_id and command_id of the StationRequest, and the attributes
+             of the command's item. The requester is operator for every request web
+             passes on.
+             A read is the GET of its route; the attributes of the read's item are its
+             query parameters, an absent one left out.
+             A view is the GET of its route; the answer is one JSON object: v, profile_id,
+             boot_id and the view's attributes. On the socket the view is the event of
+             type function, a dot and the feature's name, or function and .state for a
+             view named as its function (SocketProtocol).
+             An answer is 200 with one JSON object: v, profile_id, boot_id, command_id for
+             a command, and the answer's attributes. A refusal answers with ErrorBody and
+             the status of StatusRule: StationRefused, SelectionRefused, RankingRefused,
+             StrategiesRefused, AutoRefused, Refused of receive, CursorExpired, LogRefused,
+             SettingsRefused, DetectRefused, ListRefused, SaveRefused and ImportRefused,
+             and every other answer whose refusal is present.
+             The settings take the methods of HTTP for documents: saveConfig is the PUT of
+             /profile/config and saveShack the PUT of /profile/shack, each with the body of
+             a command; createEntry is the POST of /profile and the collection's name
+             (WstxProfileAccess::SettingsCollection), updateEntry its PUT and deleteEntry
+             its DELETE with a slash and the member's key after it, coded as a path
+             segment; the item's collection and key stand in the route, not in the body.
+             The transfers of files follow Transfers. */
+        @FollowsSource { reference = "RFC 9110 (HTTP semantics); RFC 3986 (URI)"; }
+    }
+
+    enum def WireRefusal {
+        doc /* The refusals of the connection itself, before the supervisor sees the
+             request.
+             forbidden_origin: a request that changes something, or a socket, without
+             exactly the station's origin in Origin.
+             request_too_large: a body above its limit (Limits).
+             unsupported_media_type: a body of another type than application/json, at
+             most with charset=utf-8, where JSON is due.
+             invalid_request: a request that is not the form of its item.
+             unsupported_version: v other than 1.
+             not_found: no route, or no member with the key. */
+        enum forbidden_origin;
+        enum request_too_large;
+        enum unsupported_media_type;
+        enum invalid_request;
+        enum unsupported_version;
+        enum not_found;
+    }
+    attribute def ErrorBody {
+        doc /* The body of every refusal: exactly {"error": {"code", "field"}}. code is the
+             refusal's literal; field is the wire name of the value the refusal is about,
+             or null. No text of the request is returned. */
+        attribute code : String;
+        attribute 'field' : String[0..1];
+    }
+    attribute def StatusRule {
+        doc /* The HTTP status of a refusal, by its code: 400 for invalid_request,
+             unsupported_version and every code that begins with invalid_ or is
+             out_of_range; 403 for forbidden_origin and wrong_profile; 404 for not_found;
+             410 for cursor_expired; 413 for request_too_large; 415 for
+             unsupported_media_type; 422 for invalid_recording, unsupported_audio,
+             recording_limit and import_failed; 502 for download_failed; 503 for
+             storage_unavailable; 409 for every other code. */
+        @FollowsSource { reference = "RFC 9110 section 15 (status codes)"; }
+    }
+    attribute def RequestOrder {
+        doc /* The checks of a request, in this order; the first that fails answers:
+             the route and its method (not_found; a method the route has not: 405 with
+             Allow); Origin; the media type; the size of the body; the form of the item
+             and v; then the supervisor (WstxStationAuthority::ReceiptRule, GateRule) and
+             the function. A GET may come without Origin; one with an Origin that is not
+             the station's is refused. */
+    }
+
+    attribute def Limits {
+        doc /* The largest body web takes, in bytes of UTF-8. Every request not named
+             below: controlBytes. */
+        attribute controlBytes : Integer = 1024;
+        attribute recordBytes : Integer = 8192 {
+            doc /* saveRecord: a comment of 1024 characters fits with every character
+                 escaped. */ }
+        attribute settingsBytes : Integer = 32768 {
+            doc /* saveConfig, saveShack, createEntry and updateEntry. */ }
+        attribute logChunkBytes : Integer = 16384 { doc /* A part of a logbook file. */ }
+        attribute recordingChunkBytes : Integer = 2048 {
+            doc /* A part of a recording's file. */ }
+    }
+
+    attribute def Transfers {
+        doc /* The features that carry a file, and the page.
+             importChunk is the PUT of /log/import/ and the import's id, recordingChunk the
+             PUT of /profile/recording/ and the import's id: the body is the part of the
+             file as bytes (application/octet-stream for the logbook, audio/wav for a
+             recording, without a content coding), with exactly one Content-Range of the
+             form bytes start-end/total; its answer is the import's view.
+             export is the GET of /log/export: the logbook as an ADIF file,
+             application/octet-stream, as the attachment contacts.adi, sent in parts as the
+             log gives them (ExportChunk), without a Content-Length.
+             The page is the GET of /, its scripts and styles each the GET of its file
+             name (WstxListener::ClientFiles). */
+        @FollowsSource { reference = "RFC 9110 section 14.4 (Content-Range); ADIF 3"; }
+    }
+
+    enum def RequestError {
+        doc /* The refusals of a message on the socket.
+             invalid_json: not a JSON object. invalid_request: not the form of its type.
+             unsupported_version: v other than 1. unknown_command: a type the socket does
+             not take. */
+        enum invalid_json;
+        enum invalid_request;
+        enum unsupported_version;
+        enum unknown_command;
+    }
+    enum def DisplayProfile {
+        doc /* What a socket receives of the display. off: no rows. thin: the thin rows.
+             detail: the detailed rows. */
+        enum off;
+        enum thin;
+        enum detail;
+    }
+    attribute def SocketProtocol {
+        doc /* Each browser holds one WebSocket to its station: the GET of /ws with exactly
+             the station's origin and the subprotocol wstx.v1. Its messages are text, each
+             one JSON object of at most Limits::controlBytes from the browser; a binary
+             message closes the socket with 1003.
+             The browser sends {v, type, id}, id a JSON integer chosen by the browser:
+             station.get, answered by station.status {v, type, id, data {version, build}}
+             with the station's version and the client's build (WstxListener::ClientBuild);
+             spectrum.off, spectrum.thin and spectrum.detail, answered by
+             spectrum.subscription {v, type, id, data {profile}} with the DisplayProfile. A
+             refused message is answered by error {v, type, id, data {code}} with a
+             RequestError, id null when none could be read; the socket stays open.
+             The station sends heartbeat {v, type} and a ping every heartbeatMs; the
+             browser answers the ping.
+             A socket starts at off. From its first subscription on it receives the event
+             of each view: {v, type, data {profile_id, boot_id, changed}}, changed the
+             attributes whose values differ from the last event of that view on this
+             socket, all of them in the first. An event follows a change within
+             eventDelayMs; a view changing faster is sent at most once per eventDelayMs,
+             with its latest values. openSlots goes to thin and detail only. The rows go
+             as DisplayRows says. Once a second the station sends clock.time {v, type,
+             data {boot_id, utc_ms, time_state}} with station time (StationTime). */
+        @FollowsSource { reference = "RFC 6455 (WebSocket)"; }
         attribute heartbeatMs : Integer = 5000;
-        attribute stalePongMs : Integer = 15000;
-        attribute clientSilenceMs : Integer = 12000;
-        attribute clientWatchdogMs : Integer = 1000;
-        attribute clientConnectMs : Integer = 5000;
-        attribute restoredSnapshotMs : Integer = 10000;
-        attribute cookieMaxAgeSeconds : Integer = 28800;
-        attribute loginAttempts : Integer = 10;
-        attribute loginWindowSeconds : Integer = 60;
-        doc /* Incoming text/frame and outbound control/Thin are <=1024 UTF-8 bytes.
-             WstxRecordingReceive explicitly permits <=2048-byte Detailed events.
-             OS socket/kernel and HTTP/TLS memory are additional runtime bounds;
-             application limits do not claim a total process-memory bound. */
+        attribute eventDelayMs : Integer = 1000;
     }
-    attribute def LoginInput {
-        attribute originPresentAndExact : Boolean;
-        attribute tokenValid : Boolean;
-        attribute bodyBytes : Integer;
-        attribute attemptsInWindow : Integer;
-        doc /* POST /session accepts raw token body <=1024 bytes. Exact Origin is
-             required. A successful TLS login returns204 and a Secure, HttpOnly,
-             SameSite=Strict cookie scoped to/. Invalid token=>401; missing/wrong
-             Origin=>403; requests beyond ten per60s global window=>429. This may
-             temporarily deny legitimate logins under attack; internet-facing deployment
-             adds edge rate limiting. Oversized requests are refused before acceptance.
-             No failure reveals tokens. This boundary has no user-account database. */
+    attribute def DisplayRows {
+        doc /* A socket at thin receives each row of the job as spectrum.frame, one at
+             detail each detailed row as spectrum.detail.frame: {v, type, data} with
+             boot_id and the attributes of the row; the job's identity as source_id and
+             job_id; the levels of a detailed row as levels_b64, the 1024 levels as bytes
+             in standard base64 with padding (1368 characters); the key tx only when the
+             row is of a transmitted period. A detailed row waits for a slow socket up to
+             detailRecentRows rows; a socket that falls further behind loses the oldest.
+             A new subscription begins at the newest row. */
+        @FollowsSource { reference = "RFC 4648 section 4 (base64)"; }
+        attribute detailRecentRows : Integer = 25;
     }
-    item def Heartbeat {
-        attribute v : Integer = 1;
-        attribute 'type' : String = "heartbeat";
-        doc /* Exact{v:1,type:heartbeat} plus a WebSocket Ping every5s. Browsers answer
-             Ping. On the next heartbeat tick, >15s without Pong disconnects that peer. */
-    }
+
     attribute def ThinLinkBudget {
-        attribute bitsPerSecondEachDirection : Integer = 32000;
+        doc /* The link the station is built to work on: two browsers share one link of
+             bitsPerSecond in each direction with roundTripMs. Targets of normal operation,
+             judged from the link byte log (WstxListener::LinkTrafficLog), each over
+             measurementSeconds and per direction with the heartbeat: two browsers at thin
+             during live receive on a busy band and one contact, at most thinBytesPerSecond;
+             at off with the operator idle, at most idleBytesPerSecond; the station's state
+             shown within statusShownMs of a refresh. The page and its files, a reconnection,
+             a selection, a recording and an import carry no target, nor does detail. */
+        attribute bitsPerSecond : Integer = 32000;
         attribute roundTripMs : Integer = 300;
-        attribute clients : Integer = 2;
         attribute measurementSeconds : Integer = 60;
-        attribute idleBytesPerSecondEachDirectionMax : Integer = 1000;
-        attribute thinBytesPerSecondEachDirectionMax : Integer = 3000;
-        attribute connectedStatusDisplayMs : Integer = 2000;
-        doc /* Shared bottleneck, not one32kbit link per browser. Targets of normal operation
-             (#80, operator 2026-11-09): two browsers loaded and connected, live receive on a
-             busy band (FT8, about 40 decodes per period), the waterfall on Thin, one complete
-             QSO answering a CQ, the operator sorting and scrolling Band Activity and refreshing
-             status; then Off with the same receive and the operator idle. Thin at most
-             thinBytesPerSecondEachDirectionMax and Off at most idleBytesPerSecondEachDirectionMax
-             per direction, heartbeat and accounted protocol overhead included, over
-             measurementSeconds; connected status within connectedStatusDisplayMs. No test asserts
-             these numbers: the operator judges the bytes from LinkTrafficLog, and the live check
-             after a deploy watches that Refresh status shows within connectedStatusDisplayMs on
-             the thin link (operator 2026-11-09, "Watch it in the live check"). Page and asset loading,
-             reconnection, authorization recovery, CAT, selection or mode/band changes, recording
-             replay or import and log maintenance carry no link budget. Detailed carries no
-             32 kbit/s promise. */
-    }
-    attribute def LinkTrafficLog {
-        attribute fileName : String = "link-traffic.log";
-        attribute rotateBytes : Integer = 4194304;
-        attribute tlsRecordOverheadBytes : Integer = 29;
-        attribute tlsRecordPayloadMax : Integer = 16384;
-        doc /* (#80, operator 2026-11-09) The station counts the bytes between each client and
-             itself and writes them, per period, to fileName in the profile directory: one JSON
-             line per client that had traffic in the period, written at the period's end; at
-             rotateBytes the file first moves to link-traffic.1.log, replacing the older one (as the
-             MCP audit, WstxMcpInterface::McpCredential). A station without a profile directory writes no
-             log. The log is local: nothing of it is sent on a socket or in a response, and no
-             client reads it; the operator reads the file. Counting never waits, and the line is
-             written by its own task, never on a socket's or a request's path (the profile store's
-             lock is not taken there).
-             Period: the selected operating mode's (FT8 15000 ms, FT4 7500 ms), aligned to UTC
-             period starts; mode "none" with 15000 ms periods when no mode is selected. A mode
-             change at time c ends the open period there (its line: utc_ms its start, period_ms
-             c - start, the old mode); the next period runs from c to the next UTC period start of
-             the new mode (utc_ms c, period_ms up to that start, the new mode), then full periods.
-             Example: FT8 period 12:00:00, change to FT4 at 12:00:05.200: lines (12:00:00, 5200,
-             FT8), (12:00:05.200, 2300, FT4), (12:00:07.500, 7500, FT4).
-             Client: "browser:<grant_id>" for an enrolled browser, "mcp:<client_id>" for an MCP
-             client, "local" otherwise. Each TCP connection belongs, at each period end, to the
-             client of its most recent request the station accepted with credentials (a browser
-             grant, also by the WebSocket upgrade, or an MCP bearer); a connection without one is
-             local (plaintext loopback, a page before enrollment, requests refused before
-             authentication, also on TLS). Everything counted on a connection, its refused requests
-             included, goes to that client. No cookie, token, proof or body content is logged.
-             Line: {utc_ms, period_ms, mode, client, display (the display profile of each of the
-             client's sockets at the period's end: "detail", "thin", "off" or "none"), to_client and
-             from_client, each {bytes, other, estimate, types}}.
-             bytes (exact): the TCP payload bytes the station wrote (to_client) or read (from_client)
-             on the client's connections in the period, counted below TLS, so TLS records and
-             handshakes are included; the same on HTTP/1.1, HTTP/2 and WebSocket connections.
-             types maps a message type to [count, bytes], each message counted in the period in
-             which the station finished writing or reading it, by one rule for every HTTP version:
-             "ws <type>" for a WebSocket text message by its JSON type (station.status,
-             spectrum.subscription and error replies included), "ws ping", "ws pong", "ws close",
-             each the frame's header and payload as written or read (a client frame's mask
-             included); "<METHOD> <route>" for an HTTP exchange with the route's template (an
-             identifier segment as {id}; the WebSocket upgrade is "GET /ws"; the method is named only when it is GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH, CONNECT or TRACE, any other is "OTHER", and a request matching no route has the route "unrouted", so no client text becomes a type), so the set of types
-             is bounded. An HTTP request counts "<METHOD> <path and query> HTTP/1.1" CRLF, each header
-             field the router received as "name: value" CRLF, CRLF, and its body bytes as read; a
-             response counts "HTTP/1.1 <code> <reason>" CRLF, each header field it carries when it
-             leaves the outermost router layer (after content coding) as "name: value" CRLF, CRLF,
-             and its body bytes as sent after content coding (no chunk framing). What the HTTP
-             server adds itself (date, a content-length or transfer-encoding it sets, the Allow field of a 405, chunk framing,
-             HTTP/2 frames and header compression) is not in types.
-             other = bytes - sum of the types' bytes: TLS, handshakes and what the HTTP server adds;
-             signed, since HTTP/2 header compression can make it negative.
-             estimate (the IndependentLinkAccounting model, so that the numbers compare with
-             ThinLinkBudget): with t = tlsRecordOverheadBytes on TLS and 0 on plaintext, each message
-             m of a direction with type bytes b takes w = b + t x ceil(b / tlsRecordPayloadMax) wire
-             bytes and ceil(w / segmentBytesMax) segments; the rest r = max(0, bytes - sum of w)
-             takes ceil(r / segmentBytesMax) segments; S is the direction's segment total, and
-             estimate = bytes + headerBytesPerSegment x S(this direction)
-             + reverseAckBytesPerSegment x S(other direction).
-             Worked example (TLS, one FT8 period, one Thin browser): to_client 3 ws station.tick of
-             228 B (224-byte payload, 4-byte header), 3 ws heartbeat of 28 B and 3 ws ping of 2 B,
-             each in one 29-byte TLS record, so bytes = 684 + 84 + 6 + 9 x 29 = 1035, r = 0, S = 9;
-             from_client 3 ws pong of 6 B (2-byte header, 4-byte mask), each in one record,
-             bytes = 3 x 35 = 105, S = 3. estimate to_client = 1035 + 80 x 9 + 80 x 3 = 1995
-             (133 B/s), from_client = 105 + 80 x 3 + 80 x 9 = 1065 (71 B/s).
-             Types are application bytes because only they can be told apart by message; bytes is
-             counted below TLS because only there is the total exact.
-             Implementation facts (#80 coder, 2026-11-09): periods follow the system clock's UTC (not the corrected station
-             clock) and the operating mode read every 100 ms, so a mode change ends its period within 100 ms; received
-             WebSocket text is typed only by a known command (station.get, recording.get, spectrum.thin, spectrum.detail,
-             spectrum.off), any other text is "ws other" and binary "ws binary", so a client cannot grow the set of
-             types; a request without a route is "<METHOD> unrouted"; a request is recorded when its response is
-             produced, a response when its body is dropped; a closed connection's counts go into the next period line. */
-    }
-    attribute def PushedStationState {
-        attribute safetyReadMinimumMs : Integer = 30000;
-        doc /* Governing rule of the station-browser interface (operator decision #10,
-             2026-11-04): a client-server application. Each browser holds one wstx.v1
-             WebSocket; the station pushes typed state events on that socket when its
-             state changes (transmit/PTT, contact, decode records, selection/radio/band,
-             clock, log changes), each throttled per peer by that peer's
-             display subscription (Detailed, Thin, Off), so an idle Off peer receives
-             almost nothing beyond heartbeat and station.tick. HTTP carries commands and
-             one snapshot read per state on (re)connect. transmit.state, contact.state,
-             selection.state, receive.state and clock.state (#92, every profile) carry
-             their state (WstxTransmitControl::TransmitWire, WstxQsoControl::ContactStateEvent,
-             WstxStationCommands::SelectionStateEvent, the receive wire, WstxRequirements
-             CL-043-01); decode records are not carried yet;
-             a state not yet carried is read after its announcement event (one pending read
-             per state and browser) and after the browser's own mutation; a browser does not
-             poll on a timer, except a safety read of a state not yet carried no more often
-             than once per safetyReadMinimumMs. The browser holds the state (snapshot plus events) and
-             renders locally. Safety decisions (HALT, watchdog, PTT keying and release)
-             stay on the station and never wait for a browser read. Existing reads are
-             migrated in slices: first GET /transmit (WstxTransmitControl::TransmitWire
-             transmit.state), then receive results, recording (WstxRecordingReceive
-             recording.state), profile (profile.state: exactly {v:1,type:"profile.state",
-             data:{profile_id,boot_id,revision}}, sent to a display-subscribed peer once
-             after its first subscription and then when the saved revision changes, checked
-             once per second; the browser reads GET /profile once per socket for its first
-             status and on a newer announced revision, not on a later status of the socket),
-             operating selection (WstxStationCommands::SelectionStateEvent) and radio;
-             free_tx_slots.state (#65, #82) carries its state: exactly {v:1,type:"free_tx_slots.state",
-             data:{profile_id,boot_id,free_tx_slots}} (WstxAutoControl::FreeTxSlots, at most 1024
-             bytes), sent to each Detailed or Thin peer at each build of the value (every period start, when the decodes of a counted
-             period are published (operator 2026-11-09, Rebuild on decodes), and at once when a QSO starts or ends or the live job, mode or band
-             changes), once with free_tx_slots null when the value becomes null, and once to
-             a peer that subscribes Detailed or Thin while a value exists; with or without a
-             run, also while automation is never used; never to an Off peer. Its cost on the
-             thin link is a target within ThinLinkBudget's Thin envelope, judged from
-             LinkTrafficLog (#80): at most
-             2 x (1024 + 4 WS + 29 TLS + 3 x 160 accounted TCP/ACK) / 7.5 s, about 410 B/s
-             for two FT4 browsers, half that in FT8, and in a QSO one more build per Rx period
-             (at most 1.5 times that, about 615 B/s for two FT4 browsers); until a read
-             is migrated its existing cadence rules apply.
-             A new boot (#74, operator 2026-11-08, CL-074-01): the browser learns the station's
-             boot_id from GET /profile of a socket and from profile.state. When it learns a
-             boot_id other than the one a view's held station state belongs to, that view drops
-             the state at once and shows the form a freshly loaded page shows before its reads
-             (no value of the previous boot, alone or together with values of the new boot),
-             then reads its snapshot under its own rule (one read per socket, or only after its
-             announcement event where its rule says so, as WstxOperatingLayout::AutomationIndicator) or
-             waits for its first event; a snapshot reply that names another boot_id than the
-             browser's current one is discarded (events of a closed socket are already
-             ignored). This holds for every view of station state:
-             contact, recording, receive, operating selection, AGC, Tx level, native radio,
-             transmit, strategy (WstxOperatingLayout::StrategySelector), automation, PSK Reporter,
-             Monitor off at startup and alerts. Once the reads and first events of the new boot
-             have arrived, each view shows what a page loaded fresh at that moment shows. A
-             failed read leaves the empty form until that view's next read under its rule; no
-             retry timer. While the socket is down, views keep their values under the existing
-             stale marks until the new boot is learned. The logbook is stored history, not
-             state of one boot, and keeps its own rules. */
-    }
-    attribute def RuntimeInputs {
-        doc /* WSTX_TLS_CERT/KEY/TOKEN only; relative TLS paths resolve process CWD
-             in BOTH modes. They are never serialized into settings/profile responses.
-             Profile mode rejects present WSTX_BIND/WSTX_ORIGIN, including empty values.
-             TLS pair complete, token 32..128 ASCII letters/digits with TLS only;
-             non-loopback requires TLS/token plus saved explicit HTTPS origin.
-             Independent random tokens per profile are an operator prerequisite:
-             deliberately sharing the same login secret authorizes both logins. */
-        attribute tlsCertificatePath : String[0..1];
-        attribute tlsKeyPath : String[0..1];
-        attribute token : String[0..1];
-        attribute forbiddenBindPresent : Boolean;
-        attribute forbiddenOriginPresent : Boolean;
-    }
-    attribute def SelectedRadioAuthorizationScope {
-        doc /* ProfileId is the persisted logical station identity in this phase;
-             HTTPS origin is exact effective Endpoint.origin including port. UUIDs are
-             lowercase RFC9562v4; safetyRevision is positive safe integer<=maxRevision.
-             RadioId is authority-assigned, not COM endpoint/boot/browser identity.
-             Migration assigns identity only, no grant or commissioning. An
-             endpoint/model/PTT change increments revision and
-             invalidates commissioning. Unchanged USB return preserves both. */
-        attribute profileId : String;
-        attribute radioId : String;
-        attribute safetyRevision : Integer;
-        attribute httpsOrigin : String;
-    }
-    attribute def RadioCommissioningRecord {
-        doc /* Single current observable acknowledgement for exact scope and effective
-             endpoint/model/PTT configuration. Owner persists it only after explicit
-             Confirm receive-only setup. Never a CAT open/query or transmit action.
-             Changed safety configuration invalidates it and exposes explicit recovery. */
-        attribute scope : SelectedRadioAuthorizationScope;
-        attribute receiveOnlyConfirmed : Boolean;
-    }
-    attribute def McpClientCredential {
-        doc /* (#58) A durable MCP client credential in the private authorization record:
-             id (UUID), name (1..32 printable ASCII, no leading or trailing space),
-             created_utc_ms, last_used_utc_ms (null until used; written at most every
-             10 minutes, exact in memory) and token_sha256 (unpadded base64url SHA-256 of the
-             complete token); never the token. At most maxMcpClients, ids and digests unique;
-             the record field mcp_clients is omitted while empty (records before #58 read
-             unchanged). Browser-only routes, Origin exact, JSON body <= 1024 bytes:
-             GET /authorization/v1/mcp-clients (read-only, Cache-Control no-store; a
-             present Origin must be exact) lists {version, max_clients,
-             clients [{client_id, name, created_utc_ms, last_used_utc_ms}], recent (newest
-             first audit entries, WstxMcpInterface::McpCredential)}; .../create {version:1, name}
-             returns 200 {version, client_id, name, created_utc_ms, token} with Cache-Control
-             no-store, the only time the token is shown (cap reached 429, invalid name 400);
-             .../revoke {version:1, client_id} removes it and every transport of it at once
-             and returns the listing (unknown 409). An auth-v1 revoke with all_for_radio
-             also removes every MCP client. An MCP token is never accepted as a browser
-             cookie, by /session or by these routes. Settings > General > Access & grants
-             shows the list with Revoke (after confirmation), the create field and the new
-             token once with Copy and Done, and the recent use; it reads them only when
-             Settings opens. */
-        attribute id : String;
-        attribute name : String;
-        attribute createdUtcMs : Integer;
-        attribute lastUsedUtcMs : Integer[0..1];
-        attribute tokenSha256 : String;
-    }
-    attribute def BootstrapScopeRequest {
-        doc /* Delivered: exact POST /authorization/v1/bootstrap-scope request is
-             {version:1}; no optional/unknown/duplicate fields. */
-        attribute version : Integer = 1;
-    }
-    enum def DisplayProfile { enum off; enum thin; enum detail; }
-    enum def HttpMethod { enum get; enum mutation; }
-    attribute def HttpResponsePolicy {
-        attribute cacheControl : String = "no-store";
-        attribute corsAllowed : Boolean = false;
-        attribute jsonMediaType : String = "application/json";
-        doc /* contract 12.6: UTF-8 JSON except raw WAV input. No CORS permission is emitted.
-             JSON accepts optional UTF-8 charset as12.5. JSON schemas are exact:
-             reject duplicate/unknown/missing keys. */
-    }
-    attribute def HttpErrorDetail {
-        attribute code : ErrorCode;
-        attribute 'field' : String[0..0];
-        doc /* Exact members code and field. field is JSON null; code is the stable
-             declared error code, never reflected request input. */
-    }
-    attribute def HttpErrorBody {
-        attribute error : HttpErrorDetail;
-        doc /* Exact UTF-8 wire shape {"error":{"code":"...","field":null}}. */
-    }
-    attribute def HttpValidation {
-        attribute selectedProfile : Boolean;
-        attribute originAllowed : Boolean;
-        attribute authenticated : Boolean;
-        attribute responsePolicy : HttpResponsePolicy;
-        attribute mediaAllowed : Boolean;
-        attribute bodyBounded : Boolean;
-        attribute schemaValid : Boolean;
-        attribute versionSupported : Boolean;
-        attribute sameProfile : Boolean;
-        attribute sameBootGeneration : Boolean;
-        attribute resourceKnown : Boolean;
-        attribute stateAllowed : Boolean;
-        doc /* Validation order: mode/route existence; Origin (403 forbidden_origin); TLS auth
-             (401 unauthorized); content type/encoding (415 unsupported_media_type); declared or
-             observed body bound (413 request_too_large, transport rejection may occur earlier);
-             exact JSON/UUID/safe-integer/version schema (400 invalid_request/unsupported_version);
-             profile mismatch (403 wrong_profile); boot/generation mismatch (409 state_conflict);
-             resource existence (404 not_found); busy/state compatibility (409 busy/invalid_state);
-             file structure (422 invalid_recording); supported PCM capability (422 unsupported_audio);
-             frame/duration/chunk limit (422 recording_limit); I/O/cleanup (503 storage_unavailable).
-             Malformed/missing/duplicate Content-Range is400 invalid_request; incorrect byte offset
-             or changed total is409 state_conflict. An import total above the file cap is413
-             request_too_large. A stalled/expired import is408 upload_timeout, explicit cancel is409 cancelled on an
-             in-flight PUT; completed DELETE still returns200. A missing recording is409 no_recording;
-             generation ceiling is409 generation_exhausted. Syntactic UUID errors are400; foreign
-             well-formed UUIDs are404 except explicit profile_id mismatch. Errors do not echo input.
-             Input progress is bytes received/declared Content-Range total while receiving; before
-             the first chunk show awaiting upload rather than a fabricated percent. Validation/commit states are distinct from completed. */
-    }
-
-    attribute def AlertWire {
-        attribute alert : WstxRankingControl::Alert;
-        doc /* Routes (the StrategyHttp rules for Origin, authorization, media and size): GET
-             /strategy/alerts (operating access, no query, empty body) -> {v 1, profile_id,
-             boot_id, revision, alerts (oldest first)}. POST /strategy/alerts/clear {v,
-             profile_id, boot_id}: exact keys, the refusals of POST /strategy/ignore (400
-             invalid_request with the field, unsupported_version, 403 wrong_profile, 409
-             state_conflict boot_id); it empties the history, revision + 1, and returns the
-             alerts snapshot. No MCP tool dispatches to the clear (an MCP principal is refused);
-             wstx_read view alerts reads GET /strategy/alerts (WstxMcpInterface::ToolCatalog).
-             Event: a display-subscribed peer receives alert.state {v 1, type "alert.state",
-             data {profile_id, boot_id, alert_revision}} when the revision changes after it
-             subscribed (never on subscription itself), paced with contact.state; the browser
-             then reads GET /strategy/alerts. */
-    }
-    attribute def MostWantedListWire {
-        attribute status : WstxRankingControl::MostWantedStatus;
-        doc /* Status in the GET /strategy snapshot: most_wanted null or {date, entries,
-             unmapped}, most_wanted_unreadable, most_wanted_attribution "Club Log Most Wanted
-             list, Club Log (c) Michael Wells G7VJR, clublog.org".
-             POST /strategy/most-wanted/download {v, profile_id, boot_id}: the station fetches
-             the source once on the operator's click (WstxClubLog::MostWantedDownload); a
-             failure or a reply that is no list is 502 download_failed with error.reason,
-             nothing changed. Exact keys, with the refusals of POST /strategy/ignore, and it
-             returns the snapshot; no MCP tool dispatches to it. There is no automatic refresh. */
-    }
-    attribute def ContestVerdictWire {
-        attribute verdict : WstxRankingControl::ContestVerdict;
-        attribute tally : WstxRankingControl::ContestTally;
-        doc /* POST /strategy/evaluate with strategy null and a contest in force returns the
-             contest verdicts, with strategy the profile's name and contest the tally {qsos,
-             multipliers, points,
-             score} (null when the log is unreadable); explain false lists the ranked, the
-             greyed and the dupes. A draft strategy still previews the draft. why: "calls my
-             call", "new multiplier", "<n> points" joined by " \· ", or the reason above. */
-    }
-
-    attribute def IgnoreListsWire {
-        attribute lists : WstxRankingControl::IgnoreLists;
-        attribute command : WstxRankingControl::IgnoreCommand;
-        doc /* POST /strategy/ignore {v, profile_id, boot_id, call, ignore}: exact keys; same
-             Origin/authorization/media/size rules and refusal codes as PUT /strategy (400
-             invalid_request with the field, unsupported_version, 403 wrong_profile, 409
-             state_conflict boot_id); call: an entry of CL-042-02's form; ignore true adds that
-             entry to the session list (or renews it), false removes it (not listed: no
-             change). It changes no revision, is allowed while a strategy runs and applies at
-             the next evaluation;
-             returns the snapshot. No MCP tool dispatches to it (an MCP principal is refused). */
-    }
-    attribute def EvaluateWire {
-        attribute request : WstxRankingControl::EvaluateRequest;
-        attribute reply : WstxRankingControl::EvaluateReply;
-        doc /* POST /strategy/evaluate {v, profile_id, boot_id, source_id, job_id, generation,
-             first_sequence, next_sequence (0 <= next - first <= 2048), strategy (null: the
-             saved active strategy, else a draft Strategy), explain}: the verdicts of the
-             retained live records [first, next) of exactly that live job (another job: 409
-             stale_request job_id; no active strategy: 409 not_configured strategy) in display
-             order: every one when explain, else only those with a rank or grey. Never changes
-             station state. */
-    }
-    attribute def RankingStateWire {
-        attribute rankingState : WstxRankingControl::RankingState;
-        doc /* GET /strategy carries the ranking state: my_continent (configured, else derived;
-             null when unknown), derived_continent, session_ignore (the session list in the
-             order added without ended entries, each {call, band, remaining_s: whole seconds to
-             its expiry, rounded up}), the MostWantedList status. */
+        attribute thinBytesPerSecond : Integer = 3000;
+        attribute idleBytesPerSecond : Integer = 1000;
+        attribute statusShownMs : Integer = 2000;
     }
 }

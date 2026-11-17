@@ -730,3 +730,10 @@ the file first; the planned line (i) carries it).
 Not verified: the bodies of the tests of TC-044-003 and TC-044-020 were searched for the
 two file names (lines 163 to 171, 1050, 1092, 1229, 1232 of `radio_setup_tests.rs`), not
 read in full again.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-009-007 (`CatControl.sysml`): its counts 0, 10, 60 and 120 of the ALC: 0, 8, 50 and 100 percent.

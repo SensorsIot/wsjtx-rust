@@ -14,8 +14,6 @@ package WstxTxLevel {
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
 
-    // ---- The level and how it is set ----------------------------------------------------------
-
     requirement 'CL-044-12' {
         subject transmit : TransmitService;
         doc /* Transmit MUST play its audio at the Tx level of the station's band, set by
@@ -90,17 +88,7 @@ package WstxTxLevel {
     }
 
     verification 'TC-044-013' {
-        doc /* The level in a transmission and in a tone.
-             Setup: the transmit function on a given clock with a scripted radio and an
-             output that records every scale it is given; no sound device, no radio.
-             (a) The level -12 set while nothing plays: the output is given nothing. A
-             transmission: the output is given -12 once, directly before its program.
-             The level -13 set during the transmission: the output is given nothing
-             more.
-             (b) The level -99 set, then the tone: the tone starts at -40. The level 5
-             set during the tone: the output is given 0 at once.
-             (c) The scale of the level 0 is 0.5, that of -20 is 0.05, and that of -99
-             is the scale of -40. */
+        doc /* The level in a transmission and in a tone. */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -112,44 +100,7 @@ package WstxTxLevel {
     }
 
     verification 'TC-044-014' {
-        doc /* Finding the level with the Tune tone, and the stored level.
-             Setup: the transmit function of a station on a disposable profile folder,
-             LevelMode automatic, with an output that records every scale and radio
-             control on a scripted IC-7300 that is keyed and reports an output power of
-             50 %; no sound device, no radio.
-             (a) The decision of a finding. At -30 with an ALC of 0: -29. At -20 with an
-             ALC of 1: -21 is found. At -40 with an ALC of 1: -40 is found. At -10 with
-             an ALC of 0 and a profile power of 49: -11 is found; with a profile power
-             of 50: -9. At 0 with an ALC of 0: 0 is found, max_without_alc. No ALC
-             value: no_alc. An SWR of 3.0: high_swr.
-             (b) A radio whose ALC rises from -27 on, the tone switched on: it plays at
-             -30, -29, -28 and -27; the result is stored, and the level found and taken
-             is -28; the next tone plays at -28; the radio has received readings and no
-             setting. At every reading of the finding TxLevelStatus::level_db is the
-             level the tone plays at.
-             (c) Halt during a finding: aborted, no level found, the level 0, the tone
-             off.
-             (d) A radio that refuses the ALC reading: the finding ends with no_alc, alc
-             is unavailable and no level is found. With LevelMode manual, a
-             configuration with the level -12 for the band given during a tone: the
-             tone plays at -12 at once.
-             (e) At station start without a level for the band in the configuration:
-             the level 0, and a tone plays at 0. With the level -17: -17, and a tone
-             plays at -17.
-             (f) The ALC rises from -27 on and the level found does not come back as
-             saved: the result is storage_unavailable, the level 0, stored false, and
-             the next tone plays at 0.
-             (g) levelManaged true and no tone: no reading. The tone on outside a
-             finding, the radio with an ALC of 6: one reading, and meters holds alc 6,
-             po_pct 50 and swr_x10 10. 900 ms after that reading: no further one. 1000
-             ms after it: one more.
-             (h) Planned, no test yet: after a finding the tone goes on at the level
-             found, and at the level before after a finding without one, until it is
-             switched off or reaches its limit; the transmit state and its causes do not
-             change; a finding ended by the limit of the tone; with LevelMode manual a
-             tone finds nothing; a StationBand of a band with an entry plays at its
-             level, of a band without one at the level before; a level found is given
-             for the station's band. */
+        doc /* Finding the level with the Tune tone, and the stored level. */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -172,8 +123,6 @@ package WstxTxLevel {
                 + "tune_meters_are_read_once_a_second_and_pushed_as_one_event";
         }
     }
-
-    // ---- The supervision of the level in normal operation -----------------------------------
 
     requirement 'CL-044-14' {
         subject transmit : TransmitService;
@@ -228,54 +177,7 @@ package WstxTxLevel {
     }
 
     verification 'TC-044-017' {
-        doc /* The reading of a transmission and the correction of the level.
-             Setup: the decision alone for (a) and (h) to (k); the transmit function on
-             a given clock with a scripted radio for (b); the station of TC-044-014 for
-             the others. LevelMode automatic unless said otherwise. The output power
-             reads 50 % unless said otherwise; no sound device, no radio.
-             (a) At -10 with a profile power of 50: an ALC of 8 leaves -10; 9 and 50
-             give -11. At -40 an ALC of 50 leaves -40. An ALC of 0 with a profile power
-             of 63: -9; with 62: -10; at 0 with 100: 0. An ALC of 1, no profile power,
-             and no ALC value: no step up. A profile power of 49: -11. An SWR of 3.0 is
-             a fault; the meter count below it is none. An SWR of 2.0 three times:
-             swr_high from the third reading, gone with a reading of 1.0. An ALC of 50
-             three times: alc_high from the third; of 49 three times: no warning. A
-             profile power of 101 three times: po_low from the third.
-             (b) An FT8 transmission whose audio starts 500 ms after the period start P:
-             the reading is asked for at P + 6820 ms, once. The next one, in P + 30 s:
-             at P + 36820 ms. A tone: none. A transmission started 11200 ms after P:
-             none.
-             (c) An ALC of 50 at the level -10. The radio not keyed: nothing is read and
-             the level stays. Keyed: one reading of the three meters and nothing else,
-             the level -11 found and taken, nothing given to the output, no warning. A
-             second reading: no warning. A third: alc_high, and the level is -13. Then
-             an ALC of 8: no warning, and the level stays -13.
-             (d) The transmit state on; a reading with an SWR of
-             3.0: one Halt, disarmed with the cause halt, swr_fault. A
-             reading without an SWR value: swr_fault stays. An Arm with the cause
-             operator and a reading with a low SWR: no swr_fault, still armed.
-             (e) While the level is found: nothing is read.
-             (f) After a station start the request of a transmission for its reading
-             leads to one reading of the three meters.
-             (g) An ALC of 50 at -10 and the level found does not come back as saved:
-             the level stays -10, stored false, and the next tone plays at -10.
-             (h) A radio that reads an ALC of 0 up to -10 and 9 from -9 on, with a
-             profile power of 100. From -10: -9 after one transmission, -10 after two
-             and after 40. From -9: -10, -9, -10, and -10 after 40.
-             (i) A profile power of 100. At -12 an ALC of 11: -13. Then 0: -12. Then 0:
-             -11. Then 4: -11. Then 11: -12. Then 0: -11.
-             (j) An ALC of 26 at -9 that falls by 5 for each dB: -10, -11, -12, -13, and
-             -13 after 40 transmissions, without a warning.
-             (k) A radio that reads an ALC of 0 up to -9 and 6 at -8, rising by 5 for
-             each dB: a finding goes up at -9 and finds -9 at -8. The supervision goes
-             from -9 to -8 and stays; from -7 it goes to -8 and stays.
-             (l) A profile power of 100, the level -10. An ALC of 0: -9. Then 9: -10.
-             Then 0: -10. The same profile power given again, an ALC of 0: -10. A
-             profile power of 90: -9 with an ALC of 0 and -10 with 9. A finding that
-             finds -9, then an ALC of 0: -8.
-             (m) Planned, no test yet: with LevelMode manual, an ALC of 50 three times
-             leaves the level and shows alc_high from the third reading, and an SWR of
-             3.0 halts as in (d). */
+        doc /* The reading of a transmission and the correction of the level. */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

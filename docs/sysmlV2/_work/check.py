@@ -19,7 +19,7 @@ RULES = {
     "M4.2": "an FR states a status, a code link or a test link",
     "M5.10": 'the word "user"',
     "M6.2a": "a clause without a subject",
-    "M6.2b": "a satisfy outside Station.sysml",
+    "M6.2b": "a satisfy outside Shack.sysml",
     "M6.4a": "a clause that is not one sentence",
     "M6.4b": "a clause without MUST, SHOULD or MAY",
     "M6.10": "a clause whose sentence names no element defined in its file",
@@ -27,7 +27,37 @@ RULES = {
     "M7.3": "a text that restates its own identity",
     "M7.4": "history in a text: a date, an issue number or a history word",
     "W100": "a line over 100 characters",
+    "C1": "a comment in a model file (// or /* */ outside a doc)",
 }
+
+# The entry marker the model tools read (tools/sysml/README.md "Entry file"): the one comment
+# a model file may hold, on the first line of Requirements.sysml.
+ENTRY_MARKER = "// Canonical authority: SysML"
+
+
+def comments(text):
+    """Offsets of the comments outside strings and outside doc texts."""
+    found, i, n = [], 0, len(text)
+    while i < n:
+        c, two = text[i], text[i:i + 2]
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            i = j + 1
+        elif two == "/*":
+            end = text.find("*/", i + 2)
+            end = n if end < 0 else end + 2
+            if not re.search(r"\bdoc\s*$", text[max(0, i - 40):i]):
+                found.append(i)
+            i = end
+        elif two == "//":
+            found.append(i)
+            end = text.find("\n", i)
+            i = n if end < 0 else end
+        else:
+            i += 1
+    return found
 
 HISTORY = re.compile(
     r"20\d\d-\d\d-\d\d|(?<![A-Za-z0-9])#\d+\b|\bformerly\b|\breplaces\b|\bNot delivered yet\b|\bNot automated yet\b"
@@ -113,13 +143,18 @@ def check_file(key, findings):
             add("W100", n, "%d characters" % len(line))
         if re.match(r"\s*dependency\b", line):
             add("M7.1", n, line.strip()[:70])
-        if re.match(r"\s*satisfy\b", line) and key != "Station.sysml":
+        if re.match(r"\s*satisfy\b", line) and key != "Shack.sysml":
             add("M6.2b", n, line.strip()[:70])
         if re.search(r"\busers?\b", line, re.I):
             add("M5.10", n, line.strip()[:70])
         m = HISTORY.search(line)
         if m:
             add("M7.4", n, m.group(0))
+
+    for offset in comments(text):
+        if key == "Requirements.sysml" and offset == 0 and text.startswith(ENTRY_MARKER):
+            continue
+        add("C1", line_of(offset), text[offset:offset + 60].split("\n")[0])
 
     names = set(DECL.findall(text))
     for m in ELEMENT.finditer(text):

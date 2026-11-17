@@ -367,3 +367,13 @@ Not verified: of `udp_tests.rs` the first 65 lines of
 "the target gets Heartbeat and Status only" holds with an empty list as it does with a
 broken file is taken from the rule of `DecodeFields` in the model (line 345 of `Udp.sysml`: a record published
 while no target is active is not sent afterwards), not from a test with an empty list.
+
+
+## Work for the code: promises no test shows yet
+
+Taken from the test cases when they became skeleton and a title (operator 2026-11-16, SensorsIot/harness#129). Each is a behaviour the model promises and no bound test shows; the case's clause carries the status.
+
+- TC-012-004 (`UdpSender.sysml`): one target created, changed and deleted by its address (WstxProfileAccess::CreateEntry, UpdateEntry, DeleteEntry): the sender follows each at once; the other targets keep their sockets.
+- TC-112-001 (`UdpSender.sysml`): a station named IC-7300: WSTX-Rust - IC-7300; one named FLEX-6600 A: WSTX-Rust - FLEX-6600 A, from station start on; the configuration name of Status is the station's name.
+- TC-012-002 (`Udp.sysml`): the T/R period of Status as not applicable; the code and its test send 15 for FT8 and 7 for FT4.
+- TC-012-002 (`Udp.sysml`): after (h), Log QSO (the log's ResendLast): QSO Logged and Logged ADIF of that contact once more.

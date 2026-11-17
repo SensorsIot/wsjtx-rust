@@ -15,8 +15,6 @@ package WstxRecordings {
     private import ModelBindings::TestLevel;
     private import ModelBindings::TestLocation;
 
-    // ---- The recording and its file ---------------------------------------------------------
-
     requirement 'CL-006-01' {
         subject profile : PersistedProfile;
         doc /* Profile MUST take in only a recording whose file is a WAV file of the one
@@ -101,25 +99,7 @@ package WstxRecordings {
     }
 
     verification 'TC-018-001' {
-        doc /* Recordings that are taken in, kept and given as samples.
-             Setup: the profile on a folder of its own, with WAV files built byte by
-             byte; for (c) the recordings of the two fixture lists, 22 of FT8 and 3 of
-             FT4; for (d) a station on the loopback interface. No sound device and no
-             radio.
-             (a) Files of 1, 2048, 4096, 4097 and RecordingLimits::importMaxFrames
-             samples that run through the values -32768, -1, 0, 1 and 32767: each
-             import is completed, and the file in the folder recordings is byte for
-             byte the one given.
-             (b) The samples of each, asked for: blocks of at most 4096 samples that
-             begin at 0 and follow each other without a gap; each sample is its value
-             divided by 32768; the last block, and no other, is marked as the end.
-             (c) After a station start on the same folder: the same recording id, the
-             same count of samples, RecordingLimits::rateHz.
-             (d) Each recording of the two lists has the SHA-256 its list names, is
-             PCM, one channel, 16 bits at RecordingLimits::rateHz, and is within
-             RecordingLimits::fileBytes. The first of each list, and a tone of 3 s,
-             imported through the station: file_bytes is the length of the file, and
-             the stored file is byte for byte the one given. */
+        doc /* Recordings that are taken in, kept and given as samples. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -130,8 +110,6 @@ package WstxRecordings {
                 + "tests/profile/recording-fixtures.test.cjs; tests/recording.test.cjs";
         }
     }
-
-    // ---- The import ---------------------------------------------------------------------------
 
     requirement 'CL-006-05' {
         subject profile : PersistedProfile;
@@ -218,67 +196,8 @@ package WstxRecordings {
     }
 
     verification 'TC-018-002' {
-        doc /* Files that are no recording, and imports that fail, are cancelled or run
-             out of time.
-             Setup: the profile on a folder of its own, with WAV files built byte by
-             byte from a file of the three samples 0, 1 and -1 with a header of 44
-             bytes, and with a fault set at one step of an import; for (k) to (n) a
-             station on the loopback interface. No sound device and no radio.
-             (a) invalid_recording: another byte at the place 0, 8, 12 or 36 of the
-             file; the byte 255 at the place 4, 16, 28, 32 or 40; the file cut off
-             after each count of bytes from 0 to 49; a file without a sample; the four
-             bytes RIFF alone.
-             (b) unsupported_audio: the byte 3 at the place 20, 22, 24 or 34.
-             (c) recording_limit: one sample more than RecordingLimits::importMaxFrames;
-             one byte more than RecordingLimits::fileBytes; one chunk more than
-             RecordingLimits::importMaxRiffChunks.
-             (d) Taken: a chunk JUNK of one byte and its filling byte before the fmt
-             chunk, 3 samples; a file of exactly RecordingLimits::fileBytes; exactly
-             RecordingLimits::importMaxRiffChunks chunks.
-             (e) A file that is opened for writing only: storage_unavailable.
-             (f) With the recording 1, 2, 3 stored, an import of 4, 5, 6 that fails
-             when a part is added, when the file is made durable, when the description
-             is written, when current.json is written, and when it is put in place:
-             storage_unavailable each time; the stored recording is the first, its file
-             byte for byte as before, also after a station start.
-             (g) An import that fails after current.json is put in place:
-             storage_unavailable; the stored recording is the new one with its bytes,
-             also after a station start.
-             (h) An import reserved 31 s ago; one whose latest part began 16 s ago;
-             one reserved 1801 s ago: each ends with upload_timeout, a further part is
-             refused with upload_timeout, and the stored recording is the one of
-             before.
-             (i) While a part is being taken, a second part: state_conflict. Then a
-             CancelImport, and the files not removed after 6 s: storage_error is
-             storage_unavailable and a reservation is refused with it. The first part
-             then ends refused with storage_unavailable, the files are removed, and
-             storage_error is absent.
-             (j) Files of an import that cannot be removed: storage_error is
-             storage_unavailable and the file is still there, also after a station
-             start while the fault lasts. After a station start without the fault: no
-             storage_error, the recording of before, the file gone.
-             (k) An empty folder: no recording and no source_error. A WAV file and its
-             description under a UUID, without current.json: source_error is
-             recording_unavailable, no recording, both files kept. A completed import
-             then: no source_error, the new recording, the two files gone.
-             (l) Through the station. Two reservations at once: one admitted, one
-             refused. With an import reserved, a reservation: busy.
-             (m) Through the station, on a reserved import. A part from byte 1:
-             state_conflict. A total one above RecordingLimits::fileBytes:
-             request_too_large. The first 2 of 100 bytes: receiving. A CancelImport:
-             answered before the files are removed, and the import is
-             cancelled within 600 ms; a further part is refused with cancelled. A
-             CancelImport while a part is on its way and not whole: cancelled, and no
-             recording is stored.
-             (n) Through the station, with a recording stored. An import whose length
-             after RIFF is wrong, in two parts: the first is taken, the second refused
-             with invalid_recording; the stored recording is the one of before. Then,
-             each followed by a station start: the stored file removed; the description
-             holding {}; current.json holding {}; current.json removed. Each time
-             source_error is recording_unavailable and no recording is shown; where the
-             stored file was not removed it is still there, and an import of the four
-             bytes RIFF is refused and leaves it there; a whole import then ends
-             source_error. */
+        doc /* Files that are no recording, and imports that fail, are cancelled or run out of time.
+             */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

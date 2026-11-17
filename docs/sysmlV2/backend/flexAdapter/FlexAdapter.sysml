@@ -26,7 +26,7 @@ package WstxFlexAdapterPart {
         @NotStated {
             what = "which connection carries StreamDiagnosis out of the adapter; radio "
                 + "control takes SessionStatus only, and the adapter has no port toward "
-                + "the station service";
+                + "the supervisor";
         }
         port control : ~NativeControlPort {
             @NotStated {

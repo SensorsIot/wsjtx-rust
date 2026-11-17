@@ -47,27 +47,7 @@ package WstxAlert {
     }
 
     verification 'TC-042-006' {
-        doc /* Alerts at the station.
-             Setup: the station on a throw-away profile HB9BLA on 40m in FT8 with a
-             scripted clock and decodes written by hand; the strategy Alerts, new
-             call; G4ABC on the ignore list.
-             (a) CQ JA1XYZ PM95 decoded before the strategy is active: no alert, then
-             and later.
-             (b) One period with CQ K1ABC FN42 at -12 dB, CQ DL1XYZ JO62 at -3, CQ NA
-             W1AW FN31, CQ G4ABC IO91 and HB9BLA VK2ABC QF56: two alerts and revision
-             2. The first has id 1, the start of that period, K1ABC, "CQ K1ABC FN42",
-             Alerts, 40m, ft8, -12 and United States; the second id 2, DL1XYZ and Fed.
-             Rep. of Germany.
-             (c) CQ K1ABC 30 s later: no alert. 600 s after the first: an alert with
-             id 3; revision 3.
-             (d) On 20m, 30 s later: an alert for K1ABC with 20m; revision 4.
-             (e) ClearAlerts: an empty history with revision 5. CQ K1ABC on 20m one
-             period later: no alert.
-             (f) 101 CQs of different calls in one period: revision 106; the history
-             holds the last 100 of them, the first with id 6.
-             (g) Planned, no test yet: under the contest ww_digi, CQ K1ABC that brings a
-             new multiplier: an alert; CQ W1AW that brings none: no alert; a wanted
-             station's CQ: an alert. */
+        doc /* Alerts at the station. */
         subject ranking : RankingService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

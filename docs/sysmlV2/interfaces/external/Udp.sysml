@@ -45,8 +45,6 @@ package WstxUdp {
         end peers : ~UdpPort;
     }
 
-    // ---- What is sent, and when ---------------------------------------------------------
-
     requirement 'CL-040-01' {
         subject udp : Udp;
         doc /* The station MUST send every enabled target the messages of the WSJT-X UDP
@@ -86,8 +84,6 @@ package WstxUdp {
             doc /* A longer datagram from a target is not read. */ }
     }
 
-    // ---- IPv6 multicast targets ----------------------------------------------------------
-
     requirement 'CL-040-06' {
         subject udp : Udp;
         doc /* The station MUST take an IPv6 multicast group as a target and send to it
@@ -109,8 +105,6 @@ package WstxUdp {
              shows TargetError::socketUnavailable. */
         @FollowsSource { reference = "RFC 4291, section 2.7: multicast scopes"; }
     }
-
-    // ---- What the station takes from a target ----------------------------------------------
 
     requirement 'CL-040-03' {
         subject udp : Udp;
@@ -147,8 +141,6 @@ package WstxUdp {
                 + "can read.";
         }
     }
-
-    // ---- Status -----------------------------------------------------------------------------
 
     requirement 'CL-040-07' {
         subject udp : Udp;
@@ -211,8 +203,6 @@ package WstxUdp {
         }
     }
 
-    // ---- Decode -----------------------------------------------------------------------------
-
     requirement 'CL-040-04' {
         subject udp : Udp;
         doc /* The station MUST send each message decoded by the live receive job once, in
@@ -262,8 +252,6 @@ package WstxUdp {
         }
     }
 
-    // ---- Clear ----------------------------------------------------------------------------
-
     requirement 'CL-112-04' {
         subject udp : Udp;
         doc /* The station MUST send Clear when the operating selection changes to another
@@ -286,8 +274,6 @@ package WstxUdp {
                 + "the operator as well; the station sends it on a band change only.";
         }
     }
-
-    // ---- Logged contacts ------------------------------------------------------------------
 
     requirement 'CL-112-05' {
         subject udp : Udp;
@@ -333,8 +319,6 @@ package WstxUdp {
         }
     }
 
-    // ---- Close ----------------------------------------------------------------------------
-
     requirement 'CL-112-06' {
         subject udp : Udp;
         doc /* The station MUST tell a target with Close that it stops sending to it
@@ -352,27 +336,8 @@ package WstxUdp {
              and Close is given to the network without waiting. */
     }
 
-    // ---- Test cases -------------------------------------------------------------------------
-
     verification 'TC-012-001' {
-        doc /* The datagrams, byte for byte.
-             Setup: vectors written by hand, field by field, from the source's header
-             file, apart from the encoder; no network.
-             (a) Heartbeat, Status, a Decode at schema 2 and one at schema 3, Clear,
-             QSO Logged, Close and Logged ADIF made from the vectors' field values:
-             equal to the vectors.
-             (b) A Heartbeat at schema 3 with the id WSTX-Rust, one with bytes after
-             its fields, and one at schema 2 with the id JTAlert and no field: read
-             with their schema and id.
-             (c) Clear, Reply, Close, Replay, Halt Tx, Free Text, Location, Highlight
-             Callsign, Switch Configuration, Configure and an unknown type; a
-             Heartbeat with another magic number, at schema 1 and 4, with an id that is
-             cut off, not UTF-8 or null, and one of 4097 bytes: not read.
-             (d) Every shortening of every vector, 20000 made-up datagrams and an id
-             that claims 4294967294 bytes: not read, without a fault.
-             (e) The record text "K1ABC W9XYZ R -09": "K1ABC W9XYZ R-09"; with R +03:
-             "R+03". "K1ABC W9XYZ -09", "K1ABC W9XYZ R FN42", "CQ K1ABC FN42" and
-             "K1ABC W9XYZ RR73" stay as they are. */
+        doc /* The datagrams, byte for byte. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -381,40 +346,7 @@ package WstxUdp {
     }
 
     verification 'TC-012-002' {
-        doc /* The messages to two targets.
-             Setup: the station on a throw-away profile (HB9BLA, JN47AA) with scripted
-             transmit hardware and a live FT8 job; targets A (every message) and B
-             (decode only) on the loopback address; a reader of the datagrams written
-             apart from the encoder.
-             (a) First look: A gets Heartbeat (schema 2, id WSTX-Rust, highest schema 3,
-             the station's version, an empty revision) and then Status (FT8, HB9BLA,
-             JN47AA, Tx not enabled, tolerance 4294967295, the profile's
-             display name); B gets nothing. Second look: nothing.
-             (b) The records "CQ K1ABC FN42" at 1234.6 Hz and -12.4 dB and "HB9BLA W9XYZ
-             R-09" at 900.0 Hz and -3.0 dB of the period 12:34:30: A and B each get two
-             Decodes; the first new, time 45270000 ms, SNR -12, DT 0.1, 1235 Hz, "~",
-             "CQ K1ABC FN42"; the second SNR -3, 900 Hz, "HB9BLA W9XYZ R-09". Next
-             look: no Decode.
-             (c) The station's report set to -7: one Status to A with the report "-7".
-             (d) A second live job on the same band: no Clear.
-             (e) A contact with K1ABC saved (FN42, FT8, 14.075500 MHz, reports -12 and
-             -09, ended at 12:36:15): A gets QSO Logged and then Logged ADIF. QSO
-             Logged carries the Julian day 2461346, 45375000 ms, UTC, K1ABC, FN42,
-             14075500 Hz, FT8, "-12" and "-09". Logged ADIF begins with the header and
-             "<call:5>K1ABC" and ends with the contact's identity field and " <EOR>".
-             B gets nothing. The same save again, and a save of the stored contact:
-             nothing is sent.
-             (f) The view shows a last send for both targets and no error. A disabled
-             by a new list: A gets Close and is not active; B stays active. Next look:
-             nothing to A.
-             (g) A played recording with a decoded record: no Decode and no Clear.
-             (h) A contact that completes and logs itself: QSO Logged and Logged ADIF
-             once; a repeated 73: nothing more.
-             Two records added from an ADIF file: nothing is sent.
-             (i) Planned, no test yet: the T/R period of Status as not applicable; the
-             code and its test send 15 for FT8 and 7 for FT4.
-             (j) Planned, no test yet: after (h), Log QSO (the log's ResendLast): QSO
-             Logged and Logged ADIF of that contact once more. */
+        doc /* The messages to two targets. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -423,23 +355,7 @@ package WstxUdp {
     }
 
     verification 'TC-012-003' {
-        doc /* Nothing a target sends acts on the station.
-             Setup: as the messages to two targets, with one target A and another socket
-             X; one published row; transmission armed from the browser.
-             (a) From A and from X to the station's socket of A: Halt Tx, Clear, a Reply
-             to the row, Close, Replay, Free Text, Location JN36AB, Highlight Callsign,
-             Switch Configuration and Configure. Afterwards transmission is still armed
-             with the same last cause of disarming, the contact is unchanged and names
-             no station, the locator is the profile's, and A has got nothing but
-             Status.
-             (b) The view carries the instance name and the configuration, and for a
-             target its address, active, schema, last send and error.
-             (c) Each alone: a Heartbeat at schema 3 from X; from A a Heartbeat at
-             schema 3 with the id OTHER, a Heartbeat at schema 4, a Replay and a Halt Tx
-             at schema 3: the schema of A stays 2.
-             (d) From A a datagram of 5000 bytes and then a Heartbeat at schema 3: the
-             schema is 3. A Heartbeat at schema 2: it stays 3. The next Decode to A
-             carries schema 3. */
+        doc /* Nothing a target sends acts on the station. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -448,26 +364,7 @@ package WstxUdp {
     }
 
     verification 'TC-012-006' {
-        doc /* IPv6 multicast targets.
-             Setup: the station on a throw-away profile; a socket joined to the group
-             ff12::5754:5358 on the loopback interface of the PC, index 1; nothing
-             leaves the PC.
-             (a) No target of UdpTarget, each alone: the
-             addresses [ff00::1], [ff0f::1] and [ff1f::1]; the group and [ff01::1]
-             without an interface; hop limit 0 and 256; the IPv4 group 239.255.0.1
-             with the interface "1"; the interfaces "0", "01", "-1", "+1", " 1",
-             "4294967296", "Ethernet", "127.0.0.1", "::1", "" and the number 1.
-             (b) Targets, in one list: the
-             group with hop limit 2 and interface "1"; [ff05::5754:5358]:2237 with hop
-             limit 255 and interface "1"; [ff15::5754:5358]:2238 with interface
-             "4000000000"; [ff08::5754:5358]:2239, not enabled, without an interface.
-             (c) [::1]:2240, not enabled, interface "127.0.0.1": a target. With the
-             interface "1" on it: none.
-             (d) The socket of the group has hop limit 2, interface 1 and loopback on;
-             that of the second group hop limit 255. The third target is not active,
-             with socketUnavailable.
-             (e) The joined socket gets Heartbeat and then Status, at schema 2 with the
-             id WSTX-Rust. */
+        doc /* IPv6 multicast targets. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -476,25 +373,7 @@ package WstxUdp {
     }
 
     verification 'TC-012-007' {
-        doc /* Status with the decode windows and the pulse.
-             Setup: as the messages to two targets, with A (every message), B (status
-             only) and C (heartbeat and decode); the pulse is reached by setting its
-             time back, not by waiting. For (e) the live receive worker on windows of
-             silence.
-             (a) First look: A gets Heartbeat and then Status with Decoding false; B
-             gets Status; C gets Heartbeat. Second look: nothing.
-             (b) Twice: a window's decode begins: one Status with Decoding true to A and
-             to B, and none at the next look; it ends: one Status with Decoding false.
-             C gets none.
-             (c) A window that begins and ends between two looks: one Status with
-             Decoding false to A and to B; then nothing.
-             (d) 14 s after the pulse: nothing. 15 s after it: A gets Heartbeat and a
-             Status equal byte for byte to the last one, B the Status, C the Heartbeat.
-             Then nothing.
-             (e) Before a window: no decode runs and 0 windows have begun. While the
-             first window decodes: a decode runs, 1 window; while the second decodes,
-             also when it takes the place of one that ran over: 2 windows. Afterwards:
-             no decode runs, 2 windows. */
+        doc /* Status with the decode windows and the pulse. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -503,14 +382,7 @@ package WstxUdp {
     }
 
     verification 'TC-112-002' {
-        doc /* The dial frequency and the report of Status.
-             Setup: the station on a throw-away profile; a scripted radio whose
-             confirmed dial is 7074000 Hz.
-             (a) No confirmed dial and no operating selection: 0. The selection 40m,
-             7074000 Hz, without a radio: 7074000. The selection 20m, 14074000 Hz, with
-             the radio's dial confirmed: 7074000.
-             (b) The station's report set to -9, 3, 0, -24, 49 and -50: "-9", "3", "0",
-             "-24", "49" and "-50". */
+        doc /* The dial frequency and the report of Status. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -519,14 +391,7 @@ package WstxUdp {
     }
 
     verification 'TC-112-003' {
-        doc /* The delta time of a Decode.
-             Setup: the station on a throw-away profile with a live FT8 job; a target
-             that selects decode.
-             (a) DT 0.04: 0.0; -0.06: -0.1; 0.25: 0.3; -0.25: -0.3; 1.349: 1.3; no
-             DT: 0.
-             (b) A record with DT 0.25 whose period start is not known: no Decode. The
-             same message in the next period: one Decode with the single-precision
-             value of 0.3 and the time 45285000 ms. Next look: nothing. */
+        doc /* The delta time of a Decode. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -535,17 +400,7 @@ package WstxUdp {
     }
 
     verification 'TC-112-004' {
-        doc /* Clear on a change of band only.
-             Setup: the station on a throw-away profile with a live FT8 job on 20m;
-             targets A (every message) and B (without clear); a Decode is sent before
-             each step but (c).
-             (a) The operating selection changed to 40m: one Clear to A, none to B.
-             (b) The selection without a band, then the dial read from the radio taken
-             as the selection on 20m: one Clear.
-             (c) Changed to 40m again with no Decode in between: one Clear.
-             (d) No Clear for each of: a live job in FT4 on the same band, a new live
-             job, a new epoch of the source after a loss, receive stopped, and the
-             frequency changed within the band from 7074000 to 7047500 Hz. */
+        doc /* Clear on a change of band only. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -554,25 +409,7 @@ package WstxUdp {
     }
 
     verification 'TC-112-005' {
-        doc /* The exchanges of QSO Logged.
-             Setup: the station with its log on a throw-away profile (HB9BLA, JN47AA);
-             a target that selects qso_logged and logged_adif. Each contact is logged
-             at its completion and then saved again from its stored record under
-             another identity; both give the same exchanges.
-             (a) field_day with 1A EMA and 2B CT: "1A EMA" and "2B CT".
-             (b) rtty with 559 MA and 579 MA: "559 MA" and "579 MA"; with 559 0003 and
-             559 0013: "559 0003" and "559 0013".
-             (c) eu_vhf from JN37VL with the partner at IO91NP: "550001 JN37VL" and
-             "590003 IO91NP".
-             (d) na_vhf with the partner at FN42, and ww_digi with the partner at
-             FN42ab: "JN47" and "FN42". arrl_digi without a partner's grid: "JN47"
-             and empty.
-             (e) hound and none with the partner at FN42: both empty. A record without
-             an activity that carries 1A EMA and 2B CT: both empty.
-             (f) Logged ADIF ends with the contact's identity field, then the activity
-             field, then " <EOR>"; for none it has no activity field.
-             (g) A save of a stored contact that differs in the activity only: nothing
-             is sent. */
+        doc /* The exchanges of QSO Logged. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -581,15 +418,7 @@ package WstxUdp {
     }
 
     verification 'TC-112-006' {
-        doc /* Close when the station ends.
-             Setup: the station with scripted transmit hardware; targets A (every
-             message), B (without close), C (not enabled) and D (an IPv6 group on an
-             interface index the PC does not have, socketUnavailable); a Flex station
-             whose session is never ready, with one target.
-             (a) The station is told to end: the release of transmission returns within
-             500 ms and nothing is sent before it has returned. Then A gets one Close
-             with the id WSTX-Rust; B, C and D get nothing.
-             (b) The Flex station is told to end: nothing is sent. */
+        doc /* Close when the station ends. */
         subject udp : Udp;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

@@ -9,10 +9,8 @@ package WstxWantedList {
 
     doc /* The wanted list: the calls and patterns the operator wants worked before
          every other station. The entries are ranking's data (WantedEntry); the
-         settings function keeps them as one list of the operator's stations
+         settings function keeps them as one list of the shack's stations
          (WstxProfileAccess::SettingsCollection::wantedList); ranking ranks by them. */
-
-    // ---- A wanted station ranks first -----------------------------------------------------
 
     requirement 'CL-124-02' {
         subject ranking : RankingService;
@@ -46,8 +44,6 @@ package WstxWantedList {
              A wanted entry ranks only while a strategy or a contest is selected. */
     }
 
-    // ---- A worked entry leaves the list ---------------------------------------------------
-
     requirement 'CL-124-03' {
         subject ranking : RankingService;
         doc /* Ranking MUST report an exact entry of the wanted list once a QSO with its
@@ -60,7 +56,7 @@ package WstxWantedList {
         doc /* Which entries leave the wanted list by themselves.
              An entry without "*" and "?" leaves the list at the first QSO logged with
              its call after its addedUtcMs: ranking gives WantedWorked with the entry,
-             and the station service removes it from the list. A pattern stays until the
+             and the supervisor removes it from the list. A pattern stays until the
              operator removes it; a station it names stops being wanted by WantedRule
              once a QSO with that station is logged after the pattern was added. */
     }

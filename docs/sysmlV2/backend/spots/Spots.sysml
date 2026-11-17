@@ -11,9 +11,10 @@ package WstxSpotsPart {
 
     part def SpotsService {
         doc /* Tells the station who hears it. It reads the spots of the PSK Reporter feed
-             for the profile's call and for the station being called, and tells ranking
-             which stations hear us and auto what the station being called hears. It
-             reports the stations the station decodes to PSK Reporter. */
+             for the profile's call and for the station of the contact in progress, and
+             tells ranking which stations hear us, and auto, qso and the supervisor
+             what that station hears. It reports the stations the station decodes to PSK
+             Reporter. */
         @ImplementedIn { module = "server/src/operating/qso/pskr.rs"; }
         attribute config : SpotsConfig {
             doc /* Its configuration, as the last SpotsConfiguration gave it. */ }

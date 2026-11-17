@@ -4,13 +4,14 @@
 |---|---|
 | Context.sysml | taken over |
 | Requirements.sysml | to build (old file of this name is pending) |
-| Station.sysml | taken over |
-| interfaces/internal/StationLink.sysml | taken over |
-| interfaces/internal/StationCommands.sysml | taken over |
+| Shack.sysml | taken over |
+| interfaces/internal/StationLink.sysml | built (the wire, derived from the boundary) |
+| interfaces/internal/WebControl.sysml | built (web's control interface) |
+| interfaces/internal/StationCommands.sysml | built (the supervisor's control interface) |
 | interfaces/internal/Strategies.sysml | built |
 | interfaces/internal/RankingControl.sysml | built |
-| interfaces/internal/AutoControl.sysml | taken over |
-| interfaces/internal/QsoControl.sysml | taken over |
+| interfaces/internal/AutoControl.sysml | built |
+| interfaces/internal/QsoControl.sysml | built |
 | interfaces/internal/LogControl.sysml | built |
 | interfaces/internal/ReceiveControl.sysml | built |
 | interfaces/internal/TransmitControl.sysml | built |
@@ -18,7 +19,6 @@
 | interfaces/internal/RadioControl.sysml | built |
 | interfaces/internal/Decodes.sysml | built |
 | interfaces/internal/DisplayData.sysml | built |
-| interfaces/internal/PeriodTiming.sysml | taken over |
 | interfaces/internal/OperatingChain.sysml | taken over |
 | interfaces/internal/Hearing.sysml | built |
 | interfaces/internal/AudioStreams.sysml | built |
@@ -34,14 +34,15 @@
 | interfaces/external/Udp.sysml | built |
 | interfaces/external/PskReporter.sysml | built |
 | interfaces/external/ClubLog.sysml | built |
+| interfaces/external/CountryFiles.sysml | built |
 | interfaces/external/TimeSource.sysml | taken over |
-| backend/station/Station.sysml | to build (old file of this name is pending) |
-| backend/station/OperatingSelection.sysml | to build (old file of this name is pending) |
-| backend/station/StationAuthority.sysml | to build (old file of this name is pending) |
-| backend/station/Startup.sysml | to build (old file `backend/receive/Startup.sysml` is pending) |
-| backend/web/Web.sysml | to build (old file of this name is pending) |
-| backend/web/Listener.sysml | to build (new file) |
-| backend/web/ContentCoding.sysml | to build (old file of this name is pending) |
+| backend/supervisor/Supervisor.sysml | built |
+| backend/supervisor/OperatingSelection.sysml | built |
+| backend/supervisor/StationAuthority.sysml | built |
+| backend/supervisor/Startup.sysml | built |
+| backend/web/Web.sysml | built |
+| backend/web/Listener.sysml | built |
+| backend/web/ContentCoding.sysml | built |
 | backend/mcp/Mcp.sysml | to build (old file of this name is pending) |
 | backend/mcp/McpEndpoint.sysml | to build (old file of this name is pending) |
 | backend/profile/Profile.sysml | built |
@@ -55,7 +56,8 @@
 | backend/modes/Decode.sysml | built |
 | backend/modes/MessageEncode.sysml | built |
 | backend/modes/MessagePayload.sysml | built |
-| backend/clock/Clock.sysml | taken over |
+| backend/clock/Clock.sysml | built |
+| backend/clock/StationClock.sysml | built |
 | backend/transmit/Transmit.sysml | built |
 | backend/transmit/TransmitState.sysml | built |
 | backend/transmit/Schedule.sysml | built |
@@ -69,18 +71,18 @@
 | backend/operating/ranking/WantedList.sysml | built |
 | backend/operating/ranking/MostWanted.sysml | built |
 | backend/operating/ranking/Alert.sysml | built |
-| backend/operating/auto/Auto.sysml | taken over |
-| backend/operating/auto/TargetChoice.sysml | to build (new file) |
-| backend/operating/auto/CqWhenIdle.sysml | to build (new file) |
-| backend/operating/auto/TxSlot.sysml | to build (new file) |
-| backend/operating/auto/BusyPause.sysml | to build (new file) |
-| backend/operating/auto/Leave.sysml | to build (new file) |
-| backend/operating/auto/Watchdog.sysml | to build (new file) |
-| backend/operating/qso/Qso.sysml | to build (old file of this name is pending) |
-| backend/operating/qso/StandardQso.sysml | to build (old file of this name is pending) |
-| backend/operating/qso/SpecialActivities.sysml | to build (old file of this name is pending) |
-| backend/operating/qso/MessageChoice.sysml | to build (new file) |
-| backend/operating/qso/HoldTx.sysml | to build (new file) |
+| backend/operating/auto/Auto.sysml | built |
+| backend/operating/auto/TargetChoice.sysml | built |
+| backend/operating/auto/CqWhenIdle.sysml | built |
+| backend/operating/auto/TxSlot.sysml | built |
+| backend/operating/auto/Leave.sysml | built |
+| backend/operating/auto/AutoMode.sysml | built |
+| backend/operating/qso/Qso.sysml | built |
+| backend/operating/qso/StandardQso.sysml | built |
+| backend/operating/qso/SpecialActivities.sysml | built |
+| backend/operating/qso/MessageChoice.sysml | built |
+| backend/operating/qso/QsoTransmit.sysml | built (Qso* of M2.1) |
+| backend/operating/qso/HoldTx.sysml | built |
 | backend/log/Log.sysml | built |
 | backend/log/Logbook.sysml | built |
 | backend/log/CountryFile.sysml | built |
@@ -90,6 +92,8 @@
 | backend/udp/Udp.sysml | built |
 | backend/udp/UdpSender.sysml | built |
 | interfaces/internal/UdpControl.sysml | built |
+| interfaces/internal/Keying.sysml | built |
+| interfaces/internal/StationTime.sysml | built |
 | backend/audio/Audio.sysml | built |
 | backend/audio/AudioDevice.sysml | built |
 | backend/audio/Capture.sysml | built |

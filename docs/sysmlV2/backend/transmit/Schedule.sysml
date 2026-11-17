@@ -49,21 +49,7 @@ package WstxSchedule {
     }
 
     verification 'TC-006-001' {
-        doc /* The start plan of FT8.
-             Setup: the planning function alone with a given time; no clock, no sound
-             device and no radio. The period 12:00:00 UTC of 31 October 2026 is even.
-             (a) The next even period at 12:00:00.000, at 12:00:11.249 and at
-             11:59:59.999: 12:00:00. At 12:00:11.250: 12:00:30.
-             (b) The next odd period at 12:00:00.000 and at 12:00:14.999: 12:00:15. At
-             12:00:26.250: 12:00:45.
-             (c) The period 12:00:15, planned 3 s before it, 0.499 s and 0.500 s after
-             its start: audio at 12:00:15.500 from sample 0.
-             (d) Planned 2.750 s after its start for 48 kHz: audio at once from sample
-             108000. Planned 11.249 s after it for 12 kHz: at once from sample 128988.
-             (e) Planned 11.250 s, 15.001 s and 60 s after its start: stalePeriod.
-             (f) A period start 1 ms after 12:00:15: misalignedPeriod.
-             (g) Station time not synchronized, 0.1 s after the period start:
-             clockNotSynchronized. */
+        doc /* The start plan of FT8. */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -77,26 +63,7 @@ package WstxSchedule {
     }
 
     verification 'TC-006-002' {
-        doc /* The start plan of FT4.
-             Setup: as for FT8. The FT4 period 12:00:00 UTC of 31 October 2026 is even,
-             12:00:07.5 odd and 12:00:15 even; as an FT8 period 12:00:15 is odd.
-             (a) The next even period at 12:00:00.000, at 12:00:05.339 and at
-             11:59:59.999: 12:00:00. At 12:00:05.340 and at 12:00:05.624: 12:00:15.
-             (b) The next odd period at 12:00:00.000 and at 12:00:07.499: 12:00:07.5. At
-             12:00:13.125: 12:00:22.5. For FT8 the next odd period at 12:00:07.5 is
-             12:00:15.
-             (c) The period 12:00:07.5, planned 3 s before it, 0.299 s and 0.300 s after
-             its start: audio at 12:00:07.800 from sample 0.
-             (d) Planned 0.301 s after its start for 48 kHz: audio at once from sample
-             48; 2.750 s after it: from sample 117600; 5.339 s after it: from sample
-             241872, and for 12 kHz from sample 60468.
-             (e) Planned 5.340 s, 5.341 s, 5.624 s, 5.625 s and 7.501 s after its start,
-             for 12 kHz and for 48 kHz: stalePeriod.
-             (f) A period start 1 ms after 12:00:07.5: misalignedPeriod. The period
-             12:00:07.5 for FT8: misalignedPeriod. The FT8 period 12:00:00 planned at
-             12:00:07.5 for 48 kHz: audio at once from sample 336000.
-             (g) Station time not synchronized, 0.1 s after the period start:
-             clockNotSynchronized. */
+        doc /* The start plan of FT4. */
         subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
