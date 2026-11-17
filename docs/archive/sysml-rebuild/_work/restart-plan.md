@@ -31,6 +31,8 @@ product issues; harness issues can be managed much simpler"):
 | Phase 1.2: branches and worktrees | – |
 | Phase 1.3: Alex's configuration, #172, the meter's baseline | H |
 | Phase 1.4: MEMORY's "Inputs and unfinished work" | H |
+| Phase 1.5: every branch and worktree resolved, master alone | – (valid work through its issue) |
+| Phase 1.6: historical files and passages off master | H for harness paths, P for product paths |
 | Phase 3: harness change 2 | H |
 | Phase 4: production | P |
 
@@ -55,6 +57,14 @@ product issues; harness issues can be managed much simpler"):
    gone through, what is done is closed, the rest stays as single issues; harness#120 stays
    upstream. The meter's baseline starts after the rebuild.
 4. MEMORY's "Inputs and unfinished work" is renewed.
+5. Every branch and worktree is resolved (operator 2026-11-18): work that is still valid reaches
+   master through its issue, the rest is removed; the result is master alone, beside the merge
+   queue's own worktree. `sysmlv2-rebuild` is tagged `archive/sysml-rebuild` and removed after
+   #235 has landed.
+6. Historical files and passages leave master (operator 2026-11-18): an inventory of master's
+   files and of the history inside current documents (dates, issue narratives, "formerly",
+   superseded copies, frozen archives, ledgers kept only as record), each removed, or kept
+   where a rule needs it, with the reason.
 
 ## Phase 2 (first): #235 by hand (P)
 
