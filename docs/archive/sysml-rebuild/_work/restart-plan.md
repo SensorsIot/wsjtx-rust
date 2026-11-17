@@ -137,3 +137,6 @@ migrations; README in #235 or #231; where harness issues live.
    Jonah counts his 10 CRs from then.
 4. The second PC (operator 2026-11-18, B): Andreas is no longer used; it leaves `machines:`
    and every text that names it; the factory runs on HB9BLA alone.
+5. Flaky tests (operator 2026-11-18, A): `queue.flake_issue` is null; a flake is commented on the
+   CR whose gate saw it; `merge_queue.py history --flakes` keeps the count; TC-096-001 and
+   `clock_state_is_pushed_to_every_profile` each get an issue.
