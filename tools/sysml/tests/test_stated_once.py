@@ -417,7 +417,7 @@ class StatedOnceTests(unittest.TestCase):
     # T7
     # Proves: CL-014-11; TC-DOC-009
     def test_gate_model_bindings_of_the_metadata_forms_equal_those_of_the_attribute_forms(self):
-        spec = importlib.util.spec_from_file_location("stated_once_model_bindings", ROOT / ".harness/model_bindings.py")
+        spec = importlib.util.spec_from_file_location("stated_once_model_bindings", ROOT / "harness/project/model_bindings.py")
         bindings = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bindings)
 

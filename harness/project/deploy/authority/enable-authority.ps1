@@ -1,6 +1,6 @@
 # Switch the station deploy authority on (#30, #31, #32). Run by the operator only.
 # -DryRun changes nothing and needs no elevation; it may run from the checkout as HB9BLA:
-#   powershell -NoProfile -ExecutionPolicy Bypass -File .harness\deploy\authority\enable-authority.ps1 -OperatorPublicKey <operator key .pub> -DryRun
+#   powershell -NoProfile -ExecutionPolicy Bypass -File harness\project\deploy\authority\enable-authority.ps1 -OperatorPublicKey <operator key .pub> -DryRun
 # The real run executes with Administrator rights, so nothing the agents can write may take
 # part in it: not the checkout, not git, not HB9BLA's environment (HKCU\Environment can load
 # a DLL into an elevated PowerShell started as HB9BLA). Hence, in an elevated

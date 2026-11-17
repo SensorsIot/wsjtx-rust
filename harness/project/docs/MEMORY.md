@@ -1,4 +1,28 @@
-# HB9BLA agent handover
+# Current project memory
+
+Pointers only: every rule and fact lives in the document named here, and the current state
+lives in Git and the GitHub issues. Recheck them before continuing. The HB9BLA handover
+follows the pointers, from [Start](#start) to [Inputs and unfinished work](#inputs-and-unfinished-work).
+
+- **Start:** [AGENTS.md](../../../AGENTS.md), then the `harness-coordinator` skill (the main
+  session's role) and the [Harness Overview](Harness-Overview.md).
+- **Product authority:** the [functional authority binding](Project-Specifics.md#exclusive-functional-authority);
+  entry point `docs/sysml/Requirements.sysml`.
+- **Machines:** [machines and roles](Project-Specifics.md#machines-and-roles); the issue's
+  `owner:` label names the machine building it.
+- **Runtime and data locations on HB9BLA:** [Preserve the runtime](#preserve-the-runtime) and
+  [Inputs and unfinished work](#inputs-and-unfinished-work) below.
+- **Taking a new harness pin on this clone:** [every clone takes the pin](../../general/core/docs/Harness-Changes.md#every-clone-takes-the-pin).
+- **Where every CR stands:** `python harness/general/core/tools/cr_state.py status` and
+  `python harness/general/core/tools/merge_queue.py status`.
+- **Open work and decisions:** the open issues and their newest comments; a paused CR's
+  [checkpoint](../../general/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint)
+  names its next action and owner. Deployed source: the issue checkpoint and the private
+  runtime receipt, never a remembered version.
+- **The harness layout (#230):** everything under `harness/` is the harness: the general
+  harness (the submodule `harness-general`) at `harness/general/`, the project harness at
+  `harness/project/`. A branch from before #230 has the submodule at `harness` and the project
+  harness at its old places; see [the layout change](#the-layout-change).
 
 ## Start
 
@@ -30,7 +54,7 @@ verify their availability in the actual agent environment before starting work.
   `0003` showed Po 0 %; no wattmeter. A test that makes QSOs ("for qsos, you need at least 30W")
   uses `0090` or more and checks Po on its first Tx; short keying without a QSO may use `0003`.
   **Before keying, an agent runs
-  `.harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>` and keys only on
+  `harness/project/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>` and keys only on
   exit 0, under its lease** (`-Status`, `-Release`). The level is required: nothing keys at an
   assumed one. It stops an idle station gracefully, because the station holds COM3, reads the
   power, writes it only if different, reads it back, starts the station again and records the
@@ -45,10 +69,10 @@ verify their availability in the actual agent environment before starting work.
   is that run's. The station itself does not check this.
 - Agent tests transmit only on 10, 15, 20 or 40 m (the IC-7300's antenna). A stop a test
   triggers never aborts a contact at or after RR73 or 73: that contact ends on its own.
-- A cost-4/5 live test sets back what it changed ([testing](../../harness/core/docs/standards/testing.md#cost-levels)):
+- A cost-4/5 live test sets back what it changed ([testing](../../general/core/docs/standards/testing.md#cost-levels)):
   band, frequency, mode, strategy, Auto, Hold Tx, Tx/Rx, theme and power. A CAT setting change
   resets the receive-only setup confirmation, which must then be given again.
-- Function test before review ([CR process](../../harness/core/docs/CR-Process.md), step 2): a
+- Function test before review ([CR process](../../general/core/docs/CR-Process.md), step 2): a
   few short transmissions on a development build need no prior review (operator 2026-11-06: "If
   they are short, nobody will complain"). Long or unattended automatic running on the air
   needs its safety review first.
@@ -67,6 +91,11 @@ verify their availability in the actual agent environment before starting work.
   radio did not answer and nothing changed; report it to the operator and run the same
   command again once the radio answers. A contact you did not start is never aborted
   to make the station idle.
+- A deploy of a commit from before #230 runs that commit's own script, whose record step calls
+  the harness at its old place. In a checkout already in the new layout that call fails: the
+  log says "record not posted" and the install itself goes ahead. The coordinator then posts
+  the record by hand (`python harness/general/core/tools/cr_state.py installed <commit> --since
+  <previous>` and the install record on each issue it moves).
 - Official WSJT-X **3.3.0-beta4** runs alongside ours as `WSTX-Comparison`,
   Rig=None, no CAT/PTT, Fast/AP-off. A connected Edge frontend runs here too.
 - Keep credentials private. Codex is signed in. Development secrets/SSH keys and
@@ -107,24 +136,24 @@ $env:WSTX_SIMULATOR_SAMPLE_DIR = Join-Path $sim 'ft4'
 $env:WSTX_SIMULATOR_ORACLE_DIR = Join-Path (git rev-parse --show-toplevel) 'fixtures\decoder'
 ```
 
-Without these, a push that selects any suite whose `needs` in `.harness/suites.yaml`
+Without these, a push that selects any suite whose `needs` in `harness/project/suites.yaml`
 names a WSTX_* input is refused red. The merge-queue worker reads the same inputs from
-`queue.env` in `.harness/config.yaml`; run it as a background job from the main checkout:
+`queue.env` in `harness/project/config.yaml`; run it as a background job from the main checkout:
 
 ```bash
 HARNESS_REPO=D:/Github/wsjtx-rust python D:/Github/harness-mq/core/tools/merge_queue.py worker
 ```
 
 `D:\Github\harness-mq` is a harness clone at the pinned (or newer reviewed) commit; keep it
-and the main checkout's `harness` submodule on the same commit. Agent builds use their own
+and the main checkout's `harness/general` submodule on the same commit. Agent builds use their own
 `CARGO_TARGET_DIR=D:/wstx-build/<worktree>` and `TEMP`/`TMP` set to that same folder (never
 inside a worktree, never shared): Cargo creates it before the linker needs it, so no
 one has to make a temp folder first (link.exe fails with LNK1104 on a missing one). Agents do not wait for `busy` (it starves them when the
 queue gates back to back): they run beside the gate at BelowNormal with 2 build jobs and
 rerun a timing-sensitive failure once. Gate builds go to
 `D:/harness-cargo-target/wsjtx-rust/<checkout>` and are pruned by the gate itself; agent
-build directories are pruned with `harness/core/tools/build_prune.py agent-dirs --root DIR
---apply` (harness/lang/rust/standard.md, "Build folders").
+build directories are pruned with `harness/general/core/tools/build_prune.py agent-dirs --root DIR
+--apply` (harness/general/lang/rust/standard.md, "Build folders").
 
 Use this synchronization set, not stale `synchronization-inputs-final`/`-lf` caches.
 Evidence: `.git\migration-evidence\hardware-preparation\`; original design: sibling
@@ -141,3 +170,31 @@ pushed.
 Skills are the pinned harness's, through the generated `.claude/skills/` entrypoints
 (`install_skills.py`); registered user skills preserve user state. Never
 install Fortran locally.
+
+## The layout change
+
+#230 moved the general harness from the submodule path `harness` to `harness/general` (submodule
+name `harness-general`, its own module store `.git/modules/harness-general`) and the project
+harness under `harness/project/`. A checkout moves between the layouts by the merge queue's
+sequence (`git checkout -q --detach -f <commit>`, `git clean -q -fd`,
+`git submodule update --init --recursive -q`) only after a one-time step, because the sequence
+alone leaves the other layout's submodule behind:
+
+- **Old layout to new**: `git -C <checkout> submodule deinit -f harness` at the moment that
+  checkout switches, then the sequence: the merge queue's worktree right before it takes #230's
+  candidate (the queue idle), the main checkout when it takes master after #230 landed, and every
+  other worktree when it rebases or merges onto master after #230. A checkout that stays on a
+  branch from before #230 is not touched: the deinit would take its harness away. Without it the gitfile `harness/.git` stays, and every git call from
+  `harness/project/` (the radio preflight's lease folder among them) resolves to the old
+  submodule instead of the checkout. A checkout that already moved without the step: delete the
+  file `harness/.git`; `git -C <checkout>/harness/project rev-parse --show-toplevel` then names
+  the checkout itself.
+- **New layout to old** (a parent checked out by hand, a branch older than #230):
+  `git -C <checkout> submodule deinit -f harness/general`, then the sequence. Without it
+  `harness/general` stays inside the old submodule and the old submodule's files stay deleted;
+  the repair is `git -C <checkout> submodule update --init --force` and
+  `git -C <checkout>/harness clean -ffdq`.
+
+Then, once per clone, `install_hooks.py` of the new pin (the operator's; its hooks enter
+through shims in the clone's git directory, harness#136, so each checkout and worktree runs
+its own pre-push in either layout), and `secrets.md` moves to `harness/project/secrets.md`.

@@ -1,34 +1,57 @@
 # Harness reference index
 
-The build procedure is the [CR process](../../harness/core/docs/CR-Process.md); method changes
-follow [Harness changes](../../harness/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
+The build procedure is the [CR process](../../general/core/docs/CR-Process.md); method changes
+follow [Harness changes](../../general/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
 contract; the references below are the constraints a change must respect.
 
 | Subject | Reference |
 |---|---|
-| Product contract | [Functional model entry point](../sysml/Requirements.sysml); [exclusive authority selection](Project-Specifics.md#exclusive-functional-authority) |
-| Product component/interface boundaries | [Architecture](../sysml/Station.sysml) and its referenced behaviour/interface packages |
+| Product contract | [Functional model entry point](../../../docs/sysml/Requirements.sysml); [exclusive authority selection](Project-Specifics.md#exclusive-functional-authority) |
+| Product component/interface boundaries | [Architecture](../../../docs/sysml/Station.sysml) and its referenced behaviour/interface packages |
 | The finished model: the rules every model change and its check name (M1–M8) | [Finished model](Finished-Model.md); read first by the definer and the reviewer of a model change |
-| Product SysML artifacts and view scope | [Architecture model](../sysml/Station.sysml); [catalog and validation](../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings) |
-| Behavior baseline and provenance | [Functional model](../sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../README.md#license-and-attribution) |
+| Product SysML artifacts and view scope | [Architecture model](../../../docs/sysml/Station.sysml); [catalog and validation](../../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings) |
+| Behavior baseline and provenance | [Functional model](../../../docs/sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../../README.md#license-and-attribution) |
 | Which machine is needed for what (HB9BLA has the transceiver) | [Machines and roles](Project-Specifics.md#machines-and-roles) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
-| Language rules | [Rust standard](../../harness/lang/rust/standard.md) |
-| Security | [principles](../../harness/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
-| Testing | [testing](../../harness/core/docs/standards/testing.md); suites in `.harness/suites.yaml` |
-| Change and harness-improvement reports; restart checkpoints | [Reporting](../../harness/core/docs/CR-Reporting.md); shared harness overview: `python harness/core/tools/report_cr.py --harness --root harness` |
-| The coordinator (main session), parallel issue workspaces and sub-agents | [Agent roles](../../harness/core/agents/roles.md), [workspace tool](../../harness/core/docs/Workspaces.md); `python harness/core/tools/parallel.py status` |
-| Writing functional SysML models | [SysML v2 authoring](../../harness/core/docs/standards/sysml-v2.md) |
+| Language rules | [Rust standard](../../general/lang/rust/standard.md) |
+| Security | [principles](../../general/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
+| Testing | [testing](../../general/core/docs/standards/testing.md); suites in `harness/project/suites.yaml` |
+| Change and harness-improvement reports; restart checkpoints | [Reporting](../../general/core/docs/CR-Reporting.md); shared harness overview: `python harness/general/core/tools/report_cr.py --harness --root harness/general` |
+| The coordinator (main session), parallel issue workspaces and sub-agents | [Agent roles](../../general/core/agents/roles.md), [workspace tool](../../general/core/docs/Workspaces.md); `python harness/general/core/tools/parallel.py status` |
+| Writing functional SysML models | [SysML v2 authoring](../../general/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
 | Escapes | [Escapes ledger](Escapes-Ledger.md) |
+| Project memory and the HB9BLA handover | [MEMORY](MEMORY.md) |
 | Backlog | [GitHub issues](https://github.com/SensorsIot/wsjtx-rust/issues); rules in [Backlog](#backlog) |
 
-## Bindings
+## Layout
 
-The reusable general process is in `harness/core/`; Rust rules and compiler checks are
-in `harness/lang/rust/`. Project configuration is in `.harness/`, and project-specific
-environment, build and model-maintenance instructions are in [Project specifics](Project-Specifics.md).
+Everything under `harness/` is the harness (HOW); everything else is product.
+
+- `harness/general/` is the general harness: the git submodule `harness-general`
+  (https://github.com/SensorsIot/harness, branch `main`) at the commit this project pins. The
+  reusable process is in `harness/general/core/`; Rust rules and compiler checks are in
+  `harness/general/lang/rust/`. Fixes to it are made inside it.
+- `harness/project/` is the project harness, this project's own part:
+  - `config.yaml`: the harness configuration (packs, gate, queue, machines, Alex);
+  - `suites.yaml`: the test registry;
+  - `model_bindings.py`: the gate's model bindings (`gate.model_bindings`);
+  - `deploy/`: the radio preflight (`radio-preflight.ps1`, `radio-port.json`), the station
+    switch for simulator tests (`station-switch.ps1`), their shared station control
+    (`station-control.ps1`), the prepared deploy authority (`authority/`, switched off) and
+    their tests (`tests/`);
+  - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
+  - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
+    [Escapes ledger](Escapes-Ledger.md), [Finished model](Finished-Model.md), this overview,
+    [MEMORY](MEMORY.md) and [Project specifics](Project-Specifics.md);
+  - `secrets.md`: the machine's notifier secrets, local and never tracked (`.gitignore`).
+
+The generated anchors `AGENTS.md`, `CLAUDE.md` and `.claude/` stay at the repository root,
+where the hosts look for them. Project-specific environment, build and model-maintenance
+instructions are in [Project specifics](Project-Specifics.md).
+
+## Bindings
 
 - **Main branch:** `master`; the push gate compares against `origin/master`.
 - **Execution mode:** local. HB9BLA is authoritative for compiler checks,
@@ -36,11 +59,11 @@ environment, build and model-maintenance instructions are in [Project specifics]
   packaging. The local pre-push hook enforces the ordinary gate. GitHub Actions has
   only a manual trigger and is an explicit alternative when requested, not a second
   automatic build after a local pass.
-- **Configuration:** `execution_mode: local` in `.harness/config.yaml` selects local
+- **Configuration:** `execution_mode: local` in `harness/project/config.yaml` selects local
   gate execution. The manual-only hosted workflow supplies the alternative location
   when explicitly selected; it does not add a routine second run.
 - **Test selection:** explicit file owners and downstream functional dependencies in
-  `.harness/suites.yaml`; see [functional test selection](Project-Specifics.md#functional-test-selection).
+  `harness/project/suites.yaml`; see [functional test selection](Project-Specifics.md#functional-test-selection).
   Shared or unmapped changes select broader checks. `--plan` explains the selection;
   `--full` executes every eligible group without memo reuse.
 - **Deploy:** a Windows release executable built and installed on HB9BLA
@@ -68,16 +91,16 @@ buffer exceed 128 KiB; it does not emulate arbitrary congestion queues.
 
 The paths a harness change may touch; everything else is product:
 
-- `harness/` (the submodule: its pinned version; fixes are made inside it)
-- `.harness/`
-- `docs/harness/`, `AGENTS.md`, `CLAUDE.md`, `.claude/` (the agent guard and skill entrypoints)
-- `deny.toml` (the `rust-supply-chain` pack's licence and source policy)
+- `harness/` (`harness/general/`, the submodule at its pinned version, fixes made inside it;
+  and `harness/project/`, the project harness)
+- `AGENTS.md`, `CLAUDE.md`, `.claude/` (the agent guard and skill entrypoints)
 - `.github/ISSUE_TEMPLATE/`
 - `.github/workflows/rust-advisories.yml` (the pack's scheduled advisories sensor)
-- `.gitmodules` (the harness submodule's URL and branch; it holds only that submodule, and adding
-  another submodule is a product change)
+- `deny.toml` (the `rust-supply-chain` pack's licence and source policy)
+- `.gitmodules` (the harness submodule's name, path, URL and branch; it holds only that
+  submodule, and adding another submodule is a product change)
 
-They are declared as `harness_paths` in `.harness/config.yaml`: a push that changes only
+They are declared as `harness_paths` in `harness/project/config.yaml`: a push that changes only
 these paths is a harness change: no review and no gate (harness Harness-Changes.md).
 
 Maintained with the harness but inputs of product suites, so a change to them is gated
@@ -106,7 +129,7 @@ against the model, test the function with independent oracles, for real where it
 only then have the independent review, to find undesired behaviour. Reconcile delivered functionality, source bindings and durable cases before
 manual issue closure. A test's presence, actual execution and live acceptance are distinct.
 
-The [model catalog](../sysml/Requirements.sysml) owns stable FR/CL/TC identities and
+The [model catalog](../../../docs/sysml/Requirements.sysml) owns stable FR/CL/TC identities and
 functional verification definitions. Executable assertions and fixture data remain linked
 companions. Protocol, states, errors and bounds are in the responsible model packages,
 not duplicated into another active specification. Product-specific tests and additive
@@ -120,7 +143,7 @@ behavioural equivalence or implementation readiness; the ready check, independen
 and relevant application tests supply that evidence.
 
 The active canonical contract and these bindings state the rule that holds now, never
-its history ([documentation](../../harness/core/docs/standards/documentation.md)).
+its history ([documentation](../../general/core/docs/standards/documentation.md)).
 Open work and review/execution evidence live in GitHub issues; history is `git log`.
 
 ## Backlog
@@ -133,5 +156,5 @@ GitHub issues of `SensorsIot/wsjtx-rust` are the project's one to-do list.
 - **Types say what:** `Bug`, `Feature`, `Task`.
 - **Ageing:** an open issue is overdue 30 days after it was created; a `waiting` issue
   never ages and names what it waits for.
-- **Priority:** harness issues first ([intake](../../harness/core/docs/CR-Process.md#intake-and-authorization)), then prerequisites, then `Bug`, then `Task`, then `Feature`; within
+- **Priority:** harness issues first ([intake](../../general/core/docs/CR-Process.md#intake-and-authorization)), then prerequisites, then `Bug`, then `Task`, then `Feature`; within
   a type, the oldest first.

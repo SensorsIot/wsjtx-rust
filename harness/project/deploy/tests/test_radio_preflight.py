@@ -12,11 +12,21 @@ import tempfile
 import unittest
 
 # The one copy of the PowerShell runner is tools/deploy/tests/pwsh.py.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "tools", "deploy", "tests"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "tools", "deploy", "tests"))
 import pwsh  # noqa: E402
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(HERE, "radio-preflight.ps1")
+# The checkout: three folders above harness/project/deploy/.
+REPO = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
+
+
+def seen_at(command, variables, into):
+    """A prelude line: when `command` (a function of the script) is called, the values of
+    `variables` are appended to the file `into`, one line each. Nothing else changes."""
+    values = "; ".join(f"Add-Content -LiteralPath {pwsh.ps_quote(into)} -Value (Get-Variable -Name {v} -ValueOnly)"
+                       for v in variables)
+    return f"\nSet-PSBreakpoint -Command {command} -Action {{ {values} }} | Out-Null\n"
 
 
 def prelude(log, raw="00 26", running=True, ptt="released", contact="idle", open_fails=False, comes_back=True,
@@ -337,6 +347,20 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
             self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
             self.assertEqual(self.preflight("cr44-a", **radio)[0], 2)
             self.assertEqual(self.lease(), "lease: free", radio)
+
+    def test_without_agent_client_the_checkouts_own_client_is_used(self):
+        # #230 item 14: the default resolves tools/deploy/ from the repository root.
+        seen = os.path.join(self.tmp.name, "seen.txt")
+        rc, out = pwsh.run(TOOL, ["-Status", "-StateDir", self.state, "-Station", self.station],
+                           prelude(self.log) + seen_at("With-LeaseLock", ["AgentClient"], seen),
+                           env={"FAKE_STATION": self.station})
+        self.assertEqual(rc, 0, out)
+        with open(seen, encoding="utf-8-sig") as f:
+            resolved = f.read().splitlines()[0]
+        expected = os.path.join(REPO, "tools", "deploy", "agent-client.ps1")
+        self.assertEqual(os.path.normcase(resolved), os.path.normcase(expected))
+        self.assertTrue(os.path.isfile(resolved), resolved)
+        self.assertEqual(self.system(), [], "nothing reached the system")
 
     def test_an_expired_lease_is_free(self):
         os.makedirs(self.state)

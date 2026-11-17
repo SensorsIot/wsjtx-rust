@@ -9,10 +9,10 @@ description: Move code, tests or model text to a new place without changing what
   and tested separately.
 ---
 
-Read [the canonical restructuring skill](../../../harness/core/skills/restructuring/SKILL.md) in full BEFORE following this skill.
-Filesystem path relative to this entrypoint: `../../../harness/core/skills/restructuring/SKILL.md`.
+Read [the canonical restructuring skill](../../../harness/general/core/skills/restructuring/SKILL.md) in full BEFORE following this skill.
+Filesystem path relative to this entrypoint: `../../../harness/general/core/skills/restructuring/SKILL.md`.
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=b6505a77ad543bfd7faf94037d8ea5a5062fcf49eaf95459924616c4e8a5c9a1 -->
-<!-- harness-forwarder-v1 sha256=5c152b2c4b0d84f0a5f8dd7bd42b74a2e76d6f5e8ca71e9cd52ee1d1d5862c44 -->
+<!-- canonical-source-sha256=2fbb6b7b5303478a27f94a23bf3e8999a21a405b4d74f6aa2c072571bea64dac -->
+<!-- harness-forwarder-v1 sha256=d98119db524e49fb4bb01b7f88d3b73a1be097e53e8117ee2f0d99eb6dd601d9 -->

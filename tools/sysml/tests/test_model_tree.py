@@ -264,7 +264,7 @@ class ModelTreeTests(unittest.TestCase):
     # Required packages T6: the gate's model bindings on moved and renamed files
     # Proves: CL-014-10; TC-DOC-008
     def test_gate_model_bindings_follow_moved_and_renamed_required_files(self):
-        spec = importlib.util.spec_from_file_location("required_model_bindings", ROOT / ".harness/model_bindings.py")
+        spec = importlib.util.spec_from_file_location("required_model_bindings", ROOT / "harness/project/model_bindings.py")
         bindings = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bindings)
         bound = 'AutomationState::partial;\n        attribute executable : String = "tests/case.cjs";'
@@ -436,7 +436,7 @@ class ModelTreeTests(unittest.TestCase):
     # T11
     # Proves: CL-014-10; TC-DOC-008
     def test_gate_model_bindings_read_and_list_the_tree_of_a_revision(self):
-        spec = importlib.util.spec_from_file_location("tree_model_bindings", ROOT / ".harness/model_bindings.py")
+        spec = importlib.util.spec_from_file_location("tree_model_bindings", ROOT / "harness/project/model_bindings.py")
         bindings = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bindings)
 

@@ -13,11 +13,13 @@ import tempfile
 import unittest
 
 # The one copy of the PowerShell runner is tools/deploy/tests/pwsh.py.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "tools", "deploy", "tests"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "tools", "deploy", "tests"))
 import pwsh  # noqa: E402
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL = os.path.join(HERE, "station-switch.ps1")
+# The checkout: three folders above harness/project/deploy/.
+REPO = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 
 # The lines of tools/deploy/station-update/launcher.ps1 the switch reads and writes.
 LAUNCHER = ("$ErrorActionPreference='Stop'\r\n"
@@ -261,6 +263,28 @@ function Agent-Get($c, $Route) {{
             self.assertEqual(rc, 2, f"{args}: {out}")
             self.assertIn("need -To simulator or -To back", out)
         self.assertEqual(self.system(), [])
+
+    def test_without_agent_client_and_pin_the_checkouts_own_files_are_used(self):
+        # #230 item 14: the defaults resolve tools/deploy/ from the repository root. -To back
+        # -DryRun with the station stopped reads the pin and changes nothing.
+        self.write("launcher.ps1", LAUNCHER.replace("'profiles\\ic7300'", "'profiles\\SIM-IC7300'"))
+        seen = os.path.join(self.tmp.name, "seen.txt")
+        hook = (f"\nSet-PSBreakpoint -Command Launcher-Profile -Action {{ "
+                f"Add-Content -LiteralPath {pwsh.ps_quote(seen)} -Value $AgentClient; "
+                f"Add-Content -LiteralPath {pwsh.ps_quote(seen)} -Value $Pin }} | Out-Null\n")
+        before = self.snapshot()
+        rc, out = pwsh.run(TOOL, ["-To", "back", "-DryRun", "-Station", self.station],
+                           prelude(self.log, running=False) + hook, env={"FAKE_STATION": self.station})
+        self.assertEqual(rc, 0, out)
+        with open(seen, encoding="utf-8-sig") as f:
+            client, pin = f.read().splitlines()[:2]
+        expected = (os.path.join(REPO, "tools", "deploy", "agent-client.ps1"),
+                    os.path.join(REPO, "tools", "deploy", "station-update", "launcher.ps1"))
+        self.assertEqual((os.path.normcase(client), os.path.normcase(pin)), tuple(os.path.normcase(e) for e in expected))
+        for path in (client, pin):
+            self.assertTrue(os.path.isfile(path), path)
+        self.assertIn(f"pinned launcher {pin}", out)
+        self.assertEqual((self.snapshot(), self.system()), (before, []))
 
     def test_the_script_writes_no_profile_and_opens_no_port(self):
         with open(TOOL, encoding="utf-8") as f:

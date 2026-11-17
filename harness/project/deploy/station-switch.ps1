@@ -1,5 +1,5 @@
 # Switches the station between the operator profile and the simulator profile SIM-IC7300 for live
-# tests on the FT-8 Band Simulator (docs/harness/Project-Specifics.md, Simulator live tests, Switch;
+# tests on the FT-8 Band Simulator (harness/project/docs/Project-Specifics.md, Simulator live tests, Switch;
 # harness#114). It needs no administrator rights.
 #   station-switch.ps1 -To simulator     the tester or the coordinator
 #   station-switch.ps1 -To back          the coordinator only: no agent switches the station to ic7300
@@ -102,8 +102,9 @@ function Read-Back($expected) {
 try {
   if ($To -notin @('simulator', 'back')) { Finish 2 'ERROR' "need -To simulator or -To back, not '$To'" }
   if (-not $Station) { $Station = Join-Path $env:LOCALAPPDATA 'WstxRust\station' }
-  if (-not $AgentClient) { $AgentClient = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\tools\deploy\agent-client.ps1')) }
-  if (-not $Pin) { $Pin = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\tools\deploy\station-update\launcher.ps1')) }
+  # The repository root is three folders above harness/project/deploy/.
+  if (-not $AgentClient) { $AgentClient = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\tools\deploy\agent-client.ps1')) }
+  if (-not $Pin) { $Pin = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\tools\deploy\station-update\launcher.ps1')) }
   $script:CtrlCExit = 'not run'; $script:StillRuns = $false
   $launcher = Join-Path $Station 'launcher.ps1'
   $backup = Join-Path $Station 'launcher.ps1.before-simulator'

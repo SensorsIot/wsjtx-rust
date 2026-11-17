@@ -52,7 +52,7 @@ COMMENT_ID = "987654321"
 # The removed parameter of the deploy that asked for an operator's OK (#196). Built from two
 # parts: no tracked text but the test of TC-196-07 may state it.
 REMOVED_PARAMETER = "-Ok" + "Comment"
-# The mechanism files in pin order (docs/harness/Project-Specifics.md, Deploy pins).
+# The mechanism files in pin order (harness/project/docs/Project-Specifics.md, Deploy pins).
 MECHANISM = ("tools/deploy/station-update/station-update.ps1", "tools/deploy/station-update/make_package.py",
              "tools/deploy/station-update/launcher.ps1", "tools/deploy/agent-client.ps1",
              "tools/deploy/station-probe.ps1", "tools/deploy/live-page-check.ps1")
@@ -70,7 +70,7 @@ LOCAL = {"Set-StrictMode", "Join-Path", "Split-Path", "Test-Path", "Get-Item", "
          "Push-Location", "Pop-Location", "ForEach-Object", "(dot-source-agent-client)",
          "Safe-Child", "Station-Processes", "Assert-Setup", "Firewall-Scope", "Send-CtrlC", "Stop-Station",
          "Start-Ready", "Write-Active", "Save-Profile", "Restore-Profile", "Restore-Launcher", "Switch-Back", "Step",
-         "Hash", "Now", "Read-Pins", "Pins-Text", "Issue-Skip", "Take-Lock", "Read-State", "Station-Busy",
+         "Hash", "Now", "Specifics-Path", "Read-Pins", "Pins-Text", "Issue-Skip", "Take-Lock", "Read-State", "Station-Busy",
          "Busy-Reason", "Clean", "Last-Line", "Move-Installed", "Issues-Named"}
 # .NET types the script may name; file and path methods act on the same sandbox paths.
 TYPES = {"[Convert]", "[DateTime]", "[IO.FileAttributes]", "[IO.File]", "[IO.Path]", "[NullString]", "[StringComparison]",
@@ -120,12 +120,20 @@ function Get-NetFirewallPortFilter { process { [pscustomobject]@{ Protocol = 'TC
 function git {
   if ($args -contains 'fetch') { $global:LASTEXITCODE = $(if ($env:DRILL_FETCH_FAIL) { 1 } else { 0 }); return }
   if ($args -contains 'merge-base') { $c = $args[$args.Count - 2]; $global:LASTEXITCODE = $(if (($env:DRILL_ON_MASTER -split ',') -contains $c) { 0 } else { 1 }); return }
+  if ($args -contains 'ls-tree') { Drill-LsTree $args; return }
   if ($args -contains 'show') {
     $spec = [string]$args[$args.Count - 1]; $i = $spec.IndexOf(':')
     $file = Join-Path (Join-Path $env:DRILL_GIT_STORE $spec.Substring(0, $i)) ($spec.Substring($i + 1) -replace '/', '\')
     if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file; $global:LASTEXITCODE = 0 } else { $global:LASTEXITCODE = 128 }
     return }
   Drill-Mutation "git $args" }
+# git ls-tree --name-only <commit> -- <path>: the path when the commit's store holds it, else
+# nothing; exit 0 either way and nothing on stderr, as git does.
+function Drill-LsTree($a) {
+  $path = [string]$a[$a.Count - 1]; $commit = [string]$a[[array]::IndexOf($a, '--') - 1]
+  $file = Join-Path (Join-Path $env:DRILL_GIT_STORE $commit) ($path -replace '/', '\')
+  if (Test-Path -LiteralPath $file -PathType Leaf) { $path }
+  $global:LASTEXITCODE = 0 }
 function gh { Drill-Mutation "gh $args" }
 function python { Drill-Mutation "python $args" }
 function powershell.exe {
@@ -296,10 +304,22 @@ class Sandbox:
         """[(sha256, path)] of the package's mechanism files, in pin order."""
         return [(sha256(os.path.join(self.pkg, "deploy", *p.split("/"))), p) for p in MECHANISM]
 
-    def pin(self, commit, pins=None, text=None):
-        """Give `commit` a Project-Specifics.md (git show) with these pins (default: the package's)."""
-        path = os.path.join(self.store, commit, "docs", "harness", "Project-Specifics.md")
-        write(path, text if text is not None else pins_text(self.pins() if pins is None else pins))
+    def specifics(self, commit, old=False):
+        """The file `git ls-tree` finds and `git show <commit>:<path>` reads: harness/project/docs/Project-Specifics.md,
+        or with `old` docs/harness/Project-Specifics.md (a commit from before #230)."""
+        rel = ("docs", "harness") if old else ("harness", "project", "docs")
+        return os.path.join(self.store, commit, *rel, "Project-Specifics.md")
+
+    def pin(self, commit, pins=None, text=None, old=False):
+        """Give `commit` a Project-Specifics.md (git show) with these pins (default: the package's),
+        at the new path, or with `old` at the old path."""
+        write(self.specifics(commit, old), text if text is not None else pins_text(self.pins() if pins is None else pins))
+
+    def unpin(self, commit, old=False):
+        """`commit` has no Project-Specifics.md at that path."""
+        path = self.specifics(commit, old)
+        if os.path.exists(path):
+            os.remove(path)
 
     def write_gates(self, gates, rehash=False):
         write_json(os.path.join(self.pkg, "gates.json"), gates)
@@ -463,6 +483,36 @@ def running_without_pins(s):
     s.pin(CURRENT, text="# Project-specific harness bindings\n")
 
 
+def commit_pins_at_old_path_only(s):
+    """#230: a commit from before the move states its pins at docs/harness/."""
+    s.unpin(COMMIT)
+    s.pin(COMMIT, old=True)
+
+
+def commit_new_file_without_pins_old_file_with_pins(s):
+    """#230: a file at the new path decides; the old one is not read."""
+    s.pin(COMMIT, text="# Project-specific harness bindings\n\n## Deployment authority\n\nNo pins.\n")
+    s.pin(COMMIT, old=True)
+
+
+def commit_without_any_specifics(s):
+    s.unpin(COMMIT)
+    s.unpin(COMMIT, old=True)
+
+
+def running_pins_at_old_path(s):
+    """#230: the running commit is from before the move, with the same pins."""
+    s.unpin(CURRENT)
+    s.pin(CURRENT, old=True)
+
+
+def running_other_pins_at_old_path(s):
+    pins = s.pins()
+    pins[4] = ("0" * 64, pins[4][1])
+    s.unpin(CURRENT)
+    s.pin(CURRENT, pins, old=True)
+
+
 def station_launcher_differs(s):
     write(os.path.join(s.station, "launcher.ps1"), b"# another launcher\n")
 
@@ -558,6 +608,16 @@ PIN_CASES = [
      ["deploy mechanism changed: the running commit ccccccccc has no deploy pins", "stop station"], "reaches stop"),
     ("changed mechanism: station launcher differs from its pin", station_launcher_differs, {},
      ["deploy mechanism changed: the launcher in the station folder differs from its pin", "stop station"], "reaches stop"),
+    # #230: the pins are read at harness/project/docs/, at docs/harness/ only when that file is absent.
+    ("pins: at the old path only, -DryRun", commit_pins_at_old_path_only, {},
+     ["deploy mechanism equals its pins", "dry run: nothing changed"], "dry-run accepted"),
+    ("pins: new file without pins, old file with pins", commit_new_file_without_pins_old_file_with_pins, {},
+     "commit 123456789 has no deploy pins", "refused"),
+    ("pins: neither file", commit_without_any_specifics, {}, "commit 123456789 has no deploy pins", "refused"),
+    ("running commit pins at the old path, equal", running_pins_at_old_path, {},
+     ["deploy mechanism equals its pins", "dry run: nothing changed"], "dry-run accepted"),
+    ("running commit pins at the old path, differing", running_other_pins_at_old_path, {},
+     ["deploy mechanism changed: the pins of 123456789 differ from those of the running ccccccccc", "stop station"], "reaches stop"),
     ("the removed OK parameter stops at binding", removed_parameter, {}, REMOVED_PARAMETER.lstrip("-"), "binding refused"),
     ("rollback with differing pins never asks", rollback_with_other_pins, {}, "rollback: ccccccccc -> ddddddddd", "rollback reaches stop"),
     ("rollback with the radio closed never asks", rollback_previous, {"DRILL_RADIO": "closed"}, "rollback: ccccccccc -> ddddddddd", "rollback reaches stop"),

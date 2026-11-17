@@ -62,18 +62,17 @@ and licensing; it is not a second functional specification.
 | `client/` | HTML/CSS/JavaScript status/settings interface, embedded into the server executable. |
 | `docs/sysml/` | Canonical functional SysML requirements, interfaces, behaviour, architecture and verification. |
 | `docs/archive/` | Frozen historical Markdown; not an active specification or validation input. |
-| `docs/harness/` | Project-specific harness bindings and development instructions. |
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |
-| `harness/`, `.harness/` | Pinned development harness and project bindings. |
+| `harness/` | The development harness: the pinned general harness (`harness/general/`) and the project harness (`harness/project/`) with its development instructions. |
 
-Build, test and packaging instructions are in the [project-specific harness](docs/harness/Project-Specifics.md). A packaged desktop webview is an optional future client distribution, not a requirement for using the browser interface.
+Build, test and packaging instructions are in the [project-specific harness](harness/project/docs/Project-Specifics.md). A packaged desktop webview is an optional future client distribution, not a requirement for using the browser interface.
 
 ## Documentation
 
 - [Canonical functional model and behaviour baseline](docs/sysml/Requirements.sysml)
 - [Stable requirements and verification cases](docs/sysml/Requirements.sysml)
 - [Architecture](docs/sysml/Station.sysml)
-- [Project-specific harness: Windows builds and model validation](docs/harness/Project-Specifics.md)
+- [Project-specific harness: Windows builds and model validation](harness/project/docs/Project-Specifics.md)
 - [Reusable SysML authoring instruction](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md)
 
 ## Branches

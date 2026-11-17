@@ -448,8 +448,7 @@
   - client/
   - tests/
   - fixtures/
-  - docs/harness/
-  - .harness/
+  - harness/project/
   - README.md
   select:
   - docs/sysml/

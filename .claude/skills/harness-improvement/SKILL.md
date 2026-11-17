@@ -9,10 +9,10 @@ description: The central test of the harness. Reads what real runs left behind (
   method; not for generic code cleanup.
 ---
 
-Read [the canonical improvement skill](../../../harness/core/skills/improvement/SKILL.md) in full BEFORE following this skill.
-Filesystem path relative to this entrypoint: `../../../harness/core/skills/improvement/SKILL.md`.
+Read [the canonical improvement skill](../../../harness/general/core/skills/improvement/SKILL.md) in full BEFORE following this skill.
+Filesystem path relative to this entrypoint: `../../../harness/general/core/skills/improvement/SKILL.md`.
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=cc6bbfffc7f316a9f769ffdbdad4ecc6dc929add2a4e9fdd6301591192e7c672 -->
-<!-- harness-forwarder-v1 sha256=2cc2a9b90e933dbbb95afc270aaed8c23ecebd42bdff0db2313a823eeb973f0c -->
+<!-- canonical-source-sha256=cbe03cbd697bd4c2c9f43b7b60b57a3a93fccdd8b9b6cbf5001fa31cf8b50a86 -->
+<!-- harness-forwarder-v1 sha256=73daa61419a55c9a6cfbae0fbfbca0e44a0dbff701c8af19133b8abee892b7a6 -->

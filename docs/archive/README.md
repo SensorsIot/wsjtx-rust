@@ -7,10 +7,16 @@ are preserved as historical content and may be obsolete.
 
 The active functional authority is the [SysML model](../sysml/),
 with [stable requirements and verification](../sysml/Requirements.sysml).
-Harness/process instructions remain active Markdown under `docs/harness/`.
+Harness/process instructions remain active Markdown under `harness/project/docs/`.
 
 Archived source: `docs/WSTX Rust FSD.md` from commit `ba1765b3c352247a9bf960bdf5c5488cf8a28134`.
 The [archived file](markdown-functional-specification/WSTX%20Rust%20FSD.md) preserves
 that Git blob byte for byte (UTF-8 with LF line endings).
 
 SHA-256: `ccd5d24204a6247060dbcbc90b4c3b7a329ca444853aa382d126a6c5ad13447e`.
+
+## Archived harness material
+
+[harness-diagrams/](harness-diagrams/) holds the former harness process diagrams (moved here by #230),
+replaced by the SysML model and kept as history. It is not a harness instruction: harness instructions are under
+[harness/project/docs/](../../harness/project/docs/).

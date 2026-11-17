@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 tool_spec = importlib.util.spec_from_file_location("trace_sysml", ROOT / "tools/sysml.py")
 tool = importlib.util.module_from_spec(tool_spec)
 tool_spec.loader.exec_module(tool)
-TOOLS = ROOT / "harness/core/tools"
+TOOLS = ROOT / "harness/general/core/tools"
 sys.path.insert(0, str(TOOLS))
 try:
     spec = importlib.util.spec_from_file_location("trace_registry", TOOLS / "registry.py")
@@ -35,7 +35,7 @@ def discover_patterns(rows):
 class TraceSelectionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.rows = registry.parse((ROOT / ".harness/suites.yaml").read_text(encoding="utf-8"))
+        cls.rows = registry.parse((ROOT / "harness/project/suites.yaml").read_text(encoding="utf-8"))
 
     def test_code_changes_select_fast_trace_check_without_full_model_suite(self):
         for source in ("client/app.js", "server/src/profile.rs", "tests/profiles.test.cjs"):
@@ -119,7 +119,7 @@ class TraceSelectionTests(unittest.TestCase):
     def test_suite_definitions_select_both_architecture_suites(self):
         architecture = [name for name in self.rows if name.startswith(VALIDATOR)]
         self.assertIn(VALIDATOR, architecture)
-        self.assert_selection(".harness/suites.yaml", architecture, ())
+        self.assert_selection("harness/project/suites.yaml", architecture, ())
 
     # T4 (#202): source edits select neither architecture suite; they invalidate the
     # validator suite's evidence (its pinned checks read them), not the working-model suite's.
