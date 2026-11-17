@@ -13,7 +13,7 @@ Three documents govern everything written under `docs/sysmlV2`.
 | 2 | [Authoring/](Authoring/SKILL.md) | how each element is written: the authoring skill, its five references, the written example, the standards behind them, and the skill that writes the documentation from the model |
 | 3 | [3-Method.md](3-Method.md) | how the new model is built from the old one: the steps per part, the ledger, the checks, and when a part is done |
 
-`1-Finished-Model.md` is the working copy. It started as `docs/harness/Finished-Model.md`
+`1-Finished-Model.md` is the working copy. It started as `docs/harness/Finished-Model.md` (now `harness/project/docs/Finished-Model.md`)
 and differs from it in M0, M2.1 (`Startup` stands in `station/`; operating's
 `StrategySelection`; auto's `AutoMode` in place of `Watchdog`), M5.1 (the operator's
 shared folder), M6.2, M6.4, M6.10, M7.1 and open point 3.

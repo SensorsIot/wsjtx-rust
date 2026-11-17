@@ -460,7 +460,7 @@ written only on request (`Foundation/Authoring/fsd-from-model.md`).
   operator keeps it as an issue to discuss.
 - How and when the new tree replaces the old one on main. Work for the tools and the code
   is collected in the reports.
-- `docs/harness/Finished-Model.md` on main is the older copy of the finished model; the
+- `harness/project/docs/Finished-Model.md` on master is the older copy of the finished model; the
   working copy is `Foundation/1-Finished-Model.md`.
 - `_work/files.md` and M2.1 agree (2026-11-17); `check.py` on the whole tree lists as
   missing only the files of web, mcp, the frontend and `shared/Quantities.sysml`.
