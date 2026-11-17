@@ -106,11 +106,12 @@ and holds the parts ranking, auto and qso.
 - **M3.2** A file imports only from layers before it, and from Requirements. UseCases takes
   its actors from Context.
 - **M3.3** A part never imports another part. What two parts share stands in their interface.
-- **M3.4** A transport file (StationLink, Mcp) and the operating chain's interface file may
-  import a control interface. A control interface imports none of them, and no other file
-  imports a control interface. StationCommands is the supervisor's control interface: the
-  one set of commands that web and mcp both give, and the supervisor's own state and
-  records.
+- **M3.4** Within `interfaces/`, a control interface is imported only by a transport file
+  (StationLink, Mcp), the operating chain's interface file (OperatingChain), StationCommands,
+  Strategies (operating's interface) and ProfileAccess (which stores each function's
+  settings). A control interface imports no transport file. StationCommands is the
+  supervisor's control interface: the one set of commands that web and mcp both give, and
+  the supervisor's own state and records.
 
 ## M4. What each kind of file holds
 
