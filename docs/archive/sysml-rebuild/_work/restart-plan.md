@@ -83,3 +83,20 @@ closes; skills and agents reinstalled; every clone pulls (the main checkout, the
 The operator chooses the first product CRs from the rebuild's work for the code (#226, #227,
 #228, #229, #225, the WSJT-X UI targets, the `@CodeDiffers` list, the code restructuring per
 part under M2.3), and #231 traced once to the new model.
+
+## Factory review, 2026-11-18 (read only)
+
+Findings: a stale Alex runs since 2026-11-15 (PID 49084, `harness/core/tools/alex.py`, a path
+gone since #230; it read its settings once and holds the lock); runs ended by the host's usage
+limit become "no output" stops (alex.py `ClaudeLauncher.poll`); the workspace registry held #136
+and #230 (cleaned and retired 2026-11-18); `alex.first` is all done work; the restriction
+"until #192 accepted" forbids the emulator, which is allowed, and ties the real radio to #192;
+`queue.flake_issue: 8` is closed; `limit.json` holds a stale override; stale comments in
+`config.yaml`, Agent-Working-Rules (review rounds, step numbers, hand-in) and MEMORY (worker
+path, migration notes, #7–#12, "parallel agents and radio work"); #230 and #85 at `cr:landed`
+fill `queued_landed`. #172: built in the general harness; the rest as single issues (general:
+usage limit, settings re-read, stale workspaces, `queued_landed` count, the spending-limit text;
+project: restart the factory, Agent-Working-Rules, items after #235, optional Install/Accept and
+the second PC's records). Questions: the radio restriction; the stale Alex; #235 through Alex or
+by hand; fuses for #235; Install and Accept; the meter's baseline date; the second PC; closing
+harness#120; `queue.flake_issue`; #230 and #85.
