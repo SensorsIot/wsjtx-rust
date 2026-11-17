@@ -99,7 +99,10 @@ To do:
 17. The writing rules of the rebuild's `check.py` (on the branch `sysmlv2-rebuild`) are part of
     `check`.
 18. The candidate holds no history: the rebuild's working folder `docs/archive/sysml-rebuild/`
-    stays on its branch and does not land.
+    stays on its branch and does not land. `docs/archive/` leaves the main branch (the archived
+    FSD, the former harness diagrams and their README); the tool keeps its rule that
+    `docs/WSTX Rust FSD.md` does not exist and drops what concerns the archived copy, its test
+    follows, and the root `README.md` no longer points to the archive.
 
 *Tests and code*
 19. `tools/sysml/tests/test_radio_properties.py` and its two `.tsv` files go (the property
@@ -113,8 +116,9 @@ To do:
     `WstxModeProcessing`, and those that replace `WstxOperatingReceive`, `WstxHttpContentCoding`,
     `WstxStrategy`, `WstxContest`).
 
-Not in this issue: the suites' select lists, the harness documents' links to the new files and
-the removal of the moved sections from Project-Specifics (the harness change that follows); the
+Not in this issue: the suites' select lists, the harness documents' links to the new files, the
+removal of the moved sections and of the archive's sentence from Project-Specifics (the harness
+change that follows); the
 code restructuring M2.3 asks for (one issue per part, after this); the user documentation
 (#231).
 
@@ -160,7 +164,7 @@ the code restructuring per part.
 **Approval**
 <the operator's go>
 
-**Blast:** high, because it replaces the whole product contract, rewrites the model tool and its
+**Blast:** high, because it replaces the whole product contract, removes `docs/archive/`, rewrites the model tool and its
 tests, and changes tags and test readers in about 80 code and test files; product behaviour
 does not change.
 

@@ -184,6 +184,10 @@ identities (except the dependency part), the oracle file mechanism, rules 8 and 
 - **Later sweep:** the CRs overtaken by the rebuild (model conversions and rewrites #147, #164,
   #168, #187, #194, #199, #208, #221, #222, #224) and the 13 code-split CRs (#151 to #169,
   to be checked against M2.3), one list for the operator after the CR.
+- **No history on master** (operator 2026-11-17): the rebuild's archive stays on the branch
+  `sysmlv2-rebuild` and does not land; `docs/archive/` (the archived FSD, the former harness
+  diagrams, their README) leaves master in the product CR; Project-Specifics drops "The archived
+  FSD lives under …" in harness change 2.
 - **By the foundation's rules** (not asked):
   - one writing-rule check: `check.py`'s rules join `tools/sysml.py check` (M8.2, M8.3);
   - the tool's method clauses CL-014-xx and TC-DOC-xxx leave the CL and TC series, which mean
