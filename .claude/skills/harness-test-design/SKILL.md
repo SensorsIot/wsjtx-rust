@@ -8,10 +8,10 @@ description: "Design the tests of a CR or a bug before implementing it \u2014 fr
   \ does this issue need\", \"write the tests for"
 ---
 
-Read [the canonical test-design skill](../../../harness/core/skills/test-design/SKILL.md) in full BEFORE following this skill.
-Filesystem path relative to this entrypoint: `../../../harness/core/skills/test-design/SKILL.md`.
+Read [the canonical test-design skill](../../../harness/general/core/skills/test-design/SKILL.md) in full BEFORE following this skill.
+Filesystem path relative to this entrypoint: `../../../harness/general/core/skills/test-design/SKILL.md`.
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=d6e84d51b18316c4125ce895f23b40c553d12464e5e147c058447a6936b9103c -->
-<!-- harness-forwarder-v1 sha256=1f1f27d09f1bbc651a36321a000210a0ae73e16b36bb80927bf4cdc6189f1ea7 -->
+<!-- canonical-source-sha256=e5419686fb4d7dbd1b9792fcda1ef6c5518fcd9e19dcd8e307145432936f55c8 -->
+<!-- harness-forwarder-v1 sha256=6509203311b525f263541bd0ad658eab55110f5927ca4aca10437bf20672b1f1 -->

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """The model bindings at a commit, as the harness gate reads them (gate.model_bindings,
-harness/core/tools/candidate.py), for its binding check and its report-only candidate
-selection (harness#40).
+harness/general/core/tools/candidate.py), for its binding check and its report-only
+candidate selection (harness#40).
 
-    python .harness/model_bindings.py --rev REV
+    python harness/project/model_bindings.py --rev REV
 
 It reuses tools/sysml.py: canonical_catalog reads the canonical models at REV (every
 `*.sysml` at any depth below docs/sysml, listed as `docs/sysml/<key>`), and every
@@ -25,9 +25,9 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "harness" / "core" / "tools"))
+sys.path.insert(0, str(ROOT / "harness" / "general" / "core" / "tools"))
 import sysml          # noqa: E402
 import reachability   # noqa: E402
 

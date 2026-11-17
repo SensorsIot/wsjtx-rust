@@ -37,11 +37,11 @@ What holds whichever machine is used:
 - The machine that currently builds an issue is named by the issue's single
   `owner: HB9BLA` or `owner: Andreas` label. A machine does not start an issue owned
   by the other one ([harness #23](https://github.com/SensorsIot/harness/issues/23)).
-- One PC holds development at a time. `python harness/core/tools/handover.py to <machine>`,
+- One PC holds development at a time. `python harness/general/core/tools/handover.py to <machine>`,
   run on the PC that is left, moves it: the checks, the owner labels, the checkpoints, the
   holder and the arriving PC's setup are the tool's
-  ([several machines](../../harness/core/docs/Workspaces.md#several-machines)). The binding
-  is `machines:` and `handover:` in `.harness/config.yaml`: HB9BLA is reached from Andreas
+  ([several machines](../../general/core/docs/Workspaces.md#several-machines)). The binding
+  is `machines:` and `handover:` in `harness/project/config.yaml`: HB9BLA is reached from Andreas
   over SSH; on Andreas the arriving half is run by hand (`handover.py arrive`). The test
   inputs it verifies are those of `.git/migration-data/MANIFEST.json`. Everything local is
   pushed before a transfer: the tool pushes nothing (operator 2026-11-11).
@@ -96,18 +96,18 @@ are prohibited.
 Install Rust through [rustup](https://rustup.rs/) and the Visual Studio C++ Build Tools with the Desktop development with C++ workload and a Windows SDK. The toolchain file selects the compiler version automatically.
 
 Once per clone, the operator runs `git submodule update --init`, then
-`python3 harness/core/tools/install_hooks.py`, and the same inside the submodule
-(`cd harness && python3 core/tools/install_hooks.py`) for its commit hook. The roles' hooks
+`python3 harness/general/core/tools/install_hooks.py`, and the same inside the submodule
+(`cd harness/general && python3 core/tools/install_hooks.py`) for its commit hook. The roles' hooks
 refuse `install_hooks.py`: it is the operator's.
 
 The local pre-push gate is the authoritative check:
 
 ```powershell
-python harness/core/tools/gate.py
+python harness/general/core/tools/gate.py
 ```
 
 It selects affected compiler checks and functional test groups from the declared
-change owners and downstream dependencies in `.harness/suites.yaml`. The ordinary
+change owners and downstream dependencies in `harness/project/suites.yaml`. The ordinary
 push hook uses the same gate and its valid memoized results. Do not repeat the checks
 below when the gate has already supplied their evidence for the same candidate.
 Release packaging also runs on this PC; start the packaged candidate for the dry run.
@@ -185,8 +185,8 @@ timing, latency, cadence or throughput promise lives in a **timing suite** (`tim
 `protocol-thin`, `recording-thin`, `radio-selection-thin`, `live-station-latency`,
 `decoder-quality`). A timing suite has no `select`; its `timing_inputs` name the code that
 sets the measured time, and nothing else selects it: no functional owner, unmapped-input
-or unowned-path fallback, `.harness/` edit or dependency
-([harness testing standard](../../harness/core/docs/standards/testing.md#timing-suites)).
+or unowned-path fallback, `harness/project/` edit or dependency
+([harness testing standard](../../general/core/docs/standards/testing.md#timing-suites)).
 The gate lists a timing suite the change reads but does not time as `TIMING ... not run`.
 
 The timing inputs are, per suite: the router `main.rs` (status websocket, thin anchors
@@ -229,7 +229,7 @@ promise: a mixed group would declare `timing_inputs` and guard those assertions 
 ### Parallel groups and shared resources
 
 The gate runs up to three groups at a time (`gate.parallel: 3` in
-`.harness/config.yaml`), longest first, and prints each group's output whole in name
+`harness/project/config.yaml`), longest first, and prints each group's output whole in name
 order. `protocol-thin`, `recording-thin` and `radio-selection-thin` run beside other groups
 (`gate.timing_alone: false`). The bounds of the first two are wall-clock bounds on the
 simulated 32 kbit/s link (byte budgets are judged from the link byte log since #80, not tested); besides those, `recording-thin` holds two local 250 ms TC-018
@@ -302,14 +302,14 @@ input of every group, so workflow edits also select them all.
 Preview the selected commands and reasons without running checks or recording a pass:
 
 ```powershell
-python harness/core/tools/gate.py --plan --base <base-commit>
+python harness/general/core/tools/gate.py --plan --base <base-commit>
 ```
 
 Run all eligible groups and compiler checks without memo reuse when a full validation
 is required:
 
 ```powershell
-python harness/core/tools/gate.py --full
+python harness/general/core/tools/gate.py --full
 ```
 
 Test networking remains isolated cost 2; this selection
@@ -328,7 +328,7 @@ cargo build --workspace --locked --release --target x86_64-pc-windows-msvc
 
 The server stays running. Open `http://127.0.0.1:8080` in a browser; stop the server
 with Ctrl+C. Remote TLS and access settings are defined in the
-[communication contract](../sysml/Requirements.sysml).
+[communication contract](../../../docs/sysml/Requirements.sysml).
 
 For automated browser tests, install Node 24 and run from the repository root:
 
@@ -348,19 +348,19 @@ remains an alternative execution location for this full recipe when explicitly c
 the debug executable under `CARGO_TARGET_DIR` when set, or `target/`.
 Screenshots and the thin-link measurement report are written to ignored `test-results/`.
 The portable link simulator uses modelled network overhead, not packet capture;
-see the [measurement limits](../sysml/Requirements.sysml).
+see the [measurement limits](../../../docs/sysml/Requirements.sysml).
 
 ## Merge queue
 
 A reviewed CR reaches master through the harness
-[merge queue](../../harness/core/docs/Merge-Queue.md),
+[merge queue](../../general/core/docs/Merge-Queue.md),
 whose worker runs on the PC that holds development, either one
 ([machines and roles](#machines-and-roles), operator 2026-11-11): the coordinator hands in
-the reviewed tip (`python harness/core/tools/merge_queue.py submit <issue> <tip>`) and
+the reviewed tip (`python harness/general/core/tools/merge_queue.py submit <issue> <tip>`) and
 builds no merge itself. The queue's records are local to that PC.
-The `queue:` section of `.harness/config.yaml` names the tools the gate needs (Node 24
+The `queue:` section of `harness/project/config.yaml` names the tools the gate needs (Node 24
 or later, npm, Cargo, rustc, `gh`, the MSVC linker), 20 GB free on every drive the gate uses, the
-input environment of the [HB9BLA handover](HB9BLA-HANDOFF.md) and the `npm ci` setup of
+input environment of the [HB9BLA handover](MEMORY.md#inputs-and-unfinished-work) and the `npm ci` setup of
 the queue's worktree. A long build or test run outside the gate does not wait for `busy`;
 it runs beside the gate under the priorities below and reruns a timing-sensitive failure once.
 
@@ -368,7 +368,7 @@ Priorities on HB9BLA ([harness#28](https://github.com/SensorsIot/harness/issues/
 station task `WSTX Rust Station HB9BLA` runs at High, above the gate; the gate runs at
 ABOVE_NORMAL with unbounded build parallelism; agent builds and tests outside the gate
 run at BelowNormal with a bounded `CARGO_BUILD_JOBS` (2, as the
-[HB9BLA handover](HB9BLA-HANDOFF.md) sets it).
+[HB9BLA handover](MEMORY.md#inputs-and-unfinished-work) sets it).
 
 ## Same-machine development
 
@@ -377,7 +377,7 @@ Both applications can be developed on one Windows computer: the station-server p
 ## Deployment authority
 
 This is the project's binding of the harness
-[deployment authority](../../harness/core/docs/standards/security.md#deployment-authority)
+[deployment authority](../../general/core/docs/standards/security.md#deployment-authority)
 rules (#26).
 
 **Mechanism.** There is one deploy mechanism: the Windows release executable built on
@@ -427,7 +427,7 @@ evidence only (operator decision 2026-10-30): that artifact is never installed o
 Approved by the operator on 2026-11-13 (#171 comments 6859504815, 6861452505,
 6861571300; #196 comments 6866528840, 6867219074), on the decision of 2026-11-12: "The operator is kept out of the loop, with one
 exception: when a decision is needed." It binds the deploy part of the harness rule
-[standing deploy and consent policies](../../harness/core/docs/CR-Process.md#standing-deploy-and-consent-policies). A deploy
+[standing deploy and consent policies](../../general/core/docs/CR-Process.md#standing-deploy-and-consent-policies). A deploy
 under it needs no OK per install.
 
 1. **When a deploy applies without asking.** All of these hold:
@@ -462,7 +462,17 @@ under it needs no OK per install.
    client as parameters and derives none of them from its own location. Before any write,
    `station-update.ps1` compares each mechanism file of the package with the pins of the
    commit's own `Project-Specifics.md` (read with `git show`), and compares the launcher in
-   the station folder with its pin (item 4).
+   the station folder with its pin (item 4). It reads `<commit>:harness/project/docs/Project-Specifics.md`;
+   only when that file is absent at the commit (a commit from before #230) does it read
+   `<commit>:docs/harness/Project-Specifics.md`. Neither present means no pins; a file at the
+   new path without a Deploy pins section means no pins, with no fallback. This holds for the
+   commit to install and for the running commit. A deploy of a commit from before #230 runs
+   that commit's own script, whose record step calls the harness at its old place; in a
+   checkout in the new layout that call fails, the log says "record not posted", the install
+   goes ahead and the coordinator posts the record by hand
+   ([MEMORY](MEMORY.md#preserve-the-runtime)). The install record's `cr_state.py installed`
+   runs `harness\general\core\tools\cr_state.py` of the repository when it exists, else
+   `harness\core\tools\cr_state.py`.
 4. **A changed mechanism deploys without an OK.** The deploy installs a commit whose
    mechanism files or pins differ from those of the running commit like any other commit:
    pins that differ from the running commit's pins, a running commit without pins and a
@@ -507,7 +517,7 @@ CR (policy item 4). Suite `deploy-tooling`
 (`test_deploy_pins.py`) recomputes every pin from git.
 
 ```text
-0580f8a62387d45dedd6a7908cb61d9b9496f383144413db53259fd1dc34a790  tools/deploy/station-update/station-update.ps1
+3e6a1b30a8e1565074f16ba6c9104c83d6556c1dc63d379b7117b313077020d5  tools/deploy/station-update/station-update.ps1
 0d1fb5e9676faafc71a3c1ab3c694793485a0513fe416d2eac0372719b8aa044  tools/deploy/station-update/make_package.py
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
@@ -521,7 +531,7 @@ Approved by the operator on 2026-11-12: "Transmitting is not a concern: tests tr
 1 % RF power, except QSO tests." Cost 4 and 5 live tests run without asking when all of
 these hold:
 
-- `.harness/deploy/radio-preflight.ps1` has taken the radio lease and set RF power to
+- `harness/project/deploy/radio-preflight.ps1` has taken the radio lease and set RF power to
   `0003` (1 %, 1.2 % of the control) with read-back before anything keys;
 - the test transmits only on 10, 15, 20 or 40 m;
 - afterwards it restores the power found and every setting it changed.
@@ -541,7 +551,7 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   operator profile `ic7300` and its logbook are never touched; their hashes are taken before
   and compared after.
 - **Switch.** The real IC-7300 is off (the operator switches it).
-  `.harness/deploy/station-switch.ps1 -To simulator` (the tester or the coordinator) backs
+  `harness/project/deploy/station-switch.ps1 -To simulator` (the tester or the coordinator) backs
   up `station\launcher.ps1` once, points its profile line at `profiles\SIM-IC7300` and sets
   `WSTX_RADIO_DISCOVERY=off`, `WSTX_UDP=off`, `WSTX_PSKR=off` (without discovery off, a
   silent COM4 makes the station adopt the real radio on COM3), stops the station gracefully
@@ -593,7 +603,7 @@ compiles it in as `WSTX_SOURCE_COMMIT`, and a build without one reports `unknown
 fails. A build from before #33 sends no header, for example a rollback target. The probe
 then says so and keeps the image digest as the identity. Last, it checks that the launcher
 receipt agrees with what it observed. Tests of the deploy mechanism, its pins and its drill
-are suite `deploy-tooling` (cost 2, `.harness/suites.yaml`):
+are suite `deploy-tooling` (cost 2, `harness/project/suites.yaml`):
 `python -m unittest discover -s tools/deploy/tests -v`.
 
 The operator can check the result without any agent, from PC Andreas (the only address
@@ -672,7 +682,7 @@ No rule is met in full.
 
 ### Deploy authority (prepared, switched off)
 
-`.harness/deploy/authority/` holds an operator approval for each install (#30, #31, #32).
+`harness/project/deploy/authority/` holds an operator approval for each install (#30, #31, #32).
 It is **off**: nothing in the install path calls it, the task runs `station\launcher.ps1`,
 and agents install with `station-update.ps1` as above. Only the operator switches it on,
 because from then on every install needs the operator's signature.
@@ -700,13 +710,13 @@ switches back.
 1. Create the signing key on your own machine, e.g. `ssh-keygen -t ed25519 -f %USERPROFILE%\.ssh\wstx_operator`
    (with a passphrase), and copy only `wstx_operator.pub` to HB9BLA.
 2. Approve the running version first, so the switch cannot stop the station. The agent runs
-   `.harness\deploy\authority\request-approval.ps1 -Manifest <its package>\manifest.json`. You
+   `harness\project\deploy\authority\request-approval.ps1 -Manifest <its package>\manifest.json`. You
    check the commit, digest and gate record it prints, then sign
    `ssh-keygen -Y sign -f wstx_operator -n wstx-station-approval <commit>.approval.json`.
    The agent copies `<commit>.approval.json` and `.sig` to
    `%LOCALAPPDATA%\WstxRust\station\approvals\`.
 3. As HB9BLA, unelevated, try it:
-   `powershell -NoProfile -ExecutionPolicy Bypass -File .harness\deploy\authority\enable-authority.ps1 -OperatorPublicKey <path>\wstx_operator.pub -DryRun`.
+   `powershell -NoProfile -ExecutionPolicy Bypass -File harness\project\deploy\authority\enable-authority.ps1 -OperatorPublicKey <path>\wstx_operator.pub -DryRun`.
    The real run has Administrator rights, so nothing the agents can write may take part:
    not the checkout, not git, not HB9BLA's environment (an elevated shell of HB9BLA still
    reads `HKCU\Environment`, which can load a DLL into it). In an elevated
@@ -735,7 +745,7 @@ switches back.
    `setup-once.ps1` launcher, when the root existed unprotected or when the running version
    is not approved. It prints the digests of the files it installs, points the task at the
    protected launcher and does not restart the station.
-4. Apply `.harness/deploy/authority/station-update-authority.patch` to
+4. Apply `harness/project/deploy/authority/station-update-authority.patch` to
    `station-update.ps1` (it accepts the protected launcher in `Assert-Setup` and calls
    the verifier after the package checks). Then run
    `python tools/deploy/station_drill.py`: it must show the two approval cases.
@@ -776,10 +786,10 @@ enforced by the platform.
 
 ## Product model maintenance
 
-The reusable [SysML authoring instruction](../../harness/core/docs/standards/sysml-v2.md)
+The reusable [SysML authoring instruction](../../general/core/docs/standards/sysml-v2.md)
 explains how to write models without project-specific assumptions. This binding selects the exclusive authority policy below and the local toolchain. The
-functional entry point is [Requirements.sysml](../sysml/Requirements.sysml), with the
-[architecture](../sysml/Station.sysml) and the model packages it references.
+functional entry point is [Requirements.sysml](../../../docs/sysml/Requirements.sysml), with the
+[architecture](../../../docs/sysml/Station.sysml) and the model packages it references.
 Harness instructions are not represented in product SysML.
 
 ### Exclusive functional authority
@@ -799,7 +809,7 @@ The archived FSD lives under `docs/archive/markdown-functional-specification/`.
 HOW rollout and product publication remain separate: a harness change is reviewed and
 published, a product change follows the CR process.
 
-The model tools' contract (toolchain pins, commands, validation limits, the method clauses CL-014 and their tests TC-DOC, the catalog and source bindings) is in [tools/sysml/README.md](../../tools/sysml/README.md).
+The model tools' contract (toolchain pins, commands, validation limits, the method clauses CL-014 and their tests TC-DOC, the catalog and source bindings) is in [tools/sysml/README.md](../../../tools/sysml/README.md).
 
 ## Project model documentation contract
 
@@ -815,7 +825,7 @@ The model tools' contract (toolchain pins, commands, validation limits, the meth
    oracles with the operator; unresolved ones block the issue. A device or protocol whose
    behaviour is unknown gets an experiment (`cr:experimenting`) within the
    [limits below](#limits-for-experiments), findings on the issue. The issue then passes the
-   ready check of the [CR process](../../harness/core/docs/CR-Process.md): an agent that did not
+   ready check of the [CR process](../../general/core/docs/CR-Process.md): an agent that did not
    write it posts `Ready: PASS`. A model-readiness review is held only on request.
 4. Implement against the model and declared normative references. Verification keeps
    independent expected values and does not generate its sole oracle from that code.
@@ -828,20 +838,20 @@ The model tools' contract (toolchain pins, commands, validation limits, the meth
 
 ### Limits for experiments
 
-The limits the [CR process](../../harness/core/docs/CR-Process.md) leaves to the project:
+The limits the [CR process](../../general/core/docs/CR-Process.md) leaves to the project:
 
 - Throwaway scripts live in `D:/wstx-tmp/experiments/<issue>/`, are never committed and may
   hold radio addresses.
 - Live runs log under `D:/wstx-tmp/live/<issue>/`, removed when the issue closes.
 - The radio is keyed as in any agent test: the radio preflight and its lease first
-  ([handoff](HB9BLA-HANDOFF.md)), and short test transmissions only.
+  ([handoff](MEMORY.md#preserve-the-runtime)), and short test transmissions only.
 - Anything that needs the operator (the Flex switched on) is prepared and dry-run first.
 - Three real runs without an answer mean stop and report to the operator.
 
 ## Communication verification model
 
 Functional limits and measurement acceptance are specified in
-[the canonical communication requirements](../sysml/Requirements.sysml).
+[the canonical communication requirements](../../../docs/sysml/Requirements.sysml).
 The following describes this project's verification machinery.
 
 The portable test proxy shapes actual TCP-stream bytes (including real TLS records
@@ -871,7 +881,7 @@ send-timeout branch or independently measure total queue memory.
 ## Recording fixture acquisition
 
 Candidate recordings and oracle limitations are specified in
-[the canonical model](../sysml/Requirements.sysml).
+[the canonical model](../../../docs/sysml/Requirements.sysml).
 
 - Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
 - Keep original WAV files and expected-output texts unchanged, with hashes and source URLs recorded in a fixture manifest when imported.

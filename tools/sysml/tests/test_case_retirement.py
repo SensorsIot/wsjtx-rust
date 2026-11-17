@@ -341,7 +341,7 @@ class GateBindingsTests(Fixture):
     def bindings_of(self, retiring_required):
         """The gate's bindings of two commits: HEAD~1 without TC-001-002 and its retirement,
         read with the baseline REQUIRED; HEAD retiring it, read with `retiring_required`."""
-        spec = importlib.util.spec_from_file_location("case_retirement_model_bindings", ROOT / ".harness/model_bindings.py")
+        spec = importlib.util.spec_from_file_location("case_retirement_model_bindings", ROOT / "harness/project/model_bindings.py")
         bindings = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bindings)
 

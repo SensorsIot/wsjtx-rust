@@ -15,4 +15,5 @@ package WstxPeriodTiming {
         end station : ~ClockStatusPort;
     }
     enum def PeriodParity { enum even; enum odd; }
+    enum def ClockState { enum synchronized; enum unsynchronized; enum unknown; }
 }

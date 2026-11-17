@@ -238,7 +238,7 @@ def source_snapshot(root):
     root = Path(root).resolve(strict=True)
     paths = {
         "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "server/Cargo.toml",
-        "server/tests/decoder_signal.rs", ".harness/suites.yaml",
+        "server/tests/decoder_signal.rs", "harness/project/suites.yaml",
         "tools/windows_resource_job.py", "tools/test_windows_resource_job.py",
         "tools/windows_process_metrics.py", "tools/test_windows_process_metrics.py",
     }

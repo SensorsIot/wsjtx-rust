@@ -307,7 +307,7 @@ class ArtifactTests(ApiFreeCase):
         self.executable = self.target / "x86_64-pc-windows-msvc/release/deps/decoder_signal-ab12.exe"
         self.executable.parent.mkdir(parents=True)
         self.executable.write_bytes(b"MZ fixed test artifact; never executable")
-        for relative in ("Cargo.lock", "rust-toolchain.toml", ".harness/suites.yaml",
+        for relative in ("Cargo.lock", "rust-toolchain.toml", "harness/project/suites.yaml",
                          "tools/windows_resource_job.py", "tools/test_windows_resource_job.py",
                          "tools/windows_process_metrics.py", "tools/test_windows_process_metrics.py",
                          "server/src/decoder/payload.rs", "fixtures/decoder/independent.json"):
@@ -1021,7 +1021,7 @@ class OwnerCleanupTests(ApiFreeCase):
 class RegistryTests(ApiFreeCase):
     def test_registry_keeps_pipefail_full_ordinary_inventory_and_guarded_matrix_pair(self):
         root = Path(__file__).resolve().parents[1]
-        source = (root / ".harness/suites.yaml").read_text(encoding="utf-8")
+        source = (root / "harness/project/suites.yaml").read_text(encoding="utf-8")
         entry = source.split("- suite: decoder-quality\n", 1)[1].split("\n- suite:", 1)[0]
         self.assertIn("set -euo pipefail", entry)
         self.assertIn("cargo test --release --locked --test decoder_signal --message-format=json", entry)

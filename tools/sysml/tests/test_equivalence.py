@@ -129,8 +129,10 @@ BASE = {
 }
 CITING = {
     "server/main.rs": "// See Core::Run.\n// See Core::Nothing.\nfn main() {}\n",
-    ".harness/suites.yaml": "paths: [docs/sysml/Extra.sysml]\n",
+    "harness/project/suites.yaml": "paths: [docs/sysml/Extra.sysml]\n",
 }
+# The registry of a branch still in the old layout (before #230): its root stays checked.
+OLD_ROOT = "harness/project/suites.yaml", ".harness/suites.yaml"
 
 
 def edit(files: dict, path: str, old: str, new: str) -> dict:
@@ -204,7 +206,10 @@ CASES = {
                      "docs/sysml/sub/Extra.sysml": EXTRA}),
     "E8 b updated": (CITED, {**{k: v for k, v in CITED.items() if k != "docs/sysml/Extra.sysml"},
                              "docs/sysml/sub/Extra.sysml": EXTRA,
-                             ".harness/suites.yaml": "paths: [docs/sysml/sub/Extra.sysml]\n"}),
+                             "harness/project/suites.yaml": "paths: [docs/sysml/sub/Extra.sysml]\n"}),
+    "E8 b old root": ({OLD_ROOT[1] if k == OLD_ROOT[0] else k: v for k, v in CITED.items()},
+                      {**{(OLD_ROOT[1] if k == OLD_ROOT[0] else k): v for k, v in CITED.items() if k != "docs/sysml/Extra.sysml"},
+                       "docs/sysml/sub/Extra.sysml": EXTRA}),
     "E8 d": (CITED, edit(RUN_ONLY, CORE_PATH, "    private import Meta::*;\n",
                          "    private import Meta::*;\n    public import Ops::Run;\n")),
     "E12 a": (BASE, edit(BASE, CORE_PATH, "attribute def Spare;", "item def Spare;")),
@@ -417,11 +422,12 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.outcome("E8 a", 1, "stale-by-change server/main.rs:1 Core::Run")
         lines = self.outcome("E8 a updated", 0, "unresolved server/main.rs:2 Core::Nothing")
         self.assertFalse(any(line.startswith("stale-by-change") for line in lines), lines)
-        self.outcome("E8 b", 1, "stale-by-change .harness/suites.yaml:1 docs/sysml/Extra.sysml")
+        self.outcome("E8 b", 1, "stale-by-change harness/project/suites.yaml:1 docs/sysml/Extra.sysml")
         self.outcome("E8 b updated", 0)
+        self.outcome("E8 b old root", 1, "stale-by-change .harness/suites.yaml:1 docs/sysml/Extra.sysml")
         lines = self.outcome("E8 d", 0)
         self.assertFalse(any("Core::Run" in line for line in lines), lines)
-        for name in ("E8 a", "E8 a updated", "E8 b", "E8 b updated", "E8 d"):
+        for name in ("E8 a", "E8 a updated", "E8 b", "E8 b updated", "E8 b old root", "E8 d"):
             self.assertNoExemption(name)
 
     def assertNoExemption(self, name: str, path: str = ""):

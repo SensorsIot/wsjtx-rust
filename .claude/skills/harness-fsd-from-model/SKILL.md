@@ -9,10 +9,10 @@ description: Write a readable functional specification (FSD) for one part, funct
   this never creates a second specification.
 ---
 
-Read [the canonical fsd-from-model skill](../../../harness/core/skills/fsd-from-model/SKILL.md) in full BEFORE following this skill.
-Filesystem path relative to this entrypoint: `../../../harness/core/skills/fsd-from-model/SKILL.md`.
+Read [the canonical fsd-from-model skill](../../../harness/general/core/skills/fsd-from-model/SKILL.md) in full BEFORE following this skill.
+Filesystem path relative to this entrypoint: `../../../harness/general/core/skills/fsd-from-model/SKILL.md`.
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
 <!-- canonical-source-sha256=da2168e15a33a8cb76af83dc85769604f7358779d183466ec5b12e3d9e5fce26 -->
-<!-- harness-forwarder-v1 sha256=cb6da35e2bc7477175b11220e42341d879672fefac3fa95bc8576ec54856b3ad -->
+<!-- harness-forwarder-v1 sha256=bd30f67cf4b70d602aae49dd36d71d6c8987130d16e5fb2320251f605798a9a9 -->

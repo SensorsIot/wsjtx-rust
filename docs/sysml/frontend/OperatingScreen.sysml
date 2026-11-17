@@ -12,7 +12,7 @@ package WstxOperatingLayout {
     private import WstxStandardQso::'TC-007-003';
     private import WstxRequirements::'FR-022';
     private import WstxRequirements::AutomationState;
-    private import WstxTransmit::'TC-092-005';
+    private import WstxTransmitClock::'TC-092-005';
     private import WstxContact::'TC-039-006';
     private import WstxContact::'TC-039-007';
     private import WstxStationProtocol::'TC-051-001';
@@ -44,7 +44,7 @@ package WstxOperatingLayout {
     private import WstxLiveReceive::'CL-007-05';
     private import WstxModemDecode::'CL-057-02';
     private import WstxContact::'CL-055-02';
-    private import WstxTransmit::'TC-111-015';
+    private import WstxQsoTransmit::'TC-111-015';
     private import WstxContact::'CL-039-20';
     private import WstxContact::'CL-039-22';
     private import WstxContact::'CL-063-05';

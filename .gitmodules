@@ -1,4 +1,4 @@
-[submodule "harness"]
-	path = harness
+[submodule "harness-general"]
+	path = harness/general
 	url = https://github.com/SensorsIot/harness
 	branch = main

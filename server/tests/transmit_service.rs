@@ -1365,8 +1365,8 @@ fn render_model(capacity: u32, delay: impl Fn(i64) -> i64) -> (i64, i64, i64) {
     panic!("the program never finished");
 }
 
-// Proves: CL-009-03, CL-009-04; TC-008-003. #49: with the 100 ms render buffer
-// (renderBufferMs, 4 800 frames) and 20 ms of silence ahead (silencePrefillMs), the
+// Detail test of the render fill (WstxTransmitPart::TransmitService @DetailTests), no case:
+// with the 100 ms render buffer (renderBufferMs, 4 800 frames) and 20 ms of silence ahead (silencePrefillMs), the
 // program starts within 30 ms of play (20 ms ahead plus one 10 ms engine period) and
 // its end is reported within 100 ms of the nominal end, also when the render thread is
 // delayed 40 ms once a second; a 20 ms buffer underruns then and its end report slips
