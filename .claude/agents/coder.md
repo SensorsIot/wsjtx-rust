@@ -28,7 +28,7 @@ hooks:
 <!-- source harness/general/core/agents/roles.md sha256=71189ab61efb38d9a9541d2cfadeb40d491622ad404b7ca1166672c7809f3f0d -->
 <!-- source harness/general/lang/rust/standard.md sha256=6c408f1fb3f626252e9650b9cc35975f982ea1a49112f1317c0924a626b4a25e -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=11e124c4aeb4a3f632973ba3b892f525b2f44094f04dc9ecc9f4775a56b55d20 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=05ae3519f1194389f9612624baa5437dd2676c700c89cf927f855ced61366164 -->
 <!-- harness-role-policy {"commands": ["git -C (\\S*[/\\\\]|'[^']*[/\\\\]|\"[^\"]*[/\\\\])?\\.git[/\\\\]harness-parallel[/\\\\]worktrees[/\\\\](cr|issue-)[^\\s/\\\\'\"]+[/\\\\]?['\"]? \\S.*", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*red_on_parent\\.py .+", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py (submit [0-9]+ [0-9a-f]{7,40}|status( --json)?)", "(python3?|py)(\\.exe)? \\.git/harness-parallel/worktrees/(?P<wt>(cr|issue-)[A-Za-z0-9._-]+)/((?!\\.\\.?/)[A-Za-z0-9._-]+/)*install_skills\\.py --project \\.git/harness-parallel/worktrees/(?P=wt)/?( --(host (claude|codex)|skill [a-z-]+|agent [a-z-]+|check))+", "(python3?|py)(\\.exe)? (\\S*[/\\\\]|'[^']*[/\\\\]|\"[^\"]*[/\\\\])?\\.git[/\\\\]harness-parallel[/\\\\]resources[/\\\\]issue-[0-9]+[/\\\\]scripts[/\\\\][A-Za-z0-9_-]+\\.py['\"]?( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "cargo (build|check|test|clippy|fmt)(?=.* --manifest-path \\S+).*", "node --test( --test-concurrency=1| --test-name-pattern=([\\[\\]A-Za-z0-9_.,:^+=/-]+|'[^']+')){0,2}( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\\.\\.?(?=[/\\s]|$))[A-Za-z0-9_.@+-]+)+)+", "python (\\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/)?fixtures/transmit/generate\\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+", "python -m unittest discover -s \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml/tests( -t \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?", "python -m unittest discover -s \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/deploy/tests( -t \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?", "python \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\\.py oracle", "python \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\\.py paths \\S+", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [".git/harness-parallel/worktrees/cr*/**", ".git/harness-parallel/worktrees/issue-*/**", ".git/harness-parallel/resources/issue-*/scripts/*.py"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "^(?!(python3?|py)(\\.exe)? \\S*red_on_parent\\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\\bnode\\s+--test"], "model": {"files": [], "facts": []}} -->
 
 You implement one issue that carries `Ready: PASS`. The method is
@@ -122,13 +122,14 @@ checks. Cargo runs on your worktree by its path (`--manifest-path <worktree>/Car
   `red_on_parent.py … -- bash -c "cargo build --locked --bin wstx-rust && NODE_PATH=D:/Github/wsjtx-rust/node_modules
   node --test --test-concurrency=1 --test-name-pattern=<pattern> tests/<file>"` without `WSTX_TEST_EXE`, so
   the tests run on the build of the temporary tree (its pack `CARGO_TARGET_DIR`).
-- **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
-  and its `executable` binding
-  ([source bindings](../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings));
-  the hook refuses any other model line.
-- **Proves tags:** this project's tag syntax for test-design step 5 is a `// Proves: <ID>`
-  comment, on a real `#[test]` (or Node `test(...)`) that exercises the promise, never on
-  a helper, a module or a `#[cfg(test)]` block.
+- **Delivery facts** in the model are a clause's `@Status { build }`, a case's
+  `@Automation { run }` and `@TestedBy { test }`, the code link `@ImplementedIn` on the part
+  definition (M6.6), and the `@CodeDiffers` markers the change resolves or needs (M6.13)
+  ([finished model](../../harness/project/docs/Finished-Model.md)).
+- **Proves tags:** this project's tag syntax for test-design step 5 is a `// Proves: <TC>`
+  comment naming only the test cases the test belongs to (M6.7), on a real `#[test]` (or
+  Node `test(...)`) that exercises the promise, never on a helper, a module or a
+  `#[cfg(test)]` block. A detail test carries no tag.
 
 The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hold for every role.
 
@@ -147,4 +148,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `^(?!(python3?|py)(\.exe)? \S*red_on_parent\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test`
 - Files you may write, relative to the project unless absolute: `.git/harness-parallel/worktrees/cr*/**`, `.git/harness-parallel/worktrees/issue-*/**`, `.git/harness-parallel/resources/issue-*/scripts/*.py`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=936f5afaba1d45d116769cc73a2ae8838d125a2b624037f67dfc9b211ac6e0c4 -->
+<!-- harness-agent-v1 sha256=ae4c758843f69e7bd3057e2cfb4f997b7efa9487552ac571ea244a2625d0ac20 -->

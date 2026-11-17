@@ -97,6 +97,12 @@ gate:
 build_output: [node_modules/]
 # Project documents whose Role: sections add to the agent roles (harness#39).
 role_additions: [harness/project/docs/Agent-Working-Rules.md]
+# The project's model rules, appended to the generated skills under "## This project"
+# (harness#134): the finished model wins where it fixes a form.
+skill_additions:
+  sysml-authoring: [harness/project/docs/Finished-Model.md]
+  test-design: [harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests]
+  conformance-review: [harness/project/docs/Finished-Model.md]
 # The merge queue (harness/general/core/docs/Merge-Queue.md) runs on HB9BLA. Its worker gates
 # in its own worktree with the inputs of harness/project/docs/MEMORY.md ("Inputs and unfinished
 # work"). CARGO_BUILD_JOBS is left unbounded on purpose: the gate runs ABOVE_NORMAL and outranks

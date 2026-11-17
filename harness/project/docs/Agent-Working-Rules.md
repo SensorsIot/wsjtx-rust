@@ -155,13 +155,14 @@ guard:
   `red_on_parent.py … -- bash -c "cargo build --locked --bin wstx-rust && NODE_PATH=D:/Github/wsjtx-rust/node_modules
   node --test --test-concurrency=1 --test-name-pattern=<pattern> tests/<file>"` without `WSTX_TEST_EXE`, so
   the tests run on the build of the temporary tree (its pack `CARGO_TARGET_DIR`).
-- **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
-  and its `executable` binding
-  ([source bindings](../../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings));
-  the hook refuses any other model line.
-- **Proves tags:** this project's tag syntax for test-design step 5 is a `// Proves: <ID>`
-  comment, on a real `#[test]` (or Node `test(...)`) that exercises the promise, never on
-  a helper, a module or a `#[cfg(test)]` block.
+- **Delivery facts** in the model are a clause's `@Status { build }`, a case's
+  `@Automation { run }` and `@TestedBy { test }`, the code link `@ImplementedIn` on the part
+  definition (M6.6), and the `@CodeDiffers` markers the change resolves or needs (M6.13)
+  ([finished model](Finished-Model.md)).
+- **Proves tags:** this project's tag syntax for test-design step 5 is a `// Proves: <TC>`
+  comment naming only the test cases the test belongs to (M6.7), on a real `#[test]` (or
+  Node `test(...)`) that exercises the promise, never on a helper, a module or a
+  `#[cfg(test)]` block. A detail test carries no tag.
 
 ### Role: reviewer
 
