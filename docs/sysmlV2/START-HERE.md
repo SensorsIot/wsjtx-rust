@@ -15,7 +15,10 @@ the factory: no implementer session, no agents, no issues, no gate.
 - **Changes only inside `docs/sysmlV2`.** Everything else in the repository is read only:
   the old model, the code, the tests, the tools. The work lives on the branch
   `sysmlv2-rebuild` (first commit 2026-11-16, pushed as a backup; `master` untouched, no
-  PR); a commit or push only when the operator asks.
+  PR), checked out in its own worktree `D:\Github\wsjtx-rust-sysmlv2` (since 2026-11-17).
+  The main checkout `D:\Github\wsjtx-rust` stays on master without changes, for the
+  harness's workspace tool; the rebuild never works there. A commit or push only when the
+  operator asks.
 - Nothing is posted on GitHub and nothing is said to the implementer session until the
   operator says so.
 - `git status` must show `docs/sysmlV2/` as the only change.
