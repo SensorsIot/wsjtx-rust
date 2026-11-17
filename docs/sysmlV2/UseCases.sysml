@@ -571,7 +571,7 @@ package WstxUseCases {
             requirement :> WstxUdp::'CL-112-06';
             requirement :> WstxProfileDocument::'CL-005-06';
         }
-        then action start {
+        then action startAgain {
             doc /* The station starts with transmit off and resumes the remembered receive;
                  the browser follows the new start. */
             requirement :> WstxTransmitState::'CL-111-01';
@@ -670,7 +670,7 @@ package WstxUseCases {
         objective {
             doc /* The station is ready to operate, or every failure is shown with its reason
                  and where to change it. */ }
-        action start {
+        action begin {
             doc /* The operator starts the check, and allows or refuses the Tune tone. */
             requirement :> WstxSettings::'CL-001-02';
             requirement :> WstxSettingsCheck::'CL-001-01';

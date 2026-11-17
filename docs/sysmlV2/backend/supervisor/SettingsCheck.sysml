@@ -50,13 +50,13 @@ package WstxSettingsCheck {
              unchanged (PowerStatus); without an entry for the band, or without
              RadioAbility::setPower, skipped. With CheckSettings::withTune, a Tune tone
              then finds the audio drive, and the line passes when the finding ends with
-             stored or max_without_alc and no swr_high or swr_fault (TxLevelStatus);
+             stored or maxWithoutAlc and no swrHigh or swrFault (TxLevelStatus);
              the tone ends with the finding. Without withTune that part is skipped.
              audio: the capture runs without a warning (AudioStatus) and the profile names
              an output device.
              clock: the clock has no warning (ClockQuality).
-             operating: every band of OperatingBand has a working frequency for the
-             operating mode (WorkingFrequencies), every Tx macro packs as free text, the
+             operating: the operating mode has a working frequency in the station's region
+             (WorkingFrequencies), every Tx macro packs as free text, the
              active strategy lies within the rules of a strategy, a contest in force lies in
              its period, and the Most Wanted list has been read.
              files: the logbook has been read, the country file is in use

@@ -44,10 +44,10 @@ package WstxAudioControl {
             reference = "Windows Core Audio: the endpoint ID string of an audio endpoint "
                 + "device";
         }
-        attribute input_device : String[0..1] = null {
+        attribute inputDevice : String[0..1] = null {
             doc /* The input device: the capture endpoint audio makes the receive
                  stream from. Absent: none is chosen, and no capture is opened. */ }
-        attribute output_device : String[0..1] = null {
+        attribute outputDevice : String[0..1] = null {
             doc /* The output device: the render endpoint audio plays the transmit
                  program on. Absent: none is chosen, and nothing is played. */ }
     }

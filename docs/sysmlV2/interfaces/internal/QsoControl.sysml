@@ -57,7 +57,7 @@ package WstxQsoControl {
         attribute activity : Activity = Activity::none {
             doc /* The operator's special activity (WstxSpecialActivities::ActivityRule). */ }
         attribute exchange : String[0..1] {
-            doc /* The exchange of field_day and rtty (WstxSpecialActivities::
+            doc /* The exchange of fieldDay and rtty (WstxSpecialActivities::
                  ContestExchange); absent for every other activity. */ }
         attribute rxHz : Integer = 1500 { doc /* The Rx offset at station start. */ }
         attribute txHz : Integer = 1500 { doc /* The Tx offset at station start. */ }
@@ -94,14 +94,14 @@ package WstxQsoControl {
 
     enum def Activity {
         doc /* The special activities of WSJT-X. Each has the number WSJT-X gives it in the
-             Status field Special operation: none 0, na_vhf 1, eu_vhf 2, field_day 3,
-             rtty 4, ww_digi 5, hound 7, arrl_digi 8. */
+             Status field Special operation: none 0, naVhf 1, euVhf 2, fieldDay 3,
+             rtty 4, wwDigi 5, hound 7, arrlDigi 8. */
         enum none;
-        enum na_vhf;
-        enum eu_vhf;
-        enum ww_digi;
-        enum arrl_digi;
-        enum field_day;
+        enum naVhf;
+        enum euVhf;
+        enum wwDigi;
+        enum arrlDigi;
+        enum fieldDay;
         enum rtty;
         enum hound;
     }
@@ -126,7 +126,7 @@ package WstxQsoControl {
         enum calling;
         enum replying;
         enum report;
-        enum roger_report;
+        enum rogerReport;
         enum rogers;
         enum signoff;
         enum completed;
@@ -135,9 +135,9 @@ package WstxQsoControl {
     enum def Origin {
         doc /* How a contact was prepared: from a decoded record, from an entered call, or
              as the station's own CQ. */
-        enum decoded_row;
-        enum manual_entry;
-        enum own_cq;
+        enum decodedRow;
+        enum manualEntry;
+        enum ownCq;
     }
 
     item def SelectRow {
@@ -222,38 +222,38 @@ package WstxQsoControl {
 
     enum def QsoRefusal {
         doc /* Why qso refuses a command. A refused command changes nothing.
-             contact_active: a contact is in progress and the command does not replace it.
-             no_contact: the command needs a contact, or a contact with a partner.
-             row_not_standard: the record names no partner (no standard message, or an
+             contactActive: a contact is in progress and the command does not replace it.
+             noContact: the command needs a contact, or a contact with a partner.
+             rowNotStandard: the record names no partner (no standard message, or an
              unresolved hashed call).
-             invalid_call, invalid_grid: the entered call or grid cannot be sent.
-             invalid_message: the text cannot be sent unaltered, or the slot has none.
-             invalid_report: a report outside ReportRange.
-             invalid_exchange: an exchange outside the activity's rule.
-             out_of_range: a value outside its range.
-             profile_incomplete: the profile lacks what the messages need.
-             state_conflict: the command does not fit the contact's state.
-             directive_not_answerable: a CQ not for the station, not confirmed.
-             transmit_unavailable, busy, clock_not_synchronized: transmission is not
+             invalidCall, invalidGrid: the entered call or grid cannot be sent.
+             invalidMessage: the text cannot be sent unaltered, or the slot has none.
+             invalidReport: a report outside ReportRange.
+             invalidExchange: an exchange outside the activity's rule.
+             outOfRange: a value outside its range.
+             profileIncomplete: the profile lacks what the messages need.
+             stateConflict: the command does not fit the contact's state.
+             directiveNotAnswerable: a CQ not for the station, not confirmed.
+             transmitUnavailable, busy, clockNotSynchronized: transmission is not
              possible (WstxQsoTransmit::BlockedStartRule).
-             log_pending: a completed contact waits to be logged or discarded
+             logPending: a completed contact waits to be logged or discarded
              (WstxStandardQso::LogConfirmRule). */
-        enum contact_active;
-        enum no_contact;
-        enum row_not_standard;
-        enum invalid_call;
-        enum invalid_grid;
-        enum invalid_message;
-        enum invalid_report;
-        enum invalid_exchange;
-        enum out_of_range;
-        enum profile_incomplete;
-        enum state_conflict;
-        enum directive_not_answerable;
-        enum transmit_unavailable;
+        enum contactActive;
+        enum noContact;
+        enum rowNotStandard;
+        enum invalidCall;
+        enum invalidGrid;
+        enum invalidMessage;
+        enum invalidReport;
+        enum invalidExchange;
+        enum outOfRange;
+        enum profileIncomplete;
+        enum stateConflict;
+        enum directiveNotAnswerable;
+        enum transmitUnavailable;
         enum busy;
-        enum clock_not_synchronized;
-        enum log_pending;
+        enum clockNotSynchronized;
+        enum logPending;
     }
     item def QsoAnswer {
         doc /* The answer to each command of the operator or an agent: accepted, or

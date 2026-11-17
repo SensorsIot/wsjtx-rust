@@ -27,6 +27,7 @@ RULES = {
     "M7.1": "a dependency",
     "M7.3": "a text that restates its own identity",
     "M7.4": "history in a text: a date, an issue number or a history word",
+    "M7.5": "a name with an underscore, or a definition not in UpperCamelCase",
     "W100": "a line over 100 characters",
     "C1": "a comment in a model file (// or /* */ outside a doc)",
 }
@@ -129,6 +130,11 @@ def sentences(doc):
     return [p for p in parts if p.strip()]
 
 
+NAMED = re.compile(r"\s*(?:abstract\s+)?(?:in\s+|out\s+|inout\s+)?"
+                   r"(?:attribute|enum|item|part|port|action|ref|state|occurrence|connection|"
+                   r"interface|flow|calc|constraint|metadata|use case)\s+(def\s+)?([A-Za-z]\w*)")
+
+
 def check_file(key, findings):
     text = io.open(os.path.join(ROOT, key), encoding="utf-8").read()
     lines = text.split("\n")
@@ -148,6 +154,9 @@ def check_file(key, findings):
             add("M6.2b", n, line.strip()[:70])
         if re.search(r"\busers?\b", line, re.I):
             add("M5.10", n, line.strip()[:70])
+        d = NAMED.match(line)
+        if d and ("_" in d.group(2) or (d.group(1) and not d.group(2)[0].isupper())):
+            add("M7.5", n, line.strip()[:70])
         # A quoted value of an attribute or of a source reference names a version of a
         # source (MCP's versions are dates), not history.
         scan = line

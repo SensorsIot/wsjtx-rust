@@ -60,8 +60,8 @@ package WstxLowerPanel {
              packRefused, frequencyOutOfRange or radioUnavailable, error, "Tx refused · <reason
              in words>", until a later start is accepted; the other refusals clear by
              themselves and make no entry;
-             each warning of the view txLevel: alc_high, warn, "ALC too high · audio drive
-             lowered"; po_low, warn, "Output power low"; swr_high, warn, "SWR high"; swr_fault,
+             each warning of the view txLevel: alcHigh, warn, "ALC too high · audio drive
+             lowered"; poLow, warn, "Output power low"; swrHigh, warn, "SWR high"; swrFault,
              error, "SWR too high · Tx stopped, check the antenna";
              the radio connection not ready, error, the radio's line (WstxSettings::RadioLine);
              the native session not ready, error, its line;

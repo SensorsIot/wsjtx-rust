@@ -50,7 +50,7 @@ package WstxOperatingScreen {
              Lists, frequencies and messages are written in a fixed-width font; colours keep
              the meanings of WSJT-X (WstxBandActivityPane::Highlight). The theme follows
              FrontendConfig::theme and themeSwitch. The window's title and the top bar name the
-             station by its display_name. */
+             station by its displayName. */
         attribute minWidthPx : Integer = 1366;
         attribute minHeightPx : Integer = 768;
         attribute phoneWidthPx : Integer = 360;
@@ -169,7 +169,7 @@ package WstxOperatingScreen {
     #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-074-01'; }
 
     attribute def BootRule {
-        doc /* When the page learns a boot_id other than the one a view's values belong to,
+        doc /* When the page learns a bootId other than the one a view's values belong to,
              that view drops them at once and shows what a freshly loaded page shows before
              its reads; it never shows a value of the earlier start, alone or with values of
              the new one, and an answer that names another start is not used. Once the new
@@ -265,9 +265,12 @@ package WstxOperatingScreen {
              Every control shows a short help on hover and on keyboard focus, written for the
              operator in the words of operating: what the control does for the operator and
              when to use it, its key where it has one, and while it is disabled, why.
-             A control of a radio function the station's rig lacks
-             (WstxRadioControl::RadioStatus::abilities) is shown disabled, and its help
-             says "<rig> cannot <function> over CAT". */
+             What the station's rig cannot do is shown disabled and cannot be chosen or
+             changed: a control of a radio function the rig lacks
+             (WstxRadioControl::RadioStatus::abilities), whose help says "<rig> cannot
+             <function> over CAT", and a band or working frequency outside the rig's
+             transmit ranges (WstxRadioControl::RadioStatus::txRanges), whose help says
+             "<rig> cannot transmit on <band>". */
     }
 
     attribute def LogbookPage {

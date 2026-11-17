@@ -92,10 +92,9 @@ were most of the old text.
 
 ## For the operator
 
-1. **Two naming conventions in the model.** About 70 attributes are written in snake_case
-   (the wire or file name) and the rest in camelCase. `WireNames` turns both into the same
-   key, so nothing contradicts; writing all in camelCase would make the model uniform. To
-   ask when the frontend is built.
+1. **Two naming conventions in the model.** Decided 2026-11-17 (option A): every model name
+   is camelCase (M7.5, checked by check.py); `WireNames` gives the snake_case names of the
+   wire and the station's files, with three named exceptions for numbers.
 2. **#174 and #226 question 3** are decided by rule in the model; the issues on GitHub are
    not updated (nothing posted).
 3. **MCP's credential** (#226 question 1) and **Origin on POST /mcp** (#175) come with mcp,

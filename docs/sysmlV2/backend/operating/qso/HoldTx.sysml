@@ -252,7 +252,7 @@ package WstxHoldTx {
     attribute def OffsetRule {
         doc /* SetFrequency sets the Rx offset, the Tx offset or both; it switches nothing
              on. Rx lies from 0 to rxMaxHz, Tx from txMinHz to the top of the Tx range of
-             the mode (FT8 txMaxFt8Hz, FT4 txMaxFt4Hz); a value outside is out_of_range. A
+             the mode (FT8 txMaxFt8Hz, FT4 txMaxFt4Hz); a value outside is outOfRange. A
              change of the mode brings Tx into the range of the new mode. */
         attribute rxMaxHz : Integer = 3000;
         attribute txMinHz : Integer = 200;

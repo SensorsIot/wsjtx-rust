@@ -176,6 +176,11 @@ and holds the parts ranking, auto and qso.
 - **M7.3** No text restates what the structure already says: its own number, its clause
   list, its cost.
 - **M7.4** No text tells history: no date, no issue number, no "formerly", no "replaces".
+- **M7.5** A definition is named in UpperCamelCase; a feature, an enumeration literal and
+  an action in lowerCamelCase. No name holds an underscore. A name on the wire or in the
+  station's files is the model name as `WstxStationLink::WireNames` writes it; a name of an
+  outside format (ADIF, FlexRadio, PSK Reporter) and an id that is data stay as their
+  source writes them.
 
 ## M8. Finished
 
@@ -185,7 +190,7 @@ and holds the parts ranking, auto and qso.
 
 | Check | Covers |
 |---|---|
-| The script `docs/sysmlV2/_work/check.py`, run after every part | M2.1, M4.2, M5.10, M6.2, M6.4, M6.10, M6.11, M7.1, M7.3, M7.4, and lines over 100 characters |
+| The script `docs/sysmlV2/_work/check.py`, run after every part | M2.1, M4.2, M5.10, M6.2, M6.4, M6.10, M6.11, M7.1, M7.3, M7.4, M7.5, and lines over 100 characters |
 | The operator's reading of the part and its report | M0.2, M0.3, M1.1 to M1.4, which are judgements; the report lists what was dropped as code |
 
   The structure rules M3, M4.1, M4.3 and M5 are checked by the model tools.

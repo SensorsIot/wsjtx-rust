@@ -52,6 +52,14 @@ package WstxRadioControl {
         attribute abilities : RadioAbility[0..*] {
             doc /* What the rig can do over CAT, as its catalogue entry gives it from
                  Hamlib's capabilities of the rig. */ }
+        attribute txRanges : FrequencyRange[1..*] {
+            doc /* The frequencies the rig transmits on, as its catalogue entry gives them
+                 from Hamlib's transmit ranges of the rig. */ }
+    }
+    attribute def FrequencyRange {
+        doc /* The frequencies from lowHz to highHz, both included. */
+        attribute lowHz : Integer;
+        attribute highHz : Integer;
     }
     enum def RadioAbility {
         doc /* A function of the radio that not every rig has over CAT.
@@ -244,6 +252,9 @@ package WstxRadioControl {
                  none by CAT. */ }
         attribute abilities : RadioAbility[0..*] {
             doc /* RigModel::abilities of the rig; empty while the profile controls none
+                 by CAT. */ }
+        attribute txRanges : FrequencyRange[0..*] {
+            doc /* RigModel::txRanges of the rig; empty while the profile controls none
                  by CAT. */ }
         attribute facts : RadioFacts;
         attribute automatic : AutomaticCatStatus;

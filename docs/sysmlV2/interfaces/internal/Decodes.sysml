@@ -11,11 +11,11 @@ package WstxDecodes {
         attribute sequence : Integer {
             doc /* The number of the record: 0 for the first record of a job, one higher
                  for each record after it. */ }
-        attribute period_start_utc : String[0..1] {
+        attribute periodStartUtc : String[0..1] {
             doc /* The start of the period the frame belongs to: UTC as date and time
                  with seven decimals of a second. Absent while the stream is not tied
                  to station time. */ }
-        attribute dt_seconds : Real[0..1] {
+        attribute dtSeconds : Real[0..1] {
             doc /* The DT of the frame in station time. Absent while the stream is not
                  tied to station time. */ }
         assert constraint boundedRecord {
@@ -26,22 +26,22 @@ package WstxDecodes {
     attribute def JobIdentity {
         doc /* The job something published by receive belongs to. A consumer drops what
              belongs to another job than the current one. */
-        attribute source_id : String;
-        attribute job_id : String;
+        attribute sourceId : String;
+        attribute jobId : String;
     }
 
     item def PeriodView {
         doc /* Which records are the decodes of one period. A consumer that shows one
-             period shows the records from first_sequence up to, and not including,
-             next_sequence. */
+             period shows the records from firstSequence up to, and not including,
+             nextSequence. */
         attribute id : Integer {
             doc /* 1 for the first view of a job, one higher for each view of another
                  period. A view that is published again for its period keeps its id. */ }
         attribute job : JobIdentity {
             doc /* The job whose records the view spans. */ }
-        attribute first_sequence : Integer;
-        attribute next_sequence : Integer;
-        attribute period_start_utc : String[0..1] {
+        attribute firstSequence : Integer;
+        attribute nextSequence : Integer;
+        attribute periodStartUtc : String[0..1] {
             doc /* The start of the period, as in ResultRecord. Absent while the stream
                  is not tied to station time; the view then spans the records of one
                  window. */ }
@@ -50,7 +50,7 @@ package WstxDecodes {
         attribute transmitted : Boolean {
             doc /* True for a period the station transmitted in; such a view has no
                  record. */ }
-        assert constraint ordered { id >= 1 and first_sequence <= next_sequence }
+        assert constraint ordered { id >= 1 and firstSequence <= nextSequence }
     }
 
     port def DecodesPort {

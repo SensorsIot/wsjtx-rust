@@ -42,7 +42,7 @@ package WstxStartup {
              --create-profile and a folder;
              --create-native-flex-profile with a folder, a receive antenna and at most an
              address. Other arguments, also none, end the start with
-             invalid_runtime_configuration: every station starts with its profile.
+             invalidRuntimeConfiguration: every station starts with its profile.
              A creation asks the profile to make the profile (CreateRequest) and ends
              with created, or with the profile's refusal (OpenRefusal).
              A start asks the profile to open the profile (OpenRequest); a refusal ends
@@ -53,8 +53,8 @@ package WstxStartup {
              Then the functions start, transmit disarmed. On a profile of a radio's
              native connection the adapter of that connection starts with the profile's
              NativeIntent; an intent the adapter does not take ends the start with
-             resource_unavailable, and an environment variable of the adapter
-             (WstxFlexSession) that cannot be read with invalid_runtime_configuration. A
+             resourceUnavailable, and an environment variable of the adapter
+             (WstxFlexSession) that cannot be read with invalidRuntimeConfiguration. A
              profile of the sound device connection starts no such adapter.
              Radio control makes sure which radio is the profile's (DiscoverRadio) before
              the radio connection is first opened and before transmit takes its level,
@@ -82,21 +82,21 @@ package WstxStartup {
         doc /* How a start or a creation ends.
              ready: the station runs with the profile.
              created: the profile is made.
-             invalid_runtime_configuration: the arguments or the environment of the
+             invalidRuntimeConfiguration: the arguments or the environment of the
              process are not ones the station takes; also the profile's and web's.
-             resource_unavailable, invalid_profile, unsupported_schema,
-             unsupported_connection_type, profile_in_use: the profile's refusal
-             (OpenRefusal); resource_unavailable also web's.
-             endpoint_in_use: another process listens where the profile says. */
+             resourceUnavailable, invalidProfile, unsupportedSchema,
+             unsupportedConnectionType, profileInUse: the profile's refusal
+             (OpenRefusal); resourceUnavailable also web's.
+             endpointInUse: another process listens where the profile says. */
         enum ready;
         enum created;
-        enum invalid_runtime_configuration;
-        enum resource_unavailable;
-        enum invalid_profile;
-        enum unsupported_schema;
-        enum unsupported_connection_type;
-        enum profile_in_use;
-        enum endpoint_in_use;
+        enum invalidRuntimeConfiguration;
+        enum resourceUnavailable;
+        enum invalidProfile;
+        enum unsupportedSchema;
+        enum unsupportedConnectionType;
+        enum profileInUse;
+        enum endpointInUse;
     }
 
     requirement 'CL-045-01' {
@@ -128,14 +128,14 @@ package WstxStartup {
         doc /* The resume begins once radio control has begun to keep the radio connection,
              and needs no command.
              Without a remembered receive it is idle and nothing starts. Without an input
-             device in the profile it fails with audio_unconfigured.
+             device in the profile it fails with audioUnconfigured.
              Otherwise it waits: a remembered receive in FT4 or FT8 with a band is taken
              up by a selection of that band and mode (WstxOperatingSelection::
-             SelectionRule). A selection refused with radio_unavailable, busy or
-             state_conflict is made again until the radio is ready or a bounded wait
+             SelectionRule). A selection refused with radioUnavailable, busy or
+             stateConflict is made again until the radio is ready or a bounded wait
              ends; a selection that succeeds makes the resume started. When none
              succeeds, receive starts in the remembered mode on the radio's present dial
-             (StartLive): started_untuned, and the remembered band is kept.
+             (StartLive): startedUntuned, and the remembered band is kept.
              A remembered receive in spectrum or without a band starts receive in its
              mode: started. On a profile of a radio's native connection it first waits,
              a bounded time, for the native session.

@@ -188,7 +188,7 @@ package WstxLogbook {
              newest QSO without regard to letter case, its effective band equals that
              record's, and its effective mode equals that record's. K1ABC/P is another
              station than K1ABC. An unknown band equals only an unknown band.
-             While LogContext::contestDupes is DupeRule::band_grid, a contact whose grid
+             While LogContext::contestDupes is DupeRule::bandGrid, a contact whose grid
              and the grid of the newest QSO are both known and differ in their first
              four characters is not the same station again.
              A refused contact writes no record, changes no stored one and is not given

@@ -142,11 +142,11 @@ package WstxModeProcessing {
     enum def FrameStatus {
         doc /* decoded: a payload of a supported family with valid content.
              unsupported: a CRC-valid payload of a family the product does not unpack.
-             invalid_payload: a CRC-valid payload of a supported family whose content is
+             invalidPayload: a CRC-valid payload of a supported family whose content is
              outside its domain. */
         enum decoded;
         enum unsupported;
-        enum invalid_payload;
+        enum invalidPayload;
     }
     enum def CallKind {
         enum call;
@@ -170,8 +170,8 @@ package WstxModeProcessing {
              until then. */
         attribute kind : CallKind;
         attribute text : String[0..1];
-        attribute hash_bits : Integer[0..1];
-        attribute hash_value : Integer[0..1];
+        attribute hashBits : Integer[0..1];
+        attribute hashValue : Integer[0..1];
     }
     attribute def Exchange {
         doc /* What a message exchanges: blank nothing, grid a 4-character grid, report an
@@ -237,9 +237,9 @@ package WstxModeProcessing {
     attribute def NonstandardFields :> PayloadFields {
         doc /* Family 4. A nonstandard CQ shows no hash and keeps its bits. */
         attribute 'type' : String = "nonstandard";
-        attribute full_call : CallValue;
-        attribute hashed_call : CallValue;
-        attribute hash_second : Boolean;
+        attribute fullCall : CallValue;
+        attribute hashedCall : CallValue;
+        attribute hashSecond : Boolean;
         attribute cq : Boolean;
         attribute roger : String[0..1];
     }
@@ -267,21 +267,21 @@ package WstxModeProcessing {
                  the status is decoded. */ }
         attribute fields : PayloadFields[0..1] {
             doc /* Present only when the status is decoded. */ }
-        attribute start_frame : Integer {
+        attribute startFrame : Integer {
             doc /* The place in the 12 kHz stream of the frame's first symbol, the ramp
                  symbol for FT4. */ }
-        attribute frequency_hz : Real {
+        attribute frequencyHz : Real {
             doc /* The audio frequency of the frame's lowest tone, within DecodeBand. */ }
-        attribute snr_db : Real[0..1] {
+        attribute snrDb : Real[0..1] {
             doc /* The signal-to-noise ratio in a whole number of dB on the 2500 Hz scale
                  of WSJT-X. Absent for a frame that is not wholly inside the window, and
                  without a noise baseline. */ }
-        attribute a_priori : Integer[0..1] {
+        attribute aPriori : Integer[0..1] {
             doc /* The a-priori type, 1 to 6, of a frame that was decoded with the help
                  of the context. Absent for a frame decoded without it. */ }
         assert constraint bounded {
             i3 >= 0 and i3 <= 7 and
-            start_frame >= 0 and start_frame <= (900719925 * 10000000 + 4740991)
+            startFrame >= 0 and startFrame <= (900719925 * 10000000 + 4740991)
         }
     }
 

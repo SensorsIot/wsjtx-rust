@@ -32,10 +32,10 @@ package WstxListener {
              only. A listener on an address other than loopback needs TLS and a stored
              origin. The station's origin is the stored origin, whose scheme is the
              listener's, else the scheme, address and port of the listener.
-             ListenRefused: invalid_runtime_configuration for one of the two variables
+             ListenRefused: invalidRuntimeConfiguration for one of the two variables
              without the other, a listener beyond loopback without TLS or without origin,
-             and an origin of the other scheme; resource_unavailable for a file that
-             cannot be read and a listener that cannot be opened; endpoint_in_use for a
+             and an origin of the other scheme; resourceUnavailable for a file that
+             cannot be read and a listener that cannot be opened; endpointInUse for a
              port another process listens on.
              Listening: web writes the lines WSTX address, the scheme, :// and the address
              and port, and WSTX listening and the origin, to the output of the process. On
@@ -55,7 +55,7 @@ package WstxListener {
              and styles gives that file. The client's files are built into the station's
              program; they hold no state of the station. The page carries the build it was
              served with as data-build of its body (ClientBuild). web serves the web app
-             manifest of the page with the station's display_name, its origin as start and
+             manifest of the page with the station's displayName, its origin as start and
              scope and the display standalone, so that the page installs as an app
              (WstxOperatingScreen::AppWindow). */
     }
@@ -170,9 +170,9 @@ package WstxListener {
              at once, and the next runs to the next start of the new mode.
              Client: browser and the remote address for the page, the routes and the
              sockets; mcp and the remote address for the requests of MCP.
-             Line: {utc_ms, period_ms, mode, client, display, to_client, from_client}:
+             Line: {utcMs, periodMs, mode, client, display, toClient, fromClient}:
              display the DisplayProfile of each of the client's sockets at the period's end
-             (none without one); to_client and from_client each {bytes, other, estimate,
+             (none without one); toClient and fromClient each {bytes, other, estimate,
              types}. bytes: the bytes written and read on the client's connections below
              TLS. types: per message type its count and bytes, a type being ws and the
              message's type for a message on a socket, ws ping, ws pong and ws close, and

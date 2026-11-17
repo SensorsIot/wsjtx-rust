@@ -130,7 +130,8 @@ carries the contact's commands to transmit.
   states one rule. A read is `GET /<function>` (the function's view); a command is
   `POST /<function>/<command>`, one route per command item; an event is
   `<function>.state` with the changed fields of the view; settings and collection members
-  have their own form; keys are the attribute names in snake_case; one table maps refusal to
+  have their own form; keys are the camelCase model names written in snake_case
+  (`WireNames`, M7.5); one table maps refusal to
   status. Only real wire exceptions get prose (WAV and ADIF transfers, the page files, the
   WebSocket). The route names follow the parts (`/qso`, not `/contact`; one route to switch
   Auto). MCP's tools are the second projection of the same items (#53, 2026-11-12). Today's

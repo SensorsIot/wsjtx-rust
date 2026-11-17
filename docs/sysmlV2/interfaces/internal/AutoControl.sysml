@@ -70,22 +70,22 @@ package WstxAutoControl {
     enum def AutoState {
         doc /* What Auto is doing.
              waiting: Auto is on and has no contact or CQ of its own.
-             contact_active: Auto's contact is in progress.
-             calling_cq: Auto's CQ is in progress.
+             contactActive: Auto's contact is in progress.
+             callingCq: Auto's CQ is in progress.
              stopped: Auto is off. */
         enum waiting;
-        enum contact_active;
-        enum calling_cq;
+        enum contactActive;
+        enum callingCq;
         enum stopped;
     }
     enum def WaitReason {
         doc /* Why Auto, waiting, starts nothing (WstxTargetChoice::WaitRule). */
-        enum no_receive;
-        enum auto_seq;
+        enum noReceive;
+        enum autoSeq;
         enum call;
         enum activity;
         enum band;
-        enum outside_period;
+        enum outsidePeriod;
         enum contact;
         enum clock;
         enum tune;
@@ -94,15 +94,15 @@ package WstxAutoControl {
         doc /* Why Auto went off (WstxAutoMode::AutoStops). */
         enum halted;
         enum stopped;
-        enum no_client;
-        enum transmit_refused;
-        enum transmit_stopped;
+        enum noClient;
+        enum transmitRefused;
+        enum transmitStopped;
     }
     enum def LeaveReason {
         doc /* Why Auto left a station (WstxLeave::LeaveRule). */
         enum repetitions;
         enum gone;
-        enum tx_changes;
+        enum txChanges;
     }
     attribute def Leaving {
         doc /* The station Auto left last, and why. */
@@ -119,9 +119,9 @@ package WstxAutoControl {
     attribute def LeaveCount {
         doc /* How far Auto's contact is from being left (WstxLeave::LeaveRule). */
         attribute remaining : Integer[0..1] {
-            doc /* With calls: the calls left, at least 1. With until_logged: the minutes
+            doc /* With calls: the calls left, at least 1. With untilLogged: the minutes
                  left while the station is not decoded. With contest: the Tx changes
-                 left. Absent while the station is decoded under until_logged, and while
+                 left. Absent while the station is decoded under untilLogged, and while
                  it stays under contest. */ }
         attribute staying : Boolean {
             doc /* Under contest: the station stays while it hears the station and is
@@ -137,7 +137,7 @@ package WstxAutoControl {
         attribute left : Leaving[0..1] {
             doc /* Absent until Auto leaves a station after it was switched on. */ }
         attribute quiet : RetryPause[0..*] { doc /* The stations in their retry pause. */ }
-        attribute leave : LeaveCount[0..1] { doc /* Present with contact_active. */ }
+        attribute leave : LeaveCount[0..1] { doc /* Present with contactActive. */ }
         attribute cqPauseLeft : Integer[0..1] {
             doc /* The periods left of the CQ pause (WstxCqWhenIdle::CqPause). Absent
                  while there is none. */ }

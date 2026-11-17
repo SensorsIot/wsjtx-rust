@@ -13,9 +13,9 @@ package WstxUdpControl {
         enum status;
         enum decode;
         enum clear;
-        enum qso_logged;
+        enum qsoLogged;
         enum close;
-        enum logged_adif;
+        enum loggedAdif;
     }
     attribute def UdpTarget {
         doc /* One program the station sends to. Its address is its identity: no two
@@ -58,7 +58,7 @@ package WstxUdpControl {
              supervisor gives it at station start and whenever a value changes. Each
              value is the fact of the part named, as the supervisor holds it. */
         attribute stationName : String {
-            doc /* The station's name, WstxProfileAccess::ProfileConfig::display_name. */ }
+            doc /* The station's name, WstxProfileAccess::ProfileConfig::displayName. */ }
         attribute callsign : String[0..1] { doc /* The profile's call; absent without one. */ }
         attribute locator : String[0..1] { doc /* The profile's locator; absent without one. */ }
         attribute mode : Mode[0..1] { doc /* The station's operating mode. */ }

@@ -25,7 +25,7 @@ package WstxQsoTransmit {
 
     attribute def StartRule {
         doc /* The starts are Reply, CallCq, CallDx, SendNext and ResetRepetitions of the
-             operator or an agent, and Auto's reply, call_cq and send_next
+             operator or an agent, and Auto's reply, callCq and sendNext
              (WstxOperatingChain::CallTarget). A start switches transmission on (Arm, cause
              operator or auto) and its message goes in the next own period whose start
              window is open (WstxTransmitControl::StartWindow). Nothing else switches it
@@ -34,19 +34,19 @@ package WstxQsoTransmit {
              is a new contact, the current partner goes on at the record's message.
              CallDx prepares from the entered call as EnterDx.
              CallCq starts the own CQ, or goes on with the own CQ that is kept; with a
-             contact with a partner in progress it is contact_active; a Hound has none
-             (no_contact).
+             contact with a partner in progress it is contactActive; a Hound has none
+             (noContact).
              SendNext makes the slot due and switches on; without a contact with a partner
-             in progress it is no_contact, a slot without text invalid_message.
+             in progress it is noContact, a slot without text invalidMessage.
              ResetRepetitions is ResetRule.
              A start in the step in which transmission went off
-             (WstxTransmitControl::TransmitStatus) is state_conflict; in the next step it is
+             (WstxTransmitControl::TransmitStatus) is stateConflict; in the next step it is
              a start again. */
     }
 
     requirement 'CL-111-05' {
         subject qso : QsoService;
-        doc /* qso MUST call CQ on a CallCq or Auto's call_cq only (StartRule). */
+        doc /* qso MUST call CQ on a CallCq or Auto's callCq only (StartRule). */
         @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-007'; end #derive ::> 'CL-111-05'; }
@@ -65,7 +65,7 @@ package WstxQsoTransmit {
              off with its cause, and the answer names the reason (QsoAnswer::blockedBy).
              Nothing starts by itself when the reason goes; a new start transmits.
              CallCq, SendNext and ResetRepetitions are refused with the reason
-             (transmit_unavailable, busy, clock_not_synchronized) and change nothing.
+             (transmitUnavailable, busy, clockNotSynchronized) and change nothing.
              Auto's starts are answered before anything is prepared
              (WstxOperatingChain::StartAnswer). */
     }
@@ -83,8 +83,8 @@ package WstxQsoTransmit {
              starts the count of the message due anew. While transmission is off by the
              repetition limit it starts the count anew, switches transmission on (cause
              operator) and the message due goes in the next own period. After another stop
-             it is state_conflict; without a contact with a partner in progress (no contact,
-             the own CQ, completed, cancelled) no_contact; while on but unable to transmit
+             it is stateConflict; without a contact with a partner in progress (no contact,
+             the own CQ, completed, cancelled) noContact; while on but unable to transmit
              (BlockedStartRule) refused with the reason, the count unchanged. */
     }
 

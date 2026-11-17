@@ -19,15 +19,15 @@ package WstxSpecialActivities {
         doc /* The activity in force is the activity of the contest in force
              (WstxStrategies::ContestActivity; none for a contest without one) while a
              contest is in force, otherwise the operator's (WstxQsoControl::QsoConfig). The
-             exchange of field_day and rtty is always the operator's. A change of the
+             exchange of fieldDay and rtty is always the operator's. A change of the
              activity in force renews the messages of the contact in progress and of the
-             own CQ at once. Each activity has its CQ word after CQ: TEST for na_vhf,
-             eu_vhf and arrl_digi, WW for ww_digi, FD for field_day, RU for rtty. */
+             own CQ at once. Each activity has its CQ word after CQ: TEST for naVhf,
+             euVhf and arrlDigi, WW for wwDigi, FD for fieldDay, RU for rtty. */
     }
 
     requirement 'CL-024-02' {
         subject qso : QsoService;
-        doc /* qso MUST run a contact under na_vhf, ww_digi and arrl_digi with the grid
+        doc /* qso MUST run a contact under naVhf, wwDigi and arrlDigi with the grid
              exchange of GridExchangeRule. */
         @Status { build = ImplementationState::implemented; }
     }
@@ -47,22 +47,22 @@ package WstxSpecialActivities {
 
     requirement 'CL-024-03' {
         subject qso : QsoService;
-        doc /* qso MUST run a contact under field_day and rtty with the exchanges of
+        doc /* qso MUST run a contact under fieldDay and rtty with the exchanges of
              ContestExchange. */
         @Status { build = ImplementationState::implemented; }
     }
     #derivation connection { end #original ::> 'FR-024'; end #derive ::> 'CL-024-03'; }
 
     attribute def ContestExchange {
-        doc /* field_day: the exchange is the transmitter count from 1 to 32 with the class A
+        doc /* fieldDay: the exchange is the transmitter count from 1 to 32 with the class A
              to F and the ARRL or RAC section, written in capitals with one space ("1A
              EMA"). rtty: the state or province, or DX or # for the serial, or a fixed
              serial from 0001 to 7999; the station sends "5n9" with n from its report and
              the multiplier or the serial (ContestSerialRule). Tx2 "DX MY exchange", Tx3 "DX
              MY R exchange". In FT4 rtty a selection within 3 s after a counted RR73 of the
              previous partner sends "TU; " before Tx3. An exchange outside its rule, an
-             exchange with another activity, and a nonstandard call under field_day are
-             refused (invalid_exchange, invalid_call). A record of another family counts
+             exchange with another activity, and a nonstandard call under fieldDay are
+             refused (invalidExchange, invalidCall). A record of another family counts
              as no message of the contact. The received exchange is kept with the
              contact. */
         @FollowsSource {
@@ -74,30 +74,30 @@ package WstxSpecialActivities {
     attribute def ContestLogFields {
         doc /* What a handed-over contact carries of its exchange
              (WstxOperatingChain::FinishedContact): an exchange of a word and a serial gives
-             stx or srx; field_day gives stxString, and for the received exchange
+             stx or srx; fieldDay gives stxString, and for the received exchange
              contestId ARRL-FIELD-DAY, srxString, contestClass and arrlSect; rtty gives the
-             5n9 as rstSent and rstRcvd, and usState of a received state or province; eu_vhf
+             5n9 as rstSent and rstRcvd, and usState of a received state or province; euVhf
              gives the four serial digits as stx and srx and the RS as rstSent and rstRcvd;
              any other exchange of more than one word stxString or srxString. */
     }
 
     requirement 'CL-099-02' {
         subject qso : QsoService;
-        doc /* qso MUST run a contact under eu_vhf as EuVhfRule says. */
+        doc /* qso MUST run a contact under euVhf as EuVhfRule says. */
         @Status { build = ImplementationState::implemented; }
     }
     #derivation connection { end #original ::> 'FR-024'; end #derive ::> 'CL-099-02'; }
 
     attribute def EuVhfRule {
-        doc /* eu_vhf needs a profile locator of 6 characters (profile_incomplete) and a
-             callsign of at most 11 (invalid_call); it takes no exchange (invalid_exchange);
-             the two calls of a contact together have at most 16 characters (invalid_call,
+        doc /* euVhf needs a profile locator of 6 characters (profileIncomplete) and a
+             callsign of at most 11 (invalidCall); it takes no exchange (invalidExchange);
+             the two calls of a contact together have at most 16 characters (invalidCall,
              also for the choice while such a contact is in progress). Tx6 and Tx1 carry the
              first four locator characters; Tx1 is sent. Tx2 "<DX> <MY> 5nSSSS LOCATOR6" and
              Tx3 "<DX> <MY> R 5nSSSS LOCATOR6" with n from the report and the serial of
-             ContestSerialRule up to 2047 (out_of_range beyond). A message of the family
+             ContestSerialRule up to 2047 (outOfRange beyond). A message of the family
              counts only from the partner's hash to the profile's call's hash and only under
-             eu_vhf; a record of it to the profile's call starts at Tx3 with its exchange
+             euVhf; a record of it to the profile's call starts at Tx3 with its exchange
              and 6-character grid. An edited text follows WstxMessageChoice::MessageSet. */
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: the EU VHF Contest message";
@@ -113,11 +113,11 @@ package WstxSpecialActivities {
 
     attribute def HoundRule {
         doc /* The Hound of WSJT-X, without automation: FT8 only (a
-             change to FT4 ends it, hound with FT4 is state_conflict); it transmits in the
+             change to FT4 ends it, hound with FT4 is stateConflict); it transmits in the
              second period with Hold Tx on and sends only Tx1 and Tx3; it calls no CQ
-             (no_contact). It selects a Fox record of :00 or :30 that is not another
-             Hound's Tx3 (state_conflict); a multi-message record names no partner
-             (row_not_standard). Its Tx follows its own rules, not
+             (noContact). It selects a Fox record of :00 or :30 that is not another
+             Hound's Tx3 (stateConflict); a multi-message record names no partner
+             (rowNotStandard). Its Tx follows its own rules, not
              WstxHoldTx::TooCloseRule, the quiet space or the busy pause: Tx1 goes out at a
              random offset from 1000 to 2998 Hz when Tx is below 999 Hz; after the Fox's
              report, standard or inside a multi-message, Tx3 carries the SNR of the Fox's

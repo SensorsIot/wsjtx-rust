@@ -55,34 +55,34 @@ package WstxRecordingTransfer {
     enum def ImportError {
         doc /* Why the profile refuses a command of an import, and why an import has
              ended without a stored recording.
-             state_conflict: the part is not the next one of the file.
+             stateConflict: the part is not the next one of the file.
              busy: a job of receive, a band or mode selection or another import has not
              ended.
-             storage_unavailable: the recordings cannot be read or written.
-             not_found: no import of this id.
-             invalid_state: the import is in a state in which the command cannot be
+             storageUnavailable: the recordings cannot be read or written.
+             notFound: no import of this id.
+             invalidState: the import is in a state in which the command cannot be
              carried out.
-             request_too_large: the file is announced with more than
+             requestTooLarge: the file is announced with more than
              RecordingLimits::fileBytes.
-             upload_timeout: the import ran out of time.
+             uploadTimeout: the import ran out of time.
              cancelled: the import was cancelled.
-             invalid_recording: the file is not built as a WAV file.
-             unsupported_audio: the file is a WAV file of another form than the one a
+             invalidRecording: the file is not built as a WAV file.
+             unsupportedAudio: the file is a WAV file of another form than the one a
              recording has.
-             recording_limit: the file is over a limit of RecordingLimits.
-             recording_unavailable: the stored recording cannot be read. */
-        enum state_conflict;
+             recordingLimit: the file is over a limit of RecordingLimits.
+             recordingUnavailable: the stored recording cannot be read. */
+        enum stateConflict;
         enum busy;
-        enum storage_unavailable;
-        enum not_found;
-        enum invalid_state;
-        enum request_too_large;
-        enum upload_timeout;
+        enum storageUnavailable;
+        enum notFound;
+        enum invalidState;
+        enum requestTooLarge;
+        enum uploadTimeout;
         enum cancelled;
-        enum invalid_recording;
-        enum unsupported_audio;
-        enum recording_limit;
-        enum recording_unavailable;
+        enum invalidRecording;
+        enum unsupportedAudio;
+        enum recordingLimit;
+        enum recordingUnavailable;
     }
     item def ReserveImport {
         doc /* Begin an import. */
@@ -94,13 +94,13 @@ package WstxRecordingTransfer {
     item def ImportChunk {
         doc /* The next part of the file of an import. */
         attribute id : String;
-        attribute start : Integer {
+        attribute offset : Integer {
             doc /* The place of the part's first byte in the file, from 0. */
         }
         attribute total : Integer {
             doc /* The length of the whole file, at least 1. */
         }
-        attribute bytes : Integer[1..2048] {
+        attribute bytes : Integer[1..*] {
             doc /* The bytes of the part, at most RecordingLimits::rawChunkBytes, none of
                  them beyond total. */
         }
@@ -119,16 +119,16 @@ package WstxRecordingTransfer {
              is reserved or the station stops. */
         attribute id : String;
         attribute 'state' : ImportState;
-        attribute received_bytes : Integer {
+        attribute receivedBytes : Integer {
             doc /* How much of the file the profile has taken. */
         }
-        attribute total_bytes : Integer[0..1] {
+        attribute totalBytes : Integer[0..1] {
             doc /* The length of the file; absent before the first part. */
         }
         attribute error : ImportError[0..1] {
             doc /* Why the import ended; absent while it runs and when completed. */
         }
-        attribute recording_id : String[0..1] {
+        attribute recordingId : String[0..1] {
             doc /* The id of the recording the import stored, which is the id of the
                  import; absent until the file is in the place of the stored
                  recording. */
@@ -145,7 +145,7 @@ package WstxRecordingTransfer {
             doc /* Its samples, 1 to RecordingLimits::importMaxFrames, at
                  RecordingLimits::rateHz. */
         }
-        attribute file_bytes : Integer {
+        attribute fileBytes : Integer {
             doc /* The length of its file, at most RecordingLimits::fileBytes. */
         }
     }
@@ -155,16 +155,16 @@ package WstxRecordingTransfer {
         item recording : Recording[0..1] {
             doc /* Absent when none is stored and when the stored one cannot be read. */
         }
-        attribute source_error : ImportError[0..1] {
-            doc /* recording_unavailable while a stored recording cannot be read;
+        attribute sourceError : ImportError[0..1] {
+            doc /* recordingUnavailable while a stored recording cannot be read;
                  absent otherwise. */
         }
-        attribute storage_error : ImportError[0..1] {
-            doc /* storage_unavailable while the recordings cannot be read or written;
+        attribute storageError : ImportError[0..1] {
+            doc /* storageUnavailable while the recordings cannot be read or written;
                  absent otherwise. */
         }
         item running : ImportView[0..1] {
-            doc /* The import that has not ended, without its recording_id. */
+            doc /* The import that has not ended, without its recordingId. */
         }
     }
     item def ReceiveBusy {

@@ -145,17 +145,17 @@ package WstxValueOrder {
         doc /* Whether one NewWhat is new for a sender, in one NewPer, by one Needed.
              Ranking asks the log for the WorkedSet of the strategy's WorkedSince: a
              DateWindow without dates for 'all', the current UTC date twice for today,
-             the two dates for from_to.
+             the two dates for fromTo.
              The key is looked up in the WorkedSet by its WorkedCategory. dxcc,
-             cq_zone, itu_zone and continent take the key from the sender's entity
+             cqZone, ituZone and continent take the key from the sender's entity
              (EntityAnswer); grid takes the first four characters of a locator in the
              message.
              The scope ever is every QSO of the set; band is the station's band in any
-             mode; band_mode is that band in the operating mode.
-             not_worked holds when the Standing of the key in the scope is not worked;
-             not_confirmed when it is not worked or not confirmed.
+             mode; bandMode is that band in the operating mode.
+             notWorked holds when the Standing of the key in the scope is not worked;
+             notConfirmed when it is not worked or not confirmed.
              Nothing is new: for the entity keys while the sender has no entity; in
-             the scopes band and band_mode while the station's band is unknown; for
+             the scopes band and bandMode while the station's band is unknown; for
              grid when the message has no locator, and when the set says that a QSO
              with the sender has no grid; and for every key while ranking has no
              WorkedSet. */
@@ -226,7 +226,7 @@ package WstxValueOrder {
              list". CqTargetListRule holds: "CQ target".
              The why of a candidate is "new: " with the names of the NewWhat that are
              new, and " on <band>" for the scope band or " on <band> <MODE>" for
-             band_mode. */
+             bandMode. */
     }
 
     attribute def CallerOfMyCall {
@@ -347,24 +347,24 @@ package WstxValueOrder {
              callersFirst on, the callers, and then the candidates. Within each of these
              groups the records are ordered as follows.
              Then the criteria of RankingKeys::order, each as its ValueCriterion says:
-             most_wanted: a sender whose entity is on the Most Wanted list before one
+             mostWanted: a sender whose entity is on the Most Wanted list before one
              that is not, the lower rank of the list first
              (WstxMostWanted::MostWantedListRule);
-             new_dxcc, new_dxcc_band, new_dxcc_band_mode, new_call, new_call_band,
-             new_grid, new_grid_band, new_cq_zone, new_itu_zone, new_continent,
-             new_prefix: a sender for which that NewWhat is new before one for which
+             newDxcc, newDxccBand, newDxccBandMode, newCall, newCallBand,
+             newGrid, newGridBand, newCqZone, newItuZone, newContinent,
+             newPrefix: a sender for which that NewWhat is new before one for which
              it is not, by NewNeeded in the scope the name ends with, ever without an
              ending, and with the strategy's newMeans and workedSince;
-             snr_bucket: an SNR above snrBucketUpperDb, then one from snrBucketLowerDb
+             snrBucket: an SNR above snrBucketUpperDb, then one from snrBucketLowerDb
              up to it, then one below, then an unknown one; equal within a group;
              snr: the stronger first, an unknown SNR last;
              distance: the farther first by StationDistance, an unknown one last;
-             hears_us: a sender whose call is in HeardByReport::heardBy before one
+             hearsUs: a sender whose call is in HeardByReport::heardBy before one
              that is not; equal while HeardByReport::inUse is false.
              After the criteria always the SNR, the stronger first and an unknown one
              last; then the lower audio frequency, an unknown one last; then the call
              in the order of its characters.
-             A record ranked while most_wanted is a criterion and its entity is on
+             A record ranked while mostWanted is a criterion and its entity is on
              the list has " · Most Wanted #" and the rank of the list at the end of
              its why. */
         attribute snrBucketUpperDb : Integer = 0;

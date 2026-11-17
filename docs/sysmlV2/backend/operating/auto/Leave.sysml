@@ -40,7 +40,7 @@ package WstxLeave {
              The leave mode of AutoKeys decides.
              calls: the station is left at the repetition that makes leaveCalls, or
              leaveCallsHeard while the station hears the profile's call (TargetReport).
-             until_logged: the station is left at the first publication of its parity
+             untilLogged: the station is left at the first publication of its parity
              whose period starts goneMinutes or more after its newest decode, also after
              its answer, and in which it is not decoded.
              contest: while the station is decoded, hears the profile's call and no station
@@ -50,7 +50,7 @@ package WstxLeave {
              change point: with txChanges changes made the station is left, else one more
              change is made (and Auto asks for a move, WstxTxSlot::MoveRule).
              Leaving: Auto cancels its contact, AutoActivity::left names the station and
-             the reason (repetitions, gone, tx_changes), and the station's retry pause
+             the reason (repetitions, gone, txChanges), and the station's retry pause
              starts. Auto picks from the same publication; with nothing that can be called
              it counts for the CQ wait.
              The retry pause lasts retryMinutes. During it the station is neither called

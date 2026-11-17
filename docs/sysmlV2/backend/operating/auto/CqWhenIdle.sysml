@@ -29,7 +29,7 @@ package WstxCqWhenIdle {
         doc /* When Auto calls CQ, and how its CQ goes on.
              With AutoKeys::cqWhenIdle on, Auto, waiting with no reason, counts the fresh
              complete publications in which nothing can be called, of every period of
-             either parity. At AutoKeys::cqWaitPeriods of them it calls CQ (call_cq).
+             either parity. At AutoKeys::cqWaitPeriods of them it calls CQ (callCq).
              The count starts at 0 at a
              switchOn, after a QSO, after a leaving, and after every end of Auto's CQ that
              leaves Auto on. The publication in which Auto's contact completed or its

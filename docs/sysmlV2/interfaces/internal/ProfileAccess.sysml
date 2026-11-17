@@ -42,9 +42,9 @@ package WstxProfileAccess {
     enum def ConnectionType {
         doc /* How the station reaches its radio.
              'standard': through a sound device, and CAT where it is set.
-             native_flex: through the native interface of a FlexRadio. */
+             nativeFlex: through the native interface of a FlexRadio. */
         enum 'standard';
-        enum native_flex;
+        enum nativeFlex;
     }
     attribute def ProfileLimits {
         doc /* The bounds of a saved profile. */
@@ -54,7 +54,7 @@ package WstxProfileAccess {
         }
         attribute profileHttpMaxBytes : Integer = 8192 {
             doc /* The largest ProfileSnapshot, written as compact JSON with the origin
-                 of the station as its endpoint and without schema_version. */
+                 of the station as its endpoint and without schemaVersion. */
         }
         attribute displayNameMaxBytes : Integer = 64;
     }
@@ -74,7 +74,7 @@ package WstxProfileAccess {
     attribute def ProfileConfig {
         doc /* The profile's own configuration: what is set of this station itself. No
              value is altered on the way in: a value outside its rule is refused. */
-        attribute display_name : String = "No radio" {
+        attribute displayName : String = "No radio" {
             doc /* The station's name, shown wherever the station is named: in the
                  browser, as the UDP instance name and to an agent. The operator chooses
                  it when the radio is defined, as WSJT-X's rig name: the station offers
@@ -87,7 +87,7 @@ package WstxProfileAccess {
                  or end. */
         }
         attribute endpoint : Endpoint;
-        attribute connection_type : ConnectionType = ConnectionType::'standard' {
+        attribute connectionType : ConnectionType = ConnectionType::'standard' {
             doc /* Chosen when the profile is created. No save changes it. */
         }
     }
@@ -112,7 +112,7 @@ package WstxProfileAccess {
                  has no continent, neither set nor derived, the operator is shown an
                  error message that asks the operator to set it. */
         }
-        attribute cq_words : String[0..*] {
+        attribute cqWords : String[0..*] {
             doc /* The CQ words for this station: a CQ that carries one of them after CQ
                  is for the station (WstxValueOrder::DirectedCqRule). Each is a word of
                  1 to 8 characters of A to Z and 0 to 9, and stands once. Settings
@@ -135,14 +135,14 @@ package WstxProfileAccess {
                 + "configuration: WstxRadioControl::NativeControlPort names no item "
                 + "that carries it, so its three values are defined here";
         }
-        attribute client_id : String {
+        attribute clientId : String {
             doc /* The identity under which this station registers with the radio: a
                  UUID of version 4 in lower case, made when the profile is created. */
         }
-        attribute rx_antenna : String {
+        attribute rxAntenna : String {
             doc /* The receive antenna: 1 to 16 characters of A to Z, 0 to 9 and "_". */
         }
-        attribute radio_address : String[0..1] {
+        attribute radioAddress : String[0..1] {
             doc /* Where the radio is reached when it cannot be found by itself: an IPv4
                  address and a port other than 0. Absent: the radio is looked for. */
         }
@@ -159,7 +159,7 @@ package WstxProfileAccess {
         attribute receive : ReceiveConfig;
         attribute qso : QsoConfig;
         attribute native : NativeIntent[0..1] {
-            doc /* Present exactly with ConnectionType::native_flex. */
+            doc /* Present exactly with ConnectionType::nativeFlex. */
         }
     }
     attribute def ShackSettings {
@@ -177,13 +177,14 @@ package WstxProfileAccess {
     attribute def ShackDocument {
         doc /* The shack's saved settings: the content of the file shack.json in
              the shack's folder, one JSON object of UTF-8 with the keys
-             schema_version, revision, callsign, locator, continent and cq_words of
+             schemaVersion, revision, callsign, locator, continent and cqWords of
              ShackConfig, and spots, udp, auto, qso, frequencies and log for the
-             configurations of these parts,
-             each an object with the names of its values as keys. continent is left out
-             when absent. A key that is absent, given twice or not named, a value of
-             another type and a value outside its rule make the file unusable. */
-        attribute schema_version : Integer = 1;
+             configurations of these parts, each an object with the names of its values
+             as keys; every name is written as WstxStationLink::WireNames says.
+             continent is left out when absent. A key that is absent, given twice or not
+             named, a value of another type and a value outside its rule make the file
+             unusable. */
+        attribute schemaVersion : Integer = 1;
         attribute revision : Integer = 0 {
             doc /* The count of the saves of the file. */ }
         attribute settings : ShackSettings;
@@ -202,26 +203,26 @@ package WstxProfileAccess {
         attribute strategies : Strategy[0..*] ordered;
     }
     attribute def ProfileDocument {
-        doc /* The saved profile of one station: its identity and its station config. It is the
-        content of the file profile.json: one JSON
-             object of UTF-8.
-             The object has the keys schema_version and profile_id; the keys
-             display_name, endpoint and connection_type of ProfileConfig; audio for
+        doc /* The saved profile of one station: its identity and its station config. It is
+             the content of the file profile.json: one JSON object of UTF-8; every name
+             in it is written as WstxStationLink::WireNames says.
+             The object has the keys schemaVersion and profileId; the keys
+             displayName, endpoint and connectionType of ProfileConfig; audio for
              AudioConfig; control for RadioConfig::control and, for a managed radio,
              radio for RadioConfig::agc; transmit, receive and qso for the configurations
              of these parts, each an object with the names of its values as keys; and
              native for the native connection. A file that also holds revision,
-             callsign, locator, continent, cq_words, spots or udp is read without them:
+             callsign, locator, continent, cqWords, spots or udp is read without them:
              their values are not taken over.
              A key that is absent, given twice or not named, a value of another type
              and a value outside its rule make the file no valid profile. null is
-             written for an absent input_device, output_device, control endpoint and
-             origin; radio, native and radio_address are left out when absent, and a
+             written for an absent inputDevice, outputDevice, control endpoint and
+             origin; radio, native and radioAddress are left out when absent, and a
              null in their place is not valid. */
-        attribute schema_version : Integer = 1 {
-            doc /* 1 with the connection type 'standard', 2 with native_flex. */
+        attribute schemaVersion : Integer = 1 {
+            doc /* 1 with the connection type 'standard', 2 with nativeFlex. */
         }
-        attribute profile_id : String {
+        attribute profileId : String {
             doc /* The identity of the profile: a UUID of version 4 in lower case, made
                  when the profile is created. No save changes it. */
         }
@@ -244,26 +245,26 @@ package WstxProfileAccess {
         attribute folder : String;
         attribute native : NativeIntent[0..1] {
             doc /* For a profile of the native connection: the receive antenna and at
-                 most an address (WstxProfileDocument::NativeProfile); its client_id is
+                 most an address (WstxProfileDocument::NativeProfile); its clientId is
                  made by the profile. */ }
     }
     item def ProfileCreated { doc /* The profile is made. */ }
     enum def OpenRefusal {
         doc /* Why the profile cannot be opened or made. Nothing has been changed.
-             resource_unavailable: the folder, a file or a lock cannot be had.
-             invalid_profile: profile.json is not a ProfileDocument.
-             invalid_runtime_configuration: the NativeIntent of a CreateRequest is
+             resourceUnavailable: the folder, a file or a lock cannot be had.
+             invalidProfile: profile.json is not a ProfileDocument.
+             invalidRuntimeConfiguration: the NativeIntent of a CreateRequest is
              outside its rules.
-             unsupported_schema: the schema_version is none the station knows.
-             unsupported_connection_type: the connection type does not go with the
-             schema_version.
-             profile_in_use: another station process holds the profile. */
-        enum resource_unavailable;
-        enum invalid_profile;
-        enum invalid_runtime_configuration;
-        enum unsupported_schema;
-        enum unsupported_connection_type;
-        enum profile_in_use;
+             unsupportedSchema: the schemaVersion is none the station knows.
+             unsupportedConnectionType: the connection type does not go with the
+             schemaVersion.
+             profileInUse: another station process holds the profile. */
+        enum resourceUnavailable;
+        enum invalidProfile;
+        enum invalidRuntimeConfiguration;
+        enum unsupportedSchema;
+        enum unsupportedConnectionType;
+        enum profileInUse;
     }
     item def OpenRefused { attribute reason : OpenRefusal; }
     item def ProfileFolder {
@@ -315,7 +316,7 @@ package WstxProfileAccess {
         doc /* Save this station config in the place of the saved one. It is the one way
              a change of a setting takes: the operator's change reaches the supervisor,
              which brings it here.
-             ProfileConfig::endpoint, ProfileConfig::connection_type and
+             ProfileConfig::endpoint, ProfileConfig::connectionType and
              StationConfig::native are not taken from it. Without RadioConfig::agc for
              a managed radio, the saved one stays. */
         attribute config : StationConfig;
@@ -446,30 +447,30 @@ package WstxProfileAccess {
     }
     enum def SaveRefusal {
         doc /* Why a save is refused. A refused save changes nothing.
-             invalid_settings: a value of the settings is outside its rule.
-             audio_device_not_endpoint: an audio device is no endpoint id of its
+             invalidSettings: a value of the settings is outside its rule.
+             audioDeviceNotEndpoint: an audio device is no endpoint id of its
              direction.
-             revision_conflict: a SaveShack or a command for a collection was made
+             revisionConflict: a SaveShack or a command for a collection was made
              from another revision than that of its shared file.
-             storage_unavailable: the file cannot be written.
-             entry_exists: a CreateEntry, or an UpdateEntry to another key, names a key
+             storageUnavailable: the file cannot be written.
+             entryExists: a CreateEntry, or an UpdateEntry to another key, names a key
              the collection holds.
-             entry_unknown: an UpdateEntry or a DeleteEntry names a key the collection
+             entryUnknown: an UpdateEntry or a DeleteEntry names a key the collection
              does not hold.
-             collection_full: a CreateEntry for a collection that holds as many members
+             collectionFull: a CreateEntry for a collection that holds as many members
              as its rules allow.
-             download_failed: an UpdateMostWanted or an UpdateCountryFile got no list or
+             downloadFailed: an UpdateMostWanted or an UpdateCountryFile got no list or
              no file.
-             invalid_country_file: the downloaded text does not read as a country file. */
-        enum invalid_settings;
-        enum audio_device_not_endpoint;
-        enum revision_conflict;
-        enum storage_unavailable;
-        enum entry_exists;
-        enum entry_unknown;
-        enum collection_full;
-        enum download_failed;
-        enum invalid_country_file;
+             invalidCountryFile: the downloaded text does not read as a country file. */
+        enum invalidSettings;
+        enum audioDeviceNotEndpoint;
+        enum revisionConflict;
+        enum storageUnavailable;
+        enum entryExists;
+        enum entryUnknown;
+        enum collectionFull;
+        enum downloadFailed;
+        enum invalidCountryFile;
     }
     item def SaveRefused {
         doc /* The answer to a SaveProfile, a SaveShack, a CreateEntry, an
@@ -477,14 +478,14 @@ package WstxProfileAccess {
              profile does not carry out. */
         attribute reason : SaveRefusal;
         attribute field : String[0..1] {
-            doc /* For invalid_settings and audio_device_not_endpoint, the value that
-                 is outside its rule, by its key in the file: display_name, callsign,
-                 locator, audio.input_device, audio.output_device, control.mode,
+            doc /* For invalidSettings and audioDeviceNotEndpoint, the value that
+                 is outside its rule, by its key in the file: displayName, callsign,
+                 locator, audio.inputDevice, audio.outputDevice, control.mode,
                  control.endpoint, control.ptt or radio; for a member, by its keys as
              its part names them. */
         }
         attribute detail : String[0..1] {
-            doc /* For download_failed: what failed; for invalid_country_file: the line,
+            doc /* For downloadFailed: what failed; for invalidCountryFile: the line,
                  counted from 1. */ }
     }
 

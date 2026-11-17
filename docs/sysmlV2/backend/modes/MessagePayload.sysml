@@ -36,7 +36,7 @@ package WstxMessagePayload {
              A payload of any other family has the fields of its variant of
              PayloadFields and the status decoded.
              A payload of a supported family whose content is outside the domain of that
-             family has the status invalid_payload.
+             family has the status invalidPayload.
              A standard message whose grid field holds RR73 has the exchange roger RR73.
              The Field Day sections and the RTTY states and provinces are the tables of
              WSJT-X. */

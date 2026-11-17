@@ -32,22 +32,22 @@ package WstxStationCommands {
     }
     enum def StationRefusal {
         doc /* Why the supervisor refuses a command before it reaches a function.
-             wrong_profile: the command names another profile.
-             state_conflict: it names another start of the station process, or a profile
+             wrongProfile: the command names another profile.
+             stateConflict: it names another start of the station process, or a profile
              revision the station has left.
-             swr_fault: an agent's start, Tune or Auto on while the SWR barrier holds
+             swrFault: an agent's start, Tune or Auto on while the SWR barrier holds
              (WstxStationAuthority::SwrBarrier).
-             auto_on: a command for the contact while Auto is on
+             autoOn: a command for the contact while Auto is on
              (WstxStationAuthority::AutoOnRule).
-             audio_unconfigured: a live start on a profile without an input device.
-             radio_unavailable: a live start on a profile of a radio's native connection
+             audioUnconfigured: a live start on a profile without an input device.
+             radioUnavailable: a live start on a profile of a radio's native connection
              whose session is not ready. */
-        enum wrong_profile;
-        enum state_conflict;
-        enum swr_fault;
-        enum auto_on;
-        enum audio_unconfigured;
-        enum radio_unavailable;
+        enum wrongProfile;
+        enum stateConflict;
+        enum swrFault;
+        enum autoOn;
+        enum audioUnconfigured;
+        enum radioUnavailable;
     }
     item def StationRefused :> StationOutcome {
         doc /* A command refused by the supervisor. Nothing has changed. */
@@ -90,18 +90,29 @@ package WstxStationCommands {
         enum '10m';
         enum '6m';
         enum '4m';
+        enum '2m';
+        enum '1.25m';
+        enum '70cm';
+        enum '23cm';
+    }
+    enum def IaruRegion {
+        doc /* An IARU region; 'all' stands for every region. */
+        enum 'all';
+        enum r1;
+        enum r2;
+        enum r3;
     }
     enum def NominalOrigin {
         doc /* Where the dial frequency of the selection comes from.
              unknown: there is none.
              manual: a selection without radio control; the dial is not known to be there.
-             cat_readback: radio control set it and read it back, or read it
+             catReadback: radio control set it and read it back, or read it
              (WstxOperatingSelection::ReadbackRule).
-             native_readback: the radio's native session tuned to it and confirmed it. */
+             nativeReadback: the radio's native session tuned to it and confirmed it. */
         enum unknown;
         enum manual;
-        enum cat_readback;
-        enum native_readback;
+        enum catReadback;
+        enum nativeReadback;
     }
     attribute def OperatingSelection {
         doc /* The mode, band and dial frequency the station operates on. Band and dial
@@ -133,6 +144,7 @@ package WstxStationCommands {
         attribute nominalHz : Integer {
             doc /* Within the band's limits as ADIF gives them. A mode, band and frequency
                  stand once in the list. */ }
+        attribute region : IaruRegion { doc /* The region the frequency is used in. */ }
     }
     attribute def WorkingFrequencies {
         doc /* The supervisor's part of the shack's settings
@@ -140,6 +152,9 @@ package WstxStationCommands {
         attribute entries : WorkingFrequency[0..200] ordered {
             doc /* At first, and after ResetFrequencies, WSJT-X's default list
                  (WstxOperatingSelection::BandFrequency). */ }
+        attribute region : IaruRegion = IaruRegion::'all' {
+            doc /* The station's IARU region, as the operator sets it: the station uses the
+                 entries of this region and of the region 'all'; with 'all', every entry. */ }
     }
     item def CancelSelection :> StationRequest {
         doc /* End a selection, or keep one from being carried out
@@ -154,14 +169,14 @@ package WstxStationCommands {
              restarting: the selection is set and receive starts again.
              applied: done.
              failed: it ended with an error.
-             release_blocked: receive did not give up its job.
+             releaseBlocked: receive did not give up its job.
              cancelled: it was cancelled. */
         enum releasing;
         enum applying;
         enum restarting;
         enum applied;
         enum failed;
-        enum release_blocked;
+        enum releaseBlocked;
         enum cancelled;
     }
     enum def SelectionResult {
@@ -172,40 +187,40 @@ package WstxStationCommands {
     }
     enum def SelectionError {
         doc /* Why a selection is refused, or ended without success.
-             select_band_first: a mode with no band known.
-             selection_unavailable: the band has no frequency for the mode, or radio
+             selectBandFirst: a mode with no band known.
+             selectionUnavailable: the band has no frequency for the mode, or radio
              control has no such operation for this radio.
              busy: another selection, an import or a replay has not ended; a mode while
              the transmitter is keyed, plays or tunes; radio control kept by another
              exchange.
-             radio_unavailable: the radio connection is not ready, the radio transmits,
+             radioUnavailable: the radio connection is not ready, the radio transmits,
              or the native session is not ready.
-             counter_exhausted: the operating revision has reached its end.
-             operation_superseded: a later selection or cancel has come after the one a
+             counterExhausted: the operating revision has reached its end.
+             operationSuperseded: a later selection or cancel has come after the one a
              cancel names.
-             state_conflict: the profile was saved while the selection ran.
-             release_failed: receive did not give up its job.
-             audio_unconfigured: the profile names no input device.
-             audio_unavailable: receive could not start again.
-             cancelled, radio_timeout, radio_rejected, readback_mismatch,
-             radio_failed_close, invalid_request: radio control's error
+             stateConflict: the profile was saved while the selection ran.
+             releaseFailed: receive did not give up its job.
+             audioUnconfigured: the profile names no input device.
+             audioUnavailable: receive could not start again.
+             cancelled, radioTimeout, radioRejected, readbackMismatch,
+             radioFailedClose, invalidRequest: radio control's error
              (WstxOperatingSelection::SelectionRule). */
-        enum select_band_first;
-        enum selection_unavailable;
+        enum selectBandFirst;
+        enum selectionUnavailable;
         enum busy;
-        enum radio_unavailable;
-        enum counter_exhausted;
-        enum operation_superseded;
-        enum state_conflict;
-        enum release_failed;
-        enum audio_unconfigured;
-        enum audio_unavailable;
+        enum radioUnavailable;
+        enum counterExhausted;
+        enum operationSuperseded;
+        enum stateConflict;
+        enum releaseFailed;
+        enum audioUnconfigured;
+        enum audioUnavailable;
         enum cancelled;
-        enum radio_timeout;
-        enum radio_rejected;
-        enum readback_mismatch;
-        enum radio_failed_close;
-        enum invalid_request;
+        enum radioTimeout;
+        enum radioRejected;
+        enum readbackMismatch;
+        enum radioFailedClose;
+        enum invalidRequest;
     }
     attribute def RequestedSelection {
         attribute mode : Mode;
@@ -233,7 +248,7 @@ package WstxStationCommands {
     enum def CancelResult {
         enum cancelled;
         enum fenced;
-        enum already_cancelled;
+        enum alreadyCancelled;
     }
     attribute def SelectionCancellation {
         doc /* The latest cancel accepted since station start. */
@@ -308,7 +323,8 @@ package WstxStationCommands {
                  from 0. */ }
         attribute selection : OperatingSelection;
         attribute availableBands : OperatingBand[0..*] ordered {
-            doc /* The bands with a frequency for the mode of the selection. */ }
+            doc /* The bands with a frequency for the mode of the selection
+                 (WstxOperatingSelection::BandFrequency). */ }
         attribute operation : SelectionOperation[0..1];
         attribute cancellation : SelectionCancellation[0..1];
     }
@@ -330,14 +346,14 @@ package WstxStationCommands {
              idle: there is nothing to resume.
              waiting: it waits for the radio.
              started: receive runs on the remembered band and mode.
-             started_untuned: receive runs in the remembered mode on the radio's present
+             startedUntuned: receive runs in the remembered mode on the radio's present
              dial.
              skipped: receive was started by a command before the resume.
              failed: receive could not be started. */
         enum idle;
         enum waiting;
         enum started;
-        enum started_untuned;
+        enum startedUntuned;
         enum skipped;
         enum failed;
     }
@@ -345,7 +361,7 @@ package WstxStationCommands {
         doc /* The resume of this start, given at every change. */
         attribute 'state' : ResumeState;
         attribute error : String[0..1] {
-            doc /* With failed: the error of receive or audio_unconfigured. */ }
+            doc /* With failed: the error of receive or audioUnconfigured. */ }
         attribute lastReceive : ReceiveChoice[0..1];
     }
 

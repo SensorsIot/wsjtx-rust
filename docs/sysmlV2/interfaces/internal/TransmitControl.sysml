@@ -183,13 +183,13 @@ package WstxTransmitControl {
     item def TransmitOutcome {
         doc /* One step in the life of a request. Transmit gives one for every change;
              no outcome is made from a lost answer or a wait that ran out. */
-        attribute outcome_sequence : Integer {
+        attribute outcomeSequence : Integer {
             doc /* Counts the outcomes since station start, from 1. */ }
-        attribute request_sequence : Integer;
+        attribute requestSequence : Integer;
         attribute kind : OutcomeKind;
         attribute refusal : TransmitRefusal[0..1] { doc /* Present for refused. */ }
         attribute failure : TransmitFailure[0..1] { doc /* Present for failed. */ }
-        attribute audio_start_utc_ms : Integer[0..1] {
+        attribute audioStartUtcMs : Integer[0..1] {
             doc /* The station time at which the audio started. Present for started and
                  completed, and for failed when the audio had started. */ }
     }
@@ -236,7 +236,7 @@ package WstxTransmitControl {
     }
     item def HaltReceipt {
         doc /* The answer to Halt. */
-        attribute halt_state : HaltState;
+        attribute haltState : HaltState;
     }
     item def SetTune {
         doc /* Switch the Tune tone on or off. */
@@ -293,40 +293,40 @@ package WstxTransmitControl {
     item def TransmitStatus {
         doc /* The state of transmit at the moment it is read. */
         attribute capability : Capability;
-        attribute arm_state : ArmState;
-        attribute last_disarm_cause : DisarmCause;
-        attribute last_arm_cause : ArmCause[0..1] {
+        attribute armState : ArmState;
+        attribute lastDisarmCause : DisarmCause;
+        attribute lastArmCause : ArmCause[0..1] {
             doc /* Absent until the state was first switched on. */ }
-        attribute stopped_in_step : Boolean {
+        attribute stoppedInStep : Boolean {
             doc /* True when the state was switched off since the last StepBegins. */ }
         attribute tune : Boolean { doc /* True while the tone is on. */ }
-        attribute pending_sequence : Integer[0..1] {
+        attribute pendingSequence : Integer[0..1] {
             doc /* The request that waits: the one for a later period, else the one
                  whose audio has not started. Absent without one. */ }
-        attribute last_text : String[0..1] {
+        attribute lastText : String[0..1] {
             doc /* The message last put on the air, as a receiver shows it. */ }
-        attribute last_tx_offset_hz : Integer[0..1] {
-            doc /* The Tx offset of last_text. */ }
-        attribute last_period_utc_ms : Integer[0..1] {
+        attribute lastTxOffsetHz : Integer[0..1] {
+            doc /* The Tx offset of lastText. */ }
+        attribute lastPeriodUtcMs : Integer[0..1] {
             doc /* The start, in station time, of the period of the transmission whose
                  audio started last. Absent before the first one. */ }
-        attribute halt_state : HaltState;
+        attribute haltState : HaltState;
         attribute refusal : TransmitRefusal[0..1] {
             doc /* The latest refusal. Absent after a request, an Arm or a tone was
                  accepted. */ }
         attribute ptt : PttState;
         attribute transmitting : Boolean {
             doc /* True while the audio of a transmission runs or the tone is on. */ }
-        attribute on_air : Boolean {
+        attribute onAir : Boolean {
             doc /* True while ptt is not released, the audio of a transmission runs or
-                 the tone is on. The supervisor gives it, with last_period_utc_ms,
+                 the tone is on. The supervisor gives it, with lastPeriodUtcMs,
                  to receive. */ }
-        attribute tune_remaining_seconds : Integer {
+        attribute tuneRemainingSeconds : Integer {
             doc /* What is left of the running tone before its limit, rounded up; 0
                  without one. */ }
         item outcomes : TransmitOutcome[0..*] ordered {
             doc /* The latest outcomes, the oldest first. */ }
-        attribute startup_release : StartupRelease;
+        attribute startupRelease : StartupRelease;
     }
 
     enum def AlcKnown {
@@ -341,46 +341,37 @@ package WstxTransmitControl {
     enum def LevelResult {
         doc /* How the last finding of the level with the Tune tone ended.
              stored: the ALC rose; the level one step below is stored.
-             max_without_alc: the highest level was reached without it; it is stored.
-             no_alc: the radio refused the ALC reading.
-             high_swr: the SWR reached the fault value.
+             maxWithoutAlc: the highest level was reached without it; it is stored.
+             noAlc: the radio refused the ALC reading.
+             highSwr: the SWR reached the fault value.
              aborted: Halt, the tone's limit or another end of the tone.
-             radio_unavailable: the meters could not be read.
-             storage_unavailable: the level found did not come back as saved
+             radioUnavailable: the meters could not be read.
+             storageUnavailable: the level found did not come back as saved
              (LevelFound). */
         enum stored;
-        enum max_without_alc;
-        enum no_alc;
-        enum high_swr;
+        enum maxWithoutAlc;
+        enum noAlc;
+        enum highSwr;
         enum aborted;
-        enum radio_unavailable;
-        enum storage_unavailable;
+        enum radioUnavailable;
+        enum storageUnavailable;
     }
     enum def LevelWarning {
         doc /* Trouble of the Tx signal that lasts (LevelMonitor in the transmit part).
-             alc_high: the ALC is high.
-             po_low: the output power is far below the output power of the band.
-             swr_high: the SWR is high.
-             swr_fault: the SWR stopped the station. */
-        enum alc_high;
-        enum po_low;
-        enum swr_high;
-        enum swr_fault;
-    }
-    attribute def MeterView {
-        doc /* The meters of the radio as last read. */
-        attribute alc : Integer[0..1] {
-            doc /* The ALC in percent of the radio's ALC zone. Absent when the radio
-                 refused the reading. */ }
-        attribute po_pct : Integer[0..1] {
-            doc /* The output power in percent of the radio's full scale. */ }
-        attribute swr_x10 : Integer[0..1] { doc /* Ten times the SWR. */ }
+             alcHigh: the ALC is high.
+             poLow: the output power is far below the output power of the band.
+             swrHigh: the SWR is high.
+             swrFault: the SWR stopped the station. */
+        enum alcHigh;
+        enum poLow;
+        enum swrHigh;
+        enum swrFault;
     }
     item def TxLevelStatus {
         doc /* The audio drive and its supervision, at the moment it is read. */
         attribute managed : Boolean { doc /* TransmitProfile::levelManaged. */ }
         attribute mode : LevelMode { doc /* TransmitConfig::levelMode. */ }
-        attribute level_db : Integer {
+        attribute levelDb : Integer {
             doc /* The audio drive that counts; while the level is found, the level of
                  the tone. */ }
         attribute stored : Boolean {
@@ -396,8 +387,9 @@ package WstxTransmitControl {
                     + "as radio control gives it, which is no LevelResult";
             }
         }
-        attribute meters : MeterView[0..1] { doc /* Absent before the first reading. */ }
-        attribute power_pct : Integer[0..1] { doc /* TransmitProfile::powerPct. */ }
+        attribute meters : WstxRadioProperties::MeterReadings[0..1] {
+            doc /* The meters as last read; absent before the first reading. */ }
+        attribute powerPct : Integer[0..1] { doc /* TransmitProfile::powerPct. */ }
         attribute warnings : LevelWarning[0..*];
     }
 

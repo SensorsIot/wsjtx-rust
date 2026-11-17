@@ -18,13 +18,13 @@ package WstxRankingControl {
              dxcc: the DXCC entity of the sender.
              call: the sender's call.
              grid: the first four characters of the grid in the message.
-             cq_zone, itu_zone, continent: those of the sender's entity.
+             cqZone, ituZone, continent: those of the sender's entity.
              prefix: the prefix of the sender's call by the rules of the CQ WPX contest. */
         enum dxcc;
         enum call;
         enum grid;
-        enum cq_zone;
-        enum itu_zone;
+        enum cqZone;
+        enum ituZone;
         enum continent;
         enum prefix;
     }
@@ -32,37 +32,37 @@ package WstxRankingControl {
         doc /* The scope in which it must be new.
              ever: in any QSO.
              band: on the station's band, in any mode.
-             band_mode: on the station's band in the operating mode. */
+             bandMode: on the station's band in the operating mode. */
         enum ever;
         enum band;
-        enum band_mode;
+        enum bandMode;
     }
     enum def Needed {
         doc /* What new means.
-             not_worked: no QSO holds the key in the scope.
-             not_confirmed: no QSO holds it there, or none of them is confirmed. */
-        enum not_worked;
-        enum not_confirmed;
+             notWorked: no QSO holds the key in the scope.
+             notConfirmed: no QSO holds it there, or none of them is confirmed. */
+        enum notWorked;
+        enum notConfirmed;
     }
     enum def ValueCriterion {
         doc /* The criteria of an order. What each one puts first is said by
              WstxValueOrder::ValueOrder. */
-        enum most_wanted;
-        enum new_dxcc;
-        enum new_dxcc_band;
-        enum new_dxcc_band_mode;
-        enum new_call;
-        enum new_call_band;
-        enum new_grid;
-        enum new_grid_band;
-        enum new_cq_zone;
-        enum new_itu_zone;
-        enum new_continent;
-        enum new_prefix;
-        enum snr_bucket;
+        enum mostWanted;
+        enum newDxcc;
+        enum newDxccBand;
+        enum newDxccBandMode;
+        enum newCall;
+        enum newCallBand;
+        enum newGrid;
+        enum newGridBand;
+        enum newCqZone;
+        enum newItuZone;
+        enum newContinent;
+        enum newPrefix;
+        enum snrBucket;
         enum snr;
         enum distance;
-        enum hears_us;
+        enum hearsUs;
     }
     enum def RegionKind {
         doc /* 'all': every sender.
@@ -76,18 +76,18 @@ package WstxRankingControl {
         doc /* Which QSOs count as worked.
              'all': every QSO of the logbook.
              today: those of the current UTC date.
-             from_to: those from a first to a last date, both included. */
+             fromTo: those from a first to a last date, both included. */
         enum 'all';
         enum today;
-        enum from_to;
+        enum fromTo;
     }
     attribute def WorkedSince {
         doc /* The QSOs that count as worked for a strategy. */
         attribute kind : WindowKind;
         attribute firstDate : String[0..1] {
-            doc /* With from_to: a day of the calendar from 1930 to 2099, as YYYYMMDD. */ }
+            doc /* With fromTo: a day of the calendar from 1930 to 2099, as YYYYMMDD. */ }
         attribute lastDate : String[0..1] {
-            doc /* With from_to: as firstDate, and not before it. */ }
+            doc /* With fromTo: as firstDate, and not before it. */ }
     }
     attribute def StrategyBands {
         doc /* The bands a strategy works on: band names of the ADIF enumeration in lower
@@ -211,7 +211,7 @@ package WstxRankingControl {
                  it. */ }
         attribute cqWords : String[0..*] {
             doc /* The CQ words for this station,
-                 WstxProfileAccess::ShackConfig::cq_words. */ }
+                 WstxProfileAccess::ShackConfig::cqWords. */ }
         attribute wanted : WantedEntry[0..*] ordered {
             doc /* The wanted list, as the settings function keeps it
                  (WstxProfileAccess::DefinitionsSnapshot::wanted). */ }

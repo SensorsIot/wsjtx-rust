@@ -19,8 +19,7 @@ package WstxOperatingPart {
         @DetailTests {
             tests = "server/src/strategy_tests.rs; server/src/strategy97_tests.rs; "
                 + "server/src/contest_tests.rs";
-            covers = "the evaluator of ranking and the runs of Auto, which stand in the "
-                + "same modules";
+            covers = "the strategies, their rules, the built-ins and the contests";
         }
         port control : ~StrategiesPort;
         port rankingShare : RankingSharePort;

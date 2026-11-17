@@ -47,8 +47,8 @@ package WstxStandardQso {
              its Tx4 form, each text already sent and, once a Tx2 or Tx3 was sent, the
              report; the state and the message due come from the record.
              A contact in progress is replaced only with replace (ReplaceRule); otherwise
-             the command is refused contact_active. A profile without callsign or locator
-             is profile_incomplete; a record without a partner row_not_standard. A station
+             the command is refused contactActive. A profile without callsign or locator
+             is profileIncomplete; a record without a partner rowNotStandard. A station
              that cannot transmit prepares contacts as any. */
     }
 
@@ -67,8 +67,8 @@ package WstxStandardQso {
              after completed or cancelled change nothing.
              While Auto Seq is on and transmission is on, a counted message sets the state
              and the message due, in every state from replying to signoff:
-             his grid: report, Tx2; his report: roger_report, Tx3; his R-report: rogers,
-             Tx4; his RRR or RR73: signoff, Tx5; his 73 in roger_report: signoff, Tx5; his
+             his grid: report, Tx2; his report: rogerReport, Tx3; his R-report: rogers,
+             Tx4; his RRR or RR73: signoff, Tx5; his 73 in rogerReport: signoff, Tx5; his
              73 in rogers: completed, nothing more is sent. Every other message changes
              nothing.
              While Auto Seq is off, or transmission is off, a counted message changes
@@ -107,7 +107,7 @@ package WstxStandardQso {
 
     attribute def ReopenRule {
         doc /* ChooseNext of Tx1 to Tx5 with a text sets the state of that slot (Tx1
-             replying, Tx2 report, Tx3 roger_report, Tx4 rogers, Tx5 signoff), also on a
+             replying, Tx2 report, Tx3 rogerReport, Tx4 rogers, Tx5 signoff), also on a
              completed contact, which is then in progress again with its partner, messages
              and dialogue. It transmits nothing by itself. Tx6 on a completed or cancelled
              contact makes the CQ due and leaves the state. A contact completed again is
@@ -130,7 +130,7 @@ package WstxStandardQso {
              transmission on), the first counted message to the profile's call in decode
              order whose message is a grid or a report, from a standard call, is answered
              at once as a selection of that record: the contact goes to report or
-             roger_report, transmission stays on and the next own period answers him. A
+             rogerReport, transmission stays on and the next own period answers him. A
              continuing exchange (R-report, RRR, RR73, 73), a hashed or nonstandard caller
              and later callers change nothing. Off, the CQ goes on until a start.
              Auto's CQ answers callers by Auto's own rule (WstxCqWhenIdle::CqRule). */
@@ -185,7 +185,7 @@ package WstxStandardQso {
     attribute def FtModeRule {
         doc /* A contact has the station's mode at its preparation and keeps it; every request
              carries it and only records of it count. In FT4 Tx4 is always RR73
-             (SetTx4 rrr is out_of_range). The periods, the start windows and the waveform
+             (SetTx4 rrr is outOfRange). The periods, the start windows and the waveform
              are transmit's and modes'. */
         @FollowsSource { reference = "WSJT-X at the behaviour baseline: FT4 Tx4 RR73"; }
     }
@@ -216,11 +216,11 @@ package WstxStandardQso {
 
     attribute def DirectedCqRule {
         doc /* A SelectRow or Reply of a CQ that WstxValueOrder::DirectedCqRule leaves to
-             others is refused directive_not_answerable with the reason (as "CQ NA - not
+             others is refused directiveNotAnswerable with the reason (as "CQ NA - not
              for EU") unless it carries directiveConfirmed; nothing is prepared. A CQ with
              the CQ word of the activity in force needs no confirmation; a word on the
              strategy's CQ target list still needs it. Auto's reply needs none: ranking
-             gives Auto only callable stations. The check comes before contact_active. */
+             gives Auto only callable stations. The check comes before contactActive. */
     }
 
     requirement 'CL-097-06' {
@@ -273,7 +273,7 @@ package WstxStandardQso {
              completes is not given to the log: it waits as QsoState::logPending. ConfirmLog
              gives it to the log as HandOverRule says; DiscardLog drops it, and nothing is
              logged. At most one contact waits: a start by the operator while one waits is
-             refused with log_pending. A contact Auto started is given to the log at its
+             refused with logPending. A contact Auto started is given to the log at its
              completion whatever the setting. */
     }
 

@@ -45,20 +45,20 @@ package WstxMcp {
     attribute def ToolRule {
         doc /* The tools are the second form of WstxStationCommands::StationOperations; their
              names and keys follow WstxStationLink::WireNames.
-             wstx_read, read-only: its argument name is a view or a read, by the feature's
+             wstxRead, read-only: its argument name is a view or a read, by the feature's
              name; arguments holds a read's attributes. Its result is the view or the read's
              answer.
              One tool per function that has commands, wstx_ and the function's name: its
              argument command names the command by its feature's name; its other arguments
-             are profile_id, boot_id and command_id of the StationRequest and the attributes
+             are profileId, bootId and commandId of the StationRequest and the attributes
              of the command's item, exactly those. The bytes of a file go as base64.
              Each tool's input schema lists exactly these arguments per command, with no
              other property.
              The requester of every command is agent. An argument that is missing, unknown or
-             of the wrong type is a tool error with status 400 and invalid_request with the
+             of the wrong type is a tool error with status 400 and invalidRequest with the
              field, and reaches no function.
              The server names the station: its title and its instructions carry the
-             station's display_name and profile id, so that an agent given the addresses of
+             station's displayName and profile id, so that an agent given the addresses of
              several stations tells them apart. */
         @FollowsSource { reference = "Model Context Protocol, tools/list and tools/call"; }
     }

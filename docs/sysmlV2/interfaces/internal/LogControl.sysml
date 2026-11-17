@@ -93,8 +93,8 @@ package WstxLogControl {
             doc /* The program a record taken from a file came from: 1 to 32 letters,
                  digits and "-". Absent on the station's own records. */ }
         attribute activity : String[0..1] {
-            doc /* The special activity of the contact when it was logged: field_day,
-                 rtty, eu_vhf, na_vhf, ww_digi, arrl_digi or hound; absent for none. */ }
+            doc /* The special activity of the contact when it was logged: fieldDay,
+                 rtty, euVhf, naVhf, wwDigi, arrlDigi or hound; absent for none. */ }
     }
     attribute def LogLimits {
         doc /* The limits of the log. A value at a limit is taken, one over is refused. */

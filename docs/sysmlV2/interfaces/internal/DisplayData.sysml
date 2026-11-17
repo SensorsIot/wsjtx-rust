@@ -10,8 +10,8 @@ package WstxDisplayData {
         doc /* The thin row: 128 levels over 0 to 3000 Hz for one second of samples. */
         attribute identity : JobIdentity;
         attribute sequence : Integer;
-        attribute first_frame : Integer { doc /* The first sample of the row. */ }
-        attribute end_frame : Integer {
+        attribute firstFrame : Integer { doc /* The first sample of the row. */ }
+        attribute endFrame : Integer {
             doc /* The sample after the last one of the row. A row is shorter than a
                  second only at the end of a recording. */ }
         attribute levels : Integer[128] {
@@ -19,23 +19,23 @@ package WstxDisplayData {
         attribute tx : Boolean {
             doc /* True for a row of a period the station transmitted in. */ }
         assert constraint interval {
-            sequence >= 0 and first_frame == 12000 * sequence and end_frame > first_frame
-            and end_frame <= first_frame + 12000
+            sequence >= 0 and firstFrame == 12000 * sequence and endFrame > firstFrame
+            and endFrame <= firstFrame + 12000
         }
     }
     item def DetailedSpectrumFrame {
         doc /* The detailed row: 1024 levels over 0 to 3000 Hz for 0.2 s of samples. */
         attribute identity : JobIdentity;
         attribute sequence : Integer;
-        attribute first_frame : Integer;
-        attribute end_frame : Integer {
+        attribute firstFrame : Integer;
+        attribute endFrame : Integer {
             doc /* As in SpectrumFrame; a row is shorter than 0.2 s only at the end of a
                  recording. */ }
         attribute levels : Integer[1024] { doc /* As in SpectrumFrame. */ }
         attribute tx : Boolean { doc /* As in SpectrumFrame. */ }
         assert constraint interval {
-            sequence >= 0 and first_frame == 2400 * sequence and end_frame > first_frame
-            and end_frame <= first_frame + 2400
+            sequence >= 0 and firstFrame == 2400 * sequence and endFrame > firstFrame
+            and endFrame <= firstFrame + 2400
         }
     }
 

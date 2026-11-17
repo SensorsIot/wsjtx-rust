@@ -59,14 +59,14 @@ package WstxTargetChoice {
              state holds; when it stops holding Auto picks from the next fresh complete
              publication. AutoActivity names the first reason that holds, in the order
              below.
-             no_receive: AutoContext::receiving is false.
-             auto_seq: AutoContext::autoSeq is false.
+             noReceive: AutoContext::receiving is false.
+             autoSeq: AutoContext::autoSeq is false.
              call: AutoContext::standardCall is false.
              activity: AutoContext::specialActivity is true while no contest is in force;
              a contest in force brings its own activity.
              band: the ranked list says offBand: the station's band is none of the bands of
              the strategy, or of its contest.
-             outside_period: a contest is in force (AutoStrategy::contest) and the period
+             outsidePeriod: a contest is in force (AutoStrategy::contest) and the period
              of the newest publication starts before its start or at or after its end.
              contact: AutoContext::operatorContact is true.
              clock: the last start of Auto was answered clockNotSynchronized.
@@ -151,7 +151,7 @@ package WstxTargetChoice {
 
     attribute def StartRule {
         doc /* What Auto does when a start of its own cannot go out.
-             Each reply, call_cq and send_next is answered by StartAnswer before qso
+             Each reply, callCq and sendNext is answered by StartAnswer before qso
              prepares anything. Auto never asks transmit itself.
              Blocked: clockNotSynchronized makes Auto wait with clock, busy because Tune is
              on makes it wait with tune; radioUnavailable and transmitUnsupported switch
@@ -167,7 +167,7 @@ package WstxTargetChoice {
              and Auto picks again from the next fresh complete publication with no reason;
              the station may be called again and gets no retry pause. Its CQ ends, and
              Auto calls CQ again only after a whole CQ wait. A started QSO keeps its
-             state; once no reason holds Auto sends one send_next of the message due from
+             state; once no reason holds Auto sends one sendNext of the message due from
              its next own period, and the QSO goes on under its leave rules. */
         attribute blockedBy : TransmitRefusal;
         attribute start : TargetKind;

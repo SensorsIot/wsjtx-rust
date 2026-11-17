@@ -25,7 +25,7 @@ package WstxAudioDevice {
 
     attribute def DeviceLifecycle {
         doc /* How the capture from a sound device is opened, lost and closed.
-             The device is the capture endpoint of AudioConfig::input_device.
+             The device is the capture endpoint of AudioConfig::inputDevice.
              A capture without a named endpoint is refused with SourceError::unavailable.
              The state is one of AudioState and is reported at once, also while the
              device opens or closes.

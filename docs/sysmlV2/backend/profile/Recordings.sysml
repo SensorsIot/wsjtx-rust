@@ -30,31 +30,31 @@ package WstxRecordings {
     attribute def WavForm {
         doc /* Which file is a recording. The file is read in this order, and the first
              fault found decides.
-             A file over RecordingLimits::fileBytes: recording_limit.
+             A file over RecordingLimits::fileBytes: recordingLimit.
              The file begins with RIFF, a length and WAVE, and that length plus 8 is
-             the length of the file; otherwise invalid_recording.
+             the length of the file; otherwise invalidRecording.
              Chunks follow to the end of the file, each with its name and its length;
              a chunk of odd length is followed by one byte that is not counted in it.
              Fewer than 8 bytes left for a chunk, and a chunk that reaches beyond the
-             end of the file: invalid_recording. More chunks than
-             RecordingLimits::importMaxRiffChunks: recording_limit.
+             end of the file: invalidRecording. More chunks than
+             RecordingLimits::importMaxRiffChunks: recordingLimit.
              There is one fmt chunk, before the data chunk; a second one, and one after
-             the data chunk: invalid_recording. Its length is 16 or 18; otherwise
-             unsupported_audio.
+             the data chunk: invalidRecording. Its length is 16 or 18; otherwise
+             unsupportedAudio.
              The fmt chunk names PCM (format 1), one channel, RecordingLimits::rateHz
              and 16 bits for a sample. A file that names another of these is of another
-             form: unsupported_audio, unless a fault of the build of the file is found
+             form: unsupportedAudio, unless a fault of the build of the file is found
              as well, which decides.
              A fmt chunk of this form names 2 bytes for a sample frame and 24000 bytes
              for a second, and its two further bytes, when its length is 18, are 0;
-             otherwise invalid_recording.
+             otherwise invalidRecording.
              There is one data chunk, after the fmt chunk, with an even length above
              0; a file without one, with two, with an empty one or one of odd length:
-             invalid_recording. Two of its bytes are one sample, the low byte first.
+             invalidRecording. Two of its bytes are one sample, the low byte first.
              A chunk of another name is passed over unread; it is kept with the file.
-             More samples than RecordingLimits::importMaxFrames: recording_limit.
-             A file that ends where a part of it is expected: invalid_recording. A file
-             that cannot be read for another reason: storage_unavailable. */
+             More samples than RecordingLimits::importMaxFrames: recordingLimit.
+             A file that ends where a part of it is expected: invalidRecording. A file
+             that cannot be read for another reason: storageUnavailable. */
         @FollowsSource {
             reference = "Multimedia Programming Interface and Data Specifications 1.0 "
                 + "(IBM and Microsoft): RIFF, the WAVE form and its PCM format";
@@ -66,8 +66,8 @@ package WstxRecordings {
              The recording lies in the folder recordings of the profile's folder as
              three files: the file of the import as it came, named by the id of the
              recording and .wav; its description, named by the id and .json, with
-             schema_version 1, recording_id, file_bytes, frames and rate_hz; and
-             current.json with schema_version 1 and the recording_id of the stored
+             schemaVersion 1, recordingId, fileBytes, frames and rateHz; and
+             current.json with schemaVersion 1 and the recordingId of the stored
              recording.
              A profile holds one recording or none. The recording is the one
              current.json names.
@@ -78,14 +78,14 @@ package WstxRecordings {
              Without current.json and without a file of the folder that is named by a
              UUID and .wav or .json, no recording is stored.
              In every other case the stored recording cannot be read:
-             RecordingStatus::source_error says recording_unavailable and
+             RecordingStatus::sourceError says recordingUnavailable and
              RecordingStatus::recording is absent, until an import is completed.
              At station start and after every import the profile removes each file of
              the folder that does not belong to the stored recording. While it cannot
              tell from current.json which recording is stored, it keeps every file
              named by a UUID and .wav or .json.
              A folder that cannot be made, read or cleared sets
-             RecordingStatus::storage_error to storage_unavailable; the error ends when
+             RecordingStatus::storageError to storageUnavailable; the error ends when
              the files of an import have been removed, or with a station start that
              finds the folder in order.
              An OpenRecording for the stored recording is answered with its samples as
@@ -142,13 +142,13 @@ package WstxRecordings {
              and the import is completed.
              A CancelImport in receiving or validating, and a reserved or receiving
              import that runs out of time, turn the import to cancelling with the error
-             cancelled or upload_timeout. An import runs out of time
+             cancelled or uploadTimeout. An import runs out of time
              RecordingLimits::reservationMs after its reservation while it is reserved,
              RecordingLimits::uploadIdleMs after its latest part began while it
              receives, and RecordingLimits::uploadTotalMs after its reservation in
              either state.
              A part or a step that fails turns the import to cancelling with its
-             error: the fault of WavForm, or storage_unavailable for a file that cannot
+             error: the fault of WavForm, or storageUnavailable for a file that cannot
              be written.
              cancelling: the files of the import are removed. Once they are removed
              the import is cancelled when its error is cancelled, and failed
@@ -156,8 +156,8 @@ package WstxRecordings {
              cancelling is answered with the error, and the files are removed after
              it.
              When the files cannot be removed, or are not removed in time after the
-             import turned to cancelling, the import is failed with storage_unavailable and
-             RecordingStatus::storage_error is set; the files stay until they can be
+             import turned to cancelling, the import is failed with storageUnavailable and
+             RecordingStatus::storageError is set; the files stay until they can be
              removed.
              completed, cancelled and failed are the ends of an import; ImportView
              keeps showing the import in its end.
@@ -181,20 +181,20 @@ package WstxRecordings {
         doc /* Which command of an import is carried out. A command is refused with the
              first of its reasons that holds (ImportRefused); a refused command changes
              nothing.
-             ReserveImport. busy: ReceiveBusy::notReleased. storage_unavailable:
-             RecordingStatus::storage_error is set. busy: ReceiveBusy::jobRunning, or an
+             ReserveImport. busy: ReceiveBusy::notReleased. storageUnavailable:
+             RecordingStatus::storageError is set. busy: ReceiveBusy::jobRunning, or an
              import has not ended, or the files of an import that ended are still
              being removed. An admitted reservation makes an import in the state
              reserved, in the place of the import that ended last.
-             ImportChunk. request_too_large: total is over RecordingLimits::fileBytes.
-             not_found: no import of this id. upload_timeout: the import ran out of
-             time. cancelled: the import was cancelled. state_conflict: another part of
-             the import is being taken, start is not the count of bytes taken so far,
-             or total is not the one of the first part. invalid_state: the import is
+             ImportChunk. requestTooLarge: total is over RecordingLimits::fileBytes.
+             notFound: no import of this id. uploadTimeout: the import ran out of
+             time. cancelled: the import was cancelled. stateConflict: another part of
+             the import is being taken, offset is not the count of bytes taken so far,
+             or total is not the one of the first part. invalidState: the import is
              neither reserved nor receiving.
-             CancelImport. not_found: no import of this id. invalid_state: the import
+             CancelImport. notFound: no import of this id. invalidState: the import
              is committing. An import that has ended is answered as it is.
-             ReadImport. not_found: no import of this id.
+             ReadImport. notFound: no import of this id.
              A CancelImport is answered at once, before the files of the import are
              removed. */
     }

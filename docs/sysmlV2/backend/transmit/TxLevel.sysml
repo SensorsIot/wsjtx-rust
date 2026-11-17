@@ -62,22 +62,22 @@ package WstxTxLevel {
              that is switched on (TuneTone) first finds the level of the station's band.
              The tone starts at startDb. Every settleMs transmit asks radio control for
              the meters and decides by the first of these that holds.
-             No ALC value: the finding ends with no_alc.
-             An SWR of swrFaultX10 or more: it ends with high_swr.
+             No ALC value: the finding ends with noAlc.
+             An SWR of swrFaultX10 or more: it ends with highSwr.
              An ALC above 0: the level one step below the present one, and not below
              TxLevel::levelMinDb, is found; the result is stored.
              The present level is TxLevel::levelMaxDb: that level is found; the result
-             is max_without_alc.
+             is maxWithoutAlc.
              Otherwise the level goes one step up and the tone follows.
              A reading that fails ends the finding with the failure of the reading, and
              the end of the tone (TuneTone) ends it with aborted; neither finds a level.
              A level found is given as LevelFound, and the tone goes on at it; when it
-             does not come back as saved, the result is storage_unavailable and the tone
+             does not come back as saved, the result is storageUnavailable and the tone
              goes on at the level before. After a finding without a level found the
              tone goes on at the level that counted before it.
-             A level found ends LevelWarning::swr_fault and the ceiling of
+             A level found ends LevelWarning::swrFault and the ceiling of
              LevelMonitor.
-             While the level is found, TxLevelStatus::level_db is the level of the
+             While the level is found, TxLevelStatus::levelDb is the level of the
              tone.
              The finding changes neither the transmit state nor its causes, and sends
              the radio no setting. */
@@ -156,16 +156,17 @@ package WstxTxLevel {
              says; the transmission that plays keeps its level.
              In both modes a LevelWarning is shown from the reading that makes
              persistentReadings readings in a row with its condition, until the first
-             reading without it: alc_high for an ALC of alcHigh or more, po_low for an
-             output power below poLowPct percent of the band's output power, swr_high for an
+             reading without it: alcHigh for an ALC of alcHigh or more, poLow for an
+             output power below poLowPct percent of the band's output power, swrHigh for an
              SWR of swrHighX10 or more.
              In both modes an SWR of LevelFinding::swrFaultX10 or more is a fault:
              transmit halts as for a Halt, so that the cause is halt, and shows
-             swr_fault until a reading with a lower SWR or a level found with the Tune
+             swrFault until a reading with a lower SWR or a level found with the Tune
              tone; a reading without an SWR value leaves it. */
         attribute meterMinRemainingMs : Integer = 2000;
         attribute alcLimit : Integer = 8 {
-            doc /* In percent of the radio's ALC zone (MeterView::alc), as alcHigh. */ }
+            doc /* In percent of the radio's ALC zone
+                 (WstxRadioProperties::MeterReadings::alc), as alcHigh. */ }
         attribute alcHigh : Integer = 50;
         attribute stepUpBelowPct : Integer = 80;
         attribute poLowPct : Integer = 50;

@@ -64,7 +64,7 @@ package WstxUdp {
              status: StatusCadence, filled by StatusFields.
              decode: once for each decoded record of the live receive job (DecodeFields).
              clear: ClearRule.
-             qso_logged and then logged_adif: for each LoggedContact of the log
+             qsoLogged and then loggedAdif: for each LoggedContact of the log
              (LoggedFields).
              close: CloseRule.
              No other message of the source is sent. */
@@ -193,7 +193,7 @@ package WstxUdp {
              Special operation: the source's number for the activity of the contact
              settings.
              T/R period: the value the source reads as not applicable.
-             Configuration name: the station's name (ProfileConfig::display_name).
+             Configuration name: the station's name (ProfileConfig::displayName).
              Tx message: the next message of the contact, else empty.
              Sub-mode is empty, Fast mode is false, and Frequency tolerance has the value
              the source reads as not applicable. */
@@ -214,7 +214,7 @@ package WstxUdp {
     attribute def DecodeFields {
         doc /* How a Decode is made from a ResultRecord.
              A record gives a Decode when its status is decoded and it carries the start
-             of its period (ResultRecord::period_start_utc). Every other record gives
+             of its period (ResultRecord::periodStartUtc). Every other record gives
              none.
              The records of the live receive job are taken in the order of their
              sequence, each once, when they are published. A record that gives no Decode
@@ -243,7 +243,7 @@ package WstxUdp {
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-03'; }
 
     attribute def DeltaTime {
-        doc /* The DT of the record (ResultRecord::dt_seconds), rounded to one decimal, a
+        doc /* The DT of the record (ResultRecord::dtSeconds), rounded to one decimal, a
              tie away from zero, and sent in single precision. A magnitude below 0.05
              gives 0. A record without a DT gives 0. */
         @FollowsSource {
@@ -294,11 +294,11 @@ package WstxUdp {
              Tx frequency: the record's FREQ in Hz, and 0 without one.
              Mode: the record's SUBMODE where its MODE is MFSK, else its MODE.
              Exchange sent and Exchange received, by the record's activity.
-             na_vhf, ww_digi and arrl_digi: the first four characters of MY_GRIDSQUARE and
+             naVhf, wwDigi and arrlDigi: the first four characters of MY_GRIDSQUARE and
              of GRIDSQUARE.
-             field_day and rtty: STX_STRING and SRX_STRING; without them RST_SENT with
+             fieldDay and rtty: STX_STRING and SRX_STRING; without them RST_SENT with
              STX, and RST_RCVD with SRX or else STATE, joined by a blank.
-             eu_vhf: RST_SENT, STX, a blank and the first six characters of
+             euVhf: RST_SENT, STX, a blank and the first six characters of
              MY_GRIDSQUARE; RST_RCVD, SRX, a blank and the first six of GRIDSQUARE.
              hound, none, and a record without an activity: both empty.
              An exchange whose parts are not all in the record is empty.

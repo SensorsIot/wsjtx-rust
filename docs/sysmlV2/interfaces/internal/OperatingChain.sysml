@@ -27,7 +27,7 @@ package WstxOperatingChain {
     }
     port def TargetChoicePort {
         doc /* Written from auto's side; qso uses the conjugate. A CallTarget of the kinds
-             reply, call_cq and send_next is answered by a StartAnswer. QsoProgress is
+             reply, callCq and sendNext is answered by a StartAnswer. QsoProgress is
              given for a contact or a CQ Auto started, whenever one of its values
              changes. */
         out item target : CallTarget;
@@ -35,15 +35,15 @@ package WstxOperatingChain {
         in item progress : QsoProgress;
     }
     enum def TargetKind {
-        doc /* What Auto asks of qso. reply, call_cq and send_next are the starts of
+        doc /* What Auto asks of qso. reply, callCq and sendNext are the starts of
              those names that the operator has, carried out with the cause auto: reply
-             calls the station of a record, call_cq calls CQ, send_next sends the message
+             calls the station of a record, callCq calls CQ, sendNext sends the message
              due of a started QSO; qso takes each one's Tx offset from its quiet space.
              move asks qso for a new Tx offset of Auto's contact or CQ, from the same
              space. cancel ends Auto's contact or CQ. */
         enum reply;
-        enum call_cq;
-        enum send_next;
+        enum callCq;
+        enum sendNext;
         enum move;
         enum cancel;
     }
@@ -97,7 +97,7 @@ package WstxOperatingChain {
         attribute mode : WstxModeProcessing::Mode;
         attribute rstSent : String[0..1] {
             doc /* The report of the last sent Tx2 or Tx3; for rtty the 5n9 and for
-                 eu_vhf the RS of the exchange sent (WstxSpecialActivities::ContestLogFields). */ }
+                 euVhf the RS of the exchange sent (WstxSpecialActivities::ContestLogFields). */ }
         attribute rstRcvd : String[0..1] { doc /* The same of the partner. */ }
         attribute startUtcMs : Integer { doc /* WstxStandardQso::LogTimes. */ }
         attribute endUtcMs : Integer { doc /* WstxStandardQso::LogTimes. */ }

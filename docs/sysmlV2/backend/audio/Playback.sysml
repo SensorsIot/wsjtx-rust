@@ -24,7 +24,7 @@ package WstxPlayback {
 
     attribute def ProgramPlayback {
         doc /* How a program is played.
-             The device is the render endpoint of AudioConfig::output_device.
+             The device is the render endpoint of AudioConfig::outputDevice.
              OpenOutput opens it and plays silence (OutputState::ready); a device that
              does not open is failed with its OutputError.
              PlayProgram is taken in the state ready, once for each opening.

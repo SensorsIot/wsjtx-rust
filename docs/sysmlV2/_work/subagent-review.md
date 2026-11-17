@@ -83,7 +83,7 @@ the transmit and Flex ports are carried out.
 | 1 | The port `RadioControl` had two items named `kept`: the `RadioMemory` the station service gives and the `RadioKept` answer to `DiscoverRadio` (the validator warned "Duplicate of other owned member name"). | The answer is `radioKept`; `kept` and `keep` stay the pair of `RadioMemory`, as in `AudioControl`. |
 | 2 | Most cases are bound to whole files that several cases share (`server/tests/radio_control.rs`, `radio_setup_tests.rs`, `setup_tests.rs`, `cat_lifecycle_tests.rs`), and TC-022-009 to `auth_tests.rs`, the file of the radio authorization the operator removed. | Left; listed. |
 | 3 | TC-044-002 (d) states which endpoints are at the radio's place, a rule of audio's `RadioPlace`; the test stands in radio control's `setup_tests.rs`. The report proposed that audio's TC-044-006 take it up. | Left for the operator's reading of audio; listed. |
-| 4 | `MeterReadings` (`poPct`, `swrTimesTen`) and transmit's `MeterView` (`po_pct`, `swr_x10`) name the same values twice; the second carries the code's wire names in transmit's status. | Left; listed. |
+| 4 | `MeterReadings` (`poPct`, `swrTimesTen`) and transmit's `MeterView` (`po_pct`, `swr_x10`) name the same values twice; the second carries the code's wire names in transmit's status. | **Repaired 2026-11-17 (M1.4):** `MeterView` removed; `TxLevelStatus::meters` is a `MeterReadings`. |
 
 `part_done.py radioControl` passes. Open for the operator: report lines 1, 2, 4, 5, 6, 8,
 9, 10, 11, 12 (the reconnect on a renamed station), 13, and whether radio control waits for
@@ -100,7 +100,7 @@ continent and the CQ words in `ProfileConfig`, `RankingConfig` gone).
 |---|---|---|
 | 1 | The marker on `PersistedProfile` said only the station service and the log are joined to the profile; operating is joined too (port `definitions`, the strategies file). | The marker names the three. |
 | 2 | The ports `contacts` and `definitions` are typed by the whole `ProfileAccess`; their text says only `ProfileFolder` crosses (see log, item 5). | Left: report line 2 asks whether these connections stay at all. **Answered 2026-11-15: the connections went; the folder comes with each part's context.** |
-| 3 | `ImportChunk::bytes : Integer[1..2048]` writes the value of `RecordingLimits::rawChunkBytes` a second time, as a multiplicity. | Left; listed. |
+| 3 | `ImportChunk::bytes : Integer[1..2048]` writes the value of `RecordingLimits::rawChunkBytes` a second time, as a multiplicity. | **Repaired 2026-11-17 (M1.4):** `Integer[1..*]`, the limit in its doc. |
 | 4 | `StationConfig` has no member yet for qso's configuration and the station service's own (Monitor off at startup); the handover rows to qso and station say they come with those parts. | Left. |
 
 `part_done.py profile` passes. Open for the operator: report lines 1 to 8, the four
@@ -119,7 +119,7 @@ carried out.
 
 | # | Found | Done |
 |---|---|---|
-| 1 | `@DetailTests` on `OperatingService` says the three test files cover "the evaluator of ranking and the runs of Auto": those are other parts' insides, not operating's detail tests (authoring rule 11). | Left; listed for the operator's reading. |
+| 1 | `@DetailTests` on `OperatingService` says the three test files cover "the evaluator of ranking and the runs of Auto": those are other parts' insides, not operating's detail tests (authoring rule 11). | **Repaired 2026-11-17:** covers names operating's own insides. |
 | 2 | TC-039-003 (f) shows ranking's verdicts after a save; it stands here as the proof that the share reaches ranking (CL-097-10), as the report says. | Left. |
 
 `part_done.py operating` passes. Open for the operator: report lines 2, 6, 7, 9, 10, and
@@ -137,7 +137,7 @@ config; `RankingConfig` gone; `RankingRules` from operating).
 | # | Found | Done |
 |---|---|---|
 | 1 | `DecodedFacts` had no feature for the worked status: its type `WorkedStatus` stood in `OperatingChain.sysml`, which a control interface may not import (M3.4), so the item carried less than `DecodedEntity` says (M1.3). The report proposed the move. | `WorkedStatus` moved to `WstxLogControl` (the log makes it, beside `Continent` and `CallEntity`); `OperatingChain`, `ValueOrder` and `RankingControl` import it from there; `DecodedFacts::worked : WorkedStatus[0..1]`; the marker is gone. The log needed one verdict (`workedThisBandAndMode`, a text the tool does not read). Handover row marked. |
-| 2 | `@DetailTests` on `RankingService` says the three test files cover "the saved strategies, their routes and the runs of Auto": operating's and auto's insides (as operating, item 1). | Left; listed. |
+| 2 | `@DetailTests` on `RankingService` says the three test files cover "the saved strategies, their routes and the runs of Auto": operating's and auto's insides (as operating, item 1). | **Repaired 2026-11-17:** covers names ranking's own insides. |
 | 3 | TC-063-006 (j) runs the count through the station with a logbook, so it also shows the log's `PeriodQsos`; the log's TC-011-003 (i) still says "Planned, no test yet" for the QSOs of a period. | Left; for the operator's reading. |
 | 4 | `WantedList` is an element with only a marker: no code, no test. | Left: report line 2. |
 

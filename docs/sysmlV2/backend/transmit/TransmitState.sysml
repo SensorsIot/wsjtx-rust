@@ -47,9 +47,9 @@ package WstxTransmitState {
              ready; available otherwise.
              Arm is refused with the first of these that holds: transmitUnsupported for
              the Capability unsupported; radioUnavailable for unavailable, while
-             TransmitStatus::ptt is indeterminate, while startup_release is failed, and
+             TransmitStatus::ptt is indeterminate, while startupRelease is failed, and
              after transmit itself has failed (TransmitFailure::ownerFault).
-             An admitted Arm makes the state armed, sets last_arm_cause to Arm::cause
+             An admitted Arm makes the state armed, sets lastArmCause to Arm::cause
              and clears TransmitStatus::refusal; it is admitted alike while the state
              is on.
              A refused Arm leaves the state and both causes as they are and sets
@@ -76,15 +76,15 @@ package WstxTransmitState {
              Every stop makes the state disarmed. Disarm and the lost Capability drop
              each request that is not keyed, with the outcome refused and notArmed; a
              transmission that is keyed goes on to its end. A Disarm leaves the radio's
-             switch and halt_state as they are.
-             The shown cause, TransmitStatus::last_disarm_cause, is that of the stop
+             switch and haltState as they are.
+             The shown cause, TransmitStatus::lastDisarmCause, is that of the stop
              standing first in this order, whichever came first: halt; deviceLost;
              failed; refused; contactCancelled given by Abort; txWatchdog;
              bandChanged; modeChanged; contactCancelled given by
              Disarm; contactCompleted.
              The stops compared are those since the later of the last StepBegins and
              the last admitted Arm.
-             TransmitStatus::stopped_in_step is true from a stop until the next
+             TransmitStatus::stoppedInStep is true from a stop until the next
              StepBegins. */
     }
 
@@ -167,7 +167,7 @@ package WstxTransmitState {
              more and the waveform is played (PlayProgram) from the sample the plan
              gives, at the scale of the audio drive; a plan that fails refuses the request
              as above, and the radio is released.
-             The start of the audio sets last_text and last_period_utc_ms and gives the
+             The start of the audio sets lastText and lastPeriodUtcMs and gives the
              outcome started with the station time of that moment.
              When audio reports the program as finished (OutputState::finished),
              transmit stops the output and releases the radio; the confirmed release
@@ -243,12 +243,12 @@ package WstxTransmitState {
              A Halt that arrives while the output is being opened or while the key
              waits for the radio ends that wait: the radio is not keyed. One that
              arrives while the key is exchanged is followed by the release.
-             HaltReceipt::halt_state is idle when nothing was keyed, stopped when the
+             HaltReceipt::haltState is idle when nothing was keyed, stopped when the
              release was confirmed, and pending when it was not confirmed within
-             haltBoundMs; TransmitStatus::halt_state shows the same.
+             haltBoundMs; TransmitStatus::haltState shows the same.
              Abort does what Halt does, with these differences: it waits for a step of
              transmit that is under way, the outcome is aborted, the cause is the one
-             it names, halt_state stays as it is, and a release that is not confirmed
+             it names, haltState stays as it is, and a release that is not confirmed
              sets TransmitStatus::refusal to radioUnavailable.
              When the station process ends (ProcessEnds), transmit stops the output and
              releases the radio as for a Halt. */
@@ -382,7 +382,7 @@ package WstxTransmitState {
              SetTune to switch on is refused with the first of these that holds:
              transmitUnsupported for the Capability unsupported; radioUnavailable while
              the Capability is not available, TransmitStatus::ptt is indeterminate,
-             startup_release is failed, or transmit has failed; busy while a request is
+             startupRelease is failed, or transmit has failed; busy while a request is
              held or a tone is on; frequencyOutOfRange for an offset below offsetMinHz
              or above offsetMaxHz.
              An admitted tone opens the output, keys the radio and plays the tone as

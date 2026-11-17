@@ -119,8 +119,10 @@ detection's answer.
 
 1. **`StationCommands` as the station service's control interface** (done as recommended,
    after your answer "We do not create shortcuts"). Please confirm, or say otherwise.
-2. A start without arguments (environment mode) still runs in the code; `LaunchRule`
-   refuses it as the profile's rules already did. Whether it stays is to be asked when web
-   is built (handover row "web, station").
-3. `OperatingBand` has the twelve bands of the code (160 m to 4 m). A rig of Hamlib's list
-   with 2 m or 70 cm gets no band there; widening it waits for such a rig.
+2. Decided 2026-11-17: no environment mode. `LaunchRule` refuses a start without arguments
+   (every station starts with its profile); `main.rs` still runs it and reads `WSTX_BIND`
+   and `WSTX_ORIGIN`, work for the code.
+3. Decided 2026-11-17: `OperatingBand` has the bands of WSJT-X's FT8 and FT4 list (160 m to
+   23 cm); each working frequency carries its IARU region, and the operator sets the
+   station's region as in WSJT-X (`WorkingFrequencies::region`, default all). A band
+   outside the rig's transmit ranges (`RigModel::txRanges`) is greyed out and refused.

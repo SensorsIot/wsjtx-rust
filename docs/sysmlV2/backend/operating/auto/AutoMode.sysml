@@ -79,12 +79,12 @@ package WstxAutoMode {
              acknowledgement (AutoSwitchRule).
              halted: a halt, whatever its source, also the halt of the station for a radio
              that is not ready or for its SWR fault.
-             transmit_refused: a start of Auto answered radioUnavailable or
+             transmitRefused: a start of Auto answered radioUnavailable or
              transmitUnsupported (StartAnswer).
-             transmit_stopped: Auto's contact or CQ ended failed, deviceLost, or refused
+             transmitStopped: Auto's contact or CQ ended failed, deviceLost, or refused
              for radioUnavailable, transmitUnsupported or a sequence that cannot rise any
              more (QsoProgress).
-             no_client: AutoContext::present false. From that moment Auto starts nothing
+             noClient: AutoContext::present false. From that moment Auto starts nothing
              new, cancels its CQ and a contact of its own that no station has answered,
              lets a started QSO finish (StartedQsoRule), and then goes off.
              Every other event leaves Auto on: no answer and a leaving; Halt QSO; a band or
@@ -93,7 +93,7 @@ package WstxAutoMode {
              that WstxTargetChoice::StartRule names.
              When Auto goes off it cancels its CQ and a contact of its own that is no
              started QSO (TargetKind::cancel); a transmission on the air finishes its
-             period. After halted, transmit_refused and transmit_stopped its contact is as
+             period. After halted, transmitRefused and transmitStopped its contact is as
              Halt or transmit left it. AutoActivity then says stopped with the reason.
              Only a switchOn puts Auto on again. */
         attribute reason : OffReason;
@@ -128,7 +128,7 @@ package WstxAutoMode {
     requirement 'CL-081-01' {
         subject auto : AutoService;
         doc /* Auto MUST let a started QSO of its own finish as an ordinary contact when it
-             goes off for stopped or no_client, and cancel at once its CQ and a contact of
+             goes off for stopped or noClient, and cancel at once its CQ and a contact of
              its own that is no started QSO (StartedQsoRule). */
         @Status { build = ImplementationState::implemented; }
     }
@@ -141,7 +141,7 @@ package WstxAutoMode {
              to him has started. A station that called the profile's call before the
              transmission to it started, and a station Auto called that has sent nothing
              to the profile's call, are no started QSO.
-             When Auto goes off with stopped or no_client, a started QSO stays as it is:
+             When Auto goes off with stopped or noClient, a started QSO stays as it is:
              qso sequences it to its end and logs it once, as an ordinary contact, and
              the repetition limit bounds it. Auto sends nothing more for it, starts
              nothing new and leaves its Tx offset where it is. What ends an ordinary

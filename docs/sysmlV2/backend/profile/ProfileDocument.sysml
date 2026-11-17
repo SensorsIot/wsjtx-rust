@@ -51,14 +51,14 @@ package WstxProfileDocument {
              recordings; every other file of the folder it leaves as it is.
              When the profile is opened it takes two locks and holds them until the
              station process ends, however it ends: one on the file .profile.lock of
-             the folder, and one on the file named by the profile_id and .lock in the
+             the folder, and one on the file named by the profileId and .lock in the
              folder wstx-rust-profile-locks of the account's local application data
              (LOCALAPPDATA), or of the temporary folder when the account has none.
              A lock that another process holds refuses the OpenRequest with
-             OpenRefusal::profile_in_use: the same folder under any name, and a copy
-             of the folder with the same profile_id.
+             OpenRefusal::profileInUse: the same folder under any name, and a copy
+             of the folder with the same profileId.
              A lock that cannot be taken for another reason refuses it with
-             OpenRefusal::resource_unavailable.
+             OpenRefusal::resourceUnavailable.
              A lock file that a process left behind holds nothing: the profile can be
              opened again as soon as that process has ended.
              A station process has one profile, and a profile shares no file, no lock
@@ -84,22 +84,22 @@ package WstxProfileDocument {
     attribute def OpenProfile {
         doc /* How the profile answers an OpenRequest. The first of these that holds
              refuses it (OpenRefused, OpenRefusal); a refused request changes no file.
-             resource_unavailable: the folder does not exist, or profile.json cannot be
+             resourceUnavailable: the folder does not exist, or profile.json cannot be
              opened or read.
-             invalid_profile: profile.json is larger than
+             invalidProfile: profile.json is larger than
              ProfileLimits::profileFileMaxBytes or is not the JSON object ProfileDocument
              describes.
-             unsupported_connection_type: schema_version 1 with the connection type
-             native_flex.
-             unsupported_schema: schema_version 2 without native, and every
-             schema_version other than 1 and 2.
-             invalid_profile: any other pairing of schema_version, connection type and
+             unsupportedConnectionType: schemaVersion 1 with the connection type
+             nativeFlex.
+             unsupportedSchema: schemaVersion 2 without native, and every
+             schemaVersion other than 1 and 2.
+             invalidProfile: any other pairing of schemaVersion, connection type and
              native than the two of ProfileDocument, or a NativeIntent outside its rules.
-             invalid_profile: a profile_id that is no UUID of version 4 in lower case,
+             invalidProfile: a profileId that is no UUID of version 4 in lower case,
              a value of StationConfig
              outside the rule its definition gives, or an Endpoint outside its rules.
-             profile_in_use, resource_unavailable: the locks of ProfileOwnership.
-             invalid_profile: the largest ProfileSnapshot the profile could ever give
+             profileInUse, resourceUnavailable: the locks of ProfileOwnership.
+             invalidProfile: the largest ProfileSnapshot the profile could ever give
              is over ProfileLimits::profileHttpMaxBytes. The largest is taken with the
              origin of this station and the values of StationConfig at their longest, where each
              byte of the name, of
@@ -124,19 +124,19 @@ package WstxProfileDocument {
     attribute def SaveSettings {
         doc /* What the profile does with a SaveProfile. The first of these that holds
              refuses it (SaveRefused).
-             invalid_settings with the field: the first value of StationConfig outside
+             invalidSettings with the field: the first value of StationConfig outside
              the rule its definition gives. The values are looked at in the order
-             display_name, audio.input_device, audio.output_device, control.mode,
+             displayName, audio.inputDevice, audio.outputDevice, control.mode,
              control.rig, control.endpoint, control.ptt, radio, then the values of
              transmit and receive in the order of their definitions; a value is named by its key in
              the file,
              one under a part as the part's key, a dot and the value's name
              (transmit.tuneSeconds). radio is named when RadioConfig::agc is present for
              a radio that is not managed.
-             invalid_settings with the field: on a profile of the native connection, a
+             invalidSettings with the field: on a profile of the native connection, a
              value NativeProfile does not allow.
-             audio_device_not_endpoint with the field: EndpointIds.
-             storage_unavailable: the file cannot be written.
+             audioDeviceNotEndpoint with the field: EndpointIds.
+             storageUnavailable: the file cannot be written.
              A StationConfig without RadioConfig::agc for a managed radio takes the
              saved one, or slow when none is saved.
              A save that is not refused writes the document with the new station
@@ -147,7 +147,7 @@ package WstxProfileDocument {
              file and in every ProfileSnapshot; a save that fails there leaves no file
              behind. A station process that stops while it saves leaves the whole
              document of before or the whole new one.
-             profile_id, endpoint, connection_type and native are the same after every
+             profileId, endpoint, connectionType and native are the same after every
              save.
              The station config has one maintainer, the browser of its station: saves
              are carried out one after the other, and the later one stands. */
@@ -178,7 +178,7 @@ package WstxProfileDocument {
              revision.
              The profile reads no record: what a record means is its part's.
              The store is the file memory.json beside profile.json: one JSON object of
-             UTF-8 with the key schema_version, 1, and one key for each part that has
+             UTF-8 with the key schemaVersion, 1, and one key for each part that has
              records (radio for RadioRecords, audio for AudioRecords, station for
              StartupRecords). It is written as
              the document is: the whole file anew, made durable, and put in its place
@@ -250,7 +250,7 @@ package WstxProfileDocument {
              data (LOCALAPPDATA), or the folder OpenRequest::shackFolder names;
              a name that is not absolute counts from the working directory. A folder
              that does not exist is made at station start; one that cannot be made or
-             used refuses the OpenRequest with OpenRefusal::resource_unavailable.
+             used refuses the OpenRequest with OpenRefusal::resourceUnavailable.
              It holds shack.json (ShackDocument), the strategies file
              (StrategiesFile), and the files the functions of the stations keep there:
              the logbook and the operator's country file (the log's) and the Most
@@ -267,13 +267,13 @@ package WstxProfileDocument {
     attribute def SaveShackSettings {
         doc /* What the profile does with a SaveShack, and how shack.json is read.
              The first of these that holds refuses it (SaveRefused).
-             invalid_settings with the field: the first value of ShackSettings
+             invalidSettings with the field: the first value of ShackSettings
              outside the rule its definition gives, by its key in the file: callsign,
-             locator, continent, cq_words, then the values of spots, udp, auto, qso,
+             locator, continent, cqWords, then the values of spots, udp, auto, qso,
              frequencies and log, each named
              as the part's key, a dot and the value's name.
-             revision_conflict: expectedRevision is not the revision of shack.json.
-             storage_unavailable: the file cannot be written.
+             revisionConflict: expectedRevision is not the revision of shack.json.
+             storageUnavailable: the file cannot be written.
              A save that is not refused writes shack.json with the new settings and
              the revision one higher, under the file's lock: the whole file anew, made
              durable, and put in its place in one step. Only then is it answered, with
@@ -313,21 +313,21 @@ package WstxProfileDocument {
              workingFrequencies holds WSJT-X's default list alone.
              The member is held to the rules its part states for it and for its
              collection; the profile applies them and has no rules of its own for a
-             member. A member outside them is refused with invalid_settings and one
+             member. A member outside them is refused with invalidSettings and one
              value that is outside (SaveRefused::field).
-             A CreateEntry is refused with entry_exists when its key is held, and with
-             collection_full when the collection holds as many members as its rules
-             allow. An UpdateEntry is refused with entry_unknown when its key is not
-             held, and with entry_exists when the member's own key is another
-             member's. A DeleteEntry is refused with entry_unknown when its key is not
+             A CreateEntry is refused with entryExists when its key is held, and with
+             collectionFull when the collection holds as many members as its rules
+             allow. An UpdateEntry is refused with entryUnknown when its key is not
+             held, and with entryExists when the member's own key is another
+             member's. A DeleteEntry is refused with entryUnknown when its key is not
              held.
              A command made from another revision than that of the collection's file
-             is refused with revision_conflict: the collections are shared by the
+             is refused with revisionConflict: the collections are shared by the
              stations of the shack, and a change made from an older state would undo
              another's. A command that is not refused writes the file of its
              collection with the change and the revision one higher: the whole file
              anew, made durable, and put in its place in one step. A file that cannot
-             be written refuses it with storage_unavailable.
+             be written refuses it with storageUnavailable.
              Only then is the command answered, with the snapshot of the collection:
              DefinitionsSnapshot for strategies and wantedList, ShackSnapshot for
              udpTargets, txMacros and workingFrequencies. A created wanted entry takes as
@@ -342,15 +342,15 @@ package WstxProfileDocument {
     attribute def StrategiesFile {
         doc /* The definition file in which the profile keeps the saved strategies: the
              file strategy.json in the shack's folder (ShackFolder), one JSON
-             object of UTF-8 with exactly the keys schema_version, revision and
-             configuration. schema_version is 4. revision counts the changes
+             object of UTF-8 with exactly the keys schemaVersion, revision and
+             configuration. schemaVersion is 4. revision counts the changes
              (DefinitionsSnapshot::revision).
              configuration holds the saved strategies by
              WstxStrategies::ConfigurationKeys, with active null and without contest.
              The profile reads the file at station start, by
              WstxStrategies::StrategyReading, and gives the strategies as
              DefinitionsSnapshot. Without a file there is no saved strategy.
-             A file is used when it has this form; one that also holds profile_id is
+             A file is used when it has this form; one that also holds profileId is
              read without it. A file
              of an older schema version is written in the present form with the next
              change of the strategies.
@@ -363,10 +363,10 @@ package WstxProfileDocument {
     attribute def WantedFile {
         doc /* The definition file in which the profile keeps the wanted list: the file
              wanted.json in the shack's folder (ShackFolder), one JSON object of
-             UTF-8 with exactly the keys schema_version, revision and entries.
-             schema_version is 1. revision counts the changes
+             UTF-8 with exactly the keys schemaVersion, revision and entries.
+             schemaVersion is 1. revision counts the changes
              (DefinitionsSnapshot::wantedRevision). entries is the list in the order of
-             adding, each an object with the keys call and added_utc_ms.
+             adding, each an object with the keys call and addedUtcMs.
              Without a file the list is empty. A file that cannot be used gives an
              empty list and is left as it is until the next change is written in its
              place. */
@@ -386,18 +386,18 @@ package WstxProfileDocument {
         in item download : MostWantedDownload;
         doc /* An UpdateMostWanted sends one MostWantedQuery. The MostWantedDownload is
              taken as a list when it is what that item says, each row with its limits.
-             Everything else is refused with download_failed and a detail: for an answer
+             Everything else is refused with downloadFailed and a detail: for an answer
              with another status than 200 "status" and that status, for an answer that
              is no list "the reply is not a Most Wanted list". A list that is taken is
              written to MostWantedFile with the UTC date of the download, and the
              DefinitionsSnapshot gives it; a list that cannot be written is refused with
-             storage_unavailable. A refused update leaves the kept list as it is. */
+             storageUnavailable. A refused update leaves the kept list as it is. */
     }
 
     attribute def MostWantedFile {
-        doc /* The file in which the profile keeps the list: most_wanted.json in the
+        doc /* The file in which the profile keeps the list: mostWanted.json in the
              shack's folder (ShackFolder), under the file's lock, one JSON object of
-             UTF-8 with exactly the keys schema_version, date and list. schema_version is
+             UTF-8 with exactly the keys schemaVersion, date and list. schemaVersion is
              1; list is the download's object from rank to number. Without the file there
              is no list. A file that cannot be read or holds no list gives no list, and
              DefinitionsSnapshot::mostWantedUnusable is true. */
@@ -415,11 +415,11 @@ package WstxProfileDocument {
         out item query : CtyQuery;
         in item download : CtyDownload;
         doc /* An UpdateCountryFile sends one CtyQuery. An answer that is no file is refused
-             with download_failed and a detail ("status" and the status, or "the reply is
+             with downloadFailed and a detail ("status" and the status, or "the reply is
              too large"). A text that does not read as a country file (CountryFileStore) is
-             refused with invalid_country_file and its line. A text that reads is written
+             refused with invalidCountryFile and its line. A text that reads is written
              to CountryFileStore, and the DefinitionsSnapshot gives it; a file that cannot
-             be written is refused with storage_unavailable. A refused update leaves the
+             be written is refused with storageUnavailable. A refused update leaves the
              kept file as it is. */
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: Download Latest CTY.dat in "
@@ -538,10 +538,10 @@ package WstxProfileDocument {
              The folder is made new, and profile.json is written into it with the
              values each feature of ProfileDocument, of Endpoint and of the
              configurations of StationConfig is given in its definition, a new
-             profile_id, no radio and no native.
+             profileId, no radio and no native.
              A folder that exists, also an empty one, a folder whose parent does not
              exist, and a file that cannot be written end the creation with
-             resource_unavailable; what exists is left as it is.
+             resourceUnavailable; what exists is left as it is.
              An OpenRequest makes no profile.
              StationConfig::audio and RadioConfig::control are saved as SaveSettings
              says: each of the two devices and the radio control can be set and taken
@@ -568,7 +568,7 @@ package WstxProfileDocument {
         doc /* How the two audio devices of AudioConfig are saved.
              A SaveProfile whose input or output is present and has not the form of an
              endpoint id of its direction, as AudioConfig gives it, is refused with
-             SaveRefusal::audio_device_not_endpoint and the field.
+             SaveRefusal::audioDeviceNotEndpoint and the field.
              A document that is opened may hold another text of 1 to 256 bytes without
              a control character in the place of a device: it is taken as it is and
              not changed; audio finds no endpoint of that id, and the operator chooses
@@ -589,14 +589,14 @@ package WstxProfileDocument {
         doc /* The profile of a station that uses a FlexRadio through its native
              interface.
              It is made by a CreateRequest with a NativeIntent: as CreateProfile, with
-             schema_version 2, the connection type native_flex and a NativeIntent of a
-             new client_id and the request's antenna and address.
+             schemaVersion 2, the connection type nativeFlex and a NativeIntent of a
+             new clientId and the request's antenna and address.
              An antenna or an address outside the rules of NativeIntent refuses the
-             request with invalid_runtime_configuration, and no folder is made.
-             Its document has no input_device, no output_device, the control mode
+             request with invalidRuntimeConfiguration, and no folder is made.
+             Its document has no inputDevice, no outputDevice, the control mode
              disabled without an endpoint, and ptt disabled. A SaveProfile with another
-             value in one of these is refused with SaveRefusal::invalid_settings and
-             the field, the first of audio.input_device, audio.output_device,
+             value in one of these is refused with SaveRefusal::invalidSettings and
+             the field, the first of audio.inputDevice, audio.outputDevice,
              control.mode, control.endpoint and control.ptt.
              No save changes the NativeIntent. */
     }

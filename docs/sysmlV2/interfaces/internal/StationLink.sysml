@@ -24,10 +24,14 @@ package WstxStationLink {
     }
 
     attribute def WireNames {
-        doc /* Every name on the wire is a model name in snake_case: each capital letter
-             becomes an underscore and its small letter, digits stay (setTx1Skip:
-             set_tx1_skip). This holds for the keys of JSON objects, the route segments,
-             the query parameters and the event types.
+        doc /* Every name on the wire and in the station's JSON files is a model name in
+             snake_case: each capital letter becomes an underscore and its small letter,
+             digits stay with the word before them (setTx1Skip: set_tx1_skip). Three names
+             give their number a word of its own: treat73AsCq, onePlusPer3000Km and
+             onePlusPer500KmUp (treat_73_as_cq, one_plus_per_3000_km,
+             one_plus_per_500_km_up). This holds for the keys of JSON objects, the values
+             of enumerations, the route segments, the query parameters and the event
+             types.
              The function of a feature of StationOperations is the part whose control
              interface defines the feature's item: supervisor for WstxStationCommands, qso
              for WstxQsoControl, auto for WstxAutoControl, ranking for WstxRankingControl,
@@ -44,27 +48,27 @@ package WstxStationLink {
         doc /* A value travels as JSON: an Integer as a JSON integer from 0 up to
              safeIntegerMax, or a negative one where the attribute allows it; a Real as a
              JSON number; a Boolean as true or false; a String as a JSON string; an
-             enumeration literal as its name; an attribute or item typed by a definition
+             enumeration literal as its name (WireNames); an attribute or item typed by a definition
              as an object of its attributes; a multiplicity above one as an array, in the
              order of the attribute when it is ordered; an absent optional value as null.
              An object has exactly its keys: a key that is missing, unknown or given twice
-             makes the request invalid_request with that key as field. */
+             makes the request invalidRequest with that key as field. */
         @FollowsSource { reference = "RFC 8259 (JSON); UTF-8 (RFC 3629)"; }
         attribute safeIntegerMax : Integer = 900719925 * 10000000 + 4740991;
     }
 
     attribute def WireRule {
         doc /* A command is the POST of its route. Its body is one JSON object: v (1),
-             profile_id, boot_id and command_id of the StationRequest, and the attributes
+             profileId, bootId and commandId of the StationRequest, and the attributes
              of the command's item. The requester is operator for every request web
              passes on.
              A read is the GET of its route; the attributes of the read's item are its
              query parameters, an absent one left out.
-             A view is the GET of its route; the answer is one JSON object: v, profile_id,
-             boot_id and the view's attributes. On the socket the view is the event of
+             A view is the GET of its route; the answer is one JSON object: v, profileId,
+             bootId and the view's attributes. On the socket the view is the event of
              type function, a dot and the feature's name, or function and .state for a
              view named as its function (SocketProtocol).
-             An answer is 200 with one JSON object: v, profile_id, boot_id, command_id for
+             An answer is 200 with one JSON object: v, profileId, bootId, commandId for
              a command, and the answer's attributes. A refusal answers with ErrorBody and
              the status of StatusRule: StationRefused, SelectionRefused, RankingRefused,
              StrategiesRefused, AutoRefused, Refused of receive, CursorExpired, LogRefused,
@@ -83,20 +87,20 @@ package WstxStationLink {
     enum def WireRefusal {
         doc /* The refusals of the connection itself, before the supervisor sees the
              request.
-             forbidden_origin: a request that changes something, or a socket, without
+             forbiddenOrigin: a request that changes something, or a socket, without
              exactly the station's origin in Origin.
-             request_too_large: a body above its limit (Limits).
-             unsupported_media_type: a body of another type than application/json, at
+             requestTooLarge: a body above its limit (Limits).
+             unsupportedMediaType: a body of another type than application/json, at
              most with charset=utf-8, where JSON is due.
-             invalid_request: a request that is not the form of its item.
-             unsupported_version: v other than 1.
-             not_found: no route, or no member with the key. */
-        enum forbidden_origin;
-        enum request_too_large;
-        enum unsupported_media_type;
-        enum invalid_request;
-        enum unsupported_version;
-        enum not_found;
+             invalidRequest: a request that is not the form of its item.
+             unsupportedVersion: v other than 1.
+             notFound: no route, or no member with the key. */
+        enum forbiddenOrigin;
+        enum requestTooLarge;
+        enum unsupportedMediaType;
+        enum invalidRequest;
+        enum unsupportedVersion;
+        enum notFound;
     }
     attribute def ErrorBody {
         doc /* The body of every refusal: exactly {"error": {"code", "field"}}. code is the
@@ -106,18 +110,18 @@ package WstxStationLink {
         attribute 'field' : String[0..1];
     }
     attribute def StatusRule {
-        doc /* The HTTP status of a refusal, by its code: 400 for invalid_request,
-             unsupported_version and every code that begins with invalid_ or is
-             out_of_range; 403 for forbidden_origin and wrong_profile; 404 for not_found;
-             410 for cursor_expired; 413 for request_too_large; 415 for
-             unsupported_media_type; 422 for invalid_recording, unsupported_audio,
-             recording_limit and import_failed; 502 for download_failed; 503 for
-             storage_unavailable; 409 for every other code. */
+        doc /* The HTTP status of a refusal, by its code: 400 for invalidRequest,
+             unsupportedVersion and every code that begins with invalid_ or is
+             outOfRange; 403 for forbiddenOrigin and wrongProfile; 404 for notFound;
+             410 for cursorExpired; 413 for requestTooLarge; 415 for
+             unsupportedMediaType; 422 for invalidRecording, unsupportedAudio,
+             recordingLimit and importFailed; 502 for downloadFailed; 503 for
+             storageUnavailable; 409 for every other code. */
         @FollowsSource { reference = "RFC 9110 section 15 (status codes)"; }
     }
     attribute def RequestOrder {
         doc /* The checks of a request, in this order; the first that fails answers:
-             the route and its method (not_found; a method the route has not: 405 with
+             the route and its method (notFound; a method the route has not: 405 with
              Allow); Origin; the media type; the size of the body; the form of the item
              and v; then the supervisor (WstxStationAuthority::ReceiptRule, GateRule) and
              the function. A GET may come without Origin; one with an Origin that is not
@@ -155,13 +159,13 @@ package WstxStationLink {
 
     enum def RequestError {
         doc /* The refusals of a message on the socket.
-             invalid_json: not a JSON object. invalid_request: not the form of its type.
-             unsupported_version: v other than 1. unknown_command: a type the socket does
+             invalidJson: not a JSON object. invalidRequest: not the form of its type.
+             unsupportedVersion: v other than 1. unknownCommand: a type the socket does
              not take. */
-        enum invalid_json;
-        enum invalid_request;
-        enum unsupported_version;
-        enum unknown_command;
+        enum invalidJson;
+        enum invalidRequest;
+        enum unsupportedVersion;
+        enum unknownCommand;
     }
     enum def DisplayProfile {
         doc /* What a socket receives of the display. off: no rows. thin: the thin rows.
@@ -185,13 +189,13 @@ package WstxStationLink {
              The station sends heartbeat {v, type} and a ping every heartbeatMs; the
              browser answers the ping.
              A socket starts at off. From its first subscription on it receives the event
-             of each view: {v, type, data {profile_id, boot_id, changed}}, changed the
+             of each view: {v, type, data {profileId, bootId, changed}}, changed the
              attributes whose values differ from the last event of that view on this
              socket, all of them in the first. An event follows a change within
              eventDelayMs; a view changing faster is sent at most once per eventDelayMs,
              with its latest values. openSlots goes to thin and detail only. The rows go
              as DisplayRows says. Once a second the station sends clock.time {v, type,
-             data {boot_id, utc_ms, time_state}} with station time (StationTime). */
+             data {bootId, utcMs, timeState}} with station time (StationTime). */
         @FollowsSource { reference = "RFC 6455 (WebSocket)"; }
         attribute heartbeatMs : Integer = 5000;
         attribute eventDelayMs : Integer = 1000;
@@ -199,8 +203,8 @@ package WstxStationLink {
     attribute def DisplayRows {
         doc /* A socket at thin receives each row of the job as spectrum.frame, one at
              detail each detailed row as spectrum.detail.frame: {v, type, data} with
-             boot_id and the attributes of the row; the job's identity as source_id and
-             job_id; the levels of a detailed row as levels_b64, the 1024 levels as bytes
+             bootId and the attributes of the row; the job's identity as sourceId and
+             jobId; the levels of a detailed row as levelsB64, the 1024 levels as bytes
              in standard base64 with padding (1368 characters); the key tx only when the
              row is of a transmitted period. A detailed row waits for a slow socket up to
              detailRecentRows rows; a socket that falls further behind loses the oldest.

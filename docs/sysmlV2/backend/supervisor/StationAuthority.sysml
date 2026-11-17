@@ -40,13 +40,13 @@ package WstxStationAuthority {
              The operator and an agent give the same commands with the same rights; only
              SwrBarrier tells them apart.
              Before a command goes on, a command that names another profile is refused
-             with wrong_profile, and one that names another start of the station process
-             with state_conflict (StationRefused). A Halt is passed on for the station's
+             with wrongProfile, and one that names another start of the station process
+             with stateConflict (StationRefused). A Halt is passed on for the station's
              profile whatever start it names. A StartLive, and a selection, made from
-             another profile revision than the saved one is refused with state_conflict.
+             another profile revision than the saved one is refused with stateConflict.
              A StartLive on a profile without an input device is refused with
-             audio_unconfigured, and on a profile of a radio's native connection whose
-             session is not ready with radio_unavailable. A function checks nothing of
+             audioUnconfigured, and on a profile of a radio's native connection whose
+             session is not ready with radioUnavailable. A function checks nothing of
              this again.
              A Halt goes to transmit and, as SwitchAuto of the kind halt, to auto.
              A DetectRadios goes to radio control, and its answer is RadioDetection: the
@@ -57,7 +57,7 @@ package WstxStationAuthority {
     attribute def ReceiptRule {
         doc /* Before GateRule's checks, a command whose commandId is that of one of the
              latest answered commands, with the same content, is given that answer again
-             and has no effect; with other content it is refused with state_conflict. How
+             and has no effect; with other content it is refused with stateConflict. How
              many answers are kept is a value of the code; the requester sends a command
              again only to learn its answer. */
     }
@@ -72,7 +72,7 @@ package WstxStationAuthority {
 
     attribute def AutoOnRule {
         doc /* While Auto is on (WstxAutoControl::AutoActivity), these commands of qso
-             (WstxQsoControl) of the operator or an agent are refused with auto_on and
+             (WstxQsoControl) of the operator or an agent are refused with autoOn and
              change nothing: Reply, CallCq, CallDx, SendNext, ResetRepetitions, SelectRow,
              EnterDx, ChooseNext, CancelContact, EditMessage, SetReport, SetTx4,
              SetTx1Skip, SetParity, SetFrequency, and Tune on.
@@ -92,10 +92,10 @@ package WstxStationAuthority {
 
     attribute def SwrBarrier {
         doc /* The barrier holds from transmit's SWR fault (TransmitStatus with the cause
-             halt and LevelWarning::swr_fault) until the next command of the operator
+             halt and LevelWarning::swrFault) until the next command of the operator
              (Requester::operator). While it holds, an agent's start of a contact
              (WstxQsoControl::Reply, CallCq, CallDx, SendNext and ResetRepetitions), its
-             Tune on and its SwitchAuto on are refused with swr_fault.
+             Tune on and its SwitchAuto on are refused with swrFault.
              The operator's commands and every Halt pass. It is the one barrier of its
              kind; it ends with the station process. */
     }

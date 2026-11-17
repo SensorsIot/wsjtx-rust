@@ -43,7 +43,7 @@ package WstxSettings {
              a member of a collection (a strategy, a UDP target, an entry of the wanted list,
              a Tx macro, a working frequency) is added, changed or removed on its own
              (createEntry, updateEntry, deleteEntry).
-             A save refused with revision_conflict reloads the shack's values and says
+             A save refused with revisionConflict reloads the shack's values and says
              "Another station changed the shared settings; reloaded". The answer of a save is
              its outcome (SaveOutcome). Unsaved changes stay until they are saved or Reload
              is pressed. Every text of the station shows as text. */
@@ -65,7 +65,7 @@ package WstxSettings {
     }
 
     attribute def StationSection {
-        doc /* The station's name (display_name): offered as the chosen rig's name, as model
+        doc /* The station's name (displayName): offered as the chosen rig's name, as model
              and slice A to F for a FlexRadio, or "No radio", taken or typed, refused when
              another station of the PC has it; shown in the window's title and in the top
              bar. The call sign, the locator, the continent and the CQ words of the shack
@@ -111,8 +111,9 @@ package WstxSettings {
         doc /* Auto Seq and Call 1st, the repetition limit (WstxQsoControl::QsoConfig), the
              Tune limit in seconds (WstxTransmitControl::TransmitConfig), and the Rx and Tx
              offsets at station start. The working frequencies of the shack, each added,
-             changed or removed on its own (the collection workingFrequencies), and Reset
-             (ResetFrequencies). Log automatically, the shack's
+             changed or removed on its own (the collection workingFrequencies), Reset
+             (ResetFrequencies), and the IARU region
+             (WstxStationCommands::WorkingFrequencies::region). Log automatically, the shack's
              (WstxQsoControl::QsoShared::logAutomatically). The Tx macros of the shack,
              each added, changed or removed on its own (the collection txMacros). The
              activity and its exchange stand in the QSO pane's fold-out
@@ -161,7 +162,7 @@ package WstxSettings {
     attribute def AdvancedSection {
         doc /* Shown and not changed: the listener's address, the origin and the connection
              type. The clock (ClockView). Diagnostics: Save FT8 decode windows
-             (WstxReceiveControl::ReceiveConfig::window_dump) with the latest window's
+             (WstxReceiveControl::ReceiveConfig::windowDump) with the latest window's
              counters; the resume of receive at station start (StartupState); receive's
              start and stop by hand (startLive, stopLive); the recordings: "No recording
              imported", "Recording ready", "Recording unavailable", the import of a WAV file

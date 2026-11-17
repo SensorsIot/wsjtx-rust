@@ -48,19 +48,19 @@ package WstxReceiveJob {
              end was asked for, also when it failed or came to its end meanwhile; else
              failed with its error; else completed.
              Only a replay completes, when it has shown every sample of the recording;
-             its processed_frames is then the length of the recording.
+             its processedFrames is then the length of the recording.
              A live job whose stream does not close keeps its state until the stream is
-             closed, and then ends with audio_close_failed unless its end was asked
+             closed, and then ends with audioCloseFailed unless its end was asked
              for.
              StopLive and CancelJob for a job that has ended are answered with the job
              unchanged.
              An error of the receive stream ends a live job as failed: SourceError
-             unsupportedFormat as unsupported_audio, failedClose as
-             audio_close_failed, counterExhausted as counter_exhausted, cancelled as
-             cancelled, the end of the stream as audio_unavailable, every other one as
-             audio_failed; unavailable does not end the job (EpochHandling).
+             unsupportedFormat as unsupportedAudio, failedClose as
+             audioCloseFailed, counterExhausted as counterExhausted, cancelled as
+             cancelled, the end of the stream as audioUnavailable, every other one as
+             audioFailed; unavailable does not end the job (EpochHandling).
              A replay whose recording is RecordingUnreadable fails with
-             recording_unavailable. */
+             recordingUnavailable. */
     }
 
     requirement 'CL-006-04' {
@@ -74,18 +74,18 @@ package WstxReceiveJob {
     attribute def Admission {
         doc /* Which start is admitted. A start is refused with the first of these that
              holds, in this order.
-             For StartReplay, recording_unavailable: the stored recording is damaged;
-             no_recording: none is stored; not_found: the command names another
+             For StartReplay, recordingUnavailable: the stored recording is damaged;
+             noRecording: none is stored; notFound: the command names another
              recording than the stored one.
              busy: a live job that has ended has not yet given up everything it held,
              or a band or mode selection runs that did not make this start.
-             storage_unavailable: the storage of the profile has an error.
+             storageUnavailable: the storage of the profile has an error.
              busy: a job has not ended, or an import of a recording has not ended.
              An admitted start clears the state of the job before it: its spectrum rows,
              its records and its views.
              A live start that is admitted and whose stream cannot be started is
-             answered with audio_unavailable; its job has failed.
-             StopLive is answered with not_found when no live job was admitted or the
+             answered with audioUnavailable; its job has failed.
+             StopLive is answered with notFound when no live job was admitted or the
              command names another job, and CancelJob when it names another job. */
     }
 
@@ -126,21 +126,21 @@ package WstxReceiveJob {
              reached, when its frequency is not a number or outside DecodeBand, when
              its SNR is not a number or beyond snrLimitDb either way, and when its
              record is longer than recordMaxBytes; a refused frame ends the decoding of
-             its window, the job fails with decode_limit, and no later frame becomes a
+             its window, the job fails with decodeLimit, and no later frame becomes a
              record.
-             A sequence count at its end is refused likewise, with counter_exhausted.
+             A sequence count at its end is refused likewise, with counterExhausted.
              A window that ends with DecodeError::searchLimited sets
-             LiveView::search_limited, and the job fails with decode_limit.
+             LiveView::searchLimited, and the job fails with decodeLimit.
              Receive keeps the latest records, up to keptRecords and keptMiB; when a
              record would exceed one of the two, the oldest leave and
-             first_sequence grows.
+             firstSequence grows.
              The kept records stay readable after the job has ended, until the next
              start is admitted.
-             ReadRecords is answered with not_found when it names another source or
+             ReadRecords is answered with notFound when it names another source or
              job than the current ones or no live job was admitted, with
-             invalid_request in the mode spectrum and for a cursor beyond
-             next_sequence, and with CursorExpired for a cursor before
-             first_sequence. */
+             invalidRequest in the mode spectrum and for a cursor beyond
+             nextSequence, and with CursorExpired for a cursor before
+             firstSequence. */
         attribute keptRecords : Integer = 2048;
         attribute keptMiB : Integer = 2;
         attribute recordMaxBytes : Integer = 2048;
@@ -153,13 +153,13 @@ package WstxReceiveJob {
              source id.
              With every epoch the windows, the decoder's memory of earlier windows and
              the spectrum start anew, and the view last published and
-             LiveView::last_overrun are cleared.
+             LiveView::lastOverrun are cleared.
              The first epoch of a job keeps the job's id.
              Every later epoch gives the job a new id, and its records are numbered
              from 0 again; commands and requests that name the old job or source are
-             answered with not_found.
-             LiveView::loss_epochs counts the later epochs whose reason is
-             EpochReason::captureLoss, and LiveView::last_loss is the trigger of the
+             answered with notFound.
+             LiveView::lossEpochs counts the later epochs whose reason is
+             EpochReason::captureLoss, and LiveView::lastLoss is the trigger of the
              latest of them.
              A gap of known length (a marked block that is not the first of its epoch)
              keeps job and records; the decoder's memory of earlier
@@ -168,7 +168,7 @@ package WstxReceiveJob {
              receive forgets the source and, if one was taken up, gives the job a new
              id; the stream goes on with a new epoch.
              A later epoch that cannot be given a source id ends the job as failed,
-             with storage_unavailable. */
+             with storageUnavailable. */
     }
 
     verification 'TC-009-004' {
@@ -204,19 +204,19 @@ package WstxReceiveJob {
              For every such window receive keeps WindowCounters; the marks and counts
              of the capture in them are those audio gives for the span of the window
              (CaptureMarks).
-             The window dump is ReceiveConfig::window_dump, taken at station start
+             The window dump is ReceiveConfig::windowDump, taken at station start
              and from every ReceiveConfiguration; a changed switch holds from the next
              window.
              While the dump is on, each prompt window of FT8 is written to the folder
              diagnostic-windows of the profile's folder: its samples as a WAV file,
              mono, 12 kHz, 16 bit, each sample times 32768, rounded and limited to
-             the 16-bit range, and beside it a JSON file with v 1, rate_hz 12000,
-             sample_format pcm16_mono and the window's WindowCounters.
+             the 16-bit range, and beside it a JSON file with v 1, rateHz 12000,
+             sampleFormat pcm16_mono and the window's WindowCounters.
              The two files are named by the window's origin in 15 digits, a hyphen and
              the UTC of its period start without separators, or unknown without a
              period start.
-             A window that cannot be written sets DiagnosticsView::dump_error to
-             dump_failed until the next one is written; the decoding goes on
+             A window that cannot be written sets DiagnosticsView::dumpError to
+             dumpFailed until the next one is written; the decoding goes on
              unchanged. */
         attribute keptWindows : Integer = 20 {
             doc /* DiagnosticsView::windows holds the counters of this many windows. */ }
@@ -225,7 +225,7 @@ package WstxReceiveJob {
         attribute dumpMiB : Integer = 16 {
             doc /* The folder holds at most this much; the oldest windows leave. */ }
         attribute earlyFrames : Integer = 141696 {
-            doc /* WindowCounters::early_buffer_zero_samples counts the zeros among this
+            doc /* WindowCounters::earlyBufferZeroSamples counts the zeros among this
                  many samples from the period start. */ }
     }
 

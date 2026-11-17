@@ -22,11 +22,11 @@ package WstxStrategies {
     enum def LeaveMode {
         doc /* How a station that does not answer is left.
              calls: after a number of calls.
-             until_logged: when it has not been decoded for a number of minutes.
+             untilLogged: when it has not been decoded for a number of minutes.
              contest: after a number of Tx changes, while it does not hear the station
              or is not the most valuable one. */
         enum calls;
-        enum until_logged;
+        enum untilLogged;
         enum contest;
     }
     attribute def AutoKeys {
@@ -39,7 +39,7 @@ package WstxStrategies {
             doc /* With calls: the calls while the station is heard there, from
                  leaveCalls to 40. */ }
         attribute goneMinutes : Integer[0..1] {
-            doc /* With until_logged: 1 to 60. */ }
+            doc /* With untilLogged: 1 to 60. */ }
         attribute txChanges : Integer[0..1] {
             doc /* With contest: 1 to 20. */ }
         attribute moveEveryHeard : Integer {
@@ -96,11 +96,11 @@ package WstxStrategies {
              never, at every call and at every 2nd call for the three cases in the order
              of AutoKeys; no CQ when idle; a CQ wait of 2 periods; a
              retry pause of 10 minutes; a CQ pause of 8 periods; no alert.
-             DXCC all: new dxcc per band_mode, not_confirmed; order most_wanted, snr;
-             leaving until_logged after 10 minutes.
+             DXCC all: new dxcc per bandMode, notConfirmed; order mostWanted, snr;
+             leaving untilLogged after 10 minutes.
              New DXCC on band: as DXCC all, per band.
              New DXCC: as DXCC all, per ever.
-             Casual: new call per band, not_worked; order snr_bucket, distance; CQ when
+             Casual: new call per band, notWorked; order snrBucket, distance; CQ when
              idle.
              POTA/SOTA: as Casual, with worked since today, the CQ targets POTA and SOTA
              included, and no CQ when idle.
@@ -137,26 +137,26 @@ package WstxStrategies {
              may be left out; left out and null both
              say that no contest is selected. Its keys are profile, start and end.
              A strategy has the keys name, class, bands, filters, order, contest,
-             callers_first, leave, tx_move_every, cq_when_idle,
-             cq_wait_periods, retry_minutes, cq_quiet_periods and alert. alert may be
+             callersFirst, leave, txMoveEvery, cqWhenIdle,
+             cqWaitPeriods, retryMinutes, cqQuietPeriods and alert. alert may be
              left out; left out and null both say Off.
-             bands, order and callers_first are those of RankingKeys. filters holds
-             the other features of RankingKeys: for class strategy new, new_per,
-             new_means, region with kind and for selected continents, min_snr_db,
-             worked_since with kind and for from_to the keys from and to,
-             treat_73_as_cq, countries, states and cq_targets; for class contest the
+             bands, order and callersFirst are those of RankingKeys. filters holds
+             the other features of RankingKeys: for class strategy new, newPer,
+             newMeans, region with kind and for selected continents, minSnrDb,
+             workedSince with kind and for fromTo the keys from and to,
+             treat73AsCq, countries, states and cqTargets; for class contest the
              last three only. Each of these three has the keys include and exclude; a
              country entry has kind, value and bands.
-             leave has mode and, by the mode, calls and calls_heard, gone_minutes, or
-             tx_changes. tx_move_every has heard, not_heard and no_reports.
+             leave has mode and, by the mode, calls and callsHeard, goneMinutes, or
+             txChanges. txMoveEvery has heard, notHeard and noReports.
              A value that the model writes as absent is null. A day is written
              YYYY-MM-DD, an instant YYYY-MM-DDTHH:MMZ.
              Every object has exactly its keys. One with a key missing or with another
              key is named as a whole, with two exceptions: a strategy without
-             cq_wait_periods or cq_quiet_periods is named by that key, and so is a
+             cqWaitPeriods or cqQuietPeriods is named by that key, and so is a
              contest selection that
-             carries one of the keys automation_confirmed, operation, repetitions and
-             quiet_minutes.
+             carries one of the keys automationConfirmed, operation, repetitions and
+             quietMinutes.
              A list that is too long or too short is named as a whole; a member of it
              that is outside its rule or stands twice is named by its place. */
     }
@@ -179,11 +179,11 @@ package WstxStrategies {
     attribute def StrategyReading {
         doc /* How saved strategies are read from the strategies file, also from the
              forms of its older schema versions 1, 2 and 3.
-             A strategy without cq_wait_periods is read with a CQ wait of 2, and one
-             without cq_quiet_periods with a CQ pause of 8; a strategy that holds
-             busy_pause is read without it. A
-             configuration that also holds one of the keys continent, ignore_calls and
-             session_ignore_minutes is read without them: their values are not taken
+             A strategy without cqWaitPeriods is read with a CQ wait of 2, and one
+             without cqQuietPeriods with a CQ pause of 8; a strategy that holds
+             busyPause is read without it. A
+             configuration that also holds one of the keys continent, ignoreCalls and
+             sessionIgnoreMinutes is read without them: their values are not taken
              over and are not checked. A country entry is read as it stands.
              A saved strategy whose name is that of a built-in, without regard to
              letter case, is read under another name: the name with copy after it,
@@ -191,27 +191,27 @@ package WstxStrategies {
              that is neither a built-in's nor a saved one; the name is cut so that the
              whole has at most 32 characters.
              Version 3. A strategy has exactly the keys name, class with the value
-             award, goals, needed, region, min_snr_db, value, callers_first,
-             cq_when_no_target, repetitions, quiet_minutes, treat_73_as_cq and window.
+             award, goals, needed, region, minSnrDb, value, callersFirst,
+             cqWhenNoTarget, repetitions, quietMinutes, treat73AsCq and window.
              It is read as a strategy of class strategy for every band, with empty
              country, US state and CQ target lists. Its goals give what must be new
-             and the scope: dxcc is dxcc per ever, dxcc_band dxcc per band, dxcc_slot
-             dxcc per band_mode, waz cq_zone per ever, wpx prefix per ever, grid grid
-             per ever, new_call call per ever, new_call_band call per band; each once,
+             and the scope: dxcc is dxcc per ever, dxccBand dxcc per band, dxccSlot
+             dxcc per bandMode, waz cqZone per ever, wpx prefix per ever, grid grid
+             per ever, newCall call per ever, newCallBand call per band; each once,
              in the order of the goals; of different scopes the one scope is
-             band_mode before band before ever. needed is what new means, window the
-             worked since, value the order with new_dxcc_slot read as
-             new_dxcc_band_mode; region, min_snr_db, treat_73_as_cq and callers_first
+             bandMode before band before ever. needed is what new means, window the
+             worked since, value the order with newDxccSlot read as
+             newDxccBandMode; region, minSnrDb, treat73AsCq and callersFirst
              are taken as they are. It is left after repetitions calls and after twice
              as many while heard; the transmit frequency moves never, at every call
              and at every 2nd call for the three cases in the order of AutoKeys;
-             cq_when_no_target is CQ when idle, with a CQ wait of 2;
-             quiet_minutes is the retry pause.
-             Version 2. A strategy has calls_per_station, from 1 to 20, in the place
-             of value, callers_first, cq_when_no_target, repetitions and
-             quiet_minutes. It is read as one of version 3 with the order most_wanted,
+             cqWhenNoTarget is CQ when idle, with a CQ wait of 2;
+             quietMinutes is the retry pause.
+             Version 2. A strategy has callsPerStation, from 1 to 20, in the place
+             of value, callersFirst, cqWhenNoTarget, repetitions and
+             quietMinutes. It is read as one of version 3 with the order mostWanted,
              calling stations answered, no CQ when idle, 4 repetitions and 10 quiet
-             minutes; calls_per_station is not taken over.
+             minutes; callsPerStation is not taken over.
              Version 1. The strategies are not taken over.
              A file of another version, and one of whose strategies is not of its
              version's form or outside StrategyForm, cannot be used. */
@@ -220,42 +220,42 @@ package WstxStrategies {
     enum def DupeRule {
         doc /* When a second QSO with a station counts nothing.
              band: on the same band.
-             band_mode_class: on the same band in the same of phone, CW and digital.
-             band_grid: on the same band from the same grid.
+             bandModeClass: on the same band in the same of phone, CW and digital.
+             bandGrid: on the same band from the same grid.
              call: in the same period. */
         enum band;
-        enum band_mode_class;
-        enum band_grid;
+        enum bandModeClass;
+        enum bandGrid;
         enum call;
     }
     enum def PointsRule {
         doc /* The points of one QSO. A distance is that between the centres of the two
              four-character squares, on a sphere of 6371 km radius.
-             one_plus_per_3000_km: 1, and 1 more for each full 3000 km.
-             one_plus_per_500_km_up: 1, and 1 more for each 500 km begun, one at least.
-             field_day: 1 in phone, 2 in CW and in a digital mode.
-             vhf_january: 1 on 6m, 5m, 4m and 2m; 2 on 1.25m and 70cm; 4 on 33cm and
+             onePlusPer3000Km: 1, and 1 more for each full 3000 km.
+             onePlusPer500KmUp: 1, and 1 more for each 500 km begun, one at least.
+             fieldDay: 1 in phone, 2 in CW and in a digital mode.
+             vhfJanuary: 1 on 6m, 5m, 4m and 2m; 2 on 1.25m and 70cm; 4 on 33cm and
              23cm; 8 above.
-             vhf_june_september: 1, 2, 3 and 4 on the same bands.
+             vhfJuneSeptember: 1, 2, 3 and 4 on the same bands.
              kilometres: 50 within one four-character square; otherwise 1 and the whole
              kilometres, with 111.2 km for a degree.
-             one_per_call: 1. */
-        enum one_plus_per_3000_km;
-        enum one_plus_per_500_km_up;
-        enum field_day;
-        enum vhf_january;
-        enum vhf_june_september;
+             onePerCall: 1. */
+        enum onePlusPer3000Km;
+        enum onePlusPer500KmUp;
+        enum fieldDay;
+        enum vhfJanuary;
+        enum vhfJuneSeptember;
         enum kilometres;
-        enum one_per_call;
+        enum onePerCall;
     }
     enum def MultiplierRule {
         doc /* What counts as a multiplier.
              none: nothing.
-             field_per_band: each first two characters of a grid, on each band.
-             grid_per_band: each first four characters of a grid, on each band. */
+             fieldPerBand: each first two characters of a grid, on each band.
+             gridPerBand: each first four characters of a grid, on each band. */
         enum none;
-        enum field_per_band;
-        enum grid_per_band;
+        enum fieldPerBand;
+        enum gridPerBand;
     }
     enum def CountedModes {
         doc /* The modes whose QSOs a contest counts.
@@ -314,26 +314,26 @@ package WstxStrategies {
         doc /* The contests the station knows, in the order in which they are offered.
              A profile is written as id: name; activity; bands; dupes, points,
              multipliers, counted modes; automation; schedule.
-             ww_digi: WW Digi; ww_digi; 160m, 80m, 40m, 20m, 15m, 10m; band,
-             one_plus_per_3000_km, field_per_band, ft8Ft4; forbidden; the last full
-             weekend of August, Saturday 12:00 to Sunday 12:00.
-             arrl_digi: ARRL Digi; arrl_digi; those six and 6m; band,
-             one_plus_per_500_km_up, none, digitalNoRtty; forbidden; the first full
-             weekend of June, Saturday 18:00 to Monday 00:00.
-             arrl_field_day: ARRL Field Day; field_day; those six and every band from 6m
-             up; band_mode_class, field_day, none, any; forbidden; the fourth full
-             weekend of June, Saturday 18:00 to Sunday 21:00.
-             arrl_vhf_jan: ARRL January VHF; na_vhf; every band from 6m up; band_grid,
-             vhf_january, grid_per_band, any; forbidden; asked.
-             arrl_vhf_jun: ARRL June VHF; as arrl_vhf_jan with vhf_june_september; the
+             ww_digi: WW Digi; wwDigi; 160m, 80m, 40m, 20m, 15m, 10m; band,
+             onePlusPer3000Km, fieldPerBand, ft8Ft4; forbidden; the last full weekend of
+             August, Saturday 12:00 to Sunday 12:00.
+             arrl_digi: ARRL Digi; arrlDigi; those six and 6m; band, onePlusPer500KmUp,
+             none, digitalNoRtty; forbidden; the first full weekend of June, Saturday
+             18:00 to Monday 00:00.
+             arrl_field_day: ARRL Field Day; fieldDay; those six and every band from 6m
+             up; bandModeClass, fieldDay, none, any; forbidden; the fourth full weekend
+             of June, Saturday 18:00 to Sunday 21:00.
+             arrl_vhf_jan: ARRL January VHF; naVhf; every band from 6m up; bandGrid,
+             vhfJanuary, gridPerBand, any; forbidden; asked.
+             arrl_vhf_jun: ARRL June VHF; as arrl_vhf_jan with vhfJuneSeptember; the
              second full weekend of June, Saturday 18:00 to Monday 03:00.
              arrl_vhf_sep: ARRL September VHF; as arrl_vhf_jun, in September.
              iaru_50_mgm: IARU R1 50 MHz MGM; no activity; 6m; band, kilometres,
-             grid_per_band, digital; silent; the third Saturday of April, 14:00 to
+             gridPerBand, digital; silent; the third Saturday of April, 14:00 to
              Sunday 14:00.
              iaru_70_mgm: IARU R1 70 MHz MGM; as iaru_50_mgm on 4m, in May.
              ft8_activity: FT8 Activity; no activity; 2m, 70cm, 23cm; call,
-             one_per_call, grid_per_band, digital; silent; in every month the first
+             onePerCall, gridPerBand, digital; silent; in every month the first
              Wednesday on 2m, the second on 70cm and the third on 23cm, 17:00 to 21:00,
              each round with its one band.
              The CQ words of a contest are the word of its activity: WW for ww_digi,

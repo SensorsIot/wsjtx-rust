@@ -74,8 +74,8 @@ package WstxContestRanking {
              bands, and it is no dupe of a QSO counted before it. The QSOs are taken
              in the order of their start. A QSO without a band is not counted.
              The dupe, by the profile's DupeRule. band: the call is counted on the
-             band. band_mode_class: it is counted on the band in the same of phone, CW
-             and digital. call: it is counted. band_grid: it is counted on the band
+             band. bandModeClass: it is counted on the band in the same of phone, CW
+             and digital. call: it is counted. bandGrid: it is counted on the band
              from the same first four characters of the grid; a QSO without a grid is
              a dupe when the call is counted on the band at all, and every grid is a
              dupe of a counted QSO of the call on the band that has none.
@@ -140,7 +140,7 @@ package WstxContestRanking {
              digital mode and from the first four characters of the grid in its
              message: "dupe", with ContestVerdict::dupe true, also for a caller;
              the record is no caller, and its call fails the callsign guard of
-             WstxValueOrder::Candidate: "callsign guard"; under DupeRule::band_grid
+             WstxValueOrder::Candidate: "callsign guard"; under DupeRule::bandGrid
              the guard is asked of the call without an ending /R;
              the record is no caller and neither a CQ nor an RR73 or 73 to another
              call: "not a CQ".

@@ -267,7 +267,7 @@ package WstxDecode {
              A frame found so is returned only when its payload has the status decoded
              and its confidence is at least minConfidence; an FT8 frame of the CQ type
              needs no confidence.
-             The frame carries its type in a_priori. */
+             The frame carries its type in aPriori. */
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: ft8b, ft4_decode and ft8apset "
                 + "with ncontest=0: naptypes, lapcqonly, napwid, qual";

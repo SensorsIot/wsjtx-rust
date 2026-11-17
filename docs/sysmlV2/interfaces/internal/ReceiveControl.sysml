@@ -14,7 +14,7 @@ package WstxReceiveControl {
 
     attribute def ReceiveConfig {
         doc /* The configuration of the receive function. */
-        attribute window_dump : Boolean = false {
+        attribute windowDump : Boolean = false {
             doc /* The window dump switch. On: receive writes each prompt decode window
                  of FT8 to a file, for the diagnosis of the decoder. */ }
     }
@@ -55,48 +55,48 @@ package WstxReceiveControl {
     }
     enum def ErrorCode {
         doc /* Why receive refuses a command or a job has failed.
-             not_found: the command names a job, a source or a recording that is not
+             notFound: the command names a job, a source or a recording that is not
              the current one.
              busy: another job, an import of a recording or a band or mode selection
              has not ended.
-             storage_unavailable: the storage of the profile has an error.
-             counter_exhausted: a count has reached its end.
-             no_recording: no recording is stored.
-             recording_unavailable: the stored recording cannot be read.
-             audio_unavailable: the receive stream cannot be had.
-             unsupported_audio: the format of the radio connection is none audio takes.
-             audio_close_failed: the radio connection did not close.
-             audio_failed: the receive stream failed in another way.
+             storageUnavailable: the storage of the profile has an error.
+             counterExhausted: a count has reached its end.
+             noRecording: no recording is stored.
+             recordingUnavailable: the stored recording cannot be read.
+             audioUnavailable: the receive stream cannot be had.
+             unsupportedAudio: the format of the radio connection is none audio takes.
+             audioCloseFailed: the radio connection did not close.
+             audioFailed: the receive stream failed in another way.
              cancelled: the receive stream was stopped while the job ran.
-             decode_limit: a decode window or a decoded frame is outside the limits.
-             invalid_request: a request for records that cannot be answered.
-             dump_failed: a window could not be written. */
-        enum state_conflict;
-        enum not_found;
+             decodeLimit: a decode window or a decoded frame is outside the limits.
+             invalidRequest: a request for records that cannot be answered.
+             dumpFailed: a window could not be written. */
+        enum stateConflict;
+        enum notFound;
         enum busy;
-        enum storage_unavailable;
-        enum counter_exhausted;
-        enum no_recording;
-        enum recording_unavailable;
-        enum audio_unavailable;
-        enum unsupported_audio;
-        enum audio_close_failed;
-        enum audio_failed;
+        enum storageUnavailable;
+        enum counterExhausted;
+        enum noRecording;
+        enum recordingUnavailable;
+        enum audioUnavailable;
+        enum unsupportedAudio;
+        enum audioCloseFailed;
+        enum audioFailed;
         enum cancelled;
-        enum decode_limit;
-        enum invalid_request;
-        enum dump_failed;
+        enum decodeLimit;
+        enum invalidRequest;
+        enum dumpFailed;
     }
     attribute def JobView {
         doc /* One job of receive. */
         attribute id : String;
-        attribute source_id : String[0..1] {
+        attribute sourceId : String[0..1] {
             doc /* The source the job works on: the recording, or the current epoch of
                  the receive stream. Absent for a live job until it has taken up its
                  first epoch. */ }
         attribute kind : ReceiveKind;
         attribute 'state' : ReceiveState;
-        attribute processed_frames : Integer {
+        attribute processedFrames : Integer {
             doc /* How far the job has come in its source. */ }
         attribute error : ErrorCode[0..1] { doc /* Present in the state failed. */ }
     }
@@ -129,7 +129,7 @@ package WstxReceiveControl {
     item def OnAir {
         doc /* Whether the station is on the air: it keys the radio, plays a
              transmission or tunes. The supervisor gives it whenever one of the two
-             values changes; they are on_air and last_period_utc_ms of the transmit
+             values changes; they are onAir and lastPeriodUtcMs of the transmit
              function's TransmitStatus. */
         attribute onAir : Boolean;
         attribute lastPeriodStartMs : Integer[0..1] {
@@ -154,26 +154,26 @@ package WstxReceiveControl {
     item def RecordsPage {
         doc /* The answer to ReadRecords: the kept records from the cursor on, in the
              order of their sequence, at most as many as asked for. */
-        attribute first_sequence : Integer { doc /* The oldest record kept. */ }
-        attribute next_sequence : Integer {
+        attribute firstSequence : Integer { doc /* The oldest record kept. */ }
+        attribute nextSequence : Integer {
             doc /* The sequence the next record will have. */ }
         item records : ResultRecord[0..*];
         attribute more : Boolean {
             doc /* True when kept records after the last one of the page exist. */ }
-        item latest_decode : PeriodView[0..1] {
+        item latestDecode : PeriodView[0..1] {
             doc /* The view last published. Absent until the first one. */ }
     }
     item def CursorExpired {
         doc /* The answer to ReadRecords for a cursor before the oldest record kept. */
-        attribute first_sequence : Integer;
-        attribute next_sequence : Integer;
+        attribute firstSequence : Integer;
+        attribute nextSequence : Integer;
     }
 
     attribute def FrameSpan {
-        doc /* A run of samples of the stream, from first_frame up to, and not including,
-             end_frame. */
-        attribute first_frame : Integer;
-        attribute end_frame : Integer;
+        doc /* A run of samples of the stream, from firstFrame up to, and not including,
+             endFrame. */
+        attribute firstFrame : Integer;
+        attribute endFrame : Integer;
     }
     attribute def LiveView {
         doc /* The state of live receive. */
@@ -181,22 +181,22 @@ package WstxReceiveControl {
         attribute tie : EpochTie[0..1] {
             doc /* The tie of the current epoch to station time, as audio gave it.
                  Absent while the epoch is not tied. */ }
-        attribute next_frame : Integer {
+        attribute nextFrame : Integer {
             doc /* The sample of the current epoch that comes next. */ }
-        attribute first_sequence : Integer { doc /* The oldest record kept. */ }
-        attribute next_sequence : Integer;
-        attribute search_limited : Boolean {
+        attribute firstSequence : Integer { doc /* The oldest record kept. */ }
+        attribute nextSequence : Integer;
+        attribute searchLimited : Boolean {
             doc /* True after a window held more candidates than the decoder
                  searches. */ }
-        attribute last_overrun : FrameSpan[0..1] {
+        attribute lastOverrun : FrameSpan[0..1] {
             doc /* The window last given up because the next one came due. Absent until
                  that has happened in the current epoch. */ }
-        attribute rx_level_db : Integer[0..1] {
+        attribute rxLevelDb : Integer[0..1] {
             doc /* The level of the receive stream. Absent while none is measured. */ }
-        attribute loss_epochs : Integer {
+        attribute lossEpochs : Integer {
             doc /* How many epochs after the first began with a loss in the capture. */ }
-        attribute last_loss : CaptureEvent[0..1] {
-            doc /* What caused the latest of them. Absent while loss_epochs is 0. */ }
+        attribute lastLoss : CaptureEvent[0..1] {
+            doc /* What caused the latest of them. Absent while lossEpochs is 0. */ }
     }
     item def ReceiveStatus {
         doc /* The state of receive at the moment it is read. */
@@ -206,11 +206,11 @@ package WstxReceiveControl {
         attribute live : LiveView[0..1] {
             doc /* Present from the admission of a live job until the next start is
                  admitted. */ }
-        item latest_decode : PeriodView[0..1] {
+        item latestDecode : PeriodView[0..1] {
             doc /* The view last published. Absent without live receive, until the
                  first view, and again after a break in the stream. */ }
         attribute decoding : Boolean { doc /* True while a window is being decoded. */ }
-        attribute decode_windows : Integer {
+        attribute decodeWindows : Integer {
             doc /* How many windows have been given to the decoder since station
                  start. */ }
     }
@@ -221,24 +221,24 @@ package WstxReceiveControl {
         attribute origin : Integer { doc /* The first sample of the window. */ }
         attribute frames : Integer { doc /* Its length. */ }
         attribute late : Boolean { doc /* True for the late window of a period. */ }
-        attribute period_start_frame : Integer[0..1] {
+        attribute periodStartFrame : Integer[0..1] {
             doc /* The sample at which the window's period starts. Absent while the
                  epoch is not tied. */ }
-        attribute period_start_utc : String[0..1] { doc /* Absent likewise. */ }
-        attribute window_offset_ms : Integer[0..1] {
+        attribute periodStartUtc : String[0..1] { doc /* Absent likewise. */ }
+        attribute windowOffsetMs : Integer[0..1] {
             doc /* The start of the window against the start of its period. Absent
                  likewise. */ }
-        attribute zero_samples : Integer { doc /* Samples that are exactly 0. */ }
-        attribute longest_zero_run : Integer;
-        attribute early_buffer_zero_samples : Integer[0..1] {
+        attribute zeroSamples : Integer { doc /* Samples that are exactly 0. */ }
+        attribute longestZeroRun : Integer;
+        attribute earlyBufferZeroSamples : Integer[0..1] {
             doc /* The zeros in the first 41 symbols of an FT8 period. Absent without a
                  period start. */ }
-        attribute zero_filled_frames : Integer {
+        attribute zeroFilledFrames : Integer {
             doc /* CaptureMarks::zeroFilledFrames of the window. */ }
-        attribute glitch_frames : Integer {
+        attribute glitchFrames : Integer {
             doc /* CaptureMarks::glitchFrames of the window. */ }
         attribute capture : CaptureCounts;
-        attribute capture_drift_ms : Integer[0..1] {
+        attribute captureDriftMs : Integer[0..1] {
             doc /* How far the capture clock had moved from its tie. Absent until
                  measured. */ }
         attribute dump : String[0..1] {
@@ -250,11 +250,11 @@ package WstxReceiveControl {
     }
     item def DiagnosticsView {
         doc /* The answer to ReadDiagnostics. */
-        attribute window_dump : Boolean { doc /* ReceiveConfig::window_dump. */ }
-        attribute dump_error : ErrorCode[0..1] {
-            doc /* dump_failed after a window could not be written, until the next one
+        attribute windowDump : Boolean { doc /* ReceiveConfig::windowDump. */ }
+        attribute dumpError : ErrorCode[0..1] {
+            doc /* dumpFailed after a window could not be written, until the next one
                  is written. */ }
-        attribute dumped_windows : Integer {
+        attribute dumpedWindows : Integer {
             doc /* How many windows were written since station start. */ }
         attribute windows : WindowCounters[0..*] ordered {
             doc /* The latest windows, the oldest first. */ }

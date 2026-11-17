@@ -54,13 +54,13 @@ package WstxLiveReceive {
              period begins that holds the middle of the window, and context the
              ContactContext last given.
              One window is decoded at a time. When another window comes due
-             meanwhile, the one being decoded is given up, LiveView::last_overrun
+             meanwhile, the one being decoded is given up, LiveView::lastOverrun
              names it, its view is published with complete false, and the new window
              is decoded; the late window of WindowSchedule waits instead. When a
              further window comes due while the late window waits, the waiting window
-             is given up as well, and last_overrun names the waiting window.
+             is given up as well, and lastOverrun names the waiting window.
              A window that ends with DecodeError::invalidSamples or decodeLimit ends
-             the job as failed with decode_limit.
+             the job as failed with decodeLimit.
              Receive gives the modes part a CallsUpdate at station start and whenever
              the calls of ContactContext change.
              In the mode spectrum no window is cut. */
@@ -72,7 +72,7 @@ package WstxLiveReceive {
              gives it (CaptureTie), plus the clock's correction (StationTime).
              A frame belongs to the period whose nominal start is nearest to the
              frame's start, and to the later one when two are equally near.
-             ResultRecord::dt_seconds is the frame's start against the nominal start
+             ResultRecord::dtSeconds is the frame's start against the nominal start
              of that period (Period); it lies between minus and plus half a period.
              For every record whose message names its sender, receive gives the clock
              a StationHeard: the sender, the SNR, and the DT in milliseconds as it is
@@ -90,17 +90,17 @@ package WstxLiveReceive {
              A view is published after every window that was decoded, for the running
              job only.
              While the epoch is tied, the view is that of the period the window
-             belongs to: first_sequence and next_sequence span the kept records of
+             belongs to: firstSequence and nextSequence span the kept records of
              that period, and are both the next sequence when there is none.
              A window that begins after the nominal start of its period publishes a
              view only when it is the late window of WindowSchedule.
              A view of an earlier period than the one last published is not
              published.
              A window of the period last published whose records begin at the same
-             first_sequence publishes that view again under the same id: next_sequence
+             firstSequence publishes that view again under the same id: nextSequence
              grows, complete and transmitted are set and are not cleared.
              Every other view has the next id; an id count at its end is refused with
-             counter_exhausted and leaves the view last published in place.
+             counterExhausted and leaves the view last published in place.
              While the epoch is not tied, the view spans the records from the first
              sequence of its window to the next sequence.
              A job that ends leaves its view as it was. */
@@ -231,7 +231,7 @@ package WstxLiveReceive {
     }
 
     attribute def RxLevel {
-        doc /* LiveView::rx_level_db, the level of the receive stream.
+        doc /* LiveView::rxLevelDb, the level of the receive stream.
              It is 10 log10 of the mean of the squared samples, with full scale as
              32768, rounded to a whole number and limited to 0 to maxDb.
              A value is formed from the samples of about one second.

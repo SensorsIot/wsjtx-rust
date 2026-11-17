@@ -22,8 +22,7 @@ package WstxRankingPart {
         @DetailTests {
             tests = "server/src/strategy_tests.rs; server/src/strategy97_tests.rs; "
                 + "server/src/contest_tests.rs";
-            covers = "the saved strategies, their routes and the runs of Auto, which "
-                + "stand in the same modules";
+            covers = "the verdicts and the value order of the decoded stations";
         }
         port control : ~RankingControlPort;
         port rules : ~RankingSharePort;

@@ -42,14 +42,14 @@ package WstxMessageChoice {
              with the CQ word of the activity in force after CQ. An activity changes them
              as WstxSpecialActivities says; a nonstandard call as NonstandardRule says. The
              own CQ without a partner has Tx6 only.
-             The operator sets: SetReport (ReportRange; outside it invalid_report) renews
+             The operator sets: SetReport (ReportRange; outside it invalidReport) renews
              Tx2 and Tx3 and keeps an edited Tx6; SetTx1Skip: with it a selection that
              would give Tx1 gives Tx2, and choosing Tx1 gives Tx2; SetTx4: rrr or rr73
              (FT8 starts with rrr, FT4 has rr73 only); EditMessage: a text of the slot that
              modes packs unaltered (WstxModeProcessing::PackAnswer), in capitals; otherwise
-             invalid_message;
-             ChooseNext: the message due (WstxStandardQso::ReopenRule), refused no_contact
-             without a contact and invalid_message for a slot without text. A record of
+             invalidMessage;
+             ChooseNext: the message due (WstxStandardQso::ReopenRule), refused noContact
+             without a contact and invalidMessage for a slot without text. A record of
              the current partner keeps the Tx4 form and every text already sent.
              A free-text Tx5 on the own CQ is sent once and ends the CQ as a completed one;
              nothing is handed over. */
@@ -70,7 +70,7 @@ package WstxMessageChoice {
 
     attribute def NonstandardRule {
         doc /* One of the two calls of a contact may be nonstandard or compound; with both,
-             the call is refused invalid_call. The nonstandard call is written in full and
+             the call is refused invalidCall. The nonstandard call is written in full and
              the other in angle brackets where WSJT-X does: a nonstandard partner DX gets
              Tx1 "<DX> MY GRID", Tx2 "<DX> MY report", Tx3 "<DX> MY R report", Tx4 "DX <MY>
              RRR", Tx5 "DX <MY> 73"; a nonstandard own call MY gets Tx1 "<DX> MY", Tx2 "DX
