@@ -1,9 +1,10 @@
 # From the rebuild to production
 
 Operator 2026-11-17: an updated master, an updated model, an updated Goldratt factory and the old
-stuff removed; then production starts again. The factory is polished first (operator, order A):
-nothing of it needs the model; the product CR #235 is then the factory's first job, and its proof
-by use. Order 1 → 2 → 3 → 4; #235's definition runs meanwhile and waits at `defined`.
+stuff removed; then production starts again. Order (operator 2026-11-18): #235 whole, now,
+driven by hand, so that the model reaches master; the factory's polish (the sweep, the branches,
+Alex's configuration, #172, MEMORY) is prepared alongside by read-only agents and done after it;
+then harness change 2; then production. No implementer session runs in parallel.
 
 **The goal** (operator 2026-11-18): "an absolutely clean and polished master where Alex likes to
 work and the quality of the output is marvelous". Done means: master holds the present only (no
@@ -25,11 +26,11 @@ product issues; harness issues can be managed much simpler"):
 | Step | Kind |
 |---|---|
 | #233, #234 (done) | H |
+| Phase 2 (first): #235, model, tool, tests, tags, by hand | P |
 | Phase 1.1: issue sweep | – (the operator's decisions per issue; harness issues in a short list of their own) |
 | Phase 1.2: branches and worktrees | – |
 | Phase 1.3: Alex's configuration, #172, the meter's baseline | H |
 | Phase 1.4: MEMORY's "Inputs and unfinished work" | H |
-| Phase 2: #235, model, tool, tests, tags, through the factory | P |
 | Phase 3: harness change 2 | H |
 | Phase 4: production | P |
 
@@ -55,9 +56,9 @@ product issues; harness issues can be managed much simpler"):
    upstream. The meter's baseline starts after the rebuild.
 4. MEMORY's "Inputs and unfinished work" is renewed.
 
-## Phase 2: #235 through the factory (P)
+## Phase 2 (first): #235 by hand (P)
 
-The product CR #235 runs through Alex: Check (`Ready: PASS`), Implement (the coordinator: the
+The product CR #235, kept whole and driven by hand by the coordinator: Check (`Ready: PASS`), Implement (the coordinator: the
 model's findings; the coder: the tool, its tests, the tags, the test readers; each new test red
 on the parent), Review, Land through the merge queue, Install, Accept. The candidate is cut from
 master and takes `docs/sysml/` from `sysmlv2-rebuild`; the rebuild's archive does not land;
