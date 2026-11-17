@@ -160,3 +160,6 @@ migrations; README in #235 or #231; where harness issues live.
 3. Deploy authority (operator 2026-11-18, A): #188 is carried out now: `harness/project/deploy/
    authority/`, its test and the two Project-Specifics sections go (harness change); the station
    drill's approval cases go in a product CR after #235. #188 drops its `cr` labels.
+4. Data folders (operator 2026-11-18, A): one `.git/test-inputs/` holds the test inputs and the
+   simulator samples, renamed in one harness change with the handover manifest after #235;
+   folders nothing reads are deleted; the tests' fallback to `issue-7/downloads` goes.
