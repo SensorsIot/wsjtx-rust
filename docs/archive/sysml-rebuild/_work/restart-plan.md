@@ -135,3 +135,5 @@ migrations; README in #235 or #231; where harness issues live.
 3. The meter's baseline (operator 2026-11-18, A): `meter: rules_start` is the day the polished
    Alex takes its first job; the queue history and the refusal log are pruned to it that day;
    Jonah counts his 10 CRs from then.
+4. The second PC (operator 2026-11-18, B): Andreas is no longer used; it leaves `machines:`
+   and every text that names it; the factory runs on HB9BLA alone.
