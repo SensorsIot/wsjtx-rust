@@ -99,7 +99,8 @@ function Old-Power($lease) {
 try {
   if (-not $StateDir) { $StateDir = Join-Path (git -C $PSScriptRoot rev-parse --path-format=absolute --git-common-dir) 'harness-parallel\radio' }
   if (-not $Station) { $Station = Join-Path $env:LOCALAPPDATA 'WstxRust\station' }
-  if (-not $AgentClient) { $AgentClient = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\tools\deploy\agent-client.ps1')) }
+  # The repository root is three folders above harness/project/deploy/.
+  if (-not $AgentClient) { $AgentClient = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\tools\deploy\agent-client.ps1')) }
   [void][IO.Directory]::CreateDirectory($StateDir)
   if ($Status) {
     $lease = With-LeaseLock { Read-Lease }

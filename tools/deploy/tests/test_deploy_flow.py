@@ -109,6 +109,12 @@ class DeployFlowTests(unittest.TestCase):
         pins[2] = (sha(OLD_LAUNCHER), pins[2][1])
         s.pin(CURRENT, pins)
 
+    def cr_state_at(self, *parts):
+        """The repository's harness has cr_state.py at <repo>/<parts>/core/tools/; returns the call."""
+        path = os.path.join(self.s.repo, *parts, "core", "tools", "cr_state.py")
+        station_drill.write(path, "# drill: cr_state.py\n")
+        return f"python {path} installed {COMMIT} --since {CURRENT}"
+
     def deploy(self, probe=PROBE_PASS, page=PAGE_PASS, subjects=SUBJECTS, issues=ISSUES):
         open(self.log, "w").close()
         env = {"FLOW_LOG": self.log, "FLOW_POSTS": self.posts, "FLOW_PROBE_LINE": probe[0], "FLOW_PROBE_RC": probe[1],
@@ -147,11 +153,13 @@ class DeployFlowTests(unittest.TestCase):
     def test_probe_and_page_check_pass_install_with_the_new_launcher_and_post_the_record(self):
         """TC-196-03 (a) and (c): launcher written without an OK; TC-171-03 order and lock; TC-171-04 record."""
         self.with_old_launcher()
+        self.cr_state_at("harness")
+        record_call = self.cr_state_at("harness", "general")
         new = sha(station_drill.LAUNCHER)[:12]
         rc, out, steps = self.deploy()
         self.assertEqual(rc, 0, out)
         self.assertEqual(steps, ["stop ccccccccc lock=held", f"start 123456789 lock=held launcher={new}", "probe lock=held",
-                                 "page-check lock=free", f"python {self.s.repo}\\harness\\core\\tools\\cr_state.py installed {COMMIT} --since {CURRENT}",
+                                 "page-check lock=free", record_call,
                                  "posted 171 repo=SensorsIot/wsjtx-rust"], out)
         self.assertEqual(self.active(), COMMIT)
         self.assertEqual(self.station_launcher(), station_drill.LAUNCHER)
@@ -172,6 +180,13 @@ class DeployFlowTests(unittest.TestCase):
         self.assertIn("Page check: LIVE PAGE CHECK PASS see the PAGE CHECK line x y", lines)
         self.assertEqual([l for l in lines if l.startswith(OK_LINE_START)], [])
         self.assertIn("Return to the previous version: none", lines)
+
+    def test_a_checkout_in_the_old_layout_records_with_the_old_cr_state(self):
+        """#230 item 10: without harness/general/core/tools/cr_state.py the record runs harness/core/tools/cr_state.py."""
+        record_call = self.cr_state_at("harness")
+        rc, out, steps = self.deploy()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(steps[4:], [record_call, "posted 171 repo=SensorsIot/wsjtx-rust"], out)
 
     def test_install_without_a_changed_mechanism_keeps_the_launcher(self):
         """TC-171-04: no return; the launcher is not written; the record holds no OK line (TC-196-03 c)."""

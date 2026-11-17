@@ -1,6 +1,6 @@
 # User-level update of the HB9BLA station (no administrator rights; setup-once.ps1 has set the
 # scheduled task up once). It carries out the standing deploy policy of
-# docs/harness/Project-Specifics.md (Deployment authority); every step is in this file or in
+# harness/project/docs/Project-Specifics.md (Deployment authority); every step is in this file or in
 # another pinned mechanism file of the package.
 #   <package>\deploy\tools\deploy\station-update\station-update.ps1 -Manifest <package>\manifest.json [-DryRun]
 #   station-update.ps1 -Rollback
@@ -150,9 +150,11 @@ function Switch-Back($from,$to,[bool]$restoreProfile) {
   }
 }
 # The pins a commit states (Project-Specifics.md, section Deploy pins, read with git show), in
-# their order, or $null when it states none.
+# their order, or $null when it states none. The file is harness/project/docs/Project-Specifics.md;
+# only a commit without it (one from before #230) is read at docs/harness/Project-Specifics.md.
 function Read-Pins([string]$Commit) {
-  $text=@(& git -C $Repo show "${Commit}:docs/harness/Project-Specifics.md")
+  $text=@(& git -C $Repo show "${Commit}:harness/project/docs/Project-Specifics.md")
+  if ($LASTEXITCODE -ne 0) { $text=@(& git -C $Repo show "${Commit}:docs/harness/Project-Specifics.md") }
   if ($LASTEXITCODE -ne 0) { return $null }
   $pins=@(); $in=$false
   foreach ($line in $text) {
@@ -213,10 +215,13 @@ function Last-Line($lines,[string]$prefix) {
   if ($m.Count) { return [string]$m[-1] }
   return "no $($prefix.Trim()) line"
 }
-# The issues the install moves to installed (their state change is cr_state.py's).
+# The issues the install moves to installed (their state change is cr_state.py's). The harness
+# is at harness\general since #230; a checkout still in the old layout has it at harness\.
 function Move-Installed($commit,$previous) {
+  $tool=Join-Path $Repo 'harness\general\core\tools\cr_state.py'
+  if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { $tool=Join-Path $Repo 'harness\core\tools\cr_state.py' }
   Push-Location -LiteralPath $Repo
-  try { $out=@(& python (Join-Path $Repo 'harness\core\tools\cr_state.py') installed $commit --since $previous) } finally { Pop-Location }
+  try { $out=@(& python $tool installed $commit --since $previous) } finally { Pop-Location }
   return ,$out
 }
 # Why issue $n gets no return record, or $null when it is open at cr:landed or cr:installed.

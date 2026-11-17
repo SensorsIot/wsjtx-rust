@@ -1908,7 +1908,7 @@ QNAME_SEGMENT = re.compile(r"(?:[A-Za-z_]\w*|'[^'\r\n]+')(?:::|$)")
 MODEL_PATH = re.compile(r"docs/sysml/[\w./-]*[\w/]")
 LINK = re.compile(r"\]\(\s*<?([^)\s>]+)>?\s*\)")
 # The tracked files at <head> whose model citations `equivalence` checks.
-CITATION_ROOTS = ("server", "client", "tests", "tools", "fixtures", "docs/harness", ".harness", "README.md")
+CITATION_ROOTS = ("server", "client", "tests", "tools", "fixtures", "harness/project", "docs/harness", ".harness", "README.md")
 # P6: the tests below READERS that judge a pinned commit's model or their own fixture model.
 READERS = "tools/sysml/tests/"
 PINNED_LINE = re.compile(r'(?m)^PINNED = "([0-9A-Fa-f]{7,40})"$')

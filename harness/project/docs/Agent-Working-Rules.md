@@ -4,13 +4,13 @@
 **Status:** present-state. **Layer:** HOW. **Scope:** WSTX Rust bindings.
 
 How an AI agent session works with the operator on this project. The build procedure is
-the [CR process](../../harness/core/docs/CR-Process.md); this page holds the standing
+the [CR process](../../general/core/docs/CR-Process.md); this page holds the standing
 rules around it. Agent memory only points here.
 
 ## Who changes what
 
 - **One repository leader.** Repository changes (commits, hand-ins to the
-  [merge queue](../../harness/core/docs/Merge-Queue.md), harness pushes) come from one
+  [merge queue](../../general/core/docs/Merge-Queue.md), harness pushes) come from one
   session at a time; another session reads, copies and reports. A CR reaches the main
   branch through the queue (the single exception the merge queue document names aside).
 - **Heavy runs yield to the gate by priority.** A long build or test run outside the gate
@@ -18,7 +18,7 @@ rules around it. Agent memory only points here.
   reruns a timing-sensitive failure once before treating it as real.
 - **Pushing and hand-in** follow the core: only the merge queue pushes CRs, and a CR agent
   hands in at once after red on the parent and the fast checks
-  ([CR process](../../harness/core/docs/CR-Process.md#steps), steps 2-4). This project's
+  ([CR process](../../general/core/docs/CR-Process.md#steps), steps 2-4). This project's
   cheap contract check among them is `python tools/sysml.py traces`.
 - **Per approved issue.** A session changes the main branch or the running installation
   only for an issue the operator has approved for it, each issue on its own; the approval
@@ -48,7 +48,7 @@ rules around it. Agent memory only points here.
   one change the session stops and asks the operator whether to continue.
 - A reviewer reads the candidate (`git show`, or a plain copy made with `git archive <rev> | tar -x`)
   and edits nothing. It may run the tests of what changed and of its surroundings to reproduce a
-  finding ([CR process step 3](../../harness/core/docs/CR-Process.md#steps)), never the whole suite
+  finding ([CR process step 3](../../general/core/docs/CR-Process.md#steps)), never the whole suite
   or a gate.
 
 ## GitHub issues are the memory
@@ -56,8 +56,8 @@ rules around it. Agent memory only points here.
 - An issue holds a change's request, rationale, current status, settled questions,
   required review and acceptance records, actual run evidence, the closing summary
   and outstanding approved scope.
-  Findings follow [intake](../../harness/core/docs/CR-Process.md#intake-and-authorization).
-  Continuation state uses the bounded [checkpoint](../../harness/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint).
+  Findings follow [intake](../../general/core/docs/CR-Process.md#intake-and-authorization).
+  Continuation state uses the bounded [checkpoint](../../general/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint).
   Required evidence lives in these records, rather than only in a session or chat;
   the issue is not a running diary.
 - **Records are cited as read.** A comment, commit, run or other record is cited by the
@@ -83,8 +83,8 @@ rules around it. Agent memory only points here.
 
 ## Agent role additions
 
-This project's layer of the [agent roles](../../harness/core/agents/roles.md), the coordinator
-included, installed with `python harness/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer`.
+This project's layer of the [agent roles](../../general/core/agents/roles.md), the coordinator
+included, installed with `python harness/general/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer`.
 
 ### Role: definer
 
@@ -94,7 +94,7 @@ guard:
 ```
 
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
-[model authoring and validation](../../tools/sysml/README.md#model-authoring-and-validation),
+[model authoring and validation](../../../tools/sysml/README.md#model-authoring-and-validation),
 run in an issue worktree by the worktree path rule under "Role: every" below.
 A definition that changes the model is written against the [finished model](Finished-Model.md),
 read before the model itself: every model text it writes meets its rules, and a statement
@@ -114,7 +114,7 @@ The checker posts its verdict as its own issue comment, in the posting form unde
 "Role: every" below. Its first line is exactly `Ready: PASS — <sha>` or
 `Ready: not yet — <sha>`, naming the main commit it read, or
 `Ready: PASS — <tip> (renewed from <sha>)` for a renewal, as
-[Check](../../harness/core/docs/CR-Process.md#check) says; the hook refuses any other first
+[Check](../../general/core/docs/CR-Process.md#check) says; the hook refuses any other first
 line (harness#91).
 
 ### Role: coder
@@ -133,7 +133,7 @@ guard:
 ```
 
 - **Builds and tests** use the build and temp folders of the
-  [HB9BLA handover](HB9BLA-HANDOFF.md#inputs-and-unfinished-work) and run beside the gate
+  [HB9BLA handover](MEMORY.md#inputs-and-unfinished-work) and run beside the gate
   as [heavy runs yield to the gate](Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
   In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
   TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
@@ -157,7 +157,7 @@ guard:
   the tests run on the build of the temporary tree (its pack `CARGO_TARGET_DIR`).
 - **Delivery facts** in the model are a requirement's `coverage`, a case's `automation`
   and its `executable` binding
-  ([source bindings](../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings));
+  ([source bindings](../../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings));
   the hook refuses any other model line.
 - **Proves tags:** this project's tag syntax for test-design step 5 is a `// Proves: <ID>`
   comment, on a real `#[test]` (or Node `test(...)`) that exercises the promise, never on
@@ -196,12 +196,12 @@ any other repository, for reading too.
 ```yaml
 guard:
   commands:
-    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|\.harness/deploy/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?'
-    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File \.harness/deploy/station-switch\.ps1 -To simulator'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch\.ps1 -To simulator'
   writes: ["D:/wstx-tmp/live/**"]
 ```
 
-The live-test binding is [Preserve the runtime](HB9BLA-HANDOFF.md#preserve-the-runtime):
+The live-test binding is [Preserve the runtime](MEMORY.md#preserve-the-runtime):
 the radio preflight and its lease before keying, the power the test sets, the bands, no
 abort at or after RR73 or 73, a contact you did not start, and the settings a cost-4/5
 test sets back. A run writes under `D:/wstx-tmp/live/<issue>/`
@@ -211,10 +211,10 @@ scripts, which act on the station only through the station client
 `Open-AgentSession`, `Agent-Get`, `Agent-Post`). It runs them, and the radio preflight or
 the live page check, as
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
-or `… -File .harness/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`, or
+or `… -File harness/project/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`, or
 `… -File tools/deploy/live-page-check.ps1 -Repo D:/Github/wsjtx-rust -Shared D:/Github/wsjtx-rust/.git/harness-parallel -AgentClient tools/deploy/agent-client.ps1`,
 or switches the station to the simulator profile with exactly
-`… -File .harness/deploy/station-switch.ps1 -To simulator`
+`… -File harness/project/deploy/station-switch.ps1 -To simulator`
 ([Simulator live tests](Project-Specifics.md#simulator-live-tests); `-To back` is the
 coordinator's). It installs nothing and restarts the station only through those deploy scripts.
 

@@ -1,7 +1,7 @@
 # Station deploy authority (#30, #31, #32), switched off until the operator runs
 # enable-authority.ps1. Dot-sourced by verify-approval.ps1 and protected-launcher.ps1 from
 # the protected root C:\ProgramData\WstxRust\deploy-authority. See
-# docs/harness/Project-Specifics.md#deployment-authority.
+# harness/project/docs/Project-Specifics.md#deployment-authority.
 #
 # Each entry script first calls Use-SystemModules, so no module from a folder the agents can
 # write (the user's module path comes first in PSModulePath) is ever loaded.

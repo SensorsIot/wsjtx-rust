@@ -7,10 +7,10 @@ description: Interview the user relentlessly about a plan or design until reachi
   domain-modeling.
 ---
 
-Read [the canonical grill-me skill](../../../harness/core/skills/grill-me/SKILL.md) in full BEFORE following this skill.
-Filesystem path relative to this entrypoint: `../../../harness/core/skills/grill-me/SKILL.md`.
+Read [the canonical grill-me skill](../../../harness/general/core/skills/grill-me/SKILL.md) in full BEFORE following this skill.
+Filesystem path relative to this entrypoint: `../../../harness/general/core/skills/grill-me/SKILL.md`.
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
 <!-- canonical-source-sha256=0fce303f2fe11d29a2e24ba2a078d2f76ce8baa98f3bd5a2a660e1177c3e9b7e -->
-<!-- harness-forwarder-v1 sha256=bda3637aba19fb3bad6501a5699123fab3937cd3d5bbf6504ed257e8d7b1372d -->
+<!-- harness-forwarder-v1 sha256=5a5ca2a9f18109c101d448381c2a8c580b975a216daf7248294115e744fa552e -->

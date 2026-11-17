@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/harness/core/hooks/agent-guard\" || exit 2"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/harness/general/core/hooks/agent-guard\" || exit 2"
           }
         ]
       }

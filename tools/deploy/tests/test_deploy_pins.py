@@ -1,4 +1,4 @@
-"""The deploy pins of docs/harness/Project-Specifics.md (section Deploy pins).
+"""The deploy pins of harness/project/docs/Project-Specifics.md (section Deploy pins).
 
 Acceptance item 2 of #171: the mechanism files are versioned with -text and each pin is the
 SHA-256 of its blob; TC-171-02 (i): a checkout or export with CRLF settings holds the blob's bytes.
@@ -18,7 +18,7 @@ ROOT = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 sys.path.insert(0, os.path.dirname(HERE))
 import station_drill  # noqa: E402
 
-SPECIFICS = os.path.join(ROOT, "docs", "harness", "Project-Specifics.md")
+SPECIFICS = os.path.join(ROOT, "harness", "project", "docs", "Project-Specifics.md")
 STATION_UPDATE = os.path.join(ROOT, "tools", "deploy", "station-update", "station-update.ps1")
 MAKE_PACKAGE = os.path.join(ROOT, "tools", "deploy", "station-update", "make_package.py")
 # A text=auto file of the same tree: under the CRLF settings its export must differ from its blob.

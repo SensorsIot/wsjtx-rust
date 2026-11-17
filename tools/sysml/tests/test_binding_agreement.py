@@ -174,7 +174,7 @@ class BindingAgreementTests(unittest.TestCase):
     # T5, a guard: the gate's bindings report a revision, they do not judge it.
     # Proves: CL-014-13; TC-DOC-011
     def test_gate_model_bindings_report_a_revision_with_a_tag_outside_a_binding(self):
-        spec = importlib.util.spec_from_file_location("binding_agreement_model_bindings", ROOT / ".harness/model_bindings.py")
+        spec = importlib.util.spec_from_file_location("binding_agreement_model_bindings", ROOT / "harness/project/model_bindings.py")
         bindings = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bindings)
 
