@@ -126,19 +126,19 @@ standards, process, build and gate documentation remain Markdown.
 For each functional issue follow the [required sequence](Project-Specifics.md#required-sequence-for-functional-issues):
 settle the canonical requirements and independent verification expectations, implement
 against the model, test the function with independent oracles, for real where it matters, and
-only then have the independent review, to find undesired behaviour. Reconcile delivered functionality, source bindings and durable cases before
+only then have the independent review, to find undesired behaviour. Reconcile delivered functionality, source bindings and test cases before
 manual issue closure. A test's presence, actual execution and live acceptance are distinct.
 
-The [model catalog](../../../docs/sysml/Requirements.sysml) owns stable FR/CL/TC identities and
-functional verification definitions. Executable assertions and fixture data remain linked
-companions. Protocol, states, errors and bounds are in the responsible model packages,
+The model owns the FR, CL and TC identities: each FR in `Requirements.sysml`, each clause
+and test case in the function file of its part ([finished model](Finished-Model.md) M4.2,
+M4.5, M6.5); a test case is a skeleton and a title, and its bound test is the description of
+the test. Executable assertions and fixture data remain linked companions. Protocol, states, errors and bounds are in the responsible model packages,
 not duplicated into another active specification. Product-specific tests and additive
 execution wiring remain with their functional CR; reusable method changes follow the
 harness rollout process.
 
-CL-014 and TC-DOC are HOW bindings in
-[Project specifics](Project-Specifics.md#project-model-documentation-contract), not product
-SysML. Full parsing/name checking, architecture integrity and trace checks do not prove
+The model tools' own clauses and tests are in
+[tools/sysml/README.md](../../../tools/sysml/README.md), not in product SysML. Full parsing/name checking, architecture integrity and trace checks do not prove
 behavioural equivalence or implementation readiness; the ready check, independent review
 and relevant application tests supply that evidence.
 

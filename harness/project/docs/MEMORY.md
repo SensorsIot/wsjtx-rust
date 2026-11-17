@@ -112,13 +112,6 @@ Keep open runtime work in its owning #7/#8/#9/#10/#11/#12/#13 issue; a helper re
 isolated passing test is not issue completion. Preserve known model, code and radio
 ownership and one integration writer across the two PCs.
 
-The model/authority transition is #20 with the separate project harness rollout #21.
-Shared model writes and publication are serialized with the documentation lane. Once the
-canonical marker and functional archive are published together, prepare future changes
-in SysML directly. The modem's test fixtures remain internal diagnostics, not a requested
-offline-decoding product. Keep the existing0..3000Hz/2.93Hz-bin display contract unless an
-approved functional requirement changes it.
-
 ## Inputs and unfinished work
 
 Verified inputs are `.git\migration-data\`; configure each development shell:
