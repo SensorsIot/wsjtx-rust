@@ -152,7 +152,7 @@ package WstxListener {
         subject web : WebAdapter;
         doc /* web MUST bound its sockets and their output and close a silent socket as
              BoundsRule says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-003-06'; }
 

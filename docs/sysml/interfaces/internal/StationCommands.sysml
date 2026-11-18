@@ -361,6 +361,10 @@ package WstxStationCommands {
              dial.
              skipped: receive was started by a command before the resume.
              failed: receive could not be started. */
+        @CodeDiffers {
+            what = "The code also gives the state off: with its setting Monitor off at startup "
+                + "it resumes no receive.";
+        }
         enum idle;
         enum waiting;
         enum started;

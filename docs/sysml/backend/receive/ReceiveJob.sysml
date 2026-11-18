@@ -105,7 +105,8 @@ package WstxReceiveJob {
                 + "server/src/recording_tests.rs::"
                 + "live_worker_spawn_failure_releases_admission_without_reusing_generation; "
                 + "server/src/recording_tests.rs::"
-                + "live_second_epoch_source_uuid_failure_releases_original_admission";
+                + "live_second_epoch_source_uuid_failure_releases_original_admission; "
+                + "tests/recording.test.cjs";
         }
     }
 

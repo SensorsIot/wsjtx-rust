@@ -186,6 +186,8 @@ package WstxStartup {
                 + "startup_resume_cat_unavailable_falls_back_to_plain_receive; "
                 + "server/src/receive/receive_startup_tests.rs::"
                 + "startup_resume_never_arms_or_keys; "
+                + "server/src/receive/receive_startup_tests.rs::"
+                + "startup_resume_off_or_stopped_stays_off; "
                 + "tests/flexAdapter/native-flex.test.cjs::"
                 + "CL-045-02 a native station resumes its receive at startup, waiting a "
                 + "bounded time for its session";
