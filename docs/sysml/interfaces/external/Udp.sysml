@@ -12,7 +12,6 @@ package WstxUdp {
     private import WstxModelBindings::TestLocation;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;
-    private import WstxUdpControl::*;
 
     doc /* The messages of the WSJT-X UDP protocol that the station sends to the programs the
          operator names as targets. The layouts, the type numbers and the encodings are

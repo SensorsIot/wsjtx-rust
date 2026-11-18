@@ -1,6 +1,7 @@
 package WstxSupervisorPart {
     private import ScalarValues::*;
     private import WstxStationCommands::StationOperations;
+    private import WstxStationCommands::AgentOperations;
     private import WstxStationCommands::StartupRecords;
     private import WstxProfileAccess::ProfileAccess;
     private import WstxReceiveControl::ReceiveControlPort;
@@ -34,7 +35,7 @@ package WstxSupervisorPart {
             doc /* Its records, as the last MemorySnapshot of the profile gave them. */ }
         port webOperations : ~StationOperations {
             doc /* The operator's commands, through web. */ }
-        port mcpOperations : ~StationOperations {
+        port mcpOperations : ~AgentOperations {
             doc /* The agents' commands, through mcp. */ }
         port profile : ProfileAccess;
         port receive : ReceiveControlPort;

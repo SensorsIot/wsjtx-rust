@@ -24,6 +24,7 @@ package WstxShack {
     private import WstxFlexAdapterPart::FlexAdapter;
     private import WstxStationLink::StationLink;
     private import WstxStationCommands::StationCommands;
+    private import WstxStationCommands::AgentCommands;
     private import WstxUdpControl::UdpControl;
     private import WstxWebControl::WebControl;
     private import WstxProfileAccess::ProfileAccessLink;
@@ -124,7 +125,7 @@ package WstxShack {
 
         interface webOperations : StationCommands
             connect web.supervisor to supervisor.webOperations;
-        interface mcpOperations : StationCommands
+        interface mcpOperations : AgentCommands
             connect mcp.supervisor to supervisor.mcpOperations;
         interface profileContext : ProfileAccessLink connect supervisor.profile to profile.context;
         interface receiveJobs : ReceiveControl connect supervisor.receive to receive.jobs;
@@ -206,6 +207,7 @@ package WstxShack {
             connect radioControl.backend to catAdapter.serial;
 
         satisfy 'FR-001' by profile;
+        satisfy 'FR-001' by supervisor;
         satisfy 'FR-002' by audio;
         satisfy 'FR-003' by receive;
         satisfy 'FR-004' by modes;

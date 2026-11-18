@@ -13,7 +13,7 @@ package WstxStartup {
     private import WstxRadioControl::DiscoverRadio;
     private import WstxReceiveControl::StartLive;
     private import WstxReceiveControl::StopLive;
-    private import WstxTransmitControl::ProcessEnds;
+    private import WstxStationCommands::ProcessEnds;
     private import WstxTransmitControl::TransmitStatus;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;

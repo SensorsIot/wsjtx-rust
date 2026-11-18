@@ -18,7 +18,8 @@ package WstxAutoMode {
 
     requirement 'CL-039-22' {
         subject auto : AutoService;
-        doc /* Auto MUST go on only by a switchOn while a strategy is active and, under a
+        doc /* Auto MUST go on only by a switchOn while a strategy other than Default is
+             active and, under a
              contest whose rules forbid automatic operation, only with the operator's
              acknowledgement in the settings, and hold whether it is on in memory alone
              (AutoSwitchRule). */
@@ -31,7 +32,7 @@ package WstxAutoMode {
              Auto is off at station start. It stores nothing: whether it is on, the
              stations completed since it went on, the retry pauses and every count are
              memory.
-             A switchOn while no strategy is active (AutoRules::active absent) is refused
+             A switchOn while Default is active (AutoRules::active absent) is refused
              with noStrategy. One while a contest is in force whose rules forbid automatic
              operation (AutoStrategy::automation forbidden) is refused with notConfirmed
              unless the operator has acknowledged Auto there (AutoContext::config,
@@ -65,8 +66,8 @@ package WstxAutoMode {
 
     requirement 'CL-119-05' {
         subject auto : AutoService;
-        doc /* Auto MUST stay on until the operator or an agent switches it off, no strategy
-             is active, the station halts, the radio cannot transmit or nobody is connected,
+        doc /* Auto MUST stay on until the operator or an agent switches it off, Default
+             becomes active, the station halts, the radio cannot transmit or nobody is connected,
              and then go off with the reason of AutoStops. */
         @Status { build = ImplementationState::partial; }
     }
@@ -74,7 +75,7 @@ package WstxAutoMode {
 
     attribute def AutoStops {
         doc /* What switches Auto off, and nothing else.
-             stopped: a switchOff; AutoRules without an active strategy; a contest whose
+             stopped: a switchOff; AutoRules while Default is active; a contest whose
              rules forbid automatic operation in force without the operator's
              acknowledgement (AutoSwitchRule).
              halted: a halt, whatever its source, also the halt of the station for a radio
@@ -175,8 +176,7 @@ package WstxAutoMode {
             test = "server/src/operating/qso/autofinish_tests.rs::"
                 + "tc_081_002_a_reply_on_the_air_is_a_started_qso; "
                 + "server/src/operating/qso/autofinish_tests.rs::"
-                + "tc_081_002_b_c_d_no_started_qso_ends_at_once_and_its_period_on_the_"
-                + "air_finishes";
+                + "tc_081_002_b_c_d_no_started_qso_ends_at_once_and_its_period_on_the_air_finishes";
         }
     }
 

@@ -2,7 +2,6 @@ package WstxStandardQso {
     private import ScalarValues::*;
     private import RequirementDerivation::*;
     private import WstxRequirements::'FR-007';
-    private import WstxRequirements::'FR-011';
     private import WstxQsoPart::QsoService;
     private import WstxOperatingChain::BusyPartner;
     private import WstxMessageChoice::'CL-010-12';
@@ -83,17 +82,21 @@ package WstxStandardQso {
              with the cause contactCompleted and the contact is handed over (HandOverRule).
              A transmission halted, aborted or refused completes nothing. */
         @FollowsSource {
-            reference = "WSJT-X at the behaviour baseline (v3.3.0-beta6, commit 7255454): "
-                + "DecodedMessageReaction planProcessMessage and planAutoSequence";
+            reference = "WSJT-X v3.3.0-beta6, commit 7255454: DecodedMessageReaction "
+                + "planProcessMessage and planAutoSequence";
+        }
+        @DiffersFromSource {
+            what = "SequenceRule follows WSJT-X v3.3.0-beta6, not the release of the "
+                + "behaviour baseline.";
         }
         @DiffersFromSource {
             what = "WSJT-X answers a 73 in roger_report with Tx3 again; the station sends one "
-                + "73 and completes (operator, issue 109).";
+                + "73 and completes.";
         }
         @DiffersFromSource {
             what = "WSJT-X logs at the start of its first 73; the station completes at the "
                 + "completed outcome of the 73, and a message counted before it keeps the "
-                + "contact going (issue 109).";
+                + "contact going.";
         }
     }
 
@@ -248,7 +251,7 @@ package WstxStandardQso {
         doc /* qso MUST hand each completed contact to the log once, as HandOverRule says. */
         @Status { build = ImplementationState::partial; }
     }
-    #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-085-02'; }
+    #derivation connection { end #original ::> 'FR-007'; end #derive ::> 'CL-085-02'; }
 
     attribute def HandOverRule {
         doc /* At its first completion a contact with a partner is given to the log as a
@@ -324,14 +327,11 @@ package WstxStandardQso {
                 + "server/src/contact_tests.rs::"
                 + "tc_007_010_b_the_partners_rrr_after_my_rrr_sends_73_once_and_logs_once; "
                 + "server/src/contact_tests.rs::"
-                + "tc_007_010_d_rogers_in_replying_and_report_send_73_once_"
-                + "and_log_without_rst_rcvd; "
+            + "tc_007_010_d_rogers_in_replying_and_report_send_73_once_and_log_without_rst_rcvd; "
                 + "server/src/contact_tests.rs::"
-                + "tc_007_010_e_rr73_while_my_next_tx4_is_pending_before_"
-                + "and_after_its_audio_start; "
+            + "tc_007_010_e_rr73_while_my_next_tx4_is_pending_before_and_after_its_audio_start; "
                 + "server/src/contact_tests.rs::"
-                + "tc_007_010_f_auto_seq_off_offers_tx5_after_rogers_"
-                + "in_rogers_replying_and_report; "
+            + "tc_007_010_f_auto_seq_off_offers_tx5_after_rogers_in_rogers_replying_and_report; "
                 + "server/src/contact_tests.rs::"
                 + "tc_007_010_g_only_the_partners_counted_rogers_lead_to_one_73; "
                 + "server/src/contact_tests.rs::"
@@ -363,8 +363,7 @@ package WstxStandardQso {
         objective { verify 'CL-050-04'; }
         @TestedBy {
             test = "server/src/contact_tests.rs::"
-                + "changing_the_contact_while_armed_keeps_enable_tx_"
-                + "and_the_next_period_calls_the_new_station; "
+    + "changing_the_contact_while_armed_keeps_enable_tx_and_the_next_period_calls_the_new_station; "
                 + "server/src/contact_tests.rs::"
                 + "a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_period; "
                 + "server/src/contact_tests.rs::"
@@ -392,8 +391,7 @@ package WstxStandardQso {
         objective { verify 'CL-011-03'; verify 'CL-011-04'; }
         @TestedBy {
             test = "server/src/contact_tests.rs::"
-                + "ft4_responder_transmits_in_odd_7_5_s_periods_"
-                + "and_completes_with_an_ft4_log_offer; "
+            + "ft4_responder_transmits_in_odd_7_5_s_periods_and_completes_with_an_ft4_log_offer; "
                 + "server/src/contact_tests.rs::"
                 + "ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz; "
                 + "server/src/contact_tests.rs::"

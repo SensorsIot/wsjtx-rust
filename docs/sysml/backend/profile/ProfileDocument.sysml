@@ -8,7 +8,7 @@ package WstxProfileDocument {
     private import WstxClubLog::MostWantedDownload;
     private import WstxCountryFiles::CtyQuery;
     private import WstxCountryFiles::CtyDownload;
-    private import WstxCountryFile::CountryFile;
+    private import WstxLogControl::CountryFile;
     private import WstxProfileAccess::*;
     private import WstxStrategies::StrategyForm;
     private import WstxStrategies::StrategyReading;
@@ -189,8 +189,7 @@ package WstxProfileDocument {
     }
 
     verification 'TC-022-001' {
-        doc /* The settings of a profile: what is taken, what is refused, and that a save of one
-             profile touches no other. */
+        doc /* A profile's settings: what is taken and refused; a save touches no other. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -205,8 +204,7 @@ package WstxProfileDocument {
     }
 
     verification 'TC-022-002' {
-        doc /* A saved profile outlasts its station, and a file that is no profile is refused and
-             left as it is. */
+        doc /* A saved profile outlasts its station; a file that is no profile is refused, kept. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -221,8 +219,7 @@ package WstxProfileDocument {
     }
 
     verification 'TC-022-003' {
-        doc /* One station process for a profile, and what a start that cannot be carried out leaves
-             behind. */
+        doc /* One station process for a profile, and what a failed start leaves behind. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
@@ -534,7 +531,7 @@ package WstxProfileDocument {
 
     attribute def CreateProfile {
         doc /* How a CreateRequest is carried out: the profile is made and the request
-             answered by ProfileCreated; no station runs (WstxStartup::LaunchRule).
+             answered by ProfileCreated; no station runs.
              The folder is made new, and profile.json is written into it with the
              values each feature of ProfileDocument, of Endpoint and of the
              configurations of StationConfig is given in its definition, a new

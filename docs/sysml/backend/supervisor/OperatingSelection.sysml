@@ -179,7 +179,7 @@ package WstxOperatingSelection {
         subject supervisor : Supervisor;
         doc /* The supervisor MUST hold the station's band as StationBandRule
              says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-008-11'; }
 
@@ -226,8 +226,7 @@ package WstxOperatingSelection {
                 + "server/src/recording_tests.rs::"
                 + "selection_release_timeout_retains_owner_and_never_commits_target; "
                 + "server/src/recording_tests.rs::"
-                + "selection_manual_mode_switch_uses_same_owner_and_profile_change_"
-                + "blocks_restart; "
+                + "selection_manual_mode_switch_uses_same_owner_and_profile_change_blocks_restart; "
                 + "server/src/recording_tests.rs::"
                 + "selection_profile_success_publishes_cancellation_before_new_reader; "
                 + "server/src/recording_tests.rs::"
@@ -250,21 +249,18 @@ package WstxOperatingSelection {
     }
 
     verification 'TC-011-004' {
-        doc /* The operating mode follows receive and is kept while the transmitter is
-             busy. */
+        doc /* The operating mode follows receive and is kept while the transmitter is busy. */
         subject supervisor : Supervisor;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-011-02'; }
         @TestedBy {
             test = "server/src/contact_http_tests.rs::"
-                + "ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_"
-                + "a_mode_change; "
+            + "ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change; "
                 + "server/src/contact_http_tests.rs::"
                 + "a_mode_selection_is_busy_while_ptt_is_keyed_and_while_transmitting; "
                 + "server/src/contact_http_tests.rs::"
-                + "the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_"
-                + "contact";
+                + "the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_contact";
         }
     }
 
@@ -276,11 +272,9 @@ package WstxOperatingSelection {
         objective { verify 'CL-008-12'; }
         @TestedBy {
             test = "server/src/radioControl/cat_lifecycle_tests.rs::"
-                + "station_port_released_by_other_program_reconnects_and_restores_"
-                + "selection; "
+                + "station_port_released_by_other_program_reconnects_and_restores_selection; "
                 + "server/src/radioControl/cat_lifecycle_tests.rs::"
-                + "station_readback_adoption_needs_exact_operating_mode_entry_and_"
-                + "unknown_band";
+                + "station_readback_adoption_needs_exact_operating_mode_entry_and_unknown_band";
         }
     }
 }

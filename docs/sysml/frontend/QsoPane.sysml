@@ -3,7 +3,6 @@ package WstxQsoPane {
     private import RequirementDerivation::*;
     private import WstxRequirements::'FR-010';
     private import WstxRequirements::'FR-019';
-    private import WstxRequirements::'FR-025';
     private import WstxBrowserClientPart::BrowserClient;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
@@ -142,7 +141,7 @@ package WstxQsoPane {
         subject browser : BrowserClient;
         doc /* The browser client MUST offer the QSO pane's direct buttons as PaneButtons
              says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-037-06'; }
 
@@ -161,7 +160,7 @@ package WstxQsoPane {
              says. */
         @Status { build = ImplementationState::partial; }
     }
-    #derivation connection { end #original ::> 'FR-025'; end #derive ::> 'CL-039-31'; }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-039-31'; }
 
     attribute def AutoControls {
         doc /* Auto is a toggle among the direct buttons: on gives SwitchAuto on, off

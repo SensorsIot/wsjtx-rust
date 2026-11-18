@@ -1,6 +1,6 @@
 package WstxMcpPart {
     private import ScalarValues::*;
-    private import WstxStationCommands::StationOperations;
+    private import WstxStationCommands::AgentOperations;
     private import WstxMcp::McpPort;
     private import WstxModelBindings::ImplementedIn;
 
@@ -10,7 +10,7 @@ package WstxMcpPart {
              (WstxMcp::ToolRule). It decides nothing of the station's state. */
         @ImplementedIn { module = "server/src/mcp.rs"; }
         port agent : McpPort { doc /* The agents of the station. */ }
-        port supervisor : StationOperations {
+        port supervisor : AgentOperations {
             doc /* The agents' commands and reads to the supervisor, its answers and views
                  back. */ }
     }

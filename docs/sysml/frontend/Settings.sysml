@@ -1,9 +1,9 @@
 package WstxSettings {
     private import ScalarValues::*;
     private import RequirementDerivation::*;
-    private import WstxRequirements::'FR-001';
+    private import WstxRequirements::'FR-010';
+    private import WstxRequirements::'FR-017';
     private import WstxRequirements::'FR-019';
-    private import WstxRequirements::'FR-026';
     private import WstxBrowserClientPart::BrowserClient;
     private import WstxBrowserClientPart::FrontendConfig;
     private import WstxModelNotes::FollowsSource;
@@ -53,7 +53,7 @@ package WstxSettings {
         doc /* The browser client MUST offer the settings check as CheckView says. */
         @Status { build = ImplementationState::target; }
     }
-    #derivation connection { end #original ::> 'FR-001'; end #derive ::> 'CL-001-02'; }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-001-02'; }
 
     attribute def CheckView {
         doc /* Settings check stands at the top of the settings drawer. With a radio that
@@ -235,7 +235,7 @@ package WstxSettings {
              MostWantedDisplay says. */
         @Status { build = ImplementationState::implemented; }
     }
-    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-039-25'; }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-039-25'; }
 
     attribute def MostWantedDisplay {
         doc /* "List from <date> · <n> entries" with the entries that map to no entity, or "No
@@ -244,20 +244,34 @@ package WstxSettings {
              failure keeps the list and shows the reason in one line. */
     }
 
+    verification 'TC-039-056' {
+        doc /* The Most Wanted list's line, its update and a failed update. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-039-25'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+      + "TC-039-006 Settings > General Most Wanted: one button beside the date, a failure says why";
+        }
+    }
+
     requirement 'CL-097-12' {
         subject browser : BrowserClient;
         doc /* The browser client MUST offer the strategies' editor as StrategyEditor says. */
         @Status { build = ImplementationState::partial; }
     }
-    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-097-12'; }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-097-12'; }
 
     attribute def StrategyEditor {
         doc /* The editor opens over the screen with a HALT of its own; receive keeps running.
-             It lists the strategies grouped Strategy and Contest, the built-ins read-only. A
-             new strategy is made only as a copy of another, "<name> copy", keeping its class,
-             contest and alert; a class is never switched. A strategy shows the ten decisions of
-             WstxStrategies::StrategyForm, in their order: 1 the bands; 2 the filters (what
-             must be new, new per, new means, the region, the minimum SNR, worked since, 73 as
+             It lists the strategies grouped Strategy and Contest. Default is read-only; every other
+             built-in is changed in place and has Factory reset, which puts the selected built-in
+             back to its values in WstxStrategies::BuiltinStrategies; a created strategy has no
+             Factory reset. A new strategy is made only as a copy of another, "<name> copy", keeping
+             its class, contest and alert; a class is never switched. A strategy shows the ten
+             decisions of WstxStrategies::StrategyForm, in their order: 1 the bands; 2 the filters
+             (what must be new, new per, new means, the region, the minimum SNR, worked since, 73 as
              CQ, the prefix or country, US state and CQ target lists, and that callers of the
              station's call pass them too), for a contest only the three lists; 3 the order of
              the criteria, then SNR, for a contest the contest's rules; 4 calling stations
@@ -267,10 +281,10 @@ package WstxSettings {
              shows at its control with its reason. The preview evaluates the unsaved form
              against the latest period (evaluate with explain) after each edit and shows each
              record's rank and why. Save gives one createEntry or updateEntry of the
-             collection strategies and selects nothing; Delete gives deleteEntry, and deleting
-             the active strategy ends the selection. Each strategy renamed by the station shows
-             once as "Renamed <from> to <to>". The contest prompt offers a contest's period
-             and its strategies. */
+             collection strategies and selects nothing; Delete gives deleteEntry, and deleting the
+             active strategy ends the selection, and Default is active. Each strategy renamed by the
+             station shows once as "Renamed <from> to <to>". The contest prompt offers a contest's
+             period and its strategies. */
     }
 
     requirement 'CL-042-07' {
@@ -278,7 +292,7 @@ package WstxSettings {
         doc /* The browser client MUST announce and list the alerts as AlertDisplay says. */
         @Status { build = ImplementationState::implemented; }
     }
-    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-042-07'; }
+    #derivation connection { end #original ::> 'FR-017'; end #derive ::> 'CL-042-07'; }
 
     attribute def AlertDisplay {
         doc /* Sound and Browser notification, both off by default, are choices of this
@@ -299,7 +313,7 @@ package WstxSettings {
              says. */
         @Status { build = ImplementationState::target; }
     }
-    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-042-08'; }
+    #derivation connection { end #original ::> 'FR-017'; end #derive ::> 'CL-042-08'; }
 
     attribute def CallAlert {
         doc /* A row of Band Activity marked callsMe (WstxBandActivityPane::RowMarks) whose

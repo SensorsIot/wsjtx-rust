@@ -19,17 +19,21 @@ package WstxStrategySelection {
     requirement 'CL-039-11' {
         subject operating : OperatingService;
         doc /* Operating MUST offer the built-in strategies beside the saved ones, each
-             to be selected like a saved one and none to be changed (BuiltinOffer). */
-        @Status { build = ImplementationState::implemented; }
+             to be selected like a saved one and changed only as BuiltinOffer says. */
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-039-11'; }
 
     attribute def BuiltinOffer {
         doc /* How the strategies of WstxStrategies::BuiltinStrategies are offered.
-             StrategiesState::builtins gives them, in their order and with every
-             value, in every state of operating.
+             StrategiesState::builtins gives them but Default, in their order and with
+             their present values, in every state of operating.
              A built-in is selected by its name as SelectStrategy::active, exactly as
              BuiltinStrategies writes it.
+             Default cannot be changed. Every other built-in is changed in place, under
+             its name, and keeps the change as the saved strategies keep theirs; Factory
+             reset puts it back to its values in BuiltinStrategies. A saved strategy has
+             no Factory reset.
              A built-in is none of the saved strategies: no saved strategy has the
              name of a built-in, without regard to letter case (Strategy::name). A
              strategy with the values of a built-in and another name is a saved
@@ -128,20 +132,20 @@ package WstxStrategySelection {
              contest in force only with its period and with an active strategy of class
              contest for that contest, and hold the selection until the next one or the
              stop of the station (SelectionRule). */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-063-03'; }
 
     attribute def SelectionRule {
         doc /* What may be selected, and how long a selection holds.
              The selection is SelectStrategy::active and SelectStrategy::contest of the
-             last SelectStrategy that was carried out. One strategy is active, or none:
-             active is absent, or exactly the name of a saved strategy or of a
+             last SelectStrategy that was carried out. One strategy is always active:
+             active is exactly the name of Default, of a saved strategy or of another
              built-in; another name is refused by active.
              A contest is in force exactly while the active strategy is of class
              contest: a ContestSelection is taken only together with such a strategy,
-             and only for the contest that strategy names. A contest with no active
-             strategy, with one of class strategy or with one for another contest, and
+             and only for the contest that strategy names. A contest with Default, with
+             a strategy of class strategy or with one for another contest, and
              a strategy of class contest without its contest, are refused by the
              contest.
              ContestSelection::profile is a contest of ContestTable. start and end are
@@ -149,17 +153,17 @@ package WstxStrategySelection {
              ContestSelection::periodDaysMax days after it. A value outside these
              rules is refused by its own name. The period is the operator's: it need
              not be one that ScheduleRule offers.
-             A selection with no active strategy ends the contest in force.
+             A selection of Default ends the contest in force.
              A value outside these rules refuses the SelectStrategy
              (StrategiesRefused), and the selection stays as it was. A SelectStrategy
              within them is carried out: operating holds the selection, answers with
              the StrategiesState and gives the shares anew (Shares).
              When a change of the saved strategies (SavedStrategies) leaves out the
-             active saved strategy by its name, the selection ends: no strategy is
-             active and no contest is in force.
+             active saved strategy by its name, the selection ends: Default is active
+             and no contest is in force.
              The selection is held while the station runs and is not kept by the
-             settings: at station start no strategy is active and no contest is in
-             force. */
+             settings: after every station start Default is active, no contest is in
+             force, and no earlier selection is restored. */
     }
 
     verification 'TC-063-007' {
@@ -198,8 +202,8 @@ package WstxStrategySelection {
              ContestSelection and the ContestProfile::automation of its contest.
              The contact is given ContestActivity: whether a contest is in force, and
              the ContestProfile::activity of that contest.
-             While no strategy is active, active is absent in both, no contest is in
-             force and the activity is absent.
+             While Default is active, active is absent in both, no contest is in force
+             and the activity is absent.
              Operating gives the three at station start, and gives a share anew
              whenever the saved strategies (SavedStrategies) or the selection change a
              value of it. A function is given its own share and no other value of a

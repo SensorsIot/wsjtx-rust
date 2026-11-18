@@ -21,7 +21,7 @@ package WstxAutoControl {
     }
     enum def AutoRefusal {
         doc /* Why a switchOn is not carried out.
-             noStrategy: no strategy is active.
+             noStrategy: Default is active.
              notConfirmed: the contest in force forbids automatic operation and the
              operator has not acknowledged Auto there (AutoConfig::forbiddenContests). */
         enum noStrategy;

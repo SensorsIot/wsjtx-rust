@@ -163,7 +163,7 @@ package WstxSpecialActivities {
         doc /* While a contest is in force the serial sent next is 1 plus the highest serial
              sent (stx) of the contest period's contacts in the log, also of those handed
              over and not yet stored, and 1 when there is none; a restart goes on from
-             there (issue 98). Without a contest it starts at 1 at station start. A
+             there. Without a contest it starts at 1 at station start. A
              contact counts once, at its first hand-over, and only when the log answers
              accepted; a refused contact leaves the serial, and the next partner gets the
              same. */

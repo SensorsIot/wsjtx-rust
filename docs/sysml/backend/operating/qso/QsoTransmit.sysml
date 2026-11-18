@@ -3,6 +3,7 @@ package WstxQsoTransmit {
     private import RequirementDerivation::*;
     private import WstxRequirements::'FR-007';
     private import WstxQsoPart::QsoService;
+    private import WstxTransmitControl::DisarmCause;
     private import WstxModelNotes::DiffersFromSource;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
@@ -108,6 +109,23 @@ package WstxQsoTransmit {
              transmission off with the cause refused. */
     }
 
+    requirement 'CL-010-22' {
+        subject qso : QsoService;
+        doc /* qso MUST keep a contact whose transmission stops with deviceLost, as
+             LostDeviceRule says. */
+        @Status { build = ImplementationState::partial; }
+    }
+    #derivation connection { end #original ::> 'FR-007'; end #derive ::> 'CL-010-22'; }
+
+    attribute def LostDeviceRule {
+        doc /* A contact whose transmission transmit switches off with the cause deviceLost
+             is kept as it stands: its partner, its messages, its dialogue and the
+             message due stay, and the cause shows in the transmit state
+             (WstxTransmitControl::TransmitStatus). The operator goes on with it by a
+             start (StartRule) or ends it by CancelContact (EndRule). */
+        attribute cause : DisarmCause;
+    }
+
     requirement 'CL-039-06' {
         subject qso : QsoService;
         doc /* qso MUST stop transmission before a message would be sent more often than the
@@ -134,8 +152,7 @@ package WstxQsoTransmit {
              and no sends left; Auto's CQ has the limit. */
         @DiffersFromSource {
             what = "WSJT-X stops after a time without operator action (Tx watchdog in "
-                + "minutes); the station counts the repetitions of one message (operator "
-                + "rule, issue 39).";
+                + "minutes); the station counts the repetitions of one message.";
         }
     }
 
@@ -155,8 +172,7 @@ package WstxQsoTransmit {
         objective { verify 'CL-039-06'; }
         @TestedBy {
             test = "server/src/contact_tests.rs::"
-                + "tc_008_001_the_watchdog_stops_at_n_repetitions_"
-                + "whatever_the_partner_or_browser_does; "
+           + "tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browser_does; "
                 + "server/src/contact_tests.rs::"
                 + "tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message; "
                 + "server/src/contact_tests.rs::"

@@ -223,8 +223,8 @@ package WstxRankingControl {
         doc /* The rules ranking works by. Operating gives them at station start and
              whenever one changes, on its own connection to ranking. */
         attribute active : StrategyRules[0..1] {
-            doc /* The active strategy. Absent while none is active: ranking then gives
-                 no ranked list and records no alert. */ }
+            doc /* The active strategy. Absent while Default is active: ranking then
+                 gives no ranked list and records no alert. */ }
     }
     item def EvaluateRequest {
         doc /* Evaluate the records of one job from firstSequence up to, and not
@@ -401,7 +401,7 @@ package WstxRankingControl {
     }
     enum def RankingRefusal {
         doc /* Why a command is refused.
-             notConfigured: no strategy is active and the request names none.
+             notConfigured: Default is active and the request names no draft.
              staleRequest: the job of the request is not the station's current job.
              ignoreListFull: the ignore list holds RankingLimits::ignoreListMax entries
              and the entry is not among them. */

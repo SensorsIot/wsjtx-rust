@@ -37,7 +37,6 @@ package WstxMessageEncode {
              unsupportedFamily.
              A text that fits no family is sent as free text when it has at most 13
              characters of the free-text alphabet, and is refused otherwise. */
-        @ImplementedIn { module = "server/src/transmit/pack.rs"; }
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: packjt77, pack77 and its "
                 + "grammar";
@@ -54,6 +53,10 @@ package WstxMessageEncode {
              audio that WSJT-X sends for it, and refuse a message that it cannot send
              unaltered (PackMessage, Ft8WaveformContract). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/transmit/pack.rs; server/src/modes/transmit/mod.rs; "
+                + "server/src/modes/transmit/waveform.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-005'; end #derive ::> 'CL-009-01'; }
 
@@ -64,10 +67,6 @@ package WstxMessageEncode {
              With the lowest tone from minTone0Hz to maxTone0Hz all tones lie within
              200 Hz to 3000 Hz; a lowest tone outside is refused with
              frequencyOutOfRange. */
-        @ImplementedIn {
-            module = "server/src/modes/transmit/mod.rs; "
-                + "server/src/modes/transmit/waveform.rs";
-        }
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: genft8, gen_ft8wave, and the "
                 + "printouts of ft8code and ft8sim";
@@ -82,6 +81,10 @@ package WstxMessageEncode {
              audio that WSJT-X sends for it, with the packing and the refusals of FT8
              (PackMessage, Ft4WaveformContract). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/transmit/pack.rs; server/src/modes/transmit/mod.rs; "
+                + "server/src/modes/transmit/waveform.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-005'; end #derive ::> 'CL-011-01'; }
 
@@ -93,10 +96,6 @@ package WstxMessageEncode {
              With the lowest tone from minTone0Hz to maxTone0Hz all tones lie within
              200 Hz to 3000 Hz; a lowest tone outside is refused with
              frequencyOutOfRange. */
-        @ImplementedIn {
-            module = "server/src/modes/transmit/mod.rs; "
-                + "server/src/modes/transmit/waveform.rs";
-        }
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: genft4, gen_ft4wave as the "
                 + "transmitter calls it, and the printout of ft4sim";

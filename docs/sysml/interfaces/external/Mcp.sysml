@@ -43,7 +43,7 @@ package WstxMcp {
     }
 
     attribute def ToolRule {
-        doc /* The tools are the second form of WstxStationCommands::StationOperations; their
+        doc /* The tools are the second form of WstxStationCommands::AgentOperations; their
              names and keys follow WstxStationLink::WireNames.
              wstxRead, read-only: its argument name is a view or a read, by the feature's
              name; arguments holds a read's attributes. Its result is the view or the read's

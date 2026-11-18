@@ -63,14 +63,14 @@ package WstxValueOrder {
 
     attribute def Evaluation {
         doc /* When ranking evaluates.
-             For each PeriodView, while a strategy is active, the records of the view
-             are evaluated under it and given as one RankedList, also when the view is
-             published again for its period; ranking gives it without being asked, to
-             Auto and to the supervisor.
+             For each PeriodView, while a strategy other than Default is active, the records of the
+             view are evaluated under it and given as one RankedList, also when the view is
+             published again for its period; ranking gives it without being asked, to Auto and to
+             the supervisor.
              An EvaluateRequest is answered with the verdicts of the records it names,
-             under its draft, and without one under the active strategy. Without either
-             it is refused (RankingRefusal::notConfigured), and for another job than
-             the current one with RankingRefusal::staleRequest.
+             under its draft, and without one under the active strategy. Without a draft while
+             Default is active it is refused (RankingRefusal::notConfigured), and for another job
+             than the current one with RankingRefusal::staleRequest.
              A draft of class contest is counted over the period of the contest in
              force when that is its contest, and otherwise over every QSO of the
              logbook.
@@ -296,8 +296,7 @@ package WstxValueOrder {
                 + "server/src/strategy_tests.rs::"
                 + "tc_039_030_region_min_snr_for_an_eu_and_a_non_eu_profile; "
                 + "server/src/strategy_tests.rs::"
-                + "tc_039_030_a_caller_beats_a_most_wanted_station_"
-                + "and_ignores_goal_region_and_snr; "
+            + "tc_039_030_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_snr; "
                 + "server/src/strategy_tests.rs::"
                 + "tc_039_030_value_order_with_and_without_a_list; "
                 + "server/src/strategy_tests.rs::"
@@ -320,8 +319,7 @@ package WstxValueOrder {
     }
 
     verification 'TC-097-007' {
-        doc /* Callers of the profile's call pass the filter, and are answered only when the
-             strategy says so. */
+        doc /* Callers of the profile's call pass the filter; the strategy decides the answer. */
         subject ranking : RankingService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

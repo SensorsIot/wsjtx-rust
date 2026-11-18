@@ -122,13 +122,11 @@ package WstxLiveReceive {
                 + "server/src/recording_tests.rs::"
                 + "ft8_snr_period_start_follows_the_utc_period_grid; "
                 + "server/src/recording_tests.rs::"
-                + "latest_decode_replaces_period_atomically_"
-                + "including_empty_and_all_retained_rows; "
+                + "latest_decode_replaces_period_atomically_including_empty_and_all_retained_rows; "
                 + "server/src/recording_tests.rs::"
                 + "latest_decode_actual_overrun_stays_partial_then_completes_the_next_period; "
                 + "server/src/recording_tests.rs::"
-                + "latest_decode_cancel_and_failure_preserve_published_period_"
-                + "without_new_identity; "
+            + "latest_decode_cancel_and_failure_preserve_published_period_without_new_identity; "
                 + "server/src/recording_tests.rs::"
                 + "air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate";
         }

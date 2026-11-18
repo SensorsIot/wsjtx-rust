@@ -105,8 +105,7 @@ package WstxHearingFeed {
     }
 
     verification 'TC-039-048' {
-        doc /* The reported SNR, the parity of what the target decodes, the second switch and the
-             state of the target's hearing. */
+        doc /* The reported SNR, the target's parity, the second switch and its hearing. */
         subject spots : SpotsService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

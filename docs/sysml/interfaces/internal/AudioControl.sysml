@@ -1,6 +1,7 @@
 package WstxAudioControl {
     private import ScalarValues::*;
     private import WstxAudioStreams::SourceError;
+    private import WstxRadioControl::RadioPlace;
     private import WstxModelNotes::FollowsSource;
 
     doc /* The configuration and the records of the audio function; what the supervisor
@@ -76,16 +77,6 @@ package WstxAudioControl {
              and the supervisor answers with the records as the profile holds
              them then. */
         attribute records : AudioRecords;
-    }
-    attribute def RadioPlace {
-        doc /* Where the serial port of the profile's radio is attached to the PC.
-             An endpoint is at the same place when it has the same container, or the
-             same USB hub and that hub is not a root hub. */
-        attribute model : String { doc /* The model of the radio. */ }
-        attribute container : String[0..1] {
-            doc /* The device container Windows puts the port in. */ }
-        attribute usbParent : String[0..1] {
-            doc /* The USB hub the port's device hangs on. */ }
     }
     item def ListEndpoints {
         doc /* List the sound endpoints of the PC. */

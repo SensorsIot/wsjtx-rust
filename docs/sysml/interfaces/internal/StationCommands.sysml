@@ -5,8 +5,8 @@ package WstxStationCommands {
     private import WstxRadioControl::DetectionReport;
 
     doc /* The supervisor's control interface: the commands the operator (through web)
-         and an agent (through mcp) give the station, the same for both, the answers, and
-         the supervisor's own state and records. */
+         and an agent (through mcp) give the station, the same for both but those
+         AgentRefusal names, the answers, and the supervisor's own state and records. */
 
     enum def Requester {
         doc /* Who gave a command. operator: through the browser. agent: through MCP. */
@@ -364,13 +364,17 @@ package WstxStationCommands {
             doc /* With failed: the error of receive or audioUnconfigured. */ }
         attribute lastReceive : ReceiveChoice[0..1];
     }
+    item def ProcessEnds {
+        doc /* The station process ends. */
+    }
 
     port def StationOperations {
         doc /* The station boundary: every command the operator and agents give the
              station, every read, every answer and every view the station gives back,
-             each typed by the item of the function it belongs to. Web and mcp give the
-             same features (WstxStationLink::WireRule). Written from the requester's
-             side; the supervisor uses the conjugate. */
+             each typed by the item of the function it belongs to. Web gives every
+             feature (WstxStationLink::WireRule), mcp every one but the commands
+             AgentRefusal names (AgentOperations). Written from the requester's side; the
+             supervisor uses the conjugate. */
         out abstract item commands[0..*] {
             doc /* A command: it comes with a StationRequest, may change the station, and
                  is answered by its function's answer or by StationRefused. */ }
@@ -512,9 +516,32 @@ package WstxStationCommands {
         in item recording : WstxRecordingTransfer::RecordingStatus :> views;
     }
     interface def StationCommands {
-        doc /* The operator's or an agent's commands and reads, given to the
-             supervisor, and the station's answers and views. */
+        doc /* The operator's commands and reads, given to the supervisor, and the
+             station's answers and views. */
         end requester : StationOperations;
         end station : ~StationOperations;
+    }
+    enum def AgentRefusal {
+        doc /* The commands an agent does not give: the station's setup is the operator's.
+             Applying radio settings to the rig is operating and no setup.
+             saveConfig: the station config, with the profile, the rig, CAT and PTT, the
+             connection, the audio devices and the receive settings.
+             saveShack: the shack's settings, with the call sign, the locator, the
+             strategies file and the targets of UDP and PSK Reporter. */
+        enum saveConfig;
+        enum saveShack;
+    }
+    port def AgentOperations :> StationOperations {
+        doc /* The station boundary as an agent has it: StationOperations without the
+             commands AgentRefusal names. Written from the agent's side; the supervisor
+             uses the conjugate. */
+        out item :>> saveConfig[0];
+        out item :>> saveShack[0];
+    }
+    interface def AgentCommands {
+        doc /* An agent's commands and reads, given to the supervisor, and the station's
+             answers and views. */
+        end requester : AgentOperations;
+        end station : ~AgentOperations;
     }
 }

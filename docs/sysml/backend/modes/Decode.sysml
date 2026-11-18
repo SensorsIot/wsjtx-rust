@@ -25,6 +25,21 @@ package WstxDecode {
         doc /* The decoder MUST decode the FT8 and FT4 frames of a window as the published
              protocol defines their payload, channel code and waveform (DecodeWindow). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/decoder/mod.rs; server/src/decoder/search.rs; "
+                + "server/src/decoder/subtraction.rs; server/src/modes/decoder/apriori.rs; "
+                + "server/src/modes/decoder/baseband.rs; "
+                + "server/src/modes/decoder/bitmetrics.rs; "
+                + "server/src/modes/decoder/channel.rs; "
+                + "server/src/modes/decoder/coarse_ft4.rs; server/src/modes/decoder/fit.rs; "
+                + "server/src/modes/decoder/history.rs; "
+                + "server/src/modes/decoder/parallel.rs; "
+                + "server/src/modes/decoder/physical_ft4.rs; "
+                + "server/src/modes/decoder/physical_sync.rs; "
+                + "server/src/modes/decoder/snr.rs; "
+                + "server/src/modes/decoder/synchronization.rs; "
+                + "server/src/modes/decoder/waveform.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-03'; }
 
@@ -44,21 +59,6 @@ package WstxDecode {
              window or, in continuous receive, in a later one.
              Each returned word passes the parity check and the CRC of the channel code.
              Every other case ends as DecodeError states. */
-        @ImplementedIn {
-            module = "server/src/decoder/mod.rs; server/src/decoder/search.rs; "
-                + "server/src/decoder/subtraction.rs; server/src/modes/decoder/apriori.rs; "
-                + "server/src/modes/decoder/baseband.rs; "
-                + "server/src/modes/decoder/bitmetrics.rs; "
-                + "server/src/modes/decoder/channel.rs; "
-                + "server/src/modes/decoder/coarse_ft4.rs; server/src/modes/decoder/fit.rs; "
-                + "server/src/modes/decoder/history.rs; "
-                + "server/src/modes/decoder/parallel.rs; "
-                + "server/src/modes/decoder/physical_ft4.rs; "
-                + "server/src/modes/decoder/physical_sync.rs; "
-                + "server/src/modes/decoder/snr.rs; "
-                + "server/src/modes/decoder/synchronization.rs; "
-                + "server/src/modes/decoder/waveform.rs";
-        }
         @DetailTests {
             tests = "server/src/modes/decoder/baseband_test.rs; "
                 + "server/src/modes/decoder/bitmetrics_test.rs; "

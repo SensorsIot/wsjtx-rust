@@ -212,6 +212,25 @@ package WstxLogControl {
         attribute limit : Integer {
             doc /* 1 to LogLimits::historyPageRecordsMax. */ }
     }
+    attribute def CountryFile {
+        doc /* The country file and how it is read.
+             The file bundled with the station is cty.dat as WSJT-X at the behaviour
+             baseline ships it.
+             A line with fewer than seven ":" is skipped. Each other line begins an
+             entity, whose entries follow up to a ";".
+             An entry given a second time keeps the entity of its first place.
+             An exact entry VER followed by eight digits is the version of the file.
+             A file is refused, with the line of the entity counted from 1, for a
+             number that cannot be read, a CQ zone above 40 or an ITU zone above 90,
+             also in an entry, a continent that is none of Continent, a shown name that
+             is not 1 to 40 printable ASCII characters, an entity without a primary
+             prefix, and entries that do not end with ";". A file without an entity
+             is refused with line 1. */
+        @FollowsSource {
+            reference = "AD1C cty.dat, the format of the country files of "
+                + "country-files.com; WSJT-X at the behaviour baseline: AD1CCty load_cty";
+        }
+    }
     item def ReadCountryFile {
         doc /* Read which country file is in use. Answered by CountryFileState. */
     }

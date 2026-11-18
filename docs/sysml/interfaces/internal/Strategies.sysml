@@ -87,15 +87,19 @@ package WstxStrategies {
         enum beep;
     }
     attribute def BuiltinStrategies {
-        doc /* The strategies the station offers beside the saved ones. They cannot be
-             changed. They are listed in this order.
-             Every built-in of class strategy has, unless its line says otherwise: every
-             band; region all; no minimum SNR; worked since all; Treat 73 as CQ on;
+        doc /* The strategies the station offers beside the saved ones, in this order, with
+             the values the station ships them with. Default cannot be changed; every other
+             built-in is changed in place and can be set back to these values.
+             Default, first, has no rules and no values of Strategy: while it is active
+             every station is shown, with no ranking order, no filter, no alert and no CQ
+             when idle.
+             Every other built-in of class strategy has, unless its line says otherwise:
+             every band; region all; no minimum SNR; worked since all; Treat 73 as CQ on;
              empty country, US state and CQ target lists; calling stations answered;
              leaving after 4 calls and after 8 while heard; the transmit frequency moved
              never, at every call and at every 2nd call for the three cases in the order
-             of AutoKeys; no CQ when idle; a CQ wait of 2 periods; a
-             retry pause of 10 minutes; a CQ pause of 8 periods; no alert.
+             of AutoKeys; no CQ when idle; a CQ wait of 2 periods; a retry pause of 10
+             minutes; a CQ pause of 8 periods; no alert.
              DXCC all: new dxcc per bandMode, notConfirmed; order mostWanted, snr;
              leaving untilLogged after 10 minutes.
              New DXCC on band: as DXCC all, per band.
@@ -116,11 +120,11 @@ package WstxStrategies {
              managed by the settings function (WstxProfileAccess::StrategyDefinitions)
              and given to operating as SavedStrategies. The active strategy and the
              contest are changed by SelectStrategy and held while the station runs: at
-             station start none is active and no contest is in force. */
+             station start Default is active and no contest is in force. */
         attribute strategiesMax : Integer = 16;
-        attribute active : String[0..1] {
-            doc /* The name of the active strategy, a saved or a built-in one, exactly as
-                 it is written. Absent: no strategy is active. */ }
+        attribute active : String {
+            doc /* The name of the active strategy, Default, a saved or another built-in
+                 one, exactly as it is written. */ }
         attribute strategies : Strategy[0..*] ordered {
             doc /* The saved strategies, at most strategiesMax. */ }
         attribute contest : ContestSelection[0..1] {
@@ -363,10 +367,10 @@ package WstxStrategies {
     }
     item def SelectStrategy {
         doc /* Make this strategy the active one, for class contest with its contest, or
-             none. It is the one command by which the operator selects the active
+             Default. It is the one command by which the operator selects the active
              strategy and a contest. Answered by StrategiesState or
              StrategiesRefused. */
-        attribute active : String[0..1] { doc /* As StrategyConfiguration::active. */ }
+        attribute active : String { doc /* As StrategyConfiguration::active. */ }
         attribute contest : ContestSelection[0..1] {
             doc /* As StrategyConfiguration::contest. */ }
     }
@@ -379,7 +383,8 @@ package WstxStrategies {
         doc /* What operating holds, at the moment it is given. */
         attribute configuration : StrategyConfiguration;
         attribute builtins : Strategy[1..*] ordered {
-            doc /* The strategies of BuiltinStrategies, in their order. */ }
+            doc /* The strategies of BuiltinStrategies but Default, in their order, with
+                 their present values. */ }
     }
     attribute def OfferedPeriod {
         doc /* The period of the round of a contest that ScheduleRule offers. */
@@ -421,7 +426,7 @@ package WstxStrategies {
         doc /* The rules Auto executes. Operating gives them at station start and
              whenever one changes. */
         attribute active : AutoStrategy[0..1] {
-            doc /* The active strategy. Absent while none is active. */ }
+            doc /* The active strategy. Absent while Default is active. */ }
     }
     item def ContestActivity {
         doc /* The special activity that goes with the contest in force. Operating gives it

@@ -1,6 +1,7 @@
 package WstxTransmitControl {
     private import ScalarValues::*;
     private import WstxModeProcessing::Mode;
+    private import WstxStationCommands::ProcessEnds;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;
     private import WstxModelNotes::NotStated;
@@ -279,9 +280,6 @@ package WstxTransmitControl {
              TransmitProfile: with that level when the profile has saved it, with the
              level before when it could not. */
         attribute level : BandLevel;
-    }
-    item def ProcessEnds {
-        doc /* The station process ends. */
     }
     item def CommandAnswer {
         doc /* The answer to Arm, Disarm, Abort and SetTune. */

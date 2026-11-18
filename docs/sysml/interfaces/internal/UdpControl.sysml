@@ -1,7 +1,7 @@
 package WstxUdpControl {
     private import ScalarValues::*;
     private import WstxModeProcessing::Mode;
-    private import WstxTransmitControl::ProcessEnds;
+    private import WstxStationCommands::ProcessEnds;
 
     doc /* The configuration of the UDP sender, the state of the station it reports in
          Status, and what it reports back: the control interface between the supervisor

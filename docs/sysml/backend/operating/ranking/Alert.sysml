@@ -25,9 +25,9 @@ package WstxAlert {
     attribute def AlertRule {
         doc /* When an alert is recorded.
              Each ResultRecord of the station's current job is judged once, in the
-             order of the records, also while no strategy is active: a record decoded
-             before a strategy became active alerts no more. While no strategy is active,
-             or the active one has no Strategy::alert, no alert is recorded.
+             order of the records, also while Default is active: a record decoded
+             before another strategy became active alerts no more. While Default is
+             active, or the active one has no Strategy::alert, no alert is recorded.
              Under a strategy of class strategy a record alerts when its Verdict has
              the VerdictKind candidate or wanted. Under a strategy of class contest it
              alerts when its Verdict (WstxContestRanking::ContestVerdictRule) has the

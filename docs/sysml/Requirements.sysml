@@ -1,7 +1,6 @@
 // Canonical authority: SysML
 package WstxRequirements {
     private import ScalarValues::*;
-    private import WstxModelNotes::Conflict;
 
     doc /* What the station is required to do. Each functional requirement is about the
          station as a whole; Shack.sysml gives each to the part that carries it, and its
@@ -9,10 +8,6 @@ package WstxRequirements {
 
     attribute def BehaviorBaseline {
         doc /* The WSJT-X release whose observable behaviour the decoder is compared with. */
-        @Conflict {
-            what = "The pinned reference is v3.3.0-beta4; 36 texts of the old model cite "
-                + "v3.3.0-beta5 and two cite beta6 as the reference of their own function.";
-        }
         attribute suite : String = "WSJT-X";
         attribute release : String = "v3.3.0-beta4";
         attribute sourceCommit : String = "0f7d5928449ec747c3d1f6da1306f8c94404c3a9";

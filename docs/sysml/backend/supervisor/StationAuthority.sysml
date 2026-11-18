@@ -6,6 +6,7 @@ package WstxStationAuthority {
     private import WstxStationCommands::StationRequest;
     private import WstxStationCommands::StationRefused;
     private import WstxStationCommands::Requester;
+    private import WstxStationCommands::AgentRefusal;
     private import WstxAutoControl::SwitchAuto;
     private import WstxTransmitControl::Halt;
     private import WstxTransmitControl::TransmitStatus;
@@ -29,7 +30,7 @@ package WstxStationAuthority {
         doc /* The supervisor MUST pass each command of the operator or an agent to
              the function it is for, answer a command sent again as ReceiptRule says, and
              refuse a command beforehand as GateRule says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::target; }
     }
     #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-006-07'; }
 
@@ -37,8 +38,10 @@ package WstxStationAuthority {
         doc /* A StationRequest that is a command of a function's control interface goes
              to that function over its port, and the function's answer is the outcome; one
              of the supervisor's own commands is carried out by the supervisor.
-             The operator and an agent give the same commands with the same rights; only
-             SwrBarrier tells them apart.
+             The operator and an agent give the same commands with the same rights, but
+             an agent gives none of the commands AgentRefusal names: its port to the
+             supervisor has none of them (WstxStationCommands::AgentOperations). Apart
+             from these only SwrBarrier tells them apart.
              Before a command goes on, a command that names another profile is refused
              with wrongProfile, and one that names another start of the station process
              with stateConflict (StationRefused). A Halt is passed on for the station's
@@ -52,6 +55,8 @@ package WstxStationAuthority {
              A DetectRadios goes to radio control, and its answer is RadioDetection: the
              DetectionReport, with, for a proposed radio, the endpoints audio lists for
              that radio (WstxAudioControl::EndpointEntry::radio) in each direction. */
+        attribute agentRefusal : AgentRefusal[0..*] {
+            doc /* The commands an agent does not give. */ }
     }
 
     attribute def ReceiptRule {
@@ -126,8 +131,7 @@ package WstxStationAuthority {
     }
 
     verification 'TC-006-004' {
-        doc /* Commands for another profile, another start or an old revision, and the
-             halt. */
+        doc /* Commands for another profile, start or old revision, and the halt. */
         subject supervisor : Supervisor;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

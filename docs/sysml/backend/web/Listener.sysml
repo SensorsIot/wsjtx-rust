@@ -46,7 +46,7 @@ package WstxListener {
     requirement 'CL-003-01' {
         subject web : WebAdapter;
         doc /* web MUST serve the browser client as ClientFiles says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-003-01'; }
 
@@ -58,6 +58,18 @@ package WstxListener {
              manifest of the page with the station's displayName, its origin as start and
              scope and the display standalone, so that the page installs as an app
              (WstxOperatingScreen::AppWindow). */
+    }
+
+    verification 'TC-021-006' {
+        doc /* The page and its files in a real browser, in two clients. */
+        subject web : WebAdapter;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-003-01'; }
+        @TestedBy {
+            test = "tests/communication.test.cjs::"
+                + "TC-021-006: real browser, two clients, desktop and mobile layout";
+        }
     }
 
     requirement 'CL-051-01' {

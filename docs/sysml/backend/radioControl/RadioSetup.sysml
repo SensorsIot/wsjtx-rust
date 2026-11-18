@@ -6,7 +6,6 @@ package WstxRadioSetup {
     private import WstxRadioControl::*;
     private import WstxRadioProperties::Setting;
     private import WstxRadioProperties::Agc;
-    private import WstxAudioControl::RadioPlace;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -243,8 +242,7 @@ package WstxRadioSetup {
     }
 
     verification 'TC-044-009' {
-        doc /* The wanted AGC is set at a connection and within a change of the selection, and
-             reported. */
+        doc /* The wanted AGC is set at a connection and a change of selection, and reported. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

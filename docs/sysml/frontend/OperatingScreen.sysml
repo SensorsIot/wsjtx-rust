@@ -45,8 +45,9 @@ package WstxOperatingScreen {
              (WstxQsoPane), the control panel and the error field (WstxLowerPanel), all three
              of the QSO pane's width; on a narrow window the column goes below Band Activity.
              Receive follows the selection of band and mode; a contact's transmission follows
-             its starts; the station's healthy state is shown in Settings > Expert, and the
-             error field lists only what the operator must act on.
+             its starts; the station's healthy state is shown in Settings > Advanced
+             (WstxSettings::AdvancedSection), and the error field lists only what the
+             operator must act on.
              Lists, frequencies and messages are written in a fixed-width font; colours keep
              the meanings of WSJT-X (WstxBandActivityPane::Highlight). The theme follows
              FrontendConfig::theme and themeSwitch. The window's title and the top bar name the

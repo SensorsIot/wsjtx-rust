@@ -50,7 +50,7 @@ package WstxUdpSender {
         subject udp : UdpService;
         doc /* The station MUST give every datagram one instance name that no other
              running station of the same Windows account carries (InstanceName). */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-01'; }
 

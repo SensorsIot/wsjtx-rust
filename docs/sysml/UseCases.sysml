@@ -298,6 +298,12 @@ package WstxUseCases {
             requirement :> WstxTransmitState::'CL-111-03';
             requirement :> WstxQsoTransmit::'CL-010-03';
         }
+        action deviceLost {
+            doc /* Variant: the radio or the sound device is lost while the station
+                 transmits; the contact stays, and the operator goes on with it or ends
+                 it. */
+            requirement :> WstxQsoTransmit::'CL-010-22';
+        }
         action reopen {
             doc /* Variant: the partner asks again after the contact completed; the operator
                  chooses a message and the contact is taken up again. */

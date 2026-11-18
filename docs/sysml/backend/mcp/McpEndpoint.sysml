@@ -4,6 +4,7 @@ package WstxMcpEndpoint {
     private import WstxRequirements::'FR-020';
     private import WstxMcpPart::McpAdapter;
     private import WstxMcp::*;
+    private import WstxStationCommands::AgentRefusal;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -29,16 +30,19 @@ package WstxMcpEndpoint {
     requirement 'CL-012-02' {
         subject mcp : McpAdapter;
         doc /* mcp MUST offer an agent the station's operations as ToolUse says. */
-        @Status { build = ImplementationState::partial; }
+        @Status { build = ImplementationState::target; }
     }
     #derivation connection { end #original ::> 'FR-020'; end #derive ::> 'CL-012-02'; }
 
     attribute def ToolUse {
-        doc /* mcp offers every feature of WstxStationCommands::StationOperations as
+        doc /* mcp offers every feature of WstxStationCommands::AgentOperations as
              WstxMcp::ToolRule says and answers as WstxMcp::ToolResult says: an agent reads
-             the views the browser reads, gives the commands the browser gives, and gets the
-             same answers and refusals, with the operator's rights. mcp passes each command
-             and read to the supervisor and holds no state of the station. */
+             the views the browser reads, gives the commands the browser gives but those
+             AgentRefusal names, and gets the same answers and refusals, with the
+             operator's rights. mcp passes each command and read to the supervisor and
+             holds no state of the station. */
+        attribute agentRefusal : AgentRefusal[0..*] {
+            doc /* The commands mcp offers no tool for. */ }
     }
 
     verification 'TC-020-001' {

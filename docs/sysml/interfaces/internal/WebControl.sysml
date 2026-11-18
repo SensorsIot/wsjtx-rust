@@ -1,7 +1,7 @@
 package WstxWebControl {
     private import ScalarValues::*;
     private import WstxProfileAccess::Endpoint;
-    private import WstxTransmitControl::ProcessEnds;
+    private import WstxStationCommands::ProcessEnds;
 
     doc /* What the supervisor gives the web function (its context, the request to take
          its listener, the end of the process) and how web answers. */

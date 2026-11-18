@@ -3,7 +3,6 @@ package WstxBandActivityPane {
     private import RequirementDerivation::*;
     private import WstxRequirements::'FR-010';
     private import WstxRequirements::'FR-019';
-    private import WstxRequirements::'FR-026';
     private import WstxBrowserClientPart::BrowserClient;
     private import WstxBrowserClientPart::HighlightSlot;
     private import WstxBrowserClientPart::SortField;
@@ -205,10 +204,9 @@ package WstxBandActivityPane {
              grid, call) the strongest reason that is on, "New continent <cont>" or "New
              continent on <band>", "New DXCC" or "New DXCC on <band>", "New CQ zone <cq>",
              "New ITU zone <itu>" or their forms on <band>, "New grid <square>" or "New grid
-             on <band>", "New call" or "New on <band>" with the worked status in parentheses
-             ("(worked on another band or mode)", "(worked on <band> <MODE>)"); then the
-             strategy's verdict ("Strategy <name>: #<rank>", or for a CQ not for the station
-             "Directed CQ, not calling us"); joined by " · ". The country, the continent, the
+             on <band>", "New call" or "New on <band>"; then the strategy's verdict
+             ("Strategy <name>: #<rank>", or for a CQ not for the station "Directed CQ, not
+             calling us"); joined by " · ". The country, the continent, the
              distance and a call to the station are not in the tip; their columns show them. */
     }
 
@@ -262,18 +260,18 @@ package WstxBandActivityPane {
              StrategyElement says. */
         @Status { build = ImplementationState::partial; }
     }
-    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-039-04'; }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-039-04'; }
 
     attribute def StrategyElement {
-        doc /* Above Band Activity, in one line: the strategy selector (None, then the names,
+        doc /* Above Band Activity, in one line: the strategy selector (Default, then the names,
              grouped Strategy and Contest; a choice gives SelectStrategy,
              WstxStrategies); edit, which opens the editor (WstxSettings::StrategyEditor);
              Value, which returns the order to the value (Ordering); with a contest in force
              Show all; the ignore field (IgnoreField); and Auto's line
-             (WstxQsoPane::AutoControls). While a strategy is active, Band Activity lists only
-             the rows the strategy ranks (the view ranked), the messages to the station's call
-             and the partner's rows; a row the strategy filters out is not shown. Show all,
-             off by default and kept in the page only, shows every row. The rows are drawn
+             (WstxQsoPane::AutoControls). While a strategy other than Default is active, Band
+             Activity lists only the rows the strategy ranks (the view ranked), the messages to the
+             station's call and the partner's rows; a row the strategy filters out is not shown.
+             Show all, off by default and kept in the page only, shows every row. The rows are drawn
              after each new period. A selection restarts no receive. */
     }
 
@@ -282,7 +280,7 @@ package WstxBandActivityPane {
         doc /* The browser client MUST show a contest's stations as ContestFilter says. */
         @Status { build = ImplementationState::implemented; }
     }
-    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-063-08'; }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-063-08'; }
 
     attribute def ContestFilter {
         doc /* With a contest in force Band Activity lists the stations the contest can work,
@@ -299,7 +297,7 @@ package WstxBandActivityPane {
              IgnoreField says. */
         @Status { build = ImplementationState::target; }
     }
-    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-042-06'; }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-042-06'; }
 
     attribute def IgnoreField {
         doc /* The one ignore list (WstxRankingControl::IgnoreLists) is one field of entries

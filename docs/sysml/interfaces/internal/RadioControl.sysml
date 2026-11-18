@@ -6,7 +6,6 @@ package WstxRadioControl {
     private import WstxRadioProperties::DataValue;
     private import WstxRadioProperties::Agc;
     private import WstxRadioProperties::Setting;
-    private import WstxAudioControl::RadioPlace;
     private import WstxCat::CivFrame;
 
     doc /* The configuration and the records of radio control; what the supervisor
@@ -21,6 +20,16 @@ package WstxRadioControl {
     enum def PttMode {
         enum disabled;
         enum cat;
+    }
+    attribute def RadioPlace {
+        doc /* Where the serial port of the profile's radio is attached to the PC.
+             An endpoint is at the same place when it has the same container, or the
+             same USB hub and that hub is not a root hub. */
+        attribute model : String { doc /* The model of the radio. */ }
+        attribute container : String[0..1] {
+            doc /* The device container Windows puts the port in. */ }
+        attribute usbParent : String[0..1] {
+            doc /* The USB hub the port's device hangs on. */ }
     }
     attribute def ControlSelection {
         doc /* How the operator wants the radio of the station controlled. It is intent:

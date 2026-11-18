@@ -76,7 +76,7 @@ package WstxCatControl {
         doc /* The station's own IC-7300, read and set by hand. */
         subject radioControl : RadioControlInterface;
         @TestLevel { cost = 4; location = TestLocation::station; }
-        @Automation { run = AutomationState::partial; method = "started by hand"; }
+        @Automation { run = AutomationState::partial; method = "automated"; }
         objective { verify 'CL-008-04'; }
         @TestedBy { test = "server/tests/receive/radio_hardware.rs"; }
     }

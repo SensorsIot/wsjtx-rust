@@ -116,8 +116,7 @@ package WstxTargetChoice {
         objective { verify 'CL-039-05'; }
         @TestedBy {
             test = "server/src/strategy_tests.rs::"
-                + "tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_"
-                + "needs";
+            + "tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs";
         }
     }
 

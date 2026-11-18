@@ -25,6 +25,7 @@ package WstxMessagePayload {
         doc /* The payload function MUST give every returned frame exactly the fields of
              a decoded frame, with the fields of its message family (UnpackPayload). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/decoder/payload.rs"; }
     }
     #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-09'; }
 
@@ -40,7 +41,6 @@ package WstxMessagePayload {
              A standard message whose grid field holds RR73 has the exchange roger RR73.
              The Field Day sections and the RTTY states and provinces are the tables of
              WSJT-X. */
-        @ImplementedIn { module = "server/src/decoder/payload.rs"; }
         @FollowsSource {
             reference = "QEX, The FT4 and FT8 Communication Protocols, sections 2 to 5 and "
                 + "appendix A; WSJT-X at the behaviour baseline: packjt77, with its tables "
@@ -53,6 +53,7 @@ package WstxMessagePayload {
         doc /* The payload function MUST show a hashed call as the call itself once the
              station has learned that call, and as <...> until then (HashResolution). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/modes/decoder/hashes.rs"; }
     }
     #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-024-01'; }
 
@@ -80,7 +81,6 @@ package WstxMessagePayload {
              fills my call in, also when maxHash22 other calls were learned since.
              A hash that equals the hash of the DX call of the latest CallsUpdate is
              shown as that DX call wherever WSJT-X applies its DX call. */
-        @ImplementedIn { module = "server/src/modes/decoder/hashes.rs"; }
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: packjt77 save_hash_call, "
                 + "ihashcall, hashmy10/12/22, hashdx10 and unpack77 with nrx=1";

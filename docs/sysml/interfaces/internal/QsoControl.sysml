@@ -8,7 +8,7 @@ package WstxQsoControl {
 
     doc /* What the supervisor gives the qso function (its context with its
          configuration, the commands of the operator and of agents) and what qso answers
-         and reports. An agent's command is the operator's (issue 122). */
+         and reports. An agent's command is the operator's. */
 
     port def QsoControlPort {
         doc /* Written from the supervisor's side; qso uses the conjugate. */
