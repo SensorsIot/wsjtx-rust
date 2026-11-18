@@ -1,27 +1,49 @@
 package WstxAudioPart {
     private import ScalarValues::*;
-    private import WstxAudioStreams::AudioExchange;
-    private import WstxAudioControl::AudioStatus;
+    private import WstxAudioControl::AudioStatusPort;
+    private import WstxAudioControl::AudioConfig;
+    private import WstxAudioControl::AudioRecords;
     private import WstxAudioStreams::ReceiveSamples;
+    private import WstxAudioStreams::Playback;
+    private import WstxAudioStreams::AudioExchange;
+    private import WstxAudioStreams::CaptureSamples;
+    private import WstxStationTime::StationTimePort;
     private import WstxSoundDevice::SoundDevicePort;
+    private import ModelBindings::ImplementedIn;
+
     part def AudioInterface {
-        attribute configuredIntent : WstxAudio::DeviceIntent;
-        attribute observedState : WstxAudio::AudioState;
-        attribute observedNativeFormat : WstxAudioStreams::NativeFormat[0..1];
-        attribute observedNativeRateHz : Integer[0..1];
-        attribute observedNativeChannels : Integer[0..1];
-        attribute observedNativeEndpointId : String[0..1];
-        doc /* Own sources/sinks, device/channel sample movement, metadata and device failures. No CAT/PTT, mode decoding or QSO decisions. CAT-disabled audio and control without an open audio device remain independent. */
-        doc /* Independent samples, timing and failures; CAT-disabled live input and stored
-             recordings use the same receive boundary. Does not issue control commands. */
-        port status : AudioStatus;
-        port recorded : ~ReceiveSamples;
+        doc /* The audio of the station. It turns the packets of the profile's radio
+             connection into the receive stream, keeps that stream tied to station time,
+             and plays the transmit program on the sound device.
+             The packets come from one of two connections, by the profile's radio type:
+             the sound device of a radio on USB, through the audio adapter, or the native
+             network connection of a radio, through its own adapter. The receive stream is
+             the same for both. A sound device is listed, opened and played to only on
+             the first. */
+        @ImplementedIn {
+            module = "server/src/audio.rs; server/src/transmit/playback.rs; "
+                + "server/src/source.rs";
+        }
+        attribute config : AudioConfig {
+            doc /* Its configuration, as the last AudioDevices gave it. */ }
+        attribute records : AudioRecords {
+            doc /* Its records, as the last AudioMemory of the supervisor gave
+                 them. */ }
+        port status : AudioStatusPort;
+        port time : ~StationTimePort;
         port receive : ReceiveSamples;
-        port transmit : ~AudioExchange;
-        port backend : AudioExchange;
+        port transmit : ~Playback;
+        port device : ~AudioExchange;
+        port native : ~CaptureSamples;
     }
+
     part def AudioDeviceAdapter {
-        port host : ~AudioExchange;
+        doc /* Joins audio to the sound endpoints of the PC: it lists them, opens the one
+             audio names, and passes packets in and frames out. */
+        @ImplementedIn {
+            module = "server/src/audio/windows.rs; server/src/modes/playback/windows.rs";
+        }
+        port host : AudioExchange;
         port device : SoundDevicePort;
     }
 }

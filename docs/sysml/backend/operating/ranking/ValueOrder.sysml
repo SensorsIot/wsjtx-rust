@@ -1,594 +1,478 @@
 package WstxValueOrder {
     private import ScalarValues::*;
-    private import ModelBindings::Automation;
-    private import WstxRequirements::'FR-026';
-    private import ModelNotes::FollowsSource;
-    private import ModelBindings::ImplementedIn;
-    private import WstxRankingControl::Needed;
-    private import WstxRankingControl::NewPer;
-    private import WstxRankingControl::NewWhat;
-    private import ModelNotes::NotStated;
-    private import WstxRankingPart::RankingService;
-    private import ModelBindings::Status;
-    private import WstxStrategies::Strategy;
-    private import ModelBindings::TestedBy;
-    private import WstxRequirements::AutomationState;
-    private import WstxRequirements::ImplementationState;
     private import RequirementDerivation::*;
-    private import ModelNotes::Conflict;
-
-    attribute def Candidate {
-        doc /* The filter, yes or no: every line must hold. A decoded standard message with a
-             resolved sender, not mine, passing
-             SaneCall, not ignored (IgnoreLists), the station band one of the strategy's
-             (StrategyBands), not greyed (DirectedCqRule, except a word of the include list of
-             CqTargetList), a CQ, or with treat_73_as_cq an RR73/73 addressed to someone else;
-             region holds (all; dx: my continent and the sender's are known and differ;
-             selected:
-             the sender's continent is listed); min_snr_db null or the SNR known and >= it;
-             NewNeeded true for at least one NewWhat of filters.new, with the strategy's
-             new_per,
-             new_means and worked_since (any chosen what counts); CountryList, UsStateFilter and
-             CqTargetList hold. Each failing line names itself as why ("band not in the
-             strategy",
-             "region", "below min SNR", "not new", "country list", "state list", "CQ target").
-             A contest strategy: ContestVerdict decides its callable records (the contest's
-             rules first) and CountryList, UsStateFilter and CqTargetList apply on top; none of
-             the
-             other lines. The filter and the order may use the same field. */
-    }
-    calc def NewNeeded {
-        in strategy : Strategy;
-        in what : NewWhat;
-        in per : NewPer;
-        in needed : Needed;
-        in sender : String;
-        return isNew : Boolean;
-        @NotStated {
-            what = "how ranking obtains the country table, the log and the continent of a "
-                + "call: its only connection from the log is WorkedBefore";
-        }
-        doc /* Whether one NewWhat is new for a
-             decoded sender, per NewPer, against WorkedWindow of the strategy (worked_since):
-             not_worked: no logged QSO with the same key; not_confirmed: none, or none confirmed
-             (dxcc::Standing). The key: dxcc the sender's entity (WstxCountryFile::EntityOfCall, WAE
-             entities by their own full name); call the call; grid the 4-character grid square in
-             the decoded message, with the grid rule (no grid in the message is not new; a sender
-             with a logged QSO without a grid in the window has an unknown grid status and is not
-             new); cq_zone and itu_zone the zones of the sender's entity with the cty.dat entry's
-             overrides; continent ContinentOfCall; prefix WpxPrefix of the call. per: ever any
-             logged QSO; band one on the station band, any mode; band_mode one on the station band
-             in the operating mode (ADIF MODE, an MFSK record by its SUBMODE). False without an
-             entity (dxcc, cq_zone, itu_zone, continent; /MM, /AM, unknown prefix), without a
-             known station band (band, band_mode) and when the log is unreadable (no claim of new).
-             A logged call without an entity counts for nothing for those keys; a logged contact
-             without a band counts only for ever.  */
-    }
-    attribute def CallerOfMyCall {
-        @FollowsSource {
-            reference = "WSJT-X widgets/mainwindow.cpp 1564-1568 (the CQ response None), "
-                + "mainwindow_settings.cpp 313 (default None), mainwindow.cpp 7481-7496 (it "
-                + "answers no "
-                + "caller of my CQ automatically), Configuration.cpp 3884 (Calling CQ forces "
-                + "Call 1st, off "
-                + "by default)";
-        }
-        doc /* A decoded standard message with a resolved sender, addressed to my call, other
-             than the sender's RR73/73, whose sender is not ignored (IgnoreLists). A caller of
-             my call has a rank only when it passes the filters
-             too: every line of Candidate except "a CQ" (and the CQ target line, which judges
-             only CQs); for a contest strategy the contest's verdict (a dupe never has a rank,
-             WstxContestRanking::ContestVerdictRule) and the country and US state lists. A caller
-             that fails
-             gets rank null with the failing line as why ("calls my call · not new", "calls my
-             call · region"). Decision 4, Calling stations are answered (callers_first): on, the
-             callers that pass come first (ValueOrder); off, a caller that passes has rank null
-             too, why "calls my call · not answered" (CL-097-03). Off follows WSJT-X, where the
-             CQ response None answers no caller of my CQ automatically and "Calling CQ forces
-             Call 1st" is off by default. */
-    }
-    attribute def ValueOrder {
-        attribute snrBucketUpperDb : Integer = 0;
-        attribute snrBucketLowerDb : Integer = -10;
-        doc /* The ranking. The strategy's order is a list of ValueCriterion: the first decides
-             and the next breaks a tie.
-             Each criterion, better first:
-             most_wanted: on the Most Wanted list by its rank ascending, then the stations
-             without a rank (MostWantedList).
-             new_dxcc, new_dxcc_band, new_dxcc_band_mode: NewNeeded dxcc per ever, band,
-             band_mode; new_call, new_call_band: NewNeeded call per ever, band; new_grid,
-             new_grid_band: NewNeeded grid per ever, band (no grid, an unknown grid status or an
-             unknown band is not new); new_cq_zone, new_itu_zone, new_continent, new_prefix:
-             NewNeeded cq_zone, itu_zone, continent, prefix per ever; each with the strategy's
-             new_means and worked_since; new before not new.
-             snr_bucket: the SNR in three buckets, above snrBucketUpperDb first, from
-             snrBucketLowerDb to snrBucketUpperDb (inclusive) next, below snrBucketLowerDb last,
-             unknown after them; equal inside a bucket.
-             snr: stronger first, unknown last.
-             distance: StationDistance, farther first, unknown last.
-             hears_us: the stations that hear us (PskrUse on and HearingFeed has a spot of my
-             call at that station within its heardWindowSeconds on the station band and mode)
-             first, then the rest;
-             equal with PskrUse off or no feed.
-             Then always, hidden: SNR stronger first (unknown last); then, for an
-             exact tie only, the lower audio frequency, then the call in character order.
-             Decode order is never a ranking.
-             Order of a strategy's list: with Calling stations are answered on (callers_first,
-             decision 4) the callers of my call that pass the filters (CallerOfMyCall) come
-             first,
-             ranked among themselves by the same criteria, then the candidates; with it off a
-             caller has no rank (CallerOfMyCall) and the list holds the candidates only. Band
-             Activity: the partner (on top by the browser's partner rows), then that list,
-             then the rest. A contest strategy has no order (order []): it ranks by the
-             contest's own rules (WstxContestRanking::ContestValueOrder), under the same rule
-             for callers. */
-    }
-    calc def StationDistance {
-        in sender : String;
-        in grid : String[0..1];
-        return km : Integer[0..1];
-        @NotStated {
-            what = "how ranking obtains the country table, the log and the continent of a "
-                + "call: its only connection from the log is WorkedBefore";
-        }
-        doc /* The distance for the value criterion distance: the great-circle distance from
-             the centre of the profile locator to the centre of the 4-character grid in the
-             message; otherwise to the sender's entity centre from cty.dat (the approximate
-             entity distance of WstxLogControl::DecodedEntity). Unknown without a profile locator
-             or without grid and entity (/MM, /AM, unknown prefix). Whole km, truncated. */
-    }
-    calc def WpxPrefix {
-        in call : String;
-        return prefix : String;
-        @FollowsSource { reference = "CQ WPX Contest rules"; }
-        doc /* The CQ WPX prefix of a call: the letters and
-             digits up to and including the last digit (N8BJQ N8, HG19ABC HG19, LY1000X LY1000,
-             3DA0RU 3DA0, 9A1A 9A1). A call without a digit: its first two letters and a zero
-             (XEFTJW XE0). Portable: /P /M /MM /AM /A /E /J /QRP /B and /R do not count
-             (N8BJQ/P N8); a single digit replaces the call's last digit (N8BJQ/3 N3); another
-             designator is the prefix: with a digit up to its last digit (N8BJQ/KH9 KH9,
-             KH9/N8BJQ KH9), without one its first two letters and a zero (PA/N8BJQ PA0).
-             The designator is the shorter part, the left one when both are equally long.
-             Upper case. */
-    }
-    calc def ContinentOfCall {
-        in call : String;
-        return continent : String[0..1];
-        @NotStated {
-            what = "how ranking obtains the country table, the log and the continent of a "
-                + "call: its only connection from the log is WorkedBefore";
-        }
-        doc /* The continent of WstxCountryFile::EntityOfCall for the call (with a {cont}
-             override of the matching cty.dat entry applied); none when the call has no
-             entity (/MM, /AM, unknown prefix). The message grid does not decide a station's
-             continent.
-             The snapshot's derived_continent is ContinentOfCall of my callsign. */
-    }
-    calc def MyContinent {
-        in configured : String[0..1];
-        in callsign : String[0..1];
-        in locator : String[0..1];
-        return continent : String[0..1];
-        @NotStated {
-            what = "how ranking obtains the country table, the log and the continent of a "
-                + "call: its only connection from the log is WorkedBefore";
-        }
-        doc /* The configured continent (StrategyConfiguration continent) when set; else
-             ContinentOfCall of the profile callsign; else, when the call has no entity
-             (/MM, /AM, unknown prefix), the continent of the cty.dat entity whose centre
-             is nearest to the centre of the profile locator; else none. */
-    }
-    calc def UsStateOf {
-        in sender : String;
-        return stateCode : String[0..1];
-        @NotStated {
-            what = "how ranking obtains the country table, the log and the continent of a "
-                + "call: its only connection from the log is WorkedBefore";
-        }
-        doc /* The state of a sender of the entities 291, 6 or 110
-             (WstxCountryFile::EntityOfCall), the first source that knows it: (1) the decoded
-             message, when its exchange carries a
-             US state (the RTTY Roundup family; an ARRL or RAC section is not mapped to a
-             state); (2) the log: the ADIF STATE of the newest record of that call that has
-             one, a confirmed record (dxcc::Standing) before an unconfirmed one. The licence
-             data and the grid are not used.
-             None: unknown. */
-    }
-    calc def SaneCall {
-        in call : String;
-        return sane : Boolean;
-        doc /* At least 3 characters with a digit and a letter, not ending /R (rover). */
-    }
-    enum def ActivityWord {
-        doc /* The word of a contest activity in a CQ (WstxSpecialActivities::SpecialActivity): TEST
-             for na_vhf, eu_vhf and arrl_digi, WW for ww_digi, FD for field_day, RU for rtty. */
-        enum TEST; enum WW; enum FD; enum RU;
-    }
-    calc def DirectedCqRule {
-        in target : String[0..1];
-        in activityWord : ActivityWord[0..1];
-        in myContinent : String[0..1];
-        in senderContinent : String[0..1];
-        return answerable : Boolean;
-        doc /* The one directive rule of strategies and the operator, applied before any
-             strategy and one function in the station. A CQ
-             is answerable when its directive does not exclude me: a plain CQ (no target);
-             "CQ x" with x my continent; "CQ DX" when both continents are known and differ.
-             Contest activity (WstxContestRanking::ContestDirective): the word of the station's
-             special activity (ActivityWord) is answerable too, whatever the continents.
-             Every other directive is not answerable: another continent or region (NA, JA,
-             SA, ...), any other word (TEST, POTA, a number; a contest word outside its
-             activity), CQ DX from my own or an unknown
-             continent, and with my continent unknown every directive. A record that is no
-             CQ has no directive and is answerable. Its text is "CQ x — not for <my continent>"
-             ("not for this station" when unknown).
-             My continent: MyContinent.
-             A strategy skips a CQ that is not answerable: it is greyed in Band Activity and is
-             never a Candidate. */
-    }
-
-    attribute def StrategyBandsRule {
-        doc /* A strategy with bands null works on every band; with a list it works only while
-             the station band (CAT dial band, else the operating selection band) is one of them,
-             and an unknown station band is none of them. It never switches bands. Off its
-             bands: every verdict has rank null with why "band not in the strategy" ("band
-             unknown" when unknown), so nothing is marked, alerted or called. A contest strategy
-             works only on the bands both of its list and of the contest (ContestVerdict "band
-             not in the contest"). */
-    }
-
-    attribute def CountryListRule {
-        @Conflict {
-            what = "WstxSettings::StrategyEditor says a prefix or country entry is typed as "
-                + "free text "
-                + "with no picker; this text says the editor has a country picker.";
-        }
-        @NotStated {
-            what = "how ranking obtains the country table: its only connection from the log "
-                + "is WorkedBefore";
-        }
-        doc /* An entry of kind "prefix" matches when the decoded call begins with it; an entry
-             of kind "country" with a full entity name of the country table
-             (WstxCountryFile::EntityOfCall, a WAE entity by its own name), matching the
-             sender's entity, compared ignoring case; a name the current table does not hold is
-             refused at the PUT (an entry read from the file whose name a replaced cty.dat no
-             longer holds matches nothing); an entry with bands counts only while the station
-             band is one of them. The line holds when no exclude entry matches and, with a
-             non-empty include list, at least one include entry matches; a sender without an
-             entity matches no country entry. Editor: one line per entry, with a country picker
-             that lists the table's names. */
-    }
-
-    attribute def UsStateFilterRule {
-        doc /* The sender's state (UsStateOf): with a non-empty include list the line holds only
-             when the state is known and listed (an unknown state, also every station outside
-             those entities, fails it); with an exclude list it fails only when the state is
-             known and listed. */
-    }
-
-    attribute def CqTargetListRule {
-        doc /* The directive of a CQ is the word after CQ ("CQ POTA K1ABC FN42" has POTA, "CQ DX
-             ..." DX; a plain CQ and an RR73/73 counted as calling have none). Exclude: a CQ
-             whose directive is listed fails. Include (non-empty): only a CQ whose directive is
-             listed passes; a plain CQ and an RR73/73 counted as calling fail. A caller of my
-             call is no CQ and is not judged by this line. A word on the include list that
-             DirectedCqRule does not answer (POTA, SOTA, a number) is answerable for this
-             strategy. Verdict: such a CQ is not grey for that strategy (grey false, ranked by
-             its filters and order), so Band Activity marks it and does not strike it through,
-             and Alert records it like any candidate. A continent directive and DX keep
-             DirectedCqRule. */
-    }
-
-    attribute def VerdictRule {
-        doc /* One per decoded standard record with a resolved sender (others have none): an
-             ignored sender (IgnoreLists) has rank null, grey false; else grey per
-             DirectedCqRule (not grey when its directive word is on the strategy's CQ target
-             include list, CqTargetList); a Candidate, and a caller (CallerOfMyCall) while
-             Calling stations are answered is on, have rank = the position (0-based) in
-             ValueOrder among the evaluated records; with it off a caller has rank null, why
-             "calls my call · not answered" (CL-097-03); every other record rank null. why
-             (explain only): "calls my call", "new: dxcc, grid" (the new whats, with " on
-             <band>" or " on <band> <MODE>" per new_per), with " · Most Wanted #n" when ranked
-             by the list, "not new", "not a CQ", "region", "below min SNR", "band not in the
-             strategy", "band unknown", "country list", "state list", "CQ target", "calls my
-             call · <failing line>" (CallerOfMyCall), "my own message", "callsign guard", the
-             DirectedCqRule text "CQ x — not for c" or "<call> is ignored (session list)" /
-             "(permanent list)". Display order: rank ascending; records without a rank follow in
-             sequence order. */
-    }
-
-    attribute def WorkedWindowRule {
-        doc /* window all: the log's cached worked set (rebuilt after a log or country table
-             change). today (the current UTC date) and from_to: a worked set built only from the
-             records whose QSO_DATE lies in the window, inclusive. A record without a date
-             counts only for all. The station step uses the last built set of the window at
-             once. A selection and POST /strategy/evaluate wait for the current set. With no set
-             yet nothing is needed in that step (no claim of needed). */
-    }
-
-
-    calc newNeeded : NewNeeded;
-    calc wpxPrefix : WpxPrefix;
-    calc stationDistance : StationDistance;
-    calc usStateOf : UsStateOf;
-    calc directedCqRule : DirectedCqRule;
-    calc myContinent : MyContinent;
-    attribute candidate : Candidate;
-    attribute callerOfMyCall : CallerOfMyCall;
-    attribute valueOrder : ValueOrder;
-    attribute strategyBandsRule : StrategyBandsRule;
-    attribute countryListRule : CountryListRule;
-    attribute usStateFilterRule : UsStateFilterRule;
-    attribute cqTargetListRule : CqTargetListRule;
-    attribute verdictRule : VerdictRule;
-    attribute workedWindowRule : WorkedWindowRule;
-
-    satisfy 'CL-039-02' by newNeeded;
-    satisfy 'CL-039-02' by wpxPrefix;
-    satisfy 'CL-039-02' by workedWindowRule;
-    satisfy 'CL-039-02' by callerOfMyCall;
-    satisfy 'CL-039-02' by candidate;
-    satisfy 'CL-039-02' by valueOrder;
-    satisfy 'CL-039-02' by stationDistance;
-    satisfy 'CL-039-02' by verdictRule;
-    satisfy 'CL-039-03' by directedCqRule;
-    satisfy 'CL-039-03' by myContinent;
-    satisfy 'CL-042-01' by newNeeded;
-    satisfy 'CL-097-02' by strategyBandsRule;
-    satisfy 'CL-097-02' by candidate;
-    satisfy 'CL-097-02' by newNeeded;
-    satisfy 'CL-097-02' by callerOfMyCall;
-    satisfy 'CL-097-02' by countryListRule;
-    satisfy 'CL-097-02' by usStateFilterRule;
-    satisfy 'CL-097-02' by usStateOf;
-    satisfy 'CL-097-02' by cqTargetListRule;
-    satisfy 'CL-097-02' by verdictRule;
-    satisfy 'CL-097-03' by valueOrder;
-    satisfy 'CL-097-03' by callerOfMyCall;
-    satisfy 'CL-097-03' by verdictRule;
+    private import WstxRequirements::'FR-026';
+    private import WstxRankingPart::RankingService;
+    private import WstxRankingControl::*;
+    private import WstxDecodes::ResultRecord;
+    private import WstxDecodes::PeriodView;
+    private import WstxLogControl::EntityRequest;
+    private import WstxLogControl::EntityAnswer;
+    private import WstxLogControl::CallEntity;
+    private import WstxOperatingChain::WorkedSet;
+    private import WstxOperatingChain::WorkedCategory;
+    private import WstxLogControl::WorkedStatus;
+    private import WstxOperatingChain::Standing;
+    private import WstxOperatingChain::DateWindow;
+    private import WstxHearing::HeardByReport;
+    private import ModelNotes::FollowsSource;
+    private import ModelNotes::DiffersFromSource;
+    private import ModelNotes::NotStated;
+    private import ModelBindings::ImplementationState;
+    private import ModelBindings::AutomationState;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::TestedBy;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
 
     requirement 'CL-039-02' {
         subject ranking : RankingService;
-        doc /* One station evaluator gives each decoded standard message a verdict: its filters
-             are CL-097-02 and its order CL-097-03, callers of my call included. SNR is always
-             the hidden last tie-breaker, then for an exact tie the lower audio frequency and
-             the call; decode order is never a ranking. Distance is from the profile locator to
-             the message grid, else to the cty.dat entity centre. POST /strategy/evaluate
-             returns the verdicts of retained live records for the saved strategy or a draft,
-             with the reason when asked; the browser never evaluates a strategy itself. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn {
-            module = "server/src/strategy.rs; server/src/logbook.rs; server/src/recording.rs; server/src/dxcc.rs";
-        }
+        doc /* Ranking MUST give each decoded standard message of a sender with a call one
+             verdict under the strategy it evaluates, for the decodes of each period and
+             for the records the supervisor asks for (VerdictRule, Evaluation). */
+        @Status { build = ImplementationState::partial; }
     }
+    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-039-02'; }
+
+    attribute def VerdictRule {
+        doc /* How the Verdict of a record is found under a strategy of class strategy.
+             A ResultRecord has a verdict when it is decoded, its message is a standard
+             message and its sender is a call. A sender that is a hashed call has none,
+             also when the hash is filled in.
+             The tests are made in this order, and the first that holds decides:
+             the sender is ignored (WstxIgnoreLists::IgnoreListsRule);
+             the record is a CQ that DirectedCqRule leaves to others: no rank, grey, why
+             "CQ <directive> — not for <continent>", or "not for this station" while the
+             station's continent is unknown;
+             the sender is the profile's call: no rank, why "my own message";
+             the station is off the strategy's bands (StrategyBandsRule): no rank;
+             the sender is wanted and can be called (WstxWantedList::WantedRule): a
+             rank, whatever the filter says;
+             the record is a caller (CallerOfMyCall) or a Candidate: a rank, when every
+             line of the filter holds; otherwise no rank, with the line that fails
+             first as why.
+             Every record that has a rank is ranked by ValueOrder; its rank is its place
+             among the ranked records of the evaluation, from 0.
+             A RankedList holds the verdicts of the ranked records by their rank and
+             then those of the others in the order of the records.
+             Under a strategy of class contest
+             WstxContestRanking::ContestVerdictRule finds the verdict. */
+    }
+
+    attribute def Evaluation {
+        doc /* When ranking evaluates.
+             For each PeriodView, while a strategy is active, the records of the view
+             are evaluated under it and given as one RankedList, also when the view is
+             published again for its period; ranking gives it without being asked, to
+             Auto and to the supervisor.
+             An EvaluateRequest is answered with the verdicts of the records it names,
+             under its draft, and without one under the active strategy. Without either
+             it is refused (RankingRefusal::notConfigured), and for another job than
+             the current one with RankingRefusal::staleRequest.
+             A draft of class contest is counted over the period of the contest in
+             force when that is its contest, and otherwise over every QSO of the
+             logbook.
+             For an EvaluateRequest ranking waits for the WorkedSet that holds the
+             latest change of the logbook. For a PeriodView it takes the set it has. */
+    }
+
     requirement 'CL-039-03' {
         subject ranking : RankingService;
-        doc /* One directive rule before every strategy and for the operator: a CQ is answerable
-             when it is a plain CQ, CQ <my continent> (derived from the profile call via
-             cty.dat, locator fallback) or CQ DX from another continent. Every other directive
-             is not answerable: a strategy skips it (greyed, never matches). In a contest
-             activity its own word (CQ TEST, WW, FD, RU) is answerable too (CL-063-02). */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn {
-            module = "server/src/strategy.rs; server/src/automation.rs; server/src/contact_http.rs; server/src/dxcc.rs; client/contact.js";
+        doc /* Ranking MUST mark as grey, and leave without a rank, each CQ whose
+             directive leaves the station out (DirectedCqRule, MyContinent). */
+        @Status { build = ImplementationState::partial; }
+    }
+    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-039-03'; }
+
+    attribute def DirectedCqRule {
+        doc /* Which CQ is for the station.
+             The directive of a CQ is what stands between CQ and the sender's call:
+             "CQ DX K1ABC FN42" has DX. A CQ without one, and a record that is no CQ,
+             are for the station.
+             A CQ with a directive is for the station in three cases, and leaves it out
+             in every other:
+             the directive is DX, and the station's continent (MyContinent) and the
+             sender's are both known and differ;
+             the directive is one of the station's CQ words (RankingContext::cqWords);
+             the directive is one of the CQ words of the strategy ranking evaluates,
+             of either class (its CqTargetList::included), or of the contest that
+             strategy ranks by (WstxContestRanking::ContestDirective).
+             The sender's continent is that of its entity (EntityAnswer); a sender
+             without an entity has none. */
+    }
+
+    attribute def MyContinent {
+        doc /* The station's continent.
+             It is RankingContext::continent when the operator has set one; otherwise
+             the continent of the entity of the profile's call; otherwise the continent
+             of the entity whose position is nearest to the centre of the profile's
+             locator; otherwise it is unknown.
+             RankingState::derivedContinent is the second of these alone. */
+        @NotStated {
+            what = "how ranking learns the entity nearest to a locator: an "
+                + "EntityRequest asks by a call";
         }
     }
+
+    verification 'TC-039-002' {
+        doc /* Directed CQs, the station's continent and the verdicts. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-039-03'; verify 'CL-039-02'; }
+        @TestedBy {
+            test = "server/src/strategy_tests.rs::"
+                + "tc_039_002_continent_and_directed_cq_rule; "
+                + "server/src/strategy_tests.rs::"
+                + "tc_039_002_verdicts_grey_reasons_and_treat_73; "
+                + "server/src/strategy_tests.rs::"
+                + "tc_039_002_my_continent_from_config_call_and_locator";
+        }
+    }
+
     requirement 'CL-042-01' {
         subject ranking : RankingService;
-        doc /* What must be new reads the sender's cty.dat entity against the internal log: new
-             [dxcc] per ever, band and band_mode, and new [cq_zone] per ever (NewNeeded); a
-             sender without an entity, an unknown station band (for band and band_mode) or an
-             unreadable log never counts as new. */
+        doc /* Ranking MUST judge what is new about a sender from what the log says has
+             been worked and confirmed, and claim nothing as new that it cannot check
+             (NewNeeded). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn {
-            module = "server/src/strategy.rs; server/src/dxcc.rs; server/src/logbook.rs; client/contact.js";
+    }
+    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-042-01'; }
+
+    attribute def NewNeeded {
+        doc /* Whether one NewWhat is new for a sender, in one NewPer, by one Needed.
+             Ranking asks the log for the WorkedSet of the strategy's WorkedSince: a
+             DateWindow without dates for 'all', the current UTC date twice for today,
+             the two dates for fromTo.
+             The key is looked up in the WorkedSet by its WorkedCategory. dxcc,
+             cqZone, ituZone and continent take the key from the sender's entity
+             (EntityAnswer); grid takes the first four characters of a locator in the
+             message.
+             The scope ever is every QSO of the set; band is the station's band in any
+             mode; bandMode is that band in the operating mode.
+             notWorked holds when the Standing of the key in the scope is not worked;
+             notConfirmed when it is not worked or not confirmed.
+             Nothing is new: for the entity keys while the sender has no entity; in
+             the scopes band and bandMode while the station's band is unknown; for
+             grid when the message has no locator, and when the set says that a QSO
+             with the sender has no grid; and for every key while ranking has no
+             WorkedSet. */
+        attribute what : NewWhat;
+        attribute per : NewPer;
+        attribute means : Needed;
+        attribute category : WorkedCategory;
+        attribute window : DateWindow;
+        attribute standing : Standing;
+    }
+
+    verification 'TC-042-001' {
+        doc /* A new entity and a new zone against a logbook written by hand. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-042-01'; }
+        @TestedBy {
+            test = "server/src/strategy_tests.rs::"
+                + "tc_039_030_each_goal_in_both_needed_settings";
         }
     }
+
+    verification 'TC-097-005' {
+        doc /* Each thing that can be new, in each scope and meaning. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-042-01'; verify 'CL-097-02'; }
+        @TestedBy {
+            test = "server/src/strategy97_tests.rs::"
+                + "tc_097_005_what_must_be_new_per_and_means_by_hand";
+        }
+    }
+
     requirement 'CL-097-02' {
         subject ranking : RankingService;
-        doc /* Band: off the strategy's bands (all by default) every verdict has rank null, why
-             "band not in the strategy" or "band unknown"; it never switches bands. Filters,
-             every line must hold: what must be new (DXCC entity, call, grid, CQ zone, ITU zone,
-             continent, prefix; any chosen one counts) per ever, band or band and mode, new
-             meaning not worked or not confirmed (QSL/LoTW); region; minimum SNR; worked since
-             (any time, today, from-to); Treat 73 as CQ; prefix/country include and exclude
-             lists (an entry optionally per band; country names from the country table); US
-             state include and exclude (the state from the message exchange where it carries
-             one, else the log's STATE, a confirmed record first; unknown fails an include list;
-             the licence data and the grid are not used); CQ target include and exclude (POTA,
-             SOTA, EU, DX ...; a word on the include list makes that CQ's verdict not grey for
-             this strategy, and Alert records it). Callers of my call must pass the filters too.
-             A contest strategy applies its contest's verdict first, then the country, US state
-             and CQ target lists. Each failing line is named in the verdict's reason. */
-        @Status { build = ImplementationState::partial; }
-        @ImplementedIn {
-            module = "server/src/strategy.rs; server/src/dxcc.rs; server/src/automation.rs";
-        }
+        doc /* Ranking MUST rank only on the strategy's bands, and there only a record
+             that passes every line of the strategy's filter, and name in the verdict
+             the line that fails (StrategyBandsRule, Candidate, CallerOfMyCall,
+             CountryListRule, UsStateFilterRule, CqTargetListRule). */
+        @Status { build = ImplementationState::implemented; }
     }
-    requirement 'CL-097-03' {
-        subject ranking : RankingService;
-        doc /* Order: criteria, the first decides and the next breaks a tie: Most wanted (Club
-             Log rank); New DXCC, on band, on band and mode; New call, on band; New grid, on
-             band; New CQ zone; New ITU zone; New continent; New prefix; SNR bucket (above 0 dB,
-             -10..0 dB, below -10 dB); SNR (stronger first); Distance (farthest first); Hears us
-             first (a PSK Reporter spot of my call at that station at most 600 s old). Then
-             always SNR, then for an exact tie the lower audio frequency and the call; decode
-             order is never a ranking. With "Calling stations are answered" on, the callers that
-             pass the filters come first, ranked among themselves; with it off a caller of my
-             call has rank null, why "calls my call · not answered". A contest strategy has no
-             order: it ranks by ContestValueOrder, under the same rule for callers. */
+    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-097-02'; }
+
+    attribute def StrategyBandsRule {
+        doc /* A strategy without bands ranks on every band. A strategy with bands ranks
+             only while the station's band is one of them. On another band every
+             verdict has no rank and the why "band not in the strategy", and while the
+             station's band is unknown "band unknown". */
+    }
+
+    attribute def Candidate {
+        doc /* The filter of a strategy of class strategy. A record is a candidate when
+             every line holds; the first line that fails is the why.
+             The sender's call has at least three characters, with a digit and a
+             letter, and does not end in /R: "callsign guard".
+             The record is a CQ, or with treat73AsCq an RR73 or a 73 to another call
+             than the profile's: "not a CQ".
+             The region holds, by RegionKind: for dx the station's continent
+             (MyContinent) and the sender's are both known and differ; for selected the
+             sender's continent is known and listed: "region".
+             The SNR is known and not below minSnrDb, when the strategy has one:
+             "below min SNR".
+             At least one NewWhat of the strategy is new (NewNeeded, with the
+             strategy's newPer, newMeans and workedSince): "not new".
+             CountryListRule holds: "country list". UsStateFilterRule holds: "state
+             list". CqTargetListRule holds: "CQ target".
+             The why of a candidate is "new: " with the names of the NewWhat that are
+             new, and " on <band>" for the scope band or " on <band> <MODE>" for
+             bandMode. */
+    }
+
+    attribute def CallerOfMyCall {
+        doc /* A caller is a record whose message goes to the profile's call and is no
+             RR73 and no 73.
+             A caller has a rank when RankingKeys::callersFirst is on and every line of
+             Candidate holds for it but three: the callsign guard, the CQ line and
+             CqTargetListRule are not asked of it. Its why is "calls my call".
+             A caller that fails a line has no rank and the why "calls my call · " with
+             that line.
+             With callersFirst off a caller that passes has no rank and the why "calls
+             my call · not answered". */
         @FollowsSource {
-            reference = "WstxRequirements::BehaviorBaseline (WSJT-X): the CQ response None "
-                + "answers no caller automatically and 'Calling CQ forces Call 1st' is off by "
-                + "default";
-        }
-        @Status { build = ImplementationState::partial; }
-        @ImplementedIn {
-            module = "server/src/strategy.rs; server/src/contest.rs";
+            reference = "WSJT-X at the behaviour baseline: with the CQ response None it "
+                + "answers no caller of its CQ by itself, which callersFirst off "
+                + "follows";
         }
     }
-    #derivation connection {
-        end #original ::> 'FR-026';
-        end #derive ::> 'CL-039-02';
+
+    attribute def CountryListRule {
+        doc /* A prefix entry matches a sender whose call begins with it. A country
+             entry matches a sender whose entity has that name, without regard to
+             letter case; it matches no sender without an entity.
+             An entry with bands matches only while the station's band is one of them.
+             The line holds when no excluded entry matches and, when the list of
+             included entries is not empty, one of them matches. */
     }
-    #derivation connection {
-        end #original ::> 'FR-026';
-        end #derive ::> 'CL-039-03';
+
+    attribute def UsStateFilterRule {
+        doc /* The state of a sender is known only for a sender whose entity is the
+             United States, Alaska or Hawaii. It is the state in the exchange of an
+             RTTY Roundup message of that sender among the records evaluated; without
+             one, the state the WorkedSet gives for its call.
+             The line holds when the state is not on the excluded list and, when the
+             included list is not empty, is known and on it. */
     }
-    #derivation connection {
-        end #original ::> 'FR-026';
-        end #derive ::> 'CL-042-01';
-    }
-    #derivation connection {
-        end #original ::> 'FR-026';
-        end #derive ::> 'CL-097-02';
-    }
-    #derivation connection {
-        end #original ::> 'FR-026';
-        end #derive ::> 'CL-097-03';
+
+    attribute def CqTargetListRule {
+        doc /* The line is asked of a record that is no caller.
+             It fails for a CQ whose directive is on the excluded list. When the
+             included list is not empty it holds only for a CQ whose directive is on
+             it: a CQ without a directive, and an RR73 or 73 that counts as a CQ, fail.
+             The included words are also the strategy's CQ words of DirectedCqRule. */
     }
 
     verification 'TC-097-004' {
-        doc /* The strategy's bands
-             Setup: the evaluator with the pinned cty.dat fixture and hand-authored codec-packed
-             rows; a strategy with bands ["20m", "40m"]. The run's steps off the bands are
-             TC-097-018's.
-             (a) Station band 20m: the candidates are ranked.
-             (b) Station band 15m: every verdict has rank null with why "band not in the
-             strategy".
-             (c) Station band unknown: every verdict has rank null with why "band unknown".
-             (d) The same strategy with bands null on 15m: the candidates are ranked.
-             2 — Isolated automated tests; Windows development PC. */
+        doc /* The strategy's bands. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-097-02';
-        }
+        objective { verify 'CL-097-02'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs";
+            test = "server/src/strategy97_tests.rs::"
+                + "tc_097_004_off_the_strategy_bands_nothing_is_ranked";
         }
     }
-    verification 'TC-097-005' {
-        doc /* What must be new, new per, new means and worked since
-             Setup: the evaluator with the pinned cty.dat fixture and a hand log (worked and
-             confirmed QSOs per band, mode and date, with and without grid) for HB9BLA JN37VL on
-             20m FT8; the expected verdicts hand-worked in the test from the log and the cty.dat
-             entries.
-             (a) Each NewWhat alone with each new_per and each new_means: a station is new
-             exactly where the log lacks its key per the chosen per and means; an entity whose
-             cty.dat entry overrides the ITU zone is judged by the override; prefix by the
-             WpxPrefix table cases.
-             (b) Grid: no grid in the message is not new; a logged QSO without grid gives an
-             unknown grid status, not new.
-             (c) Two whats: either counts.
-             (d) worked_since today and from_to with an undated record: an undated record counts
-             only for any time.
-             (e) region dx and selected, and min_snr_db: a station outside the region or below
-             the minimum is no candidate.
-             (f) treat_73_as_cq on and off: an RR73 to another station counts as calling only
-             with it on.
-             (g) The station band unknown with new_per band: nothing is new per band or
-             band_mode.
-             2 — Isolated automated tests; Windows development PC. */
-        @Automation { run = AutomationState::partial; }
-        objective {
-            verify 'CL-097-02';
-        }
+
+    verification 'TC-039-030' {
+        doc /* The grid, the region, the minimum SNR and the window of the filter. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-097-02'; verify 'CL-042-01'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs";
+            test = "server/src/strategy_tests.rs::"
+                + "tc_039_030_a_missing_grid_is_unknown_never_new; "
+                + "server/src/strategy_tests.rs::"
+                + "tc_039_030_region_min_snr_for_an_eu_and_a_non_eu_profile; "
+                + "server/src/strategy_tests.rs::"
+                + "tc_039_030_a_caller_beats_a_most_wanted_station_"
+                + "and_ignores_goal_region_and_snr; "
+                + "server/src/strategy_tests.rs::"
+                + "tc_039_030_value_order_with_and_without_a_list; "
+                + "server/src/strategy_tests.rs::"
+                + "tc_039_030_worked_window_from_dated_records; "
+                + "server/src/strategy_tests.rs::"
+                + "tc_039_030_today_and_from_to_read_the_log_of_the_window";
         }
     }
+
+    verification 'TC-097-006' {
+        doc /* The country, US state and CQ target lists. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-097-02'; }
+        @TestedBy {
+            test = "server/src/strategy97_tests.rs::"
+                + "tc_097_006_country_state_and_cq_target_lists";
+        }
+    }
+
     verification 'TC-097-007' {
-        doc /* Callers of my call pass the filters and are answered only when
-             Calling stations are answered is on
-             Setup: the evaluator with the pinned cty.dat fixture, HB9BLA on 20m; the built-in
-             Casual (call, per band, not worked; Calling stations are answered on); a log with
-             W1AW worked on 20m; rows HB9BLA W1AW FN31 (+5), HB9BLA N1NEW FN31 (-9), CQ K1ABC
-             FN42 (-1). The run's steps with callers are TC-097-018's. Oracle: the operator's
-             decision on callers; WSJT-X with the CQ response None answers no caller
-             automatically (widgets/mainwindow.cpp 7481-7496).
-             (a) Casual: W1AW rank null, why "calls my call · not new"; N1NEW ranked first, then
-             K1ABC.
-             (b) Calling stations are answered off with order [snr]: N1NEW rank null, why "calls
-             my call · not answered"; K1ABC alone is ranked.
-             (c) A caller failing region dx, min SNR -5, a country exclude or a state include:
-             rank null, why "calls my call · region", "· below min SNR", "· country list" or "·
-             state list".
-             2 — Isolated automated tests; Windows development PC. */
+        doc /* Callers of the profile's call pass the filter, and are answered only when the
+             strategy says so. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-097-02';
-            verify 'CL-097-03';
-        }
+        objective { verify 'CL-097-02'; verify 'CL-097-03'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs";
+            test = "server/src/strategy97_tests.rs::"
+                + "tc_097_007_callers_of_my_call_pass_the_filters";
         }
     }
-    verification 'TC-097-008' {
-        doc /* The order criteria
-             Setup: the evaluator with the TC-039-040 rows extended by stations at SNR +1, 0,
-             -10, -11 and unknown; a feed without a connection fed hand-authored spots of my
-             call at JA1XYZ and VK2ABC; the expected orders hand-worked in the test (distances
-             by the haversine formula written there).
-             (a) order [snr_bucket]: +1 first; 0 and -10 in the middle bucket; -11 last; unknown
-             after them; inside a bucket SNR, frequency, then call.
-             (b) order [snr_bucket, distance]: inside a bucket the farthest first.
-             (c) order [hears_us]: with PskrUse on JA1XYZ and VK2ABC first, with PskrUse off the
-             plain SNR order.
-             (d) order [new_cq_zone], [new_itu_zone], [new_continent], [new_prefix] and
-             [new_dxcc_band_mode], each before [snr]: the new stations first, SNR order inside.
-             (e) order [most_wanted, snr]: the listed stations first by rank, then by SNR.
-             (f) A contest strategy is ranked by ContestValueOrder: with the WW Digi built-in,
-             CQ WW JA1XYZ PM95, the non-dupe caller HB9BLA VK2ABC QF56 and the dupe caller
-             HB9BLA K1OLD FN20, Calling stations are answered on: VK2ABC rank 0, JA1XYZ rank 1;
-             off: VK2ABC rank null with why "calls my call · not answered", JA1XYZ rank 0; K1OLD
-             rank null either way.
-             (g) Decode order never changes an order.
-             2 — Isolated automated tests; Windows development PC. */
-        @Automation { run = AutomationState::partial; }
-        objective {
-            verify 'CL-097-03';
-        }
-        @TestedBy {
-            test = "server/src/strategy97_tests.rs; server/src/contest_tests.rs";
-        }
+
+    requirement 'CL-097-03' {
+        subject ranking : RankingService;
+        doc /* Ranking MUST order the records that have a rank by the criteria of the
+             strategy, the first deciding and each next one breaking a tie, and never
+             by the order in which they were decoded (ValueOrder, StationDistance). */
+        @Status { build = ImplementationState::partial; }
     }
+    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-097-03'; }
+
+    attribute def ValueOrder {
+        doc /* The order of the ranked records under a strategy of class strategy.
+             The wanted records come first (WstxWantedList::WantedRule). Then, with
+             callersFirst on, the callers, and then the candidates. Within each of these
+             groups the records are ordered as follows.
+             Then the criteria of RankingKeys::order, each as its ValueCriterion says:
+             mostWanted: a sender whose entity is on the Most Wanted list before one
+             that is not, the lower rank of the list first
+             (WstxMostWanted::MostWantedListRule);
+             newDxcc, newDxccBand, newDxccBandMode, newCall, newCallBand,
+             newGrid, newGridBand, newCqZone, newItuZone, newContinent,
+             newPrefix: a sender for which that NewWhat is new before one for which
+             it is not, by NewNeeded in the scope the name ends with, ever without an
+             ending, and with the strategy's newMeans and workedSince;
+             snrBucket: an SNR above snrBucketUpperDb, then one from snrBucketLowerDb
+             up to it, then one below, then an unknown one; equal within a group;
+             snr: the stronger first, an unknown SNR last;
+             distance: the farther first by StationDistance, an unknown one last;
+             hearsUs: a sender whose call is in HeardByReport::heardBy before one
+             that is not; equal while HeardByReport::inUse is false.
+             After the criteria always the SNR, the stronger first and an unknown one
+             last; then the lower audio frequency, an unknown one last; then the call
+             in the order of its characters.
+             A record ranked while mostWanted is a criterion and its entity is on
+             the list has " · Most Wanted #" and the rank of the list at the end of
+             its why. */
+        attribute snrBucketUpperDb : Integer = 0;
+        attribute snrBucketLowerDb : Integer = -10;
+    }
+
+    attribute def StationDistance {
+        doc /* The distance of a sender: the great circle on a sphere of 6371 km radius
+             from the centre of the profile's locator to the centre of the first four
+             characters of the locator in the message, and without one to the position
+             of the sender's entity (CallEntity), in whole kilometres, cut off.
+             It is unknown while the profile has no locator, and for a sender without
+             a locator in the message and without an entity. */
+    }
+
     verification 'TC-039-040' {
-        doc /* The filter and the value order
-             Setup: the evaluator as a function with the pinned cty.dat fixture, a hand log and
-             hand-authored codec-packed rows for HB9BLA JN47AA (EU) on 20 m FT8: CQ K1ABC FN42
-             -12 at 1200 Hz, CQ JA1XYZ PM95 -15 at 900 Hz, CQ DL1XYZ JO62 -3 at 1500 Hz, CQ
-             VK2ABC QF56 -20 at 600 Hz, CQ ZS6AA -8 at 2000 Hz (no grid), CQ OH1AA KP20 -3 at
-             1400 Hz, HB9BLA W1AW FN31 -25 (a caller); the log has K1ABC and W1AW on 20 m,
-             DL1XYZ on 40 m only, OH1AA on 20 m today; a Most Wanted list with JA (rank 40) and
-             VK (rank 90). Distances are computed in the test by the haversine formula written
-             there.
-             (a) new [call] per band, order [snr]: DL1XYZ, OH1AA (1400 Hz before 1500 Hz when
-             tied), ZS6AA, JA1XYZ, VK2ABC; K1ABC and W1AW are no candidates (worked on 20 m).
-             (b) order [distance]: VK2ABC, JA1XYZ, ZS6AA (entity centre), OH1AA, DL1XYZ.
-             (c) order [most_wanted]: JA1XYZ, VK2ABC, then the rest by SNR; [most_wanted,
-             distance]: the same for the listed, then by distance.
-             (d) new [call, grid, dxcc], Calling stations are answered off, each needed-first
-             criterion alone before [snr]: the needed stations before the others, SNR order
-             inside each group, W1AW without a rank: [new_dxcc] DL1XYZ after the rest;
-             [new_dxcc_band] DL1XYZ needed on 20 m; [new_dxcc_band_mode] JA1XYZ needed (FT4 is
-             another mode); [new_call] K1ABC after; [new_call_band] K1ABC and OH1AA after;
-             [new_grid] K1ABC (FN42) after; [new_grid_band] K1ABC needed, the row without grid
-             and the call with an unknown grid status not needed.
-             (e) The station band unknown: no candidate for new [call] per band, nothing needed
-             by new_grid_band.
-             (f) Worked since today: OH1AA not needed by new [call] per band; W1AW (not in that
-             log) a caller that passes, first with Calling stations are answered on.
-             (g) Two verdicts of the same SNR and frequency are ordered by call; Calling
-             stations are answered off: W1AW has no rank; an empty order list gives SNR order;
-             W1AW ranks only where it passes the filters (TC-097-007).
-             (h) The reasons name the needed whats; the decode sequence never changes an order.
-             2 — Isolated automated tests; Windows development PC. */
+        doc /* The filter and the order together. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-039-02';
-        }
+        objective { verify 'CL-097-03'; verify 'CL-039-02'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs";
+            test = "server/src/strategy_tests.rs::"
+                + "tc_039_040_the_filter_and_the_value_order; "
+                + "server/src/strategy_tests.rs::"
+                + "tc_039_040_each_needed_first_criterion_with_its_own_log";
+        }
+    }
+
+    verification 'TC-097-008' {
+        doc /* The criteria of the order. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-097-03'; }
+        @TestedBy {
+            test = "server/src/strategy97_tests.rs::"
+                + "tc_097_008_snr_bucket_hears_us_and_the_new_criteria; "
+                + "server/src/contest_tests.rs::"
+                + "tc_097_008_a_contest_strategy_with_callers_off_ranks_no_caller";
+        }
+    }
+
+    requirement 'CL-055-02' {
+        subject ranking : RankingService;
+        doc /* Ranking MUST tell, for each decoded record whose sender it can name, the
+             sender's entity, what is new about the sender against the logbook, and
+             whether the sender has been worked (DecodedEntity). */
+        @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/dxcc.rs"; }
+    }
+    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-055-02'; }
+
+    attribute def DecodedEntity {
+        doc /* What ranking adds to a ResultRecord, as one DecodedFacts.
+             The sender of a decoded record is: for a standard message its sender; for
+             a message with a nonstandard call the call that sends it; for a
+             DXpedition message the call of the DXpedition. The sender may be a hashed
+             call that is filled in. A hashed call that is not filled in, a free text
+             and telemetry name no sender, and such a record gets nothing.
+             entity: from the EntityAnswer for the sender. Its km is the great circle
+             from the centre of the profile's locator to the position of the entity,
+             rounded to a whole kilometre.
+             flags: from the WorkedSet of every QSO; ranking waits for the set that
+             holds the latest change of the logbook. A flag holds when its key is not
+             worked: for a flag without the ending Band in any QSO, for one with it on
+             the station's band in any mode. The flags
+             with the ending Band are given only while the station's band is known,
+             the grid flags only for a message with a locator, the flags of the
+             entity only for a sender with one. A DXpedition message and a station
+             without a WorkedSet get no flag.
+             worked: the WorkedStatus of the sender for the station's band and the
+             mode of the job. It is given only for a standard message whose sender is
+             a call, and only while the station's band is known.
+             Ranking gives the DecodedFacts of a record once, when the record is
+             decoded, and again for every record of the current PeriodView whenever the
+             logbook (also by another station of the shack), the country file or the
+             station's band changes. The facts of an older period stay as they were
+             given. */
+        attribute entity : CallEntity[0..1];
+        attribute worked : WorkedStatus[0..1];
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: LogBook::match with "
+                + "highlighting by mode off, the six categories each for the logbook "
+                + "and for the band";
+        }
+        @DiffersFromSource {
+            what = "WSJT-X looks a decode up when it prints it and colours it at "
+                + "once, never again; ranking gives the facts, again for the current "
+                + "period after a change, and the browser colours.";
+        }
+    }
+
+    verification 'TC-055-002' {
+        doc /* The entity, the flags and the worked status of decoded records. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-055-02'; }
+        @TestedBy {
+            test = "server/src/dxcc_tests.rs::"
+                + "tc_055_002_receive_results_carry_entity_and_new_flags; "
+                + "server/src/dxcc_tests.rs::"
+                + "tc_055_006_non_cq_senders_carry_entity_and_flags; "
+                + "server/src/dxcc_tests.rs::"
+                + "tc_055_002_every_decoded_sender_call_resolves; "
+                + "server/src/dxcc_tests.rs::"
+                + "tc_011_003_receive_results_carry_the_worked_status";
         }
     }
 }

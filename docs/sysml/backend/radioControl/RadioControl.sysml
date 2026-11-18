@@ -1,41 +1,70 @@
 package WstxRadioControlPart {
     private import ScalarValues::*;
     private import WstxRadioControl::RadioControl;
+    private import WstxRadioControl::RadioAccess;
+    private import WstxRadioControl::NativeControlPort;
+    private import WstxRadioControl::RadioConfig;
+    private import WstxRadioControl::RadioRecords;
     private import WstxKeying::Keying;
     private import WstxCat::CatPort;
-    part def RadioBinding {
-        doc /* The station's selected radio resource. Persisted intent resolves it at
-             connection, and every control request carries it as resource context. The
-             radio itself is an outside thing (OutsideThing catRadio, flexRadio).
-             WstxFlexSession::NativeFlexWireSubset settles native slice and handle
-             reconciliation; actual radio capacity is reported at runtime. */
-    }
-    part def RadioAuthority {
-        doc /* One effective authority for constrained resources and transmit access across
-             all station/backend choices. This is not a new process placement decision. */
-        port requests : ~RadioControl;
-        port authorized : RadioControl;
-        binding authorizedContext bind authorized.request = requests.request;
-        binding returnedContext bind requests.outcome = authorized.outcome;
-    }
+    private import ModelBindings::ImplementedIn;
+    private import ModelBindings::DetailTests;
+
     part def RadioControlInterface {
-        attribute configuredIntent : WstxRadioControl::ControlSelection;
-        attribute observedState : WstxRadioIO::CatState;
-        attribute currentFacts : WstxRadioFacts::RadioFacts[0..1];
-        attribute frequencyProvenance : WstxRadioFacts::FactProvenance;
-        attribute modeProvenance : WstxRadioFacts::FactProvenance;
-        attribute dataProvenance : WstxRadioFacts::FactProvenance;
-        doc /* Own selected capabilities, typed CAT/control/PTT/status/resource claims; not audio samples/sound devices, browser/MCP policy or duplicate modem logic. */
-        doc /* Capabilities, CAT/PTT/status, independent failures and resource claims. No
-             samples; control implementation coverage does not limit physical radio capabilities. */
-        port station : ~RadioControl;
+        doc /* The control of the station's radio. It keeps the connection to the radio
+             the profile names, reads what the radio is set to, sets frequency, mode and
+             the settings the station looks after, keys the transmitter for transmit, and
+             finds and sets up a radio on the operator's request.
+             The rig is the operator's choice from Hamlib's list (ControlSelection::rig);
+             radio control has the rules of the rigs its catalogue names, today the
+             IC-7300. The radio is reached on one of two connections, by the profile's
+             radio type: a serial port through the CAT adapter, or
+             the native network connection of a radio through its own adapter. */
+        @ImplementedIn {
+            module = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; "
+                + "server/src/radio_control/executor.rs; "
+                + "server/src/radio_control/catalogue.rs; "
+                + "server/src/radio_control/setup.rs; server/src/transmit/codec.rs; "
+                + "server/src/radioControl/cat_lifecycle.rs; "
+                + "server/src/radioControl/radio_agc.rs; server/src/radio_setup.rs";
+        }
+        @DetailTests {
+            tests = "server/tests/radio_control.rs; server/src/radio_control/setup_tests.rs";
+            covers = "the making of the native port values inside the exchange thread; "
+                + "the refusal of an incomplete connection identity before a port is "
+                + "opened; the text form of a menu value and its coding; the built-in "
+                + "list of the commands the station has for a model";
+        }
+        attribute config : RadioConfig {
+            doc /* Its configuration, as the last ControlAssignment gave it. */ }
+        attribute records : RadioRecords {
+            doc /* Its records, as the last RadioMemory of the supervisor gave
+                 them. */ }
+        port supervisor : ~RadioControl;
         port transmit : ~Keying;
-        port backend : RadioControl;
+        port backend : RadioAccess;
+        port native : NativeControlPort;
     }
-    part def RustRadioDriver {
-        attribute connectionSettings : WstxRadioControl::ControlSelection;
-        attribute observed : WstxRadioControl::RadioObservation[0..1];
-        port authorized : ~RadioControl;
+
+    part def CatAdapter {
+        doc /* Joins radio control to the serial port of a radio: it finds the port the
+             station names, opens it, sets the serial line, and passes frames out and
+             bytes in.
+             A radio is held by one station process of the PC at a time. An OpenRadio
+             for a device another station process holds is refused with resourceInUse,
+             and Windows opens the port for one program only; a station loses the
+             device when its port is closed. A ReserveDevice keeps the radio on its port
+             for this station process until the process ends, also while the port is
+             closed; another station process is refused it with resourceInUse. */
+        @ImplementedIn {
+            module = "server/src/radioControl/windows.rs; server/src/radio_setup.rs";
+        }
+        @DetailTests {
+            tests = "server/tests/receive/radio_native.rs";
+            covers = "reading and writing with a time limit and a withdrawal; the "
+                + "finding of a port by its exact name";
+        }
+        port serial : ~RadioAccess;
         port radio : CatPort;
     }
 }

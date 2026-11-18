@@ -1,686 +1,282 @@
-package WstxRadioIO {
+package WstxCatControl {
     private import ScalarValues::*;
-    private import WstxLiveReceive::ConvertAndReceive;
-    private import WstxAudioCapture::CaptureAudio;
-    private import WstxRequirements::ImplementationState;
+    private import RequirementDerivation::*;
     private import WstxRequirements::'FR-009';
-    private import WstxProfiles::'TC-009-001';
-    private import WstxRequirements::'FR-002';
-    private import WstxRequirements::AutomationState;
-    private import WstxLiveReceive::'TC-009-002';
-    private import WstxLiveReceive::'TC-002-003';
-    private import WstxRecordingReceive::'TC-009-004';
-    private import WstxStationProtocol::'TC-009-005';
-    private import WstxRequirements::'FR-008';
-    private import WstxRequirements::'FR-021';
-    private import WstxCatLifecycle::'CL-022-04';
-    private import WstxOperatingLayout::'TC-022-010';
-    private import WstxRequirements::'FR-019';
-    private import WstxRadioSetup::'TC-044-009';
-    private import WstxRadioSetup::'TC-044-011';
-    private import WstxRadioControl::CatRequest;
-    private import WstxRadioControl::CatResult;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxRadioControlPart::RadioControlInterface;
+    private import WstxRadioControl::*;
+    private import WstxKeying::*;
+    private import WstxRadioProperties::DialRange;
+    private import WstxRadioProperties::ModeValue;
+    private import WstxRadioProperties::Meter;
+    private import WstxCat::CivFrame;
+    private import ModelNotes::FollowsSource;
+    private import ModelBindings::ImplementationState;
+    private import ModelBindings::AutomationState;
     private import ModelBindings::Status;
     private import ModelBindings::Automation;
-    private import ModelBindings::ImplementedIn;
     private import ModelBindings::TestedBy;
-    doc /* Canonical capture/CAT contract with partial native Windows and IC-7300 implementation;
-         hardware matrix completion and physical acceptance remain separately declared.
-         Contract: contract 4.5/12.8; recorded source and pure decoder contracts remain
-         WstxRecordingReceive/WstxModemDecode. One physical architecture, no new deployment.
-         Windows binding0.62.2 shared between WASAPI and overlapped serial I/O.
-         Full normative operation, state, wire and oracle text follows this package. */
-    enum def CatState { enum closed; enum connecting; enum ready; enum closing; enum unavailable; }
-    attribute def Limits {
-        attribute canonicalHz : Integer = 12000;
-        attribute blockFrames : Integer = 240;
-        attribute nativeQueueMs : Integer = 500;
-        attribute canonicalQueueFrames : Integer = 12000;
-        attribute nativePacketFrames : Integer = 8192;
-        attribute converterBytes : Integer = 4194304;
-        attribute filterSupportNativeFrames : Integer = 1024;
-        attribute converterDelayMs : Integer = 20;
-        attribute cpuQuantumMs : Integer = 50;
-        attribute softwareBacklogMs : Integer = 200;
-        attribute cancelMs : Integer = 250;
-        attribute catFrameBytes : Integer = 32;
-        attribute catReadBytes : Integer = 256;
-        attribute catExchangeBytes : Integer = 4096;
-        attribute catExchangeFrames : Integer = 64;
-        attribute catExchangeMs : Integer = 1000;
-        attribute catCompositeMs : Integer = 5000;
-        attribute catalogueBytes : Integer = 262144;
-        attribute retainedRecords : Integer = 2048;
-        attribute retainedBytes : Integer = 2097152;
-        attribute correlatedClockUncertaintyNs : Integer = 2000000;
-        attribute clockJumpMs : Integer = 20;
-    }
-    action def ExecuteCat {
-        in request : CatRequest;
-        out result : CatResult;
-        doc /* Samephysicalresource retainedlock+exclusive serial0, overlappedWin32IO,
-             CancelIoEx/8N1/nohandshake/DTRRTSdisabled afterverifiedreceive-onlyprecondition.
-             One lease/noqueue, frame32/read256/exchange4096+64frames/deadline1s,
-             setup5s/poll<=1cycle/s/IOcancel50ms. Echo/foreign/broadcastnotcompletion,
-             malformedexpectedreplyerror, deadlinesneverrenew. Auto-baudconnectionphase
-             [9600,19200,4800,115200,57600,38400],one03/rate500ms+100msquiet,total5s;
-             explicitrateone1sprobe. Noaddressscan or write replay. No retry of an
-             issued exchange. Target CL-022-03/04 alone permits new read-only
-             connection attempts after confirmed release, under persisted matching
-             grant/commissioning, bounded backoff and failed-close quarantine.
-             This supersedes only the former runtime-automatic-retry prohibition;
-             it creates no second owner and never retries a setter or resumes audio.
-             Validateimmutableboundedcatalogue separately fromcompiledoperations/state.
-             Failed close retains owner. No guarantee of no initial USB-line glitch:
-             physicalUSB SEND/CW/RTTY OFF or independentlyverifiedinhibit beforeopen.
-             #44 CL-044-09: every setting change is read, compare, write, verify: read
-             first, no write when the value already fits, write only with the radio in
-             RX (checked per write for 16 12 and 1A 05, once per selection for the 05, 06
-             and 1A 06 of its receive setup; the single setter operations, which no route
-             reaches, have no RX check of their own), ACK, then readback (the transmit switch is
-             a keying action, not a setting). Menu/AGC exchanges run under the same single lease. */
-    }
-    action execute : ExecuteCat;
-    satisfy WstxRadioIO::'CL-008-04' by execute;
-    satisfy WstxRadioIO::'CL-008-06' by execute;
-    dependency controlOwner from execute to WstxArchitecture::StationProcess::radioControl;
-    package Verification {
-        doc /* Planned Cost2Windows actual candidate adapters/services/browser and independent
-             native-clock/device/serial/decoder-step fixtures, no hardware. Physicalcase
-             onlyCost4 receive-onlytarget afterverifiedUSBkeyinginhibit. Exact cases and
-             complete normative contracts are the source text in this package below. */
-        verification audio { subject candidate : ConvertAndReceive; objective { verify WstxLiveReceive::'CL-008-02'; } }
-        verification cat { subject candidate : ExecuteCat; objective { verify WstxRadioIO::'CL-008-06'; } }
-        verification independent { subject candidate : CaptureAudio; objective { verify WstxRadioIO::'CL-008-05'; } }
-        dependency audioCase from audio to WstxProfiles::'TC-002-001';
-        dependency catCase from cat to WstxProfiles::'TC-009-001';
-        dependency independenceCase from independent to WstxLiveReceive::'TC-002-003';
-        dependency catIndependenceCase from cat to WstxRadioIO::'TC-009-003';
-        dependency combinedCase from independent to WstxRecordingReceive::'TC-009-004';
-        dependency physicalCase from cat to WstxLiveReceive::'TC-009-002';
-        dependency physicalIndependenceCase from independent to WstxLiveReceive::'TC-009-002';
-    }
-    doc /* Canonical detailed behavior and verification
-### 4.5 Separate audio and radio-control functions — target FR-002/FR-009
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
 
-Audio and CAT are independent station-owned interfaces. Either works while the other
-is closed, disabled or unavailable. The shared receive service consumes audio; the
-radio-control service reports and applies only its typed supported operations. Neither
-interface owns a second profile store, receive job authority, decoder or transmit path.
-
-| Clause | Requirements | Promise | Verification |
-|---|---|---|---|
-| CL-008-01 | FR-001, FR-002, FR-009, FR-022 | Persist independently selected audio and typed IC-7300 control intent through the existing profile revision/atomic-store boundary; settings never assert device availability. | TC-002-001; TC-009-001 |
-| CL-008-02 | FR-002, FR-003, FR-004 | Deliver immutable canonical 12 kHz mono samples and explicit timing/gaps through one common converter to the existing spectrum/decoder worker, without fabricating samples or UTC accuracy. | TC-002-001; TC-002-003; TC-009-002 |
-| CL-008-03 | FR-002, FR-009, FR-019, FR-021 | Publish independently truthful audio/control states, bounded live results and explicit loss/recovery while preserving worker, cancellation and thin-link bounds. | TC-002-001; TC-009-001; TC-009-004 |
-| CL-008-04 | FR-002, FR-009 | Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. | TC-009-001; TC-009-002 |
-| CL-008-05 | FR-002, FR-009 | Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. | TC-002-003; TC-009-003; TC-009-004; TC-009-002 |
-| CL-008-06 | FR-009 | Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. | TC-009-001; TC-009-003 |
-
-**Ownership and implementation boundary.** The station `recording` receive owner
-keeps its single source/job/generation lifecycle for recorded spectrum or
-live receive; these are mutually exclusive per profile with no pending-job queue.
-The #7 pure `decoder` functions own source decoding, FEC, waveform reconstruction and
-mode analysis. The #8 `audio` module owns capture and the only native-to-canonical
-converter; `radio_control` owns catalogue validation, CI-V encoding and serial execution.
-The existing station/web/profile services own admission, cancellation, persistence and
-publication. One integration owner changes shared manifests/bootstrap/browser wiring.
-Reuse RustFFT6.4.1 and the existing immutable `SampleBlock`; no second FFT provider,
-resampler, sample reader, job manager or configuration database. The shared source
-boundary is `SampleSource::descriptor()` plus nonblocking `poll()` returning Pending,
-Block(SampleBlock), EpochChanged(EpochProposal), End or Failed(code). An epoch proposal
-contains only a source-local proposal counter, reason, trigger, native rate/first frame/QPC and
-converter delay; it contains no station/source/job identity. Pending is never EOS; only
-finite files return End. The file adapter keeps its existing reader; the live adapter
-normalizes/converts raw native packets on that same DSP worker. Before any replacement
-block, the receive authority invalidates the old tuple and allocates the new descriptor,
-source/job/generation and SourceTiming. It calls
-`acknowledge_epoch(proposal_counter,SourceDescriptor,SourceTiming)`; the producer accepts
-only its current proposal and thereafter stamps immutable blocks with that supplied
-context. Until acknowledged, descriptor is absent and poll returns Pending (or a newer
-proposal/failure), never an old or producer-invented identity. Stale acknowledgement is
-rejected. No other consumer allocates identities. Normal polling/checkpoint work is
-bounded by50ms.
-The shared Windows API
-binding is target-Windows `windows =0.62.2`; capture and CAT share this dependency.
-macOS/Linux adapter implementations retain these contracts but are separate releases.
-
-**Configuration and device identity.** Profile document/schema1 and its existing
-GET/PUT shape remain unchanged. `audio.input_device` stores an exact opaque
-IMMDevice endpoint ID; the UI displays its separately enumerated friendly name
-(GET /audio/endpoints, #44 CL-044-07/08), never the ID outside Expert or a hover title.
-Unknown, missing or ambiguous input is unavailable, never a default/camera fallback.
-The baseline selects channel0; capture accepts mono/stereo 44100/48000 Hz shared mix
-formats float32 or signed PCM16/24/32. Preserve finite float values; integer divisors
-are 32768/8388608/2147483648. SILENT packets are known zero. Reject nonfinite values,
-bad frame alignment, unsupported channel/rate/format and format changes explicitly.
-The current target IC-7300 uses its USB Audio CODEC input, independently of COM3.
-`audio.output_device` is persisted but receive never opens playback.
-
-`control.mode=cat` selects IC-7300; legacy endpoint `COMn` means model IC-7300,
-baud auto, radio address94 and controllerE0. The strict expanded form is
-`icom7300://COMn?baud=auto&radio=94&controller=E0`: COMn is COM1..COM256,
-baud is auto/4800/9600/19200/38400/57600/115200 and addresses are exactly two hex
-digits. Require all three unique keys in that order, no unknown keys, fragments,
-escaping or credentials; radio/controller addresses must differ and be01..EF.
-The UI exposes model, port, baud and addresses rather than asking an operator to edit
-the stored URI. Resolve the selected port to its stable physical USB/serial identity;
-never substitute another port/friendly-name match. Independent profile instances use
-the existing retained-lock pattern for that physical radio identity and exclusive
-CreateFile sharing0; aliases to one radio conflict. Other applications owning the port
-produce resource_in_use. `ptt=disabled` is required for this receive slice.
-
-**Capture, conversion and timing.** Use event-driven WASAPI shared capture, with its
-actual mix format and packet device-frame/QPC positions. A dedicated capture I/O pump
-only copies complete packets to preallocated bounded storage and releases the device
-buffer. It never performs FFT, conversion, decoding, disk spooling or network work.
-The native packet FIFO holds at most500 ms; packets over8192 native frames are rejected
-as an explicit loss. The canonical FIFO holds at most12000 frames; blocks contain
-at most240 canonical frames and active consumers retain at most two block references.
-The single DSP worker converts/fans out immutable blocks, checking cancellation and
-servicing conversion/spectrum between decoder CPU quanta of at most50 ms. Converter
-working storage is at most4 MiB; #7's64 MiB modem ceiling remains separate.
-
-Use one bounded rational bandlimited sinc FIR conversion from44100/48000 to12000;
-the design may choose its taps within at most1024 native-frame support and20 ms delay.
-No AGC, time-stretching or second OS/library conversion. The mathematical response must
-have gain within0.1 dB over0..3500 Hz and rejection at least60 dB from5500 Hz to native
-Nyquist. Output count/phase follows the exact rational12000/native_rate clock,
-independent of callback partition. Account for group delay exactly once in the native
-to canonical timestamp mapping. Initial/reset filter support is unobserved: discard
-unsupported edges, never label zero-padding as captured samples. Existing canonical
-12 kHz recordings bypass this converter unchanged.
-
-Each live source has immutable profile/boot/source/job/generation identity and a timing
-sidecar: native rate, native device-frame anchor, canonical-frame anchor, segment,
-converter delay, correlated packet-QPC/system-UTC anchor and uncertainty. Frame counters
-are monotonic safe integers, never derived from wall time. Known missing native intervals
-advance the exact rational canonical counter and mark the next block discontinuous;
-they are not inserted as silence. Reset converter, spectrum and decoder windows at a gap.
-Unknown loss/timestamp-error, format change or device reopen starts a new source epoch,
-generation and frame origin; old samples/results cannot append. A known SILENT packet
-remains a real measured interval. No decode waveform may bridge a discontinuity.
-A WASAPI DATA_DISCONTINUITY flag is classified by the timeline it reports: with a later
-device position it is a known gap; with a contiguous device position and a packet QPC
-within2 ms of the previous packet's QPC plus its duration it is an engine glitch on a
-continuous timeline, counted and kept as measured samples without gap, reset or epoch
-(no interval is missing beyond the at most2 ms QPC deviation the bound admits);
-with a contiguous position but no consistent QPC it is unknown loss. Every unknown-loss
-epoch names its trigger; the receive owner counts these epochs and logs one line each.
-A device reopen is not counted as unknown loss: its rotation is announced by audio
-state/error (unavailable, then running) and the reopened stream's first epoch is an
-initial epoch of that stream (normally trigger capture_start), likewise not counted.
-
-Bracket GetSystemTimePreciseAsFileTime with two QPC reads, use midpoint correlation
-and record half-bracket uncertainty; at most2 ms permits a correlated system-UTC anchor.
-Recheck once/second. A change exceeding20 ms invalidates that timing segment rather
-than warping sample indices. QPC/system correlation does not prove externally accurate
-UTC: label this basis system_utc with external_accuracy_unknown. Internal numerical fixtures and
-live spectrum/decoding work without UTC; correlated system time supports relative DT
-under4.7.4 while external accuracy/transmit readiness are not inferred.
-
-**Live lifecycle and results.** Explicit start selects spectrum-only/FT4/FT8 and owns
-one continuous receive job until stop or failure. Incomplete initial waveform support
-is not a decode. Analyze trailing up-to30 s windows every15 s for FT8 and trailing
-up-to15 s windows every7.5 s for FT4, including initial shorter complete supports.
-Reuse #7 kernels/records, preserving global canonical start_frame across known gaps.
-With a correlated UTC anchor, analysis windows follow the UTC schedule of WstxLiveReceive::LiveWindowSchedule (#47), and its one late window per period waits for the prompt analysis in progress. Otherwise no queued analysis windows: if processing misses the next boundary, report overrun and
-the skipped interval, abandon obsolete work and use the latest supported window.
-The reported last_overrun interval is the half-open support of the most recently
-abandoned analysis window. It reports skipped analysis, not missing audio or fabricated
-source gaps. Retain clearly partial verified results from that window.
-No unbounded backlog or claimed complete history after loss. Retain at most2048 results
-and2 MiB encoded content; live eviction advances first_sequence explicitly, with
-cursor_expired instead of silently claiming reliable complete delivery. Finite numerical fixtures retain their test-context limits; production uses bounded live modem history. The spectrum uses existing fixed
-0..3000 Hz wire products and rendering, independently of the decoder's200..3500 Hz search.
-
-Audio states are closed/opening/running/closing/unavailable. Explicit stop invalidates
-publication before acknowledgement, wakes capture waits and normally releases within
-250 ms. A failed OS close stays closing/unavailable and retains ownership, rather than
-claiming release. Device loss closes that input and reports its own error while CAT
-and status remain usable. Automatic reopen attempts only the selected input with
-1/2/4/8 s backoff capped at8 s, each with new identity/history; explicit stop cancels
-reopen. Counter exhaustion or unsupported format fails until explicit correction.
-Browser closure does not stop accepted capture. Restart does not automatically start
-capture or CAT and creates a new boot identity.
-
-**Radio catalogue and CI-V execution.** One immutable schema1 JSON catalogue records
-revision, model/protocol IDs, units/domains, capabilities and source/licence provenance.
-Initial bounds are256 KiB,32 models and128 command definitions; malformed schema,
-duplicates or cross-references disable only CAT. Current compiled support is IC-7300;
-Hamlib075b78cb0560e892c81bc73890d633cc11f23f59 supplies attributed factual cross-references,
-and Icom manual A7292-4EX-12a supplies independently recorded wire facts. Preserve
-source provenance; no upstream driver algorithms or wholesale catalogue are translated.
-Catalogue intent, configured parameters, our verified operations and live observations
-are separate. Only compiled typed operations can emit bytes.
-
-| Operation | Request command/data | Completion |
-|---|---|---|
-| read_frequency |03|addressed03 +5 BCD bytes, least decimal pair first, integer Hz|
-| read_mode |04|addressed04 +mode/filter|
-| read_data |1A06|addressed1A06 +DATA/filter|
-| read_rx_tx |1C00, no data|addressed1C00 +00RX/01TX; query only|
-| read_split |0F, no data|addressed0F +00off/01on; query only|
-| set_frequency |05 +5 BCD bytes|FB then independent03 exact readback|
-| set_mode |06 +mode/filter|FB then independent04 exact readback|
-| set_data |1A06 +DATA/filter|FB then independent1A06 exact readback|
-
-Set mode accepts only USB01/LSB00 and FIL1..3. DATA OFF is00 00; DATA ON is01 plus
-FIL1..3. Receive frequency is integer30000..74800000 Hz; e.g14074000 is00 40 07 14 00.
-Read modes preserve unknown codes as unsupported observations, never substitute USB.
-Frames are FE FE destination source command/data FD; FB is ACK and FA is NG. Echo,
-foreign addresses and transceive broadcasts never complete a solicited request.
-ACK alone is not confirmed state. Setters always read back; mismatch/failure reports
-actual observations and indeterminate state without invented physical rollback.
-
-One operation lease, no queue. Limits:32 bytes/frame,256 bytes/read chunk,
-4096 bytes/64 frames per exchange,1 s absolute exchange deadline,5 s composite receive
-setup deadline and at most50 ms I/O cancellation slices. Invalid/foreign traffic cannot
-extend deadlines. A receive_setup workflow holds one lease for mode/DATA/frequency
-changes and final readback; manual radio tuning can still intervene. Poll a complete
-read cycle at most once/second and never while an explicit operation holds the lease.
-No automatic retry of an issued query/setter exchange. The target automatic
-connection lifecycle is exclusively CL-022-03/04: after confirmed failed-attempt
-release it may start a new read-only connection attempt using the prescribed
-1/2/4/8-second capped delays and grant/commissioning checks. Failed close retains
-ownership and forbids timed reopen. Timeout/cancel/partial write closes the
-connection generation before another owner; reconnect never replays a write. CI-V has
-no transaction ID, so local generation tags cannot prove a late identical reply belongs
-to a new request. Draining/closing and explicit state prevent stronger unsupported claims.
-
-Connect with an explicit baud performs one1 s frequency probe. Auto holds one exclusive
-handle and probes [9600,19200,4800,115200,57600,38400], one03 request/rate with500 ms
-absolute response and100 ms bounded drain/quiet between attempts,5 s overall. Success
-requires an addressed valid BCD frequency response; effective baud is an observation,
-not a rewrite of intent. Addresses are never scanned. Use overlapped Win32 I/O,
-CancelIoEx,8N1, no handshaking and disabled DTR/RTS; verify DCB/timeouts before ready.
-
-CAT states are closed/connecting/ready/closing/unavailable, independent of audio.
-Before physical opening, USB SEND/CW/RTTY keying must be independently confirmed OFF
-or equivalent receive inhibit verified: post-open DCB settings cannot promise no initial
-control-line glitch. Hardware acceptance reads original state, compares front-panel
-indications, applies only reversible receive settings and restores them by readback.
-No PTT setter, keying, tuner, VOX or split/TX setter is reachable through this slice's
-operations, catalogue or automatic lifecycle. #9 slice B adds only the compiled CI-V
-transmit switch (WstxRadioIO::PttControl) to the same owner, reachable solely by the
-transmit service under its transmit hold and authority; #9 owns transmit authority and halt.
-Besides that, the single permitted exception is the #9 StartupSafetyRelease (WstxTransmit): one off-only PTT release 1C 00 00 with readback, once per boot, only when the first fresh 1C 00 readback of the boot shows TX before that boot ever keyed, sent by the transmit owner through the same actor; it is a safety release, never a key, and a radio in receive
-at boot sees zero setter bytes. Optional native FlexRadio (#13) is a separate network session (WstxFlexSession::NativeFlexWireSubset), never this CI-V owner.
-
-#### Interface verification
-
-| Test | Promises | Inputs/actions | Expected result/oracle | Level / where it runs |
-|---|---|---|---|---|
-| TC-002-001 — Canonical live audio | CL-008-01, CL-008-02, CL-008-03 | Inject independently timed mono/stereo native float/PCM packets, silence flags, arbitrary splits, exact queue limits/one-over, gaps, timestamp errors, DATA_DISCONTINUITY flags on contiguous positions with QPC steps inside and just outside the2 ms bound, missing devices and cancellation into actual capture/converter boundaries. Generate analytic tones/impulses and rational frame maps independently. | Channel0/normalization/finite-value rules, exact rational counts and block partition invariance within2e-5, group-delay alignment within one canonical frame, passband0.1dB/stopband60dB, bounded storage and no gap-crossing/fake silence. A contiguous flag within2 ms of the QPC timeline keeps one epoch and gap-free frames; beyond2 ms it is unknown loss; every unknown-loss epoch names its trigger. Canonical recordings unchanged. Cancel release<=250ms except explicit failed-close state; capture never invokes CAT. | 2 — Isolated automated tests; Windows development PC, actual candidate modules and independent device/clock fixtures. |
-| TC-009-001 — Typed radio control | CL-008-01, CL-008-03, CL-008-04, CL-008-06 | Feed manually derived CI-V query/set/ACK/NG/readback bytes through fragmented, malformed, echoed, foreign, stale, flooded and boundary-sized transport fixtures. Test auto-baud order/deadlines, invalid catalogue/URI, physical alias conflicts and cancellation before/after send. | Exact bytes/readback semantics; no bytes for invalid/raw/TX requests; no deadline renewal/in-flight exchange retry/write replay; one owner/no queue; every cap and one-over; missing/busy/failed-close state truthful; two processes cannot own the same physical resource. | 2 — Isolated automated tests; Windows development PC, compiled control service and independent protocol/serial emulator. |
-| TC-009-002 — Controlled IC-7300 receive station | CL-008-02, CL-008-04, CL-008-05 | On the designated Windows IC-7300 PC, verify receive inhibit/keying settings, selected USB input and COM3 identity; inspect readback against radio indications, capture known on-air/reference receive signals, restore original receive settings. Compare decoded payloads with simultaneous reference receive observations. | Correct physical input/port, no transmission, authoritative CAT observations, visible live spectrum/decodes and independent source timing/error records. Loss/reconnect and clock-quality labels agree with actual state. Reference counts alone are not exhaustive decoder truth. | 4 — Controlled live tests; HB9BLA radio PC and development browser, physical IC-7300, operator-authorized receive-only setup. |
-| TC-002-003 — Audio without CAT | CL-008-02, CL-008-05 | Stream known packets with CAT disabled/unavailable and inject audio loss; exercise live spectrum and decoder fixture consumer. | Correct samples/spectrum/results without any CAT bytes; own errors/reopen/epochs visible; engine glitches keep job/generation; GET /receive audio.loss_epochs counts unknown-loss rotations only and audio.last_loss names the latest trigger (null iff0); no default-device substitution or audio archiving. | 2 — Isolated automated tests; Windows PC, actual receive service and independent device/control fixtures. |
-| TC-009-003 — Control without audio | CL-008-05, CL-008-06 | Exercise every supported query and receive setter while audio is closed/unavailable. | Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations. | 2 — Isolated automated tests; Windows PC, actual Rust control module and serial emulator. |
-| TC-009-004 — Independent failure and shared worker | CL-008-03, CL-008-05 | Lose either interface, overrun/stop/reopen capture, stall CAT and combine native48k conversion, display and bounded decoder quanta for four profiles; seed live result counters2047/2048/2049, eviction/cursor and safe-integer boundaries; simulate later TX/halt ownership. | Independent availability, no false ready state, no cross-profile samples/results, conversion service<=50ms quanta and native-to-canonical software backlog<=200ms under the declared workload, <=250ms normal cancel, <=2s status (no 32 kbit/s link scenario, #80); failed close retains ownership. No real RF transmission. | 2 — Isolated automated tests; Windows PC, actual services/browser/link model, independently scripted device/control and decoder-step fixtures. |
-
-
-### 12.8. Live audio and CAT extension — target interface
-
-These endpoints use the existing HTTP/TLS authentication, exact Origin checks, body
-limit1024 bytes, JSON media rules and structured error envelope. Unknown/duplicate
-keys, unsupported versions, invalid enums/ranges and stale identities fail before
-device activity. Displaying or saving settings does not open a device. Responses are
-literal data; clients never evaluate endpoint names, catalogue strings or radio text.
-
-`GET /audio/devices` returns exactly `{v,profile_id,boot_id,devices}`; devices is at
-most64 exact `{id,name}` objects, nonempty strings at most256 UTF-8 bytes, total encoded
-response at most16384 bytes. A missing selected input remains visibly unavailable.
-Enumeration overflow returns device_limit rather than silently dropping entries.
-`GET /audio/endpoints` (CL-044-07) is the named listing of capture and render endpoints
-for the Settings pickers; `GET /audio/devices` keeps its version1 shape.
-`audio.device_name` of `GET /receive` is the known friendly name of `device_id` or null.
-
-`GET /receive` returns exactly `{v,profile_id,boot_id,generation,audio,source,job,clock}`.
-Audio is `{state,device_id,device_name,error,retry_after_ms,loss_epochs,last_loss}` with the4.5 states,
-nullable strings and retry integer0..8000/null. loss_epochs counts unknown-loss source
-rotations since this live receive started (safe counter, survives the rotations it counts;
-the initial epoch and device-reopen rotations are not counted);
-last_loss is null exactly when loss_epochs is0, else the latest epoch trigger code. Source is null or
-`{id,kind,sample_rate,channels,next_frame,segment}`, kind live, rate12000,channels1,
-UUID id and nonnegative safe counters. Job is null or
-`{id,mode,state,error,processed_frames,first_sequence,next_sequence,available_count,last_overrun,latest_decode}` with UUID id,
-mode spectrum/ft4/ft8, existing receive states and safe counters. available_count is
-next_sequence-first_sequence (0..2048 retained records), not lifetime publication count.
-last_overrun is null or the latest abandoned analysis half-open
-`{first_frame,end_frame}`, safe counters and end<=capturednext; cleared on newcontext.
-Clock is
-`{basis,correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns,external_accuracy}`:
-basis system_utc, correlated boolean, UTC string/null, safe canonical frame/null,
-nonnegative integer uncertainty/null and external_accuracy unknown. Period UTC and DT
-of results include the station clock correction (#43, #92 CL-043-03; the correction
-from the stations heard, 0 at start) and the measured capture-clock offset (#47, CL-007-05), which is read on
-demand, not in this snapshot: GET /receive/clock (same authorization, no query, empty
-body) returns exactly `{v,profile_id,boot_id,capture_drift_ms,capture_drift_ppm}`, the
-offset from the anchor's prediction (integer ms) and its rate (one decimal ppm, null for
-the first 60 s), both null until measured. Snapshot<=8192 bytes.
-
-latest_decode is null until an attempt publishes a view, otherwise exactly
-`{id,first_sequence,next_sequence,period_start_utc,complete}`, plus `transmitted: true`
-for a correlated period in which this station transmitted (#61 CL-061-04: no attempt,
-an empty range at the frozen publication end, complete false; the key is absent otherwise). id is a positive safe
-integer increasing per publication within the source/job epoch, except that a later
-window of the same correlated period with the same first_sequence (the #47 late window)
-extends that view under the same id: unchanged it publishes nothing, grown it only raises
-next_sequence (complete once any of its windows completed). Sequence bounds are
-nonnegative safe integers, first_sequence<=next_sequence<=the publication-end counter
-frozen with this descriptor. Correlated period_start_utc is the selected mode's UTC
-period start string; bounds enclose retained records matching that period, or both
-equal the frozen publication end when empty. Uncorrelated period_start_utc is null and
-bounds identify newly published records of that attempt. complete is boolean, true
-only for a normally finished attempt. Snapshot/page read the descriptor atomically
-with their own result counters. Known gaps clear it without reusing IDs; new jobs/source
-epochs reset it and the ID. Retention/cursor expiry remains authoritative after eviction.
-
-Live records extend12.7 with exactly period_start_utc and dt_seconds, both null without
-station clock correlation. Otherwise period_start_utc identifies the nearest nominal
-period and dt_seconds is finite in[-7.5,7.5) for FT8 or[-3.75,3.75) for FT4 under4.7.4.
-The native numerical Decode shape is unchanged except the optional a_priori key of an a-priori word (#56 slice 5). These extra live fields remain inside
-the2048-byte live record cap; existing1024-byte modem-history accounting is unchanged.
-
-`POST /receive/start` requires exactly `{v,profile_id,boot_id,generation,profile_revision,mode}`;
-mode spectrum/ft4/ft8. Admission uses the current immutable settings and existing single
-receive owner; busy/import/replay/decode cannot start another capture. Success202 returns
-the new snapshot. `POST /receive/stop` requires exactly
-`{v,profile_id,boot_id,generation,job_id}` and returns202/current snapshot after publication
-invalidation; terminal state follows actual release. IDs and generation are not caller
-selected. Initialstart allocatesjob/gen and firstsourceACK reusesthatjob/gen. Subsequent
-unknown epoch invalidates oldpublication/ring, allocatesfreshsource/job/gen beforeACK,
-retainingcontinuousintent. Older stop/DELETE and callbacks cannot affect newcontext.
-Knownmarkedgaps keepcontext/globalframes but resetanalysis/private modem state.
-
-`GET /receive/results` requires source_id,job_id,generation,cursor and optional limit1..16
-(default16) query keys; mode must be ft4/ft8. Exact page keys are
-`{v,profile_id,boot_id,source_id,job_id,generation,mode,state,error,search_limited,first_sequence,next_sequence,available_count,next,more,records,latest_decode}`.
-UUID identities, mode, state, error, search_limited and shared record
-payload/field/text/SNR/frequency shapes follow12.7. Live counter/retained domains follow12.8.
-
-For live pages, first_sequence and next_sequence are nonnegative safe integers up to
-9007199254740991. first_sequence is the oldest retained sequence; next_sequence is
-one past the lifetime latest publication. available_count=next_sequence-first_sequence
-is retained count0..2048, also bounded by2 MiB encoded records. Eviction removes oldest
-records and advances first_sequence; sequence never wraps or restarts within an epoch.
-Live record sequence and start_frame are nonnegative safe integers; sequence is below
-next_sequence and start_frame below the actually captured canonical next_frame, not a
-finite source_frames value. Before incrementing any counter beyond the safe maximum,
-fail counter_exhausted visibly and invalidate publication; never reuse an old sequence.
-
-Pages contain at most16 records/16384 encoded bytes, at most2048 encoded bytes/record.
-next is the first unreturned continuation cursor and more=(next<next_sequence), with
-an immutable counter/window snapshot per response. Cursor=next_sequence returns an empty
-page, next unchanged, more false. Cursor below first returns410 exactly
-`{v:1,error:{code:"cursor_expired",message:"Result history expired"},first_sequence,next_sequence}`;
-client visibly marks incomplete history before fetching the available oldest record.
-Cursor above next_sequence is400. Replaced source/job is404, never a different stream.
-For example first6/next2054/count2048 accepts cursor7,limit1 and returns record7,next8,
-more true; cursor5 returns410 with first6/next2054. Tests cover sequence2047/2048/2049,
-empty/one/full retained windows, byte-driven eviction and safe-counter exhaustion using
-seeded state rather than waiting for a physical stream to reach the boundary.
-
-A live job uses shared kind live; GET /recording retains the imported-file metadata
-and reports that active live job without relabeling live samples as file data.
-Admission for import/replay/decode still sees busy through the single receive owner.
-
-Live spectrum reuses the exact12.6 frame messages and subscriptions, with the live
-source/job identity; no native PCM crosses the browser link. For a live source the
-receiver checks safe monotonically increasing canonical frame counters and nominal
-row duration instead of a finite recording length. receive.state carries the job's
-progress and the audio (#10 WstxStationLink::PushedStationState); its exact data is
-`{profile_id,boot_id,generation,source_id,job_id,state,audio,clock,job}`, nullable IDs/state
-when idle, audio as in GET /receive, clock exactly
-`{correlated,utc_anchor,canonical_anchor_frame,uncertainty_ns}` and job exactly
-`{error,first_sequence,next_sequence,available_count,last_overrun,latest_decode}`, at most
-2020 bytes, which fits the 4096-byte write buffer beside a pending 2048-byte optional write. It
-is sent when any of these changes, not for the countdown of retry_after_ms alone. A socket's
-first event and one of a new identity hold every field; a later one the identity and only
-the audio, clock and job fields that changed (job by its keys). The browser accepts it like a read for
-the identity and job state it holds; only a new identity or job state or a refused event
-causes a GET /receive read. Otherwise it reads GET /receive once per socket, on a saved
-profile revision or boot change, after its own mutation and, on a later status of the socket,
-only after a failed read or an unknown outcome; a read started before an accepted event
-changes nothing, and an accepted event ends a failed read's status. On Detailed it fetches the
-announced view at once. A frame keeps the source's next_frame and the job's processed_frames.
-They carry no samples or result records. Changing between live/file sources resets
-browser history/readouts without changing the fixed0..3000 Hz axis or local sliders.
-
-The combined Thin live mode emits at most one optional spectrum row/2 s; each browser
-has one result request pending, requests limit1 and starts at most once/4 s, waiting
-behind explicit status/control. With no announced or unread view (receive.state announces
-each publication; the browser answers it with result reads until one read at the job's
-end that started after it) and no failed live or result read, a browser on any display profile
-keeps only a safety result read at most once/30 s (#10
-WstxStationLink::PushedStationState). Its result page is at most3072 encoded bytes.
-Detailed remains an explicit fast-link option; Off disables optional spectrum only.
-On Detailed a decode publication is announced at once and its records are fetched page
-after page without the 4 s cadence (#57 CL-057-01).
-The two-browser 32 kbit/s budget (WstxStationLink::ThinLinkBudget: <=3000 B/s mean
-in each direction and <=2 s visible status response) is a target judged from the link
-byte log (#80). Read requests may retry after
-explicit stale/error handling; mutations are never automatically replayed.
-
-`GET /radio` returns exactly
-`{v,profile_id,boot_id,connection_generation,state,error,device_id,effective_baud,observation}`.
-State/error use4.5; device_id is the stable physical identity/null; effective_baud is a
-supported integer/null. Observation is null or exactly
-`{frequency_hz,mode,filter,data,data_filter,split,rx_tx,observed_at_ms}`, each value nullable
-until measured, time a nonnegative monotonic millisecond counter. Unknown received mode
-is an uppercase two-hex-digit code, not a guessed supported mode. Closed/stale state
-never presents its retained observation as current readiness. Snapshot<=2048 bytes.
-
-Target issue22 deprecates manual CAT lifecycle operations. `POST /radio/connect`
-retains exactly `{v,profile_id,boot_id,profile_revision,receive_only_verified}` and
-`POST /radio/disconnect` retains exactly
-`{v,profile_id,boot_id,connection_generation}` for strict validation/refusal only.
-After unchanged authentication, exact Origin, schema, identity and size checks,
-a valid request returns409 `automatic_lifecycle` in the existing error envelope,
-with zero CAT open/query/close/setter/PTT I/O. Neither route succeeds200 or creates
-a connection owner. Normal UI has no Connect/Disconnect CAT buttons. Only the
-CL-022-03/04 automatic read-only lifecycle may open/retry under its matching durable
-grant and receive-only commissioning; capability/PTT guards, physical inhibit,
-resource ownership and acknowledged release remain mandatory.
-`POST /radio/operation` adds exactly
-operation and parameters to that disconnect identity envelope. Operations are the eight
-4.5 names or receive_setup. Query parameters are `{}`; set_frequency uses `{frequency_hz}`;
-set_mode `{mode,filter}`; set_data `{enabled,filter}`; receive_setup
-`{frequency_hz,mode,filter,data,data_filter}` with the4.5 bounds. Only a successful
-`/radio/operation` returns synchronous200, not either deprecated lifecycle route. It
-returns `{v,profile_id,boot_id,connection_generation,operation,observation}` after readback.
-Failure uses the existing error envelope; a request timeout cannot justify retrying a
-setter. Connection generation is independent of receive generation, so audio lifecycle
-changes do not invalidate an in-progress control operation. CAT never opens audio.
-
-
-    */
-    doc /* contract 4.7.5/12.8.1 coordinated operating selection is modeled by
-         WstxOperatingReceive. This companion retains the unchanged legacy strict
-         receive/radio/result shapes and owner/cancellation/source contracts, with
-         only the explicit target manual-route refusal/retry amendment above.
-         New selection uses the same authority, explicit actual release before
-         setters/new capture and a fresh context, not a second pipeline or actor. */
-    action def PttControl {
-        in enable : Boolean;
-        doc /* Typed CI-V transmit switch through the one WstxRadioIO CAT owner:
-             FE FE radio controller 1C 00 01|00 FD, ACK FB required (NG FA is
-             pttRejected), then the 1C 00 query must read back the requested state.
-             Compiled code, not an Operation: catalogue data, POST /radio/operation and
-             the automatic CL-022 lifecycle cannot reach it, and the lifecycle emits
-             no PTT. Keying takes the actor's transmit hold, which waits for a running
-             poll or operation and then excludes every ordinary operation, receive
-             transition and poll until a release is confirmed, so a release is the
-             next exchange. Closing a connection that may be keyed first sends one
-             off-only release. After an indeterminate release the owner retries
-             off-only releases (never a key) and refuses Arm until one is confirmed. */
-    }
-    dependency pttPromise from PttControl to WstxRequirements::'FR-009';
-    requirement 'CL-008-06' {
-        doc /* Separate a versioned factual radio catalogue, compiled typed operations and bounded protocol execution. Catalogue data cannot authorize raw or transmit commands. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs"; }
-    }
-    dependency CL_008_06_to_FR_009 from 'CL-008-06' to 'FR-009';
     requirement 'CL-008-04' {
-        doc /* Support the Windows shared-audio and IC-7300 receive-control matrix below, with independently verified receive-only physical acceptance. */
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST control the rig icom.ic7300, an Icom IC-7300, over its
+             CI-V serial link, on the port and with the addresses the profile's endpoint
+             names (RadioConnection). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs"; }
     }
-    dependency CL_008_04_to_FR_002 from 'CL-008-04' to 'FR-002';
-    dependency CL_008_04_to_FR_009 from 'CL-008-04' to 'FR-009';
-    requirement 'CL-008-05' {
-        doc /* Audio never requires CAT; CAT never opens audio. Unsupported operations fail before device bytes; independent failure never creates false readiness. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/audio.rs; server/src/audio/windows.rs; server/src/radio_control/mod.rs; server/src/receive.rs"; }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-008-04'; }
+
+    attribute def RadioConnection {
+        doc /* How the endpoint of ControlSelection is read and the radio connected.
+             The endpoint is "COMn", or
+             "icom7300://COMn?baud=<rate>&radio=<address>&controller=<address>" with
+             exactly these three keys in this order. n is 1 to 256 without a leading
+             zero, in capitals or not. The rate is "auto" or one of the rates of the
+             serial line. An address is two hexadecimal digits from 01 to EF, and the
+             two differ. "COMn" alone means the rate auto, the radio at 94 and the
+             controller at E0. Any other text is invalidConfiguration.
+             To connect, radio control opens the port (OpenRadio) and asks the radio
+             for its frequency; the state is ready when the radio has answered with
+             one. These rules are those of the rig icom.ic7300 (ControlSelection::rig);
+             the radio's identity is asked only where a rule says so.
+             With a rate named, the radio is asked once at that rate. With auto it is
+             asked at 9600, 19200, 4800, 115200, 57600 and 38400 in this order until it
+             answers; RadioStatus::effectiveBaud is the rate it answered at, and the
+             profile stays as it is.
+             Without an answer the port is closed and the state is unavailable with the
+             error of the last question. A port another station or another program
+             holds gives resourceInUse.
+             While the state is ready and nothing else is in work, radio control reads
+             the five facts once in pollSeconds. A read that fails ends the connection.
+             A connection that is asked to close ends the exchange in work with
+             cancelled and closes its port.
+             A port that does not close leaves the state closing with failedClose. */
+        attribute pollSeconds : Integer = 1;
+        attribute closeMaxMs : Integer = 250 {
+            doc /* From the request to close to the closed port. It bounds the reconnect
+                 after another assignment or a Disconnect, which waits for the closed
+                 port (CatLifecycle). */ }
     }
-    dependency CL_008_05_to_FR_002 from 'CL-008-05' to 'FR-002';
-    dependency CL_008_05_to_FR_009 from 'CL-008-05' to 'FR-009';
+
     verification 'TC-009-003' {
-        doc /* Control without audio
-             Exercise every supported query and receive setter while audio is closed/unavailable.
-             Exact control/status and capability failures without activating any audio endpoint; catalogue cannot enable raw/TX operations.
-             actual Rust control module and serial emulator. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::partial; }
-        objective {
-            verify 'CL-008-05';
-            verify 'CL-008-06';
-        }
-        @TestedBy { test = "server/tests/radio_control.rs"; }
-    }
-    requirement 'CL-022-03' {
-        doc /* Target replacement for explicit Connect/per-click receive_only_verified:
-             configuration UI has a one-time per-safety-revision action 'Confirm
-             receive-only setup', showing selected radio, endpoint, model and PTT
-             configuration. It requires a valid matching grant, explicit operator
-             acknowledgement and durable commit. It never opens CAT or transmits as
-             part of confirmation. Existing transceiver-test consent is not silently
-             converted into a persisted acknowledgement; migration starts unconfirmed.
-             Invalidated commissioning displays 'Confirm changed receive-only setup'
-             and exposes that same recovery action; no normal Connect/Disconnect CAT
-             buttons. CAT disabled remains disabled and there is no serial
-             enumeration/fallback, except the read-only discovery of CL-044-15 after its
-             persisted keying confirmation, which may also save a found radio as CAT control.
-             Missing/revoked/mismatched grant, missing/invalid commissioning, disabled
-             CAT and corrupt authorization store cause zero automatic native open,
-             query, setter or PTT bytes (the sole exception is that same discovery, which
-             opens and sends 19 00 only). One matching unrevoked grant plus valid
-             commissioning authorizes the station's automatic read-only CAT lifecycle
-             even when that browser is closed; it does not authorize another browser's
-             HTTP controls. Last-grant revocation cancels that lifecycle and releases
-             the native owner through existing rules. Station startup/radio return
-             obtains actual fresh readback automatically after preconditions hold.
-             Selection/query/set refer to the same current observable values and
-             identity/provenance. Automatic lifecycle never sends a setter/PTT command,
-             replays user commands, starts audio/decoder or grants transmit authority;
-             the single permitted exception is the #9 StartupSafetyRelease (WstxTransmit): one off-only PTT release 1C 00 00 with readback, once per boot, only when the first fresh 1C 00 readback of the boot shows TX before that boot ever keyed, sent by the transmit owner through the same actor. It never keys and never grants transmit authority.
-             Delivered (issue22 slice B): the browser operating panel shows the
-             action with radio identity, endpoint, model, PTT and setup revision,
-             requires an explicit receive-only acknowledgement checkbox and posts the
-             existing commission API; the label reads 'Confirm changed receive-only
-             setup' when the safety revision is above1. A selected plaintext profile
-             has no grant authority and therefore never runs the lifecycle (zero CAT
-             I/O); its automatic CAT is unavailable by design. Live IC-7300
-             acceptance (TC-022-010) passed on 2026-11-08 (6719540079).
-             Reconnect restores the selection (operator finding 2026-11-02, another
-             program held the port and released it): when the lifecycle's eligible
-             connection becomes Ready with a confirmed fresh dial while the selection
-             band is unknown, the station adopts that dial as the selection exactly as
-             WstxOperatingReceive S1 ReadbackSelectionAdoption states (exact preferred
-             entry of the station operating mode for one band, origin cat_readback,
-             read-only, no receive restart, no revision advance, never replacing a known
-             selection), so no band choice by hand is needed after startup or a
-             reconnect. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radioControl/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization.rs; server/src/authorization_http.rs; server/src/radio_http.rs; server/src/main.rs; client/recording.js"; }
-    }
-    dependency CL_022_03_to_FR_008 from 'CL-022-03' to 'FR-008';
-    dependency CL_022_03_to_FR_009 from 'CL-022-03' to 'FR-009';
-    dependency CL_022_03_to_FR_021 from 'CL-022-03' to 'FR-021';
-    verification 'TC-022-009' {
-        doc /* existing station/native scripted peer + injected
-             monotonic time. Test immediate available startup, absent/openfail/timeout/
-             removal/return, concurrent observers/RF work, identity change mid-attempt,
-             exact1/2/4/8/8 scheduling/reset/disable/re-enable, one timer/owner, no catchup,
-             late completion and failedclose zero subsequent opens. Test missing/revoked/
-             wrong grant, corrupt store, disabled CAT, absent/invalidation commissioning
-             with zero native open/query/set/PTT; explicit confirmation persists only
-             after commit, no native I/O in confirmation. Endpoint/model/PTT edit needs
-             re-confirmation; ordinary USB return does not. Independent raw-byte peer
-             rejects all setter/PTT, not merely reported TX=false. Separate real Windows
-              native fixture release/cancel measurements prove unchanged250/50ms
-             bounds and required four-profile workload; injected time is no substitute.
-             Use R4 provider/consumer fixtures, no second native builder.
-             Automated: server/src/radioControl/cat_lifecycle_tests.rs (injected-time policy:
-             immediate startup, exact1/2/4/8/8, reset only on readback, no catch-up,
-             disable/revoke/identity cancel, quarantine; scripted CI-V peer through
-             the real Actor/Executor: absent/open failure/timeout/removal/return,
-             failed close zero reopen, query-only bytes; port held by another program
-             reports port_in_use, then its release reconnects and adopts the exact
-             operating-mode dial as the selection with zero setter bytes and unchanged
-             operating revision; a non-matching dial or an already known selection
-             is left unchanged), server/src/auth_tests.rs
-             automatic_cat (real grant/commission flow, zero I/O before commission,
-             endpoint edit and last-grant revocation release, deprecated routes409
-             zero I/O, status retry reason) and tests/radio-selection.test.cjs
-             TC-022-009 (browser confirm action, no Connect/Disconnect, retry reason,
-             non-fresh frequency). Corrupt store: auth_tests automatic_cat
-             failed_store_write_quarantines_and_releases_cat_with_zero_reopen (a failed
-             write/flush/replace while CAT is ready quarantines the authority, the owner
-             is released, zero later open/byte, status503) with profile_tests startup
-             refusal of a corrupt/missing expected record. RF work: cat_lifecycle_tests
-             station_rf_work_shares_the_one_owner_without_lifecycle_interference (an
-             operator band selection on the same owner: no attempt/open/close by the
-             lifecycle or status observers, lifecycle bytes stay query-only),
-             station_revocation_during_rf_work_cancels_it_and_releases_without_reopen
-             (<=250ms release, work failed, no reopen/replay) and
-             policy_attempt_deferred_by_rf_work_is_not_a_failure. Pending: real Windows
-             native release/cancel measurement. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::partial; }
-        @TestedBy { test = "server/src/radioControl/cat_lifecycle_tests.rs; server/src/auth_tests.rs; server/src/selection_http_tests.rs; tests/radio-selection.test.cjs"; }
-        objective {
-            verify 'CL-022-03';
-            verify 'CL-022-04';
-        }
-    }
-    requirement 'CL-044-11' {
-        doc /* The server pushes the AGC state (client-server rule of #10): each WebSocket peer with a display subscription receives radio.agc {v 1, type radio.agc, data {profile_id, boot_id, target, connection_generation, value, result, trigger}} once the station has an AGC target and then after each change (target the saved AGC or null; value the AGC the radio reported last or null; result unchanged, written or the radio error code, null before the first exchange; trigger connect or selection); nothing is polled. Settings > Radio, CAT group: an AGC select FAST/MID/SLOW, shown only while the form's control is CAT with an IC-7300 endpoint, saved with Apply ⟳ as settings.radio.agc (a hidden select sends no radio key), and below it the read-back line from radio.agc: "Radio AGC <value> · read back, already as set", "Radio AGC <value> · set to <target> and read back", "Radio AGC <target> not applied · <result>". Detect radio (CL-044-02) proposes radio {agc SLOW} with the IC-7300 proposal, shows the row "AGC SLOW · recommended for FT8/FT4", and "Use this setup" sets the AGC select. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radioControl/radio_agc.rs; server/src/main.rs; server/src/radio_setup.rs; client/index.html; client/app.js; client/recording.js"; }
-    }
-    dependency CL_044_11_to_FR_019 from 'CL-044-11' to 'FR-019';
-    dependency CL_044_11_to_FR_009 from 'CL-044-11' to 'FR-009';
-    verification 'TC-044-010' {
-        doc /* AGC field and read-back in Settings > Radio
-             Setup: actual candidate server on a disposable plaintext profile with IC-7300 CAT (not authorized, so no CAT owner opens anything) and Chromium; radio.agc events injected into the page's station-message stream as the server sends them; /radio/detect answered by a route fixture with the IC-7300 proposal.
-             Steps: open Settings > Radio; read the AGC select; deliver radio.agc written SLOW, then a busy result; choose MID and Apply ⟳; GET /profile; set control Disabled; restore CAT, Detect radio with the proposal and Use this setup; 360 px width.
-             Expected: the AGC select in the CAT group shows SLOW (migrated default); the read-back line "Radio AGC SLOW · set to SLOW and read back", then "Radio AGC SLOW not applied · busy"; the saved profile holds settings.radio.agc MID; with control Disabled the select and line are hidden; the proposal row "AGC SLOW · recommended for FT8/FT4" and the select set to SLOW; no horizontal scroll at 360 px; no page error.
-             no radio, serial port or RF. */
+        doc /* The connection to the radio on a scripted serial port. */
+        subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-044-11';
+        objective { verify 'CL-008-04'; }
+        @TestedBy {
+            test = "server/tests/radio_control.rs; "
+                + "server/tests/receive/radio_native.rs::"
+                + "physical_identity_lease_conflicts_across_processes_and_case_aliases";
         }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
 
-    doc /* Issue22 contract. Delivered: CL-022-01 persistent browser key,
-         enrollment, challenge/proof transport, retained-key recovery and the
-         browser Log out / forget-rejected-credential actions; CL-022-02 durable
-         private record, revocation (logout, revoke-all), dispatch fencing of every
-         operating HTTP/WS effect under the authority lock, safety-revision
-         advance and the commissioning server API (POST /authorization/v1/commission
-         and the status condition). Delivered:
-         CL-022-03 'Confirm receive-only setup' UI and the automatic read-only CAT
-         lifecycle, CL-022-04 cadence, CL-022-05 CAT status/freshness presentation;
-         TC-022-009 automated companions. Radio identity Add/Replace/Remove is dropped
-         from the contract (operator 2026-11-06, CL-022-02). The CL-022-05 freeze was accepted on
-         the recorded trace (comment 6622256637); TC-022-008 is implemented (its planned Thin/Off
-         accounted-traffic companion was retired by #80); TC-022-010 was accepted live (6719540079).
-         Existing99 identities retain meaning and numbering. No parser, model
-         declaration or issue checkpoint proves execution/acceptance. */
+    verification 'TC-009-002' {
+        doc /* The station's own IC-7300, read and set by hand. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 4; location = TestLocation::station; }
+        @Automation { run = AutomationState::partial; method = "started by hand"; }
+        objective { verify 'CL-008-04'; }
+        @TestedBy { test = "server/tests/receive/radio_hardware.rs"; }
+    }
+
+    requirement 'CL-008-06' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST send a radio only the commands of its own operations,
+             each as one exchange that ends with an answer of that radio or at a limit
+             of time or size (ControlExchange). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-008-06'; }
+
+    attribute def ControlExchange {
+        doc /* How an OperationRequest is taken and carried out.
+             Before anything is sent the request is checked: a frequency outside
+             DialRange, a filter number outside 1 to 3, or a data filter number
+             that is not 1 to 3 with the data mode on and 0 with it off, is
+             invalidRequest; another connection than the current one is
+             staleContext; an operation the station has not for this radio is
+             unsupported; a request that is withdrawn is cancelled; a state other than
+             ready is unavailable.
+             One exchange is in work at a time. A request that meets another exchange,
+             a reservation that is not its own, or the keying of the transmitter is
+             refused with busy; nothing waits in a queue. ReserveRadio alone waits, up
+             to its waitMs, and is refused at once while the transmitter may be keyed.
+             An exchange is one frame to the radio and the radio's answer to it. The
+             answer is a frame from the radio's address to the controller's that fits
+             the command. The echo of the station's own frame, frames of other
+             addresses and reports the radio sends unasked are passed over.
+             A refusal of the radio is rejected. An answer the source does not allow,
+             and a frequency outside DialRange, is protocol.
+             A mode the station does not set is kept by its code
+             (ModeValue::modeCode).
+             A frame is sent once: radio control does not repeat an exchange by
+             itself.
+             An exchange that fails with anything but rejected and readbackMismatch
+             ends the connection: its port is closed and the state is unavailable with
+             that error.
+             An exchange the radio does not answer in time ends with timeout; what
+             arrives meanwhile does not extend it. An operation also ends at the
+             withinMs of its request. */
+        attribute exchangeMaxBytes : Integer = 4096 {
+            doc /* More bytes than this in one exchange is limit. */ }
+        attribute exchangeMaxFrames : Integer = 64 {
+            doc /* More frames than this in one exchange is limit; so is a frame longer
+                 than CivFrame::maxFrameBytes. */ }
+    }
+
+    verification 'TC-009-001' {
+        doc /* The exchanges with the radio on a scripted serial port. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-008-06'; }
+        @TestedBy {
+            test = "server/tests/radio_control.rs; "
+                + "server/src/radio_level_tests.rs::a_transmit_hold_refuses_the_lease_at_once";
+        }
+    }
+
+    requirement 'CL-044-09' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST change a value of the radio only after reading it and
+             only where it differs from the wanted one, and count the change as made
+             only when the radio reports the new value (ReadCompareWriteVerify). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-09'; }
+
+    attribute def ReadCompareWriteVerify {
+        doc /* The steps of every change: of frequency, mode and data mode
+             (ControlOperation), of the AGC (ApplyAgc and at a new connection), of the
+             output power (ManagedPower) and of a menu item (ApplyRecommended).
+             1. The value is read. A read the radio refuses ends the change with
+             rejected.
+             2. A value that is the wanted one is not written; the read is the
+             confirmation.
+             3. For the AGC and a menu item the radio is asked whether it transmits;
+             while it does, the change ends with busy.
+             4. The value is written. The radio must acknowledge; a refusal is
+             rejected.
+             5. The value is read again. Another value than the wanted one is
+             readbackMismatch; no answer and a refused read are indeterminate.
+             Nothing is written a second time and nothing is set back.
+             receiveSetup changes the mode, the data mode and the frequency in this
+             order, each by these steps. When one of them was written, the three are
+             read once more at the end and must be the wanted ones; otherwise it ends
+             with readbackMismatch. When none was written, the three reads are the
+             confirmation.
+             Keying the transmitter is not a change of a value (KeyingRules). */
+    }
+
+    verification 'TC-044-012' {
+        doc /* Frequency, mode, data mode and a menu item are read before they are set. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-044-09'; }
+        @TestedBy {
+            test = "server/tests/radio_control.rs; server/src/radio_control/executor.rs";
+        }
+    }
+
+    verification 'TC-044-008' {
+        doc /* The AGC is read before it is set. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-044-09'; }
+        @TestedBy { test = "server/src/radioControl/radio_agc_tests.rs"; }
+    }
+
+    requirement 'CL-008-09' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST key and unkey the radio for transmit, confirm each only
+             by the radio's own report, and keep every other exchange from the radio
+             while it may be keyed (KeyingRules). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-008-09'; }
+
+    attribute def KeyingRules {
+        doc /* How the requests of the port Keying are carried out.
+             A KeyRequest waits until the exchange in work and a reservation have
+             ended. When its withinMs ends first, or WithdrawKey arrives before the
+             command has gone out, it is answered with KeyFailed and busy, and nothing
+             is sent.
+             The command to key or to unkey must be acknowledged by the radio; a
+             refusal is rejected. Then the radio is asked for its transmit state:
+             KeyConfirmed follows when it reports the state asked for; the other state
+             is readbackMismatch, no report is indeterminate.
+             RadioAvailability::mayBeKeyed is true from the moment a key command is to
+             go out until an unkey is confirmed. During that time radio control takes
+             no OperationRequest, no reservation, no reading of the facts, no AGC and
+             no menu exchange: the next frame to the radio is an unkey or a meter read.
+             An UnkeyRequest is carried out whether or not the radio may be keyed, also
+             on a connection that is being closed and whose port is still open.
+             A connection that closes while the radio may be keyed first sends one
+             unkey, with its report, and no key.
+             A key or unkey that fails with anything but rejected and readbackMismatch
+             ends the connection, as in ControlExchange.
+             ReadMeters is carried out only while the radio may be keyed; otherwise it
+             is answered with MetersRefused and busy, and nothing is sent. The meters
+             are read in the order alc, po, swr. The output power is given in percent
+             of the radio's full power, the SWR as ten times the ratio and the ALC in
+             percent of the radio's ALC zone, each by the source's table. A KeyRequest or
+             UnkeyRequest ends a meter read that is in work. A meter read that fails
+             leaves the connection as it is.
+             RadioAvailability::ready is the state ready, and transmitting is the
+             transmit fact while it is confirmed.
+             A failure is given to transmit as one of KeyFailure: timeout also for
+             cancelled and partialWrite, indeterminate also for protocol and limit,
+             unavailable for every ControlError that KeyFailure does not name. */
+        attribute closingUnkeyMaxMs : Integer = 250 {
+            doc /* The time for the unkey of a connection that closes. */ }
+    }
+
+    requirement 'CL-008-13' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST set the transmit frequency of a split operation around
+             the key as SplitKeying says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-008-13'; }
+
+    attribute def SplitKeying {
+        doc /* A KeyRequest with KeyRequest::split rig or fakeIt, before its key command:
+             rig sets the radio's split on with the transmit VFO at the dial radio control
+             confirmed last plus KeyRequest::shiftHz; fakeIt sets the dial to that
+             frequency. Each is read back; one that fails answers the KeyRequest with
+             KeyFailed as the key would fail, and nothing is keyed. After the confirmed
+             unkey of a key with fakeIt the dial is set back and read back. The facts of
+             the radio are not read between the setting and the setting back, and the
+             dial fact keeps the dial from before. With none, split stays as the radio
+             has it. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: Settings > Radio, Split Operation; "
+                + "MainWindow::setXIT";
+        }
+    }
+
+    verification 'TC-009-007' {
+        doc /* Keying and unkeying on a scripted IC-7300. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-008-09'; }
+        @TestedBy {
+            test = "server/tests/transmit_service.rs::"
+                + "ci_v_ptt_bytes_readback_and_hold_exclude_polling; "
+                + "server/tests/transmit_service.rs::"
+                + "closing_a_keyed_connection_sends_one_off_only_switch_and_timeouts_close; "
+                + "server/tests/transmit_service.rs::"
+                + "a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes; "
+                + "server/src/radio_level_tests.rs::"
+                + "meters_are_read_only_under_the_transmit_hold_in_the_manual_frames; "
+                + "server/src/radio_level_tests.rs::"
+                + "a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection; "
+                + "server/src/radio_level_tests.rs::meter_scales_follow_the_manual_table";
+        }
+    }
 }

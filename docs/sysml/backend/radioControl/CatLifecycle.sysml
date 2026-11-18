@@ -1,67 +1,87 @@
 package WstxCatLifecycle {
     private import ScalarValues::*;
-    private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::'FR-008';
+    private import RequirementDerivation::*;
     private import WstxRequirements::'FR-009';
-    private import WstxRequirements::'FR-021';
-    private import WstxRadioIO::'TC-022-009';
-    private import WstxOperatingLayout::'TC-022-010';
-    private import WstxRadioControl::AutomaticCatStatus;
+    private import WstxRadioControlPart::RadioControlInterface;
+    private import WstxRadioControl::*;
+    private import ModelBindings::ImplementationState;
+    private import ModelBindings::AutomationState;
     private import ModelBindings::Status;
-    private import ModelBindings::ImplementedIn;
-    requirement 'CL-022-04' {
-        doc /* Selected target cadence: after confirmed released failed attempt wait
-             1,2,4,8seconds on successive failures, then8seconds capped. Use one timer
-             and one in-flight task under existing station authority; no catch-up or
-             backlog. Delays use monotonic time, start after attempt completion and
-             confirmed release; reset only after actual fresh successful readback.
-             Startup/explicit enable/new valid selected configuration gets one immediate
-             attempt; disable/identity change/revocation/invalid commissioning cancels
-             timer and current attempt. Re-enable starts a fresh series only after
-             release confirmation. Simultaneous browsers do not create extra attempts.
-             Preserve setup<=5s, exchange<=1s, cancellation checkpoint<=50ms and ordinary
-             RF-context release<=250ms. Bounds are not permissions to assume release.
-             Real close failure quarantines the resource; no timed reopen until an
-             explicit recovery proves release. Stop/Halt invalidates relevant receive/
-             RF-operation tokens and pending resume; CAT housekeeping may not restart
-             audio or setters. Late results are identity/generation fenced. Existing
-             shared native owner/resource arbitration with RF work stays authoritative.
-             Delivered: one station-wide50ms lifecycle tick (one timer, at most one
-             tick and one actor in flight) evaluates the grant/commissioning gate under
-             the profile store and authority locks, then the policy. A delay starts at
-             the first tick observing the confirmed released failure (<=one tick
-             after release). Explicit recovery from a failed-close quarantine is a
-             station restart; no in-process action clears it. */
+    private import ModelBindings::Automation;
+    private import ModelBindings::TestedBy;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
+
+    requirement 'CL-022-03' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST connect the profile's radio by itself and keep it
+             connected while the profile's control is CAT with an endpoint it takes,
+             and reach no radio otherwise (ControlGate). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radioControl/cat_lifecycle.rs; server/src/recording.rs; server/src/authorization_http.rs; server/src/main.rs"; }
     }
-    dependency CL_022_04_to_FR_008 from 'CL-022-04' to 'FR-008';
-    dependency CL_022_04_to_FR_009 from 'CL-022-04' to 'FR-009';
-    dependency CL_022_04_to_FR_021 from 'CL-022-04' to 'FR-021';
-    enum def AutomaticCatEvent { enum eligible; enum readbackConfirmed; enum attemptFailedReleased; enum delayElapsed; enum disabledOrRevoked; enum identityChanged; enum releaseFailed; enum recoveryConfirmed; }
-    action def MaintainCommissionedCat {
-        doc /* Target CL-022-03/04 action under existing selected-radio authority and
-             radio actor/executor. Preconditions: control enabled, matching unrevoked
-             grant, durable current commissioning and confirmed resource release.
-             One immediate attempt at eligible startup/enable/new valid configuration;
-             absence/open failure/timeout retries after confirmed failure release at
-             1,2,4,8,8seconds monotonic delays. One timer and task across all browsers;
-             no catch-up, backlog, extra actor/native builder or endpoint discovery.
-             Reset series only on actual fresh readback. Disable/last-grant revocation/
-             invalid commissioning/identity change cancels timer and task; re-enable
-             waits for release. Existing setup5s/exchange1s/cancel50ms/RFrelease250ms
-             remain hard bounds. Failed close quarantines; no timed reopen until
-             explicit recovery proves release. Late completions are identity fenced.
-             Automatic I/O is read-only queries only, no setters/PTT/audio start or
-             replay, except the WstxTransmit::StartupSafetyRelease (one off-only PTT
-             release with readback per boot, only when TX is observed before the boot
-             ever keyed). Stop/Halt clears receive/RF tokens and pending resume; background
-             CAT cannot undo Stop or broaden RF ownership. Missing precondition causes
-             zero native open/query/set/PTT. Confirmation itself has no native effect.
-             Delivered in server/src/radioControl/cat_lifecycle.rs driven by Recording::cat_maintain;
-             failed-close quarantine lasts until station restart. */
-        in scope : WstxStationLink::SelectedRadioAuthorizationScope;
-        in commissioning : WstxStationLink::RadioCommissioningRecord;
-        out current : AutomaticCatStatus;
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-022-03'; }
+
+    attribute def ControlGate {
+        doc /* What radio control does with the ControlAssignment it has.
+             With the mode disabled no port is opened and nothing is sent; a
+             connection that is connecting, ready or failed is closed. The condition
+             of AutomaticCatStatus is disabled.
+             With the mode cat and an endpoint RadioConnection does not take, no port
+             is opened; the condition is waitingForDevice with invalidRequest.
+             With the mode cat and an endpoint it takes, radio control makes one
+             attempt to connect at once: at station start and for every other
+             assignment (ControlAssignment).
+             For another assignment the connection that exists is closed first, and
+             the attempt follows when its port is closed. Until radio control has
+             acted on an assignment, its condition is waitingForDevice.
+             What radio control sends by itself on the connection are the five reads,
+             the AGC of the assignment, and the unkey of a connection that closes
+             while the radio may be keyed. */
+    }
+
+    requirement 'CL-022-04' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST try to connect again by itself after an attempt has
+             failed and its port is closed, waiting longer each time up to a limit
+             (RetryCadence). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-022-04'; }
+
+    attribute def RetryCadence {
+        doc /* When the next attempt to connect is made.
+             After a failed attempt whose port is closed, the next attempt follows
+             after firstRetrySeconds; after each further failure in a row the wait is
+             twice as long, up to maxRetrySeconds. The wait starts when radio control
+             finds the failure. AutomaticCatStatus gives the condition retryWaiting,
+             the error of the failed attempt and the time left.
+             One attempt is in work at a time. A wait that has long passed gives one
+             attempt.
+             The row of failures starts anew when the state is ready, and not
+             before.
+             An attempt that cannot start because radio control is reserved or an
+             operation is in work is no failure: it is made at the next occasion, and
+             no wait grows.
+             An attempt that is refused before a port is opened is a failed attempt.
+             A port that did not close is left alone: the condition is quarantined
+             with failedClose, and no attempt follows for as long as the station
+             process runs, whatever assignment comes. */
+        attribute firstRetrySeconds : Integer = 1;
+        attribute maxRetrySeconds : Integer = 8;
+    }
+
+    verification 'TC-022-009' {
+        doc /* The radio connection is kept by itself. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective {
+            verify 'CL-022-03';
+            verify 'CL-022-04';
+        }
+        @TestedBy {
+            test = "server/src/radioControl/cat_lifecycle_tests.rs; "
+                + "server/src/auth_tests.rs";
+        }
     }
 }

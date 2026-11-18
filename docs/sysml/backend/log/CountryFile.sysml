@@ -1,44 +1,105 @@
 package WstxCountryFile {
     private import ScalarValues::*;
+    private import RequirementDerivation::*;
+    private import WstxRequirements::'FR-011';
+    private import WstxLogPart::LogService;
+    private import WstxLogControl::CallEntity;
+    private import WstxLogControl::ReplaceCountryFile;
+    private import WstxLogControl::EntityRequest;
+    private import WstxOperatingChain::WorkedSet;
+    private import ModelNotes::FollowsSource;
+    private import ModelBindings::ImplementationState;
+    private import ModelBindings::AutomationState;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::TestedBy;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
 
-    // ---------------------------------------------------------------- country data (#55)
-    attribute def CountryFile {
-        attribute bytesMax : Integer = 1048576;
-        doc /* #55 (CL-055-01, CL-055-03). The DXCC country table is Jim Reisert AD1C's
-             cty.dat as WSJT-X ships it: server/third-party/cty/cty.dat, copied unchanged
-             from WSJT-X 3.3.0-beta5 (version VER20250115, 346 entities; source, SHA-256
-             and the MIT-style permission notice in NOTICE.md and LICENSE beside it).
-             It is embedded in the station. An uploaded file replaces it per station
-             profile as cty.dat beside contacts.adi (written to a temporary file, flushed,
-             renamed under the publication gate); a stored upload that cannot be read or
-             parsed leaves the bundled table in use, is reported and is never
-             overwritten. Nothing is downloaded automatically.
-             Format (AD1CCty load_cty): an entity line "name: cq: itu: continent: lat:
-             lon: utc: primary prefix:" (lon positive West; a leading * marks a WAE-only
-             entity) followed by comma-separated entries up to ";"; "=" marks an exact
-             call; an entry may carry (cq) [itu] <lat/lon> {continent} ~utc~ overrides.
-             Lines that are no entity line are skipped; an invalid number, a CQ zone
-             above 40 or ITU zone above 90 (also as an override), an unknown continent, a
-             shown name (EntityOfCall) that is not 1..40 printable ASCII characters, a
-             missing ";" or a file without entities is refused with the 1-based line, so
-             every accepted file gives values the browser accepts. A key listed twice keeps its first entry. "=VERyyyymmdd" is
-             the version. */
+    requirement 'CL-055-01' {
+        subject log : LogService;
+        doc /* Log MUST resolve a call to its DXCC entity, with the continent, the zones
+             and the position the country file gives for it, as WSJT-X does
+             (EntityOfCall, CountryFile). */
+        @Status { build = ImplementationState::implemented; }
     }
-    calc def EntityOfCall {
+    #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-055-01'; }
+
+    action def EntityOfCall {
         in call : String;
-        return entity : String[0..1];
-        doc /* #55 (CL-055-01) as WSJT-X AD1CCty::lookup and Radio::effective_prefix: the
-             call upper case; ending /MM or /AM: no entity. Operating suffixes are
-             removed from the right while they are a digit, A, M, P, Q, R, QRP, FD, FF,
-             AM, MM, LH, LT or LGT; of a remaining compound call the shorter side is the
-             effective prefix (the left one when the right side is at least as long).
-             When that differs from the call, an exact entry for the whole call wins.
-             Otherwise the longest entry that starts the effective prefix, where an exact
-             entry matches only the whole call. A KG4 call of length other than 3 or 5 is
-             the United States entity (with that entry's overrides). The result is the
-             entity with the entry's overrides: full name, primary prefix, continent, CQ
-             and ITU zone, position. Shown name: WSJT-X abbreviated_entity_name, then the
-             WAE entities shown as their DXCC (Bear Is., Shetland Is., AF Italy, Sicily,
-             Vienna Intl Ctr, AF/EU Turkey), as with "Include extra WAE entities" off. */
+        out entity : CallEntity[0..1];
+        doc /* How an EntityRequest is answered from the country file in use.
+             The call is read in upper case. An empty call, a call with a character
+             outside ASCII and a call that ends in /MM or /AM have no entity.
+             The effective prefix: endings after a "/" are taken off from the right
+             while they are a digit, A, M, P, Q, R, QRP, FD, FF, AM, MM, LH, LT or LGT;
+             of a call that then still has a "/", the shorter side is the prefix, and
+             the left side when both are equally long.
+             When the effective prefix is not the whole call, an exact entry of the
+             file for the whole call decides.
+             Otherwise the longest entry that begins the effective prefix decides; an
+             exact entry counts only when it is as long as the whole call.
+             A call that begins with KG4 and has neither three nor five characters is
+             of the entity whose primary prefix is K.
+             The answer is the entity with what the deciding entry says in its place
+             for the CQ zone, the ITU zone, the continent and the position; the
+             longitude is turned to positive east.
+             The shown name is the name shortened as WSJT-X shortens it, with an entity
+             that only the WAE list knows shown as its DXCC entity; the name itself
+             stays the one of the file. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: AD1CCty lookup and "
+                + "abbreviated_entity_name, Radio effective_prefix, and the display of "
+                + "entities with the extra WAE entities off";
+        }
+    }
+
+    attribute def CountryFile {
+        doc /* The country file and how it is read.
+             The file bundled with the station is cty.dat as WSJT-X at the behaviour
+             baseline ships it.
+             A line with fewer than seven ":" is skipped. Each other line begins an
+             entity, whose entries follow up to a ";".
+             An entry given a second time keeps the entity of its first place.
+             An exact entry VER followed by eight digits is the version of the file.
+             A file is refused, with the line of the entity counted from 1, for a
+             number that cannot be read, a CQ zone above 40 or an ITU zone above 90,
+             also in an entry, a continent that is none of Continent, a shown name that
+             is not 1 to 40 printable ASCII characters, an entity without a primary
+             prefix, and entries that do not end with ";". A file without an entity
+             is refused with line 1. */
+        @FollowsSource {
+            reference = "AD1C cty.dat, the format of the country files of "
+                + "country-files.com; WSJT-X at the behaviour baseline: AD1CCty load_cty";
+        }
+    }
+
+    verification 'TC-055-001' {
+        doc /* Calls resolved against known answers. */
+        subject log : LogService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-055-01'; }
+        @TestedBy {
+            test = "server/src/dxcc_tests.rs::"
+                + "tc_055_001_effective_prefix_matches_wsjtx_unit_vectors; "
+                + "server/src/dxcc_tests.rs::tc_055_001_known_answers_from_the_bundled_file; "
+                + "server/src/dxcc_tests.rs::tc_055_001_overrides_and_refused_files";
+        }
+    }
+
+    requirement 'CL-055-03' {
+        subject log : LogService;
+        doc /* Log MUST use the country file the settings function keeps in the place of
+             the bundled one (ProfileCountryFile). */
+        @Status { build = ImplementationState::partial; }
+    }
+    #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-055-03'; }
+
+    attribute def ProfileCountryFile {
+        doc /* Which file is in use. A ReplaceCountryFile with a text puts that file in use,
+             read as CountryFile, from then on for every EntityRequest and every WorkedSet
+             made afterwards; without a text the bundled file is in use. The settings
+             function fetches and checks the file (WstxProfileDocument::CountryFileFetch). */
     }
 }

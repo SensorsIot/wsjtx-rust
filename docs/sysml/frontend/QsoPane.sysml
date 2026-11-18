@@ -1,326 +1,291 @@
 package WstxQsoPane {
     private import ScalarValues::*;
-    attribute def ContactWorkspace {
-        attribute hasStationBarHalt : Boolean = true;
-        attribute hasEnableTx : Boolean = false;
-        attribute hasAutoSequence : Boolean = true;
-        attribute hasTune : Boolean = true;
-        attribute hasDxCallGridEntry : Boolean = true;
-        attribute hasStandardMessageRows : Integer = 6;
-        attribute hasReportOverride : Boolean = true;
-        attribute hasTx1Skip : Boolean = true;
-        attribute hasTx4Toggle : Boolean = true;
-        attribute hasRxTxInputs : Boolean = true;
-        attribute hasHoldTx : Boolean = true;
-        attribute hasPeriodChoice : Boolean = true;
-        attribute hasRxFrequencyPane : Boolean = false;
-        attribute hasQsoPane : Boolean = true;
-        attribute hasDirectButtons : Boolean = true;
-        attribute hasLogQso : Boolean = true;
-        attribute hasNowButtons : Boolean = false;
-        attribute hasFrequencyStepKeys : Boolean = false;
-        attribute escapeClosesRegion : Boolean = false;
-        attribute workspaceCardsChangeSignalArea : Boolean = false;
-        assert constraint adoptedControls {
-            hasStationBarHalt and not hasEnableTx and hasDirectButtons and hasAutoSequence and hasDxCallGridEntry and
-            hasStandardMessageRows == 6 and hasReportOverride and hasTx1Skip and hasTx4Toggle and
-            hasRxTxInputs and hasHoldTx and hasPeriodChoice and hasQsoPane and not hasRxFrequencyPane and hasLogQso and
-            not hasNowButtons and not hasFrequencyStepKeys and not escapeClosesRegion and
-            not workspaceCardsChangeSignalArea
-        }
-        doc /* #37 (operator design interview 2026-11-01) replaces the Enable Tx control,
-             the Current QSO card and the Rx Frequency pane by the QSO pane (QsoPane) with
-             direct buttons, and moves the Rx/Tx inputs and Hold Tx to the Rx/Tx strip
-             (RxTxStrip); where the text below names those controls, QsoPane, RxTxStrip and
-             WstxQsoTransmit::SetEnableTx apply. Earlier text: Browser regions for WstxContact, inside the existing AgreedOperatingDesign
-             order (station bar, toolbar, signal canvas, separator, band strip, cards);
-             the signal area, its 0..3000 Hz span, palette, Speed/Sensitivity and split
-             (CL-010-05, SplitGeometry) are unchanged.
-             Station bar: Halt Tx (always visible, Alt+H; disabled with reason on a
-             receive-only station), beside it Abort QSO (Esc, WstxQsoTransmit::AbortQso,
-             enabled while a contact is in progress, armed or transmitting) and a compact
-             transmit state with the last transmitted text, Tx watchdog remaining calls WD:n
-             (#97, #91: the Tx watchdog only; in a strategy run's own contact the run's leave label
-             instead, WstxStrategy::LeaveCountLabel; a busy partner appended,
-             WstxOperatingChain::BusyPartner)
-             or "Tx watchdog: same message sent N times", visible in every region. Radio toolbar (its period
-             and level slots): UTC clock, Tx progress v/15 with Transmitting label, Rx
-             level meter 0..90 dB with high/low text labels
-             (WstxQsoWire::OperatorDisplays); they are not in the station bar because the
-             360 px / 200 % station bar cannot hold them without overflow (#10 review
-             decision 2026-10-31).
-             Waterfall: green Rx and red Tx markers labelled Rx/Tx with their Hz, pointer
-             actions per WstxContact::PointerEffect; the context menu is suppressed only
-             over the canvas.
-             Band Activity card: existing latest-period table plus a worked-before
-             label/icon column (the record's worked_status, WstxLogbook::WorkedBeforeQuery); row selection by click,
-             Enter or double-click is SelectDecodedRow.
-             Current QSO card: DX Call and DX Grid inputs with Generate (Enter); contact
-             state text and partner; six message rows Tx1..Tx6, each with a Next radio and
-             editable validated text, a Tx1 skip toggle on Tx1 and an RRR/RR73 toggle on
-             Tx4; report input -50..+49; Rx Hz and Tx Hz inputs, Hold Tx and Tx even/odd
-             choice with requested versus confirmed values; Enable Tx (Alt+N), Auto Seq,
-             Tune with remaining seconds, Cancel contact, Log QSO (Alt+Q); the Rx
-             Frequency pane (WstxContact::RoutesToRxFrequencyPane) with Tx-labelled own
-             messages, unread count and Erase. At 360 CSS px it stacks below Band Activity
-             or is a labelled tab, with no horizontal page overflow.
-             Logbook region: history and ADI export (since #41 there is no log
-             review form: WstxLogbook::DirectLog stores each completed contact and Log
-             QSO, and an open Logbook page lists a new record when the contact snapshot
-             reports it saved); opening it never hides Halt Tx.
-             Alt+letter bindings apply only where the browser delivers the key; every
-             action is also a focusable labelled control. Ctrl+R, Ctrl+1..6 and F11/F12
-             are not adopted (browser reload/tab keys; #10 decision 7); since #37
-             (operator 2026-11-03) each fold-out Tx line has Next and Now (QsoPane).
-             Every control is a server request; state shows only server-confirmed
-             values, pending and unknown outcomes explicitly. */
+    private import RequirementDerivation::*;
+    private import WstxRequirements::'FR-010';
+    private import WstxRequirements::'FR-019';
+    private import WstxRequirements::'FR-025';
+    private import WstxBrowserClientPart::BrowserClient;
+    private import ModelBindings::ImplementationState;
+    private import ModelBindings::AutomationState;
+    private import ModelBindings::Status;
+    private import ModelBindings::Automation;
+    private import ModelBindings::TestedBy;
+    private import ModelBindings::TestLevel;
+    private import ModelBindings::TestLocation;
+
+    doc /* The QSO pane: the running contact, its dialogue, the stations calling, the period
+         bar, the direct buttons and the messages Tx1 to Tx6. */
+
+    requirement 'CL-037-04' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST show the running contact in a pane of fixed height as
+             PaneLayout says. */
+        @Status { build = ImplementationState::implemented; }
     }
-    dependency contactWorkspaceClauses from ContactWorkspace to WstxContact::'CL-010-03';
-    calc def QsoPaneCrowding {
-        in rowFrequencyHz : Real;
-        in rxOffsetHz : Integer;
-        in txOffsetHz : Integer;
-        in fromPartner : Boolean;
-        in toMyCall : Boolean;
-        return crowding : Boolean = not fromPartner and toMyCall and
-            ((rowFrequencyHz >= rxOffsetHz - 50.0 and rowFrequencyHz <= rxOffsetHz + 50.0) or
-             (rowFrequencyHz >= txOffsetHz - 50.0 and rowFrequencyHz <= txOffsetHz + 50.0));
-        doc /* #37 (operator 2026-11-02, replacing the near-Rx rule): another station
-             calling my call within +/-50 Hz of my Rx or Tx offset in the latest two
-             published periods (the latest and the one before it): a ⚠ QsoPane Calling me line
-             while a QSO runs. A station near my Rx that does not call me is not a QsoPane
-             line (Band Activity shows it). Presentation only. */
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-037-04'; }
+
+    attribute def PaneLayout {
+        doc /* The pane stands at the top of the workspace's right column. Its height depends
+             on the window only, never on its content, so the control panel and the error
+             field below never move. Top to bottom: the header; the direct buttons
+             (PaneButtons) and the fold-out Tx1-Tx6 (MessagesFoldOut); the message lines
+             (MessageLines); the QSO section, the dialogue (DialogueTable), qsoRows rows high
+             (narrowQsoRows on a narrow window), scrolling inside and kept at its newest row,
+             "No QSO" while none runs; the Calling me section (CallingMe), at least
+             callingRows rows high. The open fold-out covers the two sections and moves
+             nothing.
+             The header: the partner's call and grid; below them the shown name and continent
+             of the partner's entity, the distance from the station's locator with the
+             azimuth to the partner's grid (~n km for the entity's distance without a grid),
+             in km or in miles (FrontendConfig::distanceInMiles), and the reports sent and
+             received; "No contact
+             selected" without a contact; "Calling CQ" with "Tx even (1st)" or "Tx odd (2nd)"
+             while the own CQ runs; and a badge: Ready, Tx on, Transmitting, or Receive only
+             while the station cannot transmit, then with CQ, Tune and the starts disabled
+             with the reason beside them. A running contact is one with a partner from replying
+             to signoff (WstxQsoControl::SequenceState); a completed or cancelled one leaves the
+             pane. Everything follows the view qso; a reload or another browser shows the
+             same. */
+        attribute qsoRows : Integer = 12;
+        attribute narrowQsoRows : Integer = 6;
+        attribute callingRows : Integer = 5;
     }
-    attribute def QsoPane {
-        attribute crowdingWindowHz : Integer = 50;
-        attribute hasPartnerHeader : Boolean = true;
-        attribute hasLastPartnerMessage : Boolean = true;
-        attribute maximumOtherLines : Integer = 8;
-        attribute qsoAreaRows : Integer = 12;
-        attribute narrowQsoAreaRows : Integer = 6;
-        attribute callingMeRows : Integer = 5;
-        attribute fixedHeight : Boolean = true;
-        attribute hasNextWithCountdown : Boolean = true;
-        attribute hasDialogue : Boolean = true;
-        attribute hasLastSentRow : Boolean = false;
-        attribute hasCrowdingBadge : Boolean = false;
-        attribute loggedNoticeSeconds : Integer = 8;
-        attribute hasEnableTx : Boolean = false;
-        attribute hasNowButtons : Boolean = true;
-        attribute hasFinalMessageButtons : Boolean = false;
-        assert constraint compact {
-            hasPartnerHeader and hasLastPartnerMessage and maximumOtherLines == 8 and
-            fixedHeight and qsoAreaRows >= 12 and callingMeRows >= 5 and
-            hasNextWithCountdown and hasDialogue and not hasLastSentRow and
-            not hasCrowdingBadge and not hasEnableTx and hasNowButtons and
-            not hasFinalMessageButtons
-        }
-        doc /* Right pane, replacing the Rx Frequency pane and the Current QSO card. #37
-             compact QSO pane (operator decisions 2026-11-02): it shows only the running QSO
-             and nothing else, and its content takes about half the height the earlier pane
-             needed. Item 8 (operator 2026-11-03 on #37, "The QSO part is way too long. It
-             should be much smaller. Then we can add a lot of different things below it.",
-             replacing the earlier option C where the card filled its column), revised on
-             2026-11-04 (CL-037-04, live finding: at 1366x768 the dialogue rows sat in a 46 px
-             area): "The QSO panel should contain all needed information for the operator. And
-             it should be fixed in size that the things below it do not move all the time up
-             and down. We probably have a section for the QSO and a section for who is
-             calling", and "you can make this section big enough to accommodate also longer
-             QSOs. We have enough space". The pane is at the top of its column and has a fixed
-             height (fixedHeight): its height depends on the screen width only, never on its
-             content, so the ControlPanel and the ErrorField below it (LowerPanel) never move
-             when a QSO starts or ends, dialogue rows or callers are added or a line such as
-             NEXT appears. From top to bottom: the header (item 1: the partner line, which
-             wraps and scrolls in its own fixed line when longer, with the badge beside it; then
-             the last partner message of item 2, cut to the line since the dialogue repeats
-             it, the direct buttons of item 5 and the Tx1-Tx6 fold-out; at most 48em wide the
-             badge follows the buttons), the message lines (item 4 NEXT first,
-             then items 6, the exception status, Pounce and Auto Seq off; one fixed line, two at
-             most 48em wide, scrolling inside), the QSO section
-             (the #60 dialogue table, item 7: its header row and qsoAreaRows (12) rows without
-             scrolling, narrowQsoAreaRows (6) when the workspace is at most 48em wide; more
-             rows scroll inside, kept at the newest row; "No QSO" while no QSO runs), the
-             Calling me section (item 3: its header row and callingMeRows (5) rows, scrolling
-             inside; "Nobody is calling" when none). Each
-             section keeps its height whether it is empty or full; the open Tx1-Tx6 fold-out
-             covers both sections in place, so it moves nothing. Heights
-             follow the text size (rem), so 200 % text keeps the same rows. The whole stack fits
-             the 1366x768 screen (TC-007-009, TC-037-003); the default split (LowerPanel) leaves
-             room for it.
-             A running QSO is a contact with a DX call in replying..signoff
-             (WstxContact::ContactState); a contact that is completed, logged or cancelled is
-             gone from the pane, which then shows idle.
-             Lines (each a message and its SNR, the QSO area lines with their UTC period
-             start; no DT or audio frequency, which Band Activity and the waterfall markers
-             show; SNR as "+12 dB" / "−8 dB"):
-             1. Header: partner call and grid; its detail line the #55 shown name and continent,
-             distance from the profile locator (the approximate entity distance without a grid),
-             reports sent and received; idle: "No contact selected"; while an own CQ runs
-             (contact state calling) "Calling CQ" with the detail line "Tx even (1st)" or
-             "Tx odd (2nd)", the Tx period, whatever the receive display shows (#37,
-             operator 2026-11-02); the badge Ready, Tx on, Transmitting or Receive only (Receive
-             only, with CQ, Tune,
-             Now and Auto Seq disabled and the reason beside them, while the transmit capability
-             is not available: #22, it follows the pushed contact snapshot; only a running Tune
-             can be turned off).
-             2. Last partner message, while a QSO runs: the contact's ContactSnapshot
-             last_rcvd as one line "<text>  <SNR>" with "×N" when the identical message was
-             counted N > 1 times in a row; a new text replaces it.
-             3. Calling me (#37, operator 2026-11-02, its own section since 2026-11-04, formerly
-             the Others rows of the QSO table): a table with the columns "Calling me" (the
-             caller's call as decoded, a hashed call as "<...>"), SNR (signed), Grid (the
-             grid of its message, else empty) and Country (the #55 cty.dat name of its
-             record, else empty).
-             One line per station, its newest decode, at most maximumOtherLines lines, oldest
-             first (period, then decode order) and kept at the newest line, from the decoded
-             rows of the latest two published periods that
-             are addressed to my call by the Band Activity mycall rule (a standard message to
-             my call or to a filled-in hash <MYCALL>, or a nonstandard i3=4 message whose 'to'
-             call is mine, #24) from another station than the partner (the
-             partner of the last QSO stays excluded after it ended, until another contact
-             runs), on any frequency, as soon as its row is decoded (operator 2026-11-04:
-             everyone addressing me except the partner). While a QSO runs a caller within
-             +/-50 Hz of my Rx or Tx offset (QsoPaneCrowding) is a ⚠ line ("EA8BIA ⚠ | 0 | IL18
-             | Canary Islands"), and a double-click (or Enter) on any line switches the contact
-             to that station and replies (SelectDecodedRow with replace, then SetEnableTx on;
-             ChangeContact keeps Enable Tx on). When no QSO runs (idle, finished, or an own
-             CQ) a double-click (or Enter) answers (select, then
-             SetEnableTx on). Stations that do not call me are not listed (Band Activity
-             shows them). Worked-before marks (CL-010-13, #10 2026-11-04): each line
-             carries the Band Activity marks of its sender, so only stations of interest
-             are coloured: the background of the highest-priority enabled new_* slot of
-             its record flags (BandActivityColours, the same Settings choice; mycall is
-             not used, since every line calls me), none without such a flag, so a sender
-             worked before on this band and mode has no colour; its hover text (title and
-             aria-description) follows the compact BandActivityHover rule (#50, operator
-             2026-11-04 "too much information"): one line joined by " · ", per kind
-             (continent, DXCC, zone, grid, call) only the strongest reason whose slot is
-             enabled, no country, continent or distance text, "New on <band>" followed by the
-             worked-before status in parentheses ("(worked on <band> <MODE>)" or "(worked on
-             another band or mode)") from the worked_status of the sender's records of the
-             latest and the previous period (WstxLogbook::WorkedBeforeQuery),
-             e.g. "New DXCC · New call"; a line without such a reason has no hover text. The
-             double-click hint is the title of the section's "Calling me" header. When no row
-             qualifies, the section shows the muted placeholder
-             "Nobody is calling" instead of an empty list, in the same height.
-             4. NEXT: "▸ next: <message>" with a progress bar and the countdown to
-             the next period of the contact's parity, only while Enable Tx is on and the
-             contact is calling or a QSO runs. While the station reports transmitting
-             (station.tick transmitting, the station's keyed state, never the browser
-             clock) the line is "▶ TX now: <message>" with "<n> s left" (the time to the end
-             of the waveform, audio delay plus 12.64 s FT8 / 5.04 s FT4 after the period
-             start), the message being the transmit view's last_text of this period, else
-             the next message; during Tune (transmit view tune) "▶ TX now: Tune" with the
-             Tune seconds left (watchdog tune_remaining_seconds); otherwise "▸ next: <message>"
-             with "Tx in <n> s" (#37,
-             operator 2026-11-02). The bar (#50, operator 2026-11-02) is the
-             one period bar: its width is the elapsed part of the current period
-             (15 s FT8, 7.5 s FT4) on the station's clock (Contact OperatorDisplays
-             StationPeriodClock), so it restarts at the period start the station keys on;
-             it is red, as the waterfall Tx marker rgb(255,64,64), in a period of my Tx
-             parity while Enable Tx is on and whenever the station reports transmitting,
-             and green, as the Rx marker rgb(48,208,80), in every other (receive) period.
-             5. Direct buttons: CQ, Auto, PSK, Tune, HALT, Abort QSO (Esc), Log QSO (#39
-             strategydef, operator Q5, Q17, Q29: "Auto" right of CQ, a toggle green while on and
-             grey while off, WstxAutoControl::AutoToggle; "PSK", "Use PSK Reporter" as its
-             title, right of Auto, a toggle green while on, WstxHearingFeed::PskrUse, disabled
-             while the
-             Settings switch is off; both follow only the pushed station state). (SetEnableTx
-             (#37). Operator
-             2026-11-03 ("We have two HALT buttons ... I do not understand why we need a Reply
-             and an RR73 and a 73 button there"): RR73 and 73 are gone, Auto Seq sends them
-             and the fold-out Next/Now overrides by hand as in WSJT-X; Reply, kept only as the
-             operator's workaround until the #50 double-click fix was installed, is gone too:
-             a double-click on a Band Activity row or a Calling me row, or the row menu Reply,
-             starts the reply (with the WstxContact::DirectedCqSelection warning for a CQ not
-             answerable);
-             this HALT is the one HALT of the operating view (OperatingScreen);
-             Log QSO, offered (button and Alt+Q) while a QSO runs, logs the contact now,
-             WstxLogbook::DirectLog
-             (#41), and closes it, so nothing stays queued). A command's accepted result
-             line goes when the QSO ends.
-             6. Log outcome: after a completion or Log QSO is stored, "✓ Logged <call>" for
-             loggedNoticeSeconds seconds, then nothing; a contact that could not
-             be stored shows "Not logged <call> · <reason>" while that outcome holds.
-             7. QSO dialogue (#37, operator 2026-11-02, revising "no dialogue"): the QSO
-             section (fixed height, item 8) holds the
-             ContactSnapshot
-             dialogue of the running QSO only, as a table (#60, operator 2026-11-03, replacing
-             the earlier line and arrow formats) with the header row "UTC | Direction |
-             Exchange | Rep | Rx SNR | Tx SNR", one row per entry, oldest first and newest at
-             the bottom, "×N" in Rep for N > 1 repeats (empty for one), no frequency and no
-             other
-             station (the callers are the Calling me section, item 3). The section scrolls
-             inside, kept at its newest row, with the header row staying visible; it is the
-             header row and qsoAreaRows (12) rows high (narrowQsoAreaRows at most 48em wide,
-             item 8) and shows "No QSO" while no QSO runs; it never grows the page
-             (TC-007-009); at 360 CSS px the table fits the pane width and the
-             titles may be abbreviated (UTC, Dir, Exch, Rep, Rx, Tx) and the Direction calls
-             may wrap at their spaces.
-             It is gone with the QSO (completed, logged or cancelled), as the rest of the
-             QSO view, and a reload or another browser shows the same entries.
-             Columns: UTC is HH:MM:SS, the UTC period start, with no ◂/▸ direction mark.
-             Direction is the two calls in the Band Activity (on-air) order, the recipient
-             first and the sender second, with "◂" between them pointing to the recipient
-             ("HB9BLA ◂ CT1BFP": CT1BFP sends to HB9BLA; "CT1BFP ◂ HB9BLA": I send to
-             CT1BFP), a hashed call as decoded ("<PJ4/K1ABC>", "<...>"); a CQ is "CQ <call>"
-             or "CQ DX <call>" (the words before the grid) without an arrow, its grid in
-             Exchange. Exchange is the message after the two calls ("IM59", "+08", "R-02",
-             "RR73", "73"); a message that does not start with two calls or a CQ (free text)
-             is all Exchange with an empty Direction. Rx SNR and Tx SNR are on every dialogue
-             row, received and sent alike (operator #60, 2026-11-03: "the RX and TX dB wherever
-             possible on each line, always the one from the last transmission"): Rx SNR is our
-             measured SNR of the latest received dialogue entry at or before that row, signed
-             ("+8", "−12", "0"); Tx SNR is the latest report the partner sent us in a received
-             dialogue entry at or before that row (an Exchange "R-02" gives "−2", a plain report
-             "-05" gives "−5"); each is empty only while no such value exists yet. Example
-             (operator, #60): "22:51:15 | HB9BLA ◂ CT1BFP | IM59 | | +8 |",
-             "22:51:30 | CT1BFP ◂ HB9BLA | +08 | | +8 |", "22:51:45 | HB9BLA ◂ CT1BFP | R-02 | |
-             +7 | −2",
-             "22:52:00 | CT1BFP ◂ HB9BLA | RR73 | | +7 | −2", "22:52:15 | HB9BLA ◂ CT1BFP | 73 |
-             ×2 | +9 | −2".
-             Sent rows keep their own colour.
-             Messages between two other stations are not QSO pane lines.
-             There is no LAST row, no crowding badge and no status line
-             for a finished contact. A status line under the header is shown only for an
-             exception: a refused transmission, a halt pending, an unknown contact state.
-             Auto Seq off (#11): while Auto Seq is off during a contact or CQ, a warning
-             line among the message lines reads "Auto Seq off" (title: received messages do not
-             advance the QSO) with an "Auto Seq on" button; when the contact's ContactSnapshot
-             suggested_slot is set, the line adds "<call> expects" and a "Send <exchange>
-             next" button (e.g. "Send 73 next", the full message as its title) that chooses
-             that slot and arms (Reply). It is hidden otherwise and never clipped on the
-             1366x768 screen.
-             PSK Reporter lines (#39 strategydef, WstxHearingFeed::PskrUse): while Use PSK
-             Reporter is on and a strategy or contest run's own contact has a target, two lines
-             under the
-             header, in the message lines' fixed area: "Hears us: <age> ago · <rp> dB", "Hears
-             us: no" or "Hears us: unknown"; and "Tx <hz> Hz · open at his end: yes", "· no" or
-             "· unknown". Hidden otherwise; never clipped on the 1366x768 screen; at 360 px they
-             wrap inside the pane.
-             Pounce (#42 WstxStrategy::Pounce): while a pounce run is active, a line under
-             the header reads "Pouncing on <call> (<band>) · waiting for CQ or 73" (in its
-             contact "· in QSO") with a "Stop pounce" button that stops the run; hidden
-             otherwise and never clipped on the 1366x768 screen.
-             A fold-out "Messages Tx1-Tx6" shows Tx1-Tx6, each with its Next choice
-             (choose_next), a Now button (#37: choose_next, then SetEnableTx on when it is
-             off, so the message goes from the next own period; disabled without a message,
-             without transmit capability or on a completed contact) and its editable
-             text (Tx5 is editable whenever a contact exists, also without a message, for
-             WSJT-X Tx5 free text, #24 S1b; the others once they have a message), Skip Tx1,
-             RRR/RR73 and Cancel contact in place, and above them the Activity choice (None,
-             NA VHF, EU VHF, WW Digi, ARRL Digi, Field Day, RTTY Roundup, Hound; set_activity,
-             WstxSpecialActivities::GridExchangeContest, #24 S2a, EuVhfExchange, #99,
-             HoundOperation, #24 S4b) that shows the
-             station's setting, with an Exchange entry beside it (ContestExchange, #24 S2b:
-             shows settings.exchange; choosing Field Day or RTTY Roundup sends set_activity
-             with the entered exchange, and changing the exchange while one of them is chosen
-             sends it again; the next serial is shown while RTTY uses DX or # and while EU
-             VHF is chosen, which sends set_activity without an exchange and shows a refusal,
-             e.g. a locator of fewer than 6 characters, in the error field); the DX
-             Call/Grid entry, report, Tx period, Auto Seq, Call 1st and Hold Tx are the
-             ControlPanel below the pane (#37, operator 2026-11-03). On a station without
-             transmit capability the transmit
-             buttons are disabled with the reason. */
+
+    attribute def CallingMe {
+        doc /* One line per station that calls the station's call in the latest two periods
+             (as myCall of WstxBandActivityPane::Highlight), from any station but the
+             partner, on any frequency, as soon as its record is shown, at most callingLines
+             lines, oldest first: the call as decoded, the SNR, the grid of its message and
+             the country of its entity. While a contact runs, a caller within crowdingHz of
+             the Rx or the Tx offset is marked ⚠. A double-click or Enter on a line gives
+             Reply, with replace while a contact runs. A line carries the colour and the tip of
+             Band Activity's marks of its sender, without myCall. With no caller: "Nobody is
+             calling". */
+        attribute callingLines : Integer = 8;
+        attribute crowdingHz : Integer = 50;
+    }
+
+    requirement 'CL-060-01' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST show the running contact's dialogue as DialogueTable
+             says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-060-01'; }
+
+    attribute def DialogueTable {
+        doc /* The dialogue of the view qso (WstxQsoControl::QsoContact::dialogue) as a table
+             with the header "UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR", one row per
+             entry, oldest first. UTC: the period start, HH:MM:SS. Direction: the two calls in
+             the order of the message, the addressee first and the sender second, with ◂
+             between them pointing at the addressee ("HB9BLA ◂ CT1BFP" received, "CT1BFP ◂
+             HB9BLA" sent), a hashed call as decoded; a CQ is "CQ <call>" or "CQ DX <call>"
+             without the arrow, its grid the Exchange. Exchange: the message after the two
+             calls; a free text is all Exchange. Rep: ×N for a message counted N times in a
+             row, empty for once. On every row, received or sent, Rx SNR is the station's SNR
+             of the latest received entry up to that row and Tx SNR the latest report the
+             partner sent up to that row ("R-02" gives −2), each empty while none exists. Sent
+             rows have a colour of their own. On a narrow window the titles shorten to UTC,
+             Dir, Exch, Rep, Rx, Tx. */
+    }
+
+    requirement 'CL-050-05' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST show what the station sends next as MessageLines
+             says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-050-05'; }
+
+    attribute def MessageLines {
+        doc /* One fixed area of lines below the buttons:
+             the last message of the partner with its SNR, and ×N when it came N times in a
+             row;
+             while the station transmits (the view transmit), "▶ TX now: <message>" with
+             "<n> s left", or "▶ TX now: Tune" with the seconds of Tune left; while the
+             transmit state is on otherwise, "▸ next: <message> · Tx in <n> s";
+             while Auto Seq is off in a contact or CQ, "Auto Seq off" with an Auto Seq on
+             button, and when the sequence would choose a message (QsoContact::suggestedSlot)
+             "<call> expects" with a button "Send <exchange> next" (SendNext);
+             a contact that waits to be logged (QsoState::logPending), "Log <call>?" with its
+             calls, reports and times, and the buttons Log QSO (ConfirmLog) and Discard
+             (DiscardLog);
+             after a contact is logged, "✓ Logged <call>" for loggedSeconds; a contact the
+             log refused, "Not logged <call> · <reason>" while that holds (the view
+             logAttempt), as "same station as the last log entry" for a repeat;
+             for a contact in progress, by hand or by Auto, with PSK Reporter in use, the
+             two lines of the view target: "Hears us: <age> ago · <dB> dB", "Hears us: no" or
+             "Hears us: unknown", and "Tx <hz> Hz · open at his end: yes", "no" or "unknown";
+             the sends left of the message due (QsoState::repetitionsLeft);
+             a refused command's reason, until the next command. */
+        attribute loggedSeconds : Integer = 8;
+    }
+
+    requirement 'CL-050-03' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST show the progress of the period on station time as
+             PeriodBar says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-050-03'; }
+
+    attribute def PeriodBar {
+        doc /* With the message line, a bar shows the part of the current period gone by
+             (FT8 15 s, FT4 7.5 s), on station time (clock.time,
+             WstxOperatingScreen::TimeRule), never the browser's clock, and restarts at the
+             start of the period the transmitter keys on. It is red in a period of the own Tx
+             parity while the transmit state is on, and whenever the station transmits; green
+             in every other period. */
+    }
+
+    requirement 'CL-037-06' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST offer the QSO pane's direct buttons as PaneButtons
+             says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-037-06'; }
+
+    attribute def PaneButtons {
+        doc /* In one row: CQ (CallCq, WstxQsoControl), Auto and PSK (AutoControls), Tune
+             (Tune on and off, with the seconds left while on), HALT
+             (WstxOperatingScreen::HaltRule), Abort QSO (Esc) (HaltQso, while a contact is in
+             progress) and Log QSO (Alt+Q): ConfirmLog while a contact waits to be logged,
+             else WstxLogControl::ResendLast, which gives the newest record of the logbook
+             again. Log QSO closes no contact. Each button shows the state of the views only. */
+    }
+
+    requirement 'CL-039-31' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST offer Auto and the use of PSK Reporter as AutoControls
+             says. */
+        @Status { build = ImplementationState::partial; }
+    }
+    #derivation connection { end #original ::> 'FR-025'; end #derive ::> 'CL-039-31'; }
+
+    attribute def AutoControls {
+        doc /* Auto is a toggle among the direct buttons: on gives SwitchAuto on, off
+             SwitchAuto off (WstxAutoControl); its title says what off does with a contact in
+             progress. Auto's line stands beside the strategy selector
+             (WstxBandActivityPane::StrategyElement) and follows the view auto: on and
+             waiting, with the wait reason in words ("waiting · outside period"); in a contact,
+             the partner's call, or "your QSO" in a contact the operator started; "calling
+             CQ"; the leave count while a station is called; the periods left of the CQ
+             pause; off after it was on, with the reason in words ("stopped · transmit
+             refused"); a refused switch on, with its reason. PSK, titled "Use PSK Reporter",
+             is a toggle of the spots' use switch (WstxHearing::SpotsConfig), saved with the
+             shack's settings (saveShack); it is disabled, with the title "PSK Reporter is off
+             in Settings", while listening to PSK Reporter is off. */
+    }
+
+    requirement 'CL-111-09' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST offer the six messages and the activity as
+             MessagesFoldOut says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-111-09'; }
+
+    attribute def MessagesFoldOut {
+        doc /* The fold-out "Messages Tx1-Tx6" holds the six messages of the contact, each
+             with its Next choice (ChooseNext) and its text, which can be edited
+             (EditMessage): Tx5 whenever a contact exists, for free text, offering the Tx
+             macros of the shack (WstxQsoControl::QsoShared::macros) as the operator types,
+             the others once they have a message; Skip Tx1 (SetTx1Skip), RRR or RR73 (SetTx4)
+             and Cancel
+             contact (CancelContact). Above them the Activity choice, None, NA VHF, EU VHF, WW
+             Digi, ARRL Digi, Field Day, RTTY Roundup, Hound, with the Exchange beside it for
+             Field Day and RTTY Roundup, both values of the station config
+             (WstxQsoControl::QsoConfig activity, exchange); the next serial shows while the
+             activity sends one. A choosing of a message never starts a transmission. */
+    }
+
+    verification 'TC-037-003' {
+        doc /* The pane of fixed height with its two sections. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-037-04'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-007-003' {
+        doc /* Rows, the partner's selection and the pane. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-037-04'; }
+        @TestedBy { test = "server/src/contact_http_tests.rs; tests/contact.test.cjs"; }
+    }
+    verification 'TC-060-001' {
+        doc /* The dialogue table. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-060-01'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-050-005' {
+        doc /* The pane while calling CQ and transmitting. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-050-05'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs; tests/contact.test.cjs"; }
+    }
+    verification 'TC-085-005' {
+        doc /* What the operator sees of a repeat the log refuses. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-050-05'; }
+        @TestedBy { test = "tests/contact.test.cjs; server/src/contact_http_tests.rs"; }
+    }
+    verification 'TC-050-003' {
+        doc /* The period bar's colour on station time. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-050-03'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-081-006' {
+        doc /* Auto's toggle says what off does. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-039-31'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-024-006' {
+        doc /* The activity choice in the fold-out. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-111-09'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-024-009' {
+        doc /* Field Day and RTTY Roundup with their exchange. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-111-09'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-024-013' {
+        doc /* The Hound in the fold-out. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-111-09'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-099-003' {
+        doc /* EU VHF in the fold-out. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-111-09'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
 }
