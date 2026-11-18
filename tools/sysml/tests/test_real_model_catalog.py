@@ -32,7 +32,7 @@ def expected_status(states):
 
 class RealModelStatusTests(unittest.TestCase):
     def test_status_on_this_tree_prints_each_fr_of_the_catalog_with_its_computed_status(self):
-        """TR-12: `status` on this tree prints each FR of the catalog with the status its
+        """TV-107 (TR-12): `status` on this tree prints each FR of the catalog with the status its
         clauses give it, then the counts."""
         output, errors = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
@@ -61,7 +61,7 @@ class RealModelStatusTests(unittest.TestCase):
 
 class RealModelPackageTests(unittest.TestCase):
     def test_this_tree_is_accepted(self):
-        """TR-10: the catalog accepts this tree; Shack.sysml holds the package WstxShack."""
+        """TV-108 (TR-10): the catalog accepts this tree; Shack.sysml holds the package WstxShack."""
         self.assertGreater(len(tool.canonical_catalog(tool.MODELS, tool.ROOT)), 0)
         shack = tool.MODELS / "Shack.sysml"
         self.assertEqual(tool.file_package(tool.blanked(shack.read_text(encoding="utf-8"))), "WstxShack")

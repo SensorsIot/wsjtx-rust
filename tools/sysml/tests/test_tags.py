@@ -63,11 +63,11 @@ class TagTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
 
     def test_tags_of_one_and_two_cases_are_accepted(self):
-        """TR-14: a tag of one case and a tag of two cases joined by a comma are accepted."""
+        """TV-116 (TR-14): a tag of one case and a tag of two cases joined by a comma are accepted."""
         self.assertEqual(tool.tag_faults(self.entries, self.root), [])
 
     def test_each_tag_outside_the_form_is_refused(self):
-        """TR-14: a tag naming an FR, a clause, shorthand, an issue number or added text is refused with its line."""
+        """TV-117 (TR-14): a tag naming an FR, a clause, shorthand, an issue number or added text is refused with its line."""
         tags = {
             "FR": "// Proves: FR-004",
             "clause": "// Proves: CL-022-01",
@@ -81,7 +81,7 @@ class TagTests(unittest.TestCase):
                 self.assertEqual(tool.tag_faults(self.entries, self.root), [f"Invalid Proves tag: {TEST_KEY}:1"])
 
     def test_tag_naming_an_undeclared_case_is_refused(self):
-        """TR-14: a tag naming a case the model does not declare is refused with its line."""
+        """TV-118 (TR-14): a tag naming a case the model does not declare is refused with its line."""
         self.write(self.root / TEST_KEY, TESTS.replace("// Proves: TC-022-004, TC-022-005",
                                                        "// Proves: TC-022-004, TC-022-009"))
         self.assertEqual(tool.tag_faults(self.entries, self.root),

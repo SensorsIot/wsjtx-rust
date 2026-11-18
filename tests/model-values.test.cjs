@@ -1,6 +1,6 @@
 'use strict';
 // The JavaScript model-value reader on the fixture tree tests/fixtures/model-values/
-// (TC-DOC-014), against the hand-written list of expected values there. Node only.
+// (TR-20), against the hand-written list of expected values there. Node only.
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
@@ -81,14 +81,14 @@ function accepted(t,eol){
   return count;
 }
 
-// TC-DOC-014 (the JavaScript reader accepts every value of the fixture list).
+// TV-153 (TR-20): the JavaScript reader accepts every value of the fixture list.
 test('model values: every fixture value is read, in LF and CRLF',t=>{
   const lf=accepted(t,'\n'),crlf=accepted(t,'\r\n');
   assert.ok(lf>0,'the fixture list names no value');
   assert.equal(lf,crlf);
 });
 
-// TC-DOC-014 (the JavaScript reader refuses every fault of the fixture list).
+// TV-154 (TR-20): the JavaScript reader refuses every fault of the fixture list.
 test('model values: every fixture fault is refused naming the name and the reason',t=>{
   const cases=expected().refused;
   assert.ok(cases.length>0,'the fixture list names no fault');

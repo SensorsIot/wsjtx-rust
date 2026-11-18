@@ -76,7 +76,7 @@ class Fixture(unittest.TestCase):
 
 class ComputedStatusTests(Fixture):
     def test_status_is_computed_from_the_clauses(self):
-        """TR-12: all implemented gives implemented, mixed gives partial, all target or none gives target."""
+        """TV-074 (TR-12): all implemented gives implemented, mixed gives partial, all target or none gives target."""
         entries = self.catalog()
         self.assertEqual({identity: (entries[identity]["status"], entries[identity]["clauses"])
                           for identity in ("FR-001", "FR-002", "FR-003", "FR-004")}, {
@@ -87,7 +87,7 @@ class ComputedStatusTests(Fixture):
         })
 
     def test_computed_status_of_each_mix_of_states(self):
-        """TR-12: each mix of clause states gives the status the rule names."""
+        """TV-075 (TR-12): each mix of clause states gives the status the rule names."""
         mixes = {
             (): "target",
             ("target", "target"): "target",
@@ -102,7 +102,7 @@ class ComputedStatusTests(Fixture):
                 self.assertEqual(tool.computed_status(list(states)), status)
 
     def test_status_lines_name_each_fr_with_its_counts(self):
-        """TR-12: status prints each FR's computed status with its clause counts, then the summary."""
+        """TV-076 (TR-12): status prints each FR's computed status with its clause counts, then the summary."""
         self.assertEqual(tool.status_lines(self.catalog()), [
             "FR-001 implemented: 2 clauses, 2 implemented, 0 partial, 0 target",
             "FR-002 partial: 2 clauses, 1 implemented, 0 partial, 1 target",
@@ -112,7 +112,7 @@ class ComputedStatusTests(Fixture):
         ])
 
     def test_fr_stating_a_status_is_refused(self):
-        """TR-12: an FR that states a status or a code link is refused."""
+        """TV-077 (TR-12): an FR that states a status or a code link is refused."""
         for label, statement in (("status", "@Status { build = ImplementationState::implemented; }"),
                                  ("code link", '@ImplementedIn { module = "server/src/clock.rs"; }')):
             with self.subTest(label):

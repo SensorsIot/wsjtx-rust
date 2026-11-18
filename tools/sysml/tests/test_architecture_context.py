@@ -79,12 +79,12 @@ def owner_faults(text):
 
 class ShackContextOwnerTests(unittest.TestCase):
     def test_outside_things_join_their_owners(self):
-        """TR-07: each outside thing of ShackContext has the ports the owner table lists,
+        """TV-001 (TR-07): each outside thing of ShackContext has the ports the owner table lists,
         each joined once, through an interface of interfaces/external, to its function."""
         self.assertEqual(owner_faults(CONTEXT.read_text(encoding="utf-8")), [])
 
     def test_each_difference_from_the_table_is_found(self):
-        """TR-07: an outside thing added or removed, a join removed, doubled, moved to another
+        """TV-002 (TR-07): an outside thing added or removed, a join removed, doubled, moved to another
         function or typed by an internal interface differs from the table."""
         text = CONTEXT.read_text(encoding="utf-8")
         mutations = {

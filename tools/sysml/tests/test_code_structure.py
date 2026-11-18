@@ -87,13 +87,13 @@ class CodeStructureTest(unittest.TestCase):
             return tool.fault_lines(tool.structure_faults(model, links, root))
 
     def test_each_module_in_one_part_folder_is_accepted(self):
-        """TR-17: each module in one part's folder, a module and a page outside it named by
+        """TV-040 (TR-17): each module in one part's folder, a module and a page outside it named by
         the part's CodeDiffers, a shared module, test files and modules declared only under
         `#[cfg(test)]` or from a test file are accepted."""
         self.assertEqual(self.faults(), [])
 
     def test_module_of_no_part_is_refused(self):
-        """TR-17: a module no part names outside server/src/shared/ is refused."""
+        """TV-041 (TR-17): a module no part names outside server/src/shared/ is refused."""
         cases = {
             "new file": ([("server/src/clock/extra.rs", None, "pub fn extra() {}\n")],
                          ["module of no part: server/src/clock/extra.rs"]),
@@ -108,7 +108,7 @@ class CodeStructureTest(unittest.TestCase):
                 self.assertEqual(self.faults(edits), expected)
 
     def test_module_of_two_parts_is_refused(self):
-        """TR-17: a module two part definitions name is refused."""
+        """TV-042 (TR-17): a module two part definitions name is refused."""
         edits = [(TRANSMIT_PART, '"server/src/transmit/schedule.rs"', '"server/src/transmit/schedule.rs; server/src/clock/air.rs"')]
         self.assertEqual(self.faults(edits), [
             "module of TransmitService outside its folder without CodeDiffers: server/src/clock/air.rs",
@@ -116,7 +116,7 @@ class CodeStructureTest(unittest.TestCase):
         ])
 
     def test_module_outside_its_folder_unmarked_is_refused(self):
-        """TR-17: a part's module, or a module its clause names, outside the part's folder
+        """TV-043 (TR-17): a part's module, or a module its clause names, outside the part's folder
         and not named by its CodeDiffers is refused."""
         cases = {
             "part's module": ([(CLOCK_PART, MARKER, MARKER.replace("server/src/time/sync.rs, ", ""))],
@@ -131,7 +131,7 @@ class CodeStructureTest(unittest.TestCase):
                 self.assertEqual(self.faults(edits), expected)
 
     def test_marker_naming_a_module_inside_is_refused(self):
-        """TR-17: a CodeDiffers naming a module inside the part's folder is refused."""
+        """TV-044 (TR-17): a CodeDiffers naming a module inside the part's folder is refused."""
         for inside in ("server/src/clock/air.rs", "client/src/clock/clock.css"):
             with self.subTest(inside):
                 edits = [(CLOCK_PART, "client/clock.html and", f"client/clock.html, {inside} and")]

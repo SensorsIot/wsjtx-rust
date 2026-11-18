@@ -108,12 +108,12 @@ def content_lines(files: dict[str, str]) -> list[str]:
 
 class FileContentsTest(unittest.TestCase):
     def test_accepted(self):
-        """TR-05: Requirements, Shack, Context and UseCases in the forms of M4.1 to M4.3 and M4.9
+        """TV-071 (TR-05): Requirements, Shack, Context and UseCases in the forms of M4.1 to M4.3 and M4.9
         are accepted."""
         self.assertEqual(content_lines(ACCEPTED), [])
 
     def test_negatives(self):
-        """TR-05: each way to break what a file holds is refused with its one fault line."""
+        """TV-072 (TR-05): each way to break what a file holds is refused with its one fault line."""
         for way, key, old, new, expected in NEGATIVES:
             with self.subTest(way):
                 files = dict(ACCEPTED)
@@ -122,7 +122,7 @@ class FileContentsTest(unittest.TestCase):
                 self.assertEqual(content_lines(files), [expected])
 
     def test_real_model_contents(self):
-        """TR-05: the real model `docs/sysml` holds in each file what M4 allows."""
+        """TV-073 (TR-05): the real model `docs/sysml` holds in each file what M4 allows."""
         self.assertEqual(tool.fault_lines(tool.content_faults(tool.Model(ROOT / "docs/sysml"))), [])
 
 

@@ -215,7 +215,7 @@ class DeploymentRuleTests(unittest.TestCase):
                 self.assertCountEqual(self.faults(state), expected)
 
     def test_finished_form_passes_every_deployment_rule(self):
-        """TR-06: the finished deployment, with Halt as a whole-message command and an
+        """TV-018 (TR-06): the finished deployment, with Halt as a whole-message command and an
         abstract command item that typed items subset, passes TR-06 to TR-08."""
         self.assertEqual(self.faults("base"), [])
         records = self.records("base")
@@ -228,14 +228,14 @@ class DeploymentRuleTests(unittest.TestCase):
                       [row[:5] for row in records["PITEM"]])
 
     def test_each_role_missing_is_refused(self):
-        """TR-06: each role of M2.2 and M5.5 removed alone is refused, with every role inside it."""
+        """TV-019 (TR-06): each role of M2.2 and M5.5 removed alone is refused, with every role inside it."""
         self.assertEqual(len(ROLES), 25)
         for role in ROLES:
             with self.subTest(role=role):
                 self.assertCountEqual(self.faults("no " + role), role_case(role))
 
     def test_roles_at_their_places_and_multiplicities(self):
-        """TR-06: one deployment, stations of any number, one catAdapter, ranking inside
+        """TV-020 (TR-06): one deployment, stations of any number, one catAdapter, ranking inside
         operating, and no view that adds a part."""
         self.assert_cases({
             "stations 1..1": [f"role with multiplicity 1..1: {STATIONS}"],
@@ -246,7 +246,7 @@ class DeploymentRuleTests(unittest.TestCase):
         })
 
     def test_browser_client_has_one_port_to_web(self):
-        """TR-06: the browser client has one port toward the station, joined to web, and the
+        """TV-021 (TR-06): the browser client has one port toward the station, joined to web, and the
         frontend connects to nothing else of the station."""
         self.assert_cases({
             "second browser port to the station": [f"browser client with 2 ports toward the station: {BROWSERS}"],
@@ -257,7 +257,7 @@ class DeploymentRuleTests(unittest.TestCase):
         })
 
     def test_outside_things_are_black_boxes_joined_once_to_a_function(self):
-        """TR-07: an outside thing holds ports only, each joined once, through an interface of
+        """TV-022 (TR-07): an outside thing holds ports only, each joined once, through an interface of
         interfaces/external, to a station function, and is no requirement's subject."""
         self.assert_cases({
             "outside part with a part": ["outside thing with PartUsage board: context.catRadio"],
@@ -272,7 +272,7 @@ class DeploymentRuleTests(unittest.TestCase):
         })
 
     def test_connections_typed_and_items_not_empty(self):
-        """TR-08: every connection is typed by an interface of interfaces/; no port item is
+        """TV-023 (TR-08): every connection is typed by an interface of interfaces/; no port item is
         untyped, typed by a definition with neither doc nor feature, or an abstract item no
         typed item subsets."""
         self.assert_cases({
@@ -303,18 +303,18 @@ class AgentCommandTests(unittest.TestCase):
             return tool.fault_lines(tool.agent_faults(model))
 
     def test_finished_form_passes(self):
-        """TR-06: AgentOperations removes exactly the commands AgentRefusal names and mcp's
+        """TV-024 (TR-06): AgentOperations removes exactly the commands AgentRefusal names and mcp's
         port toward the supervisor is typed by it."""
         self.assertEqual(self.faults(), [])
 
     def test_mcp_offering_a_refused_command_is_refused(self):
-        """TR-06: an AgentRefusal command that AgentOperations keeps is refused."""
+        """TV-025 (TR-06): an AgentRefusal command that AgentOperations keeps is refused."""
         line = line_of((), STATION_COMMANDS, AGENT_PORT)
         self.assertEqual(self.faults([(STATION_COMMANDS, SAVE_SHACK_REMOVED, "")]),
                          [f"mcp offers the refused command saveShack: {STATION_COMMANDS}:{line}"])
 
     def test_mcp_port_typed_by_every_command_is_refused(self):
-        """TR-06: mcp's port toward the supervisor typed by StationOperations offers the refused commands."""
+        """TV-026 (TR-06): mcp's port toward the supervisor typed by StationOperations offers the refused commands."""
         edits = [(MCP, "    private import WstxStationCommands::AgentOperations;\n",
                   "    private import WstxStationCommands::StationOperations;\n"),
                  (MCP, MCP_PORT, "        port supervisor : StationOperations;\n")]
@@ -323,13 +323,13 @@ class AgentCommandTests(unittest.TestCase):
                                                    f"mcp offers every command of StationOperations: {MCP}:{line}"])
 
     def test_mcp_lacking_another_command_is_refused(self):
-        """TR-06: a command AgentOperations removes that AgentRefusal does not name is refused."""
+        """TV-027 (TR-06): a command AgentOperations removes that AgentRefusal does not name is refused."""
         edits = [(STATION_COMMANDS, SAVE_SHACK_REMOVED, SAVE_SHACK_REMOVED + "        out item :>> halt[0];\n")]
         line = line_of(edits, STATION_COMMANDS, "        out item :>> halt[0];\n")
         self.assertEqual(self.faults(edits), [f"mcp lacks the command halt: {STATION_COMMANDS}:{line}"])
 
     def test_refusal_literal_naming_no_command_is_refused(self):
-        """TR-06: an AgentRefusal literal that names no command of StationOperations is refused."""
+        """TV-028 (TR-06): an AgentRefusal literal that names no command of StationOperations is refused."""
         edits = [(STATION_COMMANDS, SAVE_SHACK_LITERAL, SAVE_SHACK_LITERAL + "        enum saveRig;\n")]
         line = line_of(edits, STATION_COMMANDS, "        enum saveRig;\n")
         self.assertEqual(self.faults(edits), [f"AgentRefusal literal saveRig names no command: {STATION_COMMANDS}:{line}"])

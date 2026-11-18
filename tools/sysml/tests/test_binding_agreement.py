@@ -79,7 +79,7 @@ class BindingAgreementTests(unittest.TestCase):
         return str(refused.exception)
 
     def test_tagged_tests_in_their_bindings_are_accepted(self):
-        """TR-14: tests in a bound file, tests bound by name, and a manual case's untagged file are accepted."""
+        """TV-029 (TR-14): tests in a bound file, tests bound by name, and a manual case's untagged file are accepted."""
         accepted = {
             "file": [],
             "test names": [(MODEL_KEY, case("TC-022-004"), case(
@@ -92,7 +92,7 @@ class BindingAgreementTests(unittest.TestCase):
                 self.assertIsNone(tool.binding_agreement(self.build(changes), self.root))
 
     def test_each_test_or_file_outside_the_binding_is_refused(self):
-        """TR-14: a tagged test its case's binding lacks, a bound file without a test that names the case,
+        """TV-030 (TR-14): a tagged test its case's binding lacks, a bound file without a test that names the case,
         a tag on no test and a bound test name that no test has are each refused."""
         faults = {
             "binding lacking the test": (

@@ -1,4 +1,4 @@
-// Fixture of the model-value readers (TC-DOC-014): each value here is refused; the reasons
+// Fixture of the model-value readers (TR-20): each value here is refused; the reasons
 // are in ../expected.json.
 package FixtureFaults {
     private import ScalarValues::*;

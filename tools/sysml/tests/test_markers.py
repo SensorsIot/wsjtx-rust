@@ -168,7 +168,7 @@ class MarkerListingTests(unittest.TestCase):
         return status, output.getvalue(), errors.getvalue()
 
     def test_markers_lists_every_marker_by_key_and_line_with_counts_by_kind(self):
-        """TR-20: every marker of a WstxModelNotes kind is listed by key and line, then the
+        """TV-085 (TR-20): every marker of a WstxModelNotes kind is listed by key and line, then the
         counts by kind; a binding, a doc and a string are not markers."""
         before = self.hashes()
         with self.subTest("the model is one the catalog refuses"), self.assertRaises(ValueError):
@@ -196,12 +196,12 @@ class MarkerListingTests(unittest.TestCase):
                                                  "0 DiffersFromSource, 0 FollowsSource, 0 LeftOpen, 0 NotStated\n", ""))
 
     def test_markers_lists_a_joined_value_as_one_text(self):
-        """TR-20: a marker value of literals joined by `+` is listed as one text."""
+        """TV-086 (TR-20): a marker value of literals joined by `+` is listed as one text."""
         self.write(JOINED_KEY, JOINED)
         self.assertEqual(self.markers("NotStated"), (0, JOINED_LISTING, ""))
 
     def test_markers_refuses_a_kind_that_is_not_a_wstxmodelnotes_kind(self):
-        """TR-20: a kind that no WstxModelNotes `metadata def` declares is refused and nothing is listed."""
+        """TV-087 (TR-20): a kind that no WstxModelNotes `metadata def` declares is refused and nothing is listed."""
         before = self.hashes()
         for unknown in ("Status", "ImplementedIn", "Local", "Deferred", "InADoc", "notstated"):
             with self.subTest(unknown=unknown):
@@ -211,7 +211,7 @@ class MarkerListingTests(unittest.TestCase):
         self.assertEqual(self.hashes(), before)
 
     def test_markers_without_a_wstxmodelnotes_file_lists_none(self):
-        """TR-20: without a file of package WstxModelNotes there is no kind and no marker."""
+        """TV-088 (TR-20): without a file of package WstxModelNotes there is no kind and no marker."""
         (self.models / NOTES_KEY).unlink()
         with self.subTest("no WstxModelNotes file"):
             self.assertEqual(self.markers(), (0, "0 markers\n", ""))
@@ -223,7 +223,7 @@ class MarkerListingTests(unittest.TestCase):
             self.assertIn("Unknown marker kind: NotStated\n", errors)
 
     def test_markers_needs_the_authority_marker(self):
-        """TR-20: `markers` refuses a model without the authority marker and writes nothing."""
+        """TV-089 (TR-20): `markers` refuses a model without the authority marker and writes nothing."""
         self.write("Requirements.sysml", ENTRY.split("\n", 1)[1])
         before = self.hashes()
         status, output, errors = self.markers()

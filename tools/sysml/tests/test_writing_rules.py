@@ -117,18 +117,18 @@ def broken(key: str, old: str, new: str) -> dict[str, str]:
 
 class WritingRulesTest(unittest.TestCase):
     def test_accepted(self):
-        """TR-18: the model's forms, a joined path at `; ` and a line of 100 columns are accepted."""
+        """TV-147 (TR-18): the model's forms, a joined path at `; ` and a line of 100 columns are accepted."""
         self.assertEqual(len(COLUMNS_100), 100)
         self.assertEqual(writing_lines(ACCEPTED), [])
 
     def test_negatives(self):
-        """TR-18: each way to break the writing rules is refused with its one fault line."""
+        """TV-148 (TR-18): each way to break the writing rules is refused with its one fault line."""
         for way, key, old, new, expected in NEGATIVES:
             with self.subTest(way):
                 self.assertEqual(writing_lines(broken(key, old, new)), [expected])
 
     def test_doc_line_names_no_element(self):
-        """TR-18: a word that begins a wrapped doc line is no element of the file, so a clause
+        """TV-149 (TR-18): a word that begins a wrapped doc line is no element of the file, so a clause
         naming only that word names no element of its file."""
         files = broken(STATION_CLOCK, "by the TickRule", "by the length of a second")
         files = broken_in(files, STATION_CLOCK, "        attribute tickRate",
@@ -137,7 +137,7 @@ class WritingRulesTest(unittest.TestCase):
         self.assertEqual(writing_lines(files), [f"CL-001-01 names no element of its file: {STATION_CLOCK}:3"])
 
     def test_real_model_writing(self):
-        """TR-18: the real model `docs/sysml` meets the writing rules."""
+        """TV-150 (TR-18): the real model `docs/sysml` meets the writing rules."""
         self.assertEqual(tool.fault_lines(tool.writing_faults(tool.Model(ROOT / "docs/sysml"))), [])
 
 

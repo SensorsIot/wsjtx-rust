@@ -38,7 +38,7 @@ class TraceSelectionTests(unittest.TestCase):
         cls.rows = registry.parse((ROOT / "harness/project/suites.yaml").read_text(encoding="utf-8"))
 
     def test_code_changes_select_fast_trace_check_without_full_model_suite(self):
-        """TR-02: a code change selects traces, not the full model suite."""
+        """TV-122 (TR-02): a code change selects traces, not the full model suite."""
         for source in ("client/app.js", "server/src/profile.rs", "tests/profiles.test.cjs"):
             with self.subTest(source=source):
                 selected = registry.selection(self.rows, [source])
@@ -52,13 +52,13 @@ class TraceSelectionTests(unittest.TestCase):
 
     # A guard of existing behaviour.
     def test_model_file_in_a_subfolder_selects_the_model_suites(self):
-        """TR-02: a model file in a subfolder selects the model suites."""
+        """TV-123 (TR-02): a model file in a subfolder selects the model suites."""
         selected = registry.selection(self.rows, ["docs/sysml/backend/qso/X.sysml"])
         self.assertIn("sysml-documentation", selected)
         self.assertIn("source-model-traces", selected)
 
     def test_source_change_or_deletion_invalidates_both_evidence_fingerprints(self):
-        """TR-02: a source change or deletion invalidates both evidence fingerprints."""
+        """TV-124 (TR-02): a source change or deletion invalidates both evidence fingerprints."""
         for source in ("client/app.js", "server/src/profile.rs", "tests/profiles.test.cjs"):
             self.assertFalse(registry.global_input(source, self.rows), "Regression needs a source owned by its runtime suite, not global fallback")
             before = [(source, "100644", "independent-source-before")]
@@ -71,7 +71,7 @@ class TraceSelectionTests(unittest.TestCase):
                     self.assertNotEqual(original, registry.fingerprint(row, [], self.rows))
 
     def test_every_admitted_source_root_is_fingerprinted_and_selects_fast_traces(self):
-        """TR-02: every source root is fingerprinted and selects traces."""
+        """TV-125 (TR-02): every source root is fingerprinted and selects traces."""
         for root in tool.SOURCE_BINDING_ROOTS:
             prefix = root + "/"
             for name in ("source-model-traces", "sysml-documentation"):
@@ -89,7 +89,7 @@ class TraceSelectionTests(unittest.TestCase):
 
     # T1: model edits run the working-model checks, not the Pilot validator tests.
     def test_model_and_model_data_changes_select_the_working_model_suite_not_the_validator(self):
-        """TR-02: a model edit selects the working-model suite, not the validator tests."""
+        """TV-126 (TR-02): a model edit selects the working-model suite, not the validator tests."""
         for path in ("docs/sysml/Station.sysml", "docs/sysml/Context.sysml",
                      "docs/sysml/interfaces/internal/StationLink.sysml",
                      "tools/sysml/architecture-oracle.json", "tools/sysml/pending-structure.json"):
@@ -102,7 +102,7 @@ class TraceSelectionTests(unittest.TestCase):
     # T2: the tool selects both architecture suites; the validator, its library pin
     # and its test files the validator suite; the working-model module its own suite.
     def test_tool_changes_select_the_architecture_suites_they_feed(self):
-        """TR-02: a tool change selects the architecture suites it feeds."""
+        """TV-127 (TR-02): a tool change selects the architecture suites it feeds."""
         self.assert_selection("tools/sysml.py", (CONTEXT, VALIDATOR), ())
         pattern, = discover_patterns(self.rows)[VALIDATOR]
         validator_tests = sorted(p.name for p in TESTS.glob("test_*.py") if fnmatch.fnmatch(p.name, pattern))
@@ -119,7 +119,7 @@ class TraceSelectionTests(unittest.TestCase):
 
     # T3, a guard of existing behaviour: the suite definitions select both suites.
     def test_suite_definitions_select_both_architecture_suites(self):
-        """TR-02: the suite definitions select both architecture suites."""
+        """TV-128 (TR-02): the suite definitions select both architecture suites."""
         architecture = [name for name in self.rows if name.startswith(VALIDATOR)]
         self.assertIn(VALIDATOR, architecture)
         self.assert_selection("harness/project/suites.yaml", architecture, ())
@@ -127,7 +127,7 @@ class TraceSelectionTests(unittest.TestCase):
     # T4: source edits select neither architecture suite; they invalidate the
     # validator suite's evidence (its pinned checks read them), not the working-model suite's.
     def test_source_change_selects_neither_architecture_suite_and_invalidates_only_the_validator(self):
-        """TR-02: a source edit selects neither architecture suite and invalidates only the validator's evidence."""
+        """TV-129 (TR-02): a source edit selects neither architecture suite and invalidates only the validator's evidence."""
         for source in SOURCES:
             with self.subTest(source=source):
                 self.assert_selection(source, (), (CONTEXT, VALIDATOR))
@@ -142,7 +142,7 @@ class TraceSelectionTests(unittest.TestCase):
 
     # T5, a guard of existing behaviour: every test file runs in exactly one suite.
     def test_every_sysml_test_file_runs_in_exactly_one_suite(self):
-        """TR-02: every tool test file runs in exactly one suite."""
+        """TV-130 (TR-02): every tool test file runs in exactly one suite."""
         patterns = discover_patterns(self.rows)
         names = sorted(p.name for p in TESTS.glob("test_*.py"))
         self.assertIn(WORKING_MODEL_MODULE, names)

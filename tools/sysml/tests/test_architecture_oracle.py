@@ -310,7 +310,7 @@ class OracleCommandTests(unittest.TestCase):
         return [line for line in lines if not line.startswith("Architecture oracle ")]
 
     def test_oracle_then_check_round_trip(self):
-        """TR-09: `oracle` writes the deployment and prints each addition; the comparison
+        """TV-013 (TR-09): `oracle` writes the deployment and prints each addition; the comparison
         passes; `oracle` again leaves the file; an added connection is refused until
         `oracle` lists it."""
         code, lines, err = self.run_command("oracle", "base")
@@ -343,7 +343,7 @@ class OracleCommandTests(unittest.TestCase):
         self.assertEqual(self.compare("connection"), {"parts": 12, "references": 0, "ports": 6, "connections": 4})
 
     def test_each_edit_prints_its_change_line(self):
-        """TR-09: one edit at a time, each followed by `oracle`: exactly the line written before the run."""
+        """TV-014 (TR-09): one edit at a time, each followed by `oracle`: exactly the line written before the run."""
         self.assertEqual(self.run_command("oracle", "base")[0], 0)
         for state, expected in SEQUENCE:
             with self.subTest(state=state, expected=expected):
@@ -355,7 +355,7 @@ class OracleCommandTests(unittest.TestCase):
                          {"items": {"job": ["out", "WstxReceiveControl::ReceivePlan"]}})
 
     def test_refused_model_leaves_the_file(self):
-        """TR-09: a model the fixed rules or the Pilot refuse leaves the oracle file as it was,
+        """TV-015 (TR-09): a model the fixed rules or the Pilot refuse leaves the oracle file as it was,
         absent or present; no other command creates or changes it."""
         refused = {"second deployment": "expected one physical deployment",
                    "view part": "views may expose, not create runtime parts/connections"}
@@ -396,7 +396,7 @@ class OracleCommandTests(unittest.TestCase):
         self.assertEqual(digest(self.oracle), before)
 
     def test_fixed_rules_on_the_deployment(self):
-        """TR-09: the inventory starts at the one package-level part usage; the fixed rules
+        """TV-016 (TR-09): the inventory starts at the one package-level part usage; the fixed rules
         refuse none, two, or a view that adds a part."""
         records = tool.inventory_records(self.inventory("base").stdout)
         self.assertEqual(records["ROOTPART"], [["WstxContext::context"]])
@@ -412,7 +412,7 @@ class OracleCommandTests(unittest.TestCase):
             tool.fixed_rules(tool.inventory_records("AST\tROOTS\t0\n"))
 
     def test_outside_port_joined_to_a_function(self):
-        """TR-09: an outside thing's port joined to a function passes; unjoined, `oracle`
+        """TV-017 (TR-09): an outside thing's port joined to a function passes; unjoined, `oracle`
         prints the removed connection and the comparison refuses the port."""
         self.assertEqual(self.run_command("oracle", "base")[0], 0)
         self.compare("base")

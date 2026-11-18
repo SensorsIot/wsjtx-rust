@@ -17,7 +17,7 @@ spec.loader.exec_module(tool)
 
 class ValidatorTests(unittest.TestCase):
     def test_actual_pilot_rejects_files_that_stitch_invalid_syntax(self):
-        """TR-02: files that only stitch into valid syntax are refused, each named."""
+        """TV-111 (TR-02): files that only stitch into valid syntax are refused, each named."""
         cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
         with tempfile.TemporaryDirectory() as directory:
             first, second = (Path(directory) / name for name in ("A.sysml", "B.sysml"))
@@ -33,7 +33,7 @@ class ValidatorTests(unittest.TestCase):
                         self.assertNotIn("validation passed", result.stdout)
 
     def test_actual_pilot_resolves_complete_graph_and_keeps_file_diagnostics(self):
-        """TR-02: file order hides neither a valid reference nor its diagnostic."""
+        """TV-112 (TR-02): file order hides neither a valid reference nor its diagnostic."""
         cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
         with tempfile.TemporaryDirectory() as directory:
             consumer = Path(directory) / "AConsumer.sysml"
@@ -53,7 +53,7 @@ class ValidatorTests(unittest.TestCase):
 
     # This invokes the real parser/resolver, not a mock.
     def test_actual_pilot_accepts_valid_and_rejects_syntax_and_reference(self):
-        """TR-02: the Pilot accepts a valid model and refuses a syntax error and an unresolved name."""
+        """TV-113 (TR-02): the Pilot accepts a valid model and refuses a syntax error and an unresolved name."""
         cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "case.sysml"
@@ -70,7 +70,7 @@ class ValidatorTests(unittest.TestCase):
                     self.assertIn(diagnostic, result.stdout)
 
     def test_missing_tool_never_reports_semantic_pass(self):
-        """TR-02: a missing Java or JAR never reports a semantic pass."""
+        """TV-114 (TR-02): a missing Java or JAR never reports a semantic pass."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model = root / "valid.sysml"
@@ -82,7 +82,7 @@ class ValidatorTests(unittest.TestCase):
             self.assertNotIn("validation passed", output.getvalue())
 
     def test_empty_or_corrupt_cached_library_is_refused(self):
-        """TR-02: an empty or corrupt cached library is refused."""
+        """TV-115 (TR-02): an empty or corrupt cached library is refused."""
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory)
             packages = tool.json.loads(tool.TOOLCHAIN.read_text(encoding="utf-8"))

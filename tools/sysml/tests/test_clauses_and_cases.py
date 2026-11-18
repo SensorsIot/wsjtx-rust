@@ -128,11 +128,11 @@ class ClauseTests(unittest.TestCase):
         return tool.fault_lines(tool.clause_faults(tool.Model(self.models), entries, SERVED, ENDS))
 
     def test_skeleton_case_target_clause_and_interface_clause_are_accepted(self):
-        """TR-11: a skeleton case, a target clause without case and an interface clause from an end's FR."""
+        """TV-034 (TR-11): a skeleton case, a target clause without case and an interface clause from an end's FR."""
         self.assertEqual(self.faults(), [])
 
     def test_debugging_clause_without_step_is_accepted(self):
-        """TR-11: a clause of a debugging function carries no use-case step."""
+        """TV-035 (TR-11): a clause of a debugging function carries no use-case step."""
         self.assertEqual(self.faults([
             ("UseCases.sysml", "            requirement :> WstxStationClock::'CL-043-02';\n", ""),
             (FUNCTION_KEY, "@Status { build = ImplementationState::target; }",
@@ -140,7 +140,7 @@ class ClauseTests(unittest.TestCase):
         ]), [])
 
     def test_each_fault_of_a_clause_or_case_is_refused(self):
-        """TR-11: each way to break the rules of clauses and cases is refused with its message, key and line."""
+        """TV-036 (TR-11): each way to break the rules of clauses and cases is refused with its message, key and line."""
         faults = {
             "clause without subject": (
                 [(FUNCTION_KEY, "    requirement 'CL-043-01' {\n        subject clock : ClockService;\n",

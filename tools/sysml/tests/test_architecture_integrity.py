@@ -569,7 +569,7 @@ class ArchitectureIntegrityTests(unittest.TestCase):
         self.assertRegex(str(refused.exception), "^Architecture integrity: " + message)
 
     def test_oracle_then_check_accepts_the_finished_form(self):
-        """TR-09: `oracle` writes the fixture's parts, ports and connections; `check`'s
+        """TV-003 (TR-09): `oracle` writes the fixture's parts, ports and connections; `check`'s
         comparison then passes with the fixture's counts; `oracle` again leaves the file."""
         code, lines, err = self.written
         self.assertEqual(code, 0, err)
@@ -592,13 +592,13 @@ class ArchitectureIntegrityTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), self.oracle_path.read_bytes())
 
     def test_other_about_text_is_accepted(self):
-        """TR-09: the oracle's free `about` text does not take part in the comparison."""
+        """TV-004 (TR-09): the oracle's free `about` text does not take part in the comparison."""
         oracle = self.oracle()
         oracle["about"] = "another free text"
         self.assertEqual(self.judge(self.inventory("base"), oracle), COUNTS)
 
     def test_each_oracle_entry_removed_is_refused(self):
-        """TR-09: each entry of the written oracle, removed alone, is refused."""
+        """TV-005 (TR-09): each entry of the written oracle, removed alone, is refused."""
         oracle = self.oracle()
         removals = [("root", lambda copy: copy.pop("root"), "Invalid architecture oracle: missing section: root$")]
         for section in ("parts", "references", "contracts", "ports", "connections", "bindings"):
@@ -632,29 +632,29 @@ class ArchitectureIntegrityTests(unittest.TestCase):
                     self.assertRegex(str(refused.exception), "^Architecture integrity: (?:" + expected + ")")
 
     def test_removed_connection_is_refused(self):
-        """TR-09: a connection the oracle lists, removed from the model, is refused."""
+        """TV-006 (TR-09): a connection the oracle lists, removed from the model, is refused."""
         self.refuses("removed connection", re.escape(f"missing required connection at {BACKEND} "
                                                      "receive.jobs <-> supervisor.receive") + "$")
 
     def test_wrong_port_type_is_refused(self):
-        """TR-09: a port typed otherwise than the oracle lists is refused: the conjugate
+        """TV-007 (TR-09): a port typed otherwise than the oracle lists is refused: the conjugate
         turns its items' directions, another definition is another port definition."""
         self.refuses("conjugation", re.escape(f"wrong exchange direction {BACKEND}.receive.jobs.job") + "$")
         self.refuses("other port definition", re.escape(f"wrong port definition {BACKEND}.receive.jobs") + "$")
 
     def test_wrong_item_type_is_refused(self):
-        """TR-09: an item of another type than the oracle's contract is refused."""
+        """TV-008 (TR-09): an item of another type than the oracle's contract is refused."""
         self.refuses("item type", re.escape(f"wrong semantic item type {BACKEND}.receive.jobs.job") + "$")
 
     def test_unlisted_part_port_and_connection_are_refused(self):
-        """TR-09: a part, a port or a connection the oracle does not list is refused."""
+        """TV-009 (TR-09): a part, a port or a connection the oracle does not list is refused."""
         self.refuses("unlisted part", re.escape(f"unexpected part {BACKEND}.archive") + "$")
         self.refuses("unlisted port", re.escape(f"missing or unexpected boundary port roles ['{BACKEND}.supervisor.spare']") + "$")
         self.refuses("unlisted connection", re.escape(f"unexpected connection/bypass at {STATIONS} "
                                                       "backend.receive.jobs <-> backend.supervisor.receive") + "$")
 
     def test_fixed_rules_hold_whatever_the_oracle_lists(self):
-        """TR-09: a second deployment and a view that adds a part are refused, by `check`
+        """TV-010 (TR-09): a second deployment and a view that adds a part are refused, by `check`
         and by `oracle`, which then leaves the file as it was."""
         self.refuses("second deployment", "expected one physical deployment$")
         self.refuses("view part", "views may expose, not create runtime parts/connections$")
@@ -668,12 +668,12 @@ class ArchitectureIntegrityTests(unittest.TestCase):
                 self.assertEqual(self.oracle_path.read_bytes(), before)
 
     def test_missing_inventory_is_refused(self):
-        """TR-09: a validator output without the resolved inventory is refused."""
+        """TV-011 (TR-09): a validator output without the resolved inventory is refused."""
         with self.assertRaisesRegex(ValueError, "^Architecture integrity: missing resolved Pilot inventory$"):
             self.judge("OMG Pilot 0.62.0 syntax/name/semantic validation passed; behavior not executed.\n", self.oracle())
 
     def test_missing_or_malformed_oracle_file_is_refused(self):
-        """TR-09: the comparison refuses a missing or malformed oracle file whole."""
+        """TV-012 (TR-09): the comparison refuses a missing or malformed oracle file whole."""
         text = self.oracle_path.read_text(encoding="utf-8")
         anchor = '"ports": {\n'
         self.assertEqual(text.count(anchor), 1)

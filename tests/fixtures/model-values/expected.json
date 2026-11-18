@@ -1,5 +1,5 @@
 {
-  "source": "Hand-written list of the values in tree/ (TC-DOC-014, Project-Specifics 'Model values read by tests'), each taken from the fixture text by reading it, not from a reader. Exact values; a refusal matches when the reader's reason contains the reason given here. Both readers (server/src/model_values.rs, tests/model-values.cjs) are judged against this file, on an LF and a CRLF copy of tree/.",
+  "source": "Hand-written list of the values in tree/ (TR-20, Project-Specifics 'Model values read by tests'), each taken from the fixture text by reading it, not from a reader. Exact values; a refusal matches when the reader's reason contains the reason given here. Both readers (server/src/model_values.rs, tests/model-values.cjs) are judged against this file, on an LF and a CRLF copy of tree/.",
   "tree": "tree",
   "values": [
     { "name": "FixtureValues::pageRecords", "read": "plain", "expect": { "integer": 1 } },
