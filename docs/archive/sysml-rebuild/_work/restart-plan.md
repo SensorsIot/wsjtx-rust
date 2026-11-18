@@ -226,3 +226,6 @@ migrations; README in #235 or #231; where harness issues live.
    reference; the dial range becomes a property of `RigModel` from the catalogue.
 4. Decode tolerances and repeatability are promises: they stay in the model and the contract tests
    read them (V2).
+5. ThinLinkBudget gets a clause in StationLink ("the link to a browser MUST stay within
+   ThinLinkBudget"), at target; its case is a manual test judging the link log; implemented once
+   the operator has judged it.
