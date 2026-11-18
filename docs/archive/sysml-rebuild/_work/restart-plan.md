@@ -221,3 +221,6 @@ migrations; README in #235 or #231; where harness issues live.
 2. Not built (V3): a value is covered when a target or partial clause names its element or reaches
    it through typed features (M6.10), in any file; reached by an implemented clause too, it counts
    as built and must match the code.
+3. Source values (A4): `ModeProcessing::Period` (FT8/FT4 periods, starts, frames), the safe JSON
+   integer (2^53−1, three places) and `DialRange` leave the model's values; each keeps its source
+   reference; the dial range becomes a property of `RigModel` from the catalogue.
