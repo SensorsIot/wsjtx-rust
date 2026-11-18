@@ -91,7 +91,7 @@ const STATE_IDENTITY: [&str; 5] = [
     "snapshot_sequence",
     "monotonic_ms",
 ];
-/// WstxStationCommands::SelectionStateEvent: the snapshot GET /receive/selection gives this
+/// WstxStationCommands::SelectionState: the snapshot GET /receive/selection gives this
 /// station now.
 pub(crate) fn pushed_view(state: &ProfileState) -> Option<Value> {
     let cat = state.store.lock().ok()?.document.control.mode == "cat";
@@ -290,7 +290,8 @@ pub async fn select(
             store.document.control.mode == "cat",
         )
     };
-    // WstxQsoTransmit::ModeChange: no mode change while #9 keys the radio, transmits or
+    // WstxOperatingSelection::SelectionRule: no mode change while transmit keys the radio,
+    // transmits or
     // tunes (WSJT-X disables the mode controls while transmitting); nothing changes.
     // The owner lock can wait on a CAT exchange: read the view off the async runtime.
     if intent.action == "mode"

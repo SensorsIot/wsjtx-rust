@@ -12,6 +12,7 @@ const {once}=require('node:events');
 const crypto=require('node:crypto');
 const {chromium}=require('playwright');
 const {server,browserPort}=require('./support.cjs');
+const {openModel}=require('./model-values.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
@@ -43,11 +44,12 @@ function emptyResults(s){return {v:1,profile_id:s.profile_id,boot_id:s.boot_id,s
 
 async function chooseDisplay(page,value){
   await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
-  // Display preferences are a Settings section (WstxOperatingLayout::SettingsSection display).
+  // Display preferences are a Settings section (WstxSettings::DisplaySection).
   await page.locator('#open-server-settings').click();await page.selectOption('#display-profile',value);
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
 }
-// Proves: CL-006-03/04; TC-010-005. Browser preference fixtures, no synthesized source or decoded result.
+// Browser preference fixtures, no synthesized source or decoded result.
+// Proves: TC-010-005
 test('TC-010-005 explicit display choice survives reload and browser storage restoration',{timeout:20000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1440,height:900});
   const profile=(await (await fetch(app.origin+'/profile')).json()).profile_id,key=`wstx.display-profile.v1:${profile}`;
@@ -104,8 +106,8 @@ test('TC-010-005 runtime Thin fallback preserves explicit Detailed preference',{
   assert.equal(await page.inputValue('#display-profile'),'thin');assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-07/08; TC-007-002. Valid empty-state wire fixture only; no decoded messages or decoder-success claim.
-test('TC-007-002 empty live receive distinguishes listening from unavailable',{timeout:15000},async t=>{
+// Valid empty-state wire fixture only; no decoded messages or decoder-success claim.
+test('empty live receive distinguishes listening from unavailable',{timeout:15000},async t=>{
   let current,idle;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
     idle=await (await fetch(app.origin+'/receive')).json();current=liveFixture(idle);current.job.mode='ft4';
@@ -128,7 +130,7 @@ test('TC-007-002 empty live receive distinguishes listening from unavailable',{t
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-07, CL-010-08; TC-009-004. Negative delayed HTTP fixture; no decoder evidence.
+// Negative delayed HTTP fixture; no decoder evidence.
 test('receive result race cannot regress a newer cancelled snapshot',{timeout:15000},async t=>{
   const entered=deferred(),release=deferred();let current;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
@@ -146,7 +148,7 @@ test('receive result race cannot regress a newer cancelled snapshot',{timeout:15
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-07, CL-010-08; TC-009-004. Negative wire fixture through the actual listener.
+// Negative wire fixture through the actual listener.
 test('receive frame race updates its live owner while recording job is absent',{timeout:15000},async t=>{
   let current;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
@@ -163,11 +165,11 @@ test('receive frame race updates its live owner while recording job is absent',{
   assert.equal(await page.locator('#connection').getAttribute('data-state'),'connected');assert.deepEqual(errors,[]);
 });
 
-// Band Activity sorts by its column headers (WstxOperatingLayout::ActivityOrdering): a new
+// Band Activity sorts by its column headers (WstxBandActivityPane::Ordering): a new
 // header chooses its field with its default direction, the active header reverses it.
 async function clickSort(page,field){await page.locator(`#band-activity th[data-sort="${field}"]`).click();}
 async function sortState(page){return page.evaluate(()=>{const th=document.querySelector('#band-activity th[aria-sort=ascending],#band-activity th[aria-sort=descending]');return th?[th.dataset.sort,th.getAttribute('aria-sort')==='ascending'?'asc':'desc']:null;});}
-// Proves: CL-010-07, CL-010-08; TC-009-004. A pre-mutation read is not reconciliation evidence.
+// A pre-mutation read is not reconciliation evidence.
 test('receive snapshot race preserves unknown mutation until a later read',{timeout:15000},async t=>{
   const entered=deferred(),release=deferred();let hold=false;
   const {page,errors}=await fixture(t,{width:1440,height:900},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
@@ -191,7 +193,7 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// WstxQsoTransmit::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
+// WstxOperatingScreen::KeyRule: Escape aborts
 // the QSO but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
@@ -201,7 +203,8 @@ async function returnToOperation(page){
 }
 async function geometry(page){return page.evaluate(()=>{const box=id=>{const r=document.querySelector(id).getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};return {bar:box('#station-bar'),signal:box('#signal'),split:box('#splitter'),workspace:box('#controls'),overflow:document.documentElement.scrollWidth>innerWidth};});}
 
-// Proves: CL-010-05, CL-010-07, CL-010-08; TC-007-002 read-only layout subset.
+// Read-only layout subset.
+// Proves: TC-007-002
 test('TC-007-002 operating screen exposes literal identity and truthful unsupported controls',{timeout:20000},async t=>{
   const {page,errors}=await fixture(t,{width:1440,height:900});
   assert.equal(await page.locator('#operating-station').count(),1,'persistent operating station identity exists');
@@ -235,7 +238,8 @@ test('TC-007-002 operating screen exposes literal identity and truthful unsuppor
   await fs.mkdir('test-results/ui-operating',{recursive:true});await page.screenshot({path:'test-results/ui-operating/desktop.png',fullPage:true});assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-05, CL-010-08; TC-007-002 desktop/mobile/200% CSS viewport and keyboard.
+// Desktop/mobile/200% CSS viewport and keyboard.
+// Proves: TC-007-002
 test('TC-007-002 operating split, drawer and pages remain accessible at narrow and zoom equivalent sizes',{timeout:30000},async t=>{
   const {page,errors}=await fixture(t,{width:360,height:800});
   for(const viewport of [{width:360,height:800},{width:720,height:450}]){
@@ -264,8 +268,8 @@ test('TC-007-002 operating split, drawer and pages remain accessible at narrow a
   await page.setViewportSize({width:360,height:800});await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await page.screenshot({path:'test-results/ui-operating/mobile.png',fullPage:true});assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-07, CL-010-08; TC-007-002 link loss and no invented commands.
-test('TC-007-002 pointer resize and stale link preserve read-only authority',{timeout:20000},async t=>{
+// Link loss and no invented commands.
+test('pointer resize and stale link preserve read-only authority',{timeout:20000},async t=>{
   const {page,app,errors,sent}=await fixture(t,{width:1440,height:900});
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const separator=page.getByRole('separator'),before=Number(await separator.getAttribute('aria-valuenow')),box=await separator.boundingBox();
@@ -278,8 +282,9 @@ test('TC-007-002 pointer resize and stale link preserve read-only authority',{ti
 });
 
 
-// Proves: CL-010-05, CL-010-07, CL-010-08, CL-010-16, CL-050-01; TC-007-002, TC-050-001 agreed design and authority-preserving regions.
-test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activity and the QSO pane with truthful state',{timeout:30000},async t=>{
+// Agreed design and authority-preserving regions.
+// Proves: TC-050-001
+test('agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activity and the QSO pane with truthful state',{timeout:30000},async t=>{
  const {page,errors,sent}=await fixture(t,{width:1200,height:1200});
  assert.equal(Math.round((await page.locator('#signal').boundingBox()).height),330,'#54: a sufficiently tall desktop starts with the taller signal height (about 2 FT8 periods at 10 px/s)');
  await page.setViewportSize({width:1200,height:800});
@@ -319,7 +324,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).count(),0,`${id} is gone`);
  assert.equal(await page.locator('#activity-value').isVisible(),true,'the Value control is visible');
  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
- // WstxQsoWire::OperatorDisplays (D11): server UTC in the top bar. #50: one period bar only, the QSO pane's NEXT bar.
+ // WstxOperatingScreen::TimeRule: server UTC in the top bar. One period bar only, the QSO pane's NEXT bar (WstxQsoPane::PeriodBar).
  await page.locator('#radio-toolbar .op-period > span').filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
  assert.deepEqual(await page.locator('#radio-toolbar .op-period').evaluate(p=>[p.children.length,!!p.querySelector('.op-period-track,small')]),[1,false],'no period bar in the top bar');
  assert.equal(await page.locator('#rx-focus .op-qso-progress #qso-progress').count(),1,'the period bar stays in the QSO pane');
@@ -337,7 +342,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 });
 
 // ---------------------------------------------------------------- #37 operating screen
-// WstxOperatingLayout::OperatingScreen and friends (operator design interview 2026-11-01). The
+// WstxOperatingScreen::ScreenLayout and friends. The
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#qso-halt','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#contact-tune','#qso-halt','#contact-log'];
@@ -356,9 +361,9 @@ const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'sele
 // Records a page's contact commands and answers them like the station (202) without effects.
 async function contactCommands(page,commands){await page.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});}
 
-// Proves: CL-011-03; TC-007-008 (#11 live stall 2026-11-02, IW9FRA): with Auto Seq off the
+// With Auto Seq off the
 // QSO pane says so, and the partner's RR73 in roger_report offers 73 as one action.
-test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 next',{timeout:40000},async t=>{
+test('Auto Seq off is shown on the QSO pane and an RR73 offers 73 next',{timeout:40000},async t=>{
   const commands=[];let contact=null,settings={auto_seq:false};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
@@ -406,14 +411,13 @@ test('TC-007-008 Auto Seq off is shown on the QSO pane and an RR73 offers 73 nex
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16, CL-010-06; TC-007-009 the compact QSO pane (#37, operator decisions
-// 2026-11-02, items 1-10): the running QSO only, NEXT only while armed, "✓ Logged <call>"
+// The compact QSO pane: the running QSO only, NEXT only while armed, "✓ Logged <call>"
 // for a few seconds, nothing of a finished contact, about half the height.
-// Proves: CL-050-05, CL-050-06; TC-050-005, TC-050-006 (c) (#37, operator 2026-11-02 and
-// 2026-11-04): Calling me lists only stations calling my call, every one but the partner, with
+// Calling me lists only stations calling my call, every one but the partner, with
 // call, SNR, grid and country (⚠ during a QSO within ±50 Hz of my Rx or Tx offset), below the
 // QSO dialogue.
-test('TC-007-009 the compact QSO pane shows only the running QSO and clears when it ends',{timeout:60000},async t=>{
+// Proves: TC-050-005
+test('the compact QSO pane shows only the running QSO and clears when it ends',{timeout:60000},async t=>{
   let state,contact=null,transmit={},log=null,settings={},records=[];const commands=[],period='2026-10-27T12:00:15.0000000Z';
   const standard=(from,to)=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
   const record=(sequence,text,hz,snr)=>{const [to,from]=text.split(' ');return {sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to),period_start_utc:period};};
@@ -557,12 +561,13 @@ test('TC-007-009 the compact QSO pane shows only the running QSO and clears when
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-060-01; TC-060-001 (#60, operator 2026-11-03): the QSO dialogue is a table,
+// The QSO dialogue is a table,
 // UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR (the callers, formerly rows of it, are the
 // #37 Calling me section since 2026-11-04); Direction is the two calls as on
 // the air, recipient first, with "◂" pointing to the recipient; a CQ is "CQ <call>" with its
 // grid; free text is all Exchange; Rep is ×N; on every dialogue row Rx SNR (ours) and Tx SNR
 // (the partner's report on us) are the latest received values at or before it (2026-11-03).
+// Proves: TC-060-001
 test('TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the recipient, Exchange, Rep, Rx SNR and Tx SNR',{timeout:60000},async t=>{
   let state,contact=null;const period='2026-10-27T12:00:15.0000000Z';
   const call=text=>({kind:text===null?'hash':'call',text,hash_bits:text===null?22:null,hash_value:text===null?12345:null});
@@ -639,10 +644,11 @@ function ownCq(){return {id:crypto.randomUUID(),origin:'own_cq',dx_call:null,dx_
   messages:[null,null,null,null,null,'CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false,suggested_slot:null,last_rcvd:null,dialogue:[]};}
 const GREEN='rgb(48, 208, 80)',RED='rgb(255, 64, 64)';
 
-// Proves: CL-050-03; TC-050-003. #50 (operator 2026-11-02, CT7BRV): the QSO pane's period bar
+// The QSO pane's period bar
 // runs on the station's clock (station.tick / snapshot utc_ms over the browser's monotonic
 // clock), not the browser's wall clock, and is red in my Tx periods and while transmitting,
 // green in receive periods.
+// Proves: TC-050-003
 test('TC-050-003 the period bar follows the station clock and is red in my Tx periods and green otherwise',{timeout:40000},async t=>{
   const clock={offset:0};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -684,12 +690,12 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
   assert.deepEqual(errors,[]);
 });
 
-// Proves: TC-097-017 (d), TC-097-013 (f) (CL-097-06, WstxOperatingChain::BusyPartner "Shown"). While
+// WstxOperatingChain::BusyPartner "Shown": while
 // busy_with is set " · K1ABC busy with W9XYZ, not counted (2/6)" follows WD:n in the QSO pane and
 // the station bar (k the paused_calls, N the Tx watchdog's tx_calls), gone with busy_with null; in a
 // run's own contact (tx_remaining_calls null) it follows the leave label with the run's paused.
 // Red on the parent: no suffix.
-test('TC-097-017 the busy marker follows WD:n and the leave label',{timeout:40000},async t=>{
+test('the busy marker follows WD:n and the leave label',{timeout:40000},async t=>{
   let watchdog={tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:0,busy_with:'W9XYZ',paused_calls:2},run=null;
   const contact=partner('replying');
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -714,13 +720,13 @@ test('TC-097-017 the busy marker follows WD:n and the leave label',{timeout:4000
   assert.deepEqual(errors,[]);
 });
 
-// Proves: TC-097-013 (b), (c), (d), (e) (CL-097-04; oracle WstxStrategy::LeaveCountLabel and
-// WstxQsoControl::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
+// Oracle: WstxAutoControl::LeaveCount and
+// WstxQsoPane::AutoControls. In a run's own contact (tx_remaining_calls null) the QSO pane's
 // watchdog line is the leave label: "Leave in 4 calls" .. "Leave in 1 calls"; a contest stay "Stay ·
 // most valuable", never "WD:∞"; until_logged "Until logged", then "Until logged · leave if gone 7
 // min". Unattended (an integer count) and in a manual contact it is WD:n, 6 down to 1. Station
 // replies are routed fixtures.
-test('TC-097-013 the leave label stands where WD:n stood in a run\'s own contact',{timeout:40000},async t=>{
+test('the leave label stands where WD:n stood in a run\'s own contact',{timeout:40000},async t=>{
   let watchdog={tx_remaining_calls:null,tx_expired:false,tune_remaining_seconds:0,busy_with:null,paused_calls:0},run=null;
   const contact=partner('replying');
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -750,10 +756,11 @@ test('TC-097-013 the leave label stands where WD:n stood in a run\'s own contact
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-050-05, CL-039-21; TC-050-005, TC-039-022 (WD:∞ for a null count). #37 (operator 2026-11-02, a CQ run on 40 m): while my CQ
+// A CQ run on 40 m: while my CQ
 // runs the header says "Calling CQ" with the Tx period, also after a receive refresh; the
 // message line is "▶ TX now" while the station transmits and "▸ next" otherwise; an empty
 // Others list says "nobody calling".
+// Proves: TC-050-005
 test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherwise, and nobody calling',{timeout:40000},async t=>{
   const clock={offset:0};let transmit={arm_state:'armed'},watchdog=null;
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -809,7 +816,8 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16, CL-037-03; TC-007-009 one fixed laptop screen and phone safety.
+// One fixed laptop screen and phone safety.
+// Proves: TC-007-009
 test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating items',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:25000});
@@ -851,8 +859,8 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16, CL-008-03; TC-007-009 exception chips and the explicit receive start/stop.
-test('TC-007-009 exception chips appear only for an exception and start, stop and explain receive',{timeout:40000},async t=>{
+// Exception chips and the explicit receive start/stop.
+test('exception chips appear only for an exception and start, stop and explain receive',{timeout:40000},async t=>{
   let current,idle;const posts=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
     idle=await (await fetch(app.origin+'/receive')).json();current=idle;
@@ -889,9 +897,9 @@ test('TC-007-009 exception chips appear only for an exception and start, stop an
   assert.equal(posts.length,2);assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16; TC-007-009 Settings drawer sections and reachability.
-// Proves: TC-007-004 (Esc closes no panel).
-test('TC-007-009 the Settings drawer has four sections holding every control moved off the screen',{timeout:60000},async t=>{
+// Settings drawer sections and reachability.
+// (Esc closes no panel).
+test('the Settings drawer has four sections holding every control moved off the screen',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   const requests=[];page.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
   // The contact client (loaded after the first snapshots) adds the watchdog, MCP and logging sections.
@@ -919,8 +927,9 @@ test('TC-007-009 the Settings drawer has four sections holding every control mov
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-044-06; TC-044-005. Settings > Radio "Detect radio": the station's /radio routes are
+// Settings > Radio "Detect radio": the station's /radio routes are
 // answered by route fixtures, so no serial port is ever probed or written by this test.
+// Proves: TC-044-005
 test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fills the Radio section',{timeout:60000},async t=>{
   const capture='{0.0.1.00000000}.{6b9f2c1e-1111-4222-8333-944444444444}',render='{0.0.0.00000000}.{f4069c8a-1111-4222-8333-944444444444}';
   const radio=[],requests=[];
@@ -980,10 +989,10 @@ test('TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fi
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-044-13; TC-044-015. The Tx level in the Audio section follows the server's radio.tx_level
+// The Tx level in the Audio section follows the server's radio.tx_level
 // push; Set level and the slider are commands, the slider appears only without ALC over CI-V.
-// Proves: CL-044-14, CL-044-15; TC-044-018, TC-044-022 (steps inside this test).
-test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>{
+// Proves: TC-044-018, TC-044-022
+test('Tx level in Settings > Radio > Audio',{timeout:60000},async t=>{
   const endpoint='icom7300://COM250?baud=19200&radio=94&controller=e0',posts=[];
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{control:{mode:'cat',endpoint,ptt:'disabled'},beforeNavigate:async p=>{
     await p.route('**/radio/tx-level',async route=>{const body=JSON.parse(route.request().postData());posts.push(body);await route.fulfill({json:{v:1,profile_id:body.profile_id,boot_id:body.boot_id,command_id:body.command_id,accepted:true,refusal:null}});});
@@ -995,7 +1004,7 @@ test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>
   assert.equal(await slider.isVisible(),false,'no manual level while the radio may report ALC');
   const base={managed:true,level_db:0,stored:false,alc:'unknown',assistant:false,result:null,meters:null,power_limit_pct:null,warnings:[],keying_confirmed:false};
   const inject=data=>page.evaluate(d=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'radio.tx_level',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,...d}}}})),data);
-  // Proves: CL-044-15; TC-044-022. The one-time confirmation is offered until it is stored.
+  // The one-time confirmation is offered until it is stored.
   await inject(base);assert.match(await page.locator('#discovery-state').textContent(),/off until confirmed once/);
   await inject({...base,keying_confirmed:true});assert.match(await page.locator('#discovery-state').textContent(),/discovery on start is on/);
   await inject(base);assert.equal(await line.textContent(),'Tx level not set yet');assert.equal(await meters.isVisible(),false);
@@ -1017,7 +1026,7 @@ test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>
   await section.locator('#control-power-limit').fill('10');await page.locator('#settings-save').click();
   await page.locator('#settings-result').filter({hasText:/Saved revision/}).waitFor();
   assert.deepEqual((await (await fetch(app.origin+'/profile')).json()).settings.radio,{agc:'SLOW',power_limit_pct:10});
-  // Proves: CL-044-14; TC-044-018. Persistent Tx trouble is an entry in the error field, gone when cleared.
+  // Persistent Tx trouble is an entry in the error field, gone when cleared.
   const field=page.locator('#error-field');
   await inject({...base,warnings:['alc_high','po_low','swr_high','swr_fault']});
   for(const [key,severity,text] of [['tx-alc_high','warn','ALC too high'],['tx-po_low','warn','Tx power low'],['tx-swr_high','warn','SWR high'],['tx-swr_fault','error','SWR too high']]){
@@ -1031,8 +1040,9 @@ test('TC-044-015 Tx level in Settings > Radio > Audio',{timeout:60000},async t=>
   await page.selectOption('#control-mode','disabled');assert.equal(await button.isVisible(),false,'hidden for a control without CI-V');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-068-01; TC-068-001. The last pushed SWR is the Rx/Tx strip's last item, red above 2.0,
+// The last pushed SWR is the Rx/Tx strip's last item, red above 2.0,
 // display only: no request, no pointer action, no extra strip line.
+// Proves: TC-068-001
 test('TC-068-001 SWR at the end of the Rx/Tx strip',{timeout:90000},async t=>{
   // A profile without CAT, so the real server carries out the band change of step (f); the
   // radio.tx_level pushes are injected and carry managed themselves.
@@ -1110,10 +1120,11 @@ test('TC-068-001 SWR at the end of the Rx/Tx strip',{timeout:90000},async t=>{
   await hidden('another boot');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-044-11; TC-044-010. AGC is a Radio/CAT setting: the select is in the CAT group only
+// AGC is a Radio/CAT setting: the select is in the CAT group only
 // for an IC-7300 CAT endpoint, the read-back line follows the server's radio.agc push (the real
 // server's first event, then injected outcomes), Apply saves settings.radio, Detect radio
 // recommends SLOW. The station is plaintext, so CAT is never authorized and no port opens.
+// Proves: TC-044-010
 test('TC-044-010 AGC field and read-back in Settings > Radio',{timeout:60000},async t=>{
   const endpoint='icom7300://COM250?baud=19200&radio=94&controller=e0',requests=[];
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{control:{mode:'cat',endpoint,ptt:'disabled'},beforeNavigate:async p=>{
@@ -1164,8 +1175,9 @@ test('TC-044-010 AGC field and read-back in Settings > Radio',{timeout:60000},as
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-044-06; TC-044-005. Before the contact client (confirmation dialog, transmit state)
+// Before the contact client (confirmation dialog, transmit state)
 // is loaded, Apply/Undo radio settings stay disabled and send nothing, even with CAT ready.
+// Proves: TC-044-005
 test('TC-044-005 radio settings writes wait for the confirmation dialog and a known disarmed transmitter',{timeout:40000},async t=>{
   const radio=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async p=>{
@@ -1181,8 +1193,9 @@ test('TC-044-005 radio settings writes wait for the confirmation dialog and a kn
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-039-20; TC-039-021 Settings shows the PSK Reporter feed from one snapshot and pushed
+// Settings shows the PSK Reporter feed from one snapshot and pushed
 // events, against a local MQTT peer written from the 3.1.1 packet tables; nothing reaches the broker.
+// Proves: TC-039-021
 test('TC-039-021 Settings shows the PSK Reporter status, pushed, and saves the switch',{timeout:60000},async t=>{
   const sockets=new Set(),received=[];let drop=false;
   const broker=net.createServer(socket=>{sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));
@@ -1227,8 +1240,8 @@ test('TC-039-021 Settings shows the PSK Reporter status, pushed, and saves the s
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-045-01, CL-010-16; TC-007-009 "Monitor off at startup" is a plain General setting.
-test('TC-007-009 Monitor off at startup reads and saves the station setting without touching receive',{timeout:60000},async t=>{
+// "Monitor off at startup" is a plain General setting.
+test('Monitor off at startup reads and saves the station setting without touching receive',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const requests=[],posts=[];
   page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='POST'&&p==='/receive/startup')posts.push(JSON.parse(r.postData()));});
@@ -1258,8 +1271,8 @@ test('TC-007-009 Monitor off at startup reads and saves the station setting with
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-052-01; TC-052-001 the FT8 window dump is an Expert setting, off by default and read on demand.
-test('TC-052-001 Save FT8 decode windows reads and saves the station setting in Settings > Expert',{timeout:60000},async t=>{
+// The FT8 window dump is an Expert setting, off by default and read on demand.
+test('Save FT8 decode windows reads and saves the station setting in Settings > Expert',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const requests=[],posts=[];
   page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='POST'&&p==='/receive/diagnostics')posts.push(JSON.parse(r.postData()));});
@@ -1286,8 +1299,8 @@ test('TC-052-001 Save FT8 decode windows reads and saves the station setting in 
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-040-02, CL-112-01, CL-010-16; TC-007-009 the UDP interface is a Logging & Reporting setting.
-test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the edited targets with one PUT',{timeout:60000},async t=>{
+// The UDP interface is a Logging & Reporting setting.
+test('the UDP editor reads GET /udp when Settings opens and saves the edited targets with one PUT',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const requests=[],puts=[];
   page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='PUT'&&p==='/udp')puts.push(JSON.parse(r.postData()));});
@@ -1331,8 +1344,8 @@ test('TC-007-009 the UDP editor reads GET /udp when Settings opens and saves the
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-040-02, CL-040-06, CL-010-16; TC-007-009 the UDP editor takes an IPv6 multicast group (#46).
-test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit and interface index',{timeout:60000},async t=>{
+// The UDP editor takes an IPv6 multicast group.
+test('the UDP editor saves an IPv6 multicast target with hop limit and interface index',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const puts=[];
   page.on('request',r=>{if(r.method()==='PUT'&&new URL(r.url()).pathname==='/udp')puts.push(JSON.parse(r.postData()));});
@@ -1361,8 +1374,8 @@ test('TC-007-009 the UDP editor saves an IPv6 multicast target with hop limit an
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16; TC-007-009 restart changes ask first during a QSO.
-test('TC-007-009 band, mode and Apply ask before restarting receive during a QSO',{timeout:40000},async t=>{
+// Restart changes ask first during a QSO.
+test('band, mode and Apply ask before restarting receive during a QSO',{timeout:40000},async t=>{
   let contact=null;const selects=[],puts=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
@@ -1390,7 +1403,8 @@ test('TC-007-009 band, mode and Apply ask before restarting receive during a QSO
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16, CL-010-11; TC-007-009 Rx/Tx strip, markers and keyboard.
+// Rx/Tx strip, markers and keyboard.
+// Proves: TC-007-009
 test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the expected requests',{timeout:70000},async t=>{
   const commands=[];let settings={rx_hz:1500,tx_hz:1200,hold_tx:false};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -1429,7 +1443,7 @@ test('TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the e
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-050-07; TC-050-007 one frequency mapping for the waterfall pointer, the Rx/Tx lines
+// One frequency mapping for the waterfall pointer, the Rx/Tx lines
 // and the axis ticks, and the WSJT-X brackets of the lines following the mode.
 async function waterfallMappingPass(page,commands,settings,label){
   const wait=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);assert.equal(commands.length,n,`${label} command ${n}: ${JSON.stringify(commands.slice(-3))}`);return commands.at(-1);};
@@ -1498,7 +1512,7 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
   }
 });
 
-// #82 WstxSignalArea::FreeTxSlotMarks (TC-082-004). Oracle: the CL-050-07 mapping (the waterfall
+// WstxSignalArea::OpenSlotMarks. Oracle: the CL-050-07 mapping (the waterfall
 // canvas's own box carries 0..3000 Hz), the operator's #82 answers ("open slots are shown all the time
 // as a part of the waterfall", "nothing else on screen") and #76 numbers (bars 8 px high, 2 px inset
 // at each end, a drawn colour difference of at least 40); the free_tx_slots values are hand-written.
@@ -1542,12 +1556,13 @@ function freeTxGap(m,low,high,label){
   assert.ok(a&&b&&a.hi===b.lo,`${label}: touching bars ${low} and ${high}`);
   assert.ok(Math.abs(b.left-a.right-4)<=1,`${label}: gap ${b.left-a.right} px between ${low} and ${high}`);
 }
-// Proves: CL-065-02; TC-082-004, TC-065-003 (#82: replaced by TC-082-004) the open slot marks are always part of the waterfall: no checkbox, a
+// The open slot marks are always part of the waterfall: no checkbox, a
 // bar per open range [lo, hi) inset 2 px at each end on the waterfall's mapping (touching ranges a
 // 4 px gap), 8 px, no text, a drawn colour apart from the Rx line, Tx line and ruler in each theme,
 // with automation never used (no run, no run_id match); the held value replaced by each event, by a
 // GET /automation reply only with a later at_utc_ms, dropped at a new boot; an event carried before
 // the operating client loaded drawn once it has; no pointer input and no request of their own.
+// Proves: TC-082-004
 test('TC-082-004 open slot marks always on the waterfall',{timeout:180000},async t=>{
   for(const scale of [1,2]){
     const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false},requests=[];
@@ -1667,8 +1682,9 @@ test('TC-082-004 open slot marks always on the waterfall',{timeout:180000},async
   }
 });
 
-// Proves: CL-010-16, CL-037-03, CL-010-01, CL-010-09, CL-050-01; TC-007-009, TC-050-001 QSO pane, double-click to call, Band Activity history and menu.
-test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
+// QSO pane, double-click to call, Band Activity history and menu.
+// Proves: TC-050-001
+test('QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
   let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
   const standard=(from,to='CQ')=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
   const record=(sequence,text,from,hz,p,to='CQ')=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to),period_start_utc:p});
@@ -1744,7 +1760,8 @@ test('TC-007-009 QSO pane buttons and a double-click start transmission; Band Ac
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16; TC-007-009 themes are browser-local.
+// Themes are browser-local.
+// Proves: TC-007-009
 test('TC-007-009 Day, Dark and Night themes switch manually and by time without a station request',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push(new URL(r.url()).pathname);});
@@ -1761,10 +1778,10 @@ test('TC-007-009 Day, Dark and Night themes switch manually and by time without 
   assert.deepEqual(mutations,[],'themes never send a station request');assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-008-03, CL-010-16; TC-009-005 case1 (no automatic restart or mutation retry).
+// No automatic restart or mutation retry.
 // Investigation guard for #37: with a running receive, reconnects, status refreshes, repeated
 // readiness and a second tab never send a receive start, stop or selection by themselves.
-test('TC-009-005 no receive start, stop or selection without an operator action across reconnects and two tabs',{timeout:90000},async t=>{
+test('no receive start, stop or selection without an operator action across reconnects and two tabs',{timeout:90000},async t=>{
   let running;const mutations=[];
   const watch=p=>{p.on('request',r=>{const path=new URL(r.url()).pathname;if(r.method()!=='GET'&&/^\/receive\/(start|stop|select)$/.test(path))mutations.push(path);});};
   const route=async(p,app)=>{
@@ -1789,9 +1806,8 @@ test('TC-009-005 no receive start, stop or selection without an operator action 
   await second.close();assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-16, CL-022-01; TC-007-009 unauthorized view.
-// Proves: CL-096-01; TC-096-001 (i) no full-screen button in the unauthorized view, shown once authorized.
-test('TC-007-009 an unauthorized browser sees only the token form until it is authorized',{timeout:60000},async t=>{
+// No full-screen button in the unauthorized view; it is shown once authorized.
+test('an unauthorized browser sees only the token form until it is authorized',{timeout:60000},async t=>{
   const selfsigned=require('selfsigned'),dir=await fs.mkdtemp(path.join(root,'secure-')),port=await browserPort(),origin=`https://localhost:${port}`;
   const cert=await selfsigned.generate([{name:'commonName',value:'localhost'}],{days:1,keySize:2048,extensions:[{name:'subjectAltName',altNames:[{type:2,value:'localhost'},{type:7,ip:'127.0.0.1'}]}]});
   await fs.writeFile(path.join(dir,'cert.pem'),cert.cert);await fs.writeFile(path.join(dir,'key.pem'),cert.private);
@@ -1806,7 +1822,7 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
     const visible=await page.evaluate(()=>[...document.querySelectorAll('main *')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&(el.matches('button,input,select,textarea,a,canvas,table,[tabindex]')||[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))).map(el=>({id:el.id,inLogin:!!el.closest('#login-view'),connection:el.id==='connection'})).filter(e=>!e.inLogin&&!e.connection));
     assert.deepEqual(visible,[],`only the token form and its status line are shown at ${width}px`);
     assert.equal(await page.locator('#token').isVisible(),true);assert.equal(await page.locator('#login button').isVisible(),true);
-    assert.equal(await page.locator('#full-screen').isVisible(),false,'#96 TC-096-001 (i): no full-screen button in the unauthorized view');
+    assert.equal(await page.locator('#full-screen').isVisible(),false,'(i): no full-screen button in the unauthorized view');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/ui-operating/unauthorized-${width}.png`});
   }
@@ -1818,8 +1834,8 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-05, CL-010-07, CL-010-08; TC-007-002 actual form state survives region changes.
-test('TC-007-002 in-page navigation preserves unsaved profile and selected recording with no command replay',{timeout:20000},async t=>{
+// Actual form state survives region changes.
+test('in-page navigation preserves unsaved profile and selected recording with no command replay',{timeout:20000},async t=>{
  const {page,errors}=await fixture(t,{width:1440,height:950});
  const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push({method:r.method(),url:r.url()});});
  await page.keyboard.press('F2');assert.equal(await page.locator('#settings-drawer').isVisible(),true);
@@ -1838,13 +1854,14 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- // Escape is Abort QSO (WstxQsoTransmit::AbortQso, #39): with no contact in progress it sends
+ // Escape is Abort QSO (WstxOperatingScreen::KeyRule): with no contact in progress it sends
  // nothing, and it is never a halt.
  assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations, and Esc sends no halt');
  assert.deepEqual(errors,[]);
 });
 
-// Proves: TC-007-002 readable rem typography and actual 200% text enlargement, every region.
+// Readable rem typography and actual 200% text enlargement, every region.
+// Proves: TC-007-002
 test('TC-007-002 readable text reflows throughout every operating region at 200 percent',{timeout:60000},async t=>{
  const {page,errors,sent}=await fixture(t,{width:1200,height:900});
  const regions=['operate','general','radio','logging','expert','logbook','help'];
@@ -1907,7 +1924,7 @@ test('TC-007-002 readable text reflows throughout every operating region at 200 
 
 // Presentation-only captured FT4/FT8 text plus independent edge cases; no decoder/RF success claim.
 const bandPresentationFixture={"purpose":"Presentation-only text fixture; not decoder/RF truth. Captured DT is unavailable and normalized to U+2014. Independent edge rows are explicitly synthetic.","capture_sha256":"030d849cdc8fbc5a62b7251f1dbb1c275fd1485ef11baca297f8eed67dd347ca","rows":[{"kind":"captured-physical-FT4-text-only","values":["64.987 s","10.8","\u2014","2199.2","R4SF LZ2MP KN23","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["64.916 s","6.5","\u2014","2733.3","DL1LN SP9JBT +00","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["64.916 s","-15.6","\u2014","1774.9","CQ LB1PI JO49","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["73.198 s","22.3","\u2014","399.9","CQ LZ2II KN22","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.898 s","22.3","\u2014","1195.0","DB1BC EB4FSM IN80","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.711 s","12.5","\u2014","1454.5","IW1BYR IZ8EYN +17","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.744 s","-6.4","\u2014","449.9","G5ACE/P LA1KKA 73","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.678 s","-7.6","\u2014","1844.3","NF3R SQ8AA 73","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.718 s","-16.3","\u2014","2768.4","CQ AA3B FN20","Decoded"]},{"kind":"independent-presentation-edge","values":["123456.789 s","-60.0","-0.123","3499.9","CQ PJ4/PA3XYZ FK52","Decoded"]},{"kind":"independent-presentation-edge","values":["23:59:59","+23.0","+0.123","1000.0","PJ4/PA3XYZ HB9BLA RR73 THANKS FOR THE CONTACT 73","unsupported"]},{"kind":"independent-presentation-edge","values":["Unknown","\u2014","\u2014","200.0","Payload invalid_payload","invalid_payload"]}],"capture_ft8_sha256":"820f9dfc5744f30f0cb1d30c5aff6843d364e4df44a5961d0e186bdb83f6a353"};
-test('TC-007-002 populated Band Activity has dominant width and complete readable field details',{timeout:25000},async t=>{
+test('populated Band Activity has dominant width and complete readable field details',{timeout:25000},async t=>{
  // #37 columns: UTC, dB, DT, Freq, Message, DXCC, Dist (the payload status is in the message).
  const {page,errors}=await fixture(t,{width:1440,height:1000}),rows=bandPresentationFixture.rows.map((r,i)=>({...r,values:[...r.values.slice(0,5),'—',i%3?'—':'19999 km']}));
  // The contact client re-renders Band Activity when it arrives; insert the fixture after it.
@@ -1938,7 +1955,8 @@ test('TC-007-002 populated Band Activity has dominant width and complete readabl
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-09; TC-007-006. Explicit presentation/clock fixtures, never modem/RF truth.
+// Explicit presentation/clock fixtures, never modem/RF truth.
+// Proves: TC-007-006
 test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot restore old stations',{timeout:45000},async t=>{
   // Detailed fetches the next page at once (#57), so the second page waits for the first sort.
   let state,records,held=null,hold=false;const pending=deferred(),secondPage=deferred();
@@ -1987,10 +2005,11 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
   assert.equal(await page.evaluate(()=>resultCursor),37,'old period page cannot move new view cursor');assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-057-03; TC-057-004 (#37/#57). Band Activity keeps only the latest even and odd
+// Band Activity keeps only the latest even and odd
 // periods: after three consecutive periods only periods 2 and 3 are shown, the newest on top
 // below no divider and the other below one; a same-parity successor (a skipped period) drops
 // the older one; result reads never page below the current view.
+// Proves: TC-057-004
 test('TC-057-004 three consecutive periods leave only the latest even and odd period',{timeout:45000},async t=>{
   let state,records=[];const cursors=[];
   const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z','2026-10-27T12:00:30.0000000Z','2026-10-27T12:01:00.0000000Z'];
@@ -2024,11 +2043,12 @@ test('TC-057-004 three consecutive periods leave only the latest even and odd pe
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-061-03; TC-061-004 (#61, operator decision 2026-11-04). The station marks its Tx
+// The station marks its Tx
 // period (latest_decode transmitted true, no records, CL-061-04); Band Activity renders that
 // marker and no empty-period block, the receive period before it stays below its divider, and
 // the next receive period keeps it. A genuinely empty receive period keeps its note. No
 // station.tick says transmitting: the browser does not infer the Tx period.
+// Proves: TC-061-004
 test('TC-061-004 a Tx period shows the station Tx marker, no empty block, and keeps the receive periods',{timeout:45000},async t=>{
   let state,records=[];
   const makeRecord=(sequence,period)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`PERIOD FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:0.1});
@@ -2066,9 +2086,10 @@ test('TC-061-004 a Tx period shows the station Tx marker, no empty block, and ke
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-061-04; TC-061-006 (#61, operator decision 2026-11-04). The station measures no Rx
+// The station measures no Rx
 // level in its Tx period (station.tick rx_level_db null) and marks its waterfall rows (tx true);
 // the browser shows level warnings for receive periods only and paints Tx rows as Tx.
+// Proves: TC-061-006
 test('TC-061-006 Tx rows are painted as Tx and level warnings show for receive periods only',{timeout:45000},async t=>{
   const {page,errors}=await liveDisplayFixture(t);
   // Each tick is read in the same task (its handler redraws the meter synchronously and the
@@ -2093,8 +2114,9 @@ test('TC-061-006 Tx rows are painted as Tx and level warnings show for receive p
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-061-05; TC-061-008 (#61, operator 2026-11-06). Scripted rows, computed from 0.2 s rows
+// Scripted rows, computed from 0.2 s rows
 // at 10 px/s with y(s)=floor(s*10*H/C): a Tx period takes a 4 px band, the labels beyond it stay exact.
+// Proves: TC-061-008
 test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothing turns pale',{timeout:45000},async t=>{
   // A plot that holds the 20 s the bands below need at 10 px/s; at 1366x768 the default split leaves the room to the QSO pane (#37).
   const {page,errors}=await liveDisplayFixture(t,{width:1366,height:1200});
@@ -2139,8 +2161,8 @@ test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothi
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-007-05; TC-004-004. A late window extends the period view in place (#47).
-test('TC-004-004 a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
+// A late window extends the period view in place
+test('a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
   let state,records,requested=[];
   const period='2026-10-27T12:00:15.0000000Z';
   const makeRecord=(sequence,dt)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12.3,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`LATE FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:dt});
@@ -2176,7 +2198,8 @@ test('TC-004-004 a correlated period view extended in place adds the late starte
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-09; TC-007-006. Period identity can be learned from results, not only snapshots.
+// Period identity can be learned from results, not only snapshots.
+// Proves: TC-007-006
 test('TC-007-006 a page-announced period refetches its prefix instead of skipping it',{timeout:35000},async t=>{
   const oldPeriod='2026-10-27T12:00:00.0000000Z',newPeriod='2026-10-27T12:00:15.0000000Z';let state,announced=false;
   const records=Array.from({length:19},(_,i)=>({sequence:i,start_frame:i?186000:6000,frequency_hz:1000+i,snr_db:0,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`PAGE FIXTURE ${i}`,fields:{},period_start_utc:i?newPeriod:oldPeriod,dt_seconds:0}));
@@ -2202,7 +2225,8 @@ test('TC-007-006 a page-announced period refetches its prefix instead of skippin
   assert.equal(await page.locator('tr[data-period=latest]').last().locator('td').nth(4).textContent(),'PAGE FIXTURE 18');assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-09; TC-007-006. Numeric/literal presentation sorting never selects a station.
+// Numeric/literal presentation sorting never selects a station.
+// Proves: TC-007-006
 test('TC-007-006 selectable ordering is numeric, unknown-last and persists across periods and modes',{timeout:20000},async t=>{
   let state;const period='2026-10-27T12:00:00.0000000Z';
   let records=[
@@ -2242,13 +2266,13 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   assert.ok(sent.every(m=>!['radio.operation','receive.start'].includes(m.type)));assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-04; TC-011-001 browser subset (#41 DirectLog). Actual server and
+// Browser subset with the actual server and
 // Chromium with the contact snapshot answered by the test: a completed contact opens no
 // review form and the browser never saves; Log QSO is one open_log command; the QSO pane
 // shows the server's log outcome; an open Logbook page lists a newly logged record by
 // itself. The record is stored through the server's own SaveContact route, standing in
 // for the server-side DirectLog store, which contact_http/udp tests prove.
-test('TC-011-001 completed QSOs log without a review and the open Logbook lists them live',{timeout:30000},async t=>{
+test('completed QSOs log without a review and the open Logbook lists them live',{timeout:30000},async t=>{
  let snapshot={contact:null,log:null};const commands=[],posts=[];
  const {page,app,errors}=await fixture(t,{width:1200,height:900},{beforeNavigate:async(p,app)=>{
    const base=await (await fetch(app.origin+'/profile')).json();
@@ -2287,10 +2311,10 @@ test('TC-011-001 completed QSOs log without a review and the open Logbook lists 
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-04; TC-011-002 browser subset (#10 Update logbook from ADIF). Actual server
+// Browser subset with the actual server
 // and Chromium; a synthetic Log4OM-shaped export (byte order mark, '#' banner, PROGRAMID
 // LOG4OM2, a UTF-8 NAME, MFSK/FT4) and hand-counted summaries.
-test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger export and Export downloads contacts.adi',{timeout:30000},async t=>{
+test('Update logbook from ADIF in Settings consolidates a logger export and Export downloads contacts.adi',{timeout:30000},async t=>{
  const {page,errors}=await fixture(t,{width:1200,height:900});
  await page.waitForFunction(()=>profileData&&window.wstxLogbook);
  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
@@ -2333,10 +2357,11 @@ test('TC-011-002 Update logbook from ADIF in Settings consolidates a logger expo
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-13; TC-011-003, TC-050-002 browser subset. The receive pages with the station's worked_status
+// Browser subset. The receive pages with the station's worked_status
 // (the station side: tc_011_003_receive_results_carry_the_worked_status) and the manual band selection are
 // presentation fixtures, not RF truth.
-test('TC-011-003 Band Activity shows the worked_status of each record with no query',{timeout:30000},async t=>{
+// Proves: TC-050-002
+test('Band Activity shows the worked_status of each record with no query',{timeout:30000},async t=>{
  let state;const queries=[];
  const period='2026-10-27T12:00:15.0000000Z';
  const standard=(from)=>({type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
@@ -2374,11 +2399,11 @@ test('TC-011-003 Band Activity shows the worked_status of each record with no qu
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-13; TC-011-003 QSO pane subset (#10 2026-11-04). The station's worked_status on routed records and
+// QSO pane subset The station's worked_status on routed records and
 // query; receive pages, flags and the manual band selection are presentation fixtures, not RF truth.
 // The stations calling me carry the Band Activity marks: only interesting senders coloured, worked
 // before on this band and mode no colour, the status as text, and no extra query.
-test('TC-011-003 QSO pane callers show worked-before status and only interesting stations are coloured',{timeout:40000},async t=>{
+test('QSO pane callers show worked-before status and only interesting stations are coloured',{timeout:40000},async t=>{
  let state;const queries=[],period='2026-10-27T12:00:15.0000000Z';
  const standard=(from,exchange)=>({type:'standard',to:{kind:'call',text:'HB9BLA',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange});
  const rows=[['HB9BLA K1ABC FN42','K1ABC',{kind:'grid',value:'FN42'},null,'worked_this_band_and_mode'],['HB9BLA W1XYZ FN31','W1XYZ',{kind:'grid',value:'FN31'},{new_call:true,new_call_band:true},'not_worked'],['HB9BLA DL1ABC -10','DL1ABC',{kind:'report',value:-10},{new_call_band:true},'worked_other_band_or_mode']];
@@ -2414,9 +2439,10 @@ test('TC-011-003 QSO pane callers show worked-before status and only interesting
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-055-04; TC-055-006 browser subset.
+// Browser subset.
 // The result records (with #55 dxcc and flags and the station's worked_status), the strategy verdict and the selection band
 // are presentation fixtures.
+// Proves: TC-055-006
 test('TC-055-006 Band Activity colours every sender, names each reason on hover and sorts by value',{timeout:40000},async t=>{
  const period='2026-10-27T12:00:15.0000000Z';
  const fields=(from,to,exchange)=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange});
@@ -2483,8 +2509,9 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-055-05; TC-055-007. Band Activity row density at 1366x768: the result records
+// Band Activity row density at 1366x768: the result records
 // are presentation fixtures; the layout is the actual client.
+// Proves: TC-055-007
 test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:30000},async t=>{
  const period='2026-10-27T12:00:15.0000000Z',n=30;
  const records=Array.from({length:n},(_,i)=>{const call=`K${i%10}A${String.fromCharCode(65+i%26)}${String.fromCharCode(65+(i*7)%26)}`;return {sequence:i,start_frame:186000+i,frequency_hz:300+i*90,snr_db:-20+i%15,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1};});
@@ -2510,9 +2537,10 @@ test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:3
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-050-02; TC-050-002 (b). Operator 2026-11-03: only interesting stations are coloured. The
+// Only interesting stations are coloured. The
 // receive pages (with the #55 flags and the worked_status a station derives from its log,
 // CL-055-04) are routed fixtures; the colours are the served client's CSS.
+// Proves: TC-050-002
 test('TC-050-002 a CQ from a station worked on this band and mode has no colour; My call still applies',{timeout:30000},async t=>{
  let state;const queries=[];
  const period='2026-10-27T12:00:15.0000000Z';
@@ -2542,8 +2570,9 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-010-15; TC-007-005 browser subset (#10 PushedStationState). The receive snapshot, its result pages and
+// Browser subset. The receive snapshot, its result pages and
 // the receive.state events are fixtures; what the browser holds and which reads it makes are the served client's.
+// Proves: TC-007-005
 test('TC-007-005 receive.state carries the job and the audio; only a new state, a refused event or a failed read reads GET /receive',{timeout:40000},async t=>{
   const period='2026-11-06T10:55:30.0000000Z',decode=n=>({id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:false});
   const record=(sequence,call)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1});
@@ -2610,9 +2639,10 @@ test('TC-007-005 receive.state carries the job and the audio; only a new state, 
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-050-08; TC-050-008 (#50, live 2026-11-06, M7OZL UT4PA KO20): the worked-before status of a row
+// The worked-before status of a row
 // stays while it is on screen, also when the next period moves it to the kept period. The receive pages with their
 // worked_status are routed fixtures.
+// Proves: TC-050-008
 test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:40000},async t=>{
   const a='2026-11-06T10:55:30.0000000Z',b='2026-11-06T10:55:45.0000000Z';
   const record=(sequence,text,from,period)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:{type:'standard',to:{kind:'call',text:'M7OZL',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'KO20'}},period_start_utc:period,dt_seconds:0.1,flags:{new_call_band:true},worked_status:'worked_other_band_or_mode'});
@@ -2646,10 +2676,11 @@ test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-050-08; TC-050-008 (#50, operator 2026-11-04). The receive pages (with the #55 flags,
+// The receive pages (with the flags,
 // dxcc and the station's worked_status), the contact snapshots are routed
 // fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
 // from the operator's scheme, not from the candidate.
+// Proves: TC-050-008
 test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, CQ of interest, sender-only colour, one-line reason tip',{timeout:60000},async t=>{
  let state,base,contact=null;const records=[],queries=[];
  const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
@@ -2750,10 +2781,10 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
  assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-009-05; TC-006-003. The transmit status line shows the station's SNTP clock
+// The transmit status line shows the station's SNTP clock
 // state and measurement from a GET /transmit fixture (no CAT, PTT or audio: the profile's
 // CAT PTT setting is set in the page only, the server keeps transmit unsupported).
-test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:45000},async t=>{
+test('transmit status shows the SNTP clock measurement',{timeout:45000},async t=>{
   let view;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
@@ -2769,8 +2800,9 @@ test('TC-006-003 transmit status shows the SNTP clock measurement',{timeout:4500
   assert.match(await status(),/ · clock unsynchronized -2089 ms time\.windows\.com 6 s ago · halt /);
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-010-15; TC-007-005. contact.state builds the snapshot: a contact and its dialogue rows
+// contact.state builds the snapshot: a contact and its dialogue rows
 // in order, the rows that follow on the next tick at the same sequence shown too, and no read.
+// Proves: TC-007-005
 test('TC-007-005 contact.state rows arrive in order and a continuation is shown',{timeout:45000},async t=>{
   const {page,errors}=await fixture(t,{width:1440,height:900});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()?.settings,null,{timeout:30000});
@@ -2799,10 +2831,11 @@ test('TC-007-005 contact.state rows arrive in order and a continuation is shown'
 const clockEvent=(page,clock)=>page.evaluate(clock=>{dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'clock.state',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,clock_revision:(clockState?.clock_revision??0)+1,clock:{state:'synchronized',correction_ms:0,warning:null,ntp_offset_ms:null,capture_warning:null,...clock}}}}}));window.wstxChipsShow();},clock);
 // The error-field entries of the clock and audio clock (key, severity, text) with `ptt` set in the page.
 const clockEntries=(page,ptt)=>page.evaluate(ptt=>{profileData.settings.control.ptt=ptt;window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock],#exception-chips [data-chip=capture-warning]')].map(b=>[b.dataset.chip,b.dataset.severity,b.textContent.slice(2)]);},ptt);
-// Proves: CL-043-01, CL-043-03, CL-009-05; TC-043-003. Settings > General > Clock reads GET
+// Settings > General > Clock reads GET
 // /clock only when Settings opens and shows the status line (no source select); the clock
 // entries come from routed clock.state with transmit configured; the Clock line names the
 // correction.
+// Proves: TC-043-003
 test('TC-043-003 the clock view in Settings and the clock entries from clock.state',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768});
   const requests=[];
@@ -2827,11 +2860,12 @@ test('TC-043-003 the clock view in Settings and the clock entries from clock.sta
   assert.equal(await page.locator('#clock-setting').textContent(),'Station clock unsynchronized, correction -1980 ms','the Clock line names the correction');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-043-03, CL-037-02; TC-092-005. The clock entries in the error field from routed
+// The clock entries in the error field from routed
 // clock.state (texts of CL-043-03): Clock off only with transmit configured, the yellow entries
 // on a receive-only profile too, each opening its detail; the Settings status line remedies by
 // Windows Time and the accepted wording without evidence; no GET /clock outside Settings, no
 // source select, no Clock unknown or disagreement text anywhere.
+// Proves: TC-092-005
 test('TC-092-005 clock entries in the error field and the clock status line',{timeout:90000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768});
   const requests=[];
@@ -2886,10 +2920,11 @@ test('TC-092-005 clock entries in the error field and the clock status line',{ti
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-039-01, CL-039-04, CL-039-05, CL-039-10; TC-039-006. The browser renders the
+// The browser renders the
 // station's verdicts (it never evaluates), sends only the selection and the editor's save, and
 // keeps HALT reachable in the popup. Station replies are hand-written fixtures; the expected
 // requests and row order are written here.
+// Proves: TC-039-006
 test('TC-039-006 Selecting only marks, marks and value order from the verdicts, a column click overrides, the editor holds the settings',{timeout:60000},async t=>{
   let state,view,automation={run:null,refusal:null,policy:0,runRevision:0};const puts=[],evaluations=[],autos=[],commands=[],switches=[];let automationReads=0;
   const period='2026-10-27T12:00:00.0000000Z';
@@ -2931,7 +2966,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   for(let i=0;i<60&&!evaluations.length;i++)await page.waitForTimeout(50);
   assert.equal(await page.locator('#op-confirm[open]').count(),0,'selecting asks nothing');
   assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration.active,b.configuration.strategies]),[[4,'DX first',[strategy]]]);
-  // WstxAutoControl::AutoToggle: a selection only marks; it never switches Auto.
+  // WstxStrategies::SelectStrategy: a selection only marks; it never switches Auto.
   await page.locator('#station-automation').filter({hasText:'Strategy DX first · Auto off'}).waitFor();
   assert.deepEqual(switches,[],'selecting sends no POST /strategy/auto');
   assert.deepEqual(evaluations.map(b=>[b.source_id,b.job_id,b.generation,b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[state.source.id,state.job.id,state.generation,0,3,null,false]]);
@@ -2999,7 +3034,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   await page.locator('#se-save').click();for(let i=0;i<40&&puts.length<3;i++)await page.waitForTimeout(50);
   assert.deepEqual([puts[2].configuration.active,puts[2].configuration.strategies],['DX first',[edited,{...edited,name:'DX first copy'}]]);
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
-  // A HALT is pushed: Auto off, the selection and its marks stay (WstxAutoControl::StrategyRun).
+  // A HALT is pushed: Auto off, the selection and its marks stay (WstxAutoMode::AutoStops).
   view={...view,revision:view.revision+1,auto:false};
   await announce('strategy.state',{strategy_revision:view.revision});
   await page.waitForFunction(()=>document.querySelector('#qso-auto').getAttribute('aria-pressed')==='false',null,{timeout:5000});
@@ -3020,9 +3055,10 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   assert.equal(commands.some(c=>c.action==='enable_tx'),false,'the browser never arms for a strategy; the station run does');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-063-03, CL-063-04; TC-063-008. The browser sends only the selection with the period,
+// The browser sends only the selection with the period,
 // lists what the station's verdicts call callable, and never evaluates. Station replies are
 // hand-written fixtures; the expected requests and rows are written here.
+// Proves: TC-063-008
 test('TC-063-008 The contest prompt, Auto off marks only, the callable list and Show all',{timeout:60000},async t=>{
   let state,view,contact=null;const puts=[],evaluations=[],contestReads=[];
   const period='2026-10-27T12:00:00.0000000Z';
@@ -3148,12 +3184,12 @@ const BUILTIN_NAMES=STRATEGY_BUILTINS.map(s=>s.name);
 const userStrategy=(name,extra={})=>strategyOf(name,{filters:{new:['call'],new_per:'ever',new_means:'not_worked',treat_73_as_cq:false},order:['most_wanted'],...extra});
 const contestProfile=(id,name,extra)=>({id,name,cabrillo:null,cabrillo_confirmed:false,activity:'none',bands:['20m'],modes:'',exchange:'',dupes:'band',points:'one_per_call',multipliers:'none',score:'',automation:'silent',automation_text:'The rules do not address automatic operation.',schedule:`${name} schedule`,notes:[],source:'',period:{start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',band:null},...extra});
 const CONTEST_PROFILES=[contestProfile('ww_digi','WW Digi',{activity:'ww_digi',automation:'forbidden',automation_text:'A human operator must initiate calling each QSO partner.'}),contestProfile('ft8_activity','FT8 Activity')];
-// A run of the GET /automation snapshot (WstxMcp::AutomationWire) with the strategydef keys.
+// A run of the GET /automation snapshot (WstxAutoControl::AutoActivity) with the strategydef keys.
 const strategyRunOf=(state,extra={})=>({id:'7d1f6c2e-0000-4000-8000-000000000039',state,reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],left:null,quiet:[],hearing:null,tx_slot:null,slot_check:null,pounce:null,...extra});
-// The routed station of the strategydef browser cases (TC-039-046): GET and PUT /strategy, POST
+// The routed station of the strategydef browser cases: GET and PUT /strategy, POST
 // /strategy/auto, GET /pskr, POST /pskr/use, GET /strategy/contests and GET /automation answer with
-// the model's wire shapes (WstxStrategies::StrategyHttp, AutoToggle, HearingFeed, PskrUse;
-// WstxStrategies::ContestSelection; WstxMcp::AutomationWire). The station changes its state on a
+// the model's wire shapes (WstxStrategies::StrategiesState, WstxAutoControl::SwitchAuto,
+// WstxHearing::FeedStatus, WstxStrategies::ContestList, WstxAutoControl::AutoActivity). The station changes its state on a
 // command; the page learns it only from the pushes strategy.state, pskr.state and automation.state.
 async function strategydefStation(t,viewport,{strategies=[userStrategy('Mine')]}={}){
   const s={view:null,pskr:null,automation:{policy:0,runRevision:0,configuration:null,run:null,refusal:null},transmit:{},contact:null,puts:[],autos:[],uses:[],requests:[],commands:[]};
@@ -3165,7 +3201,7 @@ async function strategydefStation(t,viewport,{strategies=[userStrategy('Mine')]}
     p.on('request',r=>{const u=new URL(r.url());if(u.origin===app.origin&&u.pathname!=='/'&&!/\.(js|css|svg|png|ico|woff2?)$/.test(u.pathname))s.requests.push(`${r.method()} ${u.pathname}`);});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{transmit:s.transmit,contact:s.contact})}));
     await contactCommands(p,s.commands);
-    // None turns Auto off (WstxAutoControl::AutoToggle); another selection keeps it.
+    // None turns Auto off (WstxAutoMode::AutoStops); another selection keeps it.
     // s.refuse(body): the station's refusal of a PUT (its error object), else null.
     await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());s.puts.push(b);const refused=s.refuse?.(b);if(refused)return route.fulfill({status:400,json:{error:refused}});s.view={...s.view,revision:s.view.revision+1,configuration:b.configuration,auto:b.configuration.active||b.configuration.contest?s.view.auto:false};}await route.fulfill({json:s.view});});
     await p.route('**/strategy/auto',async route=>{const b=JSON.parse(route.request().postData());s.autos.push(b);s.view={...s.view,revision:s.view.revision+1,auto:b.auto};await route.fulfill({json:s.view});});
@@ -3191,10 +3227,10 @@ const TOGGLE_ON='rgb(31, 122, 77)',TOGGLE_OFF='rgb(38, 50, 58)';
 // The QSO pane header items that lie outside the pane (none: nothing is cut off).
 const outsidePane=page=>page.evaluate(()=>{const pane=document.querySelector('#rx-focus').getBoundingClientRect();return [...document.querySelectorAll('#rx-focus .op-qso-buttons button,#qso-more>summary,#rx-focus .op-contact-badge')].filter(e=>{const r=e.getBoundingClientRect();return r.left<pane.left-1||r.right>pane.right+1;}).map(e=>e.id||e.textContent);});
 const toggle=locator=>locator.evaluate(e=>(e.getAnimations().forEach(a=>a.finish()),{pressed:e.getAttribute('aria-pressed'),disabled:e.disabled,title:e.title,background:getComputedStyle(e).backgroundColor}));
-// Proves: CL-039-22, CL-039-20, CL-039-04; TC-039-046 (#39 strategydef): Auto and PSK in the QSO pane's direct buttons
+// Auto and PSK in the QSO pane's direct buttons
 // follow only the pushed station state, send one POST per click and are disabled with their
 // reasons; the strategy element names the run state and Auto off. Expected values are the model's.
-test('TC-039-046 Auto and PSK follow only the push, one POST per click, their disabled states and the strategy status',{timeout:90000},async t=>{
+test('Auto and PSK follow only the push, one POST per click, their disabled states and the strategy status',{timeout:90000},async t=>{
   const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768});
   const auto=page.locator('#qso-auto'),psk=page.locator('#qso-pskr');
   // QsoPane item 5: Auto right of CQ, PSK right of Auto.
@@ -3262,10 +3298,11 @@ test('TC-039-046 Auto and PSK follow only the push, one POST per click, their di
   assert.equal(s.commands.some(c=>c.action==='enable_tx'),false,'the browser never arms for a strategy');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-081-01; TC-081-006 (#81, WstxAutoControl::AutoToggle, StrategySelector): with Auto on the Auto
+// With Auto on the Auto
 // button's title says that a QSO already started is finished; after the pushed Auto off with the run
 // stopped and the contact still in progress the button is grey with the off title, the strategy line
 // reads "Strategy Casual · Auto off" and the QSO pane still shows K1ABC. Expected texts are the model's.
+// Proves: TC-081-006
 test('TC-081-006 the Auto button says that Auto off finishes a QSO already started',{timeout:90000},async t=>{
   const {page,errors,s,push,status}=await strategydefStation(t,{width:1366,height:768});
   const auto=page.locator('#qso-auto');
@@ -3287,10 +3324,10 @@ test('TC-081-006 the Auto button says that Auto off finishes a QSO already start
   assert.equal(s.autos.length,0,'the browser sent nothing');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-039-20; TC-039-046 (#39 strategydef, WstxHearingFeed::PskrUse, WstxQsoPane::QsoPane): the two PSK
+// The two PSK
 // Reporter lines while Use is on and a run's own contact has a target, with the age from
 // station.tick; hidden otherwise; no polling; the QSO pane keeps its height at 1366x768 and 360x740.
-test('TC-039-046 the PSK Reporter lines in the QSO pane, their age formats, no polling and the fixed pane',{timeout:90000},async t=>{
+test('the PSK Reporter lines in the QSO pane, their age formats, no polling and the fixed pane',{timeout:90000},async t=>{
   const {page,errors,s,push}=await strategydefStation(t,{width:1366,height:768});
   const T=Math.floor(Date.now()/1000);
   // The lines as shown right after one station.tick at the given station second (one task, no real tick between).
@@ -3343,15 +3380,14 @@ test('TC-039-046 the PSK Reporter lines in the QSO pane, their age formats, no p
   assert.equal(await pane(),phone,'the pane keeps its height at 360 px');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-097-01; TC-097-014 (#97 WstxSettings::StrategyEditor and StrategySelector; it replaces
-// TC-039-046's editor of Filter, Value and Exit and its S&P/Run prompt, whose warning on Auto on
-// TC-063-012 keeps): the editor grouped Strategy and Contest with Duplicate only, the nine decisions,
+// WstxSettings::StrategyEditor and StrategySelector: the editor grouped Strategy and Contest
+// with Duplicate only, the nine decisions,
 // one PUT of the schema 4 object written here, the contest strategy's view, a refusal at its
 // control, the rename shown once, no overflow at 360 px; the selector's groups and the saved contest
 // strategy with no contest, the same contest and another contest in force (FT8 Activity stands for
 // the model's arrl_digi: the routed profiles are WW Digi and FT8 Activity). Station replies are
 // routed fixtures; the expected requests are written here. The 400 ms preview is TC-039-006's.
-test('TC-097-014 the editor with the nine decisions and the selector with the saved contest strategy',{timeout:90000},async t=>{
+test('the editor with the nine decisions and the selector with the saved contest strategy',{timeout:90000},async t=>{
   const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768});
   // The snapshot: two saved strategies of class strategy, one of class contest, and the upgrade's
   // rename (StrategyHttp configuration_note).
@@ -3463,15 +3499,15 @@ test('TC-097-014 the editor with the nine decisions and the selector with the sa
   assert.equal(await page.inputValue('#strategy-name'),'contest:ft8_activity','the earlier selection');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-097-07; TC-097-015 (the prompt in Chromium; oracle WstxContest D11 and
-// WstxStrategies::BuiltinStrategies): with the contest built-in "WW Digi" and a saved copy "WW Digi
+// The prompt in Chromium, oracle WstxSettings::StrategyEditor and
+// WstxStrategies::BuiltinStrategies: with the contest built-in "WW Digi" and a saved copy "WW Digi
 // fast" the prompt offers "WW Digi" first (chosen) and then "WW Digi fast"; its controls are the
 // contest, the period and the strategy only (no operation choice, repetitions or retry pause);
 // Start sends one PUT {active "WW Digi", contest {ww_digi, start, end}}; the status reads "Contest
 // WW Digi · <period> UTC · WW Digi · Auto on" after Auto on; Start with "WW Digi fast" sends that
 // active with the same contest. Station replies are routed fixtures; the expected requests are
 // written here. Red on the branch base: the prompt offers an operation choice.
-test('TC-097-015 the contest prompt offers the contest strategies, no operation choice',{timeout:60000},async t=>{
+test('the contest prompt offers the contest strategies, no operation choice',{timeout:60000},async t=>{
   const {builtin:_,...fastBase}=contestBuiltin('WW Digi fast','ww_digi');
   const fast={...fastBase,filters:{...noLists(),countries:{include:[],exclude:[{kind:'country',value:'Japan',bands:null}]}},leave:{mode:'contest',tx_changes:1},cq_when_idle:false};
   const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768},{strategies:[fast]});
@@ -3497,11 +3533,11 @@ test('TC-097-015 the contest prompt offers the contest strategies, no operation 
   assert.deepEqual([s.puts[1].configuration.active,s.puts[1].configuration.contest],['WW Digi fast',ww]);
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-063-05; TC-063-012. Automatic operation (#39 strategydef): Start only selects; Auto on
+// Automatic operation Start only selects; Auto on
 // asks the warning where the rules forbid it and sends the confirmation with POST /strategy/auto;
 // the run state and Auto off come with the pushes. Station replies are hand-written fixtures; the
 // expected requests are written here.
-test('TC-063-012 Fully automatic: the warning on Auto on, the confirmation and the run state',{timeout:60000},async t=>{
+test('Fully automatic: the warning on Auto on, the confirmation and the run state',{timeout:60000},async t=>{
   const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768},{strategies:[]});
   const auto=page.locator('#qso-auto'),period='Contest WW Digi · 08-29 12:00 to 08-30 12:00 UTC';
   const open=async()=>{await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();};
@@ -3575,11 +3611,12 @@ async function until(condition){for(let i=0;i<400&&!condition();i++)await new Pr
 // The strategy line, the selector and the Auto button as the page shows them.
 const strategyElement=page=>page.evaluate(()=>{const a=document.querySelector('#qso-auto'),s=document.querySelector('#strategy-name');
   return {line:document.querySelector('#station-automation').textContent,value:s.value,options:[...s.options].map(o=>o.textContent),selectorDisabled:s.disabled,pressed:a.getAttribute('aria-pressed'),disabled:a.disabled,title:a.title};});
-// Proves: CL-074-01; TC-074-001 (#74 reproduction, live 2026-11-08): a page kept open across a real
+// A page kept open across a real
 // restart of the isolated station, with the new socket's GET /strategy held back, never shows the
 // previous boot's "Strategy Casual" and ends as a freshly opened page shows the new
 // boot, without a GET /automation. Oracles: the station's state after a restart (active None, Auto
-// off: WstxStrategy D2) and a second page opened on the restarted station.
+// off: WstxStrategies::StrategyConfiguration) and a second page opened on the restarted station.
+// Proves: TC-074-001
 test('TC-074-001 a page kept open across a station restart shows the new boot strategy line without a reload',{timeout:120000},async t=>{
   let requests,holdStrategy=false;const held=deferred(),release=deferred();
   const {page,app,errors,dir}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -3620,11 +3657,11 @@ test('TC-074-001 a page kept open across a station restart shows the new boot st
   assert.deepEqual(requests.list.slice(mark).filter(r=>r==='GET /automation'),[],'no GET /automation: automation is unused after the restart');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-074-01; TC-074-002 the strategy line with None and no strategy run: drawn from the
+// The strategy line with None and no strategy run: drawn from the
 // strategy and automation snapshots together at each change of either; with None and no strategy
 // run it is the automation snapshot's text, "Automation idle" without a run; GET /automation only
-// after automation.state. Expected texts: WstxOperatingLayout::AutomationIndicator, WstxOperatingLayout::StrategySelector.
-test('TC-074-002 the strategy line with None and no strategy run shows the automation text',{timeout:60000},async t=>{
+// after automation.state. Expected texts: WstxBandActivityPane::StrategyElement.
+test('the strategy line with None and no strategy run shows the automation text',{timeout:60000},async t=>{
   const {page,errors,s,announce,settle,status}=await strategydefStation(t,{width:1366,height:768});
   const reads=()=>s.requests.filter(r=>r==='GET /automation').length;
   assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
@@ -3644,7 +3681,7 @@ test('TC-074-002 the strategy line with None and no strategy run shows the autom
   await run(null);await status('Automation idle');assert.equal(reads(),3);
   assert.deepEqual(errors,[]);
 });
-// The views of station state a page shows (WstxStationLink::PushedStationState), read in the page.
+// The views of station state a page shows (WstxStationLink::SocketProtocol), read in the page.
 function stationViews(){
   const q=s=>document.querySelector(s),a=q('#qso-auto'),sel=q('#strategy-name'),use=q('#qso-pskr'),layer=q('#free-tx-slots');
   return {line:q('#station-automation').textContent,active:q('#station-automation').dataset.active??null,
@@ -3658,13 +3695,14 @@ function stationViews(){
 // The boot of the state the already conforming views hold (null: none held).
 const heldBoots=page=>page.evaluate(()=>({contact:window.wstxContact?.snapshot()?.boot_id??null,recording:snapshot?.boot_id??null,live:typeof live==='undefined'?null:live?.boot_id??null,
   operating:operatingState?.boot_id??null,agc:agcState?.boot_id??null,txLevel:txLevelState?.boot_id??null,native:nativeState?.boot_id??null}));
-// Proves: CL-074-01; TC-074-003 every view on a new boot: boot A (the isolated station's real boot)
+// Every view on a new boot: boot A (the isolated station's real boot)
 // with a strategy run, Free Tx slots, PSK Reporter connected, Monitor off at startup on, Auto on and an
 // alert; then a new socket whose GET /profile names boot B, with boot B's replies held until the page
 // has been read, and boot A's late replies to GET /strategy and GET /pskr. From then on every station
 // reply and socket message of the page names boot B (the test rewrites the boot id). Oracles: the boot
-// B replies written here, the freshly loaded form (WstxOperatingLayout::StrategySelector and the page's own
+// B replies written here, the freshly loaded form (WstxBandActivityPane::StrategyElement and the page's own
 // initial texts) and a second page on boot B.
+// Proves: TC-074-003
 test('TC-074-003 on a new boot every view drops the previous boot at once, discards its late replies and ends as a fresh page',{timeout:240000},async t=>{
   for(const failing of [false,true]){
     const label=failing?'boot B strategy and PSK Reporter 503':'boot B answers';
@@ -3781,7 +3819,8 @@ test('TC-074-003 on a new boot every view drops the previous boot at once, disca
   }
 });
 
-// Proves: CL-039-01; TC-039-006 the continent is a station setting now.
+// The continent is a station setting.
+// Proves: TC-039-006
 test('TC-039-006 Settings > General continent saves to the station strategy store',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
@@ -3794,8 +3833,10 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-039-10; TC-039-006 the Most Wanted section: one button beside the date, no upload, a
+// The Most Wanted section: one button beside the date, no upload, a
 // failure's reason in one line. The update route is routed here: no network.
+// Proves: TC-039-006
+// Proves: TC-039-056
 test('TC-039-006 Settings > General Most Wanted: one button beside the date, a failure says why',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
@@ -3816,9 +3857,9 @@ test('TC-039-006 Settings > General Most Wanted: one button beside the date, a f
   await page.screenshot({path:'test-results/ui-operating/most-wanted-1366.png'});
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-042-01; TC-042-001 the editor offers what must be new and the actual isolated station
+// The editor offers what must be new and the actual isolated station
 // accepts and keeps the saved draft; Save does not start anything. Expected values written here.
-test('TC-042-001 Editor offers what must be new and the station saves it unselected',{timeout:40000},async t=>{
+test('Editor offers what must be new and the station saves it unselected',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
@@ -3834,9 +3875,9 @@ test('TC-042-001 Editor offers what must be new and the station saves it unselec
   await page.locator('#se-result').filter({hasText:'Saved'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-039-11; TC-039-032 on the actual isolated station: a built-in is read-only in the
+// On the actual isolated station: a built-in is read-only in the
 // editor, Duplicate copies it to a user strategy, a colliding name is refused with its field.
-test('TC-039-032 Built-in strategies are read-only in the editor and copy to a user strategy',{timeout:40000},async t=>{
+test('Built-in strategies are read-only in the editor and copy to a user strategy',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   const puts=[];page.on('request',r=>{if(r.url().endsWith('/strategy')&&r.method()==='PUT')puts.push(JSON.parse(r.postData()));});
@@ -3880,8 +3921,9 @@ test('TC-039-032 Built-in strategies are read-only in the editor and copy to a u
   assert.equal(reply.configuration.strategies.some(s=>s.name==='New DXCC'),false);
   assert.deepEqual(errors.filter(e=>!/400/.test(e)),[]);
 });
-// Proves: CL-039-04; TC-039-006 review 6683200740 finding 5: rows published during an evaluation are
+// Rows published during an evaluation are
 // evaluated when it ends, without a timer. Station replies are hand-written fixtures.
+// Proves: TC-039-006
 test('TC-039-006 Rows arriving during an evaluation are evaluated when it ends',{timeout:60000},async t=>{
   let state,view,release;const evaluations=[];const held=new Promise(r=>{release=r;});
   const period='2026-10-27T12:00:00.0000000Z';
@@ -3915,11 +3957,11 @@ test('TC-039-006 Rows arriving during an evaluation are evaluated when it ends',
   assert.deepEqual(evaluations.map(b=>[b.first_sequence,b.next_sequence]),[[0,2],[0,3]]);
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-042-02; TC-042-003 Band Activity right-click Ignore / Stop ignoring and the
+// Band Activity right-click Ignore / Stop ignoring and the
 // Settings > General ignore lists send exactly the requests written here; the station
 // replies (snapshots, verdicts) are hand-written fixtures; the row loses its strategy
 // mark only through the station's new verdicts.
-test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60000},async t=>{
+test('Band Activity Ignore and the Settings ignore lists',{timeout:60000},async t=>{
   let state,view;const puts=[],ignores=[],evaluations=[],commands=[];let session=[];
   const period='2026-10-27T12:00:00.0000000Z';
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
@@ -3978,11 +4020,11 @@ test('TC-042-003 Band Activity Ignore and the Settings ignore lists',{timeout:60
   await page.waitForFunction(()=>!document.querySelector('#ignore-session li'));
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-042-02, CL-042-06; TC-125-002 the Settings > General ignore lists take pattern
+// The Settings > General ignore lists take pattern
 // entries: the permanent list saves them with PUT /strategy, the session add field sends
 // POST /strategy/ignore with the pattern as call; the station's replies (snapshots, verdicts)
 // are hand-written fixtures, and the row loses its mark only through the station's new verdicts.
-test('TC-125-002 Pattern entries in the Settings ignore lists',{timeout:60000},async t=>{
+test('Pattern entries in the Settings ignore lists',{timeout:60000},async t=>{
   let state,view;const puts=[],ignores=[],commands=[];let session=[];
   const period='2026-10-27T12:00:00.0000000Z';
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
@@ -4035,10 +4077,10 @@ test('TC-125-002 Pattern entries in the Settings ignore lists',{timeout:60000},a
   await page.waitForFunction(()=>!document.querySelector('#ignore-session li'));
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-042-03; TC-042-005 Band Activity Pounce sends exactly the automation requests
+// Band Activity Pounce sends exactly the automation requests
 // written here (the station's automation replies are hand-written fixtures); the browser
 // never arms for the pounce; the QSO pane and the strategy element show the running pounce.
-test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{timeout:60000},async t=>{
+test('Band Activity Pounce and the pounce line in the QSO pane',{timeout:60000},async t=>{
   let state,view,automation={run:null,policy:0,runRevision:0,configuration:null};const autos=[],commands=[];
   const period='2026-10-27T12:00:00.0000000Z';
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
@@ -4091,11 +4133,12 @@ test('TC-042-005 Band Activity Pounce and the pounce line in the QSO pane',{time
   assert.equal(commands.some(c=>c.action==='enable_tx'||c.action==='select_row'),false,'the station run answers; the browser never arms for it');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-042-04; TC-042-007 the Settings > General
+// The Settings > General
 // alert history, Sound and Browser notification (off by default; permission asked only on
 // the click). The station's alert snapshots are hand-written fixtures; the page's
 // Notification and AudioContext are recording doubles; the expected lines, tones and
 // notifications are written here from WstxSettings::AlertDisplay.
+// Proves: TC-042-007
 test('TC-042-007 Alert history, sound and browser notification',{timeout:60000},async t=>{
   let view;const puts=[],clears=[];let history=[],revision=1;
   const strategy={name:'CQ',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,value:['most_wanted'],callers_first:true,cq_when_no_target:false,repetitions:4,quiet_minutes:10,treat_73_as_cq:false,window:{kind:'all'}};
@@ -4164,10 +4207,10 @@ test('TC-042-007 Alert history, sound and browser notification',{timeout:60000},
   await page.waitForFunction(()=>!document.querySelector('#alert-history li'));
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-055-03; TC-055-003 Settings > General shows the cty.dat in use (its date),
+// Settings > General shows the cty.dat in use (its date),
 // uploads a replacement to the actual isolated station and returns to the bundled file;
 // a file that is no cty.dat is refused with its line and changes nothing.
-test('TC-055-003 Settings > General country file shows its date, uploads and restores',{timeout:40000},async t=>{
+test('Settings > General country file shows its date, uploads and restores',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
   const status=page.locator('#cty-status');
@@ -4186,9 +4229,9 @@ test('TC-055-003 Settings > General country file shows its date, uploads and res
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-012-03; TC-020-004 MCP clients in Settings > General > Access & grants (#58):
+// MCP clients in Settings > General > Access & grants
 // listed when Settings opens, a new token shown once and cleared, revoke after confirmation.
-test('TC-020-004 Settings lists MCP clients, shows a new token once and revokes after confirmation',{timeout:60000},async t=>{
+test('Settings lists MCP clients, shows a new token once and revokes after confirmation',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   const posts=[],token='wstx_mcp_'+'A'.repeat(43);
   let clients=[{client_id:'00000000-0000-4000-8000-000000000001',name:'Claude <Code>',created_utc_ms:Date.UTC(2026,10,2,8,0),last_used_utc_ms:null}];
@@ -4243,8 +4286,8 @@ async function updatedStation(page,app,dir,t){
     return {before,next};
   }};
 }
-// Proves: CL-051-01, CL-051-02; TC-051-001 an open page reloads itself once after a station update and receives again.
-test('TC-051-001 an open page reloads after the station restarts with another client build and receives again',{timeout:60000},async t=>{
+// An open page reloads itself once after a station update and receives again.
+test('an open page reloads after the station restarts with another client build and receives again',{timeout:60000},async t=>{
   const {page,app,errors,dir}=await fixture(t,{width:1366,height:768});
   await page.evaluate(()=>{localStorage.setItem('wstx.theme.v1',JSON.stringify({theme:'day',mode:'manual',day:'07:00',night:'20:00'}));localStorage.setItem('wstx.waterfall-speed.v1','4');});
   const served=await page.evaluate(()=>document.body.dataset.build);assert.match(served,/^[0-9a-f]{16}$/);
@@ -4262,7 +4305,8 @@ test('TC-051-001 an open page reloads after the station restarts with another cl
   assert.equal(state.navigations,0,'no second reload for the same build');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-051-02, CL-051-03; TC-051-002 an update held by a QSO, a rejected snapshot and the reload chip.
+// An update held by a QSO, a rejected snapshot and the reload chip.
+// Proves: TC-051-002
 test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot shows an error chip instead of a frozen screen',{timeout:60000},async t=>{
   let contact=partner('calling'),reject=false,receiving;const bad={selection:false,results:false};
   const {page,app,errors,dir}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -4337,7 +4381,8 @@ async function liveDisplayFixture(t,viewport={width:1366,height:768}){
   await f.page.waitForFunction(()=>typeof live!=='undefined'&&live?.job?.mode==='ft8'&&live.source);
   return {...f,newJob:async()=>{receiving={...receiving,job:{...receiving.job,id:crypto.randomUUID()}};await f.page.evaluate(()=>receiveSync());await f.page.waitForFunction(id=>live.job.id===id,receiving.job.id);}};
 }
-// Proves: CL-054-02; TC-054-002 a fixed level mapping with Zero/Gain sliders, Flatten and the spectrum line option.
+// A fixed level mapping with Zero/Gain sliders, Flatten and the spectrum line option.
+// Proves: TC-054-002
 test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten and the spectrum line option',{timeout:60000},async t=>{
   const {page,errors,newJob}=await liveDisplayFixture(t);
   // Independent palette anchors (CL-006-03): t=0.1 -> (0,0,57), t=0.9 -> (255,105,0), t=0.3 -> (0,60,185), t=0.5 -> (0,220,240).
@@ -4366,7 +4411,8 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
   assert.deepEqual(await page.evaluate(()=>['wstx.waterfall-zero.v1','wstx.waterfall-range.v1','wstx.waterfall-flatten.v1','wstx.spectrum-line.v1'].map(k=>localStorage.getItem(k))),['10','30','on','on']);
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-054-01; TC-054-001 browser part: only real gaps are grey.
+// The browser part: only real gaps are grey.
+// Proves: TC-054-001
 test('TC-054-001 one or two live Thin rows the station paced out are held; only a longer run is a gap',{timeout:60000},async t=>{
   const {page,errors}=await liveDisplayFixture(t);
   await chooseDisplay(page,'thin');
@@ -4376,9 +4422,10 @@ test('TC-054-001 one or two live Thin rows the station paced out are held; only 
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-024-01; TC-024-004 (#24 S1b). Tx5 takes free text with no message yet (WSJT-X Tx5
+// Tx5 takes free text with no message yet (WSJT-X Tx5
 // free text), and Band Activity marks rows to <MYCALL> and nonstandard rows to my call as mine;
 // the QSO pane Others list them as calling me, without the partner's own rows.
+// Proves: TC-024-004
 test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeout:45000},async t=>{
   let state,records=[],contact,settings={};const commands=[],period='2026-10-27T12:00:00.0000000Z';
   const call=(kind,text,bits=null)=>({kind,text,hash_bits:bits,hash_value:bits===null?null:1});
@@ -4432,8 +4479,9 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-024-02; TC-024-006 (#24 S2a). The QSO fold-out's Activity choice shows the station's
+// The QSO fold-out's Activity choice shows the station's
 // special activity and sends set_activity.
+// Proves: TC-024-006
 test('TC-024-006 the Activity choice in the QSO fold-out',{timeout:40000},async t=>{
   const commands=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -4454,8 +4502,9 @@ test('TC-024-006 the Activity choice in the QSO fold-out',{timeout:40000},async 
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-024-03; TC-024-009 (#24 S2b). Field Day / RTTY Roundup with the Exchange entry:
+// Field Day / RTTY Roundup with the Exchange entry:
 // the entry and the serial show the station's setting; choosing and changing send the exchange.
+// Proves: TC-024-009
 test('TC-024-009 the contest choice and its Exchange entry',{timeout:40000},async t=>{
   const commands=[];
   const settings={activity:'rtty',exchange:'DX',serial:7};
@@ -4486,8 +4535,9 @@ test('TC-024-009 the contest choice and its Exchange entry',{timeout:40000},asyn
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-024-04; TC-024-013 (#24 S4b). The Hound choice: shown from the settings and sent
+// The Hound choice: shown from the settings and sent
 // without an exchange.
+// Proves: TC-024-013
 test('TC-024-013 the Hound choice in the QSO fold-out',{timeout:40000},async t=>{
   const commands=[];
   const settings={activity:'hound',exchange:null,serial:1};
@@ -4513,9 +4563,10 @@ test('TC-024-013 the Hound choice in the QSO fold-out',{timeout:40000},async t=>
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-099-02; TC-099-003 (#99). The EU VHF choice: offered after NA VHF, shown with the
+// The EU VHF choice: offered after NA VHF, shown with the
 // next serial, sent without an exchange; a refusal is shown and the choice returns to the
 // station's setting.
+// Proves: TC-099-003
 test('TC-099-003 the EU VHF choice in the QSO fold-out',{timeout:40000},async t=>{
   const commands=[];
   const settings={activity:'eu_vhf',exchange:null,serial:12};
@@ -4557,7 +4608,8 @@ test('TC-099-003 the EU VHF choice in the QSO fold-out',{timeout:40000},async t=
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-061-01; TC-061-001. Scripted receive identities, periods and waterfall rows (presentation fixtures, never modem truth).
+// Scripted receive identities, periods and waterfall rows (presentation fixtures, never modem truth).
+// Proves: TC-061-001
 test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a Stop/Start clears them',{timeout:45000},async t=>{
   let state,records=[];const reads=[];
   const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z','2026-10-27T12:00:30.0000000Z'];
@@ -4610,7 +4662,7 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
 });
 
 // ---------------------------------------------------------------- #37 lower panel
-// WstxLowerPanel::LowerPanel, ControlPanel, ErrorField. Oracle: the operator's #37 comments
+// WstxLowerPanel::ControlPanel, ErrorField. Oracle: the operator's comments
 // of 2026-11-03 (vertical stack, the QSO card's width, the controls always visible, the error
 // field with current problems only and no history), not the candidate markup.
 const panelControls=['#dx-call','#dx-grid','#dx-generate','#contact-report','#contact-auto','#contact-call-first','#contact-hold','#contact-parity'];
@@ -4625,8 +4677,9 @@ function assertStack(s,label){
   for(const k of ['control','error'])assert.ok(Math.abs(s[k].left-s.pane.left)<=1&&Math.abs(s[k].right-s.pane.right)<=1,`${label}: ${k} has the QSO card's edges ${JSON.stringify(s)}`);
   assert.equal(s.scroll,false,`${label}: no horizontal overflow`);
 }
-// Proves: CL-010-07; TC-007-002 (#22, live 2026-11-06, port held by another program): transmit unavailable
+// Transmit unavailable
 // disables CQ, Tune and Now with the reason beside them, and the pane follows each contact.state push.
+// Proves: TC-007-002, TC-037-003
 test('TC-007-002 the transmit controls and badge follow the pushed transmit capability',{timeout:40000},async t=>{
   let capability='available',revision=3,tune=false;const contact=partner('report',{suggested_slot:null});
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -4650,9 +4703,10 @@ test('TC-007-002 the transmit controls and badge follow the pushed transmit capa
   assert.deepEqual([back.cq,back.tune,back.badge,back.reason],[false,false,'Ready',null],'back without any action');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-010-07; TC-007-002 (#22). Without an available capability a double-click and a Calling me line select
+// Without an available capability a double-click and a Calling me line select
 // the station and send no enable_tx, the menu's Reply and "Auto Seq on" are not offered; Call 1st stays a setting.
-test('TC-007-002 no arming path sends enable_tx while the transmit capability is unavailable',{timeout:40000},async t=>{
+// Proves: TC-037-003
+test('no arming path sends enable_tx while the transmit capability is unavailable',{timeout:40000},async t=>{
   const period='2026-11-06T10:51:15.0000000Z';
   const standard=(to,from,toKind='call')=>({type:'standard',to:{kind:toKind,text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
   const row=(sequence,text,fields)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,period_start_utc:period,dt_seconds:0.1});
@@ -4699,7 +4753,7 @@ test('TC-007-002 no arming path sends enable_tx while the transmit capability is
   assert.deepEqual(await sent(2),['select_row','enable_tx'],'available: the double-click arms');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-057-03; TC-007-002 (#22, live 2026-11-06): a station restart leaves nothing of the previous boot in
+// A station restart leaves nothing of the previous boot in
 // Band Activity: no "Latest undefined period", no kept period, however the two reads are ordered. The real server
 // restarts on its port; the job of the first boot, the new job and their pages are presentation fixtures.
 for(const [name,order] of [['/receive answers first','receive'],['/recording answers first, /receive still pending','recording'],['a new job at a lower generation','job']])test(`TC-007-002 a station restart leaves no heading or rows of the previous boot in Band Activity: ${name}`,{timeout:60000},async t=>{
@@ -4748,7 +4802,8 @@ for(const [name,order] of [['/receive answers first','receive'],['/recording ans
   assert.match(await page.locator('#band-activity tbody').innerText(),order==='job'?/Listening for FT8/:/Decoder unavailable/);
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-037-01; TC-037-001 the Control panel below the QSO pane.
+// The Control panel below the QSO pane.
+// Proves: TC-037-001
 test('TC-037-001 the Control panel sits below the QSO pane at its width with DX call, report, Auto Seq, Call 1st, Hold Tx and Tx period always visible',{timeout:60000},async t=>{
   const commands=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -4785,7 +4840,8 @@ test('TC-037-001 the Control panel sits below the QSO pane at its width with DX 
   await page.locator('#error-field').scrollIntoViewIfNeeded();await page.screenshot({path:'test-results/ui-operating/lower-panel-360x800.png'});
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-037-02; TC-037-002 the error field lists current problems only.
+// The error field lists current problems only.
+// Proves: TC-037-002
 test('TC-037-002 the error field lists only current problems with their time and clears them by itself',{timeout:60000},async t=>{
   let transmit={};
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
@@ -4831,8 +4887,9 @@ test('TC-037-002 the error field lists only current problems with their time and
   assert.deepEqual((await entries()).map(e=>e[1]),['✖ Station connection lost · reconnecting']);
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-037-02; TC-037-002 (#37, live 2026-11-06): a long problem text cannot run past the screen at
+// A long problem text cannot run past the screen at
 // 1366x768: all of it can be scrolled into view inside the block, on screen, and the Control panel stays.
+// Proves: TC-037-002
 test('TC-037-002 a long problem scrolls inside the error field on screen and the Control panel stays',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
@@ -4863,12 +4920,12 @@ test('TC-037-002 a long problem scrolls inside the error field on screen and the
   await page.screenshot({path:'test-results/ui-operating/error-field-long-360x800.png'});
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-061-02; TC-061-003 (#83). Scripted contact snapshots, command replies and contact.state events
+// Scripted contact snapshots, command replies and contact.state events
 // (presentation fixtures): the CQ button retries a stale_revision refusal of its enable_tx with the reloaded
 // revision, at most twice, after the contract's wait of up to 2.5 s for a newer revision (ContactStateEvent):
 // the first click on the fallback (GET /contact after 2.5 s on the paused page clock), the second on the event.
 // Every wait is on an event with a 10 s hang guard; no fourth enable_tx is shown by the command order.
-test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
+test('CQ retries a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
   const commands=[],arrivals=[];let revision=3,stale=0;
   const arrival=n=>(arrivals[n]??=deferred()).promise;
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -4884,7 +4941,7 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
       if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
-  // WstxTransmit late start (live 2026-11-06, #10): a click 10 s into my Tx period keys at once for the rest.
+  // Late start (WstxTransmitControl::StartWindow): a click 10 s into my Tx period keys at once for the rest.
   assert.equal(await page.locator('#qso-cq').getAttribute('title'),'Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period');
   // From here on page time moves only by runFor: a retry before 2.5 s, or by a timer, cannot pass.
   await page.clock.pauseAt(await page.evaluate(()=>Date.now())+1000);
@@ -4920,14 +4977,14 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-037-04; TC-037-003 (#37, operator 2026-11-04: "fixed in size that the things below it
-// do not move all the time up and down"; live finding 2026-11-04: dialogue rows in a 46 px area at
-// 1366x768, ~325 px Band Activity cards at 360 px). The QSO pane has a fixed height with two
+// The QSO pane has a fixed height with two
 // sections, QSO (12 dialogue rows without scrolling on a laptop, kept at the newest row) and
 // Calling me (callers but not the partner: call, SNR, grid, country), each with a placeholder; the
 // Control panel top does not move when a QSO starts, rows or callers are added or the QSO ends;
 // at 360 px Band Activity shows compact rows, at least six on screen.
+// Proves: TC-037-003
 test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Calling me section, and Band Activity has compact rows at 360 px',{timeout:90000},async t=>{
+  const layout=openModel(),qsoRows=layout.number('WstxQsoPane::PaneLayout::qsoRows'),narrowQsoRows=layout.number('WstxQsoPane::PaneLayout::narrowQsoRows'),callingRows=layout.number('WstxQsoPane::PaneLayout::callingRows');
   let state,contact=null,transmit={},records=[];const period='2026-10-27T12:00:15.0000000Z';
   const fields=(to,from,grid)=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:grid?{kind:'grid',value:grid}:{kind:'report',value:-5}});
   const record=(sequence,text,hz,snr,dxcc)=>{const [to,from,grid]=text.split(' ');return {sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:fields(to,from,/^[A-R]{2}\d{2}$/.test(grid??'')?grid:null),period_start_utc:period,...(dxcc?{dxcc}:{})};};
@@ -4982,9 +5039,9 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.equal(await shown(page,'#qso-none'),false,'no placeholder during a QSO');
   assert.deepEqual((await calling()).map(r=>r[0]),['DL1ABC','EA8BIA ⚠'],'the partner is not calling me; EA8BIA is within 50 Hz of my Rx');
   await note('qso 1 row');
-  // Twelve rows fit without scrolling.
-  await show(qso(12),{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===12);
-  let f=await fit();assert.deepEqual(f,{scrolls:false,inside:12,lastInside:true,onScreen:true},'12 dialogue rows without scrolling at 1366x768');
+  // qsoRows rows fit without scrolling.
+  await show(qso(qsoRows),{arm_state:'armed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,qsoRows);
+  let f=await fit();assert.deepEqual(f,{scrolls:false,inside:qsoRows,lastInside:true,onScreen:true},`${qsoRows} dialogue rows without scrolling at 1366x768`);
   await note('qso 12 rows');
   await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-12rows-1366x768.png'});
   // More rows scroll inside; the newest stays visible.
@@ -5000,15 +5057,15 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   same(steps,'1366x768');
   assert.deepEqual(await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight})),{x:false,y:false},'one fixed screen at 1366x768');
   for(const selector of ['#qso-control','#error-field','#qso-halt'])assert.equal(await page.locator(selector).evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),true,`${selector} on screen at 1366x768`);
-  // Calling me holds its header and five rows without scrolling.
+  // Calling me holds its header and callingRows rows without scrolling.
   const rowH=await page.locator('#qso-others tr').first().evaluate(r=>r.getBoundingClientRect().height);
-  assert.ok(steps[0][1].calling.height>=6*rowH-1,`Calling me ${steps[0][1].calling.height} px holds its header and 5 rows of ${rowH} px`);
-  // 1920x1080: the same, and 12 rows still fit.
+  assert.ok(steps[0][1].calling.height>=(callingRows+1)*rowH-1,`Calling me ${steps[0][1].calling.height} px holds its header and ${callingRows} rows of ${rowH} px`);
+  // 1920x1080: the same, and qsoRows rows still fit.
   await page.setViewportSize({width:1920,height:1080});
   const wide=[];
-  for(const [name,n] of [['12 rows',12],['idle',0],['3 rows',3]]){
+  for(const [name,n] of [[`${qsoRows} rows`,qsoRows],['idle',0],['3 rows',3]]){
     await show(n?qso(n):null,{arm_state:'armed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);wide.push([name,await geometry()]);
-    if(n===12){f=await fit();assert.deepEqual(f,{scrolls:false,inside:12,lastInside:true,onScreen:true},'12 rows at 1920x1080');await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-12rows-1920x1080.png'});}
+    if(n===qsoRows){f=await fit();assert.deepEqual(f,{scrolls:false,inside:qsoRows,lastInside:true,onScreen:true},`${qsoRows} rows at 1920x1080`);await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-12rows-1920x1080.png'});}
   }
   same(wide,'1920x1080');
   // 360x800: the sections stack with fixed heights; Band Activity rows are compact.
@@ -5024,8 +5081,8 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.ok(visible.count>=6,`at least six Band Activity rows on screen at 360 px ${JSON.stringify(visible)}`);
   assert.ok(visible.height<=48,`a compact Band Activity row, ${visible.height} px`);
   const phone=[];
-  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);
-    if(n===6){f=await fit();assert.deepEqual([f.scrolls,f.inside],[false,6],'six full dialogue rows at 360 px (live 2026-11-06)');}}
+  for(const [name,n] of [['idle',0],[`${narrowQsoRows} rows`,narrowQsoRows],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);
+    if(n===narrowQsoRows){f=await fit();assert.deepEqual([f.scrolls,f.inside],[false,narrowQsoRows],`${narrowQsoRows} full dialogue rows at 360 px`);}}
   same(phone,'360x800');
   f=await fit();assert.equal(f.lastInside,true,'the newest row is visible at 360 px');
   await page.locator('#rx-focus').scrollIntoViewIfNeeded();
@@ -5033,8 +5090,8 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-037-05; TC-037-004 (#37, operator 2026-11-04: "Change contact to W4WFC DL1FRH JO30"
-// "makes no sense"): only a row that can start a contact for me offers the change, by its sender's call.
+// Only a row that can start a contact for me offers the change, by its sender's call.
+// Proves: TC-037-004
 test('TC-037-004 a contact change is offered only for a row that can start a contact for me',{timeout:60000},async t=>{
   const period='2026-10-27T12:00:15.0000000Z',commands=[];
   const records=[['CQ K1ABC FN42'],['QRZ W1XYZ FN31'],['HB9BLA DL1ABC JO31'],['W4WFC DL1FRH JO30'],['CQ EU G4ABC IO91','EU'],['CQ DX K2DX FN42','NA'],['CQ NA K3NA FN42','NA'],['CQ DX DL2DX JO31','EU']].map(([text,cont],sequence)=>{const w=text.split(' '),[from,grid]=w.slice(-2),to=w.slice(0,-2).join(' '),token=/^(CQ|QRZ)/.test(to);
@@ -5073,8 +5130,9 @@ test('TC-037-004 a contact change is offered only for a row that can start a con
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-044-08; TC-044-007. GET /audio/endpoints is a route fixture (hand-written names and
+// GET /audio/endpoints is a route fixture (hand-written names and
 // labels), so no audio device is read; the endpoint IDs are fixture GUIDs.
+// Proves: TC-044-007
 test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and Expert, and saves the radio audio',{timeout:60000},async t=>{
   const codecIn='{0.0.1.00000000}.{6b9f2c1e-1111-4222-8333-944444444444}',codecOut='{0.0.0.00000000}.{f4069c8a-1111-4222-8333-944444444444}';
   const headsetA='{0.0.1.00000000}.{aaaaaaaa-0000-4000-8000-000000000000}',headsetB='{0.0.1.00000000}.{bbbbbbbb-0000-4000-8000-000000000000}';
@@ -5115,7 +5173,7 @@ test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and 
 });
 
 // ---------------------------------------------------------------- #96 full screen
-// WstxOperatingLayout::FullScreenToggle (CL-096-01). The expected values are the operator's words on #96 and
+// WstxOperatingScreen::AppWindow. The expected values are the operator's words and
 // the WHATWG Fullscreen Standard (requestFullscreen on the document element, fullscreenElement,
 // fullscreenEnabled, exitFullscreen), not the candidate markup.
 const fullScreenVariants={
@@ -5173,9 +5231,9 @@ const fullScreenOff={label:'Full screen',pressed:'false',title:'Full screen: hid
 const fullScreenOn={label:'Leave full screen',pressed:'true',title:'Leave full screen',icon:'collapse',svg:1,text:''};
 const repeatedEscape=page=>page.evaluate(()=>{for(let i=0;i<3;i++)(document.activeElement??document.body).dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',repeat:true,bubbles:true,cancelable:true}));});
 
-// Proves: CL-096-01; TC-096-001 (a) place and look, (b) short Esc in full screen and after, (c) leaving from
-// outside and the held key's repeats, (d) keyboard, (e) reload, (j) layout in both states, (k) the overview.
-test('TC-096-001 the full-screen button left of ?, its states, Esc in and after full screen, keyboard, reload and the overview',{timeout:90000},async t=>{
+// The button's place and look, short Esc in full screen and after, leaving from
+// outside and the held key's repeats, keyboard, reload, layout in both states and the overview.
+test('the full-screen button left of ?, its states, Esc in and after full screen, keyboard, reload and the overview',{timeout:90000},async t=>{
   const x=await fullScreenFixture(t,{width:1366,height:768},'lock',{rows:true}),{page,errors,button}=x;
   // (a) Logbook, Settings, full screen, "?", HALT; off: outward corners.
   assert.deepEqual((await x.order()).slice(0,5),['open-logbook','open-server-settings','full-screen','help','halt-tx']);
@@ -5236,8 +5294,8 @@ test('TC-096-001 the full-screen button left of ?, its states, Esc in and after 
     ['Full screen button','Hide the browser frame and show only the app; press again to leave. Esc held: leave full screen.']]);
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-096-01; TC-096-001 (f) a browser without Keyboard Lock.
-test('TC-096-001 without Keyboard Lock the button enters full screen and Esc in full screen never aborts',{timeout:60000},async t=>{
+// A browser without Keyboard Lock.
+test('without Keyboard Lock the button enters full screen and Esc in full screen never aborts',{timeout:60000},async t=>{
   const x=await fullScreenFixture(t,{width:1366,height:768},'noKeyboard'),{page,errors,button}=x;
   assert.equal(await page.evaluate(()=>navigator.keyboard),undefined);
   await x.quiet(async()=>{await button.click();await x.entered();},'enter');
@@ -5246,15 +5304,15 @@ test('TC-096-001 without Keyboard Lock the button enters full screen and Esc in 
   assert.equal(x.aborts(),0,'Esc in full screen sends no abort');assert.equal(await x.prepared(),true);
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-096-01; TC-096-001 (g) no button where the browser offers no element full screen.
-test('TC-096-001 where fullscreenEnabled is false there is no full-screen button and no gap',{timeout:60000},async t=>{
+// No button where the browser offers no element full screen.
+test('where fullscreenEnabled is false there is no full-screen button and no gap',{timeout:60000},async t=>{
   const x=await fullScreenFixture(t,{width:1366,height:768},'disabled'),{page,errors}=x;
   assert.equal(await page.locator('#full-screen').count(),0);
   assert.deepEqual((await x.order()).slice(0,4),['open-logbook','open-server-settings','help','halt-tx'],'Settings directly followed by ?');
   assert.deepEqual(errors,[]);
 });
-// Proves: CL-096-01; TC-096-001 (h) a refused request changes nothing.
-test('TC-096-001 a refused full-screen request changes nothing and reports no error',{timeout:60000},async t=>{
+// A refused request changes nothing.
+test('a refused full-screen request changes nothing and reports no error',{timeout:60000},async t=>{
   const x=await fullScreenFixture(t,{width:1366,height:768},'rejects'),{page,errors,button}=x;
   await page.evaluate(()=>window.wstxChipsShow?.());
   const entries=()=>page.locator('#error-field [role=listitem]').allTextContents(),before=await entries();
@@ -5265,9 +5323,10 @@ test('TC-096-001 a refused full-screen request changes nothing and reports no er
 });
 
 // ---------------------------------------------------------------- #110 saved Auto Seq and Call 1st
-// Proves: CL-110-01; TC-110-005 (a)-(d). The candidate server on a disposable profile directory
+// The candidate server on a disposable profile directory
 // configured for transmission (CAT PTT and an output device, neither opened: nothing is armed), so
-// that Call 1st is an enabled setting. Oracle: CL-110-01 points 1 and 2, not the candidate's file.
+// that Call 1st is an enabled setting. Oracle: WstxQsoControl::QsoConfig, kept per profile, not the candidate's file.
+// Proves: TC-110-005
 test('TC-110-005 Call 1st unticked in the browser stays unticked after a station restart',{timeout:120000},async t=>{
   const port=await browserPort(),dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA saved settings',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',
@@ -5319,10 +5378,11 @@ test('TC-110-005 Call 1st unticked in the browser stays unticked after a station
   assert.deepEqual([second_view['contact-call-first'].checked,second_view['contact-auto'].checked],[false,true],'(b) the second browser');
   assert.deepEqual(errors,[]);
 });
-// The answer of a station whose save failed (CL-110-01 point 4), as the issue states it.
+// The answer of a station whose save failed, as the issue states it.
 const refuseStorage=route=>route.fulfill({status:503,json:{error:{code:'storage_unavailable',field:null}}});
-// Proves: CL-110-01; TC-110-005 (d) for Auto Seq. Its box is enabled only with an available transmit
+// The Auto Seq box is enabled only with an available transmit
 // capability, which no disposable station has: the snapshot is the fixture's, the refusal as in (d).
+// Proves: TC-110-005
 test('TC-110-005 (d) a refused Auto Seq change leaves the box showing the station value',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
@@ -5335,98 +5395,4 @@ test('TC-110-005 (d) a refused Auto Seq change leaves the box showing the statio
   await page.waitForFunction(()=>document.querySelector('#contact-result').textContent==='Auto sequence: refused · storage_unavailable',null,{timeout:10000});
   assert.deepEqual([await page.locator('#contact-auto').isChecked(),await page.evaluate(()=>window.wstxContact.snapshot().settings.auto_seq)],[true,true],'(d) Auto Seq ticked again');
   assert.deepEqual(errors,[]);
-});
-// Proves: TC-097-019 (oracle: lists A and B of the issue, the three searches as the case words
-// them; no browser). It reads docs/sysml/*.sysml: (1) the doc bodies list A rewrites into settings or
-// ranking text carry no match of P1, P2 or P3 (P3 ignoring case); (2) no file has the old setting
-// vocabulary outside the kept texts named below; (3) no file has a "#97" note or label. Each hit is
-// reported as file:line and the matched text.
-test('TC-097-019 the model carries no superseded wording',async()=>{
-  const dir=path.join(__dirname,'..','docs','sysml');
-  const files={};
-  for(const f of (await fs.readdir(dir,{recursive:true})).filter(f=>f.endsWith('.sysml')))files[f.replaceAll('\\','/')]=await fs.readFile(path.join(dir,f),'utf8');
-  const quote=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  // An element's own doc: the first doc comment after its declaration.
-  const doc=(file,name)=>{
-    if(file===R)file=Object.keys(files).find(f=>new RegExp(`\\b(?:requirement|verification)\\s+'${quote(name)}'`).test(files[f]))??R;
-    const text=files[file],m=new RegExp(`\\bdef\\s+${quote(name)}\\b|\\b(?:requirement|verification)\\s+'${quote(name)}'`).exec(text);
-    assert.ok(m,`${file}: ${name} not found`);
-    const s=text.indexOf('doc /*',m.index),e=text.indexOf('*/',s);
-    assert.ok(s>=0&&e>s,`${file}: ${name} has no doc`);
-    return {file,s,e:e+2};
-  };
-  // The package doc: its text before D1 (head) and its decision lines D<n>.
-  const packageDoc=file=>{const text=files[file],s=text.indexOf('doc /*');return {s,e:text.indexOf('*/',s)+2};};
-  const decisions=file=>{
-    const text=files[file],p=packageDoc(file),re=/^[ \t]*D(\d+) /gm,list=[];let m;
-    re.lastIndex=p.s;
-    while((m=re.exec(text))&&m.index<p.e)list.push([Number(m[1]),m.index]);
-    return {p,list};
-  };
-  const decision=(file,n)=>{
-    const {p,list}=decisions(file),i=list.findIndex(([k])=>k===n);
-    assert.ok(i>=0,`${file}: D${n} not found`);
-    return {file,s:list[i][1],e:i+1<list.length?list[i+1][1]:p.e};
-  };
-  const head=file=>{const {p,list}=decisions(file);return {file,s:p.s,e:list.length?list[0][1]:p.e};};
-  // Every match of re inside the span, as file:line: text; keep(index) filters by offset.
-  const hits=(span,re,keep=()=>true)=>{
-    const text=files[span.file],out=[],g=new RegExp(re.source,re.flags+'g');
-    for(const m of text.slice(span.s,span.e).matchAll(g)){
-      const at=span.s+m.index;
-      if(keep(at))out.push(`${span.file}:${text.slice(0,at).split('\n').length}: ${m[0]}`);
-    }
-    return out;
-  };
-  // (1) The rewritten elements carry no run vocabulary.
-  const P1=/\b(run|runs|run's)\b|StrategyRun|ManualIntervention|S&P|[Pp]ounce|policy run|select_row|enable_tx/;
-  const P2=/(strategy|contest)( strategy)? (selects|calls|answers|leaves|arms|transmits|starts)/;
-  const P3=/#97 replaces|it replaces|which replaces|formerly|\(target\)|until delivered|#97( \([^)]*\))?:/i;
-  // A file found by the package it declares; an element by its qualified name, at any depth.
-  const fileOf=pkg=>{
-    const file=Object.keys(files).find(f=>new RegExp(`^package\\s+${quote(pkg)}\\s*\\{`,'m').test(files[f]));
-    assert.ok(file,`package ${pkg} not found`);
-    return file;
-  };
-  const element=qualified=>{const [pkg,name]=qualified.split('::');return doc(fileOf(pkg),name);};
-  const S=fileOf('WstxStrategy'),C=fileOf('WstxContest'),R='Requirements.sysml';
-  const scope=[
-    ...[2,15,19].map(n=>decision(S,n)),
-    ...['NewWhat','NewPer','ValueCriterion','Needed','StrategyBands','CountryList','UsStateFilter','CqTargetList','Verdict'].map(n=>element(`WstxRankingControl::${n}`)),
-    ...['StrategyClass','LeaveMode','Strategy'].map(n=>element(`WstxStrategies::${n}`)),
-    element('WstxStrategy::PskCase'),
-    ...['UsStateOf','NewNeeded','CallerOfMyCall','Candidate','ValueOrder'].map(n=>element(`WstxValueOrder::${n}`)),
-    ...['StrategyBandsRule','CountryListRule','UsStateFilterRule','CqTargetListRule','VerdictRule'].map(n=>element(`WstxValueOrder::${n}`)),
-    element('WstxContestRanking::ContestVerdictRule'),
-    ...['BuiltinStrategies','StrategyConfiguration'].map(n=>element(`WstxStrategies::${n}`)),
-    element("WstxSettings::StrategyEditor"),
-    head(C),decision(C,1),decision(C,11),
-    ...['ContestSelection','ContestPrompt'].map(n=>element(`WstxStrategies::${n}`)),
-    element('WstxContestRanking::ContestValueOrder'),
-    element("WstxSettings::ContestView"),
-    ...['CL-039-01','CL-039-02','CL-039-04','CL-039-11','CL-042-01','CL-063-03'].map(n=>doc(R,n)),
-  ];
-  assert.deepEqual(scope.flatMap(span=>[P1,P2,P3].flatMap(re=>hits(span,re))),[],'(1) run vocabulary in a rewritten element');
-  // (2) No old setting vocabulary anywhere, except the kept texts: the refused-keys sentences of
-  // WstxStrategies::Strategy and WstxStrategies::ContestSelection, StrategyConfiguration's upgrade text,
-  // TC-097-001 and TC-097-002.
-  const OLD=/S&P|operation "sp"|\bsp:|[Rr]epetitions before leaving|cq_when_no_target|CQ when no target|quiet_minutes|GoalNeeded|enum def Goal|always answered|Callers of my call first|award strateg|class award/;
-  const sentence=(span,lead,end)=>{
-    const text=files[span.file],s=text.indexOf(lead,span.s);
-    assert.ok(s>=0&&s<span.e,`${span.file}: the kept text "${lead}" not found`);
-    const e=end?text.indexOf(end,s):span.e;
-    assert.ok(e>s&&e<=span.e,`${span.file}: the end of the kept text "${lead}" not found`);
-    return {file:span.file,s,e};
-  };
-  const kept=[
-    sentence(element('WstxStrategies::Strategy'),'Nothing else exists:'),
-    sentence(element('WstxStrategies::StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
-    sentence(element('WstxStrategies::ContestSelection'),'The keys operation,','null or absent'),
-    doc(R,'TC-097-001'),doc(R,'TC-097-002'),
-  ];
-  const outside=(file,i)=>!kept.some(k=>k.file===file&&i>=k.s&&i<k.e);
-  const old=Object.keys(files).flatMap(file=>hits({file,s:0,e:files[file].length},OLD,at=>outside(file,at)));
-  assert.deepEqual(old,[],'(2) old setting vocabulary');
-  // (3) No "#97" note or label anywhere.
-  assert.deepEqual(Object.keys(files).flatMap(file=>hits({file,s:0,e:files[file].length},/#97( \([^)]*\))?:/)),[],'(3) a #97 note or label');
 });

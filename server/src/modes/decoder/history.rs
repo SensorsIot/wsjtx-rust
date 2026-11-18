@@ -3,6 +3,10 @@ use super::{Decode, DecodeError, Mode};
 use serde::Serialize;
 
 const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
+/// The frames one recording, or one stretch of continuous receive, may return.
+const RECORD_CAP: usize = 2048;
+/// The largest frame, written as JSON with its sequence.
+const RECORD_MAX_BYTES: usize = 1024;
 
 /// Real fixed-table graphs plus the old inline array of one lists() reallocation.
 /// MaybeUninit slots represent moved String headers, never duplicate String owners.
@@ -451,7 +455,7 @@ impl DecodeState {
     pub fn set_period_start(&mut self, frame: Option<u64>) {
         self.period_start = frame;
     }
-    /// WstxModemDecode::APrioriContext of the next window; the default allows only the CQ
+    /// WstxModeProcessing::APrioriContext of the next window; the default allows only the CQ
     /// hypothesis.
     pub fn set_a_priori(&mut self, a_priori: super::APriori) {
         self.a_priori = a_priori;
@@ -520,7 +524,10 @@ impl DecodeState {
         let bytes = serde_json::to_vec(&Numbered { sequence, record })
             .map_err(|_| DecodeError::DecodeLimit)?
             .len();
-        if self.published.len() >= 2048 || bytes > 1024 || self.encoded_bytes + bytes > 2097152 {
+        if self.published.len() >= RECORD_CAP
+            || bytes > RECORD_MAX_BYTES
+            || self.encoded_bytes + bytes > 2097152
+        {
             return Err(DecodeError::DecodeLimit);
         }
         publish(record)?;

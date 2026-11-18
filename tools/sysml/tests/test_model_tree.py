@@ -1,543 +1,246 @@
-"""TC-DOC-008: the model is a tree of files below docs/sysml, named by key.
+"""TR-10: the catalog reads every FR, clause and case of the rebuilt forms and refuses the
+first fault; TR-20: the states and bindings it reads.
 
-A required package (WstxRequirements, WstxArchitecture) is found by its package, in a file
-of any name and folder; an additional package needs no reference anywhere. Isolated
-fixtures in a temporary folder; one test (the relocated real model) runs the real pinned
-Pilot, and two build a throwaway git repository for the gate's model bindings.
+Isolated fixtures in a temporary folder; every entry and message is written by hand from the
+fixture lines below.
 """
-import contextlib
-import hashlib
 import importlib.util
-import io
-import json
 from pathlib import Path
-import re
-import shutil
-import subprocess
 import tempfile
 import unittest
-from unittest import mock
-import urllib.parse
 
-ROOT = Path(__file__).resolve().parents[3]
-spec = importlib.util.spec_from_file_location("tree_tool", ROOT / "tools/sysml.py")
+spec = importlib.util.spec_from_file_location("model_tree_tool", Path(__file__).resolve().parents[2] / "sysml.py")
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
-REQUIRED = {"FR-901", "CL-003-01", "TC-001-001"}
-ENUMS = '''    enum def ImplementationState { enum target; enum partial; enum implemented; }
-    enum def AutomationState { enum planned; enum partial; enum implemented; }
-'''
-FR = '''    requirement 'FR-901' {
-        attribute coverage : ImplementationState = ImplementationState::target;
-    }
-'''
-CLAUSE = '''    requirement 'CL-003-01' {
-        attribute coverage : ImplementationState = ImplementationState::target;
-    }
-'''
-CASE = '''    verification 'TC-001-001' {
-        attribute automation : AutomationState = AutomationState::planned;
-        objective { verify 'FR-901'; verify 'CL-003-01'; }
-    }
-'''
-OWNS = "    dependency owns from 'CL-003-01' to 'FR-901';\n"
-CHECKS = "    dependency checks from 'CL-003-01' to 'TC-001-001';\n"
-MARKER = "// Canonical authority: SysML\n"
-# The whole catalog in the entry file, and the same catalog split over two folders.
-FLAT = MARKER + "package WstxRequirements {\n" + ENUMS + FR + CLAUSE + CASE + OWNS + CHECKS + "}\n"
-TOP = MARKER + "package WstxRequirements {\n" + ENUMS + FR + "}\n"
-PART = "package PPart {\n" + CLAUSE + CASE + OWNS + CHECKS + "}\n"
-PART_KEY = "backend/qso/Part.sysml"
-# The fixture's model files and the required package each declares, written by hand from
-# the contract's list of required packages.
-REQUIRED_FILES = {"Requirements.sysml": "WstxRequirements", "Architecture.sysml": "WstxArchitecture"}
-ARCHITECTURE_MISSING = r"Canonical model packages missing: WstxArchitecture$"
-
-
-class ModelTreeTests(unittest.TestCase):
-    def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
-        for name in tool.SOURCE_BINDING_ROOTS:
-            (self.root / name).mkdir()
-        self.models = self.root / "docs/sysml"
-        self.fsd = self.root / "docs/FSD.md"
-        self.written = {}
-        for name, package in REQUIRED_FILES.items():
-            self.write(name, "package " + package + " {}")
-        self.write("Requirements.sysml", FLAT)
-
-    def write(self, key, text):
-        path = self.models / key
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-        self.written[key] = text
-        return path
-
-    def remove(self, key):
-        (self.models / key).unlink()
-        del self.written[key]
-
-    def tree(self, part=PART):
-        """The catalog split: the FR in the root entry file, clause and case two folders down."""
-        self.write("Requirements.sysml", TOP)
-        self.write(PART_KEY, part)
-
-    def check(self):
-        return tool.canonical_catalog(self.models, self.root, required=REQUIRED)
-
-    def refused(self, message):
-        return self.assertRaisesRegex(ValueError, message)
-
-    def command(self, *argv, validate=None):
-        """Run a command of the tool on the fixture; returns (exit code, stdout, stderr)."""
-        real_catalog = tool.canonical_catalog
-        output, errors = io.StringIO(), io.StringIO()
-        # Every fixture file on the pending list: the structure checks are TC-DOC-016's.
-        pending = self.root / "tools/sysml/pending-structure.json"
-        pending.parent.mkdir(parents=True, exist_ok=True)
-        pending.write_text(json.dumps({"files": sorted(self.written), "elements": {}}), encoding="utf-8")
-        with mock.patch.object(tool, "ROOT", self.root), mock.patch.object(tool, "MODELS", self.models), \
-                mock.patch.object(tool, "FSD", self.fsd), mock.patch.object(tool, "PENDING", pending), \
-                mock.patch.object(tool, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)), \
-                mock.patch.object(tool, "validate", validate or mock.Mock(side_effect=AssertionError("validator invoked"))), \
-                mock.patch.object(tool, "architecture_integrity", return_value={"connections": 0}), \
-                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            status = tool.main(list(argv))
-        return status, output.getvalue(), errors.getvalue()
-
-    # T1
-    # Proves: CL-014-10; TC-DOC-008
-    def test_identities_in_a_subfolder_file_are_cataloged_and_a_duplicate_across_folders_refused(self):
-        self.tree()
-        self.assertEqual(set(self.check()), REQUIRED)
-        self.write("other/More.sysml", "package PPart {\n" + CLAUSE + "}\n")
-        with self.refused("Duplicate canonical identity: CL-003-01"):
-            self.check()
-
-    def elsewhere(self):
-        """The two required packages in files of other names, one at the root and one two
-        folders down. The entry file keeps its name and the marker and holds an additional
-        package. Returns {package: key}."""
-        for key in list(self.written):
-            self.remove(key)
-        keys = {package: ("" if index % 2 else "area/part/") + "File" + str(index) + ".sysml"
-                for index, package in enumerate(sorted(REQUIRED_FILES.values()))}
-        for package, key in keys.items():
-            self.write(key, "package " + package + " {}")
-        self.write(keys["WstxRequirements"], FLAT[len(MARKER):])
-        self.write("Requirements.sysml", MARKER + "package Entry {}")
-        return keys
-
-    def without_architecture_package(self):
-        """The fixture with no file of package WstxArchitecture, and no other fault."""
-        self.write("Architecture.sysml", "package Moved {}")
-
-    def git(self, *args):
-        subprocess.run(["git", "-C", str(self.root), "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
-                        "-c", "core.autocrlf=false", "-c", "commit.gpgsign=false", *args], check=True, capture_output=True)
-
-    def commit(self, message):
-        self.git("add", "-A")
-        self.git("commit", "-q", "--no-verify", "-m", message)
-
-    # Required packages T1: none and one
-    # Proves: CL-014-10; TC-DOC-008
-    def test_required_package_is_found_by_package_in_a_file_of_any_name_and_folder(self):
-        keys = self.elsewhere()
-        with self.subTest("two packages, no required file name but the entry file"):
-            self.assertEqual(len(keys), 2)
-            self.assertEqual(set(self.written) & set(REQUIRED_FILES), {"Requirements.sysml"})
-            self.assertEqual(sorted("/" in key for key in keys.values()), [False, True])
-            self.assertEqual(set(self.check()), REQUIRED)
-            self.assertEqual(tool.authority(self.models, self.fsd), "sysml")
-        for package, key in keys.items():
-            with self.subTest(removed=package):
-                text = self.written[key]
-                self.remove(key)
-                try:
-                    with self.refused("Canonical model packages missing: " + package + "$"):
-                        self.check()
-                finally:
-                    self.write(key, text)
-        architecture = keys["WstxArchitecture"]
-        self.remove(architecture)
-        # A name that is not the package of its file does not count.
-        for label, text in (("in a line comment", "// package WstxArchitecture {}\n"),
-                            ("in a block comment", "/* package WstxArchitecture {\n} */\n"),
-                            ("a longer name", "package WstxArchitectureX {}"),
-                            ("nested in another package", "package Outer { package WstxArchitecture {} }"),
-                            ("the second package of the file", "package First {}\npackage WstxArchitecture {}")):
-            with self.subTest(label):
-                self.write(architecture, text)
-                with self.refused(ARCHITECTURE_MISSING):
-                    self.check()
-        self.remove(architecture)
-        self.remove(keys["WstxRequirements"])
-        with self.subTest("two removed"), self.refused(r"Canonical model packages missing: WstxArchitecture, WstxRequirements$"):
-            self.check()
-
-    # Required packages T2: two
-    # Proves: CL-014-10; TC-DOC-008
-    def test_required_package_in_two_files_is_refused_and_a_file_name_may_repeat(self):
-        self.write("radio/Other.sysml", "package WstxArchitecture {}")
-        with self.subTest("one package, two files"), self.refused(
-                r"Duplicate canonical model package: WstxArchitecture: Architecture\.sysml, radio/Other\.sysml$"):
-            self.check()
-        self.remove("radio/Other.sysml")
-        self.write("radio/Architecture.sysml", "package RadioCapture {}")
-        with self.subTest("one file name, two packages"):
-            self.assertEqual(set(self.check()), REQUIRED)
-
-    # Required packages T3: the file of a required package split into function files
-    # Proves: CL-014-10; TC-DOC-008
-    def test_required_file_split_into_function_files_keeps_the_identities(self):
-        content = CLAUSE + CASE + OWNS + CHECKS + "}\n"
-        self.write("Requirements.sysml", TOP)
-        self.write("Architecture.sysml", "package WstxArchitecture {\n" + content)
-        before = set(self.check())
-        self.assertEqual(before, REQUIRED)
-        self.remove("Architecture.sysml")
-        self.write("backend/radio/Cat.sysml", "package WstxArchitecture {}")
-        self.write("backend/radio/Capture.sysml", "package WstxRadioCapture {\n" + content)
-        with self.subTest("the content in an additional package, referred to nowhere"):
-            self.assertEqual(set(self.check()), before)
-        self.write("backend/radio/Cat.sysml", "package WstxRadioCat {}")
-        with self.subTest("the required package renamed too"), self.refused(ARCHITECTURE_MISSING):
-            self.check()
-
-    # Required packages T4: an additional package needs no reference in any file
-    # Proves: CL-014-10; TC-DOC-008
-    def test_additional_package_in_any_file_needs_no_reference(self):
-        self.write("Future.sysml", "package FutureBackend {}")
-        self.write("nav/Scope.sysml", "package WstxProductScope { private import Decoy::*; }")
-        self.write("ProductScope.sysml", "package Decoy {}")
-        with self.subTest("referred to nowhere, with and without a package WstxProductScope"):
-            self.assertEqual(set(self.check()), REQUIRED)
-            self.remove("nav/Scope.sysml")
-            self.assertEqual(set(self.check()), REQUIRED)
-
-    # Required packages T5: a file name gives no exemption and decides nothing
-    # Proves: CL-014-10; TC-DOC-008
-    def test_file_of_a_required_name_with_another_package_is_an_additional_package(self):
-        self.write("Architecture.sysml", "package Other {}")
-        self.write("radio/Cat.sysml", "package WstxArchitecture {}")
-        with self.subTest("the required package in a file of another name"):
-            self.assertEqual(set(self.check()), REQUIRED)
-        self.remove("radio/Cat.sysml")
-        with self.subTest("only the file name left"), self.refused(ARCHITECTURE_MISSING):
-            self.check()
-
-    # Required packages T5: no package, and the former library packages
-    # Proves: CL-014-10; TC-DOC-008
-    def test_file_without_a_package_and_a_library_package_are_accepted(self):
-        self.write("shared/Notes.sysml", "package ModelNotes { metadata def NotStated; }")
-        self.write("shared/Bindings.sysml", "package ModelBindings { metadata def Status; }")
-        with self.subTest("library packages"):
-            self.assertEqual(set(self.check()), REQUIRED)
-        for key in ("Loose.sysml", "notes/Loose.sysml"):
-            with self.subTest(without_package=key):
-                self.write(key, "// package Hidden {}\nattribute def Loose;\n")
-                self.assertEqual(set(self.check()), REQUIRED)
-                self.remove(key)
-
-    # Required packages T6: the commands on a model without a required package
-    # Proves: CL-014-10; TC-DOC-008
-    def test_check_traces_and_fingerprints_refuse_a_model_without_a_required_package(self):
-        self.without_architecture_package()
-        for name in ("check", "traces", "fingerprints"):
-            with self.subTest(command=name):
-                # The fixture's validator fails the test when it is invoked.
-                self.assertEqual(self.command(name),
-                                 (2, "", "SysML check failed: Canonical model packages missing: WstxArchitecture\n"))
-
-    # Required packages T6, a guard of existing behaviour: markers runs no catalog check
-    # Proves: CL-014-10; TC-DOC-008
-    def test_markers_lists_a_model_without_a_required_package(self):
-        self.without_architecture_package()
-        self.write("shared/ModelNotes.sysml", "package ModelNotes { metadata def NotStated { attribute what : String; } }")
-        self.write("Architecture.sysml", 'package Moved {\n    @NotStated { what = "the level"; }\n}\n')
-        self.assertEqual(self.command("markers"), (0, "Architecture.sysml:2: NotStated: the level\n1 markers: 1 NotStated\n", ""))
-
-    # Required packages T6: the gate's model bindings on moved and renamed files
-    # Proves: CL-014-10; TC-DOC-008
-    def test_gate_model_bindings_follow_moved_and_renamed_required_files(self):
-        spec = importlib.util.spec_from_file_location("required_model_bindings", ROOT / "harness/project/model_bindings.py")
-        bindings = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(bindings)
-        bound = 'AutomationState::partial;\n        attribute executable : String = "tests/case.cjs";'
-        (self.root / "tests/case.cjs").write_text("// Proves: TC-001-001\ntest('identity',()=>{});\n", encoding="utf-8")
-        self.write("Requirements.sysml", FLAT.replace("AutomationState::planned;", bound))
-        self.git("init", "-q")
-        self.commit("flat")
-        flat_keys = sorted(self.written)
-        # Every file of a required package but the entry file, moved and renamed.
-        for index, key in enumerate(key for key in flat_keys if key != "Requirements.sysml"):
-            text = self.written[key]
-            self.remove(key)
-            self.write(("moved/deep/" if index % 2 else "moved/") + "M" + str(index) + ".sysml", text)
-        self.commit("moved and renamed")
-        moved_keys = sorted(self.written)
-        architecture = next(key for key, text in self.written.items() if text == "package WstxArchitecture {}")
-        self.remove(architecture)
-        self.commit("without the package")
-        case = {"automated": True, "verifies": ["FR-901", "CL-003-01"], "paths": ["tests/case.cjs"],
-                "tests": [{"path": "tests/case.cjs", "name": "identity"}], "unresolved": []}
-        real_catalog = bindings.sysml.canonical_catalog
-        with mock.patch.object(bindings, "ROOT", self.root), \
-                mock.patch.object(bindings.sysml, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)):
-            flat = bindings.bindings("HEAD~2")
-            with self.subTest("revision 1, flat"):
-                self.assertEqual(flat["models"], ["docs/sysml/" + key for key in flat_keys])
-                self.assertEqual(flat["cases"], {"TC-001-001": case})
-                self.assertEqual(set(flat["promises"]), {"FR-901", "CL-003-01"})
-            with self.subTest("revision 2, moved and renamed"):
-                moved = bindings.bindings("HEAD~1")
-                self.assertEqual(moved["models"], ["docs/sysml/" + key for key in moved_keys])
-                self.assertEqual((moved["cases"], moved["promises"]), (flat["cases"], flat["promises"]))
-            with self.subTest("revision 3, without the package"):
-                output, errors = io.StringIO(), io.StringIO()
-                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-                    status = bindings.main(["--rev", "HEAD"])
-                self.assertEqual((status, output.getvalue(), errors.getvalue()),
-                                 (2, "", "model bindings: Canonical model packages missing: WstxArchitecture\n"))
-        self.assertEqual(set(moved_keys) & set(flat_keys), {"Requirements.sysml"})
-        self.assertEqual(len(moved_keys), 2)
-
-    # T3, a guard of existing behaviour
-    # Proves: CL-014-10; TC-DOC-008
-    def test_entry_file_is_required_directly_in_the_model_folder(self):
-        self.assertEqual(tool.authority(self.models, self.fsd), "sysml")
-        self.remove("Requirements.sysml")
-        self.write("top/Requirements.sysml", FLAT)
-        with self.refused("No declared functional authority"):
-            tool.authority(self.models, self.fsd)
-        for name in ("check", "traces", "fingerprints"):
-            with self.subTest(command=name):
-                status, _output, errors = self.command(name)
-                self.assertEqual(status, 2)
-                self.assertIn("No declared functional authority", errors)
-
-    # T4
-    # Proves: CL-014-10; TC-DOC-008
-    def test_verify_through_package_names_is_read_and_checked_as_an_unqualified_one(self):
-        for qualifier in ("PPart::", "A::B::"):
-            with self.subTest(accepted=qualifier):
-                self.write("Requirements.sysml", FLAT.replace("verify 'CL-003-01';", "verify " + qualifier + "'CL-003-01';"))
-                self.assertEqual(self.check()["TC-001-001"]["refs"], ["FR-901", "CL-003-01"])
-        second = '''    verification 'TC-001-002' {
-        attribute automation : AutomationState = AutomationState::planned;
-        objective { verify PPart::'CL-003-01'; }
+CLOCK_KEY = "backend/clock/Clock.sysml"
+STATION_CLOCK_KEY = "backend/clock/StationClock.sysml"
+MODEL = {
+    "Requirements.sysml": """// Canonical authority: SysML
+package WstxRequirements {
+    requirement 'FR-006' {
+        doc /* Time
+             Keep station time with the stations heard. */
     }
 }
-'''
-        with self.subTest("without a dependency to the case (CL-014-05)"):
-            self.write("Requirements.sysml", FLAT.rsplit("}", 1)[0] + second)
-            self.assertEqual(self.check()["TC-001-002"]["refs"], ["CL-003-01"])
-        with self.subTest("undefined target"):
-            self.write("Requirements.sysml", FLAT.replace("verify 'FR-901';", "verify PPart::'FR-999';"))
-            with self.refused("verification target: TC-001-001"):
-                self.check()
+""",
+    "Shack.sysml": "package WstxShack {\n}\n",
+    "Context.sysml": "package WstxContext {\n}\n",
+    CLOCK_KEY: """package WstxClockPart {
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
 
-    # T5
-    # Proves: CL-014-10; TC-DOC-008
-    def test_clause_dependency_ends_through_package_names_are_read_and_checked(self):
-        owns = "    dependency owns from PPart::'CL-003-01' to WstxRequirements::'FR-901';\n"
-        checks = "    dependency checks from PPart::'CL-003-01' to A::B::'TC-001-001';\n"
-        self.write("Requirements.sysml", FLAT.replace(OWNS, owns).replace(CHECKS, checks))
-        self.assertEqual(set(self.check()), REQUIRED)
-        for label, text in (("owner", FLAT.replace(OWNS, owns.replace("FR-901", "FR-999")).replace(CHECKS, checks)),
-                            ("case", FLAT.replace(OWNS, owns).replace(CHECKS, checks.replace("TC-001-001", "TC-001-999")))):
-            with self.subTest(undefined=label):
-                self.write("Requirements.sysml", text)
-                with self.refused("Invalid canonical clause dependency: CL-003-01 -> "):
-                    self.check()
+    part def ClockService {
+        doc /* The station's clock. */
+        @ImplementedIn { module = "server/src/transmit/clock.rs"; }
+        @DetailTests { tests = "server/src/transmit/clock_tests.rs"; covers = "the correction"; }
+    }
+}
+""",
+    STATION_CLOCK_KEY: """package WstxStationClock {
+    private import WstxRequirements::'FR-006';
+    private import WstxClockPart::ClockService;
+    private import WstxModelBindings::*;
 
-    # T6
-    # Proves: CL-014-10; TC-DOC-008
-    def test_additional_package_is_accepted_whatever_a_productscope_text_says_of_it(self):
-        # The same holds for a file at the root and in a folder.
-        for key in ("Future.sysml", "interfaces/Future.sysml"):
-            self.write(key, "package FutureBackend {}")
-            for scope in ("private import FutureBackend::*;", "import FutureBackend;", "alias F for FutureBackend;",
-                          "", "// import FutureBackend;", "private import FutureBackendX::*;"):
-                with self.subTest(key=key, scope=scope):
-                    self.write("ProductScope.sysml", "package WstxProductScope { " + scope + " }")
-                    self.assertEqual(set(self.check()), REQUIRED)
-            self.remove(key)
+    requirement 'CL-043-01' {
+        subject clock : ClockService;
+        doc /* The clock MUST hold station time as the PC clock plus its correction. */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/transmit/air.rs; " + "server/src/transmit/clock.rs"; }
+    }
+    #derivation connection { end #original ::> 'FR-006'; end #derive ::> 'CL-043-01'; }
 
-    # T7
-    # Proves: CL-014-10; TC-DOC-008
-    def test_package_of_any_name_is_accepted_without_a_library_list(self):
-        for key, package in (("ModelNotes.sysml", "ModelNotes"), ("shared/Notes.sysml", "ModelNotes"),
-                             ("ModelNotes.sysml", "Other"), ("Unlisted.sysml", "Unlisted"), ("ModelNotes.sysml", "ModelNotesX")):
-            with self.subTest(key=key, package=package):
-                self.write(key, "package " + package + " {}")
-                self.assertEqual(set(self.check()), REQUIRED)
-                self.remove(key)
-
-    # T8
-    # Proves: CL-014-10; TC-DOC-008
-    def test_documentation_link_resolves_from_the_files_own_folder_and_messages_name_the_key(self):
-        # Three folders up from docs/sysml/backend/qso is docs, so the target is docs/tests/case.cjs.
-        linked = PART.replace("package PPart {", "package PPart {\n    doc /* [t](../../../tests/case.cjs) */")
-        target = self.root / "docs/tests/case.cjs"
-        target.parent.mkdir()
-        self.tree(linked)
-        with self.subTest("missing target"), self.refused(
-                r"Dangling model documentation link: backend/qso/Part\.sysml: \.\./\.\./\.\./tests/case\.cjs$"):
-            self.check()
-        target.write_text("", encoding="utf-8")
-        with self.subTest("existing target"):
-            self.assertEqual(set(self.check()), REQUIRED)
-        self.tree(PART + "// Canonical FSD slices SHA256: stale\n")
-        with self.subTest("retired FSD"), self.refused(r"retired FSD dependency: backend/qso/Part\.sysml$"):
-            self.check()
-
-    # T9
-    # Proves: CL-014-10; TC-DOC-008
-    def test_fingerprints_name_every_file_by_key_with_the_hash_of_its_text(self):
-        def fingerprints():
-            status, output, errors = self.command("fingerprints")
-            self.assertEqual(status, 0, errors)
-            return json.loads(output, object_pairs_hook=list)
-
-        def expected():
-            return [(key, hashlib.sha256(self.written[key].encode("utf-8")).hexdigest()) for key in sorted(self.written)]
-
-        with self.subTest("flat"):
-            self.assertEqual(fingerprints(), expected())
-            self.assertTrue(all("/" not in key for key, _hash in fingerprints()))
-        self.tree()
-        self.write("radio/Architecture.sysml", "package WstxArchitecture { /* moved */ }")
-        self.remove("Architecture.sysml")
-        with self.subTest("tree"):
-            self.assertEqual(len(self.written), 3)
-            self.assertIn(PART_KEY, self.written)
-            self.assertEqual(fingerprints(), expected())
-
-    # T10
-    # Proves: CL-014-10; TC-DOC-008
-    def test_check_validates_every_file_once_entry_first_then_sorted_by_key(self):
-        self.tree()
-        self.write("radio/Architecture.sysml", "package WstxArchitecture {}")
-        self.write("Zeta.sysml", "package Zeta {}")
-        self.remove("Architecture.sysml")
-        validate = mock.Mock(return_value=subprocess.CompletedProcess([], 0, "semantic fixture", ""))
-        status, _output, errors = self.command("check", validate=validate)
-        self.assertEqual(status, 0, errors)
-        others = sorted(key for key in self.written if key != "Requirements.sysml")
-        self.assertEqual(others, ["Zeta.sysml", PART_KEY, "radio/Architecture.sysml"])
-        self.assertEqual(validate.call_args.args[0],
-                         [self.models / "Requirements.sysml", *(self.models / key for key in others)])
-
-    # T11
-    # Proves: CL-014-10; TC-DOC-008
-    def test_gate_model_bindings_read_and_list_the_tree_of_a_revision(self):
-        spec = importlib.util.spec_from_file_location("tree_model_bindings", ROOT / "harness/project/model_bindings.py")
-        bindings = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(bindings)
-
-        def git(*args):
-            subprocess.run(["git", "-C", str(self.root), "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
-                            "-c", "core.autocrlf=false", "-c", "commit.gpgsign=false", *args], check=True, capture_output=True)
-
-        bound = 'AutomationState::partial;\n        attribute executable : String = "tests/case.cjs";'
-        (self.root / "tests/case.cjs").write_text("// Proves: TC-001-001\ntest('identity',()=>{});\n", encoding="utf-8")
-        self.write("Requirements.sysml", FLAT.replace("AutomationState::planned;", bound))
-        git("init", "-q")
-        git("add", "-A")
-        git("commit", "-q", "--no-verify", "-m", "flat")
-        flat_keys = sorted(self.written)
-        self.tree(PART.replace("AutomationState::planned;", bound))
-        git("add", "-A")
-        git("commit", "-q", "--no-verify", "-m", "tree")
-        tree_keys = sorted(self.written)
-        real_catalog = bindings.sysml.canonical_catalog
-        case = {"automated": True, "verifies": ["FR-901", "CL-003-01"], "paths": ["tests/case.cjs"],
-                "tests": [{"path": "tests/case.cjs", "name": "identity"}], "unresolved": []}
-        with mock.patch.object(bindings, "ROOT", self.root), \
-                mock.patch.object(bindings.sysml, "canonical_catalog", side_effect=lambda d, r: real_catalog(d, r, required=REQUIRED)):
-            for rev, keys in (("HEAD~1", flat_keys), ("HEAD", tree_keys)):
-                with self.subTest(rev=rev):
-                    result = bindings.bindings(rev)
-                    self.assertEqual(result["models"], ["docs/sysml/" + key for key in keys])
-                    self.assertEqual(result["cases"], {"TC-001-001": case})
-                    self.assertEqual(set(result["promises"]), {"FR-901", "CL-003-01"})
-        self.assertIn(PART_KEY, tree_keys)
-        self.assertTrue(all("/" not in key for key in flat_keys))
+    verification 'TC-043-001' {
+        doc /* Station time from the PC clock. */
+        subject clock : ClockService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-043-01'; }
+        @TestedBy { test = "server/tests/clock.rs"; }
+    }
+}
+""",
+}
+SOURCES = {
+    "server/src/transmit/air.rs": "pub fn estimate() {}\n",
+    "server/src/transmit/clock.rs": "pub fn station_time() {}\n",
+    "server/src/transmit/clock_tests.rs": "#[test]\nfn correction() {}\n",
+    "server/tests/clock.rs": "// Proves: TC-043-001\n#[test]\nfn station_time() {}\n",
+    "server/tests/plain.rs": "#[test]\nfn plain() {}\n",
+    "tools/outside.rs": "pub fn outside() {}\n",
+}
 
 
-class RelocatedRealModelTests(unittest.TestCase):
-    # Required packages T7: the real pinned Pilot on the real model.
-    # Proves: CL-014-10; TC-DOC-008
-    def test_real_model_with_a_required_package_moved_and_renamed_passes_check_with_the_same_identities(self):
-        # The real model as it stands, flat or already in folders: {key: path}, and per key the
-        # relative documentation links that reach an existing file, as (link, real target).
-        real = {path.relative_to(tool.MODELS).as_posix(): path for path in sorted(tool.MODELS.rglob("*.sysml"))}
-        links = {}
-        for key, path in real.items():
-            found = (urllib.parse.unquote(link.strip("<>").split("#", 1)[0])
-                     for link in re.findall(r"\]\(([^)]+)\)", path.read_text(encoding="utf-8")))
-            links[key] = [(link, (path.parent / link).resolve()) for link in found
-                          if link and not link.startswith(("https://", "http://")) and (path.parent / link).resolve().is_file()]
-        model_paths = {path.resolve() for path in real.values()}
-        linked = {target for found in links.values() for _link, target in found}
-        # Relocate the first file other than the entry file, at any depth, whose package is a
-        # required one. A link between two model files holds only while both keep their folders,
-        # so a file with such a link at either end is passed over.
-        def package(path):
-            code = re.sub(r"/\*[\s\S]*?\*/|//[^\r\n]*", " ", path.read_text(encoding="utf-8"))
-            found = re.search(r"\bpackage\s+(\w+)\s*\{", code)
-            return found[1] if found else None
+class Fixture(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.models = self.root / "docs/sysml"
+        for key, text in MODEL.items():
+            self.write(self.models / key, text)
+        for key, text in SOURCES.items():
+            self.write(self.root / key, text)
 
-        movable = [key for key, path in real.items()
-                   if key != "Requirements.sysml" and package(path) in REQUIRED_FILES.values() and path.resolve() not in linked
-                   and not any(target in model_paths for _link, target in links[key])]
-        self.assertTrue(movable, "no model file of a required package, other than the entry file and without "
-                                 "a relative link to or from another model file, can be relocated")
-        relocated_key = "relocated-by-test/Renamed.sysml"
-        self.assertNotEqual(Path(relocated_key).name, Path(movable[0]).name)
-        self.assertNotIn(relocated_key, real)
-        with tempfile.TemporaryDirectory() as directory:
-            copy = Path(directory) / "docs/sysml"
-            for key, path in real.items():
-                moved = copy / (relocated_key if key == movable[0] else key)
-                moved.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(path, moved)
-                # Each link keeps a target where it resolves from the linking file's folder in the copy.
-                for link, source in links[key]:
-                    if source in model_paths:
-                        continue
-                    target = (moved.parent / link).resolve()
-                    self.assertTrue(target.is_relative_to(Path(directory).resolve()), key + ": " + link)
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(source, target)
-            self.assertTrue((copy / relocated_key).is_file() and not (copy / movable[0]).exists())
-            self.assertEqual(set(tool.canonical_catalog(copy, tool.ROOT)), set(tool.canonical_catalog(tool.MODELS, tool.ROOT)))
+    def write(self, path, text):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
 
-            # The pending list follows the move. The structure checks are TC-DOC-016's: with
-            # `Station.sysml` gone the deployment rules would apply, so they are left out here.
-            listed = json.loads(tool.PENDING.read_text(encoding="utf-8"))
-            listed["files"] = [relocated_key if key == movable[0] else key for key in listed["files"]]
-            pending = Path(directory) / "pending-structure.json"
-            pending.write_text(json.dumps(listed), encoding="utf-8")
+    def change(self, key, old, new):
+        """Replace the one occurrence of `old` in the model file `key`."""
+        text = MODEL[key]
+        self.assertEqual(text.count(old), 1, old)
+        self.write(self.models / key, text.replace(old, new))
 
-            def check(models):
-                output, errors = io.StringIO(), io.StringIO()
-                with mock.patch.object(tool, "MODELS", models), \
-                        mock.patch.object(tool, "PENDING", pending if models == copy else tool.PENDING), \
-                        mock.patch.object(tool, "structure_lines", return_value=[]), \
-                        contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-                    status = tool.main(["check"])
-                self.assertEqual(status, 0, output.getvalue() + errors.getvalue())
-                return [line for line in output.getvalue().splitlines() if "identities" in line or line.startswith("Architecture integrity passed")]
+    def restore(self):
+        for key, text in MODEL.items():
+            self.write(self.models / key, text)
 
-            relocated = check(copy)
-            self.assertEqual(len(relocated), 2, relocated)
-            self.assertEqual(relocated, check(tool.MODELS))
+    def catalog(self):
+        return tool.canonical_catalog(self.models, self.root)
+
+    def assertRefused(self, message):
+        with self.assertRaises(ValueError) as refused:
+            self.catalog()
+        self.assertEqual(str(refused.exception), message)
+
+
+class CatalogTests(Fixture):
+    def test_rebuilt_forms_are_read_into_the_catalog(self):
+        """TV-094 (TR-10): the FR, the clause with its derivation and the case of the rebuilt forms are read."""
+        self.assertEqual(self.catalog(), {
+            "FR-006": {"kind": "requirement", "state": "implemented", "status": "implemented", "refs": [],
+                       "bindings": [], "manual": False, "file": "Requirements.sysml", "line": 3,
+                       "clauses": ["CL-043-01"]},
+            "CL-043-01": {"kind": "requirement", "state": "implemented", "refs": [], "manual": False,
+                          "file": STATION_CLOCK_KEY, "line": 6, "frs": ["FR-006"], "cases": ["TC-043-001"],
+                          "own": ["server/src/transmit/air.rs", "server/src/transmit/clock.rs"]},
+            "TC-043-001": {"kind": "verification", "state": "implemented", "refs": ["CL-043-01"],
+                           "bindings": ["server/tests/clock.rs"], "manual": False, "file": STATION_CLOCK_KEY,
+                           "line": 14, "levels": [(2, "developmentPc")]},
+        })
+
+    def test_duplicate_identity_is_refused(self):
+        """TV-095 (TR-10): an identity declared twice is refused."""
+        self.change("Requirements.sysml", "    }\n}\n", "    }\n    requirement 'FR-006' {\n    }\n}\n")
+        self.assertRefused("Duplicate canonical identity: FR-006")
+
+    def test_wrong_kind_is_refused(self):
+        """TV-096 (TR-10): an FR or a clause declared as a verification is refused."""
+        for old, new, identity in (("requirement 'FR-006' {", "verification 'FR-006' {", "FR-006"),
+                                   ("requirement 'CL-043-01' {", "verification 'CL-043-01' {", "CL-043-01")):
+            with self.subTest(identity):
+                key = "Requirements.sysml" if identity.startswith("FR-") else STATION_CLOCK_KEY
+                self.change(key, old, new)
+                self.assertRefused("Wrong canonical identity kind: " + identity)
+                self.restore()
+
+    def test_unreadable_form_is_refused(self):
+        """TV-097 (TR-10): a definition, a typed declaration and a short name with an identity are refused."""
+        forms = {
+            "definition": ("requirement 'CL-043-01' {", "requirement def 'CL-043-01' {", "CL-043-01"),
+            "typed": ("requirement 'CL-043-01' {", "requirement 'CL-043-01' : ClockRule {", "CL-043-01"),
+            "specialized": ("requirement 'CL-043-01' {", "requirement 'CL-043-01' :> ClockRule {", "CL-043-01"),
+            "short name": ("verification 'TC-043-001' {", "verification <'TC-043-001'> stationTime {", "TC-043-001"),
+        }
+        for label, (old, new, identity) in forms.items():
+            with self.subTest(label):
+                self.change(STATION_CLOCK_KEY, old, new)
+                self.assertRefused(f"Unreadable canonical declaration: {identity}: {STATION_CLOCK_KEY}")
+                self.restore()
+
+    def test_derivation_from_a_missing_fr_is_refused(self):
+        """TV-098 (TR-10): a derivation whose original is no declared FR is refused."""
+        self.change(STATION_CLOCK_KEY, "end #original ::> 'FR-006';", "end #original ::> 'FR-099';")
+        self.assertRefused("Invalid canonical clause derivation: CL-043-01 -> FR-099")
+
+    def test_clause_without_derivation_is_refused(self):
+        """TV-099 (TR-10): a clause that derives from no FR is refused."""
+        self.change(STATION_CLOCK_KEY,
+                    "    #derivation connection { end #original ::> 'FR-006'; end #derive ::> 'CL-043-01'; }\n", "")
+        self.assertRefused("Canonical clause lacks requirement ownership: CL-043-01")
+
+    def test_required_package_missing_is_refused(self):
+        """TV-100 (TR-10): each of WstxRequirements, WstxShack and WstxContext declared by no file is refused."""
+        for key, package in (("Requirements.sysml", "WstxRequirements"), ("Shack.sysml", "WstxShack"),
+                             ("Context.sysml", "WstxContext")):
+            with self.subTest(package):
+                self.change(key, "package " + package + " {", "package WstxOther {")
+                self.assertRefused("Canonical model packages missing: " + package)
+                self.restore()
+
+    def test_required_package_declared_twice_is_refused(self):
+        """TV-101 (TR-10): each of WstxRequirements, WstxShack and WstxContext declared by two files is refused."""
+        for key, package in (("Requirements.sysml", "WstxRequirements"), ("Shack.sysml", "WstxShack"),
+                             ("Context.sysml", "WstxContext")):
+            with self.subTest(package):
+                again = self.models / "shared/Again.sysml"
+                self.write(again, "package " + package + " {\n}\n")
+                self.assertRefused(f"Duplicate canonical model package: {package}: {key}, shared/Again.sysml")
+                again.unlink()
+
+
+class StatedTests(Fixture):
+    def test_states_and_bindings_are_read_once_each(self):
+        """TV-102 (TR-20): package names, a manual method and a binding of joined literals are read as one value each."""
+        self.change(STATION_CLOCK_KEY, "@Status { build = ImplementationState::implemented; }",
+                    "@WstxModelBindings::Status { build = WstxModelBindings::ImplementationState::partial; }")
+        entries = self.catalog()
+        self.assertEqual(entries["CL-043-01"]["state"], "partial")
+        self.restore()
+        self.change(STATION_CLOCK_KEY, '@Automation { run = AutomationState::implemented; }\n'
+                                       '        objective { verify \'CL-043-01\'; }\n'
+                                       '        @TestedBy { test = "server/tests/clock.rs"; }',
+                    '@Automation { run = AutomationState::implemented; method = "manual"; }\n'
+                    "        objective { verify 'CL-043-01'; }\n"
+                    '        @TestedBy { test = "server/tests/" + "plain.rs"; }')
+        entries = self.catalog()
+        self.assertEqual((entries["TC-043-001"]["manual"], entries["TC-043-001"]["bindings"]),
+                         (True, ["server/tests/plain.rs"]))
+
+    def test_each_fault_of_a_state_or_binding_is_refused(self):
+        """TV-103 (TR-20): a missing, unknown or repeated state, a repeated binding or method, an unknown method, a
+        missing or outside file, and a delivered case without a test are each refused."""
+        status = "@Status { build = ImplementationState::implemented; }"
+        automation = "@Automation { run = AutomationState::implemented; }"
+        tested = '@TestedBy { test = "server/tests/clock.rs"; }'
+        detail = 'tests = "server/src/transmit/clock_tests.rs";'
+        faults = {
+            "clause without state": (STATION_CLOCK_KEY, status, "",
+                                     "Missing or invalid declared model state: CL-043-01"),
+            "clause state of no kind": (STATION_CLOCK_KEY, status, "@Status { build = ImplementationState::built; }",
+                                        "Missing or invalid declared model state: CL-043-01"),
+            "clause state twice": (STATION_CLOCK_KEY, status, status + " " + status,
+                                   "Missing or invalid declared model state: CL-043-01"),
+            "clause state in the metadata keyword form": (
+                STATION_CLOCK_KEY, status, "metadata Status { build = ImplementationState::implemented; }",
+                "Missing or invalid declared model state: CL-043-01"),
+            "case without state": (STATION_CLOCK_KEY, automation, "",
+                                   "Missing or invalid declared model state: TC-043-001"),
+            "clause bound twice": (STATION_CLOCK_KEY, status,
+                                   status + ' @ImplementedIn { module = "server/src/transmit/clock.rs"; }',
+                                   "Invalid verification/implementation metadata: CL-043-01"),
+            "case bound twice": (STATION_CLOCK_KEY, tested, tested + " " + tested,
+                                 "Invalid verification/implementation metadata: TC-043-001"),
+            "another method": (STATION_CLOCK_KEY, automation,
+                               '@Automation { run = AutomationState::implemented; method = "by hand"; }',
+                               "Invalid verification/implementation metadata: TC-043-001"),
+            "missing file": (STATION_CLOCK_KEY, tested, '@TestedBy { test = "server/tests/gone.rs"; }',
+                             "Missing or out-of-scope implementation/test binding: TC-043-001: server/tests/gone.rs"),
+            "outside the source roots": (STATION_CLOCK_KEY, tested, '@TestedBy { test = "tools/outside.rs"; }',
+                                         "Binding outside declared source inputs: TC-043-001: tools/outside.rs; "
+                                         "update HOW input coverage before admitting a new root"),
+            "delivered case without a test": (STATION_CLOCK_KEY, tested, "",
+                                              "Delivered declaration lacks implementation/test binding: TC-043-001"),
+            "detail tests missing": (CLOCK_KEY, detail, 'tests = "server/src/transmit/gone_tests.rs";',
+                                     "Missing or out-of-scope implementation/test binding: " + CLOCK_KEY
+                                     + ": server/src/transmit/gone_tests.rs"),
+        }
+        for label, (key, old, new, message) in faults.items():
+            with self.subTest(label):
+                self.change(key, old, new)
+                self.assertRefused(message)
+                self.restore()
 
 
 if __name__ == "__main__":

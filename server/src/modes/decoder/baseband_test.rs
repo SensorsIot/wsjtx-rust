@@ -89,7 +89,6 @@ fn independent_band(
     };
     (frequencies, rms)
 }
-// Proves: FR-003, FR-004, CL-007-03, CL-007-04.
 #[test]
 fn bandlimit_matches_independent_periodic_dft_and_parseval() {
     let pattern = pattern();
@@ -149,7 +148,6 @@ fn bandlimit_matches_independent_periodic_dft_and_parseval() {
     }
 }
 
-// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn admission_rounding_half_ties_and_complete_end_support() {
     for (start, expected) in [(29, 0), (30, 1), (31, 1), (89, 1), (90, 2), (91, 2)] {

@@ -140,7 +140,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 #operating-receive-controls label{display:flex;flex-direction:column;gap:.25rem;max-width:100%}
 #operating-receive-controls .receive-only-verification{flex-direction:row;align-items:center;flex-wrap:wrap}
 #operating-radio,#operating-selection-status{flex-basis:100%;max-width:100%;overflow-wrap:anywhere}
-/* CR #10 contact workspace (WstxContact, OperatingLayout::ContactWorkspace). */
+/* The contact workspace (WstxQsoPane::PaneLayout). */
 .ct-dx,.ct-fields{display:flex;flex-wrap:wrap;gap:.5rem;align-items:end}
 .ct-dx label,.ct-fields label{display:flex;flex-direction:column;gap:.15rem;min-width:0;max-width:100%}
 .ct-fields label{flex:1 1 6.5rem}
@@ -170,7 +170,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 #band-activity tr[data-sequence]{cursor:pointer}
 #band-activity tr[data-sequence]:focus{outline:2px solid #e0a030;outline-offset:-2px}
 .ct-station-tx{font-size:var(--op-font-secondary);color:#c9d7df;min-width:0;max-width:18rem;overflow-wrap:anywhere}
-/* WstxOperatingLayout::OperatingScreen (#37, design interview 2026-11-01): laptop first, one fixed screen. */
+/* WstxOperatingScreen::ScreenLayout: laptop first, one fixed screen. */
 .op-app{--op-mono:ui-monospace,'Cascadia Mono',SFMono-Regular,Consolas,monospace;--op-accent:#5fd3a6;--op-warn:#f2c14e;--op-error:#ff6b5f;--op-cq:#7ee08a;--op-tome:#ff8f86}
 body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #station-bar.op-topbar{display:flex;flex-wrap:nowrap;align-items:center;gap:10px;min-height:0;padding:6px 12px;background:linear-gradient(180deg,#132634,#0f1f2a)}
@@ -311,7 +311,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #login-view{margin:8vh auto 0;width:min(28rem,calc(100% - 32px));padding:24px;border:1px solid #2a4151;border-radius:12px;background:#11212d}
 #login-view h1{font-size:1.5rem;margin:6px 0 8px;letter-spacing:0;line-height:1.3}
 #login-view #login{margin-top:16px}#login-view #login input{width:100%;display:block;margin:8px 0 12px}
-/* Themes (WstxOperatingLayout::ThemeChoice): Dark is the base; Day and Night re-map it for this browser only. */
+/* Themes (WstxBrowserClientPart::Theme): Dark is the base; Day and Night re-map it for this browser only. */
 html[data-theme=day] body{background:#f3f6f8}
 html[data-theme=day] main.op-app{filter:invert(.92) hue-rotate(180deg)}
 /* #61 CL-061-05: needs the id, or #signal canvas{filter:none} wins and the waterfall (black, Tx rows) turns pale under the page's inversion. */
@@ -345,7 +345,7 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 #qso-more .ct-dx{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:6px 0}#qso-more .ct-dx label{display:flex;align-items:center;gap:6px;margin:0}#qso-more .ct-dx input{width:9ch;font-family:var(--op-mono);text-transform:uppercase;padding:3px 6px}.ct-more-row{margin:4px 0}
 .op-drawer .op-warning{border-left:4px solid var(--op-warn);padding:6px 10px;margin:6px 0}.udp-target{border:1px solid currentColor;border-radius:6px;padding:8px 10px;margin:8px 0;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:end}.udp-target>legend{font-weight:600}.udp-messages{border:0;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:4px 12px;flex-basis:100%}.udp-target [data-f=status]{flex-basis:100%;margin:0}.op-actions{display:flex;flex-wrap:wrap;gap:8px}
 .udp-target,.udp-messages{min-inline-size:0;max-width:100%;box-sizing:border-box}.udp-target>label{max-width:100%}.udp-target input:not([type=checkbox]){width:100%;box-sizing:border-box}
-/* #39 WstxStrategy: marks in Band Activity and the strategy editor popup. */
+/* Strategy marks in Band Activity (WstxBandActivityPane::RowMarks) and the strategy editor popup. */
 #band-activity tr.ba-strategy td:first-child{box-shadow:inset 3px 0 var(--op-accent,#99e1c3)}#band-activity tr.ba-strategy td[data-col=message]{color:#c9f2df;font-weight:600}
 #band-activity td[data-ap]::after{content:' ' attr(data-ap);font-size:.75em;opacity:.7}
 #band-activity tr.ba-hidden{display:none}#band-activity tr.ba-contest-mult td[data-col=message]{color:#ffe08a}#band-activity tr.ba-dupe td{opacity:.45}#band-activity tr.ba-grey td{opacity:.45}#band-activity tr.ba-grey td[data-col=message]{text-decoration:line-through;text-decoration-thickness:1px}
@@ -367,7 +367,7 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 .se-preview td:first-child{white-space:nowrap}
 /* #54: the spectrum line is a Settings option (off by default); its height goes to the waterfall. */
 #signal #spectrum[hidden]{display:none}
-/* #50 WstxBandActivity::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel default colours as row
+/* WstxBandActivityPane::Highlight: WSJT-X 3.3 DecodeHighlightingModel default colours as row
    backgrounds, tinted for the dark screen (Day inverts and Night tints the whole page). A row takes the
    highest-priority enabled slot it matches: the rules run lowest priority first, so a later one wins.
    There is no CQ slot: only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X). */

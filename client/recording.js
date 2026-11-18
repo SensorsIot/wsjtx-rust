@@ -1,4 +1,10 @@
 'use strict';
+// This browser's display choices and their defaults (WstxBrowserClientPart::FrontendConfig),
+// the waterfall's levels (WstxSignalArea::DisplayLevels) and the SWR's colour
+// (WstxSignalArea::SwrValue).
+const FrontendConfig=Object.freeze({THEME:'dark',THEME_SWITCH:'manual',DISPLAY:'detail',SENSITIVITY_DB:0,RANGE_DB:50,SPEED:1.0,FLATTEN:false,SPECTRUM_LINE:false,SORT_FIELD:'value',SORT_DESCENDING:true,ALERT_SOUND:false,ALERT_NOTIFY:false});
+const DisplayLevels=Object.freeze({REFERENCE_DBFS:-85,SPEED_STEP:0.5});
+const SwrValue=Object.freeze({RED_ABOVE_SWR:2.0});
 const main = document.querySelector('main'), controls = document.createElement('div');
 controls.id = 'controls';
 while (main.firstChild) controls.append(main.firstChild);
@@ -8,7 +14,7 @@ signal.innerHTML = '<div class="op-signal-heading"></div><h2 id="signal-status" 
 const splitter = document.createElement('div'); splitter.id = 'splitter'; splitter.className='op-splitter'; splitter.tabIndex = 0; splitter.innerHTML='<span></span>';
 for (const [key,value] of Object.entries({role:'separator','aria-orientation':'horizontal','aria-label':'Resize spectrum and controls','aria-controls':'signal controls'})) splitter.setAttribute(key,value);
 main.append(signal,splitter,controls);
-// WstxOperatingLayout::OperatingScreen (#37): top bar, waterfall + RxTxStrip, Band Activity, QsoPane.
+// WstxOperatingScreen::ScreenLayout: top bar, waterfall + RxTxStrip, Band Activity, QsoPane.
 const stationBar=controls.querySelector('header');stationBar.id='station-bar';stationBar.className='op-header op-topbar';
 const stationConnectionNode=document.querySelector('#connection');
 const tuning=document.createElement('div');tuning.id='radio-toolbar';tuning.className='op-tuning';tuning.setAttribute('role','group');tuning.setAttribute('aria-label','Radio operation');
@@ -16,7 +22,7 @@ tuning.innerHTML='<div class="op-dial"><span class="op-dial-label">DIAL MHz</spa
 const chips=document.createElement('div');chips.id='exception-chips';chips.className='op-chips';chips.setAttribute('role','group');chips.setAttribute('aria-label','Station exceptions');
 const headerActions=document.createElement('div');headerActions.className='op-header-actions';
 headerActions.innerHTML='<button type="button" data-region="logbook" id="open-logbook" title="Logbook">&#9776; Logbook</button><button type="button" data-region="server-settings" id="open-server-settings" title="Settings (F2)">&#9881; Settings</button><button type="button" data-region="help" aria-label="Help" title="Keyboard and mouse overview (?)">?</button>';
-// WstxOperatingLayout::FullScreenToggle (#96, CL-096-01): left of "?", only where the browser offers element
+// WstxOperatingScreen::AppWindow: left of "?", only where the browser offers element
 // full screen (none on Safari on iPhone). The whole page goes full screen; the button follows fullscreenchange,
 // however full screen was left. Esc is locked where Keyboard Lock exists, so a short Esc does not leave
 // (contact.js: Esc never aborts while full screen). Nothing is stored and nothing is sent to the station.
@@ -112,7 +118,7 @@ const localPreferences=document.createElement('div');localPreferences.id='local-
 localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><option value="detail">Detailed (fast link, up to 10 KiB/s per viewer)</option><option value="thin">Thin (32 kbit/s link)</option><option value="off">Off</option></select></label><div id="display-levels"><label class="op-check"><input id="display-flatten" type="checkbox"> Flatten (even out the passband across frequency)</label><label class="op-check"><input id="display-spectrum" type="checkbox"> Show spectrum line</label><output id="bin-readout" aria-live="polite">Select a bin with pointer or arrow keys</output></div>';
 panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
-// #50 WstxBandActivity::BandActivityColours: WSJT-X 3.3 DecodeHighlightingModel slots in its priority order;
+// WstxBandActivityPane::Highlight: WSJT-X 3.3 DecodeHighlightingModel slots in its priority order;
 // only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X: no CQ slot, New call on by default).
 // A slot without data (cty.dat flags #55; grids, LotW) stays inactive until a record carries it. Worked before: none.
 const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',true],['new_call_band','New call on band',true],['lotw','LotW user',false]];
@@ -123,7 +129,7 @@ displaySettings.append(bandColours);
 function bandColoursApply(){
   let saved=null;try{saved=JSON.parse(localStorage.getItem('wstx.band-colours.v1'));}catch{}
   const on=bandSlots.filter(([k,,d])=>typeof saved?.[k]==='boolean'?saved[k]:d).map(([k])=>k);
-  // WstxSettings::ContestView: with a contest in force only my call keeps its slot; the rest is the all-time log.
+  // WstxBandActivityPane::ContestFilter: with a contest in force only my call keeps its slot; the rest is the all-time log.
   document.querySelector('#band-activity').dataset.hlOn=(window.wstxContestOn?on.filter(k=>k==='mycall'):on).join(' ');
   for(const box of bandColours.querySelectorAll('[data-hl-slot]'))box.checked=on.includes(box.dataset.hlSlot);
   for(const row of document.querySelectorAll('#band-activity tr[data-sequence]'))activityWhy(row);
@@ -133,7 +139,7 @@ bandColoursApply();
 secondary('recorded-input','Recordings and replay',panel,expertSection).open=true;
 expertSection.insertAdjacentHTML('afterbegin','<p class="op-muted">Diagnostics that are not needed while operating.</p>');
 const sliders=document.createElement('div');sliders.id='presentation-sliders';sliders.className='op-display-controls';
-sliders.innerHTML='<label title="WSJT-X Zero: moves the whole colour scale; the noise floor sits lower or higher">Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity (zero)"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="WSJT-X Gain: the dB span from dark blue to red">Range <input id="display-range" type="range" min="10" max="80" step="1" value="50" aria-label="Waterfall range (gain)"><output id="range-value">50 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="1" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">10 px/s</output></label>';
+sliders.innerHTML='<label title="WSJT-X Zero: moves the whole colour scale; the noise floor sits lower or higher">Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="'+FrontendConfig.SENSITIVITY_DB+'" aria-label="Waterfall sensitivity (zero)"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="WSJT-X Gain: the dB span from dark blue to red">Range <input id="display-range" type="range" min="10" max="80" step="1" value="'+FrontendConfig.RANGE_DB+'" aria-label="Waterfall range (gain)"><output id="range-value">50 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="'+DisplayLevels.SPEED_STEP+'" value="'+FrontendConfig.SPEED+'" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">10 px/s</output></label>';
 signal.querySelector('.op-signal-heading').append(sliders);
 for(const child of [...controls.children]){if(child.matches('h1,.intro,footer'))child.remove();}
 const loginView=document.createElement('section');loginView.id='login-view';loginView.className='op-login';loginView.setAttribute('aria-label','Station authorization');loginView.hidden=true;
@@ -175,7 +181,7 @@ addEventListener('keydown',event=>{
   if(event.altKey&&!event.ctrlKey&&!event.metaKey&&event.key.toLowerCase()==='m'){event.preventDefault();receiveToggle();}
 });
 const profileSelect=document.querySelector('#display-profile');
-const defaultDisplayProfile=()=>'detail';
+const defaultDisplayProfile=()=>FrontendConfig.DISPLAY;
 const displayPreferenceKey=id=>`wstx.display-profile.v1:${id}`;
 let restoredDisplayProfile;
 function displayPreferenceId(){const id=profileData?.profile_id;return typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)?id:null;}
@@ -187,7 +193,7 @@ function restoreDisplayPreference(){
 restoreDisplayPreference();
 // #54 WstxSignalArea::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal
 // over time. displayBlack is the fixed -85 dBFS reference; nothing in this page changes it.
-let displayBlack=-85, displayRange=50, flatten=false, spectrumLine=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=1, fallbackText='', detailRequest;
+let displayBlack=DisplayLevels.REFERENCE_DBFS, displayRange=FrontendConfig.RANGE_DB, flatten=FrontendConfig.FLATTEN, spectrumLine=FrontendConfig.SPECTRUM_LINE, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=FrontendConfig.SENSITIVITY_DB, speed=FrontendConfig.SPEED, fallbackText='', detailRequest;
 try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
 try{const zero=localStorage.getItem('wstx.waterfall-zero.v1'),range=localStorage.getItem('wstx.waterfall-range.v1'),z=Number(zero),r=Number(range);if(zero!==null&&Number.isInteger(z)&&z>=-30&&z<=30)sensitivity=z;if(range!==null&&Number.isInteger(r)&&r>=10&&r<=80)displayRange=r;flatten=localStorage.getItem('wstx.waterfall-flatten.v1')==='on';spectrumLine=localStorage.getItem('wstx.spectrum-line.v1')==='on';}catch{}
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
@@ -430,7 +436,7 @@ async function sync(current=socket) {
   } catch(error){if(current===socket){statusText.textContent=`Recording state unavailable · ${error.message}`;if(subscribedSocket===current)disconnect(current,'recording-sync-failed');}} finally{syncPending=false;if(syncAgain){syncAgain=false;sync(socket);}}
 }
 addEventListener('station-ready',event => {if(subscribedSocket!==event.detail || snapshot?.boot_id!==profileData.boot_id)sync(event.detail);});
-// WstxStationLink::PushedStationState (#74): a new boot drops the recording and live receive
+// WstxOperatingScreen::BootRule: a new boot drops the recording and live receive
 // state of the previous boot at once; both show their freshly loaded form until the new boot's reads.
 addEventListener('station-boot',()=>{
   snapshot=undefined;importOutcome=undefined;rows=[];resetLevels();paint();
@@ -528,14 +534,14 @@ if(socket?.readyState===WebSocket.OPEN && profileData && connection.dataset.stat
 
 let live,liveFailed=false,resultsAnnounced=null,livePending=false,liveAgain=null,resultPending=false,resultFailed=false,lastResultStart=-Infinity,resultCursor=0,resultRows=[],historyIncomplete=false,mutationPending=false,uncertainMutation=false,receiveFailure='';
 let operatingState=null,operatingSupported=null,operatingFailure='',operatingReadPending=false,operatingReadAgain=false,operatingEpoch=0,operatingUnknown=null,operatingIntent=null,operatingSocket=null;
-// What this socket's selection.state events hold (WstxStationCommands::SelectionStateEvent).
+// What this socket's selection.state events hold (WstxStationCommands::SelectionState).
 let operatingHeld=null,operatingHeldSocket=null;
 let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null,liveEventAt=-Infinity;
 let lastReceiveReady=null;
-let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
+let activitySortProfile=null,activitySortField=FrontendConfig.SORT_FIELD,activitySortDirection=FrontendConfig.SORT_DESCENDING?'desc':'asc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||liveFailed||resultsAnnounced!==null||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
@@ -629,7 +635,7 @@ async function receiveSync(current=socket){
 }
 function activityOrdering(records=resultRows){
   const id=displayPreferenceId();
-  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='value';activitySortDirection='desc';}
+  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField=FrontendConfig.SORT_FIELD;activitySortDirection=FrontendConfig.SORT_DESCENDING?'desc':'asc';}
   for(const th of document.querySelectorAll('#band-activity th[data-sort]'))th.setAttribute('aria-sort',th.dataset.sort===activitySortField?(activitySortDirection==='asc'?'ascending':'descending'):'none');
   const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
   const missing=v=>v===null||v===undefined||v==='';
@@ -837,7 +843,7 @@ function receiveReady(current){
   if(current!==socket||connection.dataset.state!=='connected')return false;
   const key=receiveReadyKey(profileData);
   if(key!==null){
-    // WstxRecordingReceive: one read per socket and saved profile; a later status of the socket reads
+    // WstxOperatingScreen::LinkRule: one read per socket and saved profile; a later status of the socket reads
     // nothing while receive.state holds the state, only after a failed read or an unknown outcome.
     if(lastReceiveReady?.socket===current&&lastReceiveReady.key===key&&!liveFailed&&!uncertainMutation)return false;
     // The synchronous receiveSync entry below necessarily starts or queues this
@@ -849,7 +855,7 @@ function receiveReady(current){
 addEventListener('station-ready',event=>receiveReady(event.detail));
 addEventListener('station-stale',()=>{lastReceiveReady=null;receiveShow();receiveStatus.textContent='Disconnected · live receive data stale';});
 addEventListener('station-message',event=>{const {current,message}=event.detail;if(current!==socket||message.type!=='receive.state')return;resultsAnnounced=performance.now();
-  // WstxRecordingReceive: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
+  // WstxReceiveControl::LiveView: the event carries the job's progress and the audio; GET /receive only for a new identity or state.
   // After a socket's first event it holds the identity and only the audio, clock and job fields that changed.
   const e=message.data,carried=live?.job&&e&&e.boot_id===live.boot_id&&e.generation===live.generation&&e.job_id===live.job.id&&e.state===live.job.state&&e.source_id===(live.source?.id??null)&&Object.keys(e).every(k=>['profile_id','boot_id','generation','source_id','job_id','state','audio','clock','job'].includes(k));
   const held=carried&&{...live,audio:e.audio??live.audio,clock:{...live.clock,...e.clock},job:{...live.job,...e.job}};
@@ -1016,7 +1022,7 @@ addEventListener('station-ready',event=>{
   operatingShow();
 });
 addEventListener('station-stale',()=>{operatingFailure='Disconnected · operating data stale';operatingShow();});
-// WstxStationCommands::SelectionStateEvent (#10): the socket's first event holds every field,
+// WstxStationCommands::SelectionState: the socket's first event holds every field,
 // each later one what changed. Only events build this view, so a read never mixes into it.
 addEventListener('station-message',event=>{
   const {current,message}=event.detail;if(current!==socket||message.type!=='selection.state'||!message.data?.changed)return;
@@ -1193,7 +1199,7 @@ addEventListener('station-message',event=>{const {current,message}=event.detail;
   if(profileData&&(message.data.profile_id!==profileData.profile_id||message.data.boot_id!==profileData.boot_id))return;agcState=message.data;agcShow();});
 addEventListener('station-ready',()=>{if(agcState&&agcState.boot_id!==profileData?.boot_id)agcState=null;agcShow();});
 for(const type of ['input','change'])serverForm.addEventListener(type,agcShow);
-// #44 CL-044-13 Tx level: "Set level" (Tune, step up until the ALC rises, back off one step, store,
+// WstxTransmitControl::TxLevelStatus: "Set level" (Tune, step up until the ALC rises, back off one step, store,
 // stop Tune) is the default; the manual slider exists only without ALC over CI-V. The state arrives as
 // the server's radio.tx_level push; nothing is polled.
 const powerRow=document.getElementById('control-power-row');document.getElementById('tx-level').append(powerRow);powerRow.hidden=false;
@@ -1205,7 +1211,7 @@ function validTxLevelEvent(d){
     typeof d.assistant==='boolean'&&(d.result===null||typeof d.result==='string')&&(d.power_limit_pct===null||Number.isSafeInteger(d.power_limit_pct))&&(m===null||operatingShape(m,'alc,po_pct,swr_x10')&&meter(m.alc)&&meter(m.po_pct)&&meter(m.swr_x10));
 }
 // #68 CL-068-01: the last pushed SWR at the end of the Rx/Tx strip, red above 2.0; display only.
-const SWR_RED_ABOVE_X10=20;
+const SWR_RED_ABOVE_X10=SwrValue.RED_ABOVE_SWR*10;
 function stripSwrShow(){
   const out=document.getElementById('strip-swr');if(!out)return;
   const v=txLevelState,swr=v?.managed?v.meters?.swr_x10??null:null;
@@ -1244,7 +1250,7 @@ txLevelShow();
 detectEl('detect-use').addEventListener('click',()=>{const agc=detectProposal?.radio?.agc;if(agc){const field=document.getElementById('control-agc');field.value=agc;field.dispatchEvent(new Event('change',{bubbles:true}));}agcShow();});
 agcShow();
 addEventListener('station-stale',catShow);
-// WstxTransmitControl::TransmitWire operator panel (#9 slice B). Active only for a profile with
+// WstxTransmitControl::TransmitStatus operator panel. Active only for a profile with
 // CAT PTT; the browser renders server-confirmed transmit state and sends explicit
 // requests. It runs no transmit timer: the server plans, keys and halts.
 const transmitPanel=document.createElement('div');transmitPanel.id='transmit-panel';
@@ -1268,12 +1274,12 @@ function transmitShow(){
   status.textContent=`${t.capability} · ${t.arm_state} (${t.last_disarm_cause}) · PTT ${v.ptt}${v.transmitting?' · TRANSMITTING':''}${t.tune?' · TUNE':''} · clock ${v.clock}${clock} · halt ${t.halt_state}${t.refusal?' · '+t.refusal:''}${t.last_text?' · last '+t.last_text:''}${v.watchdog.tx_remaining_calls==null?'':` · WD ${v.watchdog.tx_remaining_calls} calls`}`;
   const tune=document.querySelector('#tx-tune');if(tune)tune.textContent=t.tune?'Tune off':'Tune';
 }
-// WstxStationLink::PushedStationState / WstxTransmitControl::TransmitWire (#10): the browser holds
+// WstxStationLink::SocketProtocol / WstxTransmitControl::TransmitStatus: the browser holds
 // the transmit state from transmit.state: the socket's first event has every field, each later
 // one what changed. It does not read GET /transmit. Ages advance locally; HALT is enabled as
 // soon as the station is ready (#57).
 let transmitEventSocket=null;
-// WstxQsoControl::ContactStateEvent (#10): this client is loaded before the socket opens and the
+// WstxQsoControl::QsoState: this client is loaded before the socket opens and the
 // contact client is not, so the contact state from the events is held here: every field in the
 // socket's first event, what changed after it.
 let contactHeld=null,contactHeldSocket=null;
@@ -1314,7 +1320,7 @@ halt.addEventListener('click',async()=>{
   const result=document.querySelector('#transmit-result');
   try{const r=await transmitPost('/transmit/halt',{});result.textContent=`Halt: ${r.halt_state}`;}catch(error){result.textContent=`Halt not confirmed · ${error.message}`;}
 });
-// WstxQsoTransmit::HaltTx: Alt+H sends #9's priority halt (the emergency stop) from this
+// WstxTransmitControl::Halt: Alt+H sends the priority halt (the emergency stop) from this
 // always-loaded script, in every page state and focused field. Skipped only when the
 // station is known receive-only (the contact snapshot says unsupported); without a
 // snapshot it is sent (halt is idempotent). Esc is Abort QSO, handled by contact.js.
@@ -1330,8 +1336,8 @@ addEventListener('keydown',event=>{
   transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);});
 },true);
 new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
-document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
-// The log client (WstxContact OfferLogReview) and then the contact client load after this
+document.documentElement.dataset.theme=FrontendConfig.THEME;try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
+// The log client (WstxStandardQso::LogConfirmRule) and then the contact client load after this
 // browser's first recording and receive snapshots (or 20 s after the station is ready), so
 // their bytes never compete with the cold page, authorization or the first state reads on a
 // 32 kbit/s link (TC-009-005 and TC-010-002 bounds). Their downloads still hold the station's
@@ -1352,7 +1358,7 @@ function clientsLoad(){
 addEventListener('station-ready',clientsLoad);if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected')clientsLoad();
 chipsReady=true;chipsShow();
 
-// WstxOperatingLayout::PageUpdate (#51). app.js reloads a page whose client build differs
+// WstxOperatingScreen::PageUpdate. app.js reloads a page whose client build differs
 // from the station's, unless this screen holds the reload: a QSO or transmission in
 // progress, an open dialog or unsaved settings. A held update and a station snapshot this
 // page cannot validate are never silent: one chip names it and reloads on a click.
@@ -1384,7 +1390,7 @@ function keepWaterfall(){
   rows.push({sequence:-1,first_frame:-interval,end_frame:0,levels:null,held:false});paint();
 }
 
-// #55 CL-055-04 WstxBandActivity::BandActivityValue (1 calling me .. 8 no flag; 2, the strategy
+// WstxBandActivityPane::Ordering (1 calling me .. 8 no flag; 2, the strategy
 // hits, is applied by the value view in contact.js) and BandActivityHover (title and aria-description).
 // #24 S1b: the call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
 // 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1 (#55).

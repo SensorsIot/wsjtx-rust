@@ -1,6 +1,6 @@
-// #89 WstxStrategy::FreeTxSlot Due and Waiting for the newest period, StrategyRun Decision timing
-// (TC-089-002, TC-089-003, TC-089-004; TC-089-001 (c) at the station). Oracle: the operator's rules
-// of 2026-11-09 ("Count once decoded"; "decision always fastest when needed info is available"):
+// WstxHoldTx::QuietSpace Due and Waiting for the newest period and Auto's decision timing at
+// the station. Oracle: the operator's rules
+// ("Count once decoded"; "decision always fastest when needed info is available"):
 // my newest Rx period counts once its complete publication is published, also while in progress;
 // a contest Run's CQ decided in waiting without a fresh publication waits for that publication, at
 // the latest until the period in progress ends. Every slot below is a hand computation written
@@ -43,7 +43,7 @@ async fn newest_p(start: impl AsyncFnOnce(&Mcp)) -> (Mcp, crate::automation::Cli
     (f, client)
 }
 
-// Proves: CL-039-09; TC-089-002 (Hold Tx off selection, pounce, the 5th older period). The
+// Hold Tx off: the selection, a pounce and the 5th older period. The
 // selection of HA7NB on P's complete publication at P + 14.1 s (P in progress) counts P: the
 // candidates clear of HA7NB (1001, the called station, also decoded in P) and of M7HNI decoded at
 // 2340 in P (2300..2380 closed), all at value 0; the current Tx 2340 is closed, the nearest free
@@ -51,6 +51,7 @@ async fn newest_p(start: impl AsyncFnOnce(&Mcp)) -> (Mcp, crate::automation::Cli
 // unknown}, not 2340. The station decoded at 2290 only in P - 120 s (the 5th older odd period once
 // P counts) closes nothing, else 2390. A pounce on HA7NB chooses the same. Red on the parent: P not
 // counted, Tx stays on 2340 (with M7HNI on it).
+// Proves: TC-089-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_002_a_selection_on_the_newest_publication_counts_its_stations() {
     let expected = (
@@ -69,7 +70,7 @@ async fn tc_089_002_a_selection_on_the_newest_publication_counts_its_stations() 
     assert_eq!(frequencies(&f).await, expected, "the pounce");
 }
 
-// Proves: CL-039-09; TC-089-002 (Hold Tx on slot check). Hold Tx on (as a fresh station), Tx 1500:
+// The slot check with Hold Tx on. Hold Tx on (as a fresh station), Tx 1500:
 // K1ABC (CQ at 1800 in the even e) selected, Rx 1800, Tx stays 1500; my even periods e - 90 ..
 // e - 30 s flat 30. K1ABC silent: at rep 1 (e + 30 s) a station decoded on my Tx 1500 only in that
 // period, its row flat 30, published complete at e + 44.1 s (in progress). The slot check counts it:
@@ -98,7 +99,7 @@ async fn tc_089_002_a_held_slot_check_counts_the_newest_period() {
     );
 }
 
-// Proves: CL-065-01; TC-089-003 (a). In a QSO (my own CQ, Tx even, so my Rx parity odd), my periods
+// In a QSO (my own CQ, Tx even, so my Rx parity odd), my periods
 // e - 60 .. e - 15 s flat 30 and the odd P = e + 15 s flat 30 (its row so far). Enable Tx on at
 // e + 16 s: a build counting e - 15 and e - 45 s (2), [[300, 2700]]. P's complete publication at
 // P + 14.1 s with a station decoded at 1200 Hz in P: one build at once, at_utc_ms P + 14.1 s, P
@@ -141,7 +142,7 @@ async fn tc_089_003_the_marks_count_the_publication_of_the_period_in_progress_in
     );
 }
 
-// Proves: CL-065-01, CL-039-09; TC-089-003 (b), (c), (d); TC-089-001 (c). Listening with no run, my
+// Listening with no run, my
 // periods e - 60 .. e - 15 s and the odd P = e + 15 s flat 30. At P's start the build judges odd:
 // e - 15 and e - 45 s (2), [[300, 2700]]. (c) A partial publication of P with a station at 1200 Hz
 // at P + 13 s makes P not due: no build (at_utc_ms stays P). (d) A complete publication of the
@@ -246,7 +247,7 @@ async fn calls_from(f: &Mcp, hz: u64, name: &str) {
     );
 }
 
-// Proves: CL-039-09, CL-039-05; TC-089-004 (a), (b), (e). (a) Auto on at P + 5 s, P = e my newest
+// (a) Auto on at P + 5 s, P = e my newest
 // Rx period, in progress and unpublished: no decision and no enable_tx at P + 8 and P + 14 s; P's
 // complete publication at P + 14.1 s with a station decoded at 1500 (the current Tx) to another
 // call, nothing callable: the first empty publication, still waiting. (b) No decision without a
@@ -256,6 +257,7 @@ async fn calls_from(f: &Mcp, hz: u64, name: &str) {
 // before Auto on (not fresh) and Auto on at P + 20 s: waiting after the fresh empty e + 15 s, the
 // CQ from 1450 after the fresh empty e + 30 s. Red on the parent (the #89 contest Run): the CQ
 // before the second empty publication.
+// Proves: TC-089-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_a_contest_strategy_cq_counts_the_newest_rx_period() {
     let t = run_cq(false, |f, e| ended(f, e + 5_000)).await;
@@ -295,12 +297,13 @@ async fn tc_089_004_a_contest_strategy_cq_counts_the_newest_rx_period() {
     calls_from(f, 1450, "(e) on the second fresh empty publication").await;
 }
 
-// Proves: CL-039-05; TC-089-004 (c), (d), (f). (c) Hold Tx on: no CQ at Auto on (P + 5 s) nor at
+// (c) Hold Tx on: no CQ at Auto on (P + 5 s) nor at
 // the first empty publication; at the second the CQ on the held Tx 1500 with no slot decision
 // (D16), armed. (d) Auto off, and separately Halt, at P + 20 s between the two publications:
 // stopped, and at the second no decision and no enable_tx. (f) Auto on again at P + 20 s: still
 // waiting, and on the second empty publication one decision, 1450 as (a). Red on the parent (the
 // #89 contest Run): (c) armed at P + 5 s, (f) the CQ on P's publication.
+// Proves: TC-089-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_hold_tx_stop_and_a_second_auto_on() {
     let t = run_cq(true, |f, e| ended(f, e + 5_000)).await;
@@ -366,7 +369,7 @@ async fn tc_089_004_hold_tx_stop_and_a_second_auto_on() {
     calls_from(f, 1450, "(f) one decision on the second empty publication").await;
 }
 
-// Proves: CL-039-09, CL-039-05; TC-089-004 (g). Hold Tx off; K1ABC's CQ decoded at 1800 Hz in the
+// Hold Tx off; K1ABC's CQ decoded at 1800 Hz in the
 // even e - 30 s (published before Auto on). Auto on at P + 1 s (P = e): waiting. The operator
 // double-clicks K1ABC at P + 2 s: the run is manual (Rx = Tx = 1800 for his contact). Esc at P + 5 s
 // gives him up: the run back to waiting, and no set_frequency and no enable_tx of the run at P + 14
@@ -418,7 +421,7 @@ async fn tc_089_004_after_esc_on_a_manual_contact_the_cq_waits() {
     calls_from(f, 1750, "on the second empty publication").await;
 }
 
-// Proves: CL-039-05; TC-089-004 (g), the completed manual contact. Hold Tx off; K1ABC's RR73 to my
+// The completed manual contact. Hold Tx off; K1ABC's RR73 to my
 // call decoded at 1800 Hz in the even e - 30 s (published before Auto on). Auto on at e + 1 s:
 // waiting. The operator double-clicks it at e + 2 s (Rx 1800, Tx stays 1500 for a caller) and
 // enables Tx: the run is manual; my 73 goes

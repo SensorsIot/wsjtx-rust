@@ -8,7 +8,6 @@ fn bits(s: &str) -> [u8; 77] {
         .try_into()
         .unwrap()
 }
-// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn frozen_payload_channel_tone_vectors() {
     let manifest: Value = serde_json::from_str(include_str!(
@@ -57,7 +56,6 @@ fn frozen_payload_channel_tone_vectors() {
         assert_eq!(c.decode(&llr, &|| false), Some(word), "fec {id}");
     }
 }
-// Proves: FR-003, FR-004, CL-007-03, TC-024-007, CL-024-03.
 #[test]
 fn canonical_payload_boundaries() {
     let fixture: Value = serde_json::from_str(include_str!(
@@ -77,7 +75,7 @@ fn canonical_payload_boundaries() {
         );
     }
 }
-// Proves: CL-055-02; TC-055-004 (#55 live defect: RR73 packed as the grid square RR73 is the roger).
+//
 #[test]
 fn rr73_packed_as_a_grid_square_is_the_roger() {
     let with_exchange = |text: &str, raw: Option<u32>| {
@@ -114,7 +112,6 @@ fn rr73_packed_as_a_grid_square_is_the_roger() {
         );
     }
 }
-// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn fec_repairs_corruption_and_respects_cancellation() {
     let c = Channel::new();

@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! FR-023 native FlexRadio wire subset: bounded TCP control lines, VITA-49 DAX receive
 //! packets and discovery packets. Independently written from the SmartSDR TCP/IP API
-//! wiki and the wire facts recorded in WstxFlexSession::NativeFlexWireSubset; no
+//! wiki and the wire facts recorded in WstxFlexApi; no
 //! vendor code is translated or linked.
 
 /// Control TCP port and the discovery UDP port of the pinned API (both 4992).
@@ -9,13 +9,6 @@ pub const CONTROL_PORT: u16 = 4992;
 pub const DISCOVERY_PORT: u16 = 4992;
 /// The radio's UDP ports a routed client sends its registration to.
 pub const REGISTER_PORTS: [u16; 2] = [4991, 4993];
-/// The only admitted API protocol version (`V1.4.0.0`).
-pub const SUPPORTED_PROTOCOL: ProtocolVersion = ProtocolVersion {
-    major: 1,
-    minor: 4,
-    a: 0,
-    b: 0,
-};
 /// One incoming line including its LF; one outgoing command including its LF.
 pub const MAX_LINE: usize = 4096;
 pub const MAX_COMMAND: usize = 1024;
@@ -50,6 +43,8 @@ pub struct ProtocolVersion {
     pub b: u32,
 }
 impl ProtocolVersion {
+    /// The only admitted API protocol version, as the radio states it after `V`.
+    pub const ADMITTED: &str = "1.4.0.0";
     fn parse(text: &str) -> Result<Self, WireError> {
         let mut parts = text.split('.');
         let mut next = || parts.next().ok_or(WireError::Malformed);

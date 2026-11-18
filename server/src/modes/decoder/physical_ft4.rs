@@ -2,7 +2,7 @@
 // Copyright the WSJT-X contributors. GPL-3.0-only; see the project LICENSE.
 // Reference: WSJTX/wsjtx 0f7d5928449ec747c3d1f6da1306f8c94404c3a9.
 use super::{
-    DecodeError,
+    DECODE_BAND_HIGH_HZ, DECODE_BAND_LOW_HZ, DecodeError,
     baseband::{BandWindow, PassBand},
     physical_sync,
     search::CpuBudget,
@@ -63,7 +63,9 @@ fn admit(
     Ok(true)
 }
 fn eligible(b: isize, frequency: f64, frames: usize) -> bool {
-    b >= 32 && (b as usize - 32) * 18 + 60480 <= frames && (200. ..=3500.).contains(&frequency)
+    b >= 32
+        && (b as usize - 32) * 18 + 60480 <= frames
+        && (DECODE_BAND_LOW_HZ..=DECODE_BAND_HIGH_HZ).contains(&frequency)
 }
 fn better(a: &Candidate, b: &Candidate) -> bool {
     a.score > b.score || a.score == b.score && (a.frequency, a.start) < (b.frequency, b.start)

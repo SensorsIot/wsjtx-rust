@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 use super::{Configuration, DataValue, Error, ModeValue, Operation, Result, Sideband};
 
-pub const MAX_FRAME: usize = 32;
+pub const MAX_FRAME_BYTES: usize = 32;
 pub const MAX_READ: usize = 256;
-pub const MAX_BYTES: usize = 4096;
-pub const MAX_FRAMES: usize = 64;
+pub const EXCHANGE_MAX_BYTES: usize = 4096;
+pub const EXCHANGE_MAX_FRAMES: usize = 64;
 
 pub fn encode_frequency(mut value: u64) -> Result<[u8; 5]> {
     if !(30000..=74800000).contains(&value) {
@@ -68,7 +68,7 @@ pub fn request(config: &Configuration, operation: &Operation) -> Result<Vec<u8>>
 
 /// Typed CI-V transmit switch (command 0x1C 0x00, data 01 transmit / 00 receive).
 /// It is compiled here, never catalogue- or wire-authorized; only the transmit
-/// service reaches it through the actor's transmit hold (WstxRadioIO::PttControl).
+/// service reaches it through the actor's transmit hold (WstxCatControl::KeyingRules).
 pub fn ptt_request(config: &Configuration, on: bool) -> Result<Vec<u8>> {
     config.validate()?;
     Ok(vec![
@@ -86,7 +86,7 @@ pub fn ptt_request(config: &Configuration, on: bool) -> Result<Vec<u8>> {
 /// its completion.
 pub fn ptt_reply(config: &Configuration, frame: &[u8]) -> Result<Option<Reply>> {
     if frame.len() < 6
-        || frame.len() > MAX_FRAME
+        || frame.len() > MAX_FRAME_BYTES
         || frame[..2] != [0xfe, 0xfe]
         || frame.last() != Some(&0xfd)
     {
@@ -114,7 +114,7 @@ pub enum Reply {
 }
 pub fn reply(config: &Configuration, frame: &[u8], operation: &Operation) -> Result<Option<Reply>> {
     if frame.len() < 6
-        || frame.len() > MAX_FRAME
+        || frame.len() > MAX_FRAME_BYTES
         || frame[..2] != [0xfe, 0xfe]
         || frame.last() != Some(&0xfd)
     {
@@ -184,7 +184,7 @@ impl Framer {
             return Err(Error::Limit);
         }
         self.bytes = self.bytes.checked_add(chunk.len()).ok_or(Error::Limit)?;
-        if self.bytes > MAX_BYTES {
+        if self.bytes > EXCHANGE_MAX_BYTES {
             return Err(Error::Limit);
         }
         let mut complete = Vec::new();
@@ -205,13 +205,13 @@ impl Framer {
             if self.frame.len() == 2 && byte == 0xfe {
                 continue;
             }
-            if self.frame.len() >= MAX_FRAME {
+            if self.frame.len() >= MAX_FRAME_BYTES {
                 return Err(Error::Limit);
             }
             self.frame.push(byte);
             if byte == 0xfd {
                 self.frames += 1;
-                if self.frames > MAX_FRAMES {
+                if self.frames > EXCHANGE_MAX_FRAMES {
                     return Err(Error::Limit);
                 }
                 complete.push(std::mem::take(&mut self.frame));

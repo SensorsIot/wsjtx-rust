@@ -1,482 +1,410 @@
 package WstxSettings {
     private import ScalarValues::*;
-    private import WstxStationLink::DisplayProfile;
-    private import WstxProfileAccess::HttpProfilePut;
-    private import WstxProfileAccess::HttpProfileRepresentation;
-    attribute def BrowserDisplayPreference {
-        attribute effectiveOrigin : String;
-        attribute profileUuid : String;
-        attribute savedChoice : DisplayProfile[0..1];
-        attribute effectiveChoice : DisplayProfile;
-        attribute storageAvailable : Boolean;
-        doc /* Browser-owned preference for one effective origin and validated saved-profile UUID.
-             The browser storage boundary isolates origins; a versioned UUID key stores only
-             off/thin/detail, never credentials, device identifiers, station settings or decoded traffic.
-             Boot ID and revision do not alter identity. Environment-only/no-profile use is nonpersistent. */
+    private import RequirementDerivation::*;
+    private import WstxRequirements::'FR-010';
+    private import WstxRequirements::'FR-017';
+    private import WstxRequirements::'FR-019';
+    private import WstxBrowserClientPart::BrowserClient;
+    private import WstxBrowserClientPart::FrontendConfig;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
+
+    doc /* The settings drawer: its sections, what each shows and changes, how a change is
+         saved, and the strategy editor, the Most Wanted list and the alerts. */
+
+    requirement 'CL-227-01' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST offer the settings as SettingsDrawer says. */
+        @Status { build = ImplementationState::partial; }
     }
-    action def RestoreDisplayChoice {
-        in preference : BrowserDisplayPreference;
-        out effectiveChoice : DisplayProfile;
-        doc /* Use a valid saved choice if available. Otherwise Detailed on every origin,
-             including remote HTTPS, using existing1024 native bins at2.9296875Hz. Invalid/missing values or
-             unavailable storage use that normal default without disabling in-memory selection.
-             Explicit choices survive reload/browser restart for this origin/profile only. */
-    }
-    action def SelectDisplayChoice {
-        in explicitChoice : DisplayProfile;
-        in preference : BrowserDisplayPreference;
-        out updatedPreference : BrowserDisplayPreference;
-        doc /* An explicit user selection changes effective and saved choice for this viewer only.
-             If storage is unavailable, retain effective choice in memory without a persistence claim.
-             Subscribe with existing off/thin/detail commands; do not change decoder/radio mode,
-             source measurements, station settings or other viewers. Automatic server fallback changes
-             effective choice only, never overwrites the explicit saved choice, and retains existing
-             single Thin fallback/no retry loop. Detailed keeps fast-link/up-to10KiB/s notice and
-             no32kbit/s promise; Thin retains all bandwidth limits. */
-    }
-    enum def ImportBrowserEvent {
-        enum start; enum accepted; enum reservation_rejected; enum abort; enum response_lost;
-        enum reconciled; enum terminal;
-    }
-    state def BrowserImportLifecycle {
-        attribute acceptedEvent : ImportBrowserEvent;
-        entry; then idle;
-        state idle; state pending; state pendingCancel; state cleanupRequested; state uploading; state reconciling;
-        transition begin first idle if acceptedEvent == ImportBrowserEvent::start then pending;
-        transition reserved first pending if acceptedEvent == ImportBrowserEvent::accepted then uploading;
-        transition cancelPending first pending if acceptedEvent == ImportBrowserEvent::abort then pendingCancel;
-        transition cancelAcceptedReservation first pendingCancel if acceptedEvent == ImportBrowserEvent::accepted then cleanupRequested;
-        transition cancelledReservationRejected first pendingCancel if acceptedEvent == ImportBrowserEvent::reservation_rejected then idle;
-        transition cancelledReservationUnknown first pendingCancel if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
-        transition cleanupObserved first cleanupRequested if acceptedEvent == ImportBrowserEvent::terminal then reconciling;
-        transition cleanupUnknown first cleanupRequested if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
-        transition reservationRejected first pending if acceptedEvent == ImportBrowserEvent::reservation_rejected then idle;
-        transition reservationUnknown first pending if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
-        transition abortUpload first uploading if acceptedEvent == ImportBrowserEvent::abort then reconciling;
-        transition uploadUnknown first uploading if acceptedEvent == ImportBrowserEvent::response_lost then reconciling;
-        transition observed first reconciling if acceptedEvent == ImportBrowserEvent::reconciled then idle;
-        transition finished first uploading if acceptedEvent == ImportBrowserEvent::terminal then idle;
-        doc /* contract 12.6: pendingCancel retains local cancellation intent while awaiting
-             the reservation response. It never starts PUT. An accepted response gives
-             the exact import ID: cleanupRequested sends DELETE for that returned ID,
-             with zero PUT requests, then reconciles GET. Rejected responses end pending
-             cancellation without PUT/DELETE. Lost reservation/cleanup responses enter
-             reconciling; no cancellation success or cleanup is inferred. An unknown
-             reservation ID is observed through GET, never guessed or automatically retried.
-             UI abort during upload stops PUT and sends DELETE independently, then uses GET
-             to reconcile uncertain outcome. A lost reservation response is reconciled from
-             GET /recording, which exposes any accepted import ID. Never retry a mutation,
-             resume upload, replay, or infer rollback from a missing response. reconciling
-             persists on unavailable transport; no fabricated successful snapshot.
-             A known reservation rejection ends local pending, visibly reports the returned
-             error and starts no PUT/DELETE/retry; authoritative busy/degraded/identity state
-             remains unchanged until an independently validated snapshot changes it.
-             idle means no local upload, not permission to ignore authoritative busy state. */
-    }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-227-01'; }
+
     attribute def SettingsDrawer {
-        attribute sections : Integer = 4;
-        attribute waterfallKeepsRunning : Boolean = true;
-        attribute restartChangesApplyOnly : Boolean = true;
-        attribute confirmRestartDuringQso : Boolean = true;
-        assert constraint drawerRules { sections == 4 and waterfallKeepsRunning and restartChangesApplyOnly and confirmRestartDuringQso }
-        doc /* Side drawer over the workspace (the waterfall keeps running; HALT stays
-             reachable), opened by the top-bar Settings button or F2, closed by its close
-             control or a pointer action outside it. Exactly four sections
-             (SettingsSection):
-             General: station (display name, callsign, locator, continent, #42 the
-             ignore lists of WstxSettings::IgnoreListsDisplay: permanent entries of CL-042-02's
-             form, session expiry minutes, the session list with an add field and remove
-             controls; #42 the Alerts section of
-             WstxSettings::AlertDisplay: Sound and Browser notification checkboxes, both off by
-             default, and the alert history newest first with Clear; #39 the Most Wanted
-             section of WstxSettings::MostWantedListDisplay: status with the date and source attribution, and one button Update Most Wanted), clock
-             (#43/#92 CL-043-01 a status line only, no source setting: the SNTP state,
-             the Windows Time service state, the correction and the stations heard
-             (median DT, how many above +0.1 s and below -0.1 s), the warning and its remedy, read with GET /clock when the drawer
-             opens),
-             display (theme Day/Dark/Night and its switch, waterfall display
-             preferences), access and grants (log out, forget credential), MCP/automation,
-             and "Monitor off at startup" (#45 CL-045-01: read with GET /receive/startup,
-             saved on change with POST /receive/startup; it acts at the next station start
-             and restarts nothing, so it carries no restart mark).
-             Radio (restart): CAT (control, endpoint, PTT, receive-only confirmation),
-             audio (one Audio section, #44 CL-044-08: input select with the Rx level meter,
-             output select, both by endpoint name, and the radio's recommendation with
-             Use IC-7300 audio), transmit (Tx watchdog
-             minutes and Tune seconds as WSJT-X, power is set on the transceiver).
-             Logging & Reporting: the existing log (Logbook page, ADIF), #10 "Update
-             logbook from ADIF" (WstxLogbook::UpdateLogbook: an ADIF file input, the Update
-             logbook button and the summary line), the WSJT-X UDP
-             interface (WstxUdp, CL-040-02): the instance name as read-only text with no
-             input (CL-112-01; "not fixed yet" while GET /udp shows null) and up to 16
-             targets, each
-             address:port, enabled, multicast TTL (the hop limit of an IPv6 group) and
-             interface (an interface index for an IPv6 group, with a hint that an
-             interface- or link-local group needs one; WstxUdp D6), the outbound message
-             selection, with each target's status (active, schema, last send, error) and a
-             note that the interface is send-only: programs listen and the station takes no
-             command over UDP (operator 2026-11-06). GET /udp is read when the drawer opens (at
-             most every 30 s, so routine drawer use stays inside the Thin budget), on the
-             Logging tab and on Reload; Save sends one PUT /udp with expected_revision; it
-             is a setting that restarts nothing (no restart mark). PSK Reporter: the read-only
-             feed's switch and status (off; connecting; connected with the age of the last
-             spot, or no spot yet; not connected with the error and retrying) from
-             WstxHearingFeed::HearingFeed; plain setting, saved at once, never an error
-             elsewhere on the screen.
-             Expert: raw CAT readback, receive job/generation, timing, the explicit receive
-             start/stop, the startup resume state of #45 (resume state and last receive
-             choice from GET /receive/startup), the decode window diagnostics of #52 (Save
-             FT8 decode windows and the latest window's counters, CL-052-01), selection
-             refresh, connection details, the saved audio endpoint IDs (CL-044-08),
-             recordings/replay and the
-             raw transmit test panel (WstxTransmit, #9). (#82 removes #65's "Show free Tx
-             slots": the open slots are always part of the waterfall, FreeTxSlotMarks.)
-             Operative changes (display, theme, watchdogs) apply immediately and never
-             interrupt decoding. Restart changes (the saved profile: station, CAT, audio,
-             PTT) take effect only on Apply (the existing revision-aware profile save) and,
-             while a QSO is active or the station transmits, only after a confirmation. */
+        doc /* Settings in the top bar, or F2, opens the drawer over the workspace; the
+             waterfall keeps running and a HALT stays on screen; its close control or a click
+             outside closes it. Its sections, in this order: Station (StationSection), Radio
+             (RadioSection), Flex on a profile of the native connection (FlexSection),
+             Operating (OperatingSection), Strategies and contests (StrategiesSection), Files
+             (FilesSection), Destinations (DestinationsSection), Display (DisplaySection) and
+             Advanced (AdvancedSection). It shows the values of the views config, shack and
+             definitions; what the station keeps for itself (its records) shows nowhere.
+             Each value is marked as the shack's, shared by every station of the PC, or as
+             this station's own.
+             This station's values are changed in the form and saved by Save: one saveConfig
+             of the whole station config. A value whose change restarts receive or the radio
+             connection asks first while a contact is in progress or the station transmits.
+             The shack's values are saved by saveShack from the revision they were read at;
+             a member of a collection (a strategy, a UDP target, an entry of the wanted list,
+             a Tx macro, a working frequency) is added, changed or removed on its own
+             (createEntry, updateEntry, deleteEntry).
+             A save refused with revisionConflict reloads the shack's values and says
+             "Another station changed the shared settings; reloaded". The answer of a save is
+             its outcome (SaveOutcome). Unsaved changes stay until they are saved or Reload
+             is pressed. Every text of the station shows as text. */
+    }
+    requirement 'CL-001-02' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST offer the settings check as CheckView says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-001-02'; }
+
+    attribute def CheckView {
+        doc /* Settings check stands at the top of the settings drawer. With a radio that
+             can be keyed it first asks "The check sends a Tune tone. Continue?" and gives
+             checkSettings with withTune by the answer. The lines of the view settingsCheck
+             show as they come, each with ✓, ✗ or –, what was checked, the reason, and a link
+             to the section where it is changed; the end reads "Ready to operate" or
+             "<n> problems". */
     }
 
-    attribute loopbackRefreshDeadlineSeconds : Integer = 2;
-    attribute reconnectAfterDetectionDeadlineSeconds : Integer = 10;
-    attribute silentLossDetectionSeconds : Integer = 13;
-    calc def SaveSubmissionAllowed {
-        in saving : Boolean;
-        in conflict : Boolean;
-        in unknownOutcome : Boolean;
-        return allowed : Boolean = not saving and not conflict and not unknownOutcome;
-        doc /* contract 12.5: background Refresh/profile snapshots cannot clear a pending,
-             conflict or unknown-outcome save guard; explicit validated reload is required
-             for conflict/unknown outcome. This guard covers programmatic submission too. */
+    attribute def StationSection {
+        doc /* The station's name (displayName): offered as the chosen rig's name, as model
+             and slice A to F for a FlexRadio, or "No radio", taken or typed, refused when
+             another station of the PC has it; shown in the window's title and in the top
+             bar. The call sign, the locator, the continent and the CQ words of the shack
+             (WstxProfileAccess::ShackConfig); the CQ words proposed as the continent's code
+             and the primary prefix of the call's entity, which the operator takes or
+             changes. */
     }
-    calc def SnapshotApplicable {
-        in sameBoot : Boolean;
-        in candidateRevision : Integer;
-        in displayedRevision : Integer;
-        return applicable : Boolean = not sameBoot or candidateRevision >= displayedRevision;
+    attribute def RadioSection {
+        doc /* The rig, chosen from the rigs radio control's catalogue has, by Hamlib's name
+             (WstxRadioControl::ControlSelection::rig), as WSJT-X's rig list; the control mode
+             (CAT or none), the CAT port and the PTT method. RadioLine. The AGC choice with
+             its line, hidden without a managed radio: "Radio AGC <value> · set and read
+             back", "· read back, already as set", "· not applied · <reason>", "· not yet read
+             from the radio", and the recommendation "AGC SLOW · recommended for FT8/FT4".
+             Detect radio (DetectRadio) and Apply recommended settings (applyRecommended).
+             The audio (AudioSection). Every control of a radio function the rig lacks is
+             disabled (WstxOperatingScreen::HelpRule). The output power of the station's
+             band in percent (WstxRadioControl::RadioConfig::powers) with what came of
+             setting it on the radio (the view power). The audio drive: manual or automatic
+             (WstxTransmitControl::TransmitConfig::levelMode, automatic by default); manual
+             shows a drive slider for the station's band, as WSJT-X's Pwr; while the ALC
+             cannot be read the slider shows in both modes; the meters and the drive's
+             warnings show in both. Split operation, None, Rig or Fake It
+             (WstxTransmitControl::TransmitConfig::split), with a radio over CAT. */
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: Settings > Radio, Rig and Pwr";
+        }
     }
-    calc def StatusReady {
-        in currentOpen : Boolean;
-        in correlatedValidStatus : Boolean;
-        in initializedOnThisSocket : Boolean;
-        in validatedProfile : Boolean;
-        return ready : Boolean = currentOpen and correlatedValidStatus and
-            (initializedOnThisSocket or validatedProfile);
+    attribute def RadioLine {
+        doc /* The state of the radio connection in words: ready with the dial and mode; "CAT
+             unavailable · <reason> · automatic retry in <n> s"; "<port> in use by another
+             program"; "Actual rig frequency unknown" while the dial is not known. The radio
+             connection opens and closes by itself; there is no Connect or Disconnect. */
     }
-    attribute statusProfileGetsInFlightMax : Integer = 1;
-    attribute statusProfileFollowupsMax : Integer = 1;
-    action def PresentAndEditProfile {
-        doc /* Existing browser on embedded profile-mode flag, never error-based mode
-             guessing. One real window per endpoint; operator opens readiness origin.
-             For a selected persisted profile this operational browser flow uses the
-             effective HTTPS origin and a current scoped grant/transport established by
-             AuthenticateProfile/HandleScopedAuthorization. Trusted plaintext loopback
-             GET/PUT compatibility remains the HttpProfileGet/PutDecision API contract;
-             a plaintext selected profile reaches Connected only through the
-             runtime-token operating contract of AuthenticateProfile, never a grant.
-             Display full UUID/name/effective endpoint/boot UUID/revision with legacy
-             radio/link/version; title contains display name and port. Before Connected
-             require correlated status snapshot AND successful validated authenticated GET
-             /profile on EACH new socket, before station-ready or optional display.
-             After every await captured socket must remain current and OPEN before
-             applying HTTP results; the one exception is the save reply below (CL-073-01).
-             Established same-socket correlated status updates
-             version/radio/Connected/updated and enables Refresh immediately, independent
-             of settings HTTP. A status on an established socket reads no settings; a newer
-             announced revision (WstxStationProtocol profile.state) reads them asynchronously:
-             at most one GET in flight and one pending follow-up per socket; no mutation replay.
-             Failed background GET visibly fails and marks socket stale. Old/disconnected
-             results cannot restore Connected or mutate newer snapshots/forms.
-             GET body exactly ProfileRepresentation, no-store JSON <=8192 bytes.
-             GET absent Origin is valid; supplied wrong Origin 403, no CORS permission.
-             Form edits whole Settings only, expected revision and selected profile_id.
-             UUID/schema/endpoint/connection type/revision read-only. Standard selected;
-             Native FlexRadio is shown as the saved read-only type of a native profile
-             (NativeProfileDocument). All selections Saved; not activated;
-             radio stays unconfigured; audio/control selection availability independent.
-             PUT validates exact body shape/JSON/UTF8, media type/size before applying.
-             Disable form controls while saving, preserving their read-only state;
-             SaveSubmissionAllowed is the per-form submission guard. Refresh/profile
-             GET completion must retain saving, conflict OR unknown outcome in Save's disabled state;
-             a second submission during saving sends no second PUT. Restore editable
-             controls after completion, while permanent read-only controls stay disabled.
-             SnapshotApplicable rejects a lower revision from the same boot so a held
-             GET cannot overwrite an acknowledged newer save/form. A changed boot
-             permits authoritative restart/recovery resynchronization, including an
-             independently restored lower revision.
-             Invalid field preserves typed input with error, never Saved. Successful save
-             updates revision only on durable 200. The PUT reply is the save's outcome
-             (CL-073-01): a 200 whose body is a valid ProfileRepresentation shows Saved
-             revision N and is applied as the authoritative snapshot exactly as a GET
-             (SnapshotApplicable; a reload of the form and edited revision), with no
-             follow-up GET and no socket, authorization or form-context check after
-             the reply; a received 400/409/503 shows its refusal. The outcome is unknown
-             only when no readable reply arrives (network failure, timeout, abort,
-             unreadable or invalid body, or a reply the authorization component discards).
-             On 409 prompt reload before another
-             save. An unknown outcome also requires explicit reload before another save,
-             without automatic PUT replay or an assumed rollback. A newer announced revision or a reconnect reloads authoritative settings; preserve in-progress
-             edits until explicit reload or successful save. No settings polling/replay.
-             Refresh fixture <=2 seconds unshaped loopback. Existing watchdog 12-second
-             silence checked each second =>13-second detection (31 seconds while a deferred
-             client download is pending, WstxOperatingLayout::BrowserLinkLifecycle); reconnect 1/2/4 seconds,
-             snapshot+profile within 10 seconds after loss detection/restored link.
-             Keep 12.3/12.4 existing bounds; no N-station thin-link guarantee is invented.
-             Literal-text output, keyboard access/readability at desktop and 360px.
-             HTTP error mappings are PutDecision/GetDecision/HttpStatus; unsupported
-             methods 405 no mutation; environment-only GET/PUT return 404. */
-        in authoritative : HttpProfileRepresentation;
-        out edited : HttpProfilePut;
+    attribute def FlexSection {
+        doc /* On a profile of the native connection: the receive antenna and the radio's
+             address (WstxProfileAccess::NativeIntent), and the session's line: "Native
+             FlexRadio <state> · <error> · <model, firmware, serial, address, API> · slice
+             <letter, frequency, mode, antenna> · transmit unsupported", "Native FlexRadio
+             status stale · station disconnected" while the link is lost. */
     }
-    enum def SaveBrowserEvent {
-        enum submit; enum success; enum rejected; enum conflict;
-        enum outcome_unknown; enum explicit_reload_validated;
+    attribute def OperatingSection {
+        doc /* Auto Seq and Call 1st, the repetition limit (WstxQsoControl::QsoConfig), the
+             Tune limit in seconds (WstxTransmitControl::TransmitConfig), and the Rx and Tx
+             offsets at station start. The working frequencies of the shack, each added,
+             changed or removed on its own (the collection workingFrequencies), Reset
+             (ResetFrequencies), and the IARU region
+             (WstxStationCommands::WorkingFrequencies::region). Log automatically, the shack's
+             (WstxQsoControl::QsoShared::logAutomatically). The Tx macros of the shack,
+             each added, changed or removed on its own (the collection txMacros). The
+             activity and its exchange stand in the QSO pane's fold-out
+             (WstxQsoPane::MessagesFoldOut). */
     }
-    state def BrowserSaveLifecycle {
-        attribute acceptedEvent : SaveBrowserEvent;
-        entry; then editable;
-        state editable; state saving; state conflict; state unknownOutcome;
-        transition submit first editable if acceptedEvent == SaveBrowserEvent::submit then saving;
-        transition saved first saving if acceptedEvent == SaveBrowserEvent::success then editable;
-        transition rejected first saving if acceptedEvent == SaveBrowserEvent::rejected then editable;
-        transition conflicted first saving if acceptedEvent == SaveBrowserEvent::conflict then conflict;
-        transition responseUnknown first saving if acceptedEvent == SaveBrowserEvent::outcome_unknown then unknownOutcome;
-        transition reloadConflict first conflict if acceptedEvent == SaveBrowserEvent::explicit_reload_validated then editable;
-        transition reloadUnknown first unknownOutcome if acceptedEvent == SaveBrowserEvent::explicit_reload_validated then editable;
-        doc /* contract 12.5: browser form state, separate from the server process lifecycle.
-             While saving, disable editable controls and allow no second PUT; completion
-             restores editable fields without changing permanently read-only fields.
-             Conflict and unknownOutcome keep Save disabled until explicit reload returns
-             a validated authoritative profile on the current OPEN socket. Background GET,
-             Refresh or reconnect alone cannot clear the reload requirement; failed reload
-             leaves it set. No mutation replay. Known rejection shows error, not Saved.
-             CL-073-01: success is a received 200 with a valid ProfileRepresentation body,
-             also when the socket, the authorization or the displayed snapshot changed
-             while it was in flight (a control save renews the authorization itself);
-             a received 400 is rejected and a received 409 is conflict likewise.
-             outcome_unknown is only a save without a readable reply. */
+    attribute def StrategiesSection {
+        doc /* The strategy editor (StrategyEditor); the wanted list, one entry added or
+             removed at a time; the Most Wanted list (MostWantedDisplay); the acknowledgement
+             of Auto under a contest that forbids automatic operation
+             (WstxAutoControl::AutoConfig::forbiddenContests), with the wording of the
+             contest's warning; a refused Auto on with notConfirmed points here. */
     }
-    action presentAndEdit : PresentAndEditProfile;
-    attribute browserSource : String = "client/index.html; client/app.js; client/style.css";
-    dependency presentationOwner from presentAndEdit to WstxArchitecture::Frontend::browsers;
-    satisfy WstxProfiles::'CL-005-05' by presentAndEdit;
-    satisfy WstxOperatingLayout::'CL-073-01' by presentAndEdit;
+    attribute def FilesSection {
+        doc /* The logbook: the Logbook page (WstxOperatingScreen::LogbookPage) and
+             LogbookUpdate. Export Cabrillo (exportCabrillo): a contest and its period, the
+             contest in force and its period offered first, the header of the shack
+             (WstxLogControl::LogShared::cabrillo) saved by saveShack, the claimed score
+             from the view of the contest's score, the file given as a download. The
+             country file in use, with its version and the date of its
+             source, and Update country file (updateCountryFile). */
+    }
+    attribute def LogbookUpdate {
+        doc /* Update logbook from ADIF: a file, then the button; the file goes in parts
+             (reserveImport, importChunk) and the line reads "Logbook updated: N added, M
+             already present (C confirmations updated), K skipped" or "Logbook not updated ·
+             <reason>". */
+    }
+    attribute def DestinationsSection {
+        doc /* The WSJT-X UDP interface: the station's instance name as text, "not fixed yet"
+             while it has none; the targets, each address and port, enabled, the multicast TTL
+             or hop limit and the interface, each with its status (active, schema, last send,
+             error); the note that programs listen and send nothing to the station. PSK
+             Reporter: Listen to PSK Reporter spots, and its line: "Connected · no spot yet",
+             "Connected · last spot <n> min ago", "Off", "Not connected · <code> · retrying",
+             or the storage error; and Use PSK Reporter, as in the QSO pane. The targets and both
+             switches of PSK Reporter are the shack's. */
+    }
+    attribute def DisplaySection {
+        doc /* The choices of this browser (FrontendConfig): the theme, Day, Dark or Night,
+             and its switch, by hand, at two times, or at sunrise and sunset; the display,
+             Detailed, Thin or Off, with the note that Detailed needs a fast link; Flatten and
+             the spectrum line; the highlight slots, each with its colour; distances in km or
+             miles; the alerts' Sound and Browser notification (AlertDisplay); the sound of
+             a station calling, or Off (CallAlert). */
+    }
+    attribute def AdvancedSection {
+        doc /* Shown and not changed: the listener's address, the origin and the connection
+             type. The clock (ClockView). Diagnostics: Save FT8 decode windows
+             (WstxReceiveControl::ReceiveConfig::windowDump) with the latest window's
+             counters; the resume of receive at station start (StartupState); receive's
+             start and stop by hand (startLive, stopLive); the recordings: "No recording
+             imported", "Recording ready", "Recording unavailable", the import of a WAV file
+             in parts with its progress and Cancel, and Replay (startReplay); the radio's
+             facts as read; the link's details. */
+    }
+    attribute def ClockView {
+        doc /* The view clock in words: the state of station time and its correction; the time
+             server and its state; the state of the Windows time service, and for a PC clock
+             that is off the remedy by that state; the stations heard, "Clock accepted
+             (stations heard are not off to one side)" or how far they are off; the warning of
+             the clock and of the capture, as the error field names them. */
+    }
 
-    package IndependentVerification {
-        doc /* Case identities remain WstxRequirements::TC-022-001..005, projected
-             from WstxRequirements and this package. No cases/verdicts are regenerated from
-             action calculations. These declarations refine their subjects/oracles.
-             Source/test companions retain delivered scoped profile/API/legacy-socket
-             subsets, level 2 isolated automated Windows PC tests. The operational HTTPS/
-             grant fixture conversion and complete dual-transport companions below remain
-             pending; existing source is not complete automation of the expanded cases.
-             The independently sized plaintext8192 response-budget companion remains
-             implemented and mandatory; no existing companion or scoped evidence is discarded.
-             FOUR real candidate processes, distinct saved ports/profiles, four real
-             Chromium windows sharing ONE context/cookie store; no radio/device/live
-             account/external-service/duplicate hosted run. Rust profile tests in
-             server/src/profile_tests.rs and server/src/auth_tests.rs; communication browser/
-             process cases in tests/profiles.test.cjs, registered beside the legacy suite.
-             Case names are TC-022-001..005; run node --test --test-concurrency=1
-             tests/profiles.test.cjs after cargo build --locked. Rust companions run with
-             cargo test --workspace --locked --all-targets. Execution evidence remains
-             on issue #5; model declarations are not run results.
-             Fixture expects UUID 00000000-0000-4000-8000-00000000000i for i=1..4,
-             Station i, TESTi, JN47AA, revision0, standard, fixture-input-i/output-i,
-             disabled/null/disabled control. Ports reserved+recorded independently.
-             Operational browser windows in TC-022-001/002/003/005 and their save/readiness
-             regressions bind127.0.0.1 with saved HTTPS origins https://localhost:<port>
-             and legitimate selected grants in the shared browser context. Initial
-             selected-configuration identity migration creates no grant or commissioning;
-             fresh setup follows AuthenticateProfile/HandleScopedAuthorization, and
-             retained setup proves its existing grant without token/enrollment replay.
-             Plaintext origin null =>http://127.0.0.1:<port> remains a separate HTTP/launch
-             compatibility variant, never a claim of Connected or protected WS readiness.
-             Preserve every API field/size/error/storage/startup variant: the full trusted
-             numeric-loopback no-cookie GET/PUT matrix and current-grant HTTPS protected
-             ordered checks are independently mandatory. The exact8192 response-budget
-             fixture remains plaintext. Tokens independently generated, never logged.
-             Auth setup cannot commission/open/query/set/close CAT/audio or key PTT.
-             Hand-authored expected edit table and independently parsed JSON/file
-             hashes are the oracle, NOT new code/model-produced golden outputs.
-             Readiness <=10s, Refresh <=2s, recovery <=10s after detection/restored link.
-             No fewer-than-four/zero-check pass; missing prerequisites fail. Variable-N
-             implementation is reviewed to reject fixed four-entry arrays/assumptions;
-             additional mandatory 1/6-server runtime repeats are not required. */
-        verification variableServers {
-            subject operation : PresentAndEditProfile;
-            objective { verify WstxProfiles::'CL-005-01'; verify WstxProfiles::'CL-005-02'; verify WstxStationProtocol::'CL-005-03'; verify WstxProfiles::'CL-005-05'; }
-            doc /* TC-022-001: operational HTTPS/grant setup and separate plaintext API
-                 compatibility use the common partition above. Four PID/listener/boot-ID/
-                 visible-UUID endpoints, Refresh all. Edit only profile1: Edited station 1,
-                 changed-input-1, CAT endpoint
-                 fixture-cat-1, CAT/disabled; retain output. Second window on same
-                 station reloads acknowledged revision; other three settings/bytes stable.
-                 Repeat audio-only/control-only/null-audio/CAT-disabled edits. Radio
-                 stays unconfigured; no device opens; native disabled. Validate every
-                 4.2 domain empty/max/one-beyond, types/duplicates/extra/missing keys,
-                 malformed JSON/UTF8/enum/CAT/PTT, wrong UUID, stale/exhausted revision,
-                 exact8192/8193 HTTP-byte bodies padded with whitespace and media type.
-                 Valid boundaries persist; invalid leaves memory/disk/revision intact.
-                 Two stale competing windows: one winner/one409, no merge.
-                 Hold an announced revision's GET, start/hold PUT, then release GET: Save stays disabled,
-                 repeated submit sends no second PUT. Release PUT, require one revision
-                 increment and usable editable controls/Save, preserving read-only controls.
-                 Inverse order on revision0 station: hold an old announced GET, complete PUT,
-                 whose 200 reply is the revision1 snapshot (CL-073-01), then release old GET. Visible revision/form/name and
-                 Saved1 feedback remain1; same-boot ordering does not reject changed boots.
-                 Render <img src=x onerror=alert(1)> display name and
-                 <script>alert(1)</script> audio ID literally, no element/dialog/script.
-                 Desktop/360px identity/errors/Save readable and keyboard reachable.
-                 Oracle: independent canonical domain table and independent fixture edits. */
-        }
-        verification statusReadiness {
-            subject operation : PresentAndEditProfile;
-            objective { verify WstxProfiles::'CL-005-02'; verify WstxStationProtocol::'CL-005-03'; verify WstxRecordingReceive::'CL-006-04'; }
-            doc /* TC-022-005, tests/profiles.test.cjs, level2 Windows real Chromium/server.
-                 Use the common operational HTTPS/grant partition before each relevant
-                 protected socket; count profile GETs separately from auth setup, never
-                 substitute auth status for the correlated WS observation.
-                 Established socket: Refresh reads no profile; an independent save announces the
-                 revision and the browser reads once. Hold that GET; actual correlated WS response and
-                 changed updated/enabled Refresh <=2s BEFORE HTTP release. Repeated
-                 Refresh adds no GET; a second save while held starts no parallel read, and
-                 one follow-up gets that newer revision and retains dirty input. Fresh socket: held initial GET
-                 withholds Connected/station-ready/optional display until validated.
-                 Close old socket with GET held, establish replacement, release old:
-                 no reconnection or newer snapshot/form overwrite. Initial/background
-                 GET failure visibly fails/stales, never successful configuration.
-                 Oracle: WstxRequirements and this package, real WS and prepared revisions. */
-        }
-        dependency identity005 from statusReadiness to WstxProfiles::'TC-022-005';
-        dependency identity001 from variableServers to WstxProfiles::'TC-022-001';
+    requirement 'CL-073-01' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST take the answer of a save as its outcome as
+             SaveOutcome says. */
+        @Status { build = ImplementationState::implemented; }
     }
-    attribute def ValueView {
-        doc /* While a strategy is active the browser renders the station's verdicts in Band
-             Activity: after a new publication event (never on a timer) it asks POST
-             /strategy/evaluate once for the shown sequences of the current live identity; rows
-             arriving during an evaluation are asked for when it ends.
-             A row with a rank has the existing strategy mark (colour stays per
-             WstxBandActivity::BandActivityColours: only interesting stations); greyed rows
-             are dimmed and struck through; other rows have no mark. With the sort on value (the
-             default, the visible "Value" control in the strategy element) rows are ordered in
-             their period block by ValueOrder: the partner rows stay on top (#50), rows to my
-             call next, then rows with a rank by rank, then the rest in ActivityOrdering.
-             Clicking a column header sorts by that column until the operator returns to Value
-             (ActivityOrdering; the marks stay). No active strategy: no evaluation request and
-             no mark. After an Ignore or Stop ignoring the shown rows are evaluated again.
-             Selecting a strategy never restarts receive. */
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-073-01'; }
+
+    attribute def SaveOutcome {
+        doc /* The answer to a save is its outcome. A save answered with the new values shows
+             "Saved" and takes those values, as a read would. A refusal shows its reason at
+             the field it names (ErrorBody::field), "Invalid callsign" for the call sign; the
+             form keeps what was typed. A save with no answer, lost with the link, shows "Save
+             outcome unknown. Reload saved settings before retrying." and Save stays disabled
+             until Reload; nothing is sent again by itself. While a save is on its way, Save
+             is disabled and no second save is sent. Reload shows "Loaded saved settings.". */
     }
+
+    requirement 'CL-044-06' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST offer the detection of the radio as DetectRadio says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-044-06'; }
+
+    attribute def DetectRadio {
+        doc /* Detect radio is enabled only after the operator ticks that USB SEND and USB
+             keying are off or the radio is on a dummy load, and that opening a port can pulse
+             DTR and RTS also on other boards of the same kind; a press gives one detectRadios
+             with keyingInhibitConfirmed and clears the tick. The answer
+             (WstxStationCommands::RadioDetection) shows the ports, the radio proposed with
+             its menu settings and their recommended values, and the input and output proposed
+             at its place; the operator takes them into the form. While radio control has not
+             had the keying confirmation once, the section says that discovery waits for it. */
+    }
+
+    requirement 'CL-044-08' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST offer the audio devices by name as AudioSection says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-044-08'; }
+
+    attribute def AudioSection {
+        doc /* One Audio section in Radio: the input with the Rx level meter beside it, the
+             output, and the radio's recommendation. Each offers None and the endpoints of its
+             direction (the read endpoints, when the drawer opens), each shown by its label and
+             saved by its id; a saved endpoint that is gone shows its last known name, marked
+             absent. The level meter shows the input level of the view receive, high and low
+             marked, while receive runs. */
+    }
+
+    requirement 'CL-039-25' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST show and update the Most Wanted list as
+             MostWantedDisplay says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-039-25'; }
+
+    attribute def MostWantedDisplay {
+        doc /* "List from <date> · <n> entries" with the entries that map to no entity, or "No
+             list; strategies call the strongest first", the source's attribution, and one
+             button Update Most Wanted (updateMostWanted), fetched once on the click; a
+             failure keeps the list and shows the reason in one line. */
+    }
+
+    verification 'TC-039-056' {
+        doc /* The Most Wanted list's line, its update and a failed update. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-039-25'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+      + "TC-039-006 Settings > General Most Wanted: one button beside the date, a failure says why";
+        }
+    }
+
+    requirement 'CL-097-12' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST offer the strategies' editor as StrategyEditor says. */
+        @Status { build = ImplementationState::partial; }
+    }
+    #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-097-12'; }
+
     attribute def StrategyEditor {
-        doc /* The edit (pencil) popup (a modal dialog carrying its own HALT with the top-bar HALT's
-             action and enabled state; receive keeps running): choose, duplicate and delete
-             strategies (a new strategy is only a duplicate, "<name> copy", of a built-in or
-             user strategy, keeping its class and contest; there is no blank "Add"); the list
-             grouped Strategy, Contest (the two classes). Exactly the settings of Strategy, as the nine
-             numbered decisions in order (D19, mockups of 2026-11-09):
-             name and class (strategy or contest, shown, never switchable: a duplicate keeps it);
-             1 Band: "All bands" or band checkboxes;
-             2 Filters, as questions with answers: "What must be new?" (DXCC entity, Call, Grid,
-             CQ zone (WAZ), ITU zone, Continent (WAC), Prefix (WPX) checkboxes); "New per" (Ever,
-             Band, Band and mode); "New means" (Not worked, Not confirmed (QSL/LoTW)); "Region"
-             (All, Other continents than mine, Selected continents with checkboxes); "Minimum SNR"
-             (empty: none); "Worked since" (Any time, Today UTC, From/to UTC dates); "Treat 73 as
-             CQ"; "Prefix/country" include and exclude lists (an entry: a prefix or a country name
-             typed as free text, checked by the station on Save with a refusal shown at the entry;
-             no picker, optional bands); "US state" include and exclude
-             (state codes); "CQ target" include and exclude (words); the line "Callers of my call
-             must pass these filters too". A contest strategy shows its contest (read-only) and
-             only the three lists, under "Contest rules first, then:".
-             3 Order: dropdown rows, one criterion each (add a row from the ValueCriterion names
-             not yet listed, remove one, move one up or down; "the first decides, the next breaks
-             a tie"; the line "then SNR" under the rows, not removable); a contest strategy shows
-             "Ranked by the contest's rules" instead.
-             4 "Calling stations are answered" (a checkbox, callers_first).
-             5 "Leaving a station": After <n> calls without answer, <m> if he hears us | Until
-             logged, leave when not decoded for <n> min | Contest style: while he hears us stay as
-             long as he is the most valuable, else leave after <n> Tx changes.
-             6 "Tx frequency": for each PSK case (He reports and hears us · He reports, does not
-             hear us · He does not report) Stay | Move every call | Move every <n>-th call; the line
-             "a move goes to a quiet slot, never onto a frequency he reports busy, never below 500
-             Hz".
-             7 "Busy pause: while he is in a QSO with another station keep calling on a split
-             frequency and do not count".
-             8 "CQ when idle, after <n> periods with nothing callable" (a checkbox, cq_when_idle,
-             and a number 1..20, cq_wait_periods).
-             9 "Retry pause (minutes)" before a left station is called again.
-             Labels of the criteria: Most wanted (Club Log rank), New DXCC, New DXCC on band, New
-             DXCC on band and mode, New call, New call on band, New grid, New grid on band, New CQ
-             zone, New ITU zone, New continent, New prefix, SNR bucket (above 0, -10..0, below
-             -10), SNR (stronger first), Distance (farthest first), Hears us first (PSK
-             Reporter). A refused field is shown at its control with the station's reason. The
-             live preview evaluates the
-             unsaved draft against the latest period (POST /strategy/evaluate with explain,
-             400 ms after an edit, one request per edit, no timer otherwise) and shows each
-             decode's rank and why. Save sends one PUT /strategy, applies at once (also to the
-             active strategy) and never selects a strategy. A built-in strategy is listed read-only with
-             its settings shown and its preview; only Duplicate acts on it. With no user strategy the
-             popup opens on the first built-in and Save stores none. My continent is set in
-             Settings > General (StrategyConfiguration continent, saved by PUT /strategy). */
+        doc /* The editor opens over the screen with a HALT of its own; receive keeps running.
+             It lists the strategies grouped Strategy and Contest. Default is read-only; every other
+             built-in is changed in place and has Factory reset, which puts the selected built-in
+             back to its values in WstxStrategies::BuiltinStrategies; a created strategy has no
+             Factory reset. A new strategy is made only as a copy of another, "<name> copy", keeping
+             its class, contest and alert; a class is never switched. A strategy shows the ten
+             decisions of WstxStrategies::StrategyForm, in their order: 1 the bands; 2 the filters
+             (what must be new, new per, new means, the region, the minimum SNR, worked since, 73 as
+             CQ, the prefix or country, US state and CQ target lists, and that callers of the
+             station's call pass them too), for a contest only the three lists; 3 the order of
+             the criteria, then SNR, for a contest the contest's rules; 4 calling stations
+             answered first; 5 leaving a station; 6 the Tx frequency per PSK Reporter case; 7
+             the busy pause; 8 CQ when idle after n periods; 9 the retry pause; 10 the alert,
+             Off or one of WstxStrategies::AlertSound, each heard when chosen. A refused value
+             shows at its control with its reason. The preview evaluates the unsaved form
+             against the latest period (evaluate with explain) after each edit and shows each
+             record's rank and why. Save gives one createEntry or updateEntry of the
+             collection strategies and selects nothing; Delete gives deleteEntry, and deleting the
+             active strategy ends the selection, and Default is active. Each strategy renamed by the
+             station shows once as "Renamed <from> to <to>". The contest prompt offers a contest's
+             period and its strategies. */
     }
-    dependency editorRedesignClause from StrategyEditor to WstxContact::'CL-097-01';
-    dependency valueViewClause from ValueView to WstxOperatingLayout::'CL-039-04';
-    dependency editorClause from StrategyEditor to WstxOperatingLayout::'CL-039-04';
-    attribute def ContestView {
-        doc /* With a contest in force the browser renders the verdicts as WstxSettings::ValueView
-             does, on the same events (a new publication, a save; never a timer). Band Activity lists
-             only the rows with a rank, in rank order under the value sort; rows to my call and the
-             partner rows stay (#50); every other row is hidden. Show all (a toggle in the strategy
-             element, visible only with a contest, off at each page load, kept in the page only)
-             shows them all again without a new request: a dupe and a greyed row dimmed, no colour; a
-             row with a new multiplier has its own colour beside the strategy mark
-             (WstxBandActivity::BandActivityColours: only interesting stations). The colour slots of the
-             all-time log (new call, DXCC, zone, grid and LotW) are off while a contest is in force,
-             their reasons leave the hover too, and they come back with its end: QSOs outside the
-             period do not count (the My call slot stays; the Settings choice is unchanged). The hover names "#n",
-             new multiplier and points, or the dupe. The status beside it: "Contest <name> \· <MM-DD
-             HH:MM> to <MM-DD HH:MM> UTC \· <strategy name> \· Auto <on or off>" (Auto off is
-             colouring only) and, once evaluated, " \· <n> QSOs \· <m>
-             mult \· score <s>". Manual operation stays as it is: every row selects as ever, the
-             double-click and the directive warning unchanged. */
-    }
-    dependency viewClause from ContestView to WstxContestRanking::'CL-063-04';
 
-    attribute def IgnoreListsDisplay {
-        doc /* Band Activity: the right-click menu offers "Ignore <call>" for a row with a
-             resolved sender (it adds the exact call to the session list), "Stop ignoring
-             <call>" when that exact call is a session entry, and no ignore item for other
-             rows. A call ignored only by a pattern shows the pattern in its why text; the
-             pattern is removed in Settings. Settings > General: the permanent list (entries of
-             CL-042-02's form separated by spaces or commas, saved on change with PUT
-             /strategy), the session expiry in minutes (saved on change), and the session list
-             with an add field taking a call or a pattern (added on change) and each entry's
-             remaining minutes and a remove control; the list is read again when the drawer
-             opens. */
+    requirement 'CL-042-07' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST announce and list the alerts as AlertDisplay says. */
+        @Status { build = ImplementationState::implemented; }
     }
-    attribute def MostWantedListDisplay {
-        doc /* Browser, Settings > General: "List from <date> · <entries> entries" (and how many
-             are not mapped), or "No list; strategies call the strongest first", with beside it
-             one button "Update Most Wanted"; one click does everything. A failure keeps the
-             list and shows the reason in one line. */
-    }
+    #derivation connection { end #original ::> 'FR-017'; end #derive ::> 'CL-042-07'; }
+
     attribute def AlertDisplay {
-        doc /* Browser: Settings > General shows an Alerts section: "Sound" and "Browser
-             notification" checkboxes, both off by default, kept per browser and profile in
-             localStorage (wstx.alerts.v1:<profile_id> = {sound, notify}; unreadable: both off);
-             checking Browser notification is the only place that asks for the browser's
-             notification permission (Notification.requestPermission on that click, never
-             otherwise); a permission other than granted leaves it unchecked with the reason.
-             The history list, newest first, each line "<HH:MM:SS> <call> <message> · <rule> ·
-             <band> <MODE> · <snr> dB · <dxcc>" (unknown parts left out), and a Clear button
-             (POST /strategy/alerts/clear). An alert counts as new when its id is above the
-             highest id this page has seen (the history read at page load or reconnect announces
-             nothing): for each new alert a short tone (Web Audio, about 0.15 s) only when Sound
-             is on and the page is visible, and a notification titled "Alert <call>" with body
-             "<message> · <rule>" when Browser notification is on and permission is granted
-             (also while the page is hidden); with both off nothing is announced (the history
-             still lists it). */
+        doc /* Sound and Browser notification, both off by default, are choices of this
+             browser; ticking Browser notification is the one place that asks the browser
+             for its permission, and a permission not granted leaves it unticked with the
+             reason. The history of the view alerts, newest first, each line "<HH:MM:SS>
+             <call> <message> · <rule> · <band> <MODE> · <snr> dB · <dxcc>", with Clear
+             (clearAlerts). An alert newer than every one the page has seen plays its
+             AlertEntry::sound when Sound is on and the page is shown, and a notification
+             "Alert <call>" with "<message> · <rule>" when Browser notification is on, also
+             while the page is hidden; the history read when the page loads announces
+             nothing. */
     }
-    dependency ignoreListsDisplayClause from IgnoreListsDisplay to WstxContact::'CL-042-06';
-    dependency mostWantedListDisplayClause from MostWantedListDisplay to WstxContact::'CL-039-25';
-    dependency alertDisplayClause from AlertDisplay to WstxContact::'CL-042-07';
+
+    requirement 'CL-042-08' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST ring when a station calls the operator, as CallAlert
+             says. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-017'; end #derive ::> 'CL-042-08'; }
+
+    attribute def CallAlert {
+        doc /* A row of Band Activity marked callsMe (WstxBandActivityPane::RowMarks) whose
+             sender is not the partner of the contact in progress rings once for that
+             sender until the contact in progress changes: it plays
+             FrontendConfig::callSound when Sound is on and the page is shown, and gives
+             the notification "<call> calls you" with the message when Browser notification
+             is on, also while the page is hidden. With callSound absent it rings not. The
+             rows read when the page loads ring not. */
+    }
+
+    verification 'TC-073-001' {
+        doc /* A save's answer is its outcome. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-073-01'; }
+        @TestedBy { test = "tests/profiles.test.cjs"; }
+    }
+    verification 'TC-073-002' {
+        doc /* Answers that arrive are known, lost ones stay unknown. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-073-01'; }
+        @TestedBy { test = "tests/profiles.test.cjs"; }
+    }
+    verification 'TC-044-005' {
+        doc /* The Detect radio panel. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-044-06'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-044-022' {
+        doc /* The line on the keying confirmation. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-044-06'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-044-007' {
+        doc /* The audio section shows names, not ids. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-044-08'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-044-010' {
+        doc /* The AGC choice and its line. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-227-01'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-039-021' {
+        doc /* The PSK Reporter line in Destinations. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-227-01'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-043-003' {
+        doc /* The clock in words. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-227-01'; }
+        @TestedBy {
+            test = "server/src/transmit/clock_http_tests.rs; tests/ui-operating.test.cjs";
+        }
+    }
+    verification 'TC-110-005' {
+        doc /* The settings after a restart of the station. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-227-01'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-042-007' {
+        doc /* The alert history, the sound and the notification. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-042-07'; }
+        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
 }

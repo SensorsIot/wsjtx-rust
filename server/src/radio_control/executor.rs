@@ -281,7 +281,7 @@ impl<T: Transport> Executor<T> {
             }
         }
     }
-    /// Transmit switch with independent readback (WstxRadioIO::PttControl): write
+    /// Transmit switch with independent readback (WstxCatControl::KeyingRules): write
     /// 1C 00 01|00, require ACK, then read 1C 00 and require the requested state.
     /// Only the actor's transmit hold calls this; it is not an `Operation`, so neither
     /// the catalogue nor the wire can reach it. Exchange failure closes the connection
@@ -568,7 +568,7 @@ impl<T: Transport> Executor<T> {
         let now = Instant::now();
         if inner
             .last_poll
-            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(1))
+            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(super::POLL_SECONDS))
         {
             return Err(Error::Busy);
         }
@@ -979,8 +979,9 @@ mod publication_tests {
             Ok(())
         }
     }
-    // Proves: CL-044-09; TC-044-012. The read-first read does not re-confirm the old value
+    // The read-first read does not re-confirm the old value
     // while the setter frame is on the wire; the read-back confirms the new one.
+    // Proves: TC-044-012
     #[test]
     fn setter_fact_stays_unconfirmed_from_the_write_until_its_read_back() {
         let authority = Authority {

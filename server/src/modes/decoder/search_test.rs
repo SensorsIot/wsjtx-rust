@@ -855,7 +855,7 @@ fn resource_capacity_owned_child() {
     );
     handshake("FINISHED", "RELEASE");
 }
-// Proves: CL-007-04. Capacity setup is not a decoded-success fixture.
+// Capacity setup is not a decoded-success fixture.
 #[test]
 fn resource_candidate_and_sic_reserved_storage_ledger() {
     for mode in [Mode::Ft8, Mode::Ft4] {
@@ -903,7 +903,7 @@ fn resource_candidate_and_sic_reserved_storage_ledger() {
         std::hint::black_box((&candidates, &pending, &window_seen));
     }
 }
-// Proves: CL-007-04. Cancels only after a real completed spectrum row.
+// Cancels only after a real completed spectrum row.
 #[test]
 #[cfg(not(debug_assertions))]
 fn resource_phase_detection_observes_work_without_publishing() {
@@ -960,7 +960,6 @@ fn resource_phase_detection_observes_work_without_publishing() {
         }
     }
 }
-// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn sampled_gram_projection_matches_independent_alias_oracles() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
@@ -1009,7 +1008,6 @@ fn oracle_energy(samples: &[f32], lo: usize, hi: usize, carrier: f64, wave: &[[f
     }
     (ss * xc * xc - 2. * cs * xc * xs + cc * xs * xs) / (cc * ss - cs * cs)
 }
-// Proves: FR-003, FR-004, CL-007-03, CL-007-04.
 #[test]
 fn refinement_rejects_unrelated_carrier_sampling_alias() {
     for mode in [Mode::Ft4, Mode::Ft8] {
@@ -1084,7 +1082,6 @@ fn refinement_rejects_unrelated_carrier_sampling_alias() {
         }
     }
 }
-// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn full_rate_metric_distinguishes_conjugate_modulated_interferer() {
     let frames = 60480;
@@ -1130,7 +1127,7 @@ fn full_rate_metric_distinguishes_conjugate_modulated_interferer() {
     }
 }
 
-// Detail test of WstxModemDecode: pruned grid scoring keeps the exhaustive result.
+// Detail test of WstxDecode: pruned grid scoring keeps the exhaustive result.
 #[test]
 fn ranked_refinement_matches_exhaustive_grid_search() {
     let channel = Channel::new();
@@ -1249,7 +1246,7 @@ fn partial_interferer_window() -> (Vec<f32>, Vec<u8>, Vec<u8>) {
     (samples, strong, weak)
 }
 
-// Proves: FR-003, FR-004, CL-007-03 (#56 padded residual). A frame that runs past the
+// A frame that runs past the
 // window start is found and subtracted but never published; the weak frame under it decodes.
 #[test]
 fn partial_frame_interferer_is_subtracted_not_published() {
@@ -1314,7 +1311,7 @@ fn decoded_tones(d: &Decode) -> Vec<u8> {
     channel.tones(&channel.encode(&bits, Mode::Ft8), Mode::Ft8)
 }
 
-// Proves: FR-003, FR-004, CL-007-03 (#56 padded residual, end edge). A strong frame that
+// A strong frame that
 // runs 0.64 s past the window end is subtracted, not published; the weak frame under it decodes.
 #[test]
 fn frame_past_the_window_end_is_subtracted_not_published() {
@@ -1339,7 +1336,7 @@ fn frame_past_the_window_end_is_subtracted_not_published() {
     );
 }
 
-// Proves: FR-003, CL-007-03 (#56 padded residual publication boundary). A frame starting up
+// A frame starting up
 // to half a symbol (960 frames) before the window is published at start 0; one starting
 // further before is not.
 #[test]
@@ -1365,7 +1362,7 @@ fn half_symbol_publication_boundary() {
     }
 }
 
-// Proves: FR-003, FR-004 (#56 duplicate on another carrier). The same word on carriers 100 Hz
+// The same word on carriers 100 Hz
 // apart is published once, and both copies are subtracted: a weak frame 3 Hz from the second
 // copy decodes.
 #[test]
@@ -1394,7 +1391,7 @@ fn duplicate_on_a_distant_carrier_is_subtracted_and_published_once() {
     );
 }
 
-// Proves: CL-007-03 (#56 ft8b weak-word guard). Rejected exactly when an FT8 word has at most
+// Rejected exactly when an FT8 word has at most
 // 10 of 21 Costas hits and a measured SNR below -25 dB.
 #[test]
 fn weak_word_guard_boundaries() {
@@ -1406,7 +1403,7 @@ fn weak_word_guard_boundaries() {
     assert!(!weak_word(Mode::Ft4, 0, Some(-40.)));
 }
 
-// Proves: FR-003, CL-007-03 (#56 data point retry). A weak word that fails at its fine point
+// A weak word that fails at its fine point
 // decodes at the nearby point holding the most frame energy.
 #[test]
 fn failed_fine_point_retries_at_the_data_point() {
@@ -1575,7 +1572,7 @@ fn weak_assisted_window(
     panic!("{text}: no weak window that only the a-priori pass decodes");
 }
 
-// Proves: FR-003, FR-004, CL-007-03 (#56 slice 5 APrioriHypotheses). Weak FT8 QSO messages
+// Weak FT8 QSO messages
 // below the unassisted limit decode only through the a-priori pass with the right MyCall,
 // DxCall, QSO state and Rx/Tx frequency, and the published record carries the AP type.
 #[test]
@@ -1644,7 +1641,7 @@ fn weak_qso_words_decode_only_with_the_right_calls() {
     }
 }
 
-// Proves: CL-007-03 (#56 slice 5). Under a wrong DxCall, in every QSO state, and in pure
+// Under a wrong DxCall, in every QSO state, and in pure
 // noise under the right one, the a-priori passes never yield a word other than the one on
 // the air, at any level from buried to strong, in FT8 and FT4.
 #[test]
@@ -1686,7 +1683,7 @@ fn wrong_dx_call_never_yields_a_false_word() {
     eprintln!("A_PRIORI wrong-DxCall checks: {assisted} correct a-priori words");
 }
 
-// Proves: FR-003, CL-007-03 (#56 slice 5). FT4 a-priori: a weak CQ below the unassisted limit
+// FT4 a-priori: a weak CQ below the unassisted limit
 // decodes through type 1 without any QSO context, and a weak HB9BLA K1ABC RR73 through type 6
 // with the right calls only.
 #[test]

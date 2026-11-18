@@ -7,10 +7,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Logical CPUs minus one, leaving headroom for capture, display and transmit threads.
+/// The logical CPUs a decode leaves to capture, display and transmit threads.
+const SPARED_PROCESSORS: usize = 1;
+/// Logical CPUs minus SPARED_PROCESSORS, and at least one.
 pub(super) fn default_threads() -> usize {
     std::thread::available_parallelism()
-        .map_or(1, |n| n.get().saturating_sub(1))
+        .map_or(1, |n| n.get().saturating_sub(SPARED_PROCESSORS))
         .max(1)
 }
 
@@ -70,7 +72,8 @@ pub(super) async fn map<T: Sync, S, R: Send>(
 mod tests {
     use super::*;
     use crate::decoder::search::complete;
-    // Proves: CL-057-02; TC-057-002. Every item once, in input order, for 1..8 threads and a slow item.
+    // Every item once, in input order, for 1..8 threads and a slow item.
+    // Proves: TC-057-002
     #[test]
     fn map_keeps_input_order_on_any_thread_count() {
         let items: Vec<u64> = (0..200).collect();
@@ -94,7 +97,8 @@ mod tests {
             assert_eq!(out, items.iter().map(|x| x * x).collect::<Vec<_>>());
         }
     }
-    // Proves: CL-057-02; TC-057-002. A cancelled caller stops between rounds with Cancelled.
+    // A cancelled caller stops between rounds with Cancelled.
+    // Proves: TC-057-002
     #[test]
     fn map_stops_when_cancelled() {
         let cancelled = std::sync::atomic::AtomicBool::new(false);

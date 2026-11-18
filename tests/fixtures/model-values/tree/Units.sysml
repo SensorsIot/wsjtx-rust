@@ -1,4 +1,4 @@
-// Fixture of the model-value readers (TC-DOC-014): the fixture's own unit list. Secs is
+// Fixture of the model-value readers (TR-20): the fixture's own unit list. Secs is
 // deliberately not on it.
 package WstxUnits {
     enum def UnitSuffix {

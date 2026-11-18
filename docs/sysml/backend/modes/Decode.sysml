@@ -1,455 +1,363 @@
-package WstxModemDecode {
+package WstxDecode {
     private import ScalarValues::*;
-    private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::AutomationState;
-    private import WstxRequirements::'FR-003';
+    private import RequirementDerivation::*;
     private import WstxRequirements::'FR-004';
-    private import WstxRequirements::'FR-018';
-    private import WstxLiveReceive::'CL-007-01';
-    private import WstxOperatingLayout::'CL-007-02';
-    private import WstxLiveReceive::'TC-004-004';
-    private import WstxModeProcessing::Mode;
-    private import WstxDecodes::ResultRecord;
-    private import WstxOfflineDecode::DecodeBand;
-    private import WstxOfflineDecode::'CL-007-09';
-    private import WstxModeProcessing::DecodeJob;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::DetailTests;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::DiffersFromSource;
-    private import WstxLiveReceive::'CL-007-05';
-    private import WstxOperatingLayout::'CL-057-01';
-    private import WstxOperatingLayout::'TC-057-003';
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
-    doc /* The decode function of the modes part (WstxModesPart::ModeFunctions). A window
-         of canonical 12 kHz samples with its mode and a-priori context goes in; the records
-         of the frames decoded in it come out. The payload, channel code and waveform are
-         those of the published protocol; this package states the product's choices over
-         it and its promises at the boundary. The payload function and the data the part
-         shares are in WstxOfflineDecode. */
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::DetailTests;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::DiffersFromSource;
+    private import WstxModesPart::ModeFunctions;
+    private import WstxModeProcessing::*;
+
+    doc /* The decode function of the modes part: a window of samples goes in, the frames
+         decoded in it come out. The payload, the channel code and the waveform are those
+         of the published protocol; this file states the product's choices over it. */
+
+    requirement 'CL-007-03' {
+        subject modes : ModeFunctions;
+        doc /* The decoder MUST decode the FT8 and FT4 frames of a window as the published
+             protocol defines their payload, channel code and waveform (DecodeWindow). */
+        @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/decoder/mod.rs; server/src/decoder/search.rs; "
+                + "server/src/decoder/subtraction.rs; server/src/modes/decoder/apriori.rs; "
+                + "server/src/modes/decoder/baseband.rs; "
+                + "server/src/modes/decoder/bitmetrics.rs; "
+                + "server/src/modes/decoder/channel.rs; "
+                + "server/src/modes/decoder/coarse_ft4.rs; server/src/modes/decoder/fit.rs; "
+                + "server/src/modes/decoder/history.rs; "
+                + "server/src/modes/decoder/parallel.rs; "
+                + "server/src/modes/decoder/physical_ft4.rs; "
+                + "server/src/modes/decoder/physical_sync.rs; "
+                + "server/src/modes/decoder/snr.rs; "
+                + "server/src/modes/decoder/synchronization.rs; "
+                + "server/src/modes/decoder/waveform.rs";
+        }
+    }
+    #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-03'; }
+
+    action def DecodeWindow {
+        in request : ProcessingRequest;
+        out frames : ProcessingResult[0..2048];
+        out ended : WindowEnd;
+        doc /* How a window becomes frames.
+             A window shorter than one frame of its mode gives no frame.
+             An FT8 frame is returned when it lies inside the window, or reaches out of
+             it by at most half a symbol at either end; one that starts before the window
+             is returned with the window's first sample as its start.
+             An FT4 frame is returned when it lies inside the window.
+             A frame that reaches further out of the window is not returned.
+             A payload is returned once: a frame with the payload of an earlier one,
+             starting within half a symbol of it, is not returned again, in the same
+             window or, in continuous receive, in a later one.
+             Each returned word passes the parity check and the CRC of the channel code.
+             Every other case ends as DecodeError states. */
+        @DetailTests {
+            tests = "server/src/modes/decoder/baseband_test.rs; "
+                + "server/src/modes/decoder/bitmetrics_test.rs; "
+                + "server/src/modes/decoder/coarse_ft4_test.rs; "
+                + "server/src/modes/decoder/physical_ft4_test.rs; "
+                + "server/src/modes/decoder/subtraction_test.rs; "
+                + "server/src/modes/decoder/channel_resource_test.rs; "
+                + "server/src/modes/decoder/snr_test.rs; "
+                + "server/src/modes/decoder/search_test.rs; "
+                + "server/src/modes/decoder/apriori_test.rs; "
+                + "server/tests/modes/decoder_live.rs";
+            covers = "the band limit, the baseband and symbol transforms, the bit metrics, "
+                + "the coarse FT4 search, the subtraction of decoded frames, channel "
+                + "decoding, the SNR measurement, the refinement of a candidate, the retry "
+                + "of a failed word, the guard against weak false words and the history "
+                + "of returned frames";
+        }
+        @FollowsSource {
+            reference = "QEX, The FT4 and FT8 Communication Protocols, sections 2 to 5 and "
+                + "appendix A; WSJT-X at the behaviour baseline: sync8, getcandidates4, "
+                + "ft8b, ft4_decode, decode174_91, osd174_91";
+        }
+        @DiffersFromSource {
+            what = "SuperFox: WSJT-X decodes SuperFox frames in Hound mode; the decoder "
+                + "does not.";
+        }
+        @DiffersFromSource {
+            what = "FT8var: WSJT-X runs a second FT8 decoder when its option for a "
+                + "multithreaded FT8 decoder is on; the decoder has its own decoder only.";
+        }
+        @DiffersFromSource {
+            what = "decode174_91 checks only the CRC of a word; the decoder checks the "
+                + "parity as well.";
+        }
+    }
+
+    requirement 'CL-007-06' {
+        subject modes : ModeFunctions;
+        doc /* The decoder MUST decode at least the share of frames of each mode, with the
+             accuracy of start, frequency and SNR, that DecodeQuality states. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-06'; }
 
     attribute def DecodeQuality {
-        doc /* The share of frames the modem decodes, per mode, and the accuracy of what it
-             reports. A level is signalsPerLevel independent signals of one mode at one SNR
-             on the WSJT-X 2500 Hz scale; strongDecodedMin and weakDecodedMin of them decode
-             at the strong and the weak level. Of overlapPairs pairs of frames at each of two
-             frequency spacings, overlapDecodedMin decode both; at one spacing with
-             oneSpacingDifferenceDb between them, the stronger decodes in
-             oneSpacingStrongDecodedMin pairs and the weaker in oneSpacingWeakDecodedMin.
-             Of the pinned official recording of each mode, at least the official minimum
-             of its messages decode. A decoded start lies within the start tolerance of the
-             injected start, a decoded lowest-tone frequency within the frequency
-             tolerance. A reported SNR is a whole dB, within jt9SnrToleranceDb of the
-             pinned jt9 report where one exists, at least the floor of its mode and at most
-             snrCeilingDb. For an isolated signal of the strong level in white Gaussian
-             noise, it lies within strongAwgnSnrToleranceDb of the injected SNR. Carriers
-             decode at any lowest-tone offset within DecodeBand, not only at multiples of
-             6.25 Hz. */
-        attribute signalsPerLevel : Integer = 40;
-        attribute strongDecodedMin : Integer = 36;
-        attribute weakDecodedMin : Integer = 20;
+        doc /* The share of frames that decode, and the accuracy of what is reported.
+             A level is a set of independent signals of one mode at one SNR on the
+             2500 Hz scale of WSJT-X, each alone in white noise.
+             A frame decodes at any frequency of its lowest tone within DecodeBand. */
+        attribute strongDecodedPct : Integer = 90 {
+            doc /* At least this share of the signals of the strong level decodes. */ }
+        attribute weakDecodedPct : Integer = 50 {
+            doc /* At least this share of the signals of the weak level decodes. */ }
         attribute ft8StrongSnrDb : Integer = -15;
         attribute ft8WeakSnrDb : Integer = -18;
         attribute ft4StrongSnrDb : Integer = -10;
         attribute ft4WeakSnrDb : Integer = -13;
-        attribute overlapPairs : Integer = 20;
-        attribute overlapDecodedMin : Integer = 18;
-        attribute oneSpacingDifferenceDb : Integer = 6;
-        attribute oneSpacingStrongDecodedMin : Integer = 18;
-        attribute oneSpacingWeakDecodedMin : Integer = 10;
-        attribute ft8OfficialMessages : Integer = 14;
-        attribute ft8OfficialDecodedMin : Integer = 12;
-        attribute ft4OfficialMessages : Integer = 19;
-        attribute ft4OfficialDecodedMin : Integer = 16;
-        attribute ft8StartToleranceFrames : Integer = 240;
-        attribute ft4StartToleranceFrames : Integer = 144;
-        attribute ft8FrequencyToleranceHz : Integer = 1;
-        attribute ft4FrequencyToleranceHz : Integer = 3;
-        attribute jt9SnrToleranceDb : Integer = 1;
-        attribute strongAwgnSnrToleranceDb : Integer = 3;
-        attribute ft8SnrFloorDb : Integer = -25;
-        attribute ft4SnrFloorDb : Integer = -21;
-        attribute snrCeilingDb : Integer = 60;
+        attribute overlapDecodedPct : Integer = 90 {
+            doc /* Of pairs of frames that overlap in time, two tone spacings apart,
+                 both frames decode in at least this share. */ }
+        attribute oneSpacingDifferenceDb : Integer = 6 {
+            doc /* The weaker frame of a pair one tone spacing apart is this much
+                 weaker. */ }
+        attribute oneSpacingStrongDecodedPct : Integer = 90 {
+            doc /* Of such pairs, the stronger frame decodes in at least this share. */ }
+        attribute oneSpacingWeakDecodedPct : Integer = 50 {
+            doc /* Of such pairs, the weaker frame decodes in at least this share. */ }
+        attribute ft8StartToleranceFrames : Integer = 240 {
+            doc /* A decoded FT8 start lies within this of the true start. */ }
+        attribute ft4StartToleranceFrames : Integer = 144 {
+            doc /* A decoded FT4 start lies within this of the true start. */ }
+        attribute ft8FrequencyToleranceHz : Integer = 1 {
+            doc /* A decoded FT8 frequency lies within this of the true frequency. */ }
+        attribute ft4FrequencyToleranceHz : Integer = 3 {
+            doc /* A decoded FT4 frequency lies within this of the true frequency. */ }
+        attribute jt9SnrToleranceDb : Integer = 1 {
+            doc /* A reported SNR lies within this of the SNR that the decoder of WSJT-X
+                 reports for the same frame of a sample recording. */ }
+        attribute strongAwgnSnrToleranceDb : Integer = 3 {
+            doc /* The reported SNR of a signal of the strong level lies within this of
+                 its true SNR. */ }
+        attribute ft8SnrFloorDb : Integer = -25 {
+            doc /* The lowest SNR reported for an FT8 frame. */ }
+        attribute ft4SnrFloorDb : Integer = -21 {
+            doc /* The lowest SNR reported for an FT4 frame. */ }
+        attribute snrCeilingDb : Integer = 60 {
+            doc /* The highest SNR reported. */ }
+        @FollowsSource {
+            reference = "WSJT-X at the behaviour baseline: the SNR as ft8b and ft4_decode "
+                + "first report it";
+        }
     }
+
+    requirement 'CL-007-07' {
+        subject modes : ModeFunctions;
+        doc /* The decoder MUST return no frame from noise, from silence, from a signal of
+             the other mode or from a word whose CRC fails (FalseFrames). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-07'; }
+
+    attribute def FalseFrames {
+        doc /* Inputs that hold no frame.
+             A word of zeros only is not a frame.
+             A window that holds no frame ends without an error. */
+    }
+
+    requirement 'CL-007-08' {
+        subject modes : ModeFunctions;
+        doc /* The decoder MUST return the same frames in the same order whenever it is
+             given the same request (Repeatability). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-08'; }
+
+    attribute def Repeatability {
+        doc /* What "the same frames" means for two runs of one request: the same
+             payloads in the same order, each start and each frequency within the
+             tolerance below. */
+        attribute startToleranceFrames : Integer = 1;
+        attribute ft8RepeatToleranceHz : Real = 0.2;
+        attribute ft4RepeatToleranceHz : Real = 0.5;
+    }
+
+    requirement 'CL-007-04' {
+        subject modes : ModeFunctions;
+        doc /* The decoder MUST decode on the processor within the time and memory of
+             DecodeBudgets, and end a window that exceeds a limit with the error that
+             names the limit. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-04'; }
 
     attribute def DecodeBudgets {
-        doc /* The resources of decoding, measured on the reference PC HB9BLA (AMD Ryzen 9
-             3900X, 32 GB, Windows 11) with one CPU worker per station. A 15 s FT8 window
-             decodes in at most ft8WindowMaxSeconds, a 7.5 s FT4 window in at most
-             ft4WindowMaxSeconds and a 120 s recording in at most recordingMaxSeconds; a
-             cold start adds at most coldStartMaxSeconds. Four profiles decoding at once
-             take at most fourProfileRuntimeFactor times the single runtime. A worker uses
-             at most workerMemoryMaxMiB, and the station process grows by at most
-             processDeltaMaxMiB of private commit over idle. Decoding reaches a
-             cancellation checkpoint at least every checkpointMaxMs and releases its worker
-             at most releaseMaxMs after Stop. At most candidateCap qualified candidates are
-             searched in a window. */
-        attribute ft8WindowMaxSeconds : Integer = 5;
-        attribute ft4WindowMaxSeconds : Integer = 3;
-        attribute recordingMaxSeconds : Integer = 40;
-        attribute coldStartMaxSeconds : Integer = 2;
-        attribute fourProfileRuntimeFactor : Integer = 2;
-        attribute workerMemoryMaxMiB : Integer = 64;
-        attribute processDeltaMaxMiB : Integer = 96;
-        attribute checkpointMaxMs : Integer = 50;
-        attribute releaseMaxMs : Integer = 250;
-        attribute candidateCap : Integer = 256;
+        doc /* The resources of decoding. The times and the memory hold on the reference
+             PC (AMD Ryzen 9 3900X, 32 GB, Windows 11) with one decode thread for each
+             station. */
+        attribute ft8WindowMaxSeconds : Integer = 5 {
+            doc /* A window of 15 s of FT8 decodes within this. */ }
+        attribute ft4WindowMaxSeconds : Integer = 3 {
+            doc /* A window of 7.5 s of FT4 decodes within this. */ }
+        attribute recordingMaxSeconds : Integer = 40 {
+            doc /* A recording of 120 s decodes within this. */ }
+        attribute coldStartMaxSeconds : Integer = 2 {
+            doc /* The first decode after a start takes at most this much longer. */ }
+        attribute fourProfileRuntimeFactor : Integer = 2 {
+            doc /* Four stations that decode at once take at most this many times the
+                 time of one. */ }
+        attribute workerMemoryMaxMiB : Integer = 64 {
+            doc /* One decode uses at most this much memory. */ }
+        attribute processDeltaMaxMiB : Integer = 96 {
+            doc /* The station process grows by at most this much over idle while it
+                 decodes. */ }
+        attribute releaseMaxMs : Integer = 250 {
+            doc /* A cancelled request ends at most this long after its Cancel. */ }
+        attribute candidateCap : Integer = 256 {
+            doc /* The candidates searched in one window. One more ends the window with
+                 searchLimited. */ }
+        attribute recordCap : Integer = 2048 {
+            doc /* The frames one recording, or one stretch of continuous receive that
+                 the decoder still holds for comparison, may return. One more ends the
+                 window with decodeLimit. */ }
+        attribute recordMaxBytes : Integer = 1024 {
+            doc /* The size of one frame written as JSON. A larger one is not returned
+                 and ends the window with decodeLimit. */ }
     }
 
-    item def APrioriContext {
-        doc /* The station's a-priori context of one decode window, set before the window,
-             so that the records of a window depend only on the window and this context.
-             myCall and dxCall are the call bits of the standard message
-             "MyCall DxCall RRR" packed from the profile callsign and the current contact's
-             DX call; without an exact round trip neither is set, and without a DX call only
-             myCall is. qsoProgress is WSJT-X's nQSOProgress of the current contact state
-             (WstxContact): calling, idle and cancelled 0, replying 1, report 2,
-             roger_report 3, rogers 4, signoff and completed 5. rxHz and txHz are the
-             contact's Rx and Tx audio frequencies. cqOnly holds from start until a contact
-             tick sees the station transmitting, tuning or with Enable Tx on, and again
-             cqOnlyAfterSeconds after the last such tick. A window without a station has no
-             myCall and no dxCall. */
-        @FollowsSource {
-            reference = "WSJT-X 3.3.0-beta5 ft8apset, nQSOProgress, m_dateTimeLastTX";
-        }
-        @DiffersFromSource {
-            what = "A compound MyCall, which ft8apset packs hashed, gives no myCall.";
-        }
-        attribute myCall : Integer[0..29];
-        attribute dxCall : Integer[0..29];
-        attribute qsoProgress : Integer;
-        attribute rxHz : Real;
-        attribute txHz : Real;
-        attribute cqOnly : Boolean;
-        attribute cqOnlyAfterSeconds : Integer = 300;
+    requirement 'CL-057-02' {
+        subject modes : ModeFunctions;
+        doc /* The decoder MUST leave one logical processor to the other functions of the
+             station and return the same frames in the same order on any number of
+             threads (DecodeThreads). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-057-02'; }
+
+    attribute def DecodeThreads {
+        doc /* The threads of one decode.
+             A decode uses as many threads as the PC has logical processors, less one,
+             and at least one.
+             The frames and their order are those of a decode on one thread. */
+        attribute sparedProcessors : Integer = 1;
     }
 
-    action def AdvanceDecode {
-        in block : WstxAudio::SampleBlock;
-        in job : DecodeJob;
-        in context : APrioriContext;
-        out records : ResultRecord[0..2048];
-        @ImplementedIn {
-            module = "server/src/decoder/mod.rs; server/src/modes/decoder/apriori.rs; server/src/modes/decoder/baseband.rs; server/src/modes/decoder/bitmetrics.rs; server/src/modes/decoder/channel.rs; server/src/modes/decoder/coarse_ft4.rs; server/src/modes/decoder/fit.rs; server/src/modes/decoder/history.rs; server/src/modes/decoder/parallel.rs; server/src/modes/decoder/physical_ft4.rs; server/src/modes/decoder/physical_sync.rs; server/src/decoder/search.rs; server/src/modes/decoder/snr.rs; server/src/decoder/subtraction.rs; server/src/modes/decoder/synchronization.rs; server/src/modes/decoder/waveform.rs";
-        }
-        @DetailTests {
-            tests = "server/src/modes/decoder/baseband_test.rs; server/src/modes/decoder/bitmetrics_test.rs; server/src/modes/decoder/coarse_ft4_test.rs; server/src/modes/decoder/physical_ft4_test.rs; server/src/modes/decoder/subtraction_test.rs; server/src/modes/decoder/channel_resource_test.rs; server/src/modes/decoder/snr_test.rs; server/src/modes/decoder/search_test.rs; server/src/modes/decoder/apriori_test.rs; server/tests/modes/decoder_live.rs";
-            covers = "band limit, baseband and symbol transforms, bit metrics and their "
-                + "a-priori fixed bits, coarse FT4 search, qualified-support geometry, "
-                + "subtraction kernels, channel decoding, SNR measurement, ranked grid "
-                + "refinement and the modem history; the contract tests of these files are "
-                + "those bound to TC-004-001..003";
-        }
-        @FollowsSource {
-            reference = "QEX FT4/FT8 sections 2 to 5 and appendix A; WSJT-X 3.3.0-beta5 sync8, "
-                + "getcandidates4, ft8b, ft4_decode, decode174_91, osd174_91";
-        }
-        doc /* The shared receive owner assembles the window from canonical sample blocks: up
-             to 30 s for FT8 and 15 s for FT4. The modem reads no device, file, network or
-             clock. */
-        doc /* The modem decodes no SuperFox or legacy 2019 FT4 frame. It decodes FT8 with its
-             own decoder only and does not run WSJT-X's optional FT8var decoder. */
-        @DiffersFromSource {
-            what = "SuperFox: WSJT-X 3.3.0-beta5 decodes SuperFox frames in Hound mode; the modem "
-                + "does not.";
-        }
-        @DiffersFromSource {
-            what = "FT8var: WSJT-X 3.3.0-beta5 runs lib/ft8var (my_ft8var%decodevar in "
-                + "ft8_engine_kernel.f90) when the option Use multithreaded FT8 decoder is on "
-                + "(lmultift8, MultithreadedFT8decoder, default off, mainwindow_settings.cpp); "
-                + "the modem runs neither that decoder nor its hint passes.";
-        }
-        doc /* A record larger than the modem record cap that
-             WstxLiveReceive::LiveTimedResultRecord states is not published; the window
-             ends with decode_limit (WstxReceiveControl::ErrorCode), keeping the records
-             already published. */
-        doc /* A frame that starts before the window or runs past its end is subtracted and
-             never published, so that a weaker frame under it decodes; a frame that starts
-             at most half a symbol before the window is published at start 0. */
-        doc /* A payload repeated within half a symbol of an earlier one of the window is
-             published once; a copy on a carrier more than 50 Hz away is also subtracted. */
-        doc /* A word that fails at its fine point is tried once more at the nearby data point
-             of greatest energy. */
-        @DiffersFromSource { what = "The retry at the data point: ft8b has no such step."; }
-        doc /* An FT8 candidate that yields no word and that a frame subtracted in the same
-             pass overlaps (carriers within 50 Hz, starts less than one frame apart) is
-             qualified again on the next pass. */
-        doc /* The weak-word guard rejects an FT8 word whose final point has at most 10 of 21
-             Costas hits and whose measured SNR is below -25 dB; the rejected word is
-             neither published nor subtracted. */
-        @FollowsSource { reference = "WSJT-X 3.3.0-beta5 ft8b, nsync<=10 and xsnr<-25"; }
-        @DiffersFromSource {
-            what = "The weak-word guard: ft8b subtracts the rejected word, the modem does not.";
-        }
-        doc /* Every published word passes the parity check and the CRC, and an ordered
-             statistics word with zero disagreements is accepted. */
-        @DiffersFromSource {
-            what = "decode174_91 checks only the CRC and requires more than zero OSD "
-                + "disagreements.";
-        }
-        doc /* The window's qualified candidates count against DecodeBudgets::candidateCap;
-             the next one ends the window with search_limited, keeping the records already
-             published. */
+    requirement 'CL-007-10' {
+        subject modes : ModeFunctions;
+        doc /* The decoder MUST try the messages the station expects, by its context, on
+             a candidate that did not decode without help, and return such a frame only
+             with a valid payload and enough confidence (APrioriHypotheses). */
+        @Status { build = ImplementationState::implemented; }
     }
-
-    action def MeasureFrame {
-        in block : WstxAudio::SampleBlock;
-        out record : ResultRecord;
-        doc /* The start is the canonical frame of the first ramp or sync symbol, never a
-             native or UTC time; the frequency is the audio frequency of the lowest tone. */
-        doc /* The SNR is on the WSJT-X 2500 Hz scale as WSJT-X first reports it, rounded to a
-             whole dB, at least the floor of its mode (DecodeQuality) and at most
-             DecodeQuality::snrCeilingDb; it is null without a baseline. */
-        @FollowsSource { reference = "WSJT-X 3.3.0-beta5 ft8b xsnr2 and ft4_decode"; }
-    }
+    #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-10'; }
 
     action def APrioriHypotheses {
         in context : APrioriContext;
-        doc /* With the station's a-priori context, a candidate whose unassisted decoding
-             failed is decoded again under WSJT-X's a-priori types of the QSO state, within
-             50 Hz of the Rx frequency (FT8 also of the Tx frequency); a type needing MyCall
-             or DxCall is skipped without it. A word found so is published only with a
-             payload that decodes, at WSJT-X's confidence qual >= 0.17 (except FT8 type 1),
-             and carries its type as a_priori. */
+        out frames : ProcessingResult[0..*];
+        doc /* The a-priori types of WSJT-X, tried by the progress of the contact.
+             With cqOnly set, only the CQ type is tried.
+             A type that names my call is tried only with a call that packs exactly as
+             the call of a standard message; a type that names the DX call, only with
+             such a DX call as well.
+             A type that names the DX call is tried within nearHz of the receive
+             frequency and, for FT8, of the transmit frequency.
+             A frame found so is returned only when its payload has the status decoded
+             and its confidence is at least minConfidence; an FT8 frame of the CQ type
+             needs no confidence.
+             The frame carries its type in aPriori. */
         @FollowsSource {
-            reference = "WSJT-X 3.3.0-beta5 ft8b and ft4_decode with ncontest=0: naptypes, "
-                + "lapcqonly";
+            reference = "WSJT-X at the behaviour baseline: ft8b, ft4_decode and ft8apset "
+                + "with ncontest=0: naptypes, lapcqonly, napwid, qual";
         }
         @DiffersFromSource {
-            what = "A low-confidence a-priori word, which WSJT-X publishes marked '?', is not "
-                + "published.";
+            what = "WSJT-X shows an a-priori word of low confidence with a question mark; "
+                + "the decoder does not return it.";
         }
         @DiffersFromSource {
-            what = "The a7 and a8 passes: WSJT-X 3.3.0-beta5 ft8_decode.f90 runs, after the last "
-                + "FT8 pass of a period with AP on, ft8_a7d over the messages decoded in the "
-                + "previous period (iaptype 7) and ft8_a8d at the Rx frequency with the DX "
-                + "call and grid (iaptype 8); the modem tries only the a-priori types 1 to 6.";
+            what = "WSJT-X tries two more a-priori types, 7 and 8, after the last FT8 "
+                + "pass; the decoder tries the types 1 to 6.";
         }
-    }
-
-    action advanceDecode : AdvanceDecode;
-    action measureFrame : MeasureFrame;
-    action aprioriHypotheses : APrioriHypotheses;
-    satisfy 'CL-007-03' by measureFrame;
-    satisfy 'CL-007-04' by advanceDecode;
-    satisfy 'CL-007-06' by measureFrame;
-    satisfy 'CL-007-07' by advanceDecode;
-    satisfy 'CL-007-08' by advanceDecode;
-    satisfy 'CL-007-10' by aprioriHypotheses;
-    dependency calculationOwner from advanceDecode
-        to WstxArchitecture::StationProcess::modes;
-    dependency measurementOwner from measureFrame
-        to WstxArchitecture::StationProcess::modes;
-    dependency aprioriOwner from aprioriHypotheses
-        to WstxArchitecture::StationProcess::modes;
-
-    requirement 'CL-007-03' {
-        doc /* The modem MUST decode FT8 and FT4 frames as the published protocol defines their
-             payload, channel code and waveform. */
-        @FollowsSource {
-            reference = "QEX FT4/FT8 sections 2 to 5 and appendix A; WSJT-X 3.3.0-beta5 for the "
-                + "current message families and the section (86) and RTTY exchange (171) tables";
+        @DiffersFromSource {
+            what = "WSJT-X packs a compound call of the station as a hash; the decoder "
+                + "takes such a call as absent.";
         }
-        @Status { build = ImplementationState::implemented; }
+        attribute nearHz : Integer = 50;
+        attribute minConfidence : Real = 0.17;
     }
-    dependency CL_007_03_to_FR_003 from 'CL-007-03' to 'FR-003';
-    dependency CL_007_03_to_FR_004 from 'CL-007-03' to 'FR-004';
-    dependency CL_007_03_to_FR_018 from 'CL-007-03' to 'FR-018';
-    requirement 'CL-007-04' {
-        doc /* Decoding MUST run on the CPU within DecodeBudgets and MUST end a window whose
-             qualified candidates exceed the candidate cap with an explicit search-limited
-             result. */
-        @Status { build = ImplementationState::partial; }
-    }
-    dependency CL_007_04_to_FR_003 from 'CL-007-04' to 'FR-003';
-    dependency CL_007_04_to_FR_004 from 'CL-007-04' to 'FR-004';
-    requirement 'CL-007-06' {
-        doc /* The modem MUST decode at least the share of frames that DecodeQuality states for
-             each mode, within DecodeBand, at the stated start, frequency and SNR accuracy. */
-        @Status { build = ImplementationState::implemented; }
-    }
-    dependency CL_007_06_to_FR_003 from 'CL-007-06' to 'FR-003';
-    dependency CL_007_06_to_FR_004 from 'CL-007-06' to 'FR-004';
-    dependency CL_007_06_to_FR_018 from 'CL-007-06' to 'FR-018';
-    requirement 'CL-007-07' {
-        doc /* The modem MUST publish no frame from noise, silence, a wrong-mode signal or a
-             word whose CRC fails, and never the all-zero codeword. */
-        @Status { build = ImplementationState::implemented; }
-    }
-    dependency CL_007_07_to_FR_003 from 'CL-007-07' to 'FR-003';
-    dependency CL_007_07_to_FR_004 from 'CL-007-07' to 'FR-004';
-    requirement 'CL-007-08' {
-        doc /* The modem MUST publish the same records in the same order for the same window,
-             mode and a-priori context: the same payloads, each start within 1 frame and each
-             frequency within 0.2 Hz (FT8) or 0.5 Hz (FT4) of the other run. */
-        @Status { build = ImplementationState::implemented; }
-    }
-    dependency CL_007_08_to_FR_003 from 'CL-007-08' to 'FR-003';
-    dependency CL_007_08_to_FR_004 from 'CL-007-08' to 'FR-004';
-    requirement 'CL-007-10' {
-        doc /* With the station's a-priori context, the modem MUST try WSJT-X's a-priori
-             hypotheses for a candidate whose unassisted decoding failed, and MUST publish an
-             a-priori word only with a decoded payload at WSJT-X's confidence, marked with
-             its type. */
-        @Status { build = ImplementationState::implemented; }
-    }
-    dependency CL_007_10_to_FR_003 from 'CL-007-10' to 'FR-003';
-    dependency CL_007_10_to_FR_004 from 'CL-007-10' to 'FR-004';
 
     verification 'TC-004-001' {
-        doc /* Offline FT4
-             Setup: independent FT4 waveforms from a separate encoder, the pinned modern FT4
-             recording with its jt9 report, and the SIM18 FT4 fixtures; the station modem
-             offline. Every test bound to this case selects FT4 and is named path::test; at
-             least one loads an independent FT4 fixture. Mode-independent evidence is traced
-             by its Proves tags, not bound here.
-             (a) Every supported family and field boundary decodes to the injected text;
-                 start within DecodeQuality::ft4StartToleranceFrames, frequency within
-                 ft4FrequencyToleranceHz.
-             (b) The quality counts of DecodeQuality for FT4; on each strong isolated signal
-                 an SNR within strongAwgnSnrToleranceDb of the injected one.
-             (c) At least ft4OfficialDecodedMin of the ft4OfficialMessages official
-                 messages; every SNR a whole dB, within jt9SnrToleranceDb of jt9 and at
-                 least ft4SnrFloorDb.
-             (d) A weak CQ decodes through type 1 without context; a weak
-                 "HB9BLA K1ABC RR73" decodes through type 6 only with MyCall HB9BLA and
-                 DxCall K1ABC.
-             (e) SIM18-FT4-CLEAN decodes exactly "CQ K1ABC FN42". Open: no bound test
-                 shows (e).
-             Oracle: the injected payloads; jt9 is a lower bound, not exhaustive truth.
-             offline fixtures. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::partial; }
-        objective {
-            verify 'CL-007-01';
-            verify 'CL-007-02';
-            verify 'CL-007-03';
-            verify 'CL-007-04';
-            verify 'CL-007-06';
-            verify 'CL-007-10';
-            verify 'FR-003';
-            verify 'FR-004';
-            verify 'FR-018';
-        }
-        @TestedBy {
-            test = "server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/modes/decoder/search_test.rs::ft4_a_priori_recovers_weak_cq_and_qso_words";
-        }
-    }
-    verification 'TC-004-002' {
-        doc /* Offline FT8
-             Setup: independent FT8 waveforms from a separate encoder, the pinned official
-             FT8 recording with its jt9 report, the recorded corpus with its jt9-deep
-             reference, and the SIM18 FT8 fixtures; the station modem offline. Every test
-             bound to this case selects FT8 and is named path::test; at least one loads an
-             independent FT8 fixture. Mode-independent evidence is traced by its Proves
-             tags, not bound here.
-             (a) Carriers at exactly both ends of DecodeBand
-                 (fixtures/decoder/quality-cases.json) and at 200.5, 1000.3 and 3499 Hz
-                 decode; start within
-                 DecodeQuality::ft8StartToleranceFrames, frequency within
-                 ft8FrequencyToleranceHz.
-             (b) The quality counts of DecodeQuality for FT8; on each strong isolated signal
-                 an SNR within strongAwgnSnrToleranceDb of the injected one; a second station
-                 80 dB below a stronger one keeps both messages. Open: no bound test shows
-                 the 80 dB station.
-             (c) At least ft8OfficialDecodedMin of the ft8OfficialMessages official
-                 messages; SNR within jt9SnrToleranceDb of jt9 and at least ft8SnrFloorDb.
-             (d) At least the pinned count of jt9-deep's 409 decodes.
-             (e) Partial frames before or past the window are subtracted, never published,
-                 and the weak frame under them decodes; a frame starting at most 960 frames
-                 before the window publishes at start 0, an earlier one does not.
-             (f) One word on a carrier more than 50 Hz away publishes once, and the weak
-                 frame under its copy decodes.
-             (g) CRC-valid unsupported and invalid payloads are retained with status
-                 unsupported or invalid_payload (WstxDecodes::FrameStatus), exact
-                 payload77, and null text and fields.
-             (h) Weak "HB9BLA K1ABC FN42" (report) and "HB9BLA K1ABC RR73" (rogers) decode
-                 only with the right calls, state and Rx/Tx, with a_priori 3 and 6; a wrong
-                 DxCall in every state and mode never yields another word, and noise none.
-             (i) Through the live worker, the SNR of a UTC-aligned period equals the file
-                 decode of the same audio.
-             (j) SIM18-FT8-CLEAN decodes exactly. Open: no bound test shows (j).
-             (k) The weak-word guard rejects an FT8 word with at most 10 Costas hits and a
-                 measured SNR below -25 dB; it rejects no word with 11 hits or with an SNR of
-                 -25 dB or none, and no FT4 word.
-             (l) A weak word that fails at its fine point decodes at the nearby data point.
-             Oracle: the injected payloads; jt9 is a lower bound, not exhaustive truth.
-             offline fixtures. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::partial; }
-        objective {
-            verify 'CL-007-01';
-            verify 'CL-007-02';
-            verify 'CL-007-03';
-            verify 'CL-007-04';
-            verify 'CL-007-06';
-            verify 'CL-007-09';
-            verify 'CL-007-10';
-            verify 'FR-003';
-            verify 'FR-004';
-            verify 'FR-018';
-        }
-        @TestedBy {
-            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::official_modern_recording_baselines; server/src/recording_tests.rs::live_ft8_snr_measures_from_the_utc_period_start; server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; server/src/modes/decoder/search_test.rs::partial_frame_interferer_is_subtracted_not_published; server/src/modes/decoder/search_test.rs::frame_past_the_window_end_is_subtracted_not_published; server/src/modes/decoder/search_test.rs::half_symbol_publication_boundary; server/src/modes/decoder/search_test.rs::duplicate_on_a_distant_carrier_is_subtracted_and_published_once; server/src/modes/decoder/search_test.rs::weak_word_guard_boundaries; server/src/modes/decoder/search_test.rs::failed_fine_point_retries_at_the_data_point; server/src/modes/decoder/apriori_test.rs::a_priori_types_follow_the_wsjtx_state_table; server/src/modes/decoder/bitmetrics_test.rs::a_priori_words_need_a_decoded_payload_and_confidence; server/src/modes/decoder/search_test.rs::weak_qso_words_decode_only_with_the_right_calls; server/src/modes/decoder/search_test.rs::wrong_dx_call_never_yields_a_false_word; server/tests/audio_receive.rs::live_native_provider_decodes_independent_ft8_callsign";
-        }
-    }
-    verification 'TC-004-003' {
-        doc /* Invalid input, rejection and resources
-             Setup: noise, silence, wrong-mode and bad-CRC inputs; a release build on the
-             reference PC for the budgets.
-             (a) 1,000 noise windows per mode publish nothing.
-             (b) Silence, and an FT8 signal decoded as FT4, publish nothing and raise no
-                 search error.
-             (c) A good-FEC bad-CRC word and the all-zero codeword never publish.
-             (d) DecodeBudgets::candidateCap qualified candidates stay within the cap and
-                 one more gives search_limited.
-             (e) The runtime and memory of DecodeBudgets, with release at most
-                 DecodeBudgets::releaseMaxMs after Stop.
-             (f) A second run of the same window gives the same payloads in the same order,
-                 each start within 1 frame and each frequency within 0.2 Hz (FT8) or 0.5 Hz
-                 (FT4) of the first run.
-             2 — Isolated automated tests; Windows PC with disposable recordings, no radio
-             or live service. */
-        @Automation { run = AutomationState::partial; }
-        objective {
-            verify 'CL-007-01';
-            verify 'CL-007-02';
-            verify 'CL-007-03';
-            verify 'CL-007-04';
-            verify 'CL-007-07';
-            verify 'CL-007-08';
-            verify 'FR-003';
-            verify 'FR-004';
-            verify 'FR-018';
-        }
-        @TestedBy {
-            test = "server/tests/decoder_signal.rs::quality_corpus; server/tests/decoder_signal.rs::independent_waveforms_decode; server/tests/decoder_signal.rs::crc_valid_unsupported_and_invalid_payloads_are_retained; server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; server/tests/decoder_signal.rs::physical_wrong_mode_reproduction_has_no_frame_or_search_error; server/tests/decoder_signal.rs::release_runtime_and_overlapping_window_history; server/src/receive_http_tests.rs::resource_station_process_delta_and_owner_release; server/src/modes/decoder/physical_ft4_test.rs::qualified_support_count_keeps_the_256_257_barrier";
-        }
-    }
-    requirement 'CL-057-02' {
-        doc /* The modem decodes on all CPU cores with headroom: its parallel stages use up to the logical CPU count minus one threads (at least one; the calling thread included), scoped to each stage, so capture, display and transmit threads keep a core; the native audio capture and transmit render threads run at raised (highest) thread priority. Parallel stages are the rows of the FT8 detection spectrum, the FT8 sync-peak qualification, the verification of each pass's candidates (demodulation, channel decode, refinement, physical check and, for a supported complete FT8 frame, its SNR signal power; at most sixteen at once, each holding one 1.2 MB known-word waveform while it refines) and the synthesis of the waveforms to subtract; peak blocking, the duplicate checks, the SNR baseline (per period) and SNR value, publication and the residual subtraction stay in candidate order. The decode set and its order (payload, start frame, frequency and SNR) are identical for every thread count. At most four subtraction waveforms are built at a time: the next four are built on other threads while the previous four are subtracted, so at most eight are held, bounding their memory. The last pass's verified frames are not subtracted, because no later pass reads that residual (#57: these keep a busy FT8 prompt window at about 0.3 s of decode, well inside the CL-007-05 publication bound of period start + 15.0 s; #72: no bound from window completion to painted row is promised beyond CL-007-05 and CL-057-01). The CL-007-04 per-CPU-worker runtime, memory and four-profile budgets are measured with one decode thread per worker. Parallel work runs in rounds of about 10 ms, each started item finishing, and the decode future yields and checks cancellation between rounds, so the station worker keeps draining capture and a cancellation returns as before. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/modes/decoder/parallel.rs; server/src/decoder/search.rs; server/src/modes/decoder/synchronization.rs; server/src/modes/decoder/baseband.rs; server/src/audio/windows.rs; server/src/modes/playback/windows.rs"; }
-    }
-    dependency CL_057_02_to_FR_003 from 'CL-057-02' to 'FR-003';
-    dependency CL_057_02_to_FR_004 from 'CL-057-02' to 'FR-004';
-    verification 'TC-057-002' {
-        doc /* Parallel decode: identical result, wall time by thread count
-             Setup: release build; the hash-pinned busy recording websdr_test7.wav as the UTC-aligned FT8 prompt window (as TC-004-004); for the end-to-end case the TC-057-001 live path and Detailed browser.
-             Steps: decode the window three times each on 1, 4 and 12 threads; order-preserving map of 200 items on 1, 2, 4 and 8 threads with one slow item, and with cancellation from inside the work; the TC-057-001 run with the default thread count.
-             Expected (independent oracle: the single-threaded decode of the same window and the input order): the records on 4 and 12 threads equal those on 1 thread bit for bit and in order, at least 25 records; best wall times are reported per thread count (busy corpus period); the map returns every item once in input order and a cancelled caller ends with Cancelled; the cooperative-quanta and quality cases of TC-004-001 stay green; end to end (TC-057-001 setup, two busy periods), each period's view is published by its period start + 15.0 s on the server timeline (CL-007-05) and its rows are painted at most 300 ms after that publication (CL-057-01), so every row is painted by period start + 15.3 s; the time from window completion (+13.8 s) to the painted rows is reported, not asserted (#72: no contract states that bound).
-             no radio. */
+        doc /* Decoding FT4. */
+        subject modes : ModeFunctions;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-057-02';
-            verify 'CL-057-01';
-            verify 'CL-007-05';
+        objective { verify 'CL-007-03'; verify 'CL-007-06'; verify 'CL-007-10'; }
+        @TestedBy {
+            test = "server/tests/decoder_signal.rs::independent_waveforms_decode; "
+                + "server/tests/decoder_signal.rs::quality_corpus; "
+                + "server/tests/decoder_signal.rs::official_modern_recording_baselines; "
+                + "server/src/modes/decoder/search_test.rs::"
+                + "ft4_a_priori_recovers_weak_cq_and_qso_words";
         }
-        @TestedBy { test = "server/tests/decoder_signal.rs; server/src/modes/decoder/parallel.rs; server/src/receive_http_tests.rs"; }
+    }
+
+    verification 'TC-004-002' {
+        doc /* Decoding FT8. */
+        subject modes : ModeFunctions;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-007-03'; verify 'CL-007-06'; verify 'CL-007-10'; }
+        @TestedBy {
+            test = "server/tests/decoder_signal.rs::independent_waveforms_decode; "
+                + "server/tests/decoder_signal.rs::quality_corpus; "
+                + "server/tests/decoder_signal.rs::official_modern_recording_baselines; "
+                + "server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; "
+                + "server/src/modes/decoder/search_test.rs::"
+                + "partial_frame_interferer_is_subtracted_not_published; "
+                + "server/src/modes/decoder/search_test.rs::"
+                + "frame_past_the_window_end_is_subtracted_not_published; "
+                + "server/src/modes/decoder/search_test.rs::half_symbol_publication_boundary; "
+                + "server/src/modes/decoder/search_test.rs::"
+                + "duplicate_on_a_distant_carrier_is_subtracted_and_published_once; "
+                + "server/src/modes/decoder/search_test.rs::"
+                + "weak_qso_words_decode_only_with_the_right_calls; "
+                + "server/src/modes/decoder/search_test.rs::"
+                + "wrong_dx_call_never_yields_a_false_word";
+        }
+    }
+
+    verification 'TC-004-003' {
+        doc /* No false frame, the limits and the resources. */
+        subject modes : ModeFunctions;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-007-04'; verify 'CL-007-07'; verify 'CL-007-08'; }
+        @TestedBy {
+            test = "server/tests/decoder_signal.rs::quality_corpus; "
+                + "server/tests/decoder_signal.rs::unmodulated_sources_are_not_frames; "
+                + "server/tests/decoder_signal.rs::physical_noise_reproduction_has_no_frame; "
+                + "server/tests/decoder_signal.rs::"
+                + "physical_wrong_mode_reproduction_has_no_frame_or_search_error; "
+                + "server/tests/decoder_signal.rs::"
+                + "release_runtime_and_overlapping_window_history; "
+                + "server/tests/decoder_signal.rs::planned_scalar_and_gain_invariance; "
+                + "server/src/receive_http_tests.rs::"
+                + "resource_station_process_delta_and_owner_release; "
+                + "server/src/modes/decoder/physical_ft4_test.rs::"
+                + "qualified_support_count_keeps_the_256_257_barrier";
+        }
+    }
+
+    verification 'TC-057-002' {
+        doc /* The same frames on any number of threads. */
+        subject modes : ModeFunctions;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-057-02'; }
+        @TestedBy {
+            test = "server/tests/decoder_signal.rs::"
+                + "busy_period_decode_is_identical_and_faster_on_more_threads; "
+                + "server/src/modes/decoder/parallel.rs";
+        }
     }
 }

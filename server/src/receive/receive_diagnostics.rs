@@ -14,9 +14,12 @@ const FILE_LIMIT: u64 = 1024;
 pub(crate) const DUMP_DIR: &str = "diagnostic-windows";
 /// The dump keeps the newest windows, at most this many and this many bytes.
 pub(crate) const DUMP_KEEP: usize = 20;
-pub(crate) const DUMP_BYTES: u64 = 16 * 1024 * 1024;
+pub(crate) const DUMP_MI_B: u64 = 16;
+pub(crate) const DUMP_BYTES: u64 = DUMP_MI_B * 1024 * 1024;
 /// Counters of the latest analysis windows kept for the read.
-pub(crate) const WINDOWS: usize = 20;
+pub(crate) const KEPT_WINDOWS: usize = 20;
+/// WstxReceiveControl::ReceiveConfig: the window dump is off until it is switched on.
+const WINDOW_DUMP: bool = false;
 /// WSJT-X's first FT8 decoding sees the first 41*3456 frames of the period (#52).
 const EARLY_FRAMES: u64 = 41 * 3456;
 
@@ -39,7 +42,7 @@ impl Diagnostics {
         let defaults = Record {
             schema_version: 1,
             profile_id: profile.into(),
-            window_dump: false,
+            window_dump: WINDOW_DUMP,
         };
         let path = directory.join(FILE);
         let (record, storage_error) = match fs::metadata(&path) {
@@ -209,7 +212,7 @@ impl Recording {
         }
         let mut d = self.diagnostics.lock().unwrap();
         d.dumped_windows += u64::from(dump);
-        if d.windows.len() == WINDOWS {
+        if d.windows.len() == KEPT_WINDOWS {
             d.windows.pop_front();
         }
         d.windows.push_back(record);

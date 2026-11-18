@@ -1,4 +1,4 @@
-//! WstxTransmitClock::TransmitClock: the station measures its own UTC offset by SNTP
+//! WstxStationClock::TimeServerCheck: the station measures its own UTC offset by SNTP
 //! (RFC 4330 client, RFC 5905 packet) instead of relying on Windows reporting that a
 //! time service disciplines the clock (a third-party tool that steps the clock is
 //! never reported as discipline). Measurements run on their own thread; the transmit
@@ -47,8 +47,12 @@ pub fn windows_time() -> WindowsTime {
 pub const SERVERS: [&str; 3] = ["ch.pool.ntp.org", "time.windows.com", "pool.ntp.org"];
 /// Largest |offset| that is still synchronized.
 pub const MAX_OFFSET_MS: i64 = 500;
-/// A measurement older than this no longer counts: the state is unknown.
-pub const MAX_AGE: Duration = Duration::from_secs(600);
+/// The age of a measurement (WstxStationClock::TimeServerCheck).
+pub mod time_server_check {
+    /// A measurement older than this (s) no longer counts: the state is unknown.
+    pub const MAX_AGE_SECONDS: u64 = 600;
+}
+pub const MAX_AGE: Duration = Duration::from_secs(time_server_check::MAX_AGE_SECONDS);
 /// Largest difference between system and monotonic time elapsed since a measurement
 /// that still counts as no clock step (free-running drift over `MAX_AGE` stays below it).
 pub const MAX_STEP_MS: i64 = 100;

@@ -1,8 +1,7 @@
 #![forbid(unsafe_code)]
-// Proves: CL-012-02, CL-012-03, CL-012-04; TC-020-003 (and TC-020-002 for the
-// configuration barrier). Hand-authored candidate tables and contact scenarios; the
-// expected selections, states and stop reasons are the WstxMcp::CandidateSelection and
-// OperatingAutomation tables written below, not automation output. Integration cases use
+// Hand-authored candidate tables and contact scenarios; the
+// expected selections, states and stop reasons are the WstxTargetChoice::PickRule and
+// WstxAutoMode::AutoStops tables written below, not automation output. Integration cases use
 // the actual station router, contact engine and #9 transmit owner on the recording
 // hardware double (virtual UTC; no audio, PTT or radio) through the MCP test client.
 use super::*;
@@ -33,7 +32,6 @@ fn order(records: &[Value], config: &Config, worked: &[&str]) -> Vec<String> {
         .collect()
 }
 
-// Proves: TC-020-003.
 #[test]
 fn tc_020_003_candidate_selection_table() {
     let records = rows(&[
@@ -107,7 +105,6 @@ fn tc_020_003_candidate_selection_table() {
     );
 }
 
-// Proves: TC-020-002, TC-020-003.
 #[test]
 fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
     assert_eq!(parse_config(&Value::Null), Ok(None), "null: unconfigured");
@@ -193,7 +190,7 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
     );
 }
 
-/// #89 WstxStrategy::FreeTxSlot Due: the instant of a slot judgement, the station time and the
+/// WstxHoldTx::QuietSpace: the instant of a slot judgement, the station time and the
 /// period start of the latest complete publication, as the slot functions take it. The tests
 /// state both; a slot function that takes the station time alone (the parent of #89) is handed
 /// that, so a test that needs the publication is red there by its assertion, not by its build.
@@ -401,7 +398,6 @@ pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
     f.tick();
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_automation_selects_progresses_completes_and_takes_the_next_candidate() {
     let f = station(true).await;
@@ -451,7 +447,7 @@ async fn tc_020_003_automation_selects_progresses_completes_and_takes_the_next_c
         (json!("contact_active"), json!("W1AW"))
     );
     assert_eq!(a["last_decision"]["candidates"], 2);
-    // The contact engine progresses the contact (WstxStandardQso::AutoSequence), not automation.
+    // The contact engine progresses the contact (WstxStandardQso::SequenceRule), not automation.
     publish(&f, e + 30_000, &[("HB9BLA W1AW -05", 905.0, Some(-6.0))]);
     assert_eq!(f.read("contact").await["contact"]["state"], "roger_report");
     publish(&f, e + 60_000, &[("HB9BLA W1AW RR73", 905.0, Some(-6.0))]);
@@ -544,7 +540,6 @@ async fn tc_020_003_automation_selects_progresses_completes_and_takes_the_next_c
     assert_eq!(again["result"]["error"]["code"], "stale_request");
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_halt_retry_and_conflicts_never_replay_a_transmit_action() {
     let f = station(true).await;
@@ -651,7 +646,6 @@ async fn tc_020_003_halt_retry_and_conflicts_never_replay_a_transmit_action() {
     );
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_no_answer_context_change_and_lost_authority_stop_and_disarm() {
     let f = station(true).await;
@@ -746,7 +740,6 @@ async fn tc_020_003_no_answer_context_change_and_lost_authority_stop_and_disarm(
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_ft4_uses_the_same_policy_and_mode_mismatch_is_not_ready() {
     let f = station(true).await;
@@ -849,7 +842,7 @@ fn skew(f: &Mcp, d: Duration) {
     *owner(f).automation.skew.lock().unwrap() = d;
 }
 
-// Proves: CL-039-09; TC-039-010, TC-039-049 (l). A plain MCP policy run decides no slot, with Hold
+// A plain MCP policy run decides no slot, with Hold
 // Tx on (the default) as before #39 holdtx.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_010_a_plain_policy_run_keeps_its_tx_on_the_called_station() {
@@ -869,7 +862,6 @@ async fn tc_039_010_a_plain_policy_run_keeps_its_tx_on_the_called_station() {
     );
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_contact_limit_and_completion_stop_the_run() {
     let f = station(true).await;
@@ -901,7 +893,6 @@ async fn tc_020_003_contact_limit_and_completion_stop_the_run() {
     assert_eq!(c["transmit"]["arm_state"], "disarmed");
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_a_halt_racing_the_arming_halts_and_never_keys() {
     let f = station(true).await;
@@ -935,7 +926,6 @@ async fn tc_020_003_a_halt_racing_the_arming_halts_and_never_keys() {
     assert_eq!(f.read("contact").await["transmit"]["arm_state"], "disarmed");
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_the_run_ends_with_its_transport_and_its_duration() {
     let mut f = station(true).await;
@@ -953,7 +943,7 @@ async fn tc_020_003_the_run_ends_with_its_transport_and_its_duration() {
     skew(&f, Duration::ZERO);
     // A newer proof of the browser's grant is another credential (#58): the MCP
     // client's run keeps its own transport and waits on; the client's revocation ends
-    // it (TC-020-003 d).
+    // it.
     cfg["max_run_minutes"] = json!(480);
     reconfigure(&f, cfg).await;
     let started = start_again(&f).await;
@@ -990,7 +980,6 @@ async fn operator(f: &Mcp, action: &str, extra: Value) {
     assert_eq!(v["status"], 202, "{action}: {v}");
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_operator_actions_end_the_run_and_are_never_taken_over() {
     let f = station(true).await;
@@ -1093,7 +1082,6 @@ async fn tc_020_003_operator_actions_end_the_run_and_are_never_taken_over() {
     );
 }
 
-// Proves: TC-020-003.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_003_refused_selection_or_arming_stops_without_a_contact_left_behind() {
     let f = station(true).await;

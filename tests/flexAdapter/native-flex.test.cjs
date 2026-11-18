@@ -5,7 +5,6 @@
 // station listens for discovery only on its own loopback port, never on the LAN.
 // Independent oracle: the emulator's own resource/ownership/command records and the
 // canonical TC-023-001..003 expectations, never values computed by the candidate.
-// Proves: FR-023; CL-013-01, CL-013-02, CL-013-03, CL-013-04, CL-013-05, CL-013-06; TC-023-001, TC-023-002, TC-023-003.
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises'), os = require('node:os'), path = require('node:path');

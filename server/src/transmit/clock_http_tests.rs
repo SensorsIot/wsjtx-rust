@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-// Proves: CL-043-01, CL-043-03, CL-009-05; TC-043-003, TC-092-003, TC-092-004, TC-092-009.
 // GET /clock on the actual router (exact keys of CL-043-01, no source setting, POST /clock an
 // unknown route, a #43 clock.json ignored and left in place), GET /transmit carrying the same
 // warning, capture_warning, clock_revision, the actual station transmit owner admitting and
@@ -142,9 +141,10 @@ const VIEW_KEYS: [&str; 10] = [
     "warning",
 ];
 
-// Proves: TC-043-003. The view of CL-043-01 with and without a #43 clock.json (unchanged),
+// The view of CL-043-01 with and without a stored clock.json (unchanged),
 // GET /transmit without clock_source, twelve stations at +1555 ms over two periods, POST
 // /clock an unknown route.
+// Proves: TC-043-003
 #[tokio::test]
 async fn clock_view_wire_with_and_without_a_43_file() {
     for file in [false, true] {
@@ -218,7 +218,7 @@ async fn clock_view_wire_with_and_without_a_43_file() {
     }
 }
 
-// Proves: TC-092-004. No clock source setting: clock.json missing, {source ntp}, {source
+// No clock source setting: clock.json missing, {source ntp}, {source
 // air} and malformed give the same view (twelve stations 2 s fast: -2000 after two periods,
 // synchronized); each file byte for byte unchanged; POST /clock answered as an unknown route.
 #[tokio::test]
@@ -276,7 +276,7 @@ async fn no_clock_source_setting() {
     assert!(views.iter().all(|v| *v == views[0]), "{views:?}");
 }
 
-// Proves: TC-092-003. GET /clock and GET /transmit after each step: the same warning, the
+// GET /clock and GET /transmit after each step: the same warning, the
 // Windows Time service state, capture_warning, and clock_revision increasing at each change
 // of a clock.state field and only then.
 #[tokio::test]
@@ -353,7 +353,7 @@ async fn warnings_windows_time_capture_and_revision() {
 // The actual transmit owner plans with the station clock: synchronized with two stations (no
 // evidence, correction 0), six at +2000: -1000 (unsynchronized: median 2000) then -2000,
 // synchronized, and its UTC 2000 ms behind the system clock.
-// Proves: TC-043-003.
+// Proves: TC-043-003
 #[test]
 fn transmit_owner_admits_and_times_by_the_air_clock() {
     let s = station(directory(), Monitor::new());
@@ -385,11 +385,12 @@ fn transmit_owner_admits_and_times_by_the_air_clock() {
     );
 }
 
-// Proves: TC-092-009. clock.state over the actual status WebSocket of a receive-only and a
+// clock.state over the actual status WebSocket of a receive-only and a
 // transmit-configured profile, to a Detailed and a Thin peer: one event after subscribing
 // with exactly the keys of CL-043-01 within 512 bytes; none while nothing changes or for an
 // SNTP move within 500 ms; one within 1 s for +525 and for +530; quick changes coalesced to at
 // most one per second; drift_high and back; clock_revision equal to GET /clock's.
+// Proves: TC-092-009
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clock_state_is_pushed_to_every_profile() {
     use crate::strategy::tests::{Peer, serve};

@@ -1,5 +1,5 @@
 //! The model-value reader of the Rust tests (Project-Specifics, "Model values read by
-//! tests"; CL-014-16). A contract test names a value the model holds as data by its
+//! tests"). A contract test names a value the model holds as data by its
 //! qualified name `Package::Element(::Feature)*`, and this module finds it in the `.sysml`
 //! text at run time. It reads only the subset of that section and fails on anything else;
 //! the pinned Pilot of `tools/sysml.py check` validates the SysML itself.
@@ -745,9 +745,12 @@ impl Model {
                 [k, t] if k.is_word("enum") => t.name(),
                 _ => None,
             };
-            let doc_only = member
-                .body
-                .is_none_or(|(s, e)| statements(toks, s, e).iter().all(|m| m.doc));
+            // A member's body holds docs and annotations (`@CodeDiffers { ... }`) only.
+            let doc_only = member.body.is_none_or(|(s, e)| {
+                statements(toks, s, e)
+                    .iter()
+                    .all(|m| m.doc || m.head.first().is_some_and(|t| t.is_punct("@")))
+            });
             match short {
                 Some(member_name) if doc_only => members.push(member_name.to_string()),
                 _ => return Err(error(name, "not an enumeration member in the read form")),

@@ -1,8 +1,7 @@
-"""The catalog of #183 on the real model, read in place (#183 T2 and C1).
+"""TR-10, TR-12: the catalog and `status` on the real model, read in place.
 
 These read docs/sysml as it stands and assert only what holds for any model the catalog
-accepts: no FR number, count or package name of today's model. Nothing is written and the
-Pilot is not run.
+accepts: no FR number or count of today's model. Nothing is written and the Pilot is not run.
 """
 import contextlib
 from collections import Counter
@@ -17,14 +16,13 @@ spec = importlib.util.spec_from_file_location("real_catalog_tool", ROOT / "tools
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
-LINE = re.compile(r"(FR-\d{3}) (implemented|partial|target): (\d+) clauses, (\d+) implemented, (\d+) partial, (\d+) target"
-                  r"(?:; stated (implemented|partial|target))?")
+LINE = re.compile(r"(FR-\d{3}) (implemented|partial|target): (\d+) clauses, (\d+) implemented, (\d+) partial, (\d+) target")
 SUMMARY = re.compile(r"(\d+) FRs: (\d+) implemented, (\d+) partial, (\d+) target")
 
 
 def expected_status(states):
-    """Q3 of #183, written here independently: implemented when all clauses are,
-    target when all are target or there is none, partial otherwise."""
+    """M6.1, written here independently: implemented when all clauses are, target when
+    all are target or there is none, partial otherwise."""
     if all(state == "target" for state in states):
         return "target"
     if all(state == "implemented" for state in states):
@@ -33,9 +31,9 @@ def expected_status(states):
 
 
 class RealModelStatusTests(unittest.TestCase):
-    # T2: status on the working tree, in the P2 form, agreeing with the catalog
-    # Proves: CL-014-19; TC-DOC-017
     def test_status_on_this_tree_prints_each_fr_of_the_catalog_with_its_computed_status(self):
+        """TV-111 (TR-12): `status` on this tree prints each FR of the catalog with the status its
+        clauses give it, then the counts."""
         output, errors = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             status = tool.main(["status"])
@@ -54,8 +52,6 @@ class RealModelStatusTests(unittest.TestCase):
                 self.assertEqual(match[2], expected_status(states))
                 self.assertEqual([int(value) for value in match.group(3, 4, 5, 6)],
                                  [len(states), counts["implemented"], counts["partial"], counts["target"]])
-                stated = entry["stated"] if entry["stated"] and entry["stated"] != match[2] else None
-                self.assertEqual(match[7], stated)
         summary = SUMMARY.fullmatch(lines[-1])
         self.assertIsNotNone(summary, lines[-1])
         per_line = Counter(match[2] for match in parsed)
@@ -64,10 +60,11 @@ class RealModelStatusTests(unittest.TestCase):
 
 
 class RealModelPackageTests(unittest.TestCase):
-    # C1, accepted: this tree
-    # Proves: CL-014-10; TC-DOC-008
     def test_this_tree_is_accepted(self):
+        """TV-112 (TR-10): the catalog accepts this tree; Shack.sysml holds the package WstxShack."""
         self.assertGreater(len(tool.canonical_catalog(tool.MODELS, tool.ROOT)), 0)
+        shack = tool.MODELS / "Shack.sysml"
+        self.assertEqual(tool.file_package(tool.blanked(shack.read_text(encoding="utf-8"))), "WstxShack")
 
 
 if __name__ == "__main__":

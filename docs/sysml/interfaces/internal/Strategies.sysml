@@ -1,362 +1,564 @@
 package WstxStrategies {
+    private import WstxQsoControl::Activity;
     private import ScalarValues::*;
-    private import WstxRankingControl::Needed;
-    private import WstxRankingControl::NewPer;
-    private import WstxRankingControl::Continent;
     private import WstxRankingControl::RankingKeys;
-    attribute def BuiltinStrategies {
-        doc /* D19 (operator grill 2026-11-09). The read-only presets, one table in the
-             station in this order, listed in the GET /strategy snapshot as builtin_strategies,
-             each a Strategy with builtin true:
-             | name | class | filters new, new_per, new_means | order | leave | cq_when_idle |
-             DXCC all | strategy | [dxcc], band_mode, not_confirmed | [most_wanted, snr] |
-             until_logged, gone_minutes 10 | false;
-             New DXCC on band | strategy | [dxcc], band, not_confirmed | [most_wanted, snr] |
-             until_logged, gone_minutes 10 | false;
-             New DXCC | strategy | [dxcc], ever, not_confirmed | [most_wanted, snr] | until_logged,
-             gone_minutes 10 | false;
-             Casual | strategy | [call], band, not_worked | [snr_bucket, distance] | calls, calls 4,
-             calls_heard 8 | true;
-             POTA/SOTA | strategy | [call], band, not_worked, with worked_since today and
-             cq_targets {include [POTA, SOTA], exclude []} | [snr_bucket, distance] | calls, calls 4,
-             calls_heard 8 | false.
-             The five differ only in their answers, not in their class. POTA/SOTA (operator
-             2026-11-09, #97 Q2 "we could define a pota/sota strategy"; its values are the
-             definer's defaults, listed on #97): it ranks only CQ POTA and CQ SOTA (CqTargetList
-             makes them answerable for it), each activator not yet worked on this band today (a
-             new park or summit is usually a new day), the strongest bucket first and then the
-             farthest; its cq_when_idle is false.
-             All five, unless stated in the table: bands null (all), region all, min_snr_db null,
-             worked_since all, treat_73_as_cq true, countries, states and cq_targets empty, contest
-             null, callers_first true, tx_move_every {heard 0, not_heard 1, no_reports 2} (stay,
-             every call, every 2nd call), busy_pause true, cq_wait_periods 2, retry_minutes 10.
-             "DXCC all" is first in the selector and in the editor; active stays None at a station
-             start (StrategyConfiguration; operator 2026-11-09, Q8 "first in the list, not
-             selected at start"). No built-in is named or marked as a default.
-             Contest built-ins (operator 2026-11-09, Q1 "One per contest"): one per contest of the
-             contest table (WstxStrategies::ProfileTable), class contest, named by the
-             contest's name and holding its id, with the contest defaults: bands null, the three
-             lists empty, order [], callers_first true, leave {mode contest, tx_changes 2},
-             tx_move_every {heard 0, not_heard 2, no_reports 2}, busy_pause false, cq_when_idle
-             true, cq_wait_periods 2, retry_minutes 10. They are offered by the contest prompt
-             (WstxStrategies::ContestPrompt) and in the editor's contest group, not as rows of the
-             strategy selector.
-             The built-ins are not part of the configuration and never written to strategy.json.
-             active may name one (exactly as listed; a contest built-in only with its contest
-             selection, WstxStrategies::ContestSelection). A PUT cannot edit one: a configuration
-             strategy with a built-in's name, also differing in case, is refused 400 invalid_request strategies[i].name, and the key
-             builtin is refused like any extra key. In the editor a built-in is shown read-only
-             and Duplicate copies it to a user strategy named "<name> copy" (StrategyEditor). A
-             saved strategy whose name collides with a built-in's, ignoring case (saved before the
-             built-in existed, also a contest added to the table later), reads renamed
-             (StrategyConfiguration); it is never dropped. */
-    }
-    attribute def StrategyConfiguration {
-        attribute continent : Continent[0..1];
-        attribute active : String[0..1];
-        attribute strategiesMax : Integer = 16;
-        attribute ignoreCallsMax : Integer = 100;
-        attribute sessionIgnoreMinutes : Integer = 30;
-        assert constraint sessionMinutesRange { sessionIgnoreMinutes >= 1 and sessionIgnoreMinutes <= 720 }
-        doc /* Wire keys exactly continent (null: ContinentOfCall of my callsign, else one of
-             the seven codes: my continent for the directed-CQ rule and region dx), active
-             (null or the name of a listed or built-in strategy), strategies (0..16 Strategy),
-             ignore_calls (#42 the permanent ignore list: 0..100 unique entries of CL-042-02's
-             form, IgnoreLists), session_ignore_minutes (#42 the session list
-             expiry, an integer 1..720, default 30) and the optional contest (#63,
-             WstxStrategies::ContestSelection, never persisted). Persisted as strategy.json beside
-             profile.json: {schema_version 4, profile_id, revision, configuration} (#97), written
-             atomically like udp.json; missing: the default {null, null, [], [], 30} at
-             revision 0; foreign, malformed or larger than 262144 bytes: configuration null
-             with configuration_error invalid_configuration until a PUT replaces it.
-             active does not survive a station restart: the file always holds active null
-             and any active read is None, so the station never transmits after a restart
-             without a human selection.
-             Upgrade: a file of schema_version 1 (the configuration with rules, sort, auto
-             role and highlight) reads as: strategies dropped, active None, continent and
-             the ignore keys kept at its revision (one written before #42 with neither
-             ignore key reads [] and 30; with exactly one of them, or a bad continent, it
-             is malformed). A file of schema_version 2 (strategies with calls_per_station,
-             before strategydef) reads at its revision with each strategy's
-             calls_per_station dropped and value [most_wanted], callers_first true,
-             cq_when_no_target false, repetitions 4 and quiet_minutes 10 added; a strategy
-             of it that is otherwise malformed makes the file malformed. Each then reads on as a
-             schema 3 file.
-             Upgrade of schema 3 (#97, every strategy of class award) at its revision, each
-             strategy mapped key by key: class strategy; bands null; filters.new and new_per from
-             goals (dxcc: dxcc ever; dxcc_band: dxcc band; dxcc_slot: dxcc band_mode; waz: cq_zone
-             ever; wpx: prefix ever; grid: grid ever; new_call: call ever; new_call_band: call
-             band), the whats in goal order without repeats, and when the goals' pers differ the
-             most specific of them (band_mode before band before ever), so that every station the
-             strategy needed before is still needed; new_means = needed; region, min_snr_db and
-             treat_73_as_cq kept; worked_since = window; countries, states and cq_targets {include
-             [], exclude []}; order = value with new_dxcc_slot renamed new_dxcc_band_mode; contest
-             null; callers_first kept; leave {mode calls, calls = repetitions, calls_heard = 2 x
-             repetitions} (the doubling of the old LeaveRule); tx_move_every {heard 0, not_heard 1,
-             no_reports 2} (#94, the built-ins' values); busy_pause true; cq_when_idle =
-             cq_when_no_target; cq_wait_periods 2; retry_minutes = quiet_minutes. A schema 3
-             strategy that is otherwise malformed makes the file malformed.
-             A schema 4 file whose strategy has no cq_wait_periods (written before the key
-             existed) reads it as 2; a PUT must carry it, as every key.
-             Names: in every schema, a saved strategy whose name equals a built-in's ignoring case
-             reads renamed "<name> copy", else "<name> copy 2", "<name> copy 3" and so on, the
-             first name that is free and at most 32 characters (the name cut so that the suffix
-             fits); its configuration_note lists each rename {from, to} until the next PUT (GET
-             /strategy, StrategyHttp). Every older file is written as schema 4 by the next PUT. */
-    }
-    attribute def StrategyHttp {
-        attribute bodyBytesMax : Integer = 32768;
+    private import WstxRankingControl::RankingRules;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::CodeDiffers;
 
-        doc /* GET /strategy (operating access, no query, empty body): {v 1, profile_id,
-             boot_id, revision, configuration (or null), configuration_error, the ranking state
-             of RankingStateWire, builtin_strategies (BuiltinStrategies) and
-             configuration_note ([] or the renames of the upgrade, [{from, to}], until the next
-             PUT; the editor shows each once as "Renamed <from> to <to>")}. The body limit stays
-             32768 bytes: a configuration whose PUT is larger is refused like any oversized
-             body, and the editor says so.
-             PUT /strategy {v, profile_id, boot_id, expected_revision, configuration}:
-             exact keys; same Origin/authorization/media/size rules and refusal codes as
-             PUT /udp (400 invalid_request with the field, unsupported_version, 403
-             wrong_profile, 409 state_conflict boot_id, 409 stale_revision); returns the
-             snapshot with revision + 1. It is a browser action: an MCP principal is refused 401
-             at the boundary (#58 principal guard) and no MCP tool dispatches to it, so an MCP
-             client can never select a strategy. A changed active ends a running run and,
-             while Auto is on, starts the new one; None turns Auto off (AutoToggle,
-             StrategyRun); saving anything else leaves a running strategy running and applies
-             at its next step.
-             strategy.state {v 1, type "strategy.state", data {profile_id, boot_id,
-             strategy_revision}}: a display-subscribed peer receives it when the revision
-             changes after it subscribed (never on subscription itself), paced with
-             contact.state; the browser then reads GET /strategy. So a HALT's Auto off and
-             another browser's selection or toggle are pushed. */
-    }
-    attribute def ContestProfile {
-        doc /* Rule facts only, one data entry per contest, no behaviour of its own; wire keys of
-             GET /strategy/contests exactly: id, name, cabrillo (null: no Cabrillo log),
-             cabrillo_confirmed, activity (WstxSpecialActivities::SpecialActivity name), bands (ADIF band
-             names), modes, exchange, dupes (DupeRule), points (PointsRule), multipliers
-             (MultiplierRule), score, automation (AutomationClause), automation_text (the clause
-             as the rules word it, or that they do not address it), schedule (the rule in words),
-             notes (location and entry limits, operating-time limits), source (the URL) and period
-             (null when asked, else {start, end, band}: ScheduleRule at the time of the request,
-             "YYYY-MM-DDTHH:MMZ", end exclusive, band null unless the round names one). */
-    }
-    attribute def ContestHttp {
-        doc /* GET /strategy/contests (operating access, no query, empty body; the refusals of GET
-             /strategy): {v 1, profile_id, boot_id, profiles: [ContestProfile]}. It changes nothing;
-             the browser reads it when the period prompt opens, and once per connection while a
-             contest is in force (for its name), never at a plain page load or reconnect (it is several
-             kB on the 32 kbit/s link) and never on a timer. */
-    }
-    attribute def ContestSelection {
-        attribute periodDaysMax : Integer = 31;
-        doc /* The optional key contest of WstxStrategies::StrategyConfiguration on PUT /strategy and in
-             the GET /strategy snapshot, present only while one is selected: {profile (a profile
-             id), start, end (real instants "YYYY-MM-DDTHH:MMZ", end exclusive, start < end, at most
-             31 days apart)}.
-             Exact keys; each refusal names its field (contest, contest.profile, contest.start,
-             contest.end), 400 invalid_request like any other field. The keys operation,
-             repetitions and quiet_minutes, "colouring" and automation_confirmed are refused like
-             any other value or extra key (those settings are the contest strategy's own; colouring
-             only is Auto off, and the confirmation goes with Auto on, WstxAutoControl::AutoToggle).
-             null or absent: no contest.
-             Exactly one strategy is active or none: a contest goes with active naming a
-             contest strategy (a contest built-in or a saved strategy of class contest) whose
-             contest is profile; active of class contest without it, a contest without such an
-             active, or the two naming different contests are refused with field contest. It
-             lives in station memory only: the file never holds it and a station restart starts
-             without one (as active, WstxStrategy D2). A changed contest is a changed selection.
-             HALT turns Auto off and leaves the contest in force: it then transmits nothing. An MCP principal cannot select one (the PUT
-             /strategy principal guard). No alert is recorded for a contest
-             (WstxAlert::AlertRule follows the active strategy of class strategy). */
-    }
-    attribute def ContestPrompt {
-        doc /* The Contest button of the strategy element opens a modal dialog with its own HALT (the
-             top-bar HALT's action, as WstxSettings::StrategyEditor); receive keeps running. It reads
-             GET /strategy/contests once at opening, so the pre-fill is current. It offers the
-             profiles; Start and End (UTC, to the minute): the selection in force when it matches, else
-             the profile's period, empty when asked; the schedule in words; the strategy (D11: the
-             profile's contest built-in, first and chosen, and every saved contest strategy of that
-             profile, by name; there is no operation choice, the settings are the strategy's own,
-             WstxSettings::StrategyEditor); the automation text and the notes. Whether it transmits is
-             the Auto toggle's (WstxAutoControl::AutoToggle): a forbidden clause asks its
-             confirmation when Auto is switched on, not at Start. When the profile's
-             activity differs from the station's, one line says so. Start with an empty period
-             asks for it and sends nothing; else one PUT /strategy with active the chosen contest
-             strategy and contest. Cancel
-             changes nothing. In the selector the contest in force is one more option "<name>
-             (contest)"; None or a strategy of class strategy sends a PUT without contest (the selector's other
-             rule, WstxOperatingLayout::StrategySelector, is unchanged). */
-    }
+    doc /* What a strategy and a contest are; what the supervisor commands the
+         operating function and what operating answers; and what operating gives
+         ranking, Auto and the contact of the active strategy.
+         A strategy is a named set of rules: the rules by which ranking orders the
+         decoded stations, the rules Auto executes, and for a contest the facts of its
+         official rules. It decides and does nothing itself. */
 
     enum def StrategyClass {
-        doc /* Two classes, wire "strategy" and "contest".
-             strategy: Filters and Order from the filter questions; DXCC all and Casual are both of
-             this class and differ only in their answers. contest: Filters and Order from a contest
-             (WstxContest), with the operator's country, US state and CQ target lists on top; a
-             contest strategy is a duplicate of a contest built-in (BuiltinStrategies) and keeps
-             its class and contest. Any other class on a PUT is refused. The class is never
-             switched in the editor. */
+        doc /* strategy: the ranking rules are the strategy's own.
+             contest: the ranking rules come from a contest, with the strategy's bands
+             and its country, US state and CQ target lists on top. */
         enum strategy;
         enum contest;
     }
     enum def LeaveMode {
-        doc /* The leave modes of LeaveRule: calls (after n calls without an answer, m while he
-             hears
-             us), until_logged (stay until the QSO is logged; leave when he has not been decoded
-             for n minutes), contest (contest style: while he hears us stay as long as he is
-             still the
-             most valuable, else leave after n Tx changes). */
-        enum calls; enum until_logged; enum contest;
+        doc /* How a station that does not answer is left.
+             calls: after a number of calls.
+             untilLogged: when it has not been decoded for a number of minutes.
+             contest: after a number of Tx changes, while it does not hear the station
+             or is not the most valuable one. */
+        enum calls;
+        enum untilLogged;
+        enum contest;
+    }
+    attribute def AutoKeys {
+        doc /* The rules of one strategy that Auto executes. Every strategy of either
+             class has every one of them. */
+        attribute leaveMode : LeaveMode {
+            @CodeDiffers {
+                what = "The code names it mode, inside leave (server/src/strategy.rs).";
+            }
+        }
+        attribute leaveCalls : Integer[0..1] {
+            doc /* With calls: the calls without an answer, 1 to 20. */
+            @CodeDiffers {
+                what = "The code names it calls, inside leave (server/src/strategy.rs).";
+            }
+        }
+        attribute leaveCallsHeard : Integer[0..1] {
+            doc /* With calls: the calls while the station is heard there, from
+                 leaveCalls to 40. */
+            @CodeDiffers {
+                what = "The code names it calls_heard, inside leave (server/src/strategy.rs).";
+            }
+        }
+        attribute goneMinutes : Integer[0..1] {
+            doc /* With untilLogged: 1 to 60. */ }
+        attribute txChanges : Integer[0..1] {
+            doc /* With contest: 1 to 20. */ }
+        attribute moveEveryHeard : Integer {
+            doc /* How often the transmit frequency moves while the called station hears
+                 the station: 0 never, 1 at every call, n at every n-th call, up to
+                 20. */
+            @CodeDiffers {
+                what = "The code names it heard, inside tx_move_every (server/src/strategy.rs).";
+            }
+        }
+        attribute moveEveryNotHeard : Integer {
+            doc /* The same while it reports and does not hear the station. */
+            @CodeDiffers {
+                what = "The code names it not_heard, inside tx_move_every "
+                    + "(server/src/strategy.rs).";
+            }
+        }
+        attribute moveEveryNoReports : Integer {
+            doc /* The same while it does not report, or that is unknown. */
+            @CodeDiffers {
+                what = "The code names it no_reports, inside tx_move_every "
+                    + "(server/src/strategy.rs).";
+            }
+        }
+        attribute cqWhenIdle : Boolean {
+            doc /* CQ is called when nothing can be called. */ }
+        attribute cqWaitPeriods : Integer {
+            doc /* The periods with nothing to call before that CQ: 1 to 20. It is
+                 held also while cqWhenIdle is off. */ }
+        attribute retryMinutes : Integer {
+            doc /* The pause before a station that was left is called again: 1 to
+                 120. */ }
+        attribute cqQuietPeriods : Integer {
+            doc /* The periods without a CQ after a CQ that nobody answered: 0 to 40.
+                 It is held also while cqWhenIdle is off. */
+            @CodeDiffers {
+                what = "The code has no CQ pause and no such key (STRATEGY_KEYS in "
+                    + "server/src/strategy.rs).";
+            }
+        }
     }
     attribute def Strategy {
-        attribute name : String;
-        attribute strategyClass : StrategyClass;
+        doc /* One strategy. Every strategy has every setting; the class says where its
+             ranking rules come from. */
+        attribute name : String {
+            doc /* 1 to 32 printable ASCII characters, without a space at either end.
+                 Among the saved strategies a name stands once, without regard to letter
+                 case, and is not the name of a built-in one. */ }
+        attribute strategyClass : StrategyClass {
+            @CodeDiffers {
+                what = "The code names it class (STRATEGY_KEYS in server/src/strategy.rs).";
+            }
+        }
         attribute ranking : RankingKeys;
-        attribute leaveMode : LeaveMode;
-        attribute leaveCalls : Integer = 4;
-        attribute leaveCallsHeard : Integer = 8;
-        attribute goneMinutes : Integer = 10;
-        attribute txChanges : Integer = 2;
-        attribute moveEveryHeard : Integer = 0;
-        attribute moveEveryNotHeard : Integer = 1;
-        attribute moveEveryNoReports : Integer = 2;
-        attribute busyPause : Boolean = true;
-        attribute cqWhenIdle : Boolean = false;
-        attribute cqWaitPeriods : Integer = 2;
-        attribute retryMinutes : Integer = 10;
-
-        assert constraint leaveCallsRange { leaveCalls >= 1 and leaveCalls <= 20 }
-        assert constraint leaveCallsHeardRange {
-            leaveCallsHeard >= leaveCalls and leaveCallsHeard <= 40
-        }
-        assert constraint goneRange { goneMinutes >= 1 and goneMinutes <= 60 }
-        assert constraint txChangesRange { txChanges >= 1 and txChanges <= 20 }
-        assert constraint moveRange {
-            moveEveryHeard >= 0 and moveEveryHeard <= 20 and moveEveryNotHeard >= 0 and
-            moveEveryNotHeard <= 20 and moveEveryNoReports >= 0 and moveEveryNoReports <= 20
-        }
-        assert constraint retryRange { retryMinutes >= 1 and retryMinutes <= 120 }
-        assert constraint cqWaitRange { cqWaitPeriods >= 1 and cqWaitPeriods <= 20 }
-        doc /* Schema 4 of strategy.json (StrategyConfiguration). The same keys for every class,
-             in the order of the decisions; the keys bands, filters, order, contest and
-             callers_first
-             are the features of RankingKeys; wire keys exactly:
-             name (1..32 printable ASCII, no leading/trailing space, unique ignoring case, never
-             a built-in's name, BuiltinStrategies); class (StrategyClass);
-             bands (decision 1, StrategyBands: null for every band);
-             filters (decision 2, Candidate): for class strategy exactly {new (1..7 unique
-             NewWhat), new_per (NewPer), new_means (Needed), region ({kind all} | {kind dx} |
-             {kind
-             selected, continents: 1..7 unique Continent codes}), min_snr_db (null or an
-             integer -50..49), worked_since ({kind all} | {kind today} | {kind from_to, from,
-             to}: WorkedWindow),
-             treat_73_as_cq (boolean), countries (CountryList), states (UsStateFilter),
-             cq_targets (CqTargetList)}; for contest exactly {countries, states, cq_targets};
-             order (decision 3, ValueOrder): 0..16 unique ValueCriterion in the operator's order
-             for class strategy, [] for contest (a contest ranks by its own rules);
-             contest: null for class strategy, a contest id of the contest table for contest
-             (the contest table, WstxStrategies::ProfileTable);
-             callers_first (decision 4 "Calling stations are answered", boolean,
-             CallerOfMyCall); leave (decision 5, LeaveRule): {mode "calls", calls 1..20,
-             calls_heard calls..40} |
-             {mode "until_logged", gone_minutes 1..60} | {mode "contest", tx_changes 1..20};
-             tx_move_every (decision 6, TxMoveRule): exactly {heard, not_heard, no_reports},
-             each
-             an integer 0..20: 0 stay, 1 move every call, n move every n-th call;
-             busy_pause (decision 7, boolean, BusyPause);
-             cq_when_idle (decision 8, boolean, CqWhenNoTarget);
-             cq_wait_periods (decision 8, the CQ wait, an integer 1..20, CqWhenNoTarget; refused
-             also when missing, at strategies[i].cq_wait_periods);
-             retry_minutes (decision 9, 1..120, QuietTime).
-             Each refusal is 400 invalid_request naming its field path
-             (strategies[0].filters.worked_since.to, strategies[0].order[1],
-             strategies[0].leave.calls_heard, strategies[0].filters.countries.include[2].value).
-             A strategy is new only as a duplicate (StrategyEditor): there is no blank strategy.
-             Nothing else exists: goals, needed, value, window, region, min_snr_db, repetitions,
-             quiet_minutes and cq_when_no_target at the strategy's top level (schema 3, read
-             only by the upgrade), calls_per_station, rules, conditions, sort, auto role, switch
-             after, skip
-             after and callers are refused like any extra key. */
+        attribute contest : String[0..1] {
+            doc /* For class contest: the id of its contest in ContestTable. Absent for
+                 class strategy. */ }
+        attribute auto : AutoKeys;
+        attribute alert : AlertSound[0..1] {
+            doc /* The sound of the strategy's alerts (WstxAlert::AlertRule); absent: Off,
+                 the strategy alerts not. */ }
     }
+    enum def AlertSound {
+        doc /* The sounds of the station's alerts, distinct from one another. */
+        enum oldPhone {
+            @CodeDiffers {
+                what = "The code's alerts have one tone (tone in client/contact.js).";
+            }
+        }
+        enum bell {
+            @CodeDiffers {
+                what = "The code's alerts have one tone (tone in client/contact.js).";
+            }
+        }
+        enum chime {
+            @CodeDiffers {
+                what = "The code's alerts have one tone (tone in client/contact.js).";
+            }
+        }
+        enum beep {
+            @CodeDiffers {
+                what = "The code's alerts have one tone (tone in client/contact.js).";
+            }
+        }
+    }
+    attribute def BuiltinStrategies {
+        doc /* The strategies the station offers beside the saved ones, in this order, with
+             the values the station ships them with. Default cannot be changed; every other
+             built-in is changed in place and can be set back to these values.
+             Default, first, has no rules and no values of Strategy: while it is active
+             every station is shown, with no ranking order, no filter, no alert and no CQ
+             when idle.
+             Every other built-in of class strategy has, unless its line says otherwise:
+             every band; region all; no minimum SNR; worked since all; Treat 73 as CQ on;
+             empty country, US state and CQ target lists; calling stations answered;
+             leaving after 4 calls and after 8 while heard; the transmit frequency moved
+             never, at every call and at every 2nd call for the three cases in the order
+             of AutoKeys; no CQ when idle; a CQ wait of 2 periods; a retry pause of 10
+             minutes; a CQ pause of 8 periods; no alert.
+             DXCC all: new dxcc per bandMode, notConfirmed; order mostWanted, snr;
+             leaving untilLogged after 10 minutes.
+             New DXCC on band: as DXCC all, per band.
+             New DXCC: as DXCC all, per ever.
+             Casual: new call per band, notWorked; order snrBucket, distance; CQ when
+             idle.
+             POTA/SOTA: as Casual, with worked since today, the CQ targets POTA and SOTA
+             included, and no CQ when idle.
+             One built-in of class contest for each contest of ContestTable, in its
+             order, with the name of the contest: every band; empty lists; no order;
+             calling stations answered; leaving in the mode contest after 2 Tx changes;
+             the transmit frequency moved never, at every 2nd call and at every 2nd
+             call; CQ when idle with a CQ wait of 2 periods; a retry
+             pause of 10 minutes; a CQ pause of 8 periods; no alert. */
+    }
+    attribute def StrategyConfiguration {
+        doc /* The strategies of a profile and what is selected. The saved strategies are
+             managed by the settings function (WstxProfileAccess::StrategyDefinitions)
+             and given to operating as SavedStrategies. The active strategy and the
+             contest are changed by SelectStrategy and held while the station runs: at
+             station start Default is active and no contest is in force. */
+        attribute strategiesMax : Integer = 16;
+        attribute active : String {
+            doc /* The name of the active strategy, Default, a saved or another built-in
+                 one, exactly as it is written. */ }
+        attribute strategies : Strategy[0..*] ordered {
+            doc /* The saved strategies, at most strategiesMax. */ }
+        attribute contest : ContestSelection[0..1] {
+            doc /* Present exactly while the active strategy is of class contest, and
+                 then for that strategy's contest. */ }
+    }
+    attribute def ConfigurationKeys {
+        doc /* The names under which the values of a StrategyConfiguration are written
+             in the strategies file and named in a refusal. A value is named by its
+             keys from the configuration down, joined by a full stop, with the place
+             in a list in square brackets counted from 0: strategies[0].leave.calls.
+             The configuration as a whole is named configuration.
+             The configuration has the keys active, strategies and contest. contest
+             may be left out; left out and null both
+             say that no contest is selected. Its keys are profile, start and end.
+             A strategy has the keys name, class, bands, filters, order, contest,
+             callersFirst, leave, txMoveEvery, cqWhenIdle,
+             cqWaitPeriods, retryMinutes, cqQuietPeriods and alert. alert may be
+             left out; left out and null both say Off.
+             bands, order and callersFirst are those of RankingKeys. filters holds
+             the other features of RankingKeys: for class strategy new, newPer,
+             newMeans, region with kind and for selected continents, minSnrDb,
+             workedSince with kind and for fromTo the keys from and to,
+             treat73AsCq, countries, states and cqTargets; for class contest the
+             last three only. Each of these three has the keys include and exclude; a
+             country entry has kind, value and bands.
+             leave has mode and, by the mode, calls and callsHeard, goneMinutes, or
+             txChanges. txMoveEvery has heard, notHeard and noReports.
+             A value that the model writes as absent is null. A day is written
+             YYYY-MM-DD, an instant YYYY-MM-DDTHH:MMZ.
+             Every object has exactly its keys. One with a key missing or with another
+             key is named as a whole, with two exceptions: a strategy without
+             cqWaitPeriods or cqQuietPeriods is named by that key, and so is a
+             contest selection that
+             carries one of the keys automationConfirmed, operation, repetitions and
+             quietMinutes.
+             A list that is too long or too short is named as a whole; a member of it
+             that is outside its rule or stands twice is named by its place. */
+    }
+    attribute def StrategyForm {
+        doc /* The rules of a saved strategy, wherever one is created or changed.
+             It is a Strategy: each of its values lies within the rule its feature
+             states, in Strategy, in AutoKeys and in WstxRankingControl::RankingKeys
+             with the definitions those name.
+             A strategy of class strategy names no contest.
+             A strategy of class contest names a contest of ContestTable, has an empty
+             order, and has of the ranking rules only the bands, the country, US state
+             and CQ target lists and callersFirst.
+             A country entry of the kind country names an entity of the country file,
+             without regard to letter case, and is held as the country file writes
+             the name.
+             There are at most StrategyConfiguration::strategiesMax saved strategies.
+             A strategy outside these rules is not taken; one value that is outside
+             its rule is named, as ConfigurationKeys says. */
+    }
+    attribute def StrategyReading {
+        doc /* How saved strategies are read from the strategies file, also from the
+             forms of its older schema versions 1, 2 and 3.
+             A strategy without cqWaitPeriods is read with a CQ wait of 2, and one
+             without cqQuietPeriods with a CQ pause of 8; a strategy that holds
+             busyPause is read without it. A
+             configuration that also holds one of the keys continent, ignoreCalls and
+             sessionIgnoreMinutes is read without them: their values are not taken
+             over and are not checked. A country entry is read as it stands.
+             A saved strategy whose name is that of a built-in, without regard to
+             letter case, is read under another name: the name with copy after it,
+             and when that name is taken, with copy 2, copy 3 and so on, the first
+             that is neither a built-in's nor a saved one; the name is cut so that the
+             whole has at most 32 characters.
+             Version 3. A strategy has exactly the keys name, class with the value
+             award, goals, needed, region, minSnrDb, value, callersFirst,
+             cqWhenNoTarget, repetitions, quietMinutes, treat73AsCq and window.
+             It is read as a strategy of class strategy for every band, with empty
+             country, US state and CQ target lists. Its goals give what must be new
+             and the scope: dxcc is dxcc per ever, dxccBand dxcc per band, dxccSlot
+             dxcc per bandMode, waz cqZone per ever, wpx prefix per ever, grid grid
+             per ever, newCall call per ever, newCallBand call per band; each once,
+             in the order of the goals; of different scopes the one scope is
+             bandMode before band before ever. needed is what new means, window the
+             worked since, value the order with newDxccSlot read as
+             newDxccBandMode; region, minSnrDb, treat73AsCq and callersFirst
+             are taken as they are. It is left after repetitions calls and after twice
+             as many while heard; the transmit frequency moves never, at every call
+             and at every 2nd call for the three cases in the order of AutoKeys;
+             cqWhenNoTarget is CQ when idle, with a CQ wait of 2;
+             quietMinutes is the retry pause.
+             Version 2. A strategy has callsPerStation, from 1 to 20, in the place
+             of value, callersFirst, cqWhenNoTarget, repetitions and
+             quietMinutes. It is read as one of version 3 with the order mostWanted,
+             calling stations answered, no CQ when idle, 4 repetitions and 10 quiet
+             minutes; callsPerStation is not taken over.
+             Version 1. The strategies are not taken over.
+             A file of another version, and one of whose strategies is not of its
+             version's form or outside StrategyForm, cannot be used. */
+    }
+
     enum def DupeRule {
-        doc /* band: once per band. band_mode_class: once per band and per Phone, CW or Digital.
-             band_grid: once per band from any specific grid. call: one QSO per call in
-             the period. */
+        doc /* When a second QSO with a station counts nothing.
+             band: on the same band.
+             bandModeClass: on the same band in the same of phone, CW and digital.
+             bandGrid: on the same band from the same grid.
+             call: in the same period. */
         enum band;
-        enum band_mode_class;
-        enum band_grid;
+        enum bandModeClass;
+        enum bandGrid;
         enum call;
     }
     enum def PointsRule {
-        doc /* one_plus_per_3000_km; one_plus_per_500_km_up; field_day (Phone 1, CW 2, Digital
-             2); vhf_january (50 and 144 MHz 1, 222 and 432 MHz 2, 902 and 1296 MHz 4, 2.3
-             GHz and up 8);
-             vhf_june_september (1, 2, 3, 4); kilometres (one per km truncated plus 1 between
-             large square centres at 111.2 km per degree, the same large square 50);
-             one_per_call. */
-        enum one_plus_per_3000_km;
-        enum one_plus_per_500_km_up;
-        enum field_day;
-        enum vhf_january;
-        enum vhf_june_september;
+        doc /* The points of one QSO. A distance is that between the centres of the two
+             four-character squares, on a sphere of 6371 km radius.
+             onePlusPer3000Km: 1, and 1 more for each full 3000 km.
+             onePlusPer500KmUp: 1, and 1 more for each 500 km begun, one at least.
+             fieldDay: 1 in phone, 2 in CW and in a digital mode.
+             vhfJanuary: 1 on 6m, 5m, 4m and 2m; 2 on 1.25m and 70cm; 4 on 33cm and
+             23cm; 8 above.
+             vhfJuneSeptember: 1, 2, 3 and 4 on the same bands.
+             kilometres: 50 within one four-character square; otherwise 1 and the whole
+             kilometres, with 111.2 km for a degree.
+             onePerCall: 1. */
+        enum onePlusPer3000Km;
+        enum onePlusPer500KmUp;
+        enum fieldDay;
+        enum vhfJanuary;
+        enum vhfJuneSeptember;
         enum kilometres;
-        enum one_per_call;
+        enum onePerCall;
     }
     enum def MultiplierRule {
-        doc /* none; field_per_band: each 2-character field on each band; grid_per_band: each
-             4-character grid on each band. */
+        doc /* What counts as a multiplier.
+             none: nothing.
+             fieldPerBand: each first two characters of a grid, on each band.
+             gridPerBand: each first four characters of a grid, on each band. */
         enum none;
-        enum field_per_band;
-        enum grid_per_band;
+        enum fieldPerBand;
+        enum gridPerBand;
+    }
+    enum def CountedModes {
+        doc /* The modes whose QSOs a contest counts.
+             ft8Ft4: FT8 and FT4.
+             digital: every mode that is neither CW nor phone.
+             digitalNoRtty: those, without RTTY.
+             any: every mode.
+             Phone is SSB, USB, LSB, AM, FM and DIGITALVOICE. */
+        enum ft8Ft4;
+        enum digital;
+        enum digitalNoRtty;
+        enum any;
     }
     enum def AutomationClause {
-        doc /* forbidden: the rules forbid or in effect forbid automatic operation (a warning the
-             operator must confirm); silent: the rules do not address it (a short note). No
-             contest explicitly permits it. */
+        doc /* What the rules of a contest say about automatic operation.
+             forbidden: they forbid it.
+             silent: they do not speak of it. */
         enum forbidden;
         enum silent;
     }
     attribute def ScheduleRule {
-        doc /* A profile has one or more rounds, each a day rule and a start and an exclusive
-             end in minutes from 00:00 UTC of that day: the n-th full weekend of a month, the last
-             full
-             weekend of a month, the n-th Saturday of a month, the n-th weekday of every month,
-             or asked (not computable). A full weekend is a Saturday whose Sunday is in the same
-             month;
-             its day is the Saturday. An end stated as "through hh59" is the next minute,
-             exclusive. The current or next occurrence is the earliest of all rounds that has
-             not ended at
-             that instant. A round may name its one band (FT8 Activity). None when every round
-             is asked. Times are UTC. */
+        doc /* When a contest takes place. A contest has one or more rounds. A round has
+             a day, and a start and an end in minutes from 00:00 UTC of that day; the
+             end is the first minute after the round.
+             The day is the n-th or the last full weekend of a month, the n-th Saturday
+             of a month, the n-th of a weekday in every month, or it is asked. A full
+             weekend is a Saturday whose Sunday lies in the same month; its day is the
+             Saturday.
+             The period offered for a contest is that of the round that has not ended
+             and starts first. A contest whose day is asked has none. */
     }
-    attribute def ProfileTable {
-        doc /* The entries, in selector order, id: name; activity; rules; clause.
-             ww_digi: WW Digi; ww_digi; HF six bands, band, one_plus_per_3000_km,
-             field_per_band; forbidden (IX.12). Last full weekend of August (unconfirmed: the
-             rules state only the
-             dates), Saturday 12:00 to Sunday 12:00.
-             arrl_digi: ARRL Digi; arrl_digi; HF six bands and 6 m, band,
-             one_plus_per_500_km_up, none; forbidden (OPRG.4). First full weekend of June,
-             Saturday 18:00 to Monday 00:00.
-             arrl_field_day: ARRL Field Day; field_day; HF six bands and all from 50 MHz,
-             band_mode_class, field_day, none; forbidden (6.4). Fourth full weekend of June,
-             Saturday
-             18:00 to Sunday 21:00.
-             arrl_vhf_jan: ARRL January VHF; na_vhf; all from 50 MHz, band_grid, vhf_january,
-             grid_per_band; forbidden (OPRG.4: contemporaneous direct initiation). Asked.
-             arrl_vhf_jun: ARRL June VHF, arrl_vhf_sep: ARRL September VHF; na_vhf; alike with
-             vhf_june_september. Second full weekend of June and of September, Saturday 18:00 to
-             Monday 03:00.
-             iaru_50_mgm: IARU R1 50 MHz MGM (6 m), iaru_70_mgm: IARU R1 70 MHz MGM (4 m);
-             activity none; band, kilometres, grid_per_band; silent. Third Saturday of April and
-             of May,
-             Saturday 14:00 to Sunday 14:00.
-             ft8_activity: FT8 Activity; activity none; 2 m, 70 cm, 23 cm, call, one_per_call,
-             grid_per_band; silent. Each month first Wednesday 2 m, second 70 cm, third 23 cm,
-             17:00
-             to 21:00.
-             A rule source that does not state something is stated in the entry as unconfirmed.
-             The executable table and its hand oracle: server/src/contest.rs, TC-063-001. */
+    attribute def ContestProfile {
+        doc /* The facts of one contest, from its official rules. Its name in the
+             Cabrillo format, its exchange, its score, the wording of its automation
+             clause, its schedule in words, its notes and the address of its rules are
+             texts for the operator. */
+        attribute id : String;
+        attribute name : String;
+        attribute activity : Activity[0..1] {
+            doc /* The special activity of the station that goes with the contest. */ }
+        attribute cqWords : String[0..*] {
+            doc /* The contest's own CQ words: a CQ that carries one of them is for the
+                 station while the contest is in force and station time lies in its
+                 period (WstxContestRanking::ContestDirective). They are also the words the
+                 station may put after CQ in its own CQ in the contest; how a CQ to send
+                 is chosen is the contact's and Auto's. */
+            @CodeDiffers {
+                what = "The code holds no CQ words of a contest; the CQ word of the contest's "
+                    + "activity counts (Activity::cq in server/src/contact.rs).";
+            }
+        }
+        attribute bands : String[1..*] { doc /* ADIF band names in lower case. */ }
+        attribute dupes : DupeRule;
+        attribute points : PointsRule;
+        attribute multipliers : MultiplierRule;
+        attribute counted : CountedModes;
+        attribute automation : AutomationClause;
+        attribute schedule : ScheduleRule;
+    }
+    attribute def ContestTable {
+        doc /* The contests the station knows, in the order in which they are offered.
+             A profile is written as id: name; activity; bands; dupes, points,
+             multipliers, counted modes; automation; schedule.
+             ww_digi: WW Digi; wwDigi; 160m, 80m, 40m, 20m, 15m, 10m; band,
+             onePlusPer3000Km, fieldPerBand, ft8Ft4; forbidden; the last full weekend of
+             August, Saturday 12:00 to Sunday 12:00.
+             arrl_digi: ARRL Digi; arrlDigi; those six and 6m; band, onePlusPer500KmUp,
+             none, digitalNoRtty; forbidden; the first full weekend of June, Saturday
+             18:00 to Monday 00:00.
+             arrl_field_day: ARRL Field Day; fieldDay; those six and every band from 6m
+             up; bandModeClass, fieldDay, none, any; forbidden; the fourth full weekend
+             of June, Saturday 18:00 to Sunday 21:00.
+             arrl_vhf_jan: ARRL January VHF; naVhf; every band from 6m up; bandGrid,
+             vhfJanuary, gridPerBand, any; forbidden; asked.
+             arrl_vhf_jun: ARRL June VHF; as arrl_vhf_jan with vhfJuneSeptember; the
+             second full weekend of June, Saturday 18:00 to Monday 03:00.
+             arrl_vhf_sep: ARRL September VHF; as arrl_vhf_jun, in September.
+             iaru_50_mgm: IARU R1 50 MHz MGM; no activity; 6m; band, kilometres,
+             gridPerBand, digital; silent; the third Saturday of April, 14:00 to
+             Sunday 14:00.
+             iaru_70_mgm: IARU R1 70 MHz MGM; as iaru_50_mgm on 4m, in May.
+             ft8_activity: FT8 Activity; no activity; 2m, 70cm, 23cm; call,
+             onePerCall, gridPerBand, digital; silent; in every month the first
+             Wednesday on 2m, the second on 70cm and the third on 23cm, 17:00 to 21:00,
+             each round with its one band.
+             The CQ words of a contest are the word of its activity: WW for ww_digi,
+             TEST for arrl_digi and the three ARRL VHF contests, FD for arrl_field_day;
+             a contest without an activity has none. */
+        @FollowsSource {
+            reference = "The official rules of each contest; a profile names the "
+                + "address of its rules";
+        }
+    }
+    attribute def ContestSelection {
+        doc /* The contest in force and its period. */
+        attribute periodDaysMax : Integer = 31;
+        attribute profile : String { doc /* The id of a contest of ContestTable. */ }
+        attribute start : String {
+            doc /* The first minute of the period, an instant of UTC to the minute. */ }
+        attribute 'end' : String {
+            doc /* The first minute after the period: after start, and at most
+                 periodDaysMax days after it. */ }
+    }
+
+    item def SavedStrategies {
+        doc /* The strategies the operator has saved, as the settings function keeps
+             them (WstxProfileAccess::StrategyDefinitions). The supervisor gives
+             them at station start and after every change. */
+        attribute strategies : Strategy[0..*] ordered;
+    }
+    item def SelectStrategy {
+        doc /* Make this strategy the active one, for class contest with its contest, or
+             Default. It is the one command by which the operator selects the active
+             strategy and a contest. Answered by StrategiesState or
+             StrategiesRefused. */
+        attribute active : String { doc /* As StrategyConfiguration::active. */ }
+        attribute contest : ContestSelection[0..1] {
+            doc /* As StrategyConfiguration::contest. */ }
+    }
+    item def ReadStrategies { doc /* Ask for the state. Answered by StrategiesState. */ }
+    item def ReadContests {
+        doc /* Ask for the contests with the period of each. Answered by ContestList. */
+    }
+
+    item def StrategiesState {
+        doc /* What operating holds, at the moment it is given. */
+        attribute configuration : StrategyConfiguration;
+        attribute builtins : Strategy[1..*] ordered {
+            doc /* The strategies of BuiltinStrategies but Default, in their order, with
+                 their present values. */ }
+    }
+    attribute def OfferedPeriod {
+        doc /* The period of the round of a contest that ScheduleRule offers. */
+        attribute start : String { doc /* As ContestSelection::start. */ }
+        attribute 'end' : String { doc /* As ContestSelection::'end'. */ }
+        attribute band : String[0..1] {
+            doc /* The one band of the round. Absent for a round on every band of the
+                 contest. */ }
+    }
+    attribute def ContestOffer {
+        attribute profile : String { doc /* The id of a contest of ContestTable. */ }
+        attribute period : OfferedPeriod[0..1] {
+            doc /* Absent for a contest whose day is asked. */ }
+    }
+    item def ContestList {
+        doc /* The contests of ContestTable, in its order, each with its period at the
+             moment of the ReadContests. */
+        attribute contests : ContestOffer[1..*] ordered;
+    }
+    item def StrategiesRefused {
+        doc /* The answer to a SelectStrategy that is not carried out: a value of it is
+             outside its rule. A refused selection changes nothing. */
+        attribute field : String {
+            doc /* That value, named as ConfigurationKeys says. */ }
+    }
+
+    attribute def AutoStrategy {
+        doc /* What Auto needs of one strategy. */
+        attribute name : String;
+        attribute keys : AutoKeys;
+        attribute contest : ContestSelection[0..1] {
+            doc /* Present for a strategy of class contest: its contest and the period
+                 in force. */ }
+        attribute automation : AutomationClause[0..1] {
+            doc /* Present for a strategy of class contest: what the rules of its
+                 contest say of automatic operation (ContestProfile::automation). */ }
+    }
+    item def AutoRules {
+        doc /* The rules Auto executes. Operating gives them at station start and
+             whenever one changes. */
+        attribute active : AutoStrategy[0..1] {
+            doc /* The active strategy. Absent while Default is active. */ }
+    }
+    item def ContestActivity {
+        doc /* The special activity that goes with the contest in force. Operating gives it
+             at station start and whenever it changes; the contact uses it as
+             WstxSpecialActivities::ActivityRule says. */
+        attribute inForce : Boolean {
+            doc /* A contest is in force. */
+            @CodeDiffers {
+                what = "The code gives the contact no contest activity; Auto waits while the "
+                    + "contact's activity is not the contest's (server/src/automation.rs).";
+            }
+        }
+        attribute activity : Activity[0..1] {
+            doc /* ContestProfile::activity of the contest in force. Absent while no
+                 contest is in force, and for a contest without an activity. */ }
+    }
+
+    port def StrategiesPort {
+        doc /* Written from the supervisor's side; operating uses the conjugate.
+             SavedStrategies has no answer. An answer goes to the one command it
+             belongs to. */
+        out item saved : SavedStrategies;
+        out item selection : SelectStrategy;
+        out item readStrategies : ReadStrategies {
+            @CodeDiffers {
+                what = "The code reads the state by GET /strategy (snapshot in "
+                    + "server/src/strategy.rs).";
+            }
+        }
+        out item readContests : ReadContests {
+            @CodeDiffers {
+                what = "The code reads them by GET /strategy/contests (contests_route in "
+                    + "server/src/strategy.rs).";
+            }
+        }
+        in item strategies : StrategiesState;
+        in item contests : ContestList;
+        in item refused : StrategiesRefused;
+    }
+    interface def StrategiesControl {
+        doc /* The supervisor commands the operating function; operating answers
+             with what it holds. */
+        end station : StrategiesPort;
+        end operating : ~StrategiesPort;
+    }
+    port def RankingSharePort {
+        doc /* Written from operating's side; ranking uses the conjugate. RankingRules
+             has no answer. */
+        out item rules : RankingRules;
+    }
+    interface def RankingShare {
+        doc /* Operating gives ranking the ranking rules of the active strategy. */
+        end operating : RankingSharePort;
+        end ranking : ~RankingSharePort;
+    }
+    port def AutoSharePort {
+        doc /* Written from operating's side; Auto uses the conjugate. AutoRules has no
+             answer. */
+        out item rules : AutoRules;
+    }
+    interface def AutoShare {
+        doc /* Operating gives Auto the rules of the active strategy that it
+             executes. */
+        end operating : AutoSharePort;
+        end auto : ~AutoSharePort;
+    }
+    port def ActivitySharePort {
+        doc /* Written from operating's side; the contact uses the conjugate.
+             ContestActivity has no answer. */
+        out item activity : ContestActivity;
+    }
+    interface def ActivityShare {
+        doc /* Operating gives the contact the special activity of the contest in
+             force. */
+        end operating : ActivitySharePort;
+        end qso : ~ActivitySharePort;
     }
 }

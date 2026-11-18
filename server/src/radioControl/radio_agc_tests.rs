@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-// Proves: CL-044-09; CL-044-10; CL-044-11; TC-044-008; TC-044-009.
 // The actual router, Recording owner, CAT lifecycle AGC tick and CAT actor/executor on a
 // disposable profile; a scripted IC-7300 on COM3 that echoes each frame. Expected bytes
 // are hand-written from the IC-7300 Full Manual section 19 command table ("16 12 AGC":
@@ -116,7 +115,7 @@ fn station(radio: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
     let f = fixture("http://127.0.0.1:18045", true);
     {
         let mut store = f.state.store.lock().unwrap();
-        store.document.control = profile::Control {
+        store.document.control = profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("COM3".into()),
             ptt: "cat".into(),
@@ -184,7 +183,7 @@ fn tick(f: &Fixture, now: Instant) {
 }
 
 // TC-044-008 (h)
-// Proves: TC-044-008.
+// Proves: TC-044-008
 #[test]
 fn agc_frames_and_replies_follow_the_ic7300_command_table() {
     assert_eq!(setup::read_agc_frame(0x94), READ_AGC);
@@ -219,7 +218,7 @@ fn agc_frames_and_replies_follow_the_ic7300_command_table() {
 }
 
 // TC-044-008 (a)-(g)
-// Proves: TC-044-008.
+// Proves: TC-044-008
 #[test]
 fn ensure_agc_reads_first_and_writes_only_a_differing_value_with_readback() {
     // (a) already SLOW: the read is the only frame.
@@ -286,7 +285,7 @@ fn ensure_agc_reads_first_and_writes_only_a_differing_value_with_readback() {
 }
 
 // TC-044-009 (a), (b), (g)
-// Proves: TC-044-009.
+// Proves: TC-044-009
 #[test]
 fn connect_applies_the_saved_agc_once_and_pushes_the_read_back() {
     let (f, radio) = station(Ic7300::at(2));
@@ -338,7 +337,7 @@ fn connect_applies_the_saved_agc_once_and_pushes_the_read_back() {
 }
 
 // TC-044-009 (c), (d)
-// Proves: TC-044-009.
+// Proves: TC-044-009
 #[test]
 fn connect_apply_never_writes_while_transmitting_or_armed() {
     // (c) the radio reports TX: busy, retried after the delay once it is RX.
@@ -397,7 +396,7 @@ fn begin(f: &Fixture, action: &'static str, mode: &'static str, band: Option<&st
 }
 
 // TC-044-009 (e), (f)
-// Proves: TC-044-009.
+// Proves: TC-044-009
 #[test]
 fn ft8_and_ft4_selections_apply_the_agc_inside_the_selection() {
     let (f, radio) = station(Ic7300::at(3));
@@ -436,16 +435,16 @@ fn ft8_and_ft4_selections_apply_the_agc_inside_the_selection() {
 }
 
 // TC-044-009 (h)
-// Proves: TC-044-009.
+// Proves: TC-044-009
 #[test]
 fn profile_radio_settings_default_migrate_and_validate() {
-    use profile::{Control, Radio};
-    let cat = Control {
+    use profile::{ControlSelection, Radio};
+    let cat = ControlSelection {
         mode: "cat".into(),
         endpoint: Some("icom7300://COM3?baud=19200&radio=94&controller=e0".into()),
         ptt: "cat".into(),
     };
-    let off = Control {
+    let off = ControlSelection {
         mode: "disabled".into(),
         endpoint: None,
         ptt: "disabled".into(),
@@ -505,7 +504,7 @@ fn profile_radio_settings_default_migrate_and_validate() {
 }
 
 // TC-044-009 (h) over HTTP
-// Proves: TC-044-009.
+// Proves: TC-044-009
 #[tokio::test]
 async fn profile_put_keeps_saves_and_refuses_radio_settings() {
     let (f, _) = station(Ic7300::at(3));
@@ -576,4 +575,16 @@ async fn profile_put_keeps_saves_and_refuses_radio_settings() {
         None,
         "an unmanaged control keeps no radio settings"
     );
+}
+
+// Without a wanted AGC nothing is read or set.
+// Proves: TC-044-009
+#[test]
+fn without_a_wanted_agc_nothing_is_read_or_set() {
+    let (f, radio) = station(Ic7300::at(2));
+    super::tick(&f.state.recording, None, Instant::now());
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(agc_frames(&radio).is_empty(), "no AGC frame");
+    assert!(f.state.recording.agc.status().is_none());
+    assert_eq!(radio.lock().unwrap().agc, 2);
 }

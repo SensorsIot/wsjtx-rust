@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
-//! WstxQsoControl::ContactWire for the contact engine: GET /contact (ContactSnapshot) and
+//! WstxQsoControl::QsoControl for the contact engine: GET /contact (ContactSnapshot) and
 //! POST /contact/command (ContactCommand, CommandReceipt), the station step of the
 //! engine, its direct log (WstxLogbook::DirectLog, #41) and the contact.state /
 //! station.tick WebSocket event payloads. Validation
-//! order is WstxOperatingReceive S2: route, Origin, TLS/session, size/media/syntax,
+//! order is WstxStationLink::RequestOrder: route, Origin, TLS/session, size/media/syntax,
 //! version/enums/UUIDs/safe integers, profile, boot/revision, capability, state.
 use crate::contact::{
     self, Call, Command, Ctx, Engine, Exchange, Row, RowKey, Slot, Standard, Tx4,
@@ -24,7 +24,7 @@ const MAX_SAFE: u64 = 9_007_199_254_740_991;
 pub const LOG_PENDING_MAX: usize = 64;
 const LOG_RETRY: Duration = Duration::from_secs(5);
 
-/// WstxLogbook::QsoSettingsFile (CL-110-01): Auto Seq and Call 1st of this profile, in
+/// WstxQsoControl::QsoConfig: Auto Seq and Call 1st of this profile, in
 /// their own file so that saving them does not advance the profile revision.
 const QSO_SETTINGS_FILE: &str = "qso-settings.json";
 const QSO_SETTINGS_BYTES_MAX: u64 = 256;
@@ -47,7 +47,7 @@ fn saved_settings(store: &profile::Store) -> Option<(bool, bool)> {
         .then_some((saved.auto_seq, saved.call_first))
 }
 /// The contact engine of a station start on the profile of `store`: Auto Seq and Call 1st
-/// as last saved (CL-110-01), every other setting at its start value.
+/// as last saved, every other setting at its start value.
 pub(crate) fn start_engine(store: &profile::Store) -> Engine {
     let mut engine = Engine::new(Box::new(|| profile::new_uuid().ok()));
     if let Some((auto_seq, call_first)) = saved_settings(store) {
@@ -93,7 +93,7 @@ struct Inner {
     /// Newly saved records for the UDP targets, sent by the station tick only, after the
     /// station lock is released.
     outbox: Vec<logbook::Record>,
-    /// WstxModemDecode::APrioriContext of the next decode window, refreshed every tick.
+    /// WstxModeProcessing::APrioriContext of the next decode window, refreshed every tick.
     a_priori: decoder::APriori,
     /// The last tick (UTC ms) at which the station transmitted, tuned or had Enable Tx on
     /// (WSJT-X m_dateTimeLastTX, refreshed while m_transmitting, m_auto or m_tune).
@@ -106,10 +106,10 @@ pub(crate) struct Station {
     inner: Mutex<Inner>,
     revision: AtomicU64,
     started: Instant,
-    /// WstxMcp::OperatingAutomation of this station (drives this engine only through
+    /// The automation (WstxAutoPart::AutoService) of this station (drives this engine only through
     /// the ContactCommand path).
     pub(crate) automation: crate::automation::Owner,
-    /// WstxStrategy store of this station (#39), read on first use.
+    /// WstxStrategies::StrategyConfiguration of this station, read on first use.
     pub(crate) strategy: crate::strategy::Owner,
     /// #97 set by a strategy run around its own select_row (CqTargetList admission).
     pub(crate) strategy_select: std::sync::atomic::AtomicBool,
@@ -168,7 +168,7 @@ pub(crate) struct Facts {
     pub active: bool,
     /// The engine's own transmit period parity.
     pub parity: Parity,
-    /// #81 WstxStrategy::StartedQso: a contact with a partner in progress whose dialogue holds a
+    /// WstxAutoMode::StartedQsoRule: a contact with a partner in progress whose dialogue holds a
     /// counted message of the partner to my call and an own transmission that has started.
     pub started: bool,
 }
@@ -180,7 +180,7 @@ pub(crate) struct StatusFacts {
     pub tx_hz: u32,
     /// My Tx period parity.
     pub parity: Parity,
-    /// WstxContact::FrequencyControls holdTx, read by a run at each slot decision (#39 holdtx D5).
+    /// WstxHoldTx::HoldTxRule: Hold Tx, read by a run at each slot decision.
     pub hold_tx: bool,
     pub next_message: Option<String>,
     /// GridExchangeContest (#24 S2a).
@@ -205,8 +205,8 @@ fn call_of(v: &Value) -> Option<Call> {
         _ => None,
     }
 }
-/// A nonstandard i3=4 record as an engine message (WstxStandardQso::SelectDecodedRow, #24
-/// S1b): 'to' and 'from' are the hashed and the full call in hash_second order, a CQ
+/// A nonstandard i3=4 record as an engine message (WstxMessageChoice::NonstandardRule):
+/// 'to' and 'from' are the hashed and the full call in hash_second order, a CQ
 /// has 'to' CQ, the roger is the exchange (none: blank).
 fn nonstandard_of(f: &Value) -> Option<Standard> {
     let full = call_of(&f["full_call"])?;
@@ -265,7 +265,7 @@ fn contest_of(f: &Value) -> Option<Standard> {
         exchange: Exchange::Contest(kind, text),
     })
 }
-/// A published live result record as an engine row (WstxDecodes::StandardFields).
+/// A published live result record as an engine row (WstxModeProcessing::StandardFields).
 pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &str) -> Option<Row> {
     let f = &record["fields"];
     let nonstandard = (record["status"] == "decoded" && f["type"] == "nonstandard")
@@ -380,7 +380,8 @@ impl Station {
     pub(crate) fn revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
     }
-    /// (contact_revision, current contact, Auto Seq) for WstxMcp::OperatingAutomation.
+    /// The contact_revision, current contact and Auto Seq for the automation
+    /// (WstxAutoPart::AutoService).
     pub(crate) fn facts(&self) -> (u64, Option<Facts>, bool) {
         let inner = self.lock();
         let e = &inner.engine;
@@ -405,7 +406,7 @@ impl Station {
             e.paused_due(),
         )
     }
-    /// WstxModemDecode::APrioriContext for the next live decode window (#56 slice 5).
+    /// WstxModeProcessing::APrioriContext for the next live decode window.
     pub(crate) fn a_priori(&self) -> decoder::APriori {
         self.lock().a_priori.clone()
     }
@@ -457,7 +458,7 @@ impl Station {
         }
     }
     /// One ContactCommand body through exactly the browser's validation and execution
-    /// (WstxQsoControl::ContactCommand) as a browser operator action; `granted` is the
+    /// (WstxQsoControl::QsoControl) as a browser operator action; `granted` is the
     /// caller's current CL-022 grant. Station code uses `operate_as` with its source.
     #[cfg(test)]
     pub(crate) fn operate(
@@ -571,7 +572,7 @@ impl Station {
             inner.rows = Some((identity, next));
         }
         Self::run(r, |mut core, now| {
-            // Belt and braces for WstxTransmit::StationModeGate (set at every change).
+            // Belt and braces for WstxTransmitControl::StationMode (set at every change).
             if let Some(c) = core.as_deref_mut() {
                 c.set_station_mode(mode);
             }
@@ -875,7 +876,7 @@ impl Station {
             "tx_calls":view.as_ref().map_or(6,|v|v.tx_calls),"tune_seconds":view.as_ref().map_or(90,|v|v.tune_seconds),
             "rx_hz":s.rx_hz,"tx_hz":s.tx_hz,"hold_tx":s.hold_tx,"parity":parity_name(s.parity),"report":s.report,
             "activity":s.activity.name(),"exchange":s.exchange,"serial":s.serial});
-        // #97 WstxStrategy::StrategyWatchdog: null while armed for a strategy run's own contact
+        // WstxLeave::LeaveRule: null while armed for a strategy run's own contact
         // (attended), else the Tx watchdog's count.
         let remaining = view.as_ref().map_or(json!(0), |v| {
             if v.tx_remaining_null {
@@ -926,7 +927,7 @@ fn parity_name(p: Parity) -> &'static str {
         Parity::Odd => "odd",
     }
 }
-/// The #9 read view WstxQsoControl::ContactSnapshot carries (refusal: the latest #9
+/// The read view WstxQsoControl::QsoState carries (refusal: the latest
 /// refusal, or the contact's last refused/failed transmit outcome).
 fn transmit_view(v: &View, problem: Option<&str>, safety_revision: Option<u64>) -> Value {
     let name = |t: String| contact::snake(&t);
@@ -1237,7 +1238,7 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
         return Err(("invalid_request", None));
     }
     // set_activity's exchange is optional (ContestExchange, #24 S2b), and so is
-    // select_row's directive_confirmed (WstxContact::DirectedCqSelection).
+    // select_row's directive_confirmed (WstxStandardQso::DirectedCqRule).
     // Tune off needs no safety revision (CL-111-06).
     let optional = |k: &str| {
         (action == "set_activity" && k == "exchange")
@@ -1389,7 +1390,7 @@ impl Station {
                 let (record, mode) = r
                     .live_record(source, job, generation, sequence)
                     .ok_or(("row_unavailable", Some("row")))?;
-                // WstxContact::DirectedCqSelection: only the operator can confirm the warning.
+                // WstxStandardQso::DirectedCqRule: only the operator can confirm the warning.
                 if let Some(reason) =
                     strategy::selection_warning(state, &record, inner.engine.settings.activity)
                     && (automatic || body["directive_confirmed"] != true)
@@ -1419,7 +1420,7 @@ impl Station {
                 }
             }
         };
-        // CL-110-01: Auto Seq and Call 1st are saved before the engine takes the value
+        // WstxQsoControl::QsoConfig: Auto Seq and Call 1st are saved before the engine takes the value
         // (the engine refuses neither command); a failed save changes nothing.
         let settings = &inner.engine.settings;
         match command {
@@ -1482,7 +1483,7 @@ pub(crate) fn station_tick(state: &ProfileState) {
     if let Some(s) = state.recording.contact.get() {
         // Read before the contact step: the engine then has every record of it.
         let publication = state.recording.latest_publication();
-        // WstxAutoControl::StrategyRun: a HALT from any source turns Auto off (the selection stays).
+        // WstxAutoMode::AutoStops: a HALT from any source turns Auto off (the selection stays).
         s.strategy.halt_step(state);
         // #42 IgnoreLists: a station band change empties the session list before a run step.
         s.strategy
@@ -1491,9 +1492,9 @@ pub(crate) fn station_tick(state: &ProfileState) {
         s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);
-        // #82 WstxAutoControl::FreeTxSlots: the station's open slots, with or without a run.
+        // WstxHoldTx::OpenSlotRule: the station's open slots, with or without a run.
         s.automation.build_free_tx_slots(s, state);
-        // WstxAutoControl::AutoToggle: every run end turns Auto off.
+        // WstxAutoMode::AutoStops: every run end turns Auto off.
         let epoch = s.strategy.auto_epoch();
         s.strategy
             .auto_step(state, epoch, s.automation.strategy_running());

@@ -56,7 +56,7 @@ function stationDataRoot() {
   return stationData;
 }
 // Environment of a station a test starts: no inherited WSTX_ setting, no public SNTP
-// server (WstxTransmitClock::TransmitClock), no UDP interface, and the per-run station data.
+// server (WstxStationClock::TimeServerCheck), no UDP interface, and the per-run station data.
 function stationEnv(env = {}) {
   const clean = {...process.env};
   // Windows environment names ignore case: no differently cased LOCALAPPDATA may survive.
@@ -139,7 +139,7 @@ async function link(target, {rate = 4000, latency = 150} = {}) {
     async close() {enabled = false; for (const socket of sockets) socket.destroy(); for (const timer of timers) clearTimeout(timer); listener.close(); await once(listener, 'close');}
   };
 }
-// Test client of the CL-022-01 auth-v1 flow for raw (non-browser) requests to a selected
+// Test client of the auth-v1 flow for raw (non-browser) requests to a selected
 // HTTPS profile: bootstrap with the token, enroll a P-256 key, prove it and return the
 // transport cookie. `send(route, method, body, headers)` must resolve {status, headers, body}.
 async function grant(origin, token, send) {

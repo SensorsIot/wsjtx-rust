@@ -32,7 +32,6 @@ fn context(id: &str) -> (Arc<SourceDescriptor>, SourceTiming) {
     (descriptor, timing)
 }
 
-// Proves: CL-008-02, CL-008-03; TC-002-001, TC-009-004.
 #[test]
 fn epoch_requires_current_owner_ack_and_rejects_old_identity() {
     let mut latch = EpochLatch::default();
@@ -85,7 +84,6 @@ fn epoch_requires_current_owner_ack_and_rejects_old_identity() {
     );
 }
 
-// Proves: CL-008-02; TC-002-001.
 #[test]
 fn source_blocks_enforce_real_finite_bounded_sample_intervals() {
     let (descriptor, timing) = context("source");
@@ -115,7 +113,6 @@ fn source_blocks_enforce_real_finite_bounded_sample_intervals() {
     ));
 }
 
-// Proves: CL-008-02, CL-008-03; TC-002-001.
 #[test]
 fn correlated_system_clock_is_not_an_external_accuracy_claim() {
     let (descriptor, mut timing) = context("source");

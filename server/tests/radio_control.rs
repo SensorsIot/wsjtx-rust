@@ -15,6 +15,19 @@ use std::{
     },
     time::{Duration, Instant},
 };
+// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+#[allow(dead_code)]
+#[path = "../src/model_values.rs"]
+mod model_values;
+
+/// WstxCatControl::RadioConnection::closeMaxMs, read from the model.
+fn close_max() -> Duration {
+    let name = "WstxCatControl::RadioConnection::closeMaxMs";
+    match model_values::Model::load().number_with_unit(name) {
+        Ok(Some(model_values::Number::Integer(ms))) => Duration::from_millis(ms as u64),
+        other => panic!("model value {name}: {other:?}"),
+    }
+}
 
 const FREQUENCY: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 3, 0, 0x40, 7, 0x14, 0, 0xfd];
 const MODE: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 4, 1, 2, 0xfd];
@@ -122,7 +135,7 @@ impl Transport for Fake {
     }
 }
 
-// Proves: CL-008-03, CL-008-05; TC-009-001, TC-009-003, TC-009-004.
+// Proves: TC-009-001, TC-009-003
 #[test]
 fn actor_has_one_io_owner_no_pending_operation_and_bounded_close() {
     use radio_control::actor::Actor;
@@ -158,18 +171,19 @@ fn actor_has_one_io_owner_no_pending_operation_and_bounded_close() {
     assert!(entered.load(Ordering::Acquire));
     assert_eq!(actor.execute(req(Operation::ReadMode)), Err(Error::Busy));
     assert_eq!(state.lock().unwrap().writes.len(), 2);
+    let close_max = close_max();
     let before = Instant::now();
     actor.request_close();
     assert_eq!(worker.join().unwrap(), Err(Error::Cancelled));
-    while !actor.close_complete() && before.elapsed() < Duration::from_millis(250) {
+    while !actor.close_complete() && before.elapsed() < close_max {
         std::thread::sleep(Duration::from_millis(1));
     }
     assert!(actor.close_complete());
-    assert!(before.elapsed() < Duration::from_millis(250));
+    assert!(before.elapsed() < close_max);
     assert!(state.lock().unwrap().closed >= 1);
 }
 
-// Proves: CL-008-03, CL-008-05; TC-009-001, TC-009-003.
+// Proves: TC-009-001, TC-009-003
 #[test]
 fn actor_constructs_non_send_native_values_inside_its_io_thread() {
     use radio_control::actor::Actor;
@@ -229,7 +243,7 @@ fn req(operation: Operation) -> Request {
     }
 }
 
-// Proves: CL-008-07; TC-009-005 case3. Independent addressed replies and fixed
+// Independent addressed replies and fixed
 // sequence expectations distinguish each completed query from the legacy cache.
 #[test]
 fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_targets() {
@@ -294,8 +308,9 @@ fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_ta
     );
 }
 
-// Proves: CL-008-07; TC-009-005 cases3/4. One actor lease covers the transition,
+// One actor lease covers the transition,
 // including gaps between typed exchanges, without queueing or polling interference.
+// Proves: TC-009-001
 #[test]
 fn transition_lease_excludes_other_operations_and_polling_until_released() {
     let script = Arc::new(Mutex::new(Script {
@@ -337,7 +352,8 @@ fn transition_lease_excludes_other_operations_and_polling_until_released() {
         "idle polling must not enter a reserved transition"
     );
 }
-// Proves: CL-008-06; TC-009-001. Invalid authority cannot even activate a native transport.
+// Invalid authority cannot even activate a native transport.
+// Proves: TC-009-001
 #[test]
 fn actor_rejects_invalid_authority_before_native_factory() {
     let mut invalid = authority();
@@ -374,7 +390,8 @@ fn service(actions: Vec<Action>) -> (Executor<Fake>, Arc<Mutex<Script>>) {
     (executor, state)
 }
 
-// Proves: CL-008-06, CL-044-09; TC-009-001, TC-044-012. A workflow retains one lease and truthfully reports radio intervention.
+// A workflow retains one lease and truthfully reports radio intervention.
+// Proves: TC-009-001, TC-044-012
 #[test]
 fn receive_setup_reads_every_setter_and_checks_final_measured_state() {
     let operation = Operation::ReceiveSetup {
@@ -494,7 +511,7 @@ fn receive_setup_reads_every_setter_and_checks_final_measured_state() {
     );
 }
 
-// Proves: CL-008-01, CL-008-06; TC-009-001.
+// Proves: TC-009-001
 #[test]
 fn configuration_and_catalogue_cannot_admit_raw_or_transmit_operations() {
     assert_eq!(
@@ -539,7 +556,7 @@ fn configuration_and_catalogue_cannot_admit_raw_or_transmit_operations() {
     assert!(Catalogue::parse(&vec![b' '; 262145]).is_err());
 }
 
-// Proves: CL-008-04, CL-008-06; TC-009-001, TC-009-003.
+// Proves: TC-009-001, TC-009-003
 #[test]
 fn civ_frames_match_independently_recorded_icom_bytes() {
     let cfg = Configuration::parse("COM3").unwrap();
@@ -668,7 +685,7 @@ fn civ_frames_match_independently_recorded_icom_bytes() {
     );
 }
 
-// Proves: CL-008-03, CL-008-06; TC-009-001.
+// Proves: TC-009-001
 #[test]
 fn fragmented_parser_preserves_exact_frame_byte_and_count_limits() {
     let mut parser = Framer::default();
@@ -699,7 +716,7 @@ fn fragmented_parser_preserves_exact_frame_byte_and_count_limits() {
     assert_eq!(Framer::default().feed(&max), Err(Error::Limit));
 }
 
-// Proves: CL-008-03, CL-008-05, CL-008-06; TC-009-001, TC-009-003.
+// Proves: TC-009-001, TC-009-003
 #[test]
 fn setters_need_ack_and_independent_readback_and_preserve_actual_mismatch() {
     let (executor, state) = service(vec![
@@ -763,7 +780,8 @@ fn setters_need_ack_and_independent_readback_and_preserve_actual_mismatch() {
     assert_eq!(state.lock().unwrap().closed, 1);
 }
 
-// Proves: CL-044-09; TC-044-012. A setter whose value already fits sends only its read.
+// A setter whose value already fits sends only its read.
+// Proves: TC-044-012
 #[test]
 fn setters_read_first_and_send_no_write_when_the_value_fits() {
     for (operation, reply, read) in [
@@ -802,8 +820,9 @@ fn setters_read_first_and_send_no_write_when_the_value_fits() {
     }
 }
 
-// Proves: CL-044-09; TC-044-012. A setter whose read is refused (FA) sends no write and
+// A setter whose read is refused (FA) sends no write and
 // keeps the connection.
+// Proves: TC-044-012
 #[test]
 fn setter_with_a_refused_read_sends_no_write() {
     for (operation, read) in [
@@ -843,8 +862,9 @@ fn setter_with_a_refused_read_sends_no_write() {
     }
 }
 
-// Proves: CL-044-09; TC-044-012. A menu (1A 05) write whose item already fits sends
+// A menu (1A 05) write whose item already fits sends
 // only its read; a differing one is read, RX-checked, written and read back.
+// Proves: TC-044-012
 #[test]
 fn menu_write_reads_first_and_skips_a_fitting_value() {
     let usb_send_off = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1a, 5, 0, 0x78, 0, 0xfd];
@@ -888,7 +908,7 @@ fn menu_write_reads_first_and_skips_a_fitting_value() {
     );
 }
 
-// Proves: CL-008-03, CL-008-06; TC-009-001, TC-009-004.
+// Proves: TC-009-001
 #[test]
 fn admission_and_cancel_never_publish_stale_data_or_retry_writes() {
     let (executor, state) = service(vec![Action::Cancel(MODE.to_vec())]);
@@ -917,7 +937,7 @@ fn admission_and_cancel_never_publish_stale_data_or_retry_writes() {
     assert_eq!(state.lock().unwrap().writes.len(), 2);
 }
 
-// Proves: CL-008-04, CL-008-06; TC-009-001.
+// Proves: TC-009-001
 #[test]
 fn auto_baud_is_bounded_connection_discovery_and_does_not_rewrite_intent() {
     let state = Arc::new(Mutex::new(Script {
@@ -940,7 +960,7 @@ fn auto_baud_is_bounded_connection_discovery_and_does_not_rewrite_intent() {
     assert_eq!(executor.snapshot().unwrap().effective_baud, Some(19200));
 }
 
-// Proves: CL-008-03, CL-008-05; TC-009-001, TC-009-003, TC-009-004.
+// Proves: TC-009-001, TC-009-003
 #[test]
 fn partial_writes_and_failed_close_keep_truthful_connection_state() {
     let (executor, state) = service(vec![Action::Partial]);
@@ -959,7 +979,7 @@ fn partial_writes_and_failed_close_keep_truthful_connection_state() {
     assert_eq!(executor.snapshot().unwrap().state, State::Closing);
 }
 
-// Proves: CL-008-03; TC-009-001.
+// Proves: TC-009-001
 #[test]
 fn polling_has_one_cycle_per_second_and_fragmentation_never_renews_deadline() {
     let (executor, state) = service(vec![
@@ -992,4 +1012,69 @@ fn polling_has_one_cycle_per_second_and_fragmentation_never_renews_deadline() {
             .iter()
             .all(|deadline| *deadline == frequency_deadline)
     );
+}
+
+// An operation the radio's commands do not hold is refused before a frame is sent.
+// Proves: TC-009-001
+#[test]
+fn an_operation_the_radio_has_not_is_unsupported_and_sends_nothing() {
+    let mut doc: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../../fixtures/radio/ic7300-catalogue.json"))
+            .unwrap();
+    doc["models"][0]["commands"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c != "read_split");
+    let catalogue = Catalogue::parse(&serde_json::to_vec(&doc).unwrap()).unwrap();
+    assert!(!catalogue.supports(&Operation::ReadSplit));
+    let state = Arc::new(Mutex::new(Script {
+        actions: VecDeque::from([Action::Bytes(FREQUENCY.to_vec())]),
+        ..Script::default()
+    }));
+    let executor = Executor::connect(
+        Fake(state.clone()),
+        Configuration::parse("icom7300://COM3?baud=9600&radio=94&controller=E0").unwrap(),
+        authority(),
+        catalogue,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_eq!(
+        executor.execute(req(Operation::ReadSplit)),
+        Err(Error::Unsupported)
+    );
+    assert_eq!(
+        state.lock().unwrap().writes.len(),
+        1,
+        "the connection's read only"
+    );
+    assert_eq!(executor.snapshot().unwrap().state, State::Ready);
+}
+
+// A menu item that differs is not written while the radio reports that it transmits.
+// Proves: TC-044-012
+#[test]
+fn a_menu_write_while_the_radio_transmits_is_busy_and_writes_nothing() {
+    let usb_send_dtr = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1a, 5, 0, 0x78, 1, 0xfd];
+    let transmitting = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1c, 0, 1, 0xfd];
+    let (executor, state) = service(vec![
+        Action::Bytes(usb_send_dtr),
+        Action::Bytes(transmitting),
+    ]);
+    assert_eq!(
+        executor.setup(
+            SetupCommand::Write(setup::Setting::UsbSend, 0),
+            Instant::now() + Duration::from_secs(3),
+            &AtomicBool::new(false),
+        ),
+        Err(Error::Busy)
+    );
+    assert_eq!(
+        state.lock().unwrap().writes[1..],
+        [
+            vec![0xfe, 0xfe, 0x94, 0xe0, 0x1a, 5, 0, 0x78, 0xfd],
+            vec![0xfe, 0xfe, 0x94, 0xe0, 0x1c, 0, 0xfd]
+        ]
+    );
+    assert_eq!(executor.snapshot().unwrap().state, State::Ready);
 }

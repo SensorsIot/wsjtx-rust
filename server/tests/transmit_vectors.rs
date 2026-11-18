@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-// Proves: TC-005-001, TC-006-001, TC-024-007, TC-099-001, CL-009-01, CL-009-02, CL-024-03, CL-099-01
 use serde_json::Value;
 use std::sync::OnceLock;
 use wstx_rust::decoder::{Decoder, HashTable, Mode, unpack, unpack_with};
@@ -39,7 +38,7 @@ fn wav(name: &str) -> Vec<f64> {
         .collect()
 }
 
-// Proves: TC-005-001.
+// Proves: TC-005-001
 #[test]
 fn tc_005_001_ft8code_bits_crc_parity_and_tones_match_exactly() {
     let supported = ["1.", "2.", "3.", "4.", "5.", "0.0", "0.3", "0.4", "0.5"];
@@ -93,7 +92,7 @@ fn tc_005_001_ft8code_bits_crc_parity_and_tones_match_exactly() {
     );
 }
 
-// Proves: TC-005-001.
+// Proves: TC-005-001
 #[test]
 fn tc_005_001_families_and_explicit_refusals() {
     let family = |m: &str| encode(m).unwrap().packed.family;
@@ -146,7 +145,7 @@ fn tc_005_001_families_and_explicit_refusals() {
 
 /// Field Day and RTTY Roundup (#24 S2b): every oracle vector of the two families packs
 /// exactly, and every contest shape WSJT-X alters or rejects is refused.
-// Proves: TC-024-007, CL-024-03
+// Proves: TC-005-001
 #[test]
 fn tc_024_007_field_day_and_rtty_roundup_pack_exactly() {
     let mut exact = 0;
@@ -221,7 +220,7 @@ fn tc_024_007_field_day_and_rtty_roundup_pack_exactly() {
     }
 }
 
-/// TC-099-001: the EU VHF messages WSJT-X 3.3.0-beta5 encodes unaltered as type 5
+/// The EU VHF messages WSJT-X 3.3.0-beta5 encodes unaltered as type 5
 /// (fixtures/transmit/generate.py MESSAGES), and the shapes it rejects or alters.
 const EU_VHF: [&str; 8] = [
     "<K1ABC> <HB9BLA> 550001 JN37VL",
@@ -262,7 +261,6 @@ fn oracle(message: &str) -> &'static Value {
 /// EU VHF (#99): every oracle vector packs bit for bit as ft8code, renders its own tokens
 /// with a hash table that knows both calls and <...> without one; every rejected shape is
 /// never packed as EU VHF; the 38-character message is refused tooLong.
-// Proves: TC-099-001, CL-099-01
 #[test]
 fn tc_099_001_eu_vhf_packs_exactly_as_ft8code() {
     for message in EU_VHF {
@@ -347,7 +345,7 @@ fn deviation(ours: &[f64], reference: &[f64]) -> f64 {
         .fold(0., f64::max)
 }
 
-// Proves: TC-005-001.
+// Proves: TC-005-001
 #[test]
 fn tc_005_001_waveform_matches_zero_noise_ft8sim_within_tolerance() {
     const TOLERANCE: f64 = 0.003;
@@ -377,7 +375,7 @@ fn tc_005_001_waveform_matches_zero_noise_ft8sim_within_tolerance() {
     }
 }
 
-// Proves: TC-005-001.
+// Proves: TC-005-001
 #[test]
 fn tc_005_001_48k_waveform_and_ramps() {
     let tones = encode("CQ HB9BLA JN47").unwrap().tones;
@@ -409,7 +407,7 @@ fn tc_005_001_48k_waveform_and_ramps() {
     }
 }
 
-// Proves: TC-005-001.
+// Proves: TC-005-001
 #[test]
 fn tc_005_001_waveform_refusals() {
     let tones = encode("CQ K1ABC FN42").unwrap().tones;
@@ -428,7 +426,7 @@ fn tc_005_001_waveform_refusals() {
     );
 }
 
-// Proves: TC-005-001.
+// Proves: TC-005-001
 #[test]
 fn tc_005_001_receive_decoder_recovers_generated_waveforms() {
     let decoder = Decoder::new();
@@ -465,7 +463,7 @@ fn tc_005_001_receive_decoder_recovers_generated_waveforms() {
     assert_eq!(fixture("CQ HB9BLA JN47")["altered"], false);
 }
 
-// Proves: TC-006-001.
+// Proves: TC-006-001
 #[test]
 fn tc_006_001_period_selection_and_parity() {
     // 2026-10-31T12:00:00Z is an even period (multiple of 30 s).
@@ -489,7 +487,7 @@ fn tc_006_001_period_selection_and_parity() {
     assert_eq!(next_period(Mode::Ft8, t0 - 1, Parity::Even), t0);
 }
 
-// Proves: TC-006-001.
+// Proves: TC-006-001
 #[test]
 fn tc_006_001_start_plan_late_start_and_refusals() {
     let p: i64 = 1_793_448_015_000;

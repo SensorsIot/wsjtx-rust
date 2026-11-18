@@ -1,12 +1,13 @@
 #![forbid(unsafe_code)]
-//! WstxStrategy (#39): the award strategies, the directed-CQ rule and their one evaluator.
+//! WstxValueOrder: the award strategies, the directed-CQ rule and their one evaluator.
 //! Band Activity's marks and value order and the station's strategy runs
-//! (WstxMcp::OperatingAutomation with a strategy) both use these verdicts; the browser
+//! (WstxAutoPart::AutoService with a strategy) both use these verdicts; the browser
 //! never evaluates a strategy itself. Routes: GET /strategy (StrategySnapshot), PUT
 //! /strategy (configuration; a changed selection ends a run and, while Auto is on, starts
-//! the new one), POST /strategy/auto (WstxAutoControl::AutoToggle), POST /strategy/evaluate (verdicts of retained live rows), #42 GET /strategy/alerts and POST
-//! /strategy/alerts/clear (WstxStationLink::AlertWire), POST /strategy/most-wanted/download
-//! (WstxStationLink::MostWantedListWire), GET /strategy/contests (WstxStrategies::ContestHttp).
+//! the new one), POST /strategy/auto (WstxAutoControl::SwitchAuto), POST /strategy/evaluate (verdicts of
+//! retained live rows), GET /strategy/alerts and POST /strategy/alerts/clear
+//! (WstxRankingControl::Alert), POST /strategy/most-wanted/download
+//! (WstxRankingControl::MostWantedStatus), GET /strategy/contests (WstxStrategies::ReadContests).
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
@@ -19,16 +20,17 @@ use std::time::{Duration, Instant};
 pub(crate) mod tests;
 
 pub const FILE_NAME: &str = "strategy.json";
-pub const BODY_MAX: usize = 32_768;
+pub const BODY_MAX: usize = crate::limits::SETTINGS_BYTES;
 pub const STRATEGIES_MAX: usize = 16;
 pub const EVALUATE_MAX: u64 = 2048;
-/// #42 WstxRankingControl::IgnoreLists bounds.
+/// WstxRankingControl::RankingLimits: the ignore list bounds.
 pub const IGNORE_CALLS_MAX: usize = 100;
 pub const SESSION_IGNORE_MAX: usize = 64;
 pub const SESSION_IGNORE_MINUTES: u64 = 30;
 /// #42 WstxRankingControl::Alert bounds: the history length and the dedupe window.
 pub const ALERT_HISTORY_MAX: usize = 100;
-pub const ALERT_DEDUPE_MS: i64 = 10 * 60_000;
+pub const ALERT_DEDUPE_MINUTES: i64 = 10;
+pub const ALERT_DEDUPE_MS: i64 = ALERT_DEDUPE_MINUTES * 60_000;
 const FILE_BYTES_MAX: u64 = 262_144;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 use crate::contact::Activity;
@@ -153,7 +155,7 @@ impl Criterion {
         })
     }
 }
-/// WstxStrategy::LeaveRule, the strategy's leave (#97 decision 5).
+/// WstxLeave::LeaveRule, the strategy's leave (WstxStrategies::LeaveMode).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Leave {
     /// After `calls` calls without an answer, `heard` while he hears us.
@@ -184,7 +186,7 @@ impl Leave {
         }
     }
 }
-/// WstxStrategy::TxMoveRule: k per PskCase (0 stay, 1 every call, n every n-th call).
+/// WstxTxSlot::MoveRule: k per PSK case (0 stay, 1 every call, n every n-th call).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TxMoveEvery {
     pub heard: u64,
@@ -244,7 +246,7 @@ pub(crate) enum Region {
     Dx,
     Selected(Vec<String>),
 }
-/// WstxRankingControl::WorkedWindow; dates are YYYYMMDD.
+/// WstxRankingControl::WorkedSince; dates are YYYYMMDD.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Window {
     All,
@@ -273,7 +275,7 @@ pub(crate) struct Strategy {
     pub cq_targets: Lists<String>,
     /// 3 Order (ValueOrder): 0..16 unique criteria; [] for a contest.
     pub order: Vec<Criterion>,
-    /// The contest id of a contest strategy (WstxStrategies::ProfileTable).
+    /// The contest id of a contest strategy (WstxStrategies::ContestTable).
     pub contest: Option<&'static str>,
     /// 4 Calling stations are answered (off: a caller of my call has no rank, CL-097-03).
     pub callers_first: bool,
@@ -438,7 +440,7 @@ fn word(v: &Value, field: &str, max: usize, extra: &[u8]) -> Result<String, Fiel
         .map(str::to_owned)
         .ok_or(bad(field))
 }
-/// WstxIgnoreLists::CL-042-02 an entry of either ignore list: 1..13 characters of A-Z, 0-9, / and
+/// WstxIgnoreLists::IgnoreListsRule: an entry of either ignore list: 1..13 characters of A-Z, 0-9, / and
 /// `*`, with at least one character other than `*` (an entry of only `*` would ignore every
 /// station).
 fn ignore_entry(v: &Value, field: &str) -> Result<String, Field> {
@@ -1204,7 +1206,7 @@ impl Config {
         v
     }
     /// The contest in force (WstxStrategies::ContestSelection): with Auto on it runs
-    /// (WstxAutoControl::ContestRun), with Auto off it only marks.
+    /// (WstxTargetChoice::PickRule), with Auto off it only marks.
     pub(crate) fn automatic_contest(&self) -> Option<crate::contest::Selection> {
         self.contest
     }
@@ -1213,7 +1215,7 @@ impl Config {
         self.contest
             .is_some_and(|c| c.profile.automation == crate::contest::AutomationClause::Forbidden)
     }
-    /// A selection: an active strategy or a contest (WstxAutoControl::AutoToggle).
+    /// A selection: an active strategy or a contest (WstxAutoMode::AutoSwitchRule).
     pub(crate) fn selected(&self) -> bool {
         self.active.is_some() || self.contest.is_some()
     }
@@ -1599,7 +1601,7 @@ impl Station {
             Some(_) => None,
         }
     }
-    /// WstxValueOrder::UsStateOf: the message's exchange first, then the log.
+    /// WstxValueOrder::UsStateFilterRule: the message's exchange first, then the log.
     fn us_state(&self, f: &Facts, from_messages: &HashMap<String, String>) -> Option<String> {
         let entity = self.dxcc.lookup(&f.from)?;
         if !crate::dxcc::US_ENTITIES.contains(&entity.name.as_str()) {
@@ -1987,7 +1989,7 @@ fn window_dates(window: Window) -> Option<(u32, u32)> {
         Window::FromTo(first, last) => Some((first, last)),
     }
 }
-/// WstxValueOrder::WorkedWindowRule for the station step: never builds on it. The worked set of a
+/// WstxRankingControl::WorkedSince for the station step: never builds on it. The worked set of a
 /// window is cached per (log revision, country table, first date, last date; today is its UTC
 /// date), at most 4 windows, so it is not rebuilt per evaluation. A rebuild takes about 100 ms
 /// with 26,902 QSOs (measured 2026-11-06, release build, two station steps), so it never runs on
@@ -2042,7 +2044,7 @@ pub(crate) fn station(state: &ProfileState, config: &Config, window: Window) -> 
 /// (log revision, profile, start, end, my locator) of a built ContestLog.
 type ContestKey = (u64, &'static str, i64, i64, Option<String>);
 type ContestCache = Mutex<Option<(ContestKey, Arc<crate::contest::Log>)>>;
-/// #63 WstxContest::ContestLog of a selection from the stored log, kept for the station step;
+/// WstxContestRanking::ContestCount of a selection from the stored log, kept for the station step;
 /// None when it is unreadable. On a blocking thread (routes, the build of a later step).
 fn contest_log(
     log: &logbook::Logbook,
@@ -2118,7 +2120,7 @@ struct Inner {
     revision: u64,
     config: Option<Config>,
     error: Option<&'static str>,
-    /// WstxAutoControl::AutoToggle: station memory only, off at start.
+    /// WstxAutoMode::AutoSwitchRule: station memory only, off at start.
     auto: bool,
     /// #97 configuration_note: the renames of the upgrade (from, to) until the next PUT.
     notes: Vec<(String, String)>,
@@ -2186,8 +2188,8 @@ impl Owner {
                         ok.then(|| parse_config(&configuration, None).ok())
                             .flatten()
                             .map(|mut c| {
-                                // active never survives a restart (WstxStrategy D2), nor
-                                // does a contest (WstxStrategies::ContestSelection).
+                                // active never survives a restart, nor does a contest
+                                // (WstxStrategies::StrategyConfiguration).
                                 c.active = None;
                                 c.contest = None;
                                 (v["revision"].as_u64().unwrap_or(0), c, notes)
@@ -2209,7 +2211,7 @@ impl Owner {
         }
         inner
     }
-    /// #63 WstxContest::ContestLog on a blocking thread: waits until it is current.
+    /// WstxContestRanking::ContestCount on a blocking thread: waits until it is current.
     pub(crate) fn contest_log_now(
         &self,
         state: &ProfileState,
@@ -2218,7 +2220,7 @@ impl Owner {
     ) -> Option<Arc<crate::contest::Log>> {
         contest_log(&state.logbook, &self.contest_log, s, my_locator)
     }
-    /// #63 WstxContest::ContestLog for the station step: the last built one of this contest at
+    /// WstxContestRanking::ContestCount for the station step: the last built one of this contest at
     /// once; one behind the log is built on its own thread for a later step.
     pub(crate) fn contest_log_latest(
         &self,
@@ -2419,8 +2421,8 @@ impl Owner {
         self.most_wanted_store(state, list)?;
         Ok(self.snapshot(state))
     }
-    /// A HaltTransmit from any source since the last step turns Auto off (WstxStrategy::
-    /// StrategyRun); the selection stays, so the marks stay (a contest keeps its operation).
+    /// A HaltTransmit from any source since the last step turns Auto off
+    /// (WstxAutoMode::AutoStops); the selection stays, so the marks stay (a contest keeps its operation).
     /// Pushed by strategy.state.
     pub(crate) fn halt_step(&self, state: &ProfileState) {
         use std::sync::atomic::Ordering;
@@ -2449,7 +2451,7 @@ impl Owner {
             .store(inner.revision, std::sync::atomic::Ordering::Release);
         true
     }
-    /// WstxAutoControl::AutoToggle: whether Auto is on.
+    /// WstxAutoMode::AutoSwitchRule: whether Auto is on.
     pub(crate) fn auto(&self, state: &ProfileState) -> bool {
         self.lock(state).auto
     }
@@ -2656,7 +2658,7 @@ impl Owner {
         Ok(self.snapshot(state))
     }
     /// POST /strategy/auto {v, profile_id, boot_id, auto, automation_confirmed?} after the
-    /// route checks (WstxAutoControl::AutoToggle): the requested value. auto true needs a
+    /// route checks (WstxAutoMode::AutoSwitchRule): the requested value. auto true needs a
     /// selection (409 not_configured strategy) and, for a contest whose AutomationClause is
     /// forbidden, automation_confirmed true (400 invalid_request automation_confirmed).
     pub(crate) fn auto_request(&self, state: &ProfileState, body: &Value) -> Result<bool, Refusal> {
@@ -2693,7 +2695,7 @@ impl Owner {
     }
     /// PUT /strategy after the route checks: the snapshot and whether active changed (the
     /// route then ends the run and, while Auto is on, starts the new one,
-    /// WstxAutoControl::StrategyRun).
+    /// WstxAutoMode::AutoSwitchRule).
     pub(crate) fn put(&self, state: &ProfileState, body: Value) -> Result<(Value, bool), Refusal> {
         let r = &state.recording;
         let keys = [
@@ -2746,7 +2748,7 @@ impl Owner {
             return Err(("counter_exhausted", None));
         }
         let revision = inner.revision + 1;
-        // active is never read back: the file holds none (WstxStrategy D2).
+        // active is never read back: the file holds none (WstxStrategies::StrategyConfiguration).
         let mut stored = config.json();
         stored["active"] = Value::Null;
         if let Some(o) = stored.as_object_mut() {
@@ -2766,7 +2768,7 @@ impl Owner {
         inner.revision = revision;
         inner.error = None;
         inner.notes.clear();
-        // WstxAutoControl::AutoToggle: selecting None turns Auto off (in this revision).
+        // WstxAutoMode::AutoStops: selecting None turns Auto off (in this revision).
         if !config.selected() {
             inner.auto = false;
         }
@@ -2854,7 +2856,7 @@ impl Owner {
             .config(state)
             .ok_or(("not_configured", Some("configuration".into())))?;
         self.most_wanted_load(state);
-        // WstxStationLink::ContestVerdictWire: a draft is a preview (a contest draft over the contest in
+        // WstxRankingControl::ContestVerdict: a draft is a preview (a contest draft over the contest in
         // force, or its contest's period from now); else the active strategy.
         let chosen = match draft {
             Some(s) => s,
@@ -2991,7 +2993,7 @@ async fn body_of(
         _ => Err(Box::new(refusal("not_found", None))),
     }
 }
-/// WstxAutoControl::StrategyRun start and end, on a blocking thread with no strategy lock held:
+/// WstxAutoMode::AutoSwitchRule start and AutoStops end, on a blocking thread with no strategy lock held:
 /// ends any run and, when `start` and a selection exist, starts the selection's run through
 /// the same internal path as AutomationCommand start (the request's grant; a browser's
 /// selection or Auto on ends a Tx watchdog stop, WatchdogFromOperator). A start that is
@@ -3036,7 +3038,7 @@ pub async fn put(
         Ok(v) => v,
         Err(e) => return *e,
     };
-    // WstxAutoControl::StrategyRun: the request's grant starts the run (the boundary guard has
+    // WstxAutoMode::AutoSwitchRule: the request's grant starts the run (the boundary guard has
     // refused an MCP principal: this request is the browser's, #58).
     let access = authorization_http::operating_access_async(&headers, &app)
         .await
@@ -3050,7 +3052,7 @@ pub async fn put(
         }
         // A changed selection ends any run; while Auto is on the new one starts, except a
         // contest whose clause is forbidden: Auto goes off, the confirmation goes only with
-        // Auto on (WstxAutoControl::AutoToggle).
+        // Auto on (WstxAutoMode::AutoSwitchRule).
         let forbidden = station
             .strategy
             .config(&state)
@@ -3066,7 +3068,7 @@ pub async fn put(
         Err(_) => refusal("storage_unavailable", None),
     }
 }
-/// POST /strategy/auto (WstxAutoControl::AutoToggle): the browser only (the boundary guard has
+/// POST /strategy/auto (WstxAutoControl::SwitchAuto): the browser only (the boundary guard has
 /// refused an MCP principal, #58). Auto on ends any running pounce or MCP run and starts the
 /// selection's run; Auto off ends the run at once. Returns the GET /strategy snapshot.
 pub async fn auto_route(
@@ -3153,7 +3155,7 @@ pub async fn clear_alerts_route(
         Err((code, field)) => refusal(code, field.as_deref()),
     }
 }
-/// GET /strategy/contests (WstxStrategies::ContestHttp): the profiles with their current or
+/// GET /strategy/contests (WstxStrategies::ReadContests): the profiles with their current or
 /// next period, read at (re)connect and when the period prompt opens.
 pub async fn contests_route(
     State(app): State<App>,

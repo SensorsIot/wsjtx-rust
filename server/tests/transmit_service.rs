@@ -1,5 +1,4 @@
 #![deny(unsafe_code)]
-// Proves: CL-009-03, CL-009-04; TC-008-003.
 // Virtual-clock transmit owner against a recording hardware double, and the real
 // CI-V actor against an emulated IC-7300 peer. No device, radio or RF.
 use std::{
@@ -36,6 +35,8 @@ struct Bench {
     key_error: Mutex<Option<PttError>>,
     unkey_error: Mutex<Option<PttError>>,
     open_error: AtomicBool,
+    /// play refuses the program.
+    play_error: AtomicBool,
     stopped_by_handle: AtomicBool,
     /// Wall-clock delay of each PTT exchange (Service real-time tests).
     ptt_delay_ms: AtomicI64,
@@ -121,6 +122,9 @@ impl Hardware for Fake {
         Ok(())
     }
     fn play(&mut self, program: Program) -> Result<(), AudioError> {
+        if self.0.play_error.load(Ordering::SeqCst) {
+            return Err(AudioError::Unavailable);
+        }
         let (skip, len) = match program {
             Program::Waveform { samples, skip } => (skip, samples.len()),
             Program::Tone { .. } => (0, 0),
@@ -387,9 +391,10 @@ fn pending_request_is_replaced_until_audio_start_then_queued_for_the_next_period
     );
 }
 
-// Proves: CL-009-03; TC-008-003. #10: a request for another period while the pending one
+// A request for another period while the pending one
 // is keyed but its audio has not started is queued as the next request (no busy refusal,
 // no disarm); the keyed one plays in its own period.
+// Proves: TC-008-003
 #[test]
 fn a_request_for_another_period_while_keyed_before_audio_is_queued_not_refused() {
     let f = Fake::new();
@@ -602,7 +607,7 @@ fn restart_never_resumes_an_armed_station_or_its_request() {
     assert!(f.log().is_empty());
 }
 
-// Proves: TC-008-001 (#39 2026-11-04). The owner counts started transmissions; an
+// The owner counts started transmissions; an
 // answer resets the count; at the limit the next request is never keyed and nothing
 // is halted.
 #[test]
@@ -937,7 +942,6 @@ fn output_renderer_plays_from_the_planned_sample_on_every_channel_then_silence()
     assert!(!tone.exhausted());
 }
 
-// Proves: CL-009-04, CL-022-03; TC-008-003.
 #[test]
 fn startup_safety_release_is_off_only_once_per_boot_and_only_when_tx_is_observed() {
     // Radio found transmitting before this boot keyed: exactly one release.
@@ -1005,7 +1009,7 @@ fn wait_for(what: &str, limit: Duration, done: impl Fn() -> bool) {
     }
 }
 
-// Proves: CL-009-04; TC-008-003. Review finding 1: the release never depends on the
+// Review finding 1: the release never depends on the
 // device reporting the end.
 #[test]
 fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls() {
@@ -1032,9 +1036,10 @@ fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls
     }
 }
 
-// Proves: CL-009-04; TC-008-003. #49: a device that reports the end 300 or 900 ms late,
+// A device that reports the end 300 or 900 ms late,
 // still inside the release bound, completes normally; the station stays armed and its
 // next request plays.
+// Proves: TC-008-003
 #[test]
 fn a_late_completion_report_inside_the_bound_completes_and_stays_armed() {
     let end = P + 500 + 12_640;
@@ -1062,9 +1067,10 @@ fn a_late_completion_report_inside_the_bound_completes_and_stays_armed() {
     }
 }
 
-// Proves: CL-009-04; TC-008-003. #49: the device is asked before the deadline is
+// The device is asked before the deadline is
 // applied, so a device that consumed every sample completes even when the owner's next
 // step runs only after the deadline (owner thread delayed by load).
+// Proves: TC-008-003
 #[test]
 fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline() {
     let f = Fake::new();
@@ -1082,7 +1088,7 @@ fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline(
     assert_eq!(core.view().arm_state, ArmState::Armed);
 }
 
-// Proves: CL-009-04; TC-008-003. #49: a device that stops consuming half way never
+// A device that stops consuming half way never
 // reports the end: PTT is released by the device-independent bound (FT8 audio end
 // + 1 000 ms = P + 14 140 <= P + 14 500, FT4 P + 6 340 <= P + 7 000, also after a late
 // start), the transmission fails audioStalled and the station disarms.
@@ -1142,7 +1148,7 @@ fn a_device_that_stops_consuming_half_way_is_stalled_and_released_by_the_bound()
     }
 }
 
-// Proves: CL-009-04; TC-008-003. Review finding 3: an owner panic fails closed.
+// Review finding 3: an owner panic fails closed.
 #[test]
 fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
     let f = Fake::new();
@@ -1176,7 +1182,7 @@ fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
     driver.join().unwrap();
 }
 
-// Proves: CL-009-04; TC-008-003. Review finding 2: a halt during the output open
+// Review finding 2: a halt during the output open
 // prevents keying.
 #[test]
 fn halt_during_a_slow_output_open_never_keys() {
@@ -1204,7 +1210,7 @@ fn halt_during_a_slow_output_open_never_keys() {
     driver.join().unwrap();
 }
 
-// Proves: CL-009-04; TC-008-003. A halt while the key exchange runs releases within the bound.
+// A halt while the key exchange runs releases within the bound.
 #[test]
 fn halt_during_a_slow_key_releases_within_the_bound() {
     let f = Fake::new();
@@ -1233,7 +1239,7 @@ fn halt_during_a_slow_key_releases_within_the_bound() {
     driver.join().unwrap();
 }
 
-// Proves: CL-039-06 (WstxTransmitControl::TransmitHaltUse). The watchdog stop never touches
+// WstxTransmitControl::TransmitHaltUse: the watchdog stop never touches
 // PTT: a failing release cannot make it indeterminate, and no halt is recorded.
 #[test]
 fn watchdog_stop_never_touches_ptt() {
@@ -1260,7 +1266,7 @@ fn watchdog_stop_never_touches_ptt() {
     );
 }
 
-// Proves: CL-009-03; TC-008-003. Mutation guards named by the review.
+// Mutation guards named by the review.
 #[test]
 fn arm_is_refused_while_ptt_is_indeterminate_and_submit_checks_the_safety_revision() {
     let f = Fake::new();
@@ -1469,7 +1475,7 @@ impl Hardware for AbortAware {
     }
 }
 
-// Proves: CL-009-04; TC-008-003. Re-check finding: the boxed station hardware receives
+// Re-check finding: the boxed station hardware receives
 // the halt flag, so a halt during the CAT key wait sends no key and is confirmed in bound.
 #[test]
 fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
@@ -1503,8 +1509,9 @@ fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
     driver.join().unwrap();
 }
 
-// Proves: CL-024-01; TC-024-001 (#24 S1). Every request the transmit owner accepts teaches
+// Every request the transmit owner accepts teaches
 // the station's call hash table its calls; a refused request teaches nothing.
+// Proves: TC-024-001
 #[test]
 fn accepted_requests_teach_the_station_hash_table() {
     use wstx_rust::decoder::{HashTable, unpack};
@@ -1532,7 +1539,7 @@ fn accepted_requests_teach_the_station_hash_table() {
     assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
 }
 
-// Proves: CL-010-03 (#39 Abort QSO): a failed PTT release on abort is reported.
+// A failed PTT release on abort is reported.
 #[test]
 fn abort_with_a_failed_release_is_reported_not_silent() {
     let f = Fake::new();
@@ -1548,7 +1555,7 @@ fn abort_with_a_failed_release_is_reported_not_silent() {
     assert_eq!(v.halt_state, HaltState::Idle, "still no halt");
 }
 
-// Proves: CL-010-03 (#39 Abort QSO): abort also stops Tune.
+// Abort also stops Tune.
 #[test]
 fn abort_stops_tune_without_a_halt() {
     let f = Fake::new();
@@ -1609,8 +1616,9 @@ impl Hardware for Levelled {
     }
 }
 
-// Proves: CL-044-12; TC-044-013. A transmission takes the level at its audio start and
+// A transmission takes the level at its audio start and
 // keeps it to the end; a running Tune follows at once; the scale is the attenuation.
+// Proves: TC-044-013
 #[test]
 fn tx_level_applies_at_audio_start_and_live_only_in_tune() {
     use wstx_rust::audio::{Encoding, NativeFormat};
@@ -1705,8 +1713,9 @@ impl Hardware for Metered {
     }
 }
 
-// Proves: CL-044-14; TC-044-017. Exactly one meter read per transmission, in the middle of
+// Exactly one meter read per transmission, in the middle of
 // its audio; none for Tune.
+// Proves: TC-044-017
 #[test]
 fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
     let f = Fake::new();
@@ -1744,8 +1753,9 @@ fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
     assert_eq!(due.lock().unwrap().len(), 2);
 }
 
-// Proves: CL-044-14; TC-044-017 (b). A late start too short to read clear of its release
+// A late start too short to read clear of its release
 // has no read: audio at about period + 11 200 ms leaves under 2 s of the 13 140 ms.
+// Proves: TC-044-017
 #[test]
 fn a_late_start_with_under_two_seconds_of_audio_has_no_meter_read() {
     let f = Fake::new();
@@ -1760,4 +1770,358 @@ fn a_late_start_with_under_two_seconds_of_audio_has_no_meter_read() {
         t += 1;
     }
     assert!(due.lock().unwrap().is_empty());
+}
+
+// ---------------------------------------------------------------- negative tests
+fn key_ons(f: &Fake) -> usize {
+    f.keys().iter().filter(|k| k.1).count()
+}
+/// The last outcome: its request, kind and refusal.
+fn last_outcome(core: &Core<Fake>) -> (u64, OutcomeKind, Option<TransmitRefusal>) {
+    let o = core.view().outcomes.last().cloned().unwrap();
+    (o.request_sequence, o.kind, o.refusal)
+}
+fn played(f: &Fake) -> bool {
+    f.log()
+        .iter()
+        .any(|(_, e)| matches!(e, Event::Play { len, .. } if *len > 0))
+}
+
+// Proves: TC-008-003
+#[test]
+fn a_refused_arm_leaves_the_state_and_both_causes() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    core.halt();
+    *f.0.capability.lock().unwrap() = Some(Capability::Unsupported);
+    assert_eq!(core.arm(7), Err(TransmitRefusal::TransmitUnsupported));
+    let v = core.view();
+    assert_eq!(
+        (v.arm_state, v.last_disarm_cause, v.last_arm_cause),
+        (
+            ArmState::Disarmed,
+            DisarmCause::Halt,
+            Some(ArmCause::Operator)
+        )
+    );
+    *f.0.capability.lock().unwrap() = Some(Capability::Available);
+    core.arm(7).unwrap();
+    *f.0.capability.lock().unwrap() = Some(Capability::Unavailable);
+    assert_eq!(core.arm(7), Err(TransmitRefusal::RadioUnavailable));
+    let v = core.view();
+    assert_eq!(
+        (v.arm_state, v.last_disarm_cause, v.last_arm_cause),
+        (ArmState::Armed, DisarmCause::Halt, Some(ArmCause::Operator))
+    );
+}
+
+// Proves: TC-008-003
+#[test]
+fn a_request_while_transmit_is_unsupported_is_refused_and_switches_off() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    *f.0.capability.lock().unwrap() = Some(Capability::Unsupported);
+    let o = core.submit(request(1, P, "CQ HB9BLA JN47"));
+    assert_eq!(o.refusal, Some(TransmitRefusal::TransmitUnsupported));
+    let v = core.view();
+    assert_eq!(
+        (v.arm_state, v.last_disarm_cause),
+        (ArmState::Disarmed, DisarmCause::Refused)
+    );
+    run(&mut core, &f, P + 1_000);
+    assert!(f.log().is_empty(), "{:?}", f.log());
+}
+
+// Proves: TC-008-003
+#[test]
+fn a_request_while_the_radio_is_unavailable_is_refused_and_switches_off() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    *f.0.capability.lock().unwrap() = Some(Capability::Unavailable);
+    let o = core.submit(request(1, P, "CQ HB9BLA JN47"));
+    assert_eq!(o.refusal, Some(TransmitRefusal::RadioUnavailable));
+    let v = core.view();
+    assert_eq!(
+        (v.arm_state, v.last_disarm_cause),
+        (ArmState::Disarmed, DisarmCause::Refused)
+    );
+    run(&mut core, &f, P + 1_000);
+    assert!(f.log().is_empty(), "{:?}", f.log());
+}
+
+// Proves: TC-008-003
+#[test]
+fn a_request_while_tune_is_on_is_refused_busy() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    core.start_tune(1500, 7).unwrap();
+    let o = core.submit(request(1, P, "CQ HB9BLA JN47"));
+    assert_eq!(o.refusal, Some(TransmitRefusal::Busy));
+    assert_eq!(core.view().last_disarm_cause, DisarmCause::Refused);
+    core.set_tune(false, 0).unwrap();
+    run(&mut core, &f, P + 1_000);
+    assert_eq!(key_ons(&f), 1, "only the tone was keyed");
+    assert!(!played(&f));
+}
+
+// Proves: TC-008-003
+#[test]
+fn a_start_that_cannot_be_planned_at_the_period_start_is_refused_unkeyed() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    f.at(P - 2_000);
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    *f.0.clock.lock().unwrap() = Some(ClockState::Unsynchronized);
+    run(&mut core, &f, P + 1_000);
+    assert!(!f.log().iter().any(|(_, e)| *e == Event::Open));
+    assert_eq!(key_ons(&f), 0);
+    assert_eq!(
+        last_outcome(&core),
+        (
+            1,
+            OutcomeKind::Refused,
+            Some(TransmitRefusal::ClockNotSynchronized)
+        )
+    );
+    assert_eq!(core.view().last_disarm_cause, DisarmCause::Refused);
+}
+
+// Proves: TC-008-003
+#[test]
+fn a_key_refused_for_a_switch_in_use_refuses_the_request_busy() {
+    let f = Fake::new();
+    *f.0.key_error.lock().unwrap() = Some(PttError::Busy);
+    let mut core = Core::new(f.clone());
+    f.at(P - 2_000);
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 1_000);
+    assert!(!played(&f));
+    assert_eq!(
+        last_outcome(&core),
+        (1, OutcomeKind::Refused, Some(TransmitRefusal::Busy))
+    );
+    let v = core.view();
+    assert_eq!(
+        (v.arm_state, v.last_disarm_cause, v.ptt),
+        (ArmState::Disarmed, DisarmCause::Refused, PttState::Released)
+    );
+}
+
+// Proves: TC-008-003
+#[test]
+fn a_start_that_cannot_be_planned_at_the_audio_delay_is_refused_and_released() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    f.at(P - 2_000);
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 100);
+    assert_eq!(f.keys(), vec![(P, true)]);
+    *f.0.clock.lock().unwrap() = Some(ClockState::Unsynchronized);
+    run(&mut core, &f, P + 1_000);
+    assert!(!played(&f));
+    assert_eq!(f.keys(), vec![(P, true), (P + 500, false)]);
+    assert_eq!(
+        last_outcome(&core),
+        (
+            1,
+            OutcomeKind::Refused,
+            Some(TransmitRefusal::ClockNotSynchronized)
+        )
+    );
+}
+
+// Proves: TC-008-005
+#[test]
+fn a_failed_transmission_drops_the_next_request_unkeyed() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    run(&mut core, &f, P + 3_000);
+    let next = core.submit(request(2, P + 30_000, "CQ HB9BLA JN47"));
+    assert_eq!(next.kind, OutcomeKind::Accepted);
+    *f.0.audio.lock().unwrap() = Some(AudioPoll::Failed(AudioError::DeviceLost));
+    core.tick();
+    assert_eq!(
+        last_outcome(&core),
+        (2, OutcomeKind::Refused, Some(TransmitRefusal::NotArmed))
+    );
+    *f.0.audio.lock().unwrap() = None;
+    run(&mut core, &f, P + 31_000);
+    assert_eq!(f.keys(), vec![(P, true), (P + 3_000, false)]);
+}
+
+// Proves: TC-111-013
+#[test]
+fn a_lost_capability_drops_an_unkeyed_request() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.arm(7).unwrap();
+    core.submit(request(1, P, "CQ HB9BLA JN47"));
+    *f.0.capability.lock().unwrap() = Some(Capability::Unavailable);
+    core.tick();
+    assert_eq!(
+        last_outcome(&core),
+        (1, OutcomeKind::Refused, Some(TransmitRefusal::NotArmed))
+    );
+    assert_eq!(core.view().last_disarm_cause, DisarmCause::DeviceLost);
+    *f.0.capability.lock().unwrap() = Some(Capability::Available);
+    run(&mut core, &f, P + 1_000);
+    assert!(f.keys().is_empty());
+}
+
+/// SetTune on is refused with `refusal`; no tone is keyed.
+fn tune_refused(core: &mut Core<Fake>, f: &Fake, refusal: TransmitRefusal) {
+    let ons = key_ons(f);
+    assert_eq!(core.start_tune(1500, 7), Err(refusal));
+    assert_eq!(key_ons(f), ons, "keyed");
+    assert!(!core.view().tune);
+}
+
+// Proves: TC-111-010
+#[test]
+fn tune_is_refused_while_the_switch_is_indeterminate() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.start_tune(1500, 7).unwrap();
+    *f.0.unkey_error.lock().unwrap() = Some(PttError::Timeout);
+    core.set_tune(false, 0).unwrap();
+    assert_eq!(core.view().ptt, PttState::Indeterminate);
+    tune_refused(&mut core, &f, TransmitRefusal::RadioUnavailable);
+}
+
+// Proves: TC-111-010
+#[test]
+fn tune_is_refused_after_a_failed_startup_release() {
+    let f = Fake::new();
+    *f.0.radio_tx.lock().unwrap() = Some(true);
+    *f.0.unkey_error.lock().unwrap() = Some(PttError::Timeout);
+    let mut core = Core::new(f.clone());
+    core.tick();
+    assert_eq!(core.view().startup_release, StartupRelease::Failed);
+    tune_refused(&mut core, &f, TransmitRefusal::RadioUnavailable);
+}
+
+// Proves: TC-111-010
+#[test]
+fn tune_is_refused_after_transmit_has_failed() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.fail_closed();
+    tune_refused(&mut core, &f, TransmitRefusal::RadioUnavailable);
+}
+
+// Proves: TC-111-010
+#[test]
+fn tune_is_refused_busy_while_a_tone_is_on() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    core.start_tune(1500, 7).unwrap();
+    assert_eq!(core.start_tune(1500, 7), Err(TransmitRefusal::Busy));
+    assert_eq!(key_ons(&f), 1);
+    assert!(core.view().tune, "the tone that is on stays");
+}
+
+// Proves: TC-111-010
+#[test]
+fn tune_is_refused_outside_the_offset_range() {
+    let f = Fake::new();
+    let mut core = Core::new(f.clone());
+    for hz in [199, 2_951] {
+        assert_eq!(
+            core.start_tune(hz, 7),
+            Err(TransmitRefusal::FrequencyOutOfRange),
+            "{hz}"
+        );
+    }
+    assert!(f.log().is_empty());
+}
+
+// Proves: TC-111-010
+#[test]
+fn tune_is_refused_busy_when_the_output_does_not_open() {
+    let f = Fake::new();
+    f.0.open_error.store(true, Ordering::SeqCst);
+    let mut core = Core::new(f.clone());
+    tune_refused(&mut core, &f, TransmitRefusal::Busy);
+}
+
+// Proves: TC-111-010
+#[test]
+fn tune_is_refused_when_the_key_is_not_confirmed() {
+    let f = Fake::new();
+    *f.0.key_error.lock().unwrap() = Some(PttError::Timeout);
+    let mut core = Core::new(f.clone());
+    assert_eq!(
+        core.start_tune(1500, 7),
+        Err(TransmitRefusal::RadioUnavailable)
+    );
+    assert!(!f.log().iter().any(|(_, e)| matches!(e, Event::Play { .. })));
+    assert_eq!(f.keys().last().map(|k| k.1), Some(false), "released");
+    assert!(!core.view().tune);
+}
+
+// Proves: TC-111-010
+#[test]
+fn tune_is_refused_busy_when_the_output_refuses_the_program() {
+    let f = Fake::new();
+    f.0.play_error.store(true, Ordering::SeqCst);
+    let mut core = Core::new(f.clone());
+    assert_eq!(core.start_tune(1500, 7), Err(TransmitRefusal::Busy));
+    assert_eq!(f.keys().last().map(|k| k.1), Some(false), "released");
+    assert!(!core.view().tune);
+}
+
+// While the radio may be keyed radio control takes no operation, no menu exchange and no
+// reservation; a key that cannot take the radio within its time sends nothing.
+// Proves: TC-009-001, TC-009-007
+#[test]
+fn a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing() {
+    let (actor, state) = radio();
+    let lease = actor
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    assert_eq!(
+        actor_ptt(&actor, true, Duration::from_millis(50)),
+        Err(PttError::Busy)
+    );
+    assert!(ptt_frames(&state.lock().unwrap()).is_empty());
+    assert!(!actor.ptt_indeterminate());
+    drop(lease);
+    actor_ptt(&actor, true, Duration::from_secs(1)).unwrap();
+    let keyed = state.lock().unwrap().writes.len();
+    let request = cat::Request {
+        authority: actor.snapshot().unwrap().authority,
+        request_id: "keyed".into(),
+        operation: cat::Operation::ReadMode,
+        deadline: Instant::now() + Duration::from_secs(1),
+        cancelled: Arc::new(AtomicBool::new(false)),
+    };
+    assert_eq!(actor.execute(request), Err(cat::Error::Busy));
+    for command in [
+        cat::SetupCommand::Read(cat::setup::Setting::UsbSend),
+        cat::SetupCommand::EnsureAgc(cat::setup::Agc::Slow),
+    ] {
+        assert_eq!(
+            actor.setup(command, Instant::now() + Duration::from_millis(100)),
+            Err(cat::Error::Busy)
+        );
+    }
+    assert!(matches!(
+        actor.reserve_transition(Instant::now() + Duration::from_secs(1)),
+        Err(cat::Error::Busy)
+    ));
+    assert_eq!(
+        state.lock().unwrap().writes.len(),
+        keyed,
+        "nothing is sent while the radio may be keyed"
+    );
+    actor_ptt(&actor, false, Duration::from_secs(1)).unwrap();
 }

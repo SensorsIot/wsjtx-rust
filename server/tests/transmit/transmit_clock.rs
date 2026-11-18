@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-009-05, CL-009-02; TC-006-003. The station clock state from its own SNTP
+// The station clock state from its own SNTP
 // measurement: RFC 4330/5905 offset arithmetic (hand-computed timestamps), reply
 // validation, server fallback against fake responders on 127.0.0.1, the
 // synchronized/unsynchronized/unknown rule and PlanTransmitStart admission.
@@ -29,7 +29,7 @@ fn reply(first: u8, stratum: u8, origin: u64, receive: u64, transmit: u64) -> Ve
 }
 const SERVER_V4: u8 = 0b00_100_100; // LI 0, version 4, mode 4
 
-// Proves: TC-006-003.
+// Proves: TC-006-003
 #[test]
 fn offset_and_round_trip_follow_the_rfc_formula() {
     // T1 100.000 s, T2 100.600, T3 100.601, T4 100.021 (hand calculation):
@@ -57,7 +57,7 @@ fn offset_and_round_trip_follow_the_rfc_formula() {
     );
 }
 
-// Proves: TC-006-003.
+// Proves: TC-006-003
 #[test]
 fn invalid_replies_are_refused() {
     let (t1, t2, t3, t4) = (ts(100_000), ts(100_010), ts(100_011), ts(100_020));
@@ -140,7 +140,7 @@ fn sntp(servers: &[&str]) -> Sntp {
     }
 }
 
-// Proves: TC-006-003.
+// Proves: TC-006-003
 #[test]
 fn servers_are_tried_in_order_until_one_answers() {
     assert_eq!(
@@ -190,7 +190,7 @@ fn jumping_now() -> SystemTime {
     }
 }
 
-// Proves: TC-006-003.
+// Proves: TC-006-003
 #[test]
 fn a_clock_step_during_the_exchange_does_not_distort_the_offset() {
     // The responder answers 3 s ahead of the request's transmit timestamp. If the
@@ -224,7 +224,7 @@ fn state_at(m: Option<&Measurement>, (now, system): (Instant, SystemTime)) -> Cl
     state(m, now, system)
 }
 
-// Proves: TC-006-003.
+// Proves: TC-006-003
 #[test]
 fn clock_state_rule_and_transmit_admission() {
     let taken = Instant::now();
@@ -344,7 +344,7 @@ impl Source for Scripted {
     }
 }
 
-// Proves: TC-006-003.
+// Proves: TC-006-003
 #[test]
 fn monitor_measures_off_the_reading_thread_and_keeps_the_last_answer() {
     let (send, receive) = mpsc::channel();
@@ -373,7 +373,7 @@ fn monitor_measures_off_the_reading_thread_and_keeps_the_last_answer() {
     assert_eq!(quiet.latest().map(|m| m.offset_ms), Some(1));
 }
 
-// Proves: TC-006-003.
+// Proves: TC-006-003
 #[test]
 fn server_override_list_is_comma_separated_and_may_be_empty() {
     assert_eq!(

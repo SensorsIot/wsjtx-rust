@@ -1,4 +1,4 @@
-"""TC-DOC-003..004: level 2, local fixtures plus the real pinned OMG validator."""
+"""TR-02: level 2, local fixtures plus the real pinned OMG validator."""
 import contextlib
 import importlib.util
 import io
@@ -17,6 +17,7 @@ spec.loader.exec_module(tool)
 
 class ValidatorTests(unittest.TestCase):
     def test_actual_pilot_rejects_files_that_stitch_invalid_syntax(self):
+        """TV-115 (TR-02): files that only stitch into valid syntax are refused, each named."""
         cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
         with tempfile.TemporaryDirectory() as directory:
             first, second = (Path(directory) / name for name in ("A.sysml", "B.sysml"))
@@ -31,8 +32,8 @@ class ValidatorTests(unittest.TestCase):
                         self.assertIn(f"{second}:", result.stdout)
                         self.assertNotIn("validation passed", result.stdout)
 
-    # Harness #15: file order cannot hide a valid reference or its real diagnostic.
     def test_actual_pilot_resolves_complete_graph_and_keeps_file_diagnostics(self):
+        """TV-116 (TR-02): file order hides neither a valid reference nor its diagnostic."""
         cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
         with tempfile.TemporaryDirectory() as directory:
             consumer = Path(directory) / "AConsumer.sysml"
@@ -50,8 +51,9 @@ class ValidatorTests(unittest.TestCase):
             self.assertIn("Couldn't resolve reference", result.stdout)
             self.assertNotIn("validation passed", result.stdout)
 
-    # Proves: CL-014-04; TC-DOC-003. This invokes the real parser/resolver, not a mock.
+    # This invokes the real parser/resolver, not a mock.
     def test_actual_pilot_accepts_valid_and_rejects_syntax_and_reference(self):
+        """TV-117 (TR-02): the Pilot accepts a valid model and refuses a syntax error and an unresolved name."""
         cache = Path.home() / ".cache/wsjtx-rust/sysml-tools"
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "case.sysml"
@@ -67,8 +69,8 @@ class ValidatorTests(unittest.TestCase):
                     self.assertEqual(result.returncode, expected_status, result.stdout + result.stderr)
                     self.assertIn(diagnostic, result.stdout)
 
-    # Proves: CL-014-04; TC-DOC-004.
     def test_missing_tool_never_reports_semantic_pass(self):
+        """TV-118 (TR-02): a missing Java or JAR never reports a semantic pass."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model = root / "valid.sysml"
@@ -79,8 +81,8 @@ class ValidatorTests(unittest.TestCase):
             self.assertIn("Semantic validator unavailable", errors.getvalue())
             self.assertNotIn("validation passed", output.getvalue())
 
-    # Proves: CL-014-04; TC-DOC-004.
     def test_empty_or_corrupt_cached_library_is_refused(self):
+        """TV-119 (TR-02): an empty or corrupt cached library is refused."""
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory)
             packages = tool.json.loads(tool.TOOLCHAIN.read_text(encoding="utf-8"))

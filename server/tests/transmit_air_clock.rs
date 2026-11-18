@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-043-02, CL-043-03, CL-009-05; TC-043-001, TC-043-002, TC-092-001, TC-092-002,
-// TC-092-003. The clock from the air is the reference (#92, operator 2026-11-09): votes of
+// The clock from the air is the reference: votes of
 // hand-written DT distributions, the evidence rule (4 stations, 80 % on one side beyond
 // 0.1 s), the move toward the middle (at most 1000 ms per period), never unknown, Tx refused
 // only beyond 1 s, system clock steps, the SNTP state only warning, and a closed receive
@@ -48,8 +47,9 @@ fn crowd(shift: i64) -> Vec<i64> {
     CROWD.iter().map(|d| d + shift).collect()
 }
 
-// Proves: TC-043-001, TC-092-001. One vote per station (the median of its raw DT plus the
+// One vote per station (the median of its raw DT plus the
 // correction), the median of all votes without trimming, plus and minus beyond 100 ms.
+// Proves: TC-043-001, TC-092-001
 #[test]
 fn votes_median_and_sides_of_known_dt_distributions() {
     let at = |raw: &[i64], correction: i64| {
@@ -117,7 +117,7 @@ fn standard(from: &str) -> Fields {
         exchange: Exchange::Grid("FN42".into()),
     }
 }
-// Proves: TC-043-001.
+// Proves: TC-043-001
 #[test]
 fn observations_exclude_own_echo_weak_and_implausible_decodes() {
     assert_eq!(sender(&standard("K1ABC")), Some("K1ABC"));
@@ -165,7 +165,8 @@ fn observations_exclude_own_echo_weak_and_implausible_decodes() {
     );
 }
 
-// Proves: TC-043-001. The crowds of TC-043-001 over successive FT8 periods.
+// The crowds of TC-043-001 over successive FT8 periods.
+// Proves: TC-043-001
 #[test]
 fn crowds_move_the_correction_to_the_middle_and_keep_it() {
     // 2 s ahead: median +2025 -> -1000 (unsynchronized, 2025 > 1000); votes then median
@@ -255,7 +256,8 @@ fn crowds_move_the_correction_to_the_middle_and_keep_it() {
     assert_eq!(air.applied_ms(), -1000);
 }
 
-// Proves: TC-043-001. System clock steps with correction -2000 ms.
+// System clock steps with correction -2000 ms.
+// Proves: TC-043-001
 #[test]
 fn system_clock_steps_keep_station_utc_continuous() {
     let corrected = || {
@@ -294,7 +296,8 @@ fn system_clock_steps_keep_station_utc_continuous() {
     assert!(plan_start(Mode::Ft8, 0, Synchronized, 0, 48000).is_ok());
 }
 
-// Proves: TC-092-001. The evidence rule, case by case from start (correction 0).
+// The evidence rule, case by case from start (correction 0).
+// Proves: TC-092-001
 #[test]
 fn evidence_rule_of_the_clock_from_the_air() {
     let fresh = |raw: &[i64]| {
@@ -446,8 +449,9 @@ fn heard(clock: &StationClock, base: (i64, i64), k: i64, period_ms: i64, raw: &[
     });
 }
 
-// Proves: TC-043-001. The 2 s ahead crowd gives the same correction and state with SNTP
+// The 2 s ahead crowd gives the same correction and state with SNTP
 // +12 ms, -1900 ms and none (never applied); only the warning differs.
+// Proves: TC-043-001
 #[test]
 fn sntp_is_never_applied_and_only_warns() {
     let mut seen = vec![];
@@ -499,10 +503,11 @@ fn closed_loop(offset: i64, periods: i64) -> (Vec<i64>, Vec<ClockState>) {
     }
     (applied, states)
 }
-// Proves: TC-043-002. Hand-computed: -2 s settles at -2000 (2025, then 1025 -> -1000 each,
+// Hand-computed: -2 s settles at -2000 (2025, then 1025 -> -1000 each,
 // then mixed); +1.5 s at +1425 (11 crowd plus the bad clock at -1425 -> +1000, then -425 ->
 // +425, then 4 plus 4 minus); +0.6 s at +550 (12 of 13 minus, 7th vote -550, then mixed); 0
 // keeps 0 (5 of 13 plus); +2 s and +3 s decode at most three stations: 0, synchronized.
+// Proves: TC-043-002
 #[test]
 fn applied_correction_converges_without_oscillation() {
     for (offset, settled_at) in [(-2000, -2000), (1500, 1425), (600, 550)] {
@@ -547,10 +552,11 @@ fn applied_correction_converges_without_oscillation() {
     assert_eq!(history, [-2025, 0, -2025, 0, -2025, 0]);
 }
 
-// Proves: TC-092-002. The 10 m FT4 refusals of 2026-11-09 replayed: SNTP +525 ms
+// The live 10 m FT4 refusals replayed: SNTP +525 ms
 // (unsynchronized), four at -339, one at -50 and one at +100 (4 of 6 = 66 %): no change;
 // five at -339 and one at +100 (5 of 6 = 83 %): median -339, +339; then 2 and no stations:
 // +339 kept; synchronized and every start planned in each window, pc_clock_off throughout.
+// Proves: TC-092-002
 #[test]
 fn replay_of_the_ft4_refusals_of_2026_11_09() {
     let ntp = Monitor::new();
@@ -595,9 +601,10 @@ fn aged(offset_ms: i64, now: Instant, system: SystemTime, age: Duration) -> Meas
         system: system - age,
     }
 }
-// Proves: TC-092-003. The three situations on the station clock with a fake SNTP monitor:
+// The three situations on the station clock with a fake SNTP monitor:
 // votes correct on every SNTP state, the warnings by TransmitClock's 500 ms / 600 s / 100 ms,
 // SNTP never applied, steps leave a correction of 0 at 0.
+// Proves: TC-092-003
 #[test]
 fn three_situations_correction_state_and_warnings() {
     // SNTP +12 (synchronized): four at +1500 -> -1000, -1500, stations_off.
@@ -728,7 +735,7 @@ fn three_situations_correction_state_and_warnings() {
 // The real Windows Time service query (W32Time, query rights only, no administrator rights)
 // reads a state on the development PC, where Windows Time runs; a query asking for more
 // rights than a user holds (for example SERVICE_START) fails and reads unknown.
-// Proves: CL-043-03, TC-092-003.
+// Proves: TC-092-003
 #[cfg(windows)]
 #[test]
 fn windows_time_service_state_is_read_without_administrator_rights() {
@@ -748,7 +755,8 @@ impl Source for Silent {
         None
     }
 }
-// Proves: TC-092-003. The measuring thread records whether its rounds asked a server.
+// The measuring thread records whether its rounds asked a server.
+// Proves: TC-092-003
 #[test]
 fn rounds_record_whether_a_server_was_asked() {
     let asking = Monitor::start(Box::new(Silent), Duration::from_millis(5)).unwrap();

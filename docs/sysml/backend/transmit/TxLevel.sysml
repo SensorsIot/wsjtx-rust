@@ -1,148 +1,237 @@
 package WstxTxLevel {
     private import ScalarValues::*;
-    private import WstxRequirements::ImplementationState;
-    private import WstxRequirements::AutomationState;
-    private import WstxRequirements::'FR-009';
-    private import WstxTransmit::'CL-044-13';
-    private import WstxTransmit::'CL-044-14';
-    private import WstxTransmitPart::TransmitService;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::TestedBy;
-    private import ModelNotes::FollowsSource;
     private import RequirementDerivation::*;
-    attribute def TxLevel {
-        @FollowsSource {
-            reference = "Icom IC-7300 Full Manual A7292-4EX-12a section 19, command table: "
-                + "15 11 Po (0000 0 %, 0143 50 %, 0213 100 %), 15 12 SWR (0000 1.0, 0048 1.5, "
-                + "0080 2.0, 0120 3.0), 15 13 ALC (0000..0120 the ALC zone); data two BCD bytes "
-                + "0000..0255";
-        }
-        doc /* The Tx level of the station's Tx audio, set by Set level, by a manual level or by
-             the correction of the meter reads, and pushed as radio.tx_level. */
-    }
-    attribute txLevel : TxLevel;
-    satisfy 'CL-044-12' by txLevel;
-    satisfy 'CL-044-13' by txLevel;
-    satisfy 'CL-044-14' by txLevel;
+    private import WstxRequirements::'FR-008';
+    private import WstxTransmitPart::TransmitService;
+    private import WstxTransmitControl::*;
+    private import WstxAudioStreams::PlayProgram;
+    private import WstxAudioStreams::SetScale;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::CodeDiffers;
 
     requirement 'CL-044-12' {
         subject transmit : TransmitService;
-        doc /* The Tx level MUST be a digital attenuation of the station's Tx audio, -40..0 dB in
-             whole dB below the playback scale (WstxTransmit TransmitTiming playbackScale),
-             stored per radio profile in tx-level.json of the profile directory
-             {schema_version 1, level_db}; storing it does not advance the profile revision and
-             so does not reconnect CAT. */
-        doc /* Without a stored level, or with an invalid file, it is 0 dB. */
-        doc /* Set level is the default way to set it: POST /radio/tx-level {v, profile_id,
-             boot_id, command_id, action set_level, tx_offset_hz} (transmit authority as Tune: a
-             current CL-022 grant, otherwise 401 unauthorized; malformed 400 invalid_request;
-             reply 200 {v, profile_id, boot_id, command_id, accepted, refusal}, refused busy
-             while a transmission, a pending request, a Tune or another run is active, otherwise
-             with the transmit refusal). */
-        doc /* Set level arms when disarmed and disarms again at its end, starts Tune at -30 dB
-             and, every 400 ms, reads the meters and decides: ALC above 0 or Po above the
-             profile power settings.radio.power_limit_pct (1..100; absent: no limit but the
-             radio's own RF power setting) stores one step below the current level, never below
-             -40 dB (result stored); 0 dB reached without either stores 0 dB (result
-             max_without_alc); otherwise one step up. */
-        doc /* SWR at or above 3.0 (raw 0120) stops it without storing (result high_swr); an ALC
-             read refused FA stops it without storing (result no_alc). */
-        doc /* It always ends with Tune stopped. */
-        doc /* HALT, the Tune limit or any other loss of Tune aborts it without storing (result
-             aborted), and every failure leaves the prior level. */
-        doc /* A manual level (action manual, level_db -40..0) exists only after the radio
-             refused the ALC read (otherwise refused alc_available). */
-        doc /* A transmission takes the level at its audio start and keeps it to its end; a
-             running Tune follows a level change at once. */
-        doc /* A meter read is one burst of reads FE FE <address> E0 15 13 FD, 15 11, 15 12 (one
-             reply each; FA: that meter is missing), bounded at 400 ms in total, admitted only
-             while this station holds the transmit hold (otherwise Busy with no byte). It takes
-             no lease, so no operation or poll can start through it and it cannot delay a key; a
-             PTT exchange cancels it at once, so the 250 ms halt bound holds; a timeout or cancel
-             leaves the connection open. While Tune runs outside Set level the station reads the
-             meters once per second on its own thread. Reads only: this slice writes no radio
-             setting. */
+        doc /* Transmit MUST play its audio at the audio drive of the station's band, set by
+             the operator in manual and found with the Tune tone in automatic (TxLevel,
+             LevelFinding). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn {
-            module = "server/src/radio_level.rs; server/src/radio_control/actor.rs; server/src/radio_control/executor.rs; server/src/radio_control/setup.rs; server/src/transmit/service.rs; server/src/transmit_http.rs; server/src/transmit/playback.rs; server/src/profile.rs";
+    }
+    #derivation connection { end #original ::> 'FR-008'; end #derive ::> 'CL-044-12'; }
+
+    attribute def TxLevel {
+        doc /* The audio drive: how far the audio of the station is turned down, in whole
+             dB from levelMinDb to levelMaxDb.
+             The scale of a program (PlayProgram::scale) is playbackScale times 10 to
+             the power of the level divided by 20.
+             The level that counts is the entry of the station's band (StationBand) in
+             TransmitConfig::levels, taken at station start, from every TransmitProfile
+             and at every StationBand. While the band is unknown or has no entry, the
+             level that counted before stays; at station start that is levelMaxDb.
+             TxLevelStatus::stored is false for a band without an entry.
+             A transmission takes the level at the start of its audio and keeps it to
+             its end. The Tune tone follows a change of the level at once (SetScale).
+             With LevelMode manual the level is the operator's: transmit finds none and
+             corrects none. With automatic, transmit finds it with the Tune tone
+             (LevelFinding) and corrects it in each transmission (LevelMonitor). While
+             the radio does not report its ALC (TxLevelStatus::alc unavailable),
+             transmit works as with manual.
+             A level transmit finds is stored by giving it as LevelFound for the
+             station's band. It counts only when it has come back in a
+             TransmitProfile: one that does not come back is not taken, and the level
+             before it stays.
+             While the tone is on outside a finding and TransmitProfile::levelManaged is
+             true, transmit asks radio control for the meters every tuneReadMs and
+             shows them as TxLevelStatus::meters and TxLevelStatus::alc. */
+        attribute levelMinDb : Integer = -40;
+        attribute levelMaxDb : Integer = 0;
+        attribute playbackScale : Real = 0.5 {
+            doc /* The scale at the level 0 dB, for a waveform with a peak of 1. */ }
+        attribute tuneReadMs : Integer = 1000;
+        attribute meterReadMaxMs : Integer = 400 {
+            doc /* Transmit waits this long for one reading of the meters. */ }
+    }
+
+    attribute def LevelFinding {
+        doc /* Finding the level with the Tune tone.
+             With LevelMode automatic and TransmitProfile::levelManaged true, a tone
+             that is switched on (TuneTone) first finds the level of the station's band.
+             The tone starts at startDb. Every settleMs transmit asks radio control for
+             the meters and decides by the first of these that holds.
+             No ALC value: the finding ends with noAlc.
+             An SWR of swrFaultX10 or more: it ends with highSwr.
+             An ALC above 0: the level one step below the present one, and not below
+             TxLevel::levelMinDb, is found; the result is stored.
+             The present level is TxLevel::levelMaxDb: that level is found; the result
+             is maxWithoutAlc.
+             Otherwise the level goes one step up and the tone follows.
+             A reading that fails ends the finding with the failure of the reading, and
+             the end of the tone (TuneTone) ends it with aborted; neither finds a level.
+             A level found is given as LevelFound, and the tone goes on at it; when it
+             does not come back as saved, the result is storageUnavailable and the tone
+             goes on at the level before. After a finding without a level found the
+             tone goes on at the level that counted before it.
+             A level found ends LevelWarning::swrFault and the ceiling of
+             LevelMonitor.
+             While the level is found, TxLevelStatus::levelDb is the level of the
+             tone.
+             The finding changes neither the transmit state nor its causes, and sends
+             the radio no setting. */
+        attribute startDb : Integer = -30;
+        attribute settleMs : Integer = 400;
+        attribute swrFaultX10 : Integer = 30 {
+            @CodeDiffers {
+                what = "The code compares the raw SWR meter count of the IC-7300 with 120 "
+                    + "(SWR_FAULT_RAW in server/src/radio_level.rs), which swr_x10 reads "
+                    + "as 30.";
+            }
         }
     }
-    #derivation connection {
-        end #original ::> 'FR-009';
-        end #derive ::> 'CL-044-12';
-    }
+
     verification 'TC-044-013' {
-        doc /* Meter burst under the transmit hold; level timing
-             Setup: the actual CAT actor and executor on a scripted IC-7300 transport (echo of
-             each frame, hand-written replies); the actual transmit core on a virtual clock. No
-             radio or RF.
-             (a) A read without the hold, then with it: Busy and no byte, then exactly the
-             frames 15 13, 15 11, 15 12, and the release still works.
-             (b) ALC refused FA: ALC missing, Po read.
-             (c) A timeout, then a stalled read released by PTT off: the connection stays Ready,
-             the release returns within 250 ms and the read returns Cancelled.
-             (d) Raw values through the scales: Po 0143 50 %, 0213 100 %, SWR 0048 1.5, 0080
-             2.0, 0120 3.0.
-             (e) A level set before and during a transmission and during Tune: the level reaches
-             the hardware immediately before the play, not during the transmission, and at once
-             during Tune; 0 dB is the playback scale, -20 dB a tenth of it. */
+        doc /* The level in a transmission and in a tone. */
+        subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-044-12';
+        objective { verify 'CL-044-12'; }
+        @TestedBy {
+            test = "server/tests/transmit_service.rs::"
+                + "tx_level_applies_at_audio_start_and_live_only_in_tune";
         }
-        @TestedBy { test = "server/src/radio_level_tests.rs; server/tests/transmit_service.rs"; }
     }
+
     verification 'TC-044-014' {
-        doc /* Set level, manual level, push and route
-             Setup: the actual router, Recording owner and transmit owner on a recording
-             hardware double, the CAT actor on a scripted IC-7300 whose ALC follows the double's
-             level. No radio or RF.
-             (a) The decision table: up, stored one below, -40 floor, power limit 49/50 % at Po
-             50 %, max_without_alc, no_alc, high_swr.
-             (b) A run with the ALC rising at -27 dB: levels -30, -29, -28, -27, -28 stored, Tune
-             off, disarmed, the profile revision unchanged, the next Tune at -28, no setter
-             frame.
-             (c) HALT during a run: aborted, no file, prior level, Tune off, disarmed.
-             (d) A radio refusing the ALC read, then the manual level, also during Tune: no_alc,
-             alc unavailable, the slider action refused alc_available before, range refused,
-             -10 stored, Tune follows.
-             (e) Stored and invalid level files at startup: -17 applied, invalid files ignored.
-             (f) Ticks with and without Tune: no read without Tune, one burst per second with it,
-             exact event keys and values.
-             (g) Malformed requests and a request without a grant: 400 and 401, Tune stays off.
-             (h) The profile field: absent by default, saved, 0 and 101 refused. */
+        doc /* Finding the level with the Tune tone, and the stored level. */
+        subject transmit : TransmitService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-044-12';
-            verify 'CL-044-13';
+        objective { verify 'CL-044-12'; }
+        @TestedBy {
+            test = "server/src/radio_level_tests.rs::"
+                + "assistant_decides_from_alc_power_limit_and_swr; "
+                + "server/src/radio_level_tests.rs::"
+                + "set_level_steps_up_backs_off_one_step_stores_and_stops_tune; "
+                + "server/src/radio_level_tests.rs::"
+                + "set_level_pushes_the_level_it_is_playing_at_every_step; "
+                + "server/src/radio_level_tests.rs::halt_aborts_set_level_without_storing; "
+                + "server/src/radio_level_tests.rs::"
+                + "a_radio_without_alc_stops_the_assistant_and_opens_the_manual_level; "
+                + "server/src/radio_level_tests.rs::"
+                + "stored_level_is_loaded_at_startup_and_bad_files_are_ignored; "
+                + "server/src/radio_level_tests.rs::"
+                + "set_level_that_cannot_be_stored_leaves_the_prior_level; "
+                + "server/src/radio_level_tests.rs::"
+                + "tune_meters_are_read_once_a_second_and_pushed_as_one_event";
         }
-        @TestedBy { test = "server/src/radio_level_tests.rs"; }
     }
-    verification 'TC-044-016' {
-        doc /* Set level on HB9BLA
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator's
-             consent, a dummy load or the station antenna, RF power set low by the test before
-             the first Tx (CI-V 14 0A, value 0003, with the station stopped and idle, because it
-             holds COM3; read back; the operator's value is restored afterwards only if the
-             radio still reads what the test set, otherwise it is left alone and reported). The
-             evidence is the CI-V readback and the radio.tx_level frames, not the radio's
-             display. Not run by the automated gate.
-             (a) Read 15 13, 15 11, 15 12 during Tune over CI-V: the values read back agree with
-             the radio.tx_level frames and the manual's scales.
-             (b) Press Set level: the run ends with the ALC just below rising, the level stored
-             and Tune off.
-             (c) Press HALT during a second run: it stops at once and keeps the stored level. */
-        @TestLevel { cost = 5; location = TestLocation::station; }
-        @Automation { run = AutomationState::planned; method = "manual"; }
-        objective {
-            verify 'CL-044-12';
-            verify 'CL-044-13';
+
+    requirement 'CL-044-14' {
+        subject transmit : TransmitService;
+        doc /* Transmit MUST read the radio's meters once in every transmission, correct
+             the audio drive in automatic by at most one step for the next one, report
+             trouble that lasts, and halt on an SWR fault (LevelMonitor). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-008'; end #derive ::> 'CL-044-14'; }
+
+    attribute def LevelMonitor {
+        doc /* What transmit does with the meters during a transmission.
+             Transmit asks radio control for the meters once in each transmission, when
+             half of the audio that was left at the start of the audio has played. It
+             asks for none when less than meterMinRemainingMs was left, for a tone, and
+             while the level is found.
+             The transmission, its audio and its release do not wait for the reading,
+             and a reading that fails changes nothing.
+             With LevelMode automatic the level moves by one step at most from a
+             reading; with manual, or while the radio does not report its ALC, it does
+             not move.
+             Down, and not below TxLevel::levelMinDb: the ALC is above alcLimit.
+             Up, and not above TxLevel::levelMaxDb: the ALC is 0, the output power is
+             below stepUpBelowPct percent of the band's output power
+             (TransmitProfile::powerPct), and the level above is below the ceiling.
+             Without an output power for the band the level does not go up.
+             A level that is lowered by the reading directly after the one that raised
+             it is the ceiling: the level does not go up to it again. The ceiling ends
+             with a level found with the Tune tone, with another output power and with
+             a station start.
+             The changed level is stored for the station's band and taken as TxLevel
+             says; the transmission that plays keeps its level.
+             In both modes a LevelWarning is shown from the reading that makes
+             persistentReadings readings in a row with its condition, until the first
+             reading without it: alcHigh for an ALC of alcHigh or more, poLow for an
+             output power below poLowPct percent of the band's output power, swrHigh for an
+             SWR of swrHighX10 or more.
+             In both modes an SWR of LevelFinding::swrFaultX10 or more is a fault:
+             transmit halts as for a Halt, so that the cause is halt, and shows
+             swrFault until a reading with a lower SWR or a level found with the Tune
+             tone; a reading without an SWR value leaves it. */
+        attribute meterMinRemainingMs : Integer = 2000;
+        attribute alcLimit : Integer = 8 {
+            doc /* In percent of the radio's ALC zone
+                 (WstxRadioProperties::MeterReadings::alc), as alcHigh. */
+            @CodeDiffers {
+                what = "The code compares the raw ALC meter count of the IC-7300, whose "
+                    + "zone ends at 120, with 10 (ALC_LIMIT_RAW in server/src/radio_level.rs).";
+            }
+        }
+        attribute alcHigh : Integer = 50 {
+            @CodeDiffers {
+                what = "The code compares the raw ALC meter count of the IC-7300, whose "
+                    + "zone ends at 120, with 60 (ALC_HIGH_RAW in server/src/radio_level.rs).";
+            }
+        }
+        attribute stepUpBelowPct : Integer = 80;
+        attribute poLowPct : Integer = 50;
+        attribute swrHighX10 : Integer = 20 {
+            @CodeDiffers {
+                what = "The code compares the raw SWR meter count of the IC-7300 with 80 "
+                    + "(SWR_HIGH_RAW in server/src/radio_level.rs), which swr_x10 reads "
+                    + "as 20.";
+            }
+        }
+        attribute persistentReadings : Integer = 3;
+    }
+
+    verification 'TC-044-017' {
+        doc /* The reading of a transmission and the correction of the level. */
+        subject transmit : TransmitService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-044-14'; }
+        @TestedBy {
+            test = "server/src/radio_level_tests.rs::"
+                + "monitor_decides_one_bounded_step_and_warns_only_when_persistent; "
+                + "server/tests/transmit_service.rs::"
+                + "the_meter_read_is_due_once_in_the_middle_of_each_transmission; "
+                + "server/tests/transmit_service.rs::"
+                + "a_late_start_with_under_two_seconds_of_audio_has_no_meter_read; "
+                + "server/src/radio_level_tests.rs::"
+                + "one_burst_corrects_for_the_next_transmission_only_and_warns_when_persistent; "
+                + "server/src/radio_level_tests.rs::"
+                + "a_clear_swr_fault_stops_transmitting_and_keeps_automation_off; "
+                + "server/src/radio_level_tests.rs::a_reading_without_swr_keeps_the_fault_entry; "
+                + "server/src/radio_level_tests.rs::"
+                + "nothing_is_read_for_a_transmission_while_set_level_runs; "
+                + "server/src/radio_level_tests.rs::"
+                + "startup_connects_the_meter_call_to_one_burst; "
+                + "server/src/transmit/transmit_http_tests.rs::"
+                + "the_meter_call_of_the_transmit_step_reaches_the_sink; "
+                + "server/src/radio_level_tests.rs::"
+                + "a_correction_that_cannot_be_stored_leaves_the_level; "
+                + "server/src/radio_level_tests.rs::"
+                + "alc_zero_and_above_the_limit_on_neighbouring_levels_settle_on_the_lower; "
+                + "server/src/radio_level_tests.rs::"
+                + "a_lowering_without_a_step_up_before_it_keeps_the_step_up; "
+                + "server/src/radio_level_tests.rs::"
+                + "the_live_alc_comes_down_to_the_limit_without_a_warning_and_stays; "
+                + "server/src/radio_level_tests.rs::set_levels_stop_and_the_correction_agree; "
+                + "server/src/radio_level_tests.rs::"
+                + "the_ceiling_ends_with_a_changed_profile_power_and_a_stored_set_level";
         }
     }
 }

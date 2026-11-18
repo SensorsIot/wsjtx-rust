@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxContest (#63): the contest profiles from the official rules and their schedule, the
+//! WstxStrategies::ContestTable: the contest profiles from the official rules and their schedule, the
 //! selection of a contest and its evaluation. A new contest is one more entry of PROFILES; a
 //! profile holds rule facts only, its rule enums hold the behaviour.
 use crate::contact::{Activity, civil, parse_utc};
@@ -69,7 +69,7 @@ impl Multipliers {
         }
     }
 }
-/// Which logged QSOs a contest counts at all (WstxContest::ContestLog).
+/// Which logged QSOs a contest counts at all (WstxContestRanking::ContestCount).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Counted {
     Ft8Ft4,
@@ -523,8 +523,9 @@ impl PartialEq for Selection {
         self.profile.id == o.profile.id && (self.start_ms, self.end_ms) == (o.start_ms, o.end_ms)
     }
 }
-/// The longest period a selection accepts.
-const PERIOD_MAX_MS: i64 = 31 * DAY_MS;
+/// WstxStrategies::ContestSelection::periodDaysMax: the longest period a selection accepts.
+const PERIOD_DAYS_MAX: i64 = 31;
+const PERIOD_MAX_MS: i64 = PERIOD_DAYS_MAX * DAY_MS;
 /// A real instant "YYYY-MM-DDTHH:MMZ".
 fn minute(v: &Value) -> Option<i64> {
     let text = v.as_str().filter(|t| t.len() == 17 && t.is_ascii())?;
@@ -672,7 +673,7 @@ pub(crate) struct Qso {
     pub mode: String,
     pub ms: i64,
 }
-/// WstxContest::ContestLog: the log inside the period, by the profile's rules.
+/// WstxContestRanking::ContestCount: the log inside the period, by the profile's rules.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Log {
     keys: HashSet<String>,

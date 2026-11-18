@@ -11,16 +11,40 @@ use native_fixture::{NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES};
 #[path = "model_values.rs"]
 mod model_values;
 
-/// A value of WstxModemDecode::DecodeBudgets, read from the model.
+/// A value of WstxDecode::DecodeBudgets, read from the model.
 #[cfg(all(windows, not(debug_assertions)))]
 fn decode_budget(feature: &str) -> u64 {
-    let name = format!("WstxModemDecode::DecodeBudgets::{feature}");
+    let name = format!("WstxDecode::DecodeBudgets::{feature}");
     match model_values::Model::load()
         .number_with_unit(&name)
         .unwrap_or_else(|e| panic!("model value {e}"))
     {
         Some(model_values::Number::Integer(value)) if value >= 0 => value as u64,
         other => panic!("model value {name}: not a nonnegative integer: {other:?}"),
+    }
+}
+/// A value of WstxLiveReceive::WindowSchedule in milliseconds, read from the model.
+#[cfg(all(windows, not(debug_assertions)))]
+fn window_schedule_ms(feature: &str) -> f64 {
+    let name = format!("WstxLiveReceive::WindowSchedule::{feature}");
+    match model_values::Model::load()
+        .number_with_unit(&name)
+        .unwrap_or_else(|e| panic!("model value {e}"))
+    {
+        Some(model_values::Number::Integer(value)) => value as f64,
+        other => panic!("model value {name}: not an integer: {other:?}"),
+    }
+}
+/// The time within which a published row is painted, read from the model.
+#[cfg(all(windows, not(debug_assertions)))]
+fn paint_ms() -> f64 {
+    let name = "WstxBandActivityPane::Promptness::paintMs";
+    match model_values::Model::load()
+        .number_with_unit(name)
+        .unwrap_or_else(|e| panic!("model value {e}"))
+    {
+        Some(model_values::Number::Integer(value)) => value as f64,
+        other => panic!("model value {name}: not an integer: {other:?}"),
     }
 }
 use source::{SampleSource, SourceDescriptor, SourceError, SourcePoll, SourceTiming};
@@ -172,7 +196,6 @@ impl recording::LiveInput for Input {
     }
 }
 
-// Proves: CL-008-02/03/05; CL-010-05/07/08; TC-009-004.
 // Cost2: isolated real HTTP server + Chromium on development PC; no hardware.
 // Mandatory release execution is registered as live-station-browser.
 #[cfg(not(debug_assertions))]
@@ -181,7 +204,6 @@ async fn live_native_fixture_reaches_real_manager_http_and_browser_callsign() {
     live_native_browser_mode("ft8").await;
 }
 
-// Proves: CL-008-02/03/05; CL-010-05/07/08; TC-009-004.
 // Same actual native provider, decoder, owner, HTTP and browser path in FT4 mode.
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -507,10 +529,11 @@ impl KeptPageBoot {
     }
 }
 
-// Proves: CL-057-03; TC-007-002 (#22). Proves: CL-050-08; TC-050-008 (#50). One page across a
+// One page across a
 // restart and busy periods through the actual live source, modem, HTTP and browser; the driver
 // tests/frontend/receive-page.test.cjs holds the oracle. The process stays, because native capture can
 // only be injected in-process; the listener, all connections, the receive owner and the boot go.
+// Proves: TC-050-008
 #[cfg(all(windows, not(debug_assertions)))]
 #[test]
 fn live_native_page_kept_across_restart() {
@@ -590,11 +613,12 @@ fn live_native_page_kept_across_restart() {
     println!("{log}");
 }
 
-// Proves: CL-057-01, CL-057-02, CL-007-05; TC-057-001, TC-057-002 (#57, #72). Busy FT8
+// Busy FT8
 // periods through the actual live source, window schedule, modem, publication, WebSocket,
 // results API and Detailed browser: each period view is published by its period start
 // + 15.0 s, and every row of it is painted within 0.3 s of its publication. The time from
 // the prompt window's completion (+13.8 s) to paint is reported, not asserted.
+// Proves: TC-057-001
 #[cfg(all(windows, not(debug_assertions)))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_busy_period_rows_promptly() {
@@ -819,17 +843,20 @@ async fn live_native_busy_period_rows_promptly() {
             at(painted),
             painted - published
         );
+        let budget = paint_ms();
         assert!(
-            painted - published <= 300.0,
-            "rows painted {:.0} ms after their publication (budget 300 ms)",
+            painted - published <= budget,
+            "rows painted {:.0} ms after their publication (budget {budget} ms)",
             painted - published
         );
-        // CL-007-05: the view is published by its period start + 15.0 s.
-        let start = completed - 13_800.0;
+        // The view is published by its period start + ft8PublishedByMs.
+        let start = completed - window_schedule_ms("ft8PromptEndMs");
+        let bound = window_schedule_ms("ft8PublishedByMs");
         assert!(
-            *published <= start + 15_000.0,
-            "view published at period start {:+.3}s (bound +15.0 s)",
-            (published - start) / 1000.0
+            *published <= start + bound,
+            "view published at period start {:+.3}s (bound {:+.3} s)",
+            (published - start) / 1000.0,
+            bound / 1000.0
         );
         completion_latencies.push(painted - completed);
     }
@@ -903,9 +930,10 @@ impl StationMetrics {
     }
 }
 
-// Proves: CL-007-04; TC-004-003. Station process private-commit delta <=96MiB over idle and
+// Station process private-commit delta <=96MiB over idle and
 // receive-owner release <=250ms after Stop, on the actual manager, provider and decoder.
 // Exclusive resource window only (station capture paused, no concurrent builds).
+// Proves: TC-004-003
 #[cfg(all(windows, not(debug_assertions)))]
 #[test]
 #[ignore = "exclusive resource window: station process delta and owner release"]
@@ -1046,10 +1074,11 @@ fn resource_station_process_delta_and_owner_release() {
     );
 }
 
-// Proves: CL-010-15; TC-007-005 (#10 PushedStationState): receive.state holds exactly what the browser
+// receive.state holds exactly what the browser
 // would otherwise read for its identity, not what frames carry, and the largest one fits the
 // 4096-byte write buffer beside a pending 2048-byte optional write (two 14-byte headers).
 // Every browser-accepted text at its 256-byte maximum, counters at 2^53-1.
+// Proves: TC-007-005
 #[test]
 fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     let text = "x".repeat(256);
@@ -1099,8 +1128,9 @@ fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     assert!(data.get("source").is_none(), "a frame carries next_frame");
 }
 
-// Proves: CL-010-15; TC-007-005 (#10): after a socket's first receive.state only what changed goes,
+// After a socket's first receive.state only what changed goes,
 // beside the identity; a new receive identity goes whole. Hand-written before and after values.
+// Proves: TC-007-005
 #[test]
 fn receive_state_after_the_first_holds_only_what_changed() {
     let a = json!({"profile_id":"p","boot_id":"b","generation":3,"source_id":"s","job_id":"j","state":"running",

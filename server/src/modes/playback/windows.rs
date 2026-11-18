@@ -89,7 +89,7 @@ impl Output {
             shared,
             thread: Some(thread),
         };
-        let deadline = Instant::now() + Duration::from_secs(1);
+        let deadline = Instant::now() + Duration::from_millis(super::OPEN_MAX_MS);
         let received = loop {
             if abort.load(Ordering::Acquire) {
                 break Err(mpsc::RecvTimeoutError::Timeout);
@@ -171,7 +171,9 @@ impl Output {
         (self.stopper())();
         let start = Instant::now();
         if let Some(thread) = self.thread.take() {
-            while !thread.is_finished() && start.elapsed() < Duration::from_millis(250) {
+            while !thread.is_finished()
+                && start.elapsed() < Duration::from_millis(super::program_playback::CLOSE_MAX_MS)
+            {
                 thread::sleep(Duration::from_millis(1));
             }
             if thread.is_finished() {
@@ -225,7 +227,7 @@ fn render(
             18 + usize::from(base.cbSize),
         ))
         .map_err(|_| OutputError::UnsupportedFormat)?;
-        if format.rate != 48_000 {
+        if format.rate != super::SAMPLE_RATE_HZ {
             return Err(OutputError::UnsupportedFormat);
         }
         client
@@ -308,7 +310,7 @@ unsafe extern "system" fn console_exit(_: u32) -> ::windows::core::BOOL {
     // Not handled: the default handler then ends the process as before.
     ::windows::core::BOOL(0)
 }
-/// WstxTransmit::ExitRelease: runs `guard` (stop audio, one bounded off-only PTT release)
+/// WstxTransmitState::SafetyReleases: runs `guard` (stop audio, one bounded off-only PTT release)
 /// on Ctrl+C, Ctrl+Break, console close, logoff and shutdown before the default exit.
 pub fn install_exit_guard(guard: Box<dyn Fn() + Send + Sync>) -> bool {
     if EXIT_GUARD.set(guard).is_err() {

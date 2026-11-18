@@ -1,26 +1,26 @@
-"""Canonical-authority SysML checks and real OMG Pilot validation.
+"""The model tool of the product contract `docs/sysml`: the canonical authority, the catalog
+of identities and bindings, the real OMG Pilot validation and the rules of the finished
+model (`harness/project/docs/Finished-Model.md`).
 
-traces checks catalog and source/model bindings only, and that every test naming a
-case is in that case's binding (binding_agreement). check additionally calls the
-pinned Java parser/name resolver/semantic validator. markers lists the ModelNotes markers
-and checks nothing. retired checks the catalog and lists the `@RetiredCase` retirements;
-status checks it and prints each FR's status computed from its clauses (CL-014-19).
-equivalence compares two revisions of the model by meaning, a removal it proves
-(CL-014-22) being no difference, and identities lists the identity diff of two revisions
-(CL-014-17); both only read the repository. oracle
-writes the architecture oracle file from the resolved inventory, printing one line per
-change (CL-014-06); no other command writes it. paths rewrites only the code paths of a
-rename list in the model files (CL-014-20); no other command writes a model. None
-executes modeled behavior.
+traces checks the authority, the catalog, the Proves tags against the bindings, the code
+links, the model values against the code and the code structure. check adds the Pilot
+validation, the architecture oracle, the identity history and the structure and writing
+rules. status prints each FR's status computed from its clauses; markers lists the
+WstxModelNotes markers; equivalence compares two revisions by meaning and identities lists
+their identity diff; oracle writes the architecture oracle file; paths rewrites the code
+paths of a rename list in the model. Only oracle and paths write a file. None executes
+modelled behaviour.
 """
 from __future__ import annotations
 
 import argparse
+import ast
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import io
 import json
+import operator
 import os
 from pathlib import Path
 import posixpath
@@ -38,45 +38,27 @@ ROOT = Path(__file__).resolve().parents[1]
 FSD = ROOT / "docs/WSTX Rust FSD.md"
 MODELS = ROOT / "docs/sysml"
 TOOLCHAIN = Path(__file__).with_name("sysml") / "toolchain.json"
-# The TC-DOC-005 oracle of the deployment. `check` compares it with the inventory; only
-# `oracle` writes it, after the Pilot validation and the fixed rules pass (CL-014-06).
+# The architecture oracle. `check` compares it with the inventory; only `oracle` writes it,
+# after the Pilot validation and the fixed rules pass (TR-09).
 ORACLE = Path(__file__).with_name("sysml") / "architecture-oracle.json"
-ID = re.compile(r"\b(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-(?:\d{3}|DOC)-\d{3})\b")
+ID = re.compile(r"\b(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-\d{3}-\d{3})\b")
 CANONICAL_MARKER = "// Canonical authority: SysML"
 SOURCE_BINDING_ROOTS = ("client", "server", "tests")
-# Each required package is the package of exactly one model file, whatever the file's
-# name and folder. A change that renames or dissolves one changes this list with it.
-REQUIRED_PACKAGES = {"WstxRequirements", "WstxArchitecture"}
-# The context file, directly in the model folder: whenever it exists, its package is
-# CONTEXT_PACKAGE and is required too; no other model file names that package in code,
-# and the context file declares no identity (CL-014-10).
+# Each required package is the package of exactly one model file (TR-03).
+REQUIRED_PACKAGES = {"WstxRequirements", "WstxShack", "WstxContext"}
 CONTEXT_FILE = "Context.sysml"
 CONTEXT_PACKAGE = "WstxContext"
 # The package whose `metadata def` names are the marker kinds that `markers` lists.
-MARKER_PACKAGE = "ModelNotes"
+MARKER_PACKAGE = "WstxModelNotes"
 IDENTITY = r"(?:FR-\d{3}|CL-\d{3}-\d{2}|TC-\d{3}-\d{3})"
-# A declaration the catalog reads: `requirement '<ID>' {`, the same with `def`, and a
-# verification case typed by a definition, `verification '<TC>' : <Definition> {`.
+# A declaration the catalog reads: `requirement '<ID>' {` or `verification '<ID>' {`. A `def`
+# or a typed declaration with an identity is another form and refused (TR-10).
 DECLARATION = re.compile(r"\b(requirement|verification)(\s+def)?\s+'(" + IDENTITY + r")'\s*(?::\s*((?:\w+::)*\w+)\s*)?\{")
 # A requirement or verification whose name or short name is a stable identity, in any form.
 IDENTITY_DECLARATION = re.compile(r"\b(?:requirement|verification)(?:\s+def)?\s+(?:<\s*'(" + IDENTITY + r")'\s*>|(?:<[^<>{};]*>\s*)?'(" + IDENTITY + r")')")
-# A verification definition without identity: a shared definition for test cases.
+# A verification definition without identity.
 CASE_DEFINITION = re.compile(r"\bverification\s+def\s+(?:<[^<>{};]*>\s*)?(\w+|'[^']*')[^{};]*\{")
 STRING = r'"(?:\\.|[^"\\])*"'
-# Stable identities are an independent migration admission baseline, not generated
-# from the candidate under review. New identities may be added without renumbering.
-BASELINE_IDENTITIES = {f"FR-{i:03}" for i in range(1, 24)}
-for _group, _suffixes in {
-    3: range(1, 9), 5: range(1, 6), 6: range(1, 5), 7: range(1, 5),
-    8: range(1, 8), 10: (5, 7, 8, 9), 13: range(1, 7),
-}.items():
-    BASELINE_IDENTITIES.update(f"CL-{_group:03}-{i:02}" for i in _suffixes)
-for _group, _suffixes in {
-    2: (1, 3), 4: range(1, 4), 7: (2, 6), 9: range(1, 6),
-    10: range(1, 8), 18: range(1, 4), 21: range(5, 10),
-    22: range(1, 6), 23: range(1, 7),
-}.items():
-    BASELINE_IDENTITIES.update(f"TC-{_group:03}-{i:03}" for i in _suffixes)
 
 
 def authority(directory: Path, fsd: Path) -> str:
@@ -151,39 +133,28 @@ def annotations(text: str, code: str, name: str) -> list[tuple[int, list[tuple[s
     return found
 
 
+
+JOINED = re.compile(r'\s*"[^"\r\n]*"(?:\s*\+\s*"[^"\r\n]*")*\s*')
+
+
 def string_literal(value: str):
-    """The text of a value that is one string literal; None for anything else."""
-    literal = re.fullmatch(r'"([^"\r\n]*)"', value)
-    return literal[1] if literal else None
+    """The text of a value that is one string literal, or string literals joined by `+`,
+    which are one value; None for anything else."""
+    if not JOINED.fullmatch(value):
+        return None
+    return "".join(re.findall(r'"([^"\r\n]*)"', value))
 
 
 def stated(body: str, code: str, kind: str) -> tuple[list, list, list, set]:
-    """What one body states, in the attribute form and the metadata form together:
-    (states, bindings, methods, unread). An invalid state is "", a binding or method that
-    is not one string literal is None. `unread` holds each of "state", "binding" and
-    "method" that the body names in a spelling that is not read: such a fact is the
-    declaration's own, so nothing is taken over for it."""
+    """What one declaration body states in its metadata: (states, bindings, methods,
+    unread). An invalid state is "", a binding or method that is not one string value is
+    None. `unread` holds each of "state", "binding" and "method" that the body states in a
+    form that is not read: the `metadata` keyword form or another feature."""
     if kind == "verification":
-        state_name, enum, status, state_feature = "automation", "AutomationState", "Automation", "run"
-        binding_name, bound, bound_feature = "executable", "TestedBy", "test"
+        enum, status, state_feature, bound, bound_feature = "AutomationState", "Automation", "run", "TestedBy", "test"
     else:
-        state_name, enum, status, state_feature = "coverage", "ImplementationState", "Status", "build"
-        binding_name, bound, bound_feature = "implementation", "ImplementedIn", "module"
-    # The type and the value may carry package names (`WstxRequirements::ImplementationState`).
-    states = re.findall(r"\battribute\s+" + state_name + r"\s*:\s*(?:\w+::)*" + enum + r"\s*=\s*(?:\w+::)*" + enum
-                        + r"::(\w+)\s*;", body)
-    bindings = re.findall(r'\battribute\s+' + binding_name + r'\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
-    methods = re.findall(r'\battribute\s+method\s*:\s*String\s*=\s*"([^"\r\n]*)"\s*;', body)
-    # The feature word outside the read annotations, more often than the attribute form was
-    # read: another spelling of the attribute, such as `attribute :>> automation = ...`.
-    plain = code
-    for name in (status, bound):
-        for match in re.finditer(r"@\s*(?:\w+::)*" + name + r"\b(?!::)\s*\{", code):
-            inside = len(declaration_body(body, match.end() - 1))
-            plain = plain[:match.end()] + " " * inside + plain[match.end() + inside:]
-    unread = {fact for fact, name, read in (("state", state_name, states), ("binding", binding_name, bindings), ("method", "method", methods))
-              if len(re.findall(r"\b" + name + r"\b", plain)) > len(read)}
-    # The same metadata written with the `metadata` keyword is not read either.
+        enum, status, state_feature, bound, bound_feature = "ImplementationState", "Status", "build", "ImplementedIn", "module"
+    states, bindings, methods, unread = [], [], [], set()
     if re.search(r"\bmetadata\b[^;{}]*\b" + status + r"\b", code):
         unread.update(("state", "method"))
     if re.search(r"\bmetadata\b[^;{}]*\b" + bound + r"\b", code):
@@ -228,56 +199,6 @@ def owning_bodies(code: str, offsets: list[int]) -> dict[int, int]:
         position = offset
         owners[offset] = stack[-1] if stack else -1
     return owners
-
-
-def file_retirements(key: str, source: str) -> list[tuple[str, str, int, tuple]]:
-    """The `@RetiredCase` annotations of one model file, in the order of the file, as
-    (identity, test, line, superseding cases). A retirement into the detail tests,
-    `{ identity = "<TC>"; test = "<path>"; }`, has no superseding cases; a superseded one,
-    `{ identity = "<TC>"; supersededBy = "<TC>; <TC>"; }`, has test None. Each is checked
-    in that order: an FR or CL identity, any other spelling (the line of the `@`, or of
-    the word `metadata` in the keyword form), and for the test form a test that no
-    `@DetailTests` directly in the same body names as written. The file itself is the
-    `@DetailTests` check's; whether the superseding cases exist is the catalog's."""
-    text, code = blanked(source, strings=False), blanked(source)
-    found = list(annotations(text, code, "RetiredCase"))
-    found += [(match.start(), None) for match in
-              re.finditer(r"\bmetadata(?!\s+def\b)\s+[^;{}]*\bRetiredCase\b(?!::)", code)]
-    details = []
-    for offset, pairs in annotations(text, code, "DetailTests"):
-        for feature, value in pairs:
-            if feature == "tests" and (literal := string_literal(value)) is not None:
-                details.append((offset, [path.strip() for path in literal.split(";")]))
-    owners = owning_bodies(code, [offset for offset, _pairs in found] + [offset for offset, _paths in details])
-    named = {}
-    for offset, paths in details:
-        named.setdefault(owners[offset], set()).update(paths)
-    retired = []
-    for offset, pairs in sorted(found, key=lambda item: item[0]):
-        line = code.count("\n", 0, offset) + 1
-        features = [feature for feature, _value in pairs or []]
-        values = {feature: string_literal(value) for feature, value in pairs or []}
-        identity, test, superseded = values.get("identity"), values.get("test"), values.get("supersededBy")
-        if features.count("identity") == 1 and identity and re.fullmatch(r"FR-\d{3}|CL-\d{3}-\d{2}", identity):
-            raise ValueError(f"Only a verification case retires: {identity}: {key}")
-        invalid = ValueError(f"Invalid retired case: {key}:{line}")
-        if pairs is None or features.count("identity") != 1 or identity is None or not re.fullmatch(r"TC-\d{3}-\d{3}", identity):
-            raise invalid
-        others = sorted(feature for feature in features if feature != "identity")
-        if others == ["supersededBy"]:
-            # One literal of one or more distinct case identities, separated by `;`, not the case itself.
-            names = tuple(name.strip() for name in superseded.split(";")) if superseded is not None else ()
-            if not names or not all(re.fullmatch(r"TC-\d{3}-\d{3}", name) for name in names) \
-                    or len(set(names)) != len(names) or identity in names:
-                raise invalid
-            retired.append((identity, None, line, names))
-            continue
-        if others != ["test"] or test is None or ";" in test or "::" in test:
-            raise invalid
-        if test not in named.get(owners[offset], set()):
-            raise ValueError(f"Retired case outside the detail tests: {identity}: {test}: {key}")
-        retired.append((identity, test, line, ()))
-    return retired
 
 
 def declaration_body(text: str, opening: int) -> str:
@@ -384,12 +305,6 @@ def binding_agreement(entries: dict[str, dict], root: Path) -> None:
                          + "; ".join(f"{case}: {key}::{name}" for case, key, name in sorted(outside)))
 
 
-def source_proves(text: str) -> set[str]:
-    # Fixture-specific and HOW names are not product identities. Numeric product
-    # IDs retain the existing strict shape and shorthand-expansion checks.
-    text = re.sub(r"\b(?:FR|CL|TC)-[A-Za-z][A-Za-z0-9-]*", "", text)
-    return {ref for ref in references(text) if not ref.startswith(("CL-014-", "TC-DOC-"))}
-
 
 def model_files(directory: Path) -> dict[str, Path]:
     """Every model file below `directory`, by key and sorted by key.
@@ -436,7 +351,7 @@ def file_derivations(key: str, clean: str) -> list[tuple[str, list[str]]]:
     return found
 
 
-# CL-014-21: the places a test runs, the members of `ModelBindings::TestLocation`.
+# TR-19: the places a test runs, the members of `WstxModelBindings::TestLocation`.
 TEST_LOCATIONS = ("developmentPc", "station", "simulator", "flexRadio")
 TEST_LEVEL_FORM = re.compile(r"\bmetadata(?!\s+def\b)\s+[^;{}]*\bTestLevel\b(?!::)")
 VERIFICATION_USAGE = re.compile(r"\bverification\s+(?!def\b)(?:<[^<>{};]*>\s*)?(\w+|'[^']*')")
@@ -445,7 +360,7 @@ OWNER_NAME = re.compile(r"(?:\b(?:abstract|ref|in|out|inout|private|public|prote
 
 
 def file_levels(key: str, clean: str) -> dict[int, list[tuple[int, str]]]:
-    """CL-014-21: the `@TestLevel` pairs of one comment-free model file, by the offset of
+    """TR-19: the `@TestLevel` pairs of one comment-free model file, by the offset of
     the `{` of the body that states them, each list sorted. Only a verification case,
     definition or usage states them; every other owner, and every form other than
     `@TestLevel { cost = <1..5>; location = TestLocation::<place>; }` once per pair, is
@@ -488,7 +403,7 @@ def file_levels(key: str, clean: str) -> dict[int, list[tuple[int, str]]]:
 
 
 def computed_status(states: list[str]) -> str:
-    """CL-014-19: implemented when all clauses are, target when all are or there is none,
+    """TR-12: implemented when all clauses are, target when all are or there is none,
     partial in every other case."""
     if all(state == "target" for state in states):
         return "target"
@@ -497,31 +412,30 @@ def computed_status(states: list[str]) -> str:
     return "partial"
 
 
-def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES) -> dict[str, dict]:
+def source_proves(text: str) -> set[str]:
+    """The identities a tag text names, shorthand expanded as `references` reads it."""
+    return set(references(text))
+
+
+def canonical_catalog(directory: Path, root: Path) -> dict[str, dict]:
+    """The catalog (TR-10, TR-12, TR-19): every FR, clause and case of the model with its
+    state, bindings and links, each checked; raises on the first fault. A clause's entry
+    holds its own code link (`own`), the FRs it derives from (`frs`) and the cases that
+    verify it (`cases`); an FR's its computed status (TR-12)."""
     files = model_files(directory)
     sources = {key: path.read_text(encoding="utf-8") for key, path in files.items()}
     clean_models = {key: without_comments(source) for key, source in sources.items()}
     packages = {key: file_package(clean) for key, clean in clean_models.items()}
-    required_packages = set(REQUIRED_PACKAGES)
-    if CONTEXT_FILE in files:
-        if packages[CONTEXT_FILE] != CONTEXT_PACKAGE:
-            raise ValueError(f"Context file package is not {CONTEXT_PACKAGE}: {CONTEXT_FILE}")
-        if identity := IDENTITY_DECLARATION.search(blanked(clean_models[CONTEXT_FILE])):
-            raise ValueError(f"Context file declares an identity: {identity[1] or identity[2]}: {CONTEXT_FILE}")
-        required_packages.add(CONTEXT_PACKAGE)
-    for key, clean in clean_models.items():
-        if key != CONTEXT_FILE and re.search(r"\b" + CONTEXT_PACKAGE + r"\b", blanked(clean)):
-            raise ValueError(f"Model file names the context package: {CONTEXT_PACKAGE}: {key}")
     keys_of = {}
     for key, package in packages.items():
-        if package in required_packages:
+        if package in REQUIRED_PACKAGES:
             keys_of.setdefault(package, []).append(key)
-    if missing := required_packages - keys_of.keys():
+    if missing := REQUIRED_PACKAGES - keys_of.keys():
         raise ValueError("Canonical model packages missing: " + ", ".join(sorted(missing)))
-    for package in sorted(required_packages):
+    for package in sorted(REQUIRED_PACKAGES):
         if len(keys_of[package]) > 1:
             raise ValueError("Duplicate canonical model package: " + package + ": " + ", ".join(sorted(keys_of[package])))
-    entries, declared_in, retired, superseding, derivations = {}, {}, {}, {}, []
+    entries, derivations = {}, []
     for key, path in files.items():
         source = sources[key]
         if re.search(r"Canonical FSD|\bFSD(?:\s+(?:chapter|section))?\s*\d|WSTX(?:%20| )Rust(?:%20| )FSD", source):
@@ -535,168 +449,120 @@ def canonical_catalog(directory: Path, root: Path, required=BASELINE_IDENTITIES)
                 raise ValueError("Dangling model documentation link: " + key + ": " + target)
         clean = clean_models[key]
         code = blanked(clean)
-        # A typed declaration is read only as a verification case typed by a definition.
-        declarations = [match for match in DECLARATION.finditer(clean)
-                        if not match[4] or (match[1] == "verification" and not match[2])]
+        declarations = [match for match in DECLARATION.finditer(clean) if not match[2] and not match[4]]
         read = {match.start() for match in declarations}
         for match in IDENTITY_DECLARATION.finditer(code):
             if match.start() not in read:
                 raise ValueError(f"Unreadable canonical declaration: {match[1] or match[2]}: {key}")
-        bodies = [(match.end(), match.end() + len(declaration_body(clean, match.end() - 1))) for match in declarations]
-        # A function binding: an @ImplementedIn outside the body of every declaration.
-        functions = [value for offset, pairs in annotations(clean, code, "ImplementedIn")
-                     if not any(start <= offset < end for start, end in bodies)
-                     for feature, value in pairs if feature == "module"]
-        functions = [string_literal(value) for value in functions]
-        for value in functions:
-            file_bindings(key, value, root)
         for _offset, pairs in annotations(clean, code, "DetailTests"):
             for feature, value in pairs:
                 if feature == "tests":
                     file_bindings(key, string_literal(value), root)
         levels = file_levels(key, clean)
-        # The verification definitions of this file by name: what a case typed by one takes.
-        definitions = {}
-        for match in CASE_DEFINITION.finditer(code):
-            name = match[1].strip("'")
-            if re.fullmatch(IDENTITY, name):
-                continue
-            body = declaration_body(clean, match.end() - 1)
-            states, bindings, methods, _unread = stated(body, code[match.end():match.end() + len(body)], "verification")
-            if bindings:
-                raise ValueError(f"Verification definition carries a test binding: {name}: {key}")
-            definitions.setdefault(name, []).append((states, methods, levels.get(match.end() - 1, [])))
-        for match, (start, end) in zip(declarations, bodies):
+        for match in declarations:
             kind, identifier = match[1], match[3]
             if identifier in entries:
                 raise ValueError("Duplicate canonical identity: " + identifier)
             if kind != ("verification" if identifier.startswith("TC-") else "requirement"):
                 raise ValueError("Wrong canonical identity kind: " + identifier)
-            body = clean[start:end]
-            states, bindings, methods, unread = stated(body, code[start:end], kind)
-            # Only a definition of the same file, named without package names and found
-            # once, gives its state and method; the case's own statement wins, and a fact
-            # the case names in a spelling that is not read is refused, never taken over.
-            definition = definitions.get(match[4] or "", [])
-            # CL-014-21: a case stating no level takes its definition's, as it takes automation.
-            own_levels = levels.get(match.end() - 1, [])
-            if not own_levels and len(definition) == 1:
-                own_levels = definition[0][2]
-            if len(definition) == 1:
-                if not states and "state" not in unread:
-                    states = definition[0][0]
-                if not methods and definition[0][1]:
-                    if "method" in unread and states:
-                        raise ValueError("Invalid verification/implementation metadata: " + identifier)
-                    methods = definition[0][1]
-            allowed = {"planned", "partial", "implemented"} if kind == "verification" else {"target", "partial", "implemented"}
-            # An FR may state no status: its status is computed from its clauses (CL-014-19).
-            unstated = identifier.startswith("FR-") and not states and "state" not in unread
-            if not unstated and (len(states) != 1 or states[0] not in allowed):
-                raise ValueError("Missing or invalid declared model state: " + identifier)
+            start = match.end()
+            body = declaration_body(clean, start - 1)
+            states, bindings, methods, unread = stated(body, code[start:start + len(body)], kind)
             refs = re.findall(r"\bverify\s+(?:\w+::)*'([^']+)'\s*;", body)
-            if len(bindings) > 1 or len(methods) > 1 or None in bindings or (methods and methods[0] not in {"manual", "automated"}):
+            if identifier.startswith("FR-"):
+                # An FR states nothing of its delivery: its status is computed (TR-12).
+                if states or bindings or methods or unread:
+                    raise ValueError("FR states a status or a binding: " + identifier)
+            else:
+                allowed = {"planned", "partial", "implemented"} if kind == "verification" else {"target", "partial", "implemented"}
+                if "state" in unread or len(states) != 1 or states[0] not in allowed:
+                    raise ValueError("Missing or invalid declared model state: " + identifier)
+            if "binding" in unread or len(bindings) > 1 or len(methods) > 1 or None in bindings \
+                    or (methods and methods[0] not in {"manual", "automated"}):
                 raise ValueError("Invalid verification/implementation metadata: " + identifier)
-            delivered = not unstated and states[0] in {"partial", "implemented"}
-            if kind == "requirement" and delivered and not bindings:
-                # A clause takes its module from the function of its own model file.
-                if functions and "binding" in unread:
-                    raise ValueError("Invalid verification/implementation metadata: " + identifier)
-                if len(functions) > 1:
-                    raise ValueError(f"Ambiguous function binding: {identifier}: {key}")
-                bindings = list(functions)
-            if delivered and (not bindings or not bindings[0].strip()):
-                raise ValueError("Delivered declaration lacks implementation/test binding: " + identifier)
-            matched = [source_binding(identifier, binding.strip(), root, manual=methods == ["manual"])
-                       for binding in (bindings[0].split(";") if bindings else [])]
-            unbound = [binding.strip() for binding, bound in zip(bindings[0].split(";"), matched) if not bound] if bindings else []
-            if kind == "verification" and unbound:
-                raise ValueError(f"No Proves tag or named-test identity for {identifier}: {'; '.join(unbound)}")
-            # The effective values, stated or taken over, whatever form states them.
-            entries[identifier] = {"kind": kind, "state": states[0] if states else None, "refs": refs,
-                                   "bindings": [binding.strip() for binding in bindings[0].split(";")] if bindings else [],
-                                   "manual": methods == ["manual"]}
+            paths = [binding.strip() for binding in bindings[0].split(";")] if bindings else []
             if kind == "verification":
-                entries[identifier]["levels"] = own_levels
-            declared_in[identifier] = key
+                if states[0] in {"partial", "implemented"} and not any(paths):
+                    raise ValueError("Delivered declaration lacks implementation/test binding: " + identifier)
+                matched = [source_binding(identifier, binding, root, manual=methods == ["manual"]) for binding in paths]
+                if unbound := [binding for binding, bound in zip(paths, matched) if not bound]:
+                    raise ValueError(f"No Proves tag or named-test identity for {identifier}: {'; '.join(unbound)}")
+            else:
+                for binding in paths:
+                    source_binding(identifier, binding, root, manual=True)
+            entries[identifier] = {"kind": kind, "state": states[0] if states else None, "refs": refs,
+                                   "bindings": paths, "manual": methods == ["manual"], "file": key,
+                                   "line": clean.count("\n", 0, match.start()) + 1}
+            if kind == "verification":
+                entries[identifier]["levels"] = levels.get(match.end() - 1, [])
         derivations.extend(file_derivations(key, clean))
-        # Retired cases: after the file's detail tests and declarations are checked.
-        for identity, _test, _line, names in file_retirements(key, source):
-            retired.setdefault(identity, []).append(key)
-            if names:
-                superseding[identity] = (names, key)
-    for identity in sorted(retired):
-        if len(retired[identity]) > 1:
-            raise ValueError(f"Duplicate retired case: {identity}: " + ", ".join(sorted(set(retired[identity]))))
-    for identity in sorted(retired):
-        if identity in entries:
-            raise ValueError(f"Retired case declared again: {identity}: {declared_in[identity]}")
-    # A superseded retirement names declared cases that are not retired.
-    for identity in sorted(superseding):
-        names, key = superseding[identity]
-        for name in names:
-            if name not in entries or name in retired:
-                raise ValueError(f"Superseding case missing or retired: {identity}: {name}: {key}")
-    # A retired identity counts as present for the baseline; it is not a catalog entry.
-    if missing := set(required) - entries.keys() - retired.keys():
-        raise ValueError("Missing stable canonical identities: " + ", ".join(sorted(missing)))
-    dependencies, case_links, derived = {}, {}, {}
-    for source in clean_models.values():
-        for owner, target in re.findall(r"\bdependency\s+\w+\s+from\s+(?:\w+::)*'(CL-[^']+)'\s+to\s+(?:\w+::)*'([^']+)'\s*;", source):
-            if owner not in entries or target not in entries or not target.startswith(("FR-", "TC-")):
-                raise ValueError("Invalid canonical clause dependency: " + owner + " -> " + target)
-            (dependencies if target.startswith("FR-") else case_links).setdefault(owner, set()).add(target)
-    # A clause derived from its FR is owned by it; no reciprocal dependency is written for it.
+    derived = {}
     for original, clauses in derivations:
         for clause in clauses:
             if clause not in entries or original not in entries or not clause.startswith("CL-") or not original.startswith("FR-"):
-                raise ValueError("Invalid canonical clause dependency: " + clause + " -> " + original)
-            derived.setdefault(clause, set()).add(original)
-    verified = set()
+                raise ValueError("Invalid canonical clause derivation: " + clause + " -> " + original)
+            derived.setdefault(clause, []).append(original)
+    cases = {}
     for identifier, entry in entries.items():
-        if identifier.startswith("CL-") and identifier not in dependencies and identifier not in derived:
-            raise ValueError("Canonical clause lacks requirement ownership: " + identifier)
         if entry["kind"] == "verification":
-            if not entry["refs"] or any(ref not in entries or ref.startswith("TC-") for ref in entry["refs"]):
+            if not entry["refs"] or any(ref not in entries or not ref.startswith("CL-") for ref in entry["refs"]):
                 raise ValueError("Undefined or absent verification target: " + identifier)
-            verified.update(entry["refs"])
-            # CL-014-05: a clause is verified by the cases whose `verify` names it; a written
-            # dependency from a clause to this case needs the case to verify that clause.
-            if any(identifier in cases and clause not in entry["refs"] for clause, cases in case_links.items()):
-                raise ValueError("Nonreciprocal canonical verification links: " + identifier)
-    unverified = {i for i in entries if i.startswith("CL-")} - verified
-    if unverified:
-        raise ValueError("Canonical clauses lack verification links: " + ", ".join(sorted(unverified)))
-    # CL-014-19: each FR's status, computed from the clauses it owns by either form. The
-    # entry keeps the stated status (None when there is none) beside the computed one.
+            for ref in entry["refs"]:
+                cases.setdefault(ref, []).append(identifier)
+    for identifier, entry in entries.items():
+        if identifier.startswith("CL-"):
+            if identifier not in derived:
+                raise ValueError("Canonical clause lacks requirement ownership: " + identifier)
+            entry["frs"] = sorted(derived[identifier])
+            entry["cases"] = sorted(cases.get(identifier, []))
+            entry["own"] = entry.pop("bindings")
     for identifier, entry in entries.items():
         if identifier.startswith("FR-"):
-            clauses = sorted(clause for clause in entries if identifier in dependencies.get(clause, set()) | derived.get(clause, set()))
-            entry["stated"] = entry["state"]
+            clauses = sorted(clause for clause in entries if identifier in derived.get(clause, []))
             entry["clauses"] = clauses
-            entry["status"] = computed_status([entries[clause]["state"] for clause in clauses])
-            if entry["state"] is None:
-                entry["state"] = entry["status"]
-    for directory_name in SOURCE_BINDING_ROOTS:
-        for path in sorted((root / directory_name).rglob("*")):
-            if not path.is_file() or path.suffix not in {".rs", ".js", ".cjs"}:
-                continue
-            for tag in re.findall(r"(?m)^\s*(?://|#)\s*Proves:([^\r\n]+)", path.read_text(encoding="utf-8")):
-                if unknown := source_proves(tag) - entries.keys():
-                    raise ValueError("Source Proves tag names undefined model identities: " + path.relative_to(root).as_posix() + ": " + ", ".join(sorted(unknown)))
+            entry["status"] = entry["state"] = computed_status([entries[clause]["state"] for clause in clauses])
     return entries
 
 
+# A tag is `// Proves: TC-ddd-ddd`, several joined by `, ` (TR-14).
+TAG_FORM = re.compile(r"\s*// Proves: TC-\d{3}-\d{3}(?:, TC-\d{3}-\d{3})*\s*")
+
+
+def source_files(root: Path):
+    """The code and test files below the source roots, by repository path, sorted."""
+    for directory_name in SOURCE_BINDING_ROOTS:
+        for path in sorted((root / directory_name).rglob("*")):
+            if path.is_file() and path.suffix in {".rs", ".js", ".cjs"}:
+                yield path.relative_to(root).as_posix(), path
+
+
+def tag_faults(entries: dict[str, dict], root: Path) -> list[str]:
+    """TR-14: every `Proves:` line below the source roots is a tag of the one form, stands on
+    a test, and names only declared cases. One line per fault, sorted."""
+    faults = []
+    for key, path in source_files(root):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            if not PROVES_TAG.match(line):
+                continue
+            following = (code for code in lines[index + 1:] if not SKIPPED_LINE.match(code))
+            if not TAG_FORM.fullmatch(line) or not ATTACHED_TEST.match(next(following, "")):
+                faults.append(f"Invalid Proves tag: {key}:{index + 1}")
+                continue
+            for case in re.findall(r"TC-\d{3}-\d{3}", line):
+                if entries.get(case, {}).get("kind") != "verification":
+                    faults.append(f"Proves tag names an undeclared case: {case}: {key}:{index + 1}")
+    return sorted(faults)
+
+
 def status_lines(entries: dict[str, dict]) -> list[str]:
-    """The lines of `status` (CL-014-19): one per FR in identity order, then the summary."""
+    """The lines of `status` (TR-12): one per FR in identity order, then the summary."""
     lines, counts = [], Counter()
     for identifier in sorted(identifier for identifier in entries if identifier.startswith("FR-")):
         entry = entries[identifier]
         states = Counter(entries[clause]["state"] for clause in entry["clauses"])
         line = (f"{identifier} {entry['status']}: {len(entry['clauses'])} clauses, {states['implemented']} implemented, "
                 f"{states['partial']} partial, {states['target']} target")
-        if entry["stated"] and entry["stated"] != entry["status"]:
-            line += "; stated " + entry["stated"]
         lines.append(line)
         counts[entry["status"]] += 1
     lines.append(f"{len(lines)} FRs: {counts['implemented']} implemented, {counts['partial']} partial, {counts['target']} target")
@@ -744,13 +610,12 @@ def markers(directory: Path, kinds=()) -> list[str]:
     return lines + [summary]
 
 
-# CL-014-20: `paths` rewrites the code paths the model names from a rename list.
+# TR-20: `paths` rewrites the code paths the model names from a rename list.
 RENAME_LINE = re.compile(r"(\S+) -> (\S+)")
-# The binding features of (a): the attribute form and each metadata form with its feature.
-BINDING_ATTRIBUTE = re.compile(r'\battribute\s+(implementation|executable)\s*:\s*String\s*=\s*"[^"\r\n]*"')
-BINDING_METADATA = {"ImplementedIn": "module", "TestedBy": "test", "DetailTests": "tests", "RetiredCase": "test"}
-# The binding forms a declaration's own binding is read from, by declaration kind (`stated`).
-DECLARATION_BINDINGS = {"requirement": ("implementation", "ImplementedIn"), "verification": ("executable", "TestedBy")}
+# The binding features of (a): each metadata form with its feature.
+BINDING_METADATA = {"ImplementedIn": "module", "TestedBy": "test", "DetailTests": "tests"}
+# The binding form a declaration's own binding is read from, by declaration kind (`stated`).
+DECLARATION_BINDINGS = {"requirement": ("ImplementedIn",), "verification": ("TestedBy",)}
 PATH_CHARACTER = re.compile(r"[\w/-]|\.[\w/-]")
 URL_OR_ANCHOR = re.compile(r"[A-Za-z][\w+.-]*:|#")
 
@@ -761,13 +626,14 @@ def path_character(text: str, index: int) -> bool:
     return 0 <= index < len(text) and PATH_CHARACTER.match(text, index) is not None
 
 
-def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, bool]]]:
+def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, bool, str]]]:
     """The (a) bindings of one model file outside comments: (spans of the insides of their
-    string literals, spans of each path in them without its `::symbol`, with whether the
-    catalog checks it), in file order. The catalog checks a declaration's own binding (its
-    kind's attribute or metadata, inside the body of a declaration it reads), a function
-    `@ImplementedIn` outside every declaration body, every `@DetailTests` and, through the
-    `@DetailTests` that names it, every `@RetiredCase` test."""
+    string literals, and for each path in them without its `::symbol` its span, whether the
+    catalog checks it and its text), in file order. The catalog checks a declaration's own
+    binding (its kind's metadata, inside the body of a declaration it reads), every
+    `@ImplementedIn` outside the declaration bodies and every `@DetailTests`. A value joined
+    by `+` is one value: its literals are read as one text, so a path or its `::symbol` may
+    cross the end of a literal, and the span of such a path holds the joins."""
     text, code = blanked(source, strings=False), blanked(source)
     bodies = []
     for match in DECLARATION.finditer(text):
@@ -778,10 +644,7 @@ def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, i
         return any(start <= offset < end and (form is None or form in DECLARATION_BINDINGS[kind])
                    for start, end, kind in bodies)
 
-    literals = []
-    for match in BINDING_ATTRIBUTE.finditer(code):
-        opening = code.rindex('"', match.start(), match.end() - 1)
-        literals.append((opening + 1, match.end() - 1, inside(match.start(), match[1])))
+    values = []
     for name, feature in BINDING_METADATA.items():
         for match in re.finditer(r"@\s*(?:\w+::)*" + name + r"\b(?!::)\s*\{", code):
             if name == "ImplementedIn":
@@ -790,19 +653,21 @@ def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, i
                 checked = name != "TestedBy" or inside(match.start(), name)
             start = match.end()
             body = declaration_body(text, start - 1)
-            for item in re.finditer(r"\b" + feature + r'\s*=\s*"[^"\r\n]*"', code[start:start + len(body)]):
-                literals.append((start + item.start() + item[0].index('"') + 1, start + item.end() - 1, checked))
-    literals.sort()
+            for item in re.finditer(r"\b" + feature + r'\s*=\s*"[^"\r\n]*"(?:\s*\+\s*"[^"\r\n]*")*', code[start:start + len(body)]):
+                values.append(([(start + item.start() + literal.start(1), start + item.start() + literal.end(1))
+                                for literal in re.finditer(r'"([^"\r\n]*)"', item[0])], checked))
+    values.sort()
     paths = []
-    for begin, end, checked in literals:
-        position = begin
-        for part in source[begin:end].split(";"):
+    for spans, checked in values:
+        offsets = [index for begin, end in spans for index in range(begin, end)]
+        value, position = "".join(source[begin:end] for begin, end in spans), 0
+        for part in value.split(";"):
             lead = len(part) - len(part.lstrip())
             path = part.strip().partition("::")[0].rstrip()
             if path:
-                paths.append((position + lead, position + lead + len(path), checked))
+                paths.append((offsets[position + lead], offsets[position + lead + len(path) - 1] + 1, checked, path))
             position += len(part) + 1
-    return [(begin, end) for begin, end, _checked in literals], paths
+    return [span for spans, _checked in values for span in spans], paths
 
 
 def link_targets(source: str, key: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, str]]]:
@@ -837,17 +702,18 @@ def renamed(path: str, entries: list[tuple[str, str, bool]]):
     return None
 
 
-def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -> list[tuple[int, int, str, int]]:
-    """The rewrites of one model file as (start, end, new text, entry index), sorted."""
+def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -> list[tuple[int, int, str, int, str]]:
+    """The rewrites of one model file as (start, end, new text, entry index, old path),
+    sorted. A path of a joined value that crosses a literal's end becomes one literal."""
     _literals, bindings = binding_paths(source)
     excluded, links = link_targets(source, key)
     rewrites = []
-    for begin, end, _checked in bindings:
-        if result := renamed(source[begin:end], entries):
-            rewrites.append((begin, end, *result))
+    for begin, end, _checked, path in bindings:
+        if result := renamed(path, entries):
+            rewrites.append((begin, end, *result, path))
     # (c) reads the rest of each (a) string too, such as the paths in a command line; only
     # the spans (a) rewrote are left to it.
-    excluded += [(begin, end) for begin, end, _new, _index in rewrites]
+    excluded += [(begin, end) for begin, end, _new, _index, _old in rewrites]
     folder = posixpath.join("docs/sysml", posixpath.dirname(key))
     for begin, end, resolved in links:
         if result := renamed(resolved, entries):
@@ -855,7 +721,7 @@ def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -
             written = source[begin:end]
             if urllib.parse.unquote(written) != written:
                 relative = urllib.parse.quote(relative, safe="/")
-            rewrites.append((begin, end, relative, result[1]))
+            rewrites.append((begin, end, relative, result[1], source[begin:end]))
     for index, (old, new, folder_entry) in enumerate(entries):
         for match in re.finditer(re.escape(old), source):
             begin, end = match.span()
@@ -868,7 +734,7 @@ def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -
                     end += 1
             elif path_character(source, end):
                 continue
-            rewrites.append((begin, end, new + source[match.end():end], index))
+            rewrites.append((begin, end, new + source[match.end():end], index, source[begin:end]))
     return sorted(rewrites)
 
 
@@ -913,7 +779,7 @@ def rename_list(text: str) -> tuple[list[tuple[str, str]], list[str]]:
 
 
 def rewrite_paths(listing: Path, directory: Path, root: Path) -> tuple[int, list[str]]:
-    """CL-014-20: rewrite the code paths of the model below `directory` from the rename list
+    """TR-20: rewrite the code paths of the model below `directory` from the rename list
     `listing`, after the files were moved below `root`. Returns (exit code, lines); on a
     refusal no file is written. The faults are judged in three steps, each only on a list
     the step before admitted: the list's form, the moved files, then the model."""
@@ -932,23 +798,23 @@ def rewrite_paths(listing: Path, directory: Path, root: Path) -> tuple[int, list
     for key, source in sources.items():
         rewrites = file_rewrites(source, key, entries)
         parts, position = [], 0
-        for begin, end, new, index in rewrites:
+        for begin, end, new, index, old in rewrites:
             named.add(index)
             line_start = source.rfind("\n", 0, begin) + 1
-            lines.append((key, source.count("\n", 0, begin) + 1, begin - line_start, source[begin:end], new))
+            lines.append((key, source.count("\n", 0, begin) + 1, begin - line_start, old, new))
             parts += [source[position:begin], new]
             position = end
         results[key] = "".join(parts) + source[position:]
     faults = {"Path not named by the model: " + old for index, (old, _new, _folder) in enumerate(entries) if index not in named}
     for key, text in results.items():
         _literals, bindings = binding_paths(text)
-        for begin, end, checked in bindings:
+        for begin, _end, checked, path in bindings:
             if not checked:
                 continue
             try:
-                source_binding("paths", text[begin:end], root, manual=True)
+                source_binding("paths", path, root, manual=True)
             except ValueError:
-                faults.add(f"Path missing after rename: {key}:{text.count(chr(10), 0, begin) + 1} {text[begin:end]}")
+                faults.add(f"Path missing after rename: {key}:{text.count(chr(10), 0, begin) + 1} {path}")
         for begin, end, resolved in link_targets(text, key)[1]:
             if resolved == ".." or resolved.startswith("../") or not (root / resolved).exists():
                 faults.add(f"Path missing after rename: {key}:{text.count(chr(10), 0, begin) + 1} {text[begin:end]}")
@@ -1049,14 +915,8 @@ def tool_paths(cache: Path) -> tuple[Path, Path, Path]:
 ORACLE_SECTIONS = ("root", "parts", "references", "contracts", "ports", "connections", "bindings")
 QUALIFIED = re.compile(r"(?:\w+::)+\w+")
 POPULATION = re.compile(r"(0|[1-9][0-9]*)\.\.(0|[1-9][0-9]*|\*)")
-# The fixed rules of CL-014-06 find their parts by these simple definition names, in any
-# package, and the station's direct parts by usage name; the oracle file cannot change them.
-STATION_TYPE = "StationProcess"
-AUTHORITY_TYPE = "RadioAuthority"
-STATION_PARTS = (("profile", "PersistedProfile"), ("audioAdapter", "AudioDeviceAdapter"),
-                 ("catAdapter", "RustRadioDriver"))
-EXCLUSIVE_PARTS = ("audioAdapter", "catAdapter")
-ORACLE_ABOUT = "TC-DOC-005 oracle, written by python tools/sysml.py oracle from the resolved inventory"
+
+ORACLE_ABOUT = "The architecture oracle, written by python tools/sysml.py oracle from the resolved inventory"
 
 
 def architecture_oracle(path: Path) -> dict:
@@ -1173,38 +1033,6 @@ def inventory_records(output: str) -> dict[str, list[list[str]]]:
     return {kind: [row[1:] for row in rows if row[0] == kind] for kind in {row[0] for row in rows}}
 
 
-def of_type(values: list, type_name: str) -> bool:
-    """A PART row's definition, or a definition it specializes, has the simple name
-    `type_name`, in any package."""
-    return len(values) > 4 and any(kind.rsplit("::", 1)[-1] == type_name for kind in values[4].split(",") if kind)
-
-
-def fixed_rules(records: dict, root=None) -> None:
-    """The fixed rules of CL-014-06, whatever the oracle file lists: the one deployment
-    (and, given `root`, the oracle's), no view-made part or connection, one variable
-    station population, its direct profile and adapters, no other adapter and one
-    authority. Parts are found by type name, never by path or package."""
-    roots = records.get("ROOTPART", [])
-    if len(roots) != 1 or root is not None and roots != [[root]]:
-        raise ValueError("Architecture integrity: expected one physical deployment")
-    if records.get("VIEWSEMANTIC"):
-        raise ValueError("Architecture integrity: views may expose, not create runtime parts/connections")
-    parts = {row[0]: row[1:] for row in records.get("PART", [])}
-    stations = [path for path, values in parts.items() if of_type(values, STATION_TYPE)]
-    if len(stations) != 1 or parts[stations[0]][1] != "0:-1":
-        raise ValueError("Architecture integrity: station population must remain variable")
-    station = stations[0]
-    for name, type_name in STATION_PARTS:
-        values = parts.get(station + "." + name, [])
-        if len(values) < 3 or not of_type(values, type_name) or values[1] != "1:1" or values[2] != "false":
-            raise ValueError("Architecture integrity: exactly one direct " + name + " per station")
-    for name, type_name in STATION_PARTS:
-        if name in EXCLUSIVE_PARTS:
-            if {path for path, values in parts.items() if of_type(values, type_name)} != {station + "." + name}:
-                raise ValueError("Architecture integrity: duplicate or detached " + name)
-    if len([path for path, values in parts.items() if of_type(values, AUTHORITY_TYPE)]) != 1:
-        raise ValueError("Architecture integrity: shared radio requires one effective authority")
-
 
 def end_resolver(root: str, refs: dict):
     """The deployment path of a connection end, written relative to its owner path (or from
@@ -1225,7 +1053,7 @@ def end_resolver(root: str, refs: dict):
 
 
 def architecture_integrity(output: str) -> dict[str, int]:
-    """TC-DOC-005 (CL-014-03, CL-014-06): the deployment against the oracle file.
+    """TR-09: the deployment against the oracle file.
 
     Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
     viewer graph. The oracle is the file `ORACLE`, which only `oracle` writes; the
@@ -1407,7 +1235,7 @@ def oracle_changes(old: dict, new: dict) -> list[str]:
 
 
 def write_architecture_oracle(cache: Path) -> list[str]:
-    """`oracle` (CL-014-06): the Pilot validation and the fixed rules on the working tree's
+    """`oracle` (TR-09): the Pilot validation and the fixed rules on the working tree's
     model, then the file `ORACLE` written from the resolved inventory, keeping its `about`.
     A refusal raises and leaves the file as it was; an equal file is not rewritten."""
     entry = "Requirements.sysml"
@@ -1440,453 +1268,6 @@ def write_architecture_oracle(cache: Path) -> list[str]:
     return lines + ["Architecture oracle written: " + ", ".join(f"{count} {kind}" for kind, count in counts.items())]
 
 
-# ---- Target structure checks (CL-014-18, TC-DOC-016) ----
-
-# What is not yet in target form: `files` (model file keys, exempt from every rule) and
-# `elements` (qualified name -> owning function; exempt with their members). Only `check`
-# reads it; a rewrite takes its entries off.
-PENDING = Path(__file__).with_name("sysml") / "pending-structure.json"
-PENDING_KEY = "tools/sysml/pending-structure.json"
-# The commit a `check` judges (a pinned check); None: the working tree. Set by the caller,
-# as `ORACLE` and the Pilot inventory are, never by a command-line option.
-CHECK_COMMIT = None
-STATION_FILE = "Station.sysml"
-STATION_LINK = "interfaces/internal/StationLink.sysml"
-STATION_COMMANDS = "interfaces/internal/StationCommands.sysml"
-MCP_INTERFACE = "interfaces/external/Mcp.sysml"
-OPERATING_CHAIN = "interfaces/internal/OperatingChain.sysml"
-OPERATOR_INTERACTION = "interfaces/external/OperatorInteraction.sysml"
-# The outside interfaces the browser client may have, each with the usage directly in the
-# root its port connects to. An issue that needs a further outside connection adds it here.
-BROWSER_OUTSIDE = {OPERATOR_INTERACTION: "operator"}
-CONTROL_SUFFIX = "Control"
-CHAIN = ("ranking", "auto", "qso", "transmit")
-OUTSIDE_MEMBERS = {"port", "attribute", "metadata"}
-UNLISTABLE = (CONTEXT_FILE, "interfaces/internal/", "interfaces/external/")
-FR_STATED = ((re.compile(r"\bcoverage\b"), "coverage"), (re.compile(r"\bimplementation\b"), "implementation"),
-             (re.compile(r"(?:@|\bmetadata\b[^;{}]*?:)\s*(?:\w+::)*(Status|ImplementedIn|TestedBy|DetailTests)\b(?!::)"), None))
-SATISFY_FR = re.compile(r"satisfy\s+(?:requirement\s+)?(?:(?:\w+|'[^'\r\n]*')::)*'FR-\d{3}'\s+by\b")
-STATION_ALLOWED = re.compile(r"(?:part\s+def|part|ref\s+part|connection(?!\s+def\b)|connect|interface(?!\s+def\b)"
-                             r"|flow(?!\s+def\b)|binding|bind|import|doc|comment)\b")
-
-
-def pending_list(path: Path, keys) -> tuple[set, dict]:
-    """The pending list at `path` as (file keys, {element name: owner}); refused whole
-    when it is unreadable, not of its form, lists an entry twice, a key that is no model
-    file or that cannot be listed, or an element with an empty owner."""
-    def refused(what: str) -> ValueError:
-        return ValueError("Pending structure list: " + what)
-
-    def unique(pairs):
-        names = [name for name, _value in pairs]
-        if twice := sorted({name for name in names if names.count(name) > 1}):
-            raise refused("listed twice: " + twice[0])
-        return dict(pairs)
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        raise refused(f"unavailable or not JSON: {path}") from None
-    if not isinstance(data, dict) or set(data) != {"files", "elements"} or not isinstance(data["files"], list) \
-            or not all(isinstance(key, str) for key in data["files"]) or not isinstance(data["elements"], dict) \
-            or not all(isinstance(owner, str) for owner in data["elements"].values()):
-        raise refused("not a map of files (a list of keys) and elements (names to owners)")
-    files = data["files"]
-    if twice := sorted({key for key in files if files.count(key) > 1}):
-        raise refused("listed twice: " + twice[0])
-    for key in sorted(files):
-        if key == CONTEXT_FILE or key.startswith(UNLISTABLE[1:]):
-            raise refused("file cannot be listed: " + key)
-        if key not in keys:
-            raise refused("no model file: " + key)
-    for name, owner in sorted(data["elements"].items()):
-        if not owner.strip():
-            raise refused("element without owner: " + name)
-    return set(files), dict(data["elements"])
-
-
-def model_elements(records: dict, keys: list[str]) -> dict:
-    """The named elements of the inventory by qualified name: (metaclass, file key, first
-    line, last line, model features of a definition or None); the first of a name."""
-    elements = {}
-    for name, kind, index, start, end, features in records.get("ELEM", []):
-        position = int(index)
-        elements.setdefault(name, (kind, keys[position] if 0 <= position < len(keys) else "", int(start), int(end),
-                                   int(features) if features else None))
-    return elements
-
-
-def pending_elements(listed: dict, records: dict, keys: list[str]) -> dict:
-    """Each listed element name with the place of its element; a name that resolves to no
-    element of the model files refuses the list."""
-    elements = model_elements(records, keys) if listed else {}
-    for name in sorted(listed):
-        if name not in elements or not elements[name][1]:
-            raise ValueError("Pending structure list: no model element: " + name)
-    return {name: elements[name] for name in listed}
-
-
-def pinned_structure(revision: str, folder: Path):
-    """CL-014-18, a check on a pinned model: (model folder, keys, pending list or None) of
-    the commit, its `docs/sysml` extracted below `folder`. Its own list is refused or applied
-    with the working tree's form rules against its key set; None when it has no list."""
-    commit = commit_of(revision)
-    extract(commit, folder, ["docs/sysml"])
-    models = folder / "docs/sysml"
-    files = model_files(models)
-    entry = "Requirements.sysml"
-    keys = [entry, *(key for key in files if key != entry)]
-    if not git("ls-tree", "--name-only", commit, "--", PENDING_KEY).strip():
-        return models, keys, None
-    extract(commit, folder, [PENDING_KEY])
-    return models, keys, pending_list(folder / PENDING_KEY, set(files))
-
-
-def part_folder(key: str):
-    """The part folder of a model file: a folder directly under `backend/` other than
-    `operating/`, a folder directly under `backend/operating/`, or `frontend/`."""
-    parts = key.split("/")
-    if parts[0] == "backend" and len(parts) >= 3:
-        if parts[1] == "operating":
-            return "/".join(parts[:3]) if len(parts) >= 4 else None
-        return "/".join(parts[:2])
-    if parts[0] == "frontend" and len(parts) >= 2:
-        return "frontend"
-    return None
-
-
-def control_file(key: str) -> bool:
-    return re.fullmatch(r"interfaces/internal/[^/]*" + CONTROL_SUFFIX + r"\.sysml", key) is not None
-
-
-def may_name(key: str, target: str) -> bool:
-    """Rule 1: whether the file `key` may name the package of the file `target`."""
-    if target == key or target == "Requirements.sysml" or target.startswith("shared/"):
-        return True
-    if (folder := part_folder(key)) is not None:
-        return target.startswith("interfaces/") or part_folder(target) == folder
-    if not target.startswith("interfaces/"):
-        return False
-    if key.startswith("interfaces/external/") and target.startswith("interfaces/internal/"):
-        return key == MCP_INTERFACE and control_file(target)
-    return not (control_file(key) and target in (STATION_LINK, STATION_COMMANDS, MCP_INTERFACE, OPERATING_CHAIN))
-
-
-def structure_code(source: str) -> str:
-    """`source` with comments, the inside of strings and every `doc` and `comment` with its
-    body replaced by spaces; offsets and line breaks kept."""
-    code = blanked(source)
-    for match in list(re.finditer(r"\b(?:doc|comment)\b", code)):
-        opening = source.find("/*", match.end())
-        if opening < 0 or re.search(r"[;{}]", code[match.end():opening]):
-            continue
-        closing = source.find("*/", opening)
-        end = len(source) if closing < 0 else closing + 2
-        code = code[:match.start()] + re.sub(r"[^\r\n]", " ", code[match.start():end]) + code[end:]
-    return code
-
-
-def statement_end(code: str, begin: int, end: int) -> int:
-    """The end of the statement starting at `begin`: after its `;` or its body's `}`."""
-    depth = 0
-    for index in range(begin, end):
-        if code[index] == "{":
-            depth += 1
-        elif code[index] == "}":
-            depth -= 1
-            if depth <= 0:
-                return index + 1
-        elif code[index] == ";" and depth == 0:
-            return index + 1
-    return end
-
-
-def station_faults(key: str, code: str) -> list[tuple]:
-    """Rule 2: the statements of `Station.sysml` at package level and in its part
-    definitions other than composition, connections, `satisfy` of an FR and imports."""
-    faults = []
-
-    def judge(start: int, end: int, top: bool):
-        position = start
-        while begin := re.compile(r"\S").search(code, position, end):
-            begin = begin.start()
-            stop = statement_end(code, begin, end)
-            head = re.sub(r"^(?:(?:private|public|protected)\s+)?(?:(?:abstract|variation)\s+)*", "", code[begin:stop])
-            opening = code.find("{", begin, stop)
-            line = code.count("\n", 0, begin) + 1
-            if top and re.match(r"package\b", head):
-                if opening >= 0:
-                    judge(opening + 1, stop - 1, False)
-            elif re.match(r"part\s+def\b", head):
-                if opening >= 0:
-                    judge(opening + 1, stop - 1, False)
-            elif re.match(r"satisfy\b", head):
-                if not SATISFY_FR.match(head):
-                    faults.append((2, key, line, "satisfy of no FR"))
-            elif not STATION_ALLOWED.match(head):
-                word = re.match(r"@\s*(?:\w+::)*\w+|#?\w+(?:\s+def\b)?|\S", head)[0]
-                faults.append((2, key, line, re.sub(r"\s+", " ", word) + " not allowed"))
-            position = stop
-
-    judge(0, len(code), True)
-    return faults
-
-
-def file_faults(sources: dict[str, str]) -> list[tuple]:
-    """Rules 1, 2, 8, 9 and 10 on the model text, as (rule, key, line, what)."""
-    codes = {key: structure_code(source) for key, source in sources.items()}
-    package_files = {}
-    for key, code in codes.items():
-        for package in top_packages(code):
-            package_files.setdefault(package, set()).add(key)
-    faults = []
-    for key, source in sources.items():
-        code = codes[key]
-        unquoted = re.sub(r"'[^'\r\n]*'", lambda match: " " * len(match[0]), code)
-
-        def at(offset: int) -> int:
-            return code.count("\n", 0, offset) + 1
-
-        # Rule 1: the packages a file names by import or by qualified name in code.
-        if part_folder(key) is not None or key.startswith("interfaces/"):
-            named = {match.start(1): match[1] for match in re.finditer(r"\bimport\s+(?:all\s+)?(\w+|'[^'\r\n]*')", code)}
-            named.update((match.start(), match[0].split("::", 1)[0]) for match in QNAME.finditer(code))
-            for offset, package in sorted(named.items()):
-                targets = package_files.get(package, set())
-                if targets and not any(may_name(key, target) for target in targets):
-                    faults.append((1, key, at(offset), "names package " + package))
-        if key == STATION_FILE:
-            faults += station_faults(key, code)
-        # Rule 8: an FR states no status, no binding and no issue reference.
-        text = blanked(source, strings=False)
-        for match in DECLARATION.finditer(text):
-            if match[1] != "requirement" or not match[3].startswith("FR-"):
-                continue
-            start = match.end()
-            end = start + len(declaration_body(text, start - 1))
-            for pattern, what in FR_STATED:
-                for found in pattern.finditer(code, start, end):
-                    faults.append((8, key, at(found.start()), f"{match[3]} states {what or '@' + found[1]}"))
-            for found in re.finditer(r"#\d+", source[start:end]):
-                faults.append((8, key, at(start + found.start()), f"{match[3]} names issue {found[0]}"))
-        # Rule 9: no dependency.
-        for found in re.finditer(r"\bdependency\b", unquoted):
-            faults.append((9, key, at(found.start()), "dependency declared"))
-        # Rule 10: every requirement, definition or usage, declares a subject.
-        for found in re.finditer(r"\brequirement\b(?:\s+def\b)?", unquoted):
-            if re.search(r"(?:\bsatisfy|\bverify|\bframe|\brequire|\bassume|#|::|\.)\s*$", unquoted[:found.start()]):
-                continue
-            stop = re.compile(r"[;{]").search(code, found.end())
-            name = (code[found.end():stop.start() if stop else len(code)].split() or ["?"])[0]
-            if stop and stop[0] == "{":
-                flat, depth = [], 0
-                for character in declaration_body(code, stop.start()):
-                    depth += character == "{"
-                    flat.append(character if depth == 0 else " ")
-                    depth -= character == "}"
-                if re.search(r"\bsubject\b", "".join(flat)):
-                    continue
-            faults.append((10, key, at(found.start()), f"requirement {name} declares no subject"))
-    return faults
-
-
-def interface_faults(records: dict, elements: dict) -> list[tuple]:
-    """Rule 3 on the interface definitions: one under `interfaces/` has items; every item
-    is typed by a definition with a model feature. As (rule, key, line, what, names)."""
-    items = {}
-    for interface, _end, item, _direction, types in records.get("IITEM", []):
-        items.setdefault(interface, []).append((item, [name for name in types.split(",") if name]))
-    faults = []
-    for name, (kind, key, line, _end, _features) in elements.items():
-        if kind != "InterfaceDefinition" or not key:
-            continue
-        simple = name.rsplit("::", 1)[-1]
-        if key.startswith("interfaces/") and not items.get(name):
-            faults.append((3, key, line, f"interface {simple} without items", (name,)))
-        for item, types in items.get(name, []):
-            if not types:
-                faults.append((3, key, line, f"interface {simple} item {item} untyped", (name,)))
-            for typed in types:
-                if not (elements.get(typed) or (None,) * 5)[4]:
-                    faults.append((3, key, line, f"interface {simple} item {item} typed by featureless {typed}", (name, typed)))
-    return faults
-
-
-def deployment_faults(records: dict, keys: list[str], elements: dict) -> list[tuple]:
-    """Rules 3 (connections), 4, 5, 6 and 7 on the resolved deployment, as (rule, path,
-    what, places), each place a (file key, qualified name) that exempts the fault."""
-    def key_of(index: str) -> str:
-        position = int(index)
-        return keys[position] if 0 <= position < len(keys) else ""
-
-    def within(path: str, base: str) -> bool:
-        return path == base or path.startswith(base + ".")
-
-    root = records["ROOTPART"][0][0].rsplit("::", 1)[-1]
-    parts = {row[0]: row[1:] for row in records.get("PART", [])}
-    refs = {row[0]: row[1:] for row in records.get("REF", [])}
-    ports = {row[0]: row[1] for row in records.get("PORT", [])}
-    where = {path: (key_of(index), name) for path, name, index in records.get("WHERE", [])}
-    resolved = end_resolver(root, refs)
-    connections = []
-    for owner, _name, ends, types, index, anchor in records.get("CONN", []):
-        written = ends.split("|")
-        if len(written) < 2:
-            continue
-        connections.append({"label": f"{owner} {written[0]} -> {written[1]}", "first": resolved(owner, written[0]),
-                            "second": resolved(owner, written[1]), "types": [name for name in types.split(",") if name],
-                            "places": [(key_of(index), anchor)]})
-
-    def kind(name: str) -> str:
-        return (elements.get(name) or ("",))[0]
-
-    def file(name: str) -> str:
-        return (elements.get(name) or ("", ""))[1]
-
-    def connected(path: str, base: str) -> bool:
-        return any(within(connection[a], path) and within(connection[b], base) for connection in connections
-                   for a, b in (("first", "second"), ("second", "first")))
-
-    faults = []
-    stations = sorted(path for path, values in parts.items() if of_type(values, STATION_TYPE))
-    # Rule 3: every connection is typed by an interface definition of `interfaces/`.
-    for connection in connections:
-        interfaces = [name for name in connection["types"] if kind(name) == "InterfaceDefinition"]
-        if not connection["types"]:
-            what = "untyped connection"
-        elif not interfaces:
-            what = "connection typed by no interface"
-        elif not any(file(name).startswith("interfaces/") for name in interfaces):
-            what = "connection typed by an interface outside interfaces/"
-        else:
-            continue
-        faults.append((3, connection["label"], what, connection["places"]))
-    # Rule 4: the outside parts, directly in the root other than the station.
-    station = root + ".station"
-    members = {}
-    for path, side, category, name in records.get("MEMBER", []):
-        members.setdefault(path, []).append((side, category, name))
-    for path, types in records.get("OUTSIDE", []):
-        if path == station:
-            continue
-        types = [name for name in types.split(",") if name]
-        # The part itself is listed by its usage; its type exempts only faults about the type's members.
-        places = [where.get(path, ("", ""))]
-        type_places = places + [(file(name), name) for name in types]
-        for side, category, name in members.get(path, []):
-            if category not in OUTSIDE_MEMBERS:
-                faults.append((4, path, f"outside part with {category} {name}" + (" in its type" if side == "type" else ""),
-                               type_places if side == "type" else places))
-        usage = where.get(path, ("", ""))[1]
-        for anchor, index, subject_types, subsetted in records.get("SUBJECT", []):
-            if set(subject_types.split(",")) & set(types) or usage and usage in subsetted.split(","):
-                faults.append((4, path, f"subject of requirement {anchor}", places + [(key_of(index), anchor)]))
-        own = [port for port in ports if port.startswith(path + ".") and "." not in port[len(path) + 1:]]
-        if not any(connected(port, station) for port in own):
-            faults.append((4, path, "outside part joined to no function", places))
-    # Rule 5: a control interface has the station service at its commanding end.
-    for process in stations:
-        if process + ".station" not in parts:
-            faults.append((5, process + ".station", "missing role part", []))
-    for connection in connections:
-        controls = [name for name in connection["types"]
-                    if kind(name) == "InterfaceDefinition" and name.rsplit("::", 1)[-1].endswith(CONTROL_SUFFIX)]
-        if controls and not any(within(connection["first"], process + ".station") for process in stations):
-            faults.append((5, connection["label"], f"control interface {controls[0].rsplit('::', 1)[-1]} not commanded "
-                                                   "by the station service", connection["places"]))
-    # Rule 6: the browser client.
-    frontend = station + ".frontend"
-    browsers = frontend + ".browsers"
-    webs = [process + ".web" for process in stations]
-    missing = [path for path in (station, frontend, browsers, root + ".operator", *webs) if path not in parts]
-    faults += [(6, path, "missing role part", []) for path in missing]
-    faults += [(6, key, "missing role file", []) for key in (STATION_LINK, OPERATOR_INTERACTION) if key not in keys]
-    if not missing and STATION_LINK in keys and OPERATOR_INTERACTION in keys:
-        own = sorted(port for port in ports if port.startswith(browsers + ".") and "." not in port[len(browsers) + 1:])
-        typed = {port: file(ports[port].removeprefix("~")) for port in own}
-        internal = [port for port in own if typed[port].startswith("interfaces/internal/")]
-        if len(internal) != 1:
-            faults.append((6, browsers, f"browser client with {len(internal)} ports typed by internal interfaces",
-                           [where.get(browsers, ("", ""))]))
-        allowed = {}
-        for port in internal:
-            if typed[port] != STATION_LINK:
-                faults.append((6, port, "internal port not typed by StationLink", [where.get(port, ("", ""))]))
-            elif not any(connected(port, web) for web in webs):
-                faults.append((6, port, "StationLink port not connected to web", [where.get(port, ("", ""))]))
-            else:
-                allowed[port] = webs
-        counts = Counter()
-        for port in own:
-            if port in internal:
-                continue
-            if typed[port] not in BROWSER_OUTSIDE:
-                faults.append((6, port, "port of an interface the browser client may not have", [where.get(port, ("", ""))]))
-                continue
-            counts[typed[port]] += 1
-            peer = root + "." + BROWSER_OUTSIDE[typed[port]]
-            if not connected(port, peer):
-                faults.append((6, port, "port not connected to " + BROWSER_OUTSIDE[typed[port]], [where.get(port, ("", ""))]))
-            allowed[port] = [peer]
-        for key, count in sorted(counts.items()):
-            if count > 1:
-                faults.append((6, browsers, f"browser client with {count} ports typed by {key}", [where.get(browsers, ("", ""))]))
-        for connection in connections:
-            for inside, other in (("first", "second"), ("second", "first")):
-                if within(connection[inside], frontend) and not within(connection[other], frontend) \
-                        and not any(within(connection[inside], port) and any(within(connection[other], peer) for peer in peers)
-                                    for port, peers in allowed.items()):
-                    faults.append((6, connection["label"], "frontend connection ends at " + connection[other],
-                                   connection["places"]))
-    # Rule 7: the operating chain commands only downward, between neighbours.
-    order = set(zip(CHAIN, CHAIN[1:]))
-    for process in stations:
-        faults += [(7, process + "." + role, "missing role part", []) for role in CHAIN if process + "." + role not in parts]
-
-        def role(path: str):
-            return next((name for name in CHAIN if within(path, process + "." + name)), None)
-
-        for connection in connections:
-            first, second = role(connection["first"]), role(connection["second"])
-            if first and second and first != second and (first, second) not in order:
-                faults.append((7, connection["label"], f"{first} to {second} outside the operating chain", connection["places"]))
-    return faults
-
-
-def structure_lines(models: Path, records: dict, keys: list[str], pending: tuple[set, dict], named: dict) -> list[str]:
-    """CL-014-18: the ten rules on every model file and element not on the pending list,
-    the deployment rules once `Station.sysml` is not listed. Returns the passed line;
-    prints every fault, sorted by rule, key and line, and raises when there is one."""
-    listed, listed_elements = pending
-    files = model_files(models)
-    sources = {key: files[key].read_text(encoding="utf-8") for key in keys if key in files}
-    elements = model_elements(records, keys)
-    deployment = STATION_FILE not in listed
-
-    def covered(name: str) -> bool:
-        return any(name == listed_name or name.startswith(listed_name + "::") for listed_name in named)
-
-    def exempt_line(key: str, line: int) -> bool:
-        return key in listed or any(place[1] == key and place[2] <= line <= place[3] for place in named.values())
-
-    found = set()
-    for rule, key, line, what in file_faults(sources):
-        if not exempt_line(key, line):
-            found.add((rule, key, line, f"Structure rule {rule}: {what}: {key}:{line}"))
-    for rule, key, line, what, names in interface_faults(records, elements):
-        if not exempt_line(key, line) and not any(covered(name) for name in names):
-            found.add((rule, key, line, f"Structure rule {rule}: {what}: {key}:{line}"))
-    if deployment and records.get("ROOTPART"):
-        for rule, path, what, places in deployment_faults(records, keys, elements):
-            if not any(key in listed or covered(name) for key, name in places if key or name):
-                found.add((rule, path, 0, f"Structure rule {rule}: {what}: {path}"))
-    if found:
-        for *_order, line in sorted(found):
-            print(line)
-        raise ValueError(f"{len(found)} structure faults")
-    return [f"Structure checks passed: {len(keys) - len(listed)} files in target form, {len(listed)} files and "
-            f"{len(listed_elements)} elements pending; deployment rules {'on' if deployment else 'off'}"]
-
 
 def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subprocess.CompletedProcess:
     java, jar, library = tool_paths(cache)
@@ -1900,7 +1281,7 @@ def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subproc
     return result
 
 
-# ---- equivalence and identities (CL-014-17, TC-DOC-015) ----
+# ---- equivalence and identities (TR-21) ----
 
 # A qualified name as written in text: two or more segments, each a word or a quoted name.
 QNAME = re.compile(r"(?<![\w':])(?:[A-Za-z_]\w*|'[^'\r\n]+')(?:::(?:[A-Za-z_]\w*|'[^'\r\n]+'))+")
@@ -1909,9 +1290,8 @@ MODEL_PATH = re.compile(r"docs/sysml/[\w./-]*[\w/]")
 LINK = re.compile(r"\]\(\s*<?([^)\s>]+)>?\s*\)")
 # The tracked files at <head> whose model citations `equivalence` checks.
 CITATION_ROOTS = ("server", "client", "tests", "tools", "fixtures", "harness/project", "docs/harness", ".harness", "README.md")
-# P6: the tests below READERS that judge a pinned commit's model or their own fixture model.
+# P6: the tests below READERS that judge their own fixture model.
 READERS = "tools/sysml/tests/"
-PINNED_LINE = re.compile(r'(?m)^PINNED = "([0-9A-Fa-f]{7,40})"$')
 FIXTURE_PACKAGE = re.compile(r"\bpackage\s+([A-Za-z_]\w*)\s*\{")
 MOVE_TRAILER = re.compile(r"(?m)^Model-Move:\s*pure\s*$")
 EXPORT_WORKERS = 2
@@ -1943,7 +1323,7 @@ def extract(commit: str, destination: Path, paths=()) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     # The whole archive is read before it is unpacked: reading it as a stream stopped at the
-    # end-of-archive blocks and left git blocked on the rest of its output (#193).
+    # end-of-archive blocks and left git blocked on the rest of its output.
     try:
         result = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", commit, *paths],
                                 stdin=subprocess.DEVNULL, capture_output=True, env=env, timeout=600)
@@ -1961,22 +1341,12 @@ def extract(commit: str, destination: Path, paths=()) -> None:
 
 
 def citation_reader(path: str, text: str):
-    """P6 (CL-014-17): which model the tracked file `path` with `text` reads. A file below
-    READERS with a line `PINNED = "<hex>"` naming a commit is a pinned reader:
-    ("pinned", commit), judged by that rule only. One there without a `PINNED` line that
-    declares `package <Top> {` is a fixture reader: ("fixture", {Top, ...}). Else None."""
+    """P6 (TR-21): which model the tracked file `path` with `text` reads. A file below
+    READERS that declares `package <Top> {` is a fixture reader: ("fixture", {Top, ...}).
+    Else None."""
     if not path.startswith(READERS):
         return None
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    values = PINNED_LINE.findall(text)
-    if values:
-        for value in values:
-            try:
-                return "pinned", commit_of(value)
-            except Unreadable:
-                continue
-        return None
-    tops = set(FIXTURE_PACKAGE.findall(text))
+    tops = set(FIXTURE_PACKAGE.findall(text.replace("\r\n", "\n").replace("\r", "\n")))
     return ("fixture", tops) if tops else None
 
 
@@ -2172,324 +1542,9 @@ def summary(facts: tuple) -> str:
     return (owned or facts[0][3]) + (" " + json.dumps(words[:60]) if words else "")
 
 
-# ---- proven removals (CL-014-22) ----
-
-# The mapping of cost wordings to (cost, location), read by every `equivalence` run.
-COST_WORDINGS = Path(__file__).with_name("sysml") / "cost-wordings.json"
-PROVEN_RULES = ("case-number", "clause-list", "cost", "dependency", "status")
-# The one separator a deleted span may take with it.
-SEPARATORS = ("; ", ", ", ": ", ". ", " — ", " - ")
-STATUS_METADATA = ("Status", "Automation", "ImplementedIn", "TestedBy")
-STATUS_ATTRIBUTES = ("coverage", "automation", "method", "implementation", "executable")
-# The metadata form of each status attribute, on any element: (metadata, feature).
-STATUS_FORMS = {"coverage": ("Status", "build"), "implementation": ("ImplementedIn", "module"),
-                "automation": ("Automation", "run"), "method": ("Automation", "method"),
-                "executable": ("TestedBy", "test")}
-VERIFICATION_KINDS = ("VerificationCaseUsage", "VerificationCaseDefinition")
-QUOTED_IDENTITY = re.compile(r"'(" + IDENTITY + r")'")
-# A clause list: an optional `Proves `, then identities, each with the shorthand `references`
-# reads, joined by `, `, ` and ` or `; `.
-CLAUSE_ITEM = ID.pattern + r"(?:(?:/|,\s*|\.\.|–)\d+(?![\w-]))*"
-CLAUSE_LIST = re.compile(r"(?<![\w-])(?:Proves )?" + CLAUSE_ITEM + r"(?:(?:, | and |; )" + CLAUSE_ITEM + r")*(?![\w-])")
-
-
-def cost_wordings(path: Path = None) -> dict:
-    """The mapping file, checked whole: `line`, `bold` (wording, cost, location), `places`
-    (phrase, location) and `element` (file, element, wording, cost, location). A missing or
-    malformed file cannot be compared (Unreadable), naming the file."""
-    path = COST_WORDINGS if path is None else path
-    try:
-        name = path.resolve().relative_to(ROOT.resolve()).as_posix()
-    except ValueError:
-        name = str(path)
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        raise Unreadable(f"{name}: {error}") from None
-    fields = {"line": ("wording", "cost", "location"), "bold": ("wording", "cost", "location"),
-              "places": ("phrase", "location"), "element": ("file", "element", "wording", "cost", "location")}
-    if not isinstance(data, dict) or set(data) != set(fields):
-        raise Unreadable(f"{name}: not an object of {', '.join(fields)}")
-    found = {}
-    for section, keys in fields.items():
-        rows = data[section]
-        if not isinstance(rows, list):
-            raise Unreadable(f"{name}: {section} is not a list")
-        found[section] = []
-        for row in rows:
-            if not isinstance(row, dict) or set(row) != set(keys) \
-                    or any(not isinstance(row[key], str) or not row[key] for key in keys if key != "cost") \
-                    or row["location"] not in TEST_LOCATIONS \
-                    or "cost" in keys and (type(row["cost"]) is not int or not 1 <= row["cost"] <= 5):
-                raise Unreadable(f"{name}: invalid {section} entry {json.dumps(row)}")
-            found[section].append(tuple(row[key] for key in keys))
-    return found
-
-
-def collapsed(text: str) -> str:
-    """Text with each run of whitespace taken as one space, trimmed."""
-    return " ".join(text.split())
-
-
-def whole(text: str, start: int, end: int) -> bool:
-    """No letter or digit directly before `start` or after `end`."""
-    return not (start > 0 and text[start - 1].isalnum()) and not (end < len(text) and text[end].isalnum())
-
-
-def longest(text: str, start: int, wordings) -> tuple:
-    """The longest of `wordings` (tuples, the wording first) that stands whole at `start`."""
-    matches = [row for row in wordings if text.startswith(row[0], start) and whole(text, start, start + len(row[0]))]
-    return max(matches, key=lambda row: len(row[0]), default=None)
-
-
-def doc_candidates(text: str, element: dict, wordings: dict) -> list[tuple[int, int, str, tuple]]:
-    """The spans of a doc text that a rule may remove, as (start, end, rule, removed pairs)."""
-    found = []
-    if element["case"]:
-        identity = element["case"]
-        for match in re.finditer(r"(?:(?<!#)#{1,6} )?" + re.escape(identity), text):
-            if not re.search(r"[\w-]$", text[:match.start()] or " ") and not re.match(r"[\w-]", text[match.end():]):
-                found.append((match.start(), match.end(), "case-number", ()))
-    if not element["verification"]:
-        return found
-    for match in CLAUSE_LIST.finditer(text):
-        try:
-            listed = set(references(match[0]))
-        except ValueError:
-            continue
-        if not any(ref.startswith("TC-") for ref in listed) and listed == element["refs"]:
-            found.append((match.start(), match.end(), "clause-list", ()))
-    costs = {}
-    starts = sorted({match.end() for match in re.finditer(r"(?:^|\n)[ \t]*", text)})
-    # The Pilot drops the first `*` of a comment line (and a space after it): a bold wording
-    # at a line start is read in that form.
-    for start in starts:
-        for wording, cost, place in wordings["bold"]:
-            stripped = wording[1:].lstrip(" ") if wording.startswith("*") else None
-            if stripped and text.startswith(stripped, start) and whole(text, start, start + len(stripped)):
-                costs[start] = max(costs.get(start, (start, ())), (start + len(stripped), ((cost, place),)))
-    for start in starts:
-        row = longest(text, start, [(wording, (cost, place)) for wording, cost, place in wordings["line"]])
-        if not row:
-            continue
-        end, (cost, place) = start + len(row[0]), row[1]
-        if text.startswith("; ", end) and (phrase := longest(text, end + 2, wordings["places"])):
-            if phrase[1] != place:
-                continue
-            end += 2 + len(phrase[0])
-        costs[start] = max(costs.get(start, (start, ())), (end, ((cost, place),)))
-    own = [(wording, cost, place) for file, name, wording, cost, place in wordings["element"]
-           if file == element["file"] and element["segments"][-len(name.split("::")):] ==
-           [f"'{segment}'" if re.fullmatch(IDENTITY, segment) else segment for segment in name.split("::")]]
-    for wording, cost, place in wordings["bold"] + own:
-        start = text.find(wording)
-        while start >= 0:
-            end = start + len(wording)
-            if whole(text, start, end):
-                costs[start] = max(costs.get(start, (start, ())), (end, ((cost, place),)))
-            start = text.find(wording, start + 1)
-    found.extend((start, end, "cost", pairs) for start, (end, pairs) in costs.items())
-    return sorted(found)
-
-
-def proven_spans(base: str, head: str, candidates: list) -> list | None:
-    """The spans of `candidates` whose deletion, each with at most the one separator that
-    directly follows it, turns `base` into `head` (compared collapsed): [(rule, pairs)],
-    or None when no choice does. Nothing may be inserted."""
-    target, failed = collapsed(head), set()
-
-    def search(index: int, position: int, kept: str):
-        prefix = collapsed(kept)
-        if not target.startswith(prefix) or (index, position, prefix) in failed:
-            return None
-        if index == len(candidates):
-            return [] if collapsed(kept + base[position:]) == target else None
-        start, end, rule, pairs = candidates[index]
-        if start >= position:
-            ends = [end + len(separator) for separator in SEPARATORS if base.startswith(separator, end)] + [end]
-            for stop in ends:
-                rest = search(index + 1, stop, kept + base[position:start])
-                if rest is not None:
-                    return [(rule, pairs)] + rest
-        rest = search(index + 1, position, kept)
-        if rest is None:
-            failed.add((index, position, prefix))
-        return rest
-
-    return search(0, 0, "")
-
-
-def fact_groups(facts: tuple) -> dict[str, list[int]]:
-    """The indices of the facts of each element an entry owns directly, by its first path
-    step (such as `OwningMembership[2]`), in the order of the facts."""
-    groups = {}
-    for index, (path, _kind, _feature, _value) in enumerate(facts):
-        if path not in ("", "via"):
-            groups.setdefault(path.split("/", 1)[0], []).append(index)
-    return groups
-
-
-def metadata_name(facts: tuple, step: str, indices: list[int]):
-    """The simple name of the metadata definition typing the metadata usage of one owned
-    element (raw facts); None when it is no metadata usage typed by a model definition."""
-    for index in indices:
-        path, kind, feature, value = facts[index]
-        if kind == "ref" and feature == "type" and path == step + "/MetadataUsage[0]/FeatureTyping[0]" and len(value) == 1:
-            name = re.fullmatch(r"M:(?:.*::)?(\w+)", value[0])
-            return name[1] if name else None
-    return None
-
-
-def group_class(facts: tuple, step: str, indices: list[int]):
-    """`doc` for a documentation comment, `status` for a Status, Automation, ImplementedIn
-    or TestedBy metadata usage, `level` for a TestLevel one, else None (raw facts)."""
-    for index in indices:
-        path, kind, feature, value = facts[index]
-        if kind == "text" and path == step + "/Documentation[0]":
-            return "doc"
-        if kind == "ref" and feature == "type" and path == step + "/MetadataUsage[0]/FeatureTyping[0]" and len(value) == 1:
-            name = re.fullmatch(r"M:(?:.*::)?(\w+)", value[0])
-            if name and name[1] in STATUS_METADATA:
-                return "status"
-            if name and name[1] == "TestLevel":
-                return "level"
-    return None
-
-
-def group_level(facts: tuple, indices: list[int]):
-    """The (cost, location) of one TestLevel metadata usage from its raw facts; None when it
-    is not one integer literal 1 to 5 and one TestLocation member."""
-    costs = [facts[index][3] for index in indices if facts[index][1] == "attr" and facts[index][2] == "value"
-             and facts[index][0].rsplit("/", 1)[-1].startswith("LiteralInteger[")]
-    places = [match[1] for index in indices if facts[index][1] == "ref" and facts[index][2] == "memberElement"
-              for value in facts[index][3] if (match := re.fullmatch(r"M:(?:.*::)?TestLocation::(\w+)", value))]
-    if len(costs) != 1 or len(places) != 1 or costs[0] not in ("1", "2", "3", "4", "5") or places[0] not in TEST_LOCATIONS:
-        return None
-    return int(costs[0]), places[0]
-
-
-def child_steps(facts, path: str) -> set[str]:
-    """The first path steps below `path` ("" the element itself) among `facts`."""
-    head = path + "/" if path else ""
-    return {fact[0][len(head):].split("/", 1)[0] for fact in facts
-            if fact[0] not in ("", "via") and fact[0].startswith(head) and len(fact[0]) > len(head)}
-
-
-def expression_value(facts, path: str):
-    """The value of the one feature value of the feature at `path` (raw facts): ("string",
-    text) for one string literal; ("enum", "<Enumeration>::<literal>") for a reference to an
-    enumeration literal, whatever package names it was written with; None for anything else."""
-    values = [step for step in child_steps(facts, path) if step.startswith("FeatureValue[")]
-    if len(values) != 1:
-        return None
-    value = (path + "/" if path else "") + values[0]
-    inner = child_steps(facts, value)
-    if inner == {"LiteralString[0]"}:
-        texts = [text for step, kind, feature, text in facts
-                 if step == value + "/LiteralString[0]" and kind == "attr" and feature == "value"]
-        return ("string", texts[0]) if len(texts) == 1 else None
-    if inner == {"FeatureReferenceExpression[0]"}:
-        targets = [target for step, kind, feature, target in facts if kind == "ref" and feature == "memberElement"
-                   and step == value + "/FeatureReferenceExpression[0]/Membership[0]"]
-        if len(targets) == 1 and len(targets[0]) == 1 and (literal := re.fullmatch(r"M:(?:.*::)?(\w+::\w+)", targets[0][0])):
-            return ("enum", literal[1])
-    return None
-
-
-def attribute_value(facts: tuple):
-    """The value of a status attribute from its own raw facts; None when the attribute holds
-    anything beyond its name, at most one typing, an empty multiplicity and one value."""
-    own = [(kind, feature) for path, kind, feature, _value in facts if path == ""]
-    if sorted(own) != [("attr", "declaredName"), ("kind", "")]:
-        return None
-    steps = child_steps(facts, "")
-    if sum(step.startswith("FeatureTyping[") for step in steps) > 1:
-        return None
-    for step in steps:
-        if step.startswith("OwningMembership[") and child_steps(facts, step) == {"Multiplicity[0]"} \
-                and not child_steps(facts, step + "/Multiplicity[0]"):
-            continue
-        if not step.startswith(("FeatureTyping[", "FeatureValue[")):
-            return None
-    return expression_value(facts, "")
-
-
-def metadata_values(facts: tuple, step: str, indices: list[int]) -> list:
-    """The (metadata, feature, value) of each feature of one status metadata usage (raw
-    facts), the value as `expression_value` gives it; None for a member that is no feature
-    with one value, and [None] for a usage with no feature."""
-    name, usage = metadata_name(facts, step, indices), step + "/MetadataUsage[0]"
-    own = [facts[index] for index in indices]
-    if child_steps(own, step) != {"MetadataUsage[0]"}:
-        return [None]
-    found = []
-    for child in sorted(child_steps(own, usage)):
-        if child.startswith("FeatureTyping["):
-            continue
-        feature = f"{usage}/{child}/ReferenceUsage[0]"
-        redefined = [value for path, kind, attribute, value in own
-                     if path == feature + "/Redefinition[0]" and kind == "ref" and attribute == "redefinedFeature"]
-        target = re.fullmatch(r"M:(?:.*::)?" + re.escape(name or "") + r"::(\w+)", redefined[0][0]) \
-            if len(redefined) == 1 and len(redefined[0]) == 1 else None
-        if not child.startswith("FeatureMembership[") or child_steps(own, f"{usage}/{child}") != {"ReferenceUsage[0]"} \
-                or not target or any(not part.startswith(("Redefinition[", "FeatureValue[")) for part in child_steps(own, feature)):
-            found.append(None)
-            continue
-        found.append((name, target[1], expression_value(own, feature)))
-    # A usage without a feature states no value: it proves nothing.
-    return found or [None]
-
-
-def renumbered(facts: tuple, removed: set[str]) -> tuple:
-    """`facts` without the owned elements of the first steps `removed`, the indices of the
-    first steps after them moved down as if those elements were not written."""
-    gone = sorted(int(re.search(r"\[(\d+)\]$", step)[1]) for step in removed)
-
-    def fix(path: str) -> str:
-        first, separator, rest = path.partition("/")
-        step = re.fullmatch(r"(\w+)\[(\d+)\]", first)
-        if not step:
-            return path
-        number = int(step[2])
-        return f"{step[1]}[{number - sum(1 for index in gone if index < number)}]" + separator + rest
-
-    found = []
-    for path, kind, feature, value in facts:
-        if path not in ("", "via"):
-            if path.split("/", 1)[0] in removed:
-                continue
-            path = fix(path)
-        if kind == "ref":
-            value = tuple("#" + fix(target[1:]) if target.startswith("#") and len(target) > 1 else target for target in value)
-        found.append((path, kind, feature, value))
-    return tuple(found)
-
-
-def verify_targets(facts: tuple) -> set[str]:
-    """The keys of the elements an entry's own `verify` statements name (raw facts)."""
-    return {target[2:] for path, kind, feature, value in facts
-            if kind == "ref" and feature == "referencedFeature" and "RequirementVerificationMembership[" in path
-            for target in value if target.startswith("M:")}
-
-
-def declared_facts(side: Side, file_key: str, identity: str):
-    """What the catalog reads from the declaration of `identity` in one file of a side:
-    (states, bindings, methods, unread) of `stated`; None when it is not declared there."""
-    clean = without_comments(side.sources.get(file_key, ""))
-    code = blanked(clean)
-    for match in DECLARATION.finditer(clean):
-        if match[3] == identity:
-            body = declaration_body(clean, match.end() - 1)
-            states, bindings, methods, unread = stated(body, code[match.end():match.end() + len(body)], match[1])
-            return states, bindings, methods, sorted(unread)
-    return None
-
-
-def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None) -> tuple[int, list[str]]:
-    """P2 to P6 of CL-014-17 for two exported sides, with the proven removals of CL-014-22:
-    (exit code, lines). `exempt` maps a citation of a pinned or fixture reader to its reader
-    kind (`exemptions`); `wordings` is the mapping file's content (read when None)."""
-    wordings = cost_wordings() if wordings is None else wordings
+def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, list[str]]:
+    """P2 to P6 of TR-21 for two exported sides: (exit code, lines). `exempt` maps a citation
+    of a fixture reader to its reader kind (`exemptions`)."""
     entries_b, entries_h = base.export["entries"], head.export["entries"]
 
     def by_rel(entries):
@@ -2560,117 +1615,13 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
     paired = set(pair.values())
     strict_b = Normal(base, lambda key: "M:" + pair[key] if key in pair else "U:" + rel(entries_b, key))
     strict_h = Normal(head, lambda key: "M:" + key if key in paired else "U:" + rel(entries_h, key))
-    differences, moves, info, proven = [], [], [], []
-    missing_keys = set(missing)
+    differences, moves, info = [], [], []
 
-    def prove(key_b: str, key_h: str, facts_b: tuple, facts_h: tuple, attributes: list[str]):
-        """CL-014-22 for one pair: (the rules proven, in rule order; whether every change is
-        proven). The docs with their levels and the status are proven apart: an unproven doc
-        or level change leaves the status proof standing, and the other way round. A change
-        of any other fact proves nothing."""
-        raw_b, raw_h = entries_b[key_b]["facts"], entries_h[key_h]["facts"]
-        groups_b, groups_h = fact_groups(raw_b), fact_groups(raw_h)
-        classes_b = {step: group_class(raw_b, step, indices) for step, indices in groups_b.items()}
-        classes_h = {step: group_class(raw_h, step, indices) for step, indices in groups_h.items()}
-
-        def rest(facts, classes):
-            # The facts without status and level metadata, each doc text left out.
-            docs = {step for step, kind in classes.items() if kind == "doc"}
-            blank = tuple((path, kind, feature, "" if kind == "text" and path.split("/", 1)[0] in docs else value)
-                          for path, kind, feature, value in facts)
-            return renumbered(blank, {step for step, kind in classes.items() if kind in ("status", "level")})
-
-        if rest(facts_b, classes_b) != rest(facts_h, classes_h):
-            return [], False
-
-        def texts(facts, groups, classes):
-            return [facts[index][3] for step, indices in groups.items() if classes[step] == "doc"
-                    for index in indices if facts[index][1] == "text"]
-
-        def grouped(facts, groups, classes, wanted):
-            return [tuple(("G" + facts[index][0][len(step):],) + facts[index][1:] for index in indices)
-                    for step, indices in groups.items() if classes[step] == wanted]
-
-        last = entries_b[key_b]["rel"].rsplit("::", 1)[-1]
-        identity = match[1] if (match := QUOTED_IDENTITY.fullmatch(last)) else None
-        kind = next((value for path, sort, _feature, value in raw_b if path == "" and sort == "kind"), None)
-        element = {"case": identity if identity and identity.startswith("TC-") else None,
-                   "verification": kind in VERIFICATION_KINDS, "file": entries_b[key_b]["file"],
-                   "segments": entries_b[key_b]["rel"].split("::"),
-                   "refs": {target.rsplit("::", 1)[-1].strip("'") for target in verify_targets(raw_b)}}
-        rules, removed, docs = set(), set(), True
-        for text_b, text_h in zip(texts(facts_b, groups_b, classes_b), texts(facts_h, groups_h, classes_h)):
-            if text_b == text_h:
-                continue
-            # Collapsing whitespace is the comparison of a proven deletion, not an acceptance
-            # of its own: a doc that differs needs at least one proven span deleted.
-            chosen = proven_spans(text_b, text_h, doc_candidates(text_b, element, wordings))
-            if not chosen:
-                docs = False
-                continue
-            for rule, pairs_ in chosen:
-                rules.add(rule)
-                removed.update(pairs_)
-        levels_b = [group_level(raw_b, indices) for step, indices in groups_b.items() if classes_b[step] == "level"]
-        levels_h = [group_level(raw_h, indices) for step, indices in groups_h.items() if classes_h[step] == "level"]
-        # The removed cost wordings and the added levels prove each other.
-        if None in levels_b or None in levels_h or (set(levels_h) != set(levels_b) | removed if "cost" in rules
-                                                     else sorted(levels_b) != sorted(levels_h)):
-            docs = False
-        proven_rules = set(rules) if docs else set()
-        status = True
-        if attributes or grouped(facts_b, groups_b, classes_b, "status") != grouped(facts_h, groups_h, classes_h, "status"):
-            # On any element: the status metadata of the head carries the values of the base's
-            # status metadata and of each removed attribute in its metadata form, no more and
-            # no fewer, enumeration values compared without their package names.
-            values_b = [value for step, indices in groups_b.items() if classes_b[step] == "status"
-                        for value in metadata_values(raw_b, step, indices)]
-            values_b += [STATUS_FORMS[entries_b[member]["rel"].rsplit("::", 1)[-1]] + (attribute_value(entries_b[member]["facts"]),)
-                         for member in attributes]
-            values_h = [value for step, indices in groups_h.items() if classes_h[step] == "status"
-                        for value in metadata_values(raw_h, step, indices)]
-            status = all(value is not None and value[2] is not None for value in values_b + values_h) \
-                and Counter(values_b) == Counter(values_h)
-            # Where the catalog reads the declaration, what it reads stays equal; where it reads
-            # nothing of the element (no FR, CL or TC declaration), the values alone decide.
-            if status and identity:
-                status = declared_facts(base, entries_b[key_b]["file"], identity) \
-                    == declared_facts(head, entries_h[key_h]["file"], identity)
-            if status:
-                proven_rules.add("status")
-        return [rule for rule in PROVEN_RULES if rule in proven_rules], docs and status
-
-    def dependency(key: str):
-        """The head file of the case that still verifies the clause of a missing
-        `dependency <name> from <CL> to <TC>`; None when the removal is not proven."""
-        raw = entries_b[key]["facts"]
-        own = {feature: value for path, kind, feature, value in raw if path == "" and kind in ("kind", "ref")}
-        if own.get("") != "Dependency" or len(own.get("client", ())) != 1 or len(own.get("supplier", ())) != 1:
-            return None
-        clause, case = own["client"][0], own["supplier"][0]
-        if not clause.startswith("M:") or not case.startswith("M:"):
-            return None
-        clause, case = clause[2:], case[2:]
-        if not re.fullmatch(r"'CL-\d{3}-\d{2}'", clause.rsplit("::", 1)[-1]) \
-                or not re.fullmatch(r"'TC-\d{3}-\d{3}'", case.rsplit("::", 1)[-1]):
-            return None
-        if clause not in pair or case not in pair or pair[clause] not in verify_targets(entries_h[pair[case]]["facts"]):
-            return None
-        return entries_h[pair[case]]["file"]
-
-    changed, covered = [], set()
+    changed = []
     for key_b, key_h in sorted(pair.items()):
         b, h = entries_b[key_b], entries_h[key_h]
         facts_b, facts_h = strict_b.facts(b["facts"], b["file"]), strict_h.facts(h["facts"], h["file"])
-        attributes = [member for member in members_b.get(key_b, []) if member in missing_keys
-                      and entries_b[member]["rel"].rsplit("::", 1)[-1] in STATUS_ATTRIBUTES]
-        if facts_b == facts_h and not attributes:
-            continue
-        rules, complete = prove(key_b, key_h, facts_b, facts_h, attributes)
-        proven.extend(f"proven {rule} {b['rel']} {b['file']} -> {h['file']}" for rule in rules)
-        if "status" in rules:
-            covered.update(attributes)
-        if not complete and facts_b != facts_h:
+        if facts_b != facts_h:
             index = next((i for i, (x, y) in enumerate(zip(facts_b, facts_h)) if x != y), min(len(facts_b), len(facts_h)))
             fact = facts_b[index] if index < len(facts_b) else facts_h[index]
             changed.append(f"changed {b['rel']} {label(fact, facts_b)} {b['file']} -> {h['file']}")
@@ -2682,11 +1633,6 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
             differences.append(f"changed {b['rel']} owner {b['file']} -> {h['file']}")
     for key in missing:
         entry = entries_b[key]
-        if key in covered:
-            continue
-        if (file := dependency(key)) is not None:
-            proven.append(f"proven dependency {entry['rel']} {entry['file']} -> {file}")
-            continue
         differences.append(f"missing {entry['rel']} {entry['package']} {entry['file']}")
     for key in added:
         entry = entries_h[key]
@@ -2738,12 +1684,11 @@ def compare(base: Side, head: Side, citations: list, exempt=None, wordings=None)
                 differences.append(f"stale-by-change {path}:{line} {citation}")
         elif not on_b and not on_h:
             info.append(f"unresolved {path}:{line} {citation}")
-    lines = differences + sorted(proven) + moves + [f"pair {files[0]} -> {files[1]}: {count}" for files, count in sorted(pairs.items())] + info
+    lines = differences + moves + [f"pair {files[0]} -> {files[1]}: {count}" for files, count in sorted(pairs.items())] + info
     lines.append((f"{len(differences)} differences; {len(pair)} entries paired, {len(moves)} moved"
                   if differences else f"equivalent: {len(pair)} entries paired, {len(moves)} moved")
                  + ("; exempt: " + ", ".join(f"{path} {count}" for path, count in exempt_counts.items())
-                    if exempt_counts else "")
-                 + (f"; proven: {len(proven)}" if proven else ""))
+                    if exempt_counts else ""))
     return (1 if differences else 0), lines
 
 
@@ -2754,16 +1699,14 @@ def on_side(side: Side, kind: str, citation: str) -> bool:
     return (side.root / citation).exists()
 
 
-def exemptions(pairs: list, citations: list, side_of, exported) -> list[dict]:
-    """P6 for each exported (base, head) pair: {(file, line, kind, citation): "pinned" or
-    "fixture"} for each citation that would be stale-by-change in a pinned or fixture
-    reader and is exempt. `side_of(commit)` gives a pinned commit's side, and
-    `exported(sides, names)` exports those of them not yet exported."""
-    readers, found, wanted = {}, [], {}
+def exemptions(pairs: list, citations: list) -> list[dict]:
+    """P6 for each exported (base, head) pair: {(file, line, kind, citation): "fixture"} for
+    each name citation that would be stale-by-change in a fixture reader of its package."""
+    readers, found = {}, []
     for (base, head), cited in zip(pairs, citations):
         marks = {}
         for path, line, kind, citation in cited:
-            if not path.startswith(READERS) or not on_side(base, kind, citation) or on_side(head, kind, citation):
+            if kind != "name" or not path.startswith(READERS) or not on_side(base, kind, citation) or on_side(head, kind, citation):
                 continue
             if (id(head), path) not in readers:
                 try:
@@ -2772,38 +1715,15 @@ def exemptions(pairs: list, citations: list, side_of, exported) -> list[dict]:
                     text = ""
                 readers[(id(head), path)] = citation_reader(path, text)
             reader = readers[(id(head), path)]
-            if reader is None:
-                continue
-            if reader[0] == "fixture":
-                if kind == "name" and citation.split("::", 1)[0] in reader[1]:
-                    marks[(path, line, kind, citation)] = "fixture"
-            elif kind == "path":
-                if in_tree(reader[1], citation):
-                    marks[(path, line, kind, citation)] = "pinned"
-            else:
-                marks[(path, line, kind, citation)] = reader[1]
-                wanted.setdefault(reader[1], set()).add(citation)
+            if reader is not None and citation.split("::", 1)[0] in reader[1]:
+                marks[(path, line, kind, citation)] = "fixture"
         found.append(marks)
-    models = {commit: side_of(commit) for commit in wanted}
-    names = {}
-    for commit, side in models.items():
-        names.setdefault(id(side), set()).update(wanted[commit])
-    exported({id(side): side for side in models.values()}.values(), names)
-    for marks in found:
-        for key, mark in list(marks.items()):
-            if mark in ("fixture", "pinned"):
-                continue
-            if models[mark].export["resolved"].get(key[3]) is not None:
-                marks[key] = "pinned"
-            else:
-                del marks[key]
     return found
 
 
 def compare_revisions(pairs: list[tuple[str, object]], cache: Path) -> tuple[list[tuple[int, list[str]]], int]:
     """P1 for each (base, head) pair, head None for the working tree, with one Pilot export
     per distinct tree: ([(exit code, lines)], number of exports)."""
-    wordings = cost_wordings()
     with tempfile.TemporaryDirectory(prefix="sysml-equivalence-") as folder:
         folder = Path(folder)
         sides = {}
@@ -2838,17 +1758,9 @@ def compare_revisions(pairs: list[tuple[str, object]], cache: Path) -> tuple[lis
                 for side in chosen:
                     side.export = exports[id(side)].result()
 
-        def pinned_side(commit):
-            # Only the model of a pinned commit is read: its docs/sysml, exported once per tree.
-            tree = git("rev-parse", commit + "^{tree}").strip()
-            if tree not in sides:
-                extract(commit, folder / tree[:16], ["docs/sysml"])
-                sides[tree] = Side("pinned " + commit, folder / tree[:16], commit)
-            return sides[tree]
-
         exported(list(sides.values()), {})
-        exempt = exemptions(resolved, citations, pinned_side, exported)
-        return [compare(base, head, found, marks, wordings)
+        exempt = exemptions(resolved, citations)
+        return [compare(base, head, found, marks)
                 for (base, head), found, marks in zip(resolved, citations, exempt)], len(sides)
 
 
@@ -2880,10 +1792,9 @@ def marked(cache: Path) -> tuple[int, list[str]]:
     return (1 if failed else 0), lines
 
 
-def identity_side(directory: Path) -> tuple[dict, dict]:
-    """P7: (identity -> (text, file, package), retired identity -> `test <path>` or
-    `superseded by <TC>, <TC>`) of one side, read from the declarations without validating
-    the tree."""
+def identity_side(directory: Path) -> dict:
+    """P7: identity -> (text, file, package) of one side, read from the declarations without
+    validating the tree."""
     files = model_files(directory) if directory.is_dir() else {}
     sources = {key: path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n") for key, path in files.items()}
     codes = {key: blanked(source, strings=False) for key, source in sources.items()}
@@ -2894,7 +1805,7 @@ def identity_side(directory: Path) -> tuple[dict, dict]:
         text = resolve_links(text, key, package_of)
         return re.sub(r"(?<![\w:'])(\w+)::", lambda match: "" if match[1] in tops else match[0], text)
 
-    entries, dependencies, retired = {}, {}, {}
+    entries, dependencies = {}, {}
     for key in files:
         source, code = sources[key], codes[key]
         spans = []
@@ -2909,14 +1820,12 @@ def identity_side(directory: Path) -> tuple[dict, dict]:
             origin = re.search(r"\bfrom\s+(?:(?:\w+|'[^']*')::)*'(" + IDENTITY + r")'", match[0])
             if origin:
                 dependencies.setdefault(origin[1], []).append(" ".join(normal(source[match.start():match.end()], key).split()))
-        for identity, test, _line, names in file_retirements(key, sources[key]):
-            retired[identity] = "superseded by " + ", ".join(names) if names else "test " + test
     texts = {identity: (text + "\n" + "\n".join(sorted(dependencies.get(identity, []))), key, package)
              for identity, (text, key, package) in entries.items()}
-    return texts, retired
+    return texts
 
 
-STATUSES = ("unchanged", "moved", "changed", "added", "retired", "removed")
+STATUSES = ("unchanged", "moved", "changed", "added", "removed")
 
 
 def identities(base: str, head) -> tuple[int, list[str]]:
@@ -2929,7 +1838,7 @@ def identities(base: str, head) -> tuple[int, list[str]]:
                 continue
             extract(commit_of(revision), Path(folder) / name, ["docs/sysml"])
             sides.append(identity_side(Path(folder) / name / "docs/sysml"))
-    (old, _retired_old), (new, retired) = sides
+    old, new = sides
     lines, counts = [], Counter()
 
     def order(identity: str):
@@ -2942,14 +1851,1486 @@ def identities(base: str, head) -> tuple[int, list[str]]:
             status = "changed" if before[0] != after[0] else "unchanged" if before[1:] == after[1:] else "moved"
         elif after:
             status = "added"
-        elif identity in retired:
-            status, suffix = "retired", " " + retired[identity]
         else:
             status = "removed"
         counts[status] += 1
         lines.append(f"{identity} {status} {before[1] if before else '-'} -> {after[1] if after else '-'}{suffix}")
     lines.append(f"{len(lines)} identities: " + ", ".join(f"{counts[status]} {status}" for status in STATUSES))
     return 0, lines
+
+# ---- The rules of the finished model (TR-03 to TR-08, TR-11, TR-13, TR-15 to TR-18) ----
+
+# M2.1: the model files by folder; `*` marks a part's own file, whose package adds `Part`.
+MODEL_TREE = {
+    "": ("Context", "Requirements", "Shack", "UseCases"),
+    "interfaces/internal": ("StationLink", "StationCommands", "Strategies", "RankingControl", "AutoControl",
+                            "QsoControl", "LogControl", "ReceiveControl", "TransmitControl", "AudioControl",
+                            "RadioControl", "Keying", "Decodes", "DisplayData", "StationTime", "OperatingChain",
+                            "Hearing", "AudioStreams", "ModeProcessing", "ProfileAccess", "RecordingTransfer",
+                            "UdpControl", "WebControl"),
+    "interfaces/external": ("OperatorInteraction", "Mcp", "Cat", "RadioProperties", "FlexApi", "SoundDevice", "Udp",
+                            "PskReporter", "ClubLog", "CountryFiles", "TimeSource"),
+    "backend/supervisor": ("Supervisor*", "OperatingSelection", "StationAuthority", "Startup", "SettingsCheck"),
+    "backend/web": ("Web*", "Listener", "ContentCoding"),
+    "backend/mcp": ("Mcp*", "McpEndpoint"),
+    "backend/profile": ("Profile*", "ProfileDocument", "Recordings"),
+    "backend/receive": ("Receive*", "ReceiveJob", "Spectrum", "LiveReceive"),
+    "backend/modes": ("Modes*", "Decode", "MessageEncode", "MessagePayload"),
+    "backend/clock": ("Clock*", "StationClock"),
+    "backend/transmit": ("Transmit*", "TransmitState", "Schedule", "TxLevel"),
+    "backend/operating": ("Operating*", "StrategySelection"),
+    "backend/operating/ranking": ("Ranking*", "ValueOrder", "ContestRanking", "IgnoreLists", "WantedList",
+                                  "MostWanted", "Alert"),
+    "backend/operating/auto": ("Auto*", "TargetChoice", "CqWhenIdle", "TxSlot", "Leave", "AutoMode"),
+    "backend/operating/qso": ("Qso*", "StandardQso", "SpecialActivities", "MessageChoice", "QsoTransmit", "HoldTx"),
+    "backend/log": ("Log*", "Logbook", "CountryFile"),
+    "backend/spots": ("Spots*", "HearingFeed", "SpotsReporting"),
+    "backend/udp": ("Udp*", "UdpSender"),
+    "backend/audio": ("Audio*", "AudioDevice", "Capture", "Endpoints", "Playback"),
+    "backend/radioControl": ("RadioControl*", "CatControl", "CatLifecycle", "RadioFacts", "RadioSetup"),
+    "backend/flexAdapter": ("FlexAdapter*", "FlexSession"),
+    "frontend": ("BrowserClient*", "OperatingScreen", "BandActivityPane", "SignalArea", "QsoPane", "LowerPanel",
+                 "Settings"),
+    "shared": ("Units", "ModelBindings", "ModelNotes"),
+}
+DATA_FOLDER = "data/"
+SHACK_FILE = "Shack.sysml"
+USE_CASES_FILE = "UseCases.sysml"
+REQUIREMENTS_FILE = "Requirements.sysml"
+STATION_LINK = "interfaces/internal/StationLink.sysml"
+STATION_COMMANDS = "interfaces/internal/StationCommands.sysml"
+# M3.4: the transport files and the operating chain's file, which no control interface names.
+TRANSPORT_PACKAGES = ("WstxStationLink", "WstxMcp", "WstxOperatingChain")
+LINE_LIMIT = 100
+
+
+def tree_files() -> dict[str, str]:
+    """The model file keys of M2.1 with the package each declares (M7.5)."""
+    found = {}
+    for folder, names in MODEL_TREE.items():
+        for name in names:
+            plain = name.rstrip("*")
+            found[(folder + "/" if folder else "") + plain + ".sysml"] = "Wstx" + plain + ("Part" if name.endswith("*") else "")
+    return found
+
+
+def layer(key: str):
+    """M3.1: the layer of a model file, counted from 0 (shared); None for Requirements.sysml
+    and a file of no layer."""
+    if key.startswith("shared/"):
+        return 0
+    if key.startswith("interfaces/"):
+        return 1
+    if key.startswith(("backend/", "frontend/")):
+        return 2
+    return {SHACK_FILE: 3, CONTEXT_FILE: 4, USE_CASES_FILE: 5}.get(key)
+
+
+def part_folder(key: str):
+    """The part a model file belongs to, as its folder: `frontend`, `backend/<part>`, or for a
+    part inside operating `backend/operating/<part>`; None for any other file."""
+    parts = key.split("/")
+    if parts[0] == "frontend" and len(parts) >= 2:
+        return "frontend"
+    if parts[0] == "backend" and len(parts) >= 3:
+        if parts[1] == "operating" and len(parts) >= 4:
+            return "/".join(parts[:3])
+        return "/".join(parts[:2])
+    return None
+
+
+def structure_code(source: str) -> str:
+    """`source` with comments, the inside of strings and every `doc` and `comment` with its
+    body replaced by spaces; offsets and line breaks kept."""
+    code = blanked(source)
+    for match in list(re.finditer(r"\b(?:doc|comment)\b", code)):
+        opening = source.find("/*", match.end())
+        if opening < 0 or re.search(r"[;{}]", code[match.end():opening]):
+            continue
+        closing = source.find("*/", opening)
+        end = len(source) if closing < 0 else closing + 2
+        code = code[:match.start()] + re.sub(r"[^\r\n]", " ", code[match.start():end]) + code[end:]
+    return code
+
+
+def statement_end(code: str, begin: int, end: int) -> int:
+    """The end of the statement starting at `begin`: after its `;` or its body's `}`."""
+    depth = 0
+    for index in range(begin, end):
+        if code[index] == "{":
+            depth += 1
+        elif code[index] == "}":
+            depth -= 1
+            if depth <= 0:
+                return index + 1
+        elif code[index] == ";" and depth == 0:
+            return index + 1
+    return end
+
+
+KIND = re.compile(
+    r"(?:(?:private|public|protected|abstract|variation|ref|in|out|inout|end|derived|readonly|individual|then|first|"
+    r"constant)\s+)*"
+    r"(use\s+case\s+def\b|use\s+case\b|(?:part|attribute|item|port|interface|connection|action|state|enum|requirement|"
+    r"verification|metadata|calc|constraint|occurrence|flow|view|analysis|concern|allocation|viewpoint|rendering)\s+def\b|"
+    r"library\s+package\b|package\b|import\b|alias\b|part\b|attribute\b|item\b|port\b|interface\b|connection\b|action\b|"
+    r"state\b|enum\b|requirement\b|verification\b|metadata\b|calc\b|constraint\b|occurrence\b|flow\b|view\b|subject\b|"
+    r"actor\b|objective\b|satisfy\b|verify\b|assert\b|assume\b|require\b|expose\b|connect\b|bind\b|binding\b|"
+    r"succession\b|transition\b|entry\b|exit\b|do\b|accept\b|send\b|perform\b|exhibit\b|include\b|event\b|message\b|"
+    r"dependency\b|@|#)")
+NAME = re.compile(r"\s*(?:<[^<>]*>\s*)?('(?:[^'\\]|\\.)*'|[A-Za-z_]\w*)")
+NONSPACE = re.compile(r"\S")
+
+
+class Element:
+    """One statement of a model file: its kind (`part def`, `attribute`, `@`, ...), its name
+    (None for an unnamed one), its offsets, its body's elements and its docs."""
+
+    def __init__(self, key: str, kind: str, name, begin: int, stop: int, opening: int, parent, head: str):
+        self.key, self.kind, self.name, self.begin, self.stop = key, kind, name, begin, stop
+        self.opening, self.parent, self.head = opening, parent, head
+        self.children, self.docs, self.line = [], [], 0
+
+    @property
+    def doc(self) -> str:
+        """The text of its first doc, whitespace collapsed; "" without one."""
+        return " ".join(self.docs[0][1].split()) if self.docs else ""
+
+    def walk(self):
+        yield self
+        for child in self.children:
+            yield from child.walk()
+
+    def type_name(self):
+        """The simple name of the first type written after `:` in its head; None without."""
+        typed = re.search(r":(?![:>])\s*~?((?:(?:\w+|'[^']*')::)*(\w+|'[^']*'))", self.head)
+        return typed[2] if typed else None
+
+    def type_written(self):
+        typed = re.search(r":(?![:>])\s*~?((?:(?:\w+|'[^']*')::)*(?:\w+|'[^']*'))", self.head)
+        return typed[1] if typed else None
+
+
+def parse_model(key: str, source: str) -> Element:
+    """The elements of one model file as a tree under an element of kind `file`."""
+    code = structure_code(source)
+    root = Element(key, "file", None, 0, len(code), -1, None, "")
+    found = [root]
+
+    def walk(parent: Element, start: int, end: int):
+        position = start
+        while begin := NONSPACE.search(code, position, end):
+            begin = begin.start()
+            stop = statement_end(code, begin, end)
+            opening = code.find("{", begin, stop)
+            head = code[begin:opening if opening >= 0 else stop]
+            kind_match = KIND.match(head)
+            kind = re.sub(r"\s+", " ", kind_match[1]) if kind_match else head.split()[0] if head.split() else ""
+            name = NAME.match(head, kind_match.end()) if kind_match else None
+            element = Element(key, kind, name[1] if name else None, begin, stop, opening, parent, head)
+            element.line = source.count("\n", 0, begin) + 1
+            parent.children.append(element)
+            found.append(element)
+            if opening >= 0 and code[stop - 1:stop] == "}":
+                walk(element, opening + 1, stop - 1)
+            position = stop
+
+    walk(root, 0, len(code))
+    text = blanked(source)
+    for match in re.finditer(r"\b(doc|comment)\b", text):
+        opening = source.find("/*", match.end())
+        if opening < 0 or re.search(r"[;{}]", text[match.end():opening]):
+            continue
+        closing = source.find("*/", opening)
+        owner = root
+        for element in found[1:]:
+            if element.opening >= 0 and element.opening < match.start() < element.stop and \
+                    (owner is root or element.opening > owner.opening):
+                owner = element
+        owner.docs.append((match.start(), source[opening + 2:closing if closing >= 0 else len(source)], match[1]))
+    return root
+
+
+class Model:
+    """The model files below a folder, read once: sources, codes, packages and trees."""
+
+    def __init__(self, directory: Path):
+        self.directory = directory
+        self.files = model_files(directory) if directory.is_dir() else {}
+        self.sources = {key: path.read_text(encoding="utf-8") for key, path in self.files.items()}
+        self.codes = {key: structure_code(source) for key, source in self.sources.items()}
+        self.packages = {key: file_package(blanked(source)) for key, source in self.sources.items()}
+        self.trees = {key: parse_model(key, source) for key, source in self.sources.items()}
+        self.package_files = {}
+        for key, code in self.codes.items():
+            for package in top_packages(code):
+                self.package_files.setdefault(package, key)
+
+    def elements(self, key=None):
+        for name in ([key] if key else self.trees):
+            yield from list(self.trees[name].walk())[1:]
+
+    def definition(self, key: str, name: str, kinds=None):
+        """The first definition of simple `name` in the file `key`."""
+        for element in self.elements(key):
+            if element.name == name and element.kind.endswith("def") and (kinds is None or element.kind in kinds):
+                return element
+        return None
+
+    def find_definition(self, key: str, written: str, kinds=None):
+        """The definition `written` (simple or qualified) names, seen from the file `key`: in
+        the package a qualified name or an import names, in the file itself, or the one
+        definition of that name in the model."""
+        segments = [segment for segment in written.split("::") if segment]
+        name = segments[-1]
+        if len(segments) > 1 and (target := self.package_files.get(segments[-2] if len(segments) == 2 else segments[0])):
+            return self.definition(target, name, kinds)
+        if found := self.definition(key, name, kinds):
+            return found
+        for match in re.finditer(r"\bimport\s+(\w+)::(?:\*|" + re.escape(name) + r")\s*;", self.codes.get(key, "")):
+            if (target := self.package_files.get(match[1])) and (found := self.definition(target, name, kinds)):
+                return found
+        candidates = [element for element in self.elements() if element.name == name and element.kind.endswith("def")
+                      and (kinds is None or element.kind in kinds)]
+        return candidates[0] if len(candidates) == 1 else None
+
+
+def fault_lines(faults) -> list[str]:
+    """The fault lines, sorted by rule, file or deployment path, and line, each once; a fault of
+    the deployment has no line."""
+    ordered = sorted(set(faults), key=lambda fault: (fault[0], fault[1], fault[2] if fault[2] is not None else -1, fault[3]))
+    return [f"{what}: {key}" + (f":{line}" if line is not None else "") for rule, key, line, what in ordered]
+
+
+def tree_faults(directory: Path, model: Model) -> list[tuple]:
+    """TR-03: the model files are exactly those of M2.1; beside them only `data/`."""
+    expected, faults = tree_files(), []
+    for key in model.files:
+        if key not in expected:
+            faults.append(("TR-03", key, 1, "model file outside the tree"))
+    for key in expected:
+        if key not in model.files:
+            faults.append(("TR-03", key, 0, "model file of the tree missing"))
+    for path in sorted(directory.rglob("*")):
+        relative = path.relative_to(directory).as_posix()
+        if path.is_file() and not relative.endswith(".sysml") and not relative.startswith(DATA_FOLDER):
+            faults.append(("TR-03", relative, 0, "file outside the model files and data/"))
+    return faults
+
+
+def control_packages(model: Model) -> set[str]:
+    """M3.4: the packages that `WstxStationLink::WireNames` names, the control interfaces."""
+    tree = model.trees.get(STATION_LINK)
+    if tree is None:
+        return set()
+    names = next((element for element in tree.walk() if element.name == "WireNames"), None)
+    return set(re.findall(r"\bWstx\w+", " ".join(text for _offset, text, _kind in names.docs))) if names else set()
+
+
+def named_packages(code: str) -> list[tuple[int, str]]:
+    """The packages a file names in code: by `import` or as the first segment of a
+    qualified name; quoted names left out."""
+    unquoted = re.sub(r"'[^'\r\n]*'", lambda match: " " * len(match[0]), code)
+    named = {match.start(1): match[1] for match in re.finditer(r"\bimport\s+(?:all\s+)?(\w+)", unquoted)}
+    named.update((match.start(), match[0].split("::", 1)[0]) for match in QNAME.finditer(unquoted))
+    return sorted(named.items())
+
+
+def layer_faults(model: Model) -> list[tuple]:
+    """TR-04: M3.1 to M3.4 on every model file."""
+    controls, faults = control_packages(model), []
+    for key, code in model.codes.items():
+        own = model.packages.get(key)
+        for offset, package in named_packages(code):
+            target = model.package_files.get(package)
+            if target is None or target == key:
+                continue
+            line = code.count("\n", 0, offset) + 1
+            what = None
+            mine, theirs = layer(key), layer(target)
+            if package == CONTEXT_PACKAGE and key not in (CONTEXT_FILE, USE_CASES_FILE):
+                what = "names the context package " + package
+            elif key == REQUIREMENTS_FILE:
+                if not target.startswith("shared/"):
+                    what = "Requirements names " + package
+            elif target == REQUIREMENTS_FILE or mine is None or theirs is None or theirs < mine:
+                what = None
+            elif theirs > mine:
+                what = f"names {package} of a later layer"
+            elif mine == 1:
+                if own in controls and package in TRANSPORT_PACKAGES:
+                    what = f"control interface names {package}"
+                elif key.startswith("interfaces/external/") and package in controls:
+                    what = f"external interface names the control interface {package}"
+            elif mine == 2 and part_folder(key) != part_folder(target):
+                what = f"part names {package} of another part"
+            elif mine > 2:
+                what = "names " + package
+            if what:
+                faults.append(("TR-04", key, line, what))
+    return faults
+
+
+SATISFY_FR = re.compile(r"satisfy\s+(?:requirement\s+)?(?:(?:\w+|'[^'\r\n]*')::)*'(FR-\d{3})'\s+by\s+([\w.]+)")
+SHACK_KINDS = {"package", "import", "part def", "part", "interface", "connection", "connect", "bind", "binding", "satisfy"}
+USE_CASE_KINDS = {"package", "import", "use case def", "use case", "subject", "actor", "objective", "action", "succession",
+                  "include", "perform", "requirement", "first", "then"}
+
+
+def identity_of(element: Element):
+    """The identity a requirement or verification declares; None for any other element."""
+    if element.kind in ("requirement", "verification") and element.name and re.fullmatch(r"'" + IDENTITY + r"'", element.name):
+        return element.name.strip("'")
+    return None
+
+
+def content_faults(model: Model) -> list[tuple]:
+    """TR-05: what Requirements, Shack, UseCases and Context hold (M4.1 to M4.3, M4.9); an FR
+    only in Requirements, a satisfy only in Shack."""
+    faults = []
+    for key, tree in model.trees.items():
+        for element in list(tree.walk())[1:]:
+            identity = identity_of(element)
+            if identity and identity.startswith("FR-") and key != REQUIREMENTS_FILE:
+                faults.append(("TR-05", key, element.line, f"{identity} outside Requirements.sysml"))
+            if element.kind == "satisfy" and key != SHACK_FILE:
+                faults.append(("TR-05", key, element.line, "satisfy outside Shack.sysml"))
+    if tree := model.trees.get(REQUIREMENTS_FILE):
+        for element in list(tree.walk())[1:]:
+            identity = identity_of(element)
+            parent = element.parent
+            if parent.kind == "package" and parent.parent is tree:
+                if element.kind == "import" or element.kind == "attribute def" and element.name == "BehaviorBaseline" \
+                        or element.kind == "requirement" and identity and identity.startswith("FR-"):
+                    continue
+                faults.append(("TR-05", REQUIREMENTS_FILE, element.line, f"Requirements holds {element.kind} {element.name or ''}".rstrip()))
+            elif identity_of(parent) and identity_of(parent).startswith("FR-"):
+                faults.append(("TR-05", REQUIREMENTS_FILE, element.line, f"{identity_of(parent)} holds {element.kind} {element.name or ''}".rstrip()))
+        for element in tree.walk():
+            if (identity := identity_of(element)) and identity.startswith("FR-") and re.search(r"#\d+", element.doc):
+                faults.append(("TR-05", REQUIREMENTS_FILE, element.line, f"{identity} names an issue"))
+    if tree := model.trees.get(SHACK_FILE):
+        for element in list(tree.walk())[1:]:
+            if element.kind not in SHACK_KINDS:
+                faults.append(("TR-05", SHACK_FILE, element.line, f"Shack holds {element.kind} {element.name or ''}".rstrip()))
+            elif element.kind == "satisfy" and not SATISFY_FR.match(element.head):
+                faults.append(("TR-05", SHACK_FILE, element.line, "satisfy of no FR"))
+    if tree := model.trees.get(USE_CASES_FILE):
+        for element in list(tree.walk())[1:]:
+            if element.kind not in USE_CASE_KINDS or element.kind == "requirement" and element.name:
+                faults.append(("TR-05", USE_CASES_FILE, element.line, f"UseCases holds {element.kind} {element.name or ''}".rstrip()))
+            if re.search(r"=", element.head) and element.kind != "requirement":
+                faults.append(("TR-05", USE_CASES_FILE, element.line, "UseCases holds a value"))
+            for _offset, text, _kind in element.docs:
+                if re.search(r"\b(?:CL|FR|TC)-\d", text):
+                    faults.append(("TR-05", USE_CASES_FILE, element.line, "a step names a clause in its text"))
+    if tree := model.trees.get(CONTEXT_FILE):
+        for element in tree.walk():
+            if identity_of(element):
+                faults.append(("TR-05", CONTEXT_FILE, element.line, f"Context declares {identity_of(element)}"))
+    return faults
+
+
+def subject_of(element: Element):
+    return next((child for child in element.children if child.kind == "subject"), None)
+
+
+def part_definitions(model: Model) -> dict[str, Element]:
+    """The part definition of each part, by its folder: the first `part def` of its own file."""
+    found = {}
+    for key, package in tree_files().items():
+        if package.endswith("Part") and key in model.trees and (folder := part_folder(key)):
+            if definition := next((element for element in model.elements(key) if element.kind == "part def"), None):
+                found[folder] = definition
+    return found
+
+
+def carried_clauses(model: Model) -> set[str]:
+    """The clauses a use-case step subsets (`requirement :> <Package>::'<CL>'`)."""
+    return set(re.findall(r"\brequirement\s*:>\s*(?:\w+::)*'(CL-\d{3}-\d{2})'", model.codes.get(USE_CASES_FILE, "")))
+
+
+def has_annotation(element: Element, name: str) -> bool:
+    return any(child.kind == "@" and child.name == name for child in element.children)
+
+
+def clause_faults(model: Model, entries: dict, served=None, ends=None) -> list[tuple]:
+    """TR-11: subjects (M6.9), the place and the FR of a clause (M6.2, M6.3), the form of a
+    case (M6.5), the use-case steps (M6.11) and no dependency (M7.1). `served` maps a
+    definition's simple name to the FRs Shack gives it, `ends` an interface's simple name to
+    the definitions at its ends; without them the FR check is left out."""
+    faults, carried, parts = [], carried_clauses(model), part_definitions(model)
+    for key, tree in model.trees.items():
+        folder = part_folder(key)
+        own = folder and tree_files().get(key, "").endswith("Part")
+        for element in list(tree.walk())[1:]:
+            if element.kind == "dependency":
+                faults.append(("TR-11", key, element.line, "dependency declared"))
+            identity = identity_of(element)
+            if not identity or identity.startswith("FR-"):
+                continue
+            subject = subject_of(element)
+            if subject is None:
+                faults.append(("TR-11", key, element.line, f"{identity} names no subject"))
+            if identity.startswith("TC-"):
+                case_form(key, element, identity, faults)
+                continue
+            if not (folder and not own or key.startswith("interfaces/")):
+                faults.append(("TR-11", key, element.line, f"{identity} outside a function or interface file"))
+                continue
+            entry = entries.get(identity, {})
+            if subject is not None:
+                written = subject.type_name()
+                if folder and (parts.get(folder) is None or written != parts[folder].name):
+                    faults.append(("TR-11", key, element.line, f"{identity} names a subject other than its part"))
+                elif key.startswith("interfaces/") and model.definition(key, written or "") is None:
+                    faults.append(("TR-11", key, element.line, f"{identity} names a subject outside its interface file"))
+            frs = entry.get("frs", [])
+            if len(frs) != 1:
+                faults.append(("TR-11", key, element.line, f"{identity} derives from {len(frs)} FRs"))
+            elif served is not None and subject is not None:
+                written = subject.type_name()
+                if folder:
+                    part = parts.get(folder)
+                    if frs[0] not in served.get(part.name if part else written, set()):
+                        faults.append(("TR-11", key, element.line, f"{identity} derives from {frs[0]}, which its part does not serve"))
+                elif not any(frs[0] in served.get(end, set()) for end in ends.get(written, ())):
+                    faults.append(("TR-11", key, element.line, f"{identity} derives from {frs[0]}, which no part at its ends serves"))
+            if identity not in carried and not has_annotation(element, "Debugging"):
+                faults.append(("TR-11", key, element.line, f"{identity} is carried by no use-case step"))
+    for identity, entry in entries.items():
+        if identity.startswith("CL-") and entry["state"] == "implemented" and not entry["cases"]:
+            faults.append(("TR-11", entry["file"], entry["line"], f"{identity} is implemented and has no case"))
+    return faults
+
+
+CASE_ANNOTATIONS = {"TestLevel", "Automation", "TestedBy"}
+
+
+def case_form(key: str, element: Element, identity: str, faults: list):
+    """M6.5: a case is its identity, a one-line title, `subject`, `verify` in its objective,
+    `@TestLevel`, `@Automation` and `@TestedBy`."""
+    for child in element.children:
+        if child.kind == "subject" or child.kind == "@" and child.name in CASE_ANNOTATIONS:
+            continue
+        if child.kind == "objective" and all(grand.kind == "verify" for grand in child.children) and not child.docs:
+            continue
+        faults.append(("TR-11", key, child.line, f"{identity} holds {child.kind} {child.name or ''}".rstrip()))
+    for name in sorted(CASE_ANNOTATIONS):
+        if not has_annotation(element, name):
+            faults.append(("TR-11", key, element.line, f"{identity} has no @{name}"))
+    docs = [text for _offset, text, kind in element.docs if kind == "doc"]
+    if len(docs) != 1 or len(element.docs) != 1:
+        faults.append(("TR-11", key, element.line, f"{identity} has {len(element.docs)} titles"))
+    elif len(docs[0].strip().splitlines()) != 1:
+        faults.append(("TR-11", key, element.line, f"{identity} has a title of {len(docs[0].strip().splitlines())} lines"))
+
+
+def code_links(model: Model, entries: dict) -> tuple[dict, list[tuple]]:
+    """TR-13 (M6.6): `@ImplementedIn` stands on a part definition or a clause; a clause's code
+    link is its own, else its subject's part definition's. Returns (the modules of each
+    clause, the faults)."""
+    faults, links = [], {}
+    for key in model.trees:
+        for element in model.elements(key):
+            if element.kind == "@" and element.name == "ImplementedIn":
+                owner = element.parent
+                identity = identity_of(owner)
+                if not (owner.kind == "part def" or owner.kind == "requirement" and identity and identity.startswith("CL-")):
+                    faults.append(("TR-13", key, element.line, f"code link on {owner.kind} {owner.name or ''}".rstrip()))
+    for identity, entry in entries.items():
+        if not identity.startswith("CL-"):
+            continue
+        if entry["own"]:
+            links[identity] = list(entry["own"])
+            continue
+        element = next((element for element in model.elements(entry["file"]) if identity_of(element) == identity), None)
+        subject = subject_of(element) if element else None
+        definition = model.find_definition(entry["file"], subject.type_written(), {"part def"}) if subject and subject.type_written() else None
+        candidates = []
+        while definition is not None and definition not in [found for found, _modules in candidates]:
+            if modules := part_link(model, definition):
+                candidates.append((definition, modules))
+            supertype = re.search(r"(?::>|\bspecializes\b)\s*((?:\w+::)*\w+)", definition.head)
+            definition = model.find_definition(definition.key, supertype[1], {"part def"}) if supertype else None
+        if len(candidates) > 1:
+            faults.append(("TR-13", entry["file"], entry["line"], f"{identity} inherits two code links: "
+                           + ", ".join(found.name for found, _modules in candidates)))
+        elif candidates:
+            links[identity] = candidates[0][1]
+        elif entry["state"] in ("partial", "implemented"):
+            faults.append(("TR-13", entry["file"], entry["line"], f"{identity} is delivered and has no code link"))
+    return links, faults
+
+
+def part_link(model: Model, definition: Element) -> list[str]:
+    """The modules a part definition's own `@ImplementedIn` names."""
+    source = model.sources[definition.key]
+    for child in definition.children:
+        if child.kind == "@" and child.name == "ImplementedIn":
+            body = source[child.opening + 1:child.stop - 1] if child.opening >= 0 else ""
+            for feature, value in assignments(body, blanked(body)):
+                if feature == "module" and (text := string_literal(value)) is not None:
+                    return [path.strip() for path in text.split(";") if path.strip()]
+    return []
+
+
+HISTORY = re.compile(r"20\d\d-\d\d-\d\d|(?<![A-Za-z0-9])#\d+\b|\bformerly\b|\breplaces\b|\bno longer\b"
+                     r"|\bremains\b|\bNot delivered yet\b|\bNot automated yet\b|\boperator decision\b", re.I)
+DEFINED_NAME = re.compile(r"^\s*(?:abstract\s+)?(?:part|attribute|item|action|state|enum|port|interface|calc|constraint|"
+                          r"metadata|occurrence)\s+(?:def\s+)?([A-Za-z_][A-Za-z0-9_]*)", re.M)
+
+
+def sentences(text: str) -> list[str]:
+    return [part for part in re.split(r"(?<=[.!?])\s+(?=[A-Z(\"'])", text) if part.strip()]
+
+
+def writing_faults(model: Model) -> list[tuple]:
+    """TR-18: the writing rules M5.10 (no "user"), M6.4, M6.10, M7.3 to M7.6 and the package
+    names of M7.5."""
+    faults, expected = [], tree_files()
+    for key, source in model.sources.items():
+        package = model.packages.get(key)
+        wanted = expected.get(key, "Wstx" + Path(key).stem)
+        if package != wanted:
+            declared = re.search(r"\bpackage\s+\w+\s*\{", blanked(source))
+            at = source.count("\n", 0, declared.start()) + 1 if declared else 1
+            faults.append(("TR-18", key, at, f"package {package} is not {wanted}"))
+        for number, line in enumerate(source.split("\n"), 1):
+            line = line.rstrip("\r")
+            if len(line) > LINE_LIMIT:
+                faults.append(("TR-18", key, number, f"line of {len(line)} characters"))
+            if re.search(r"\busers?\b", line, re.I):
+                faults.append(("TR-18", key, number, "the word user"))
+            scan = re.sub(r'"[^"]*"', '""', line) if re.search(r"\battribute\b[^=]*=|\breference\s*=", line) else line
+            if history := HISTORY.search(scan):
+                faults.append(("TR-18", key, number, "history in a text: " + history[0]))
+        for token in re.finditer(r'/\*[\s\S]*?\*/|//[^\r\n]*|' + STRING + r"|'(?:\\.|[^'\\])*'|[^/\"']+|.", source):
+            text, offset = token.group(), token.start()
+            line = source.count("\n", 0, offset) + 1
+            if text.startswith("//") and not (key == REQUIREMENTS_FILE and offset == 0 and text == CANONICAL_MARKER):
+                faults.append(("TR-18", key, line, "comment //"))
+            elif text.startswith("/*") and not re.search(r"\b(?:doc)\s*$", source[max(0, offset - 40):offset]):
+                faults.append(("TR-18", key, line, "comment /* */ outside a doc"))
+        for match in re.finditer(r'(' + STRING + r')\s*\+\s*(?=(' + STRING + r'))', source):
+            left, right = match[1][1:-1], match[2][1:-1]
+            # A binding `<path>::<test name>` may join right after `::`: neither is split.
+            if not (left.endswith((" ", ";", "::")) or right.startswith((" ", ";"))):
+                faults.append(("TR-18", key, source.count("\n", 0, match.start()) + 1, "joined value split inside a word"))
+        names = set(DEFINED_NAME.findall(model.codes[key]))
+        for element in model.elements(key):
+            if element.name and not element.name.startswith("'"):
+                if "_" in element.name:
+                    faults.append(("TR-18", key, element.line, f"name with an underscore: {element.name}"))
+                if element.kind.endswith("def") and not element.name[0].isupper():
+                    faults.append(("TR-18", key, element.line, f"definition not in UpperCamelCase: {element.name}"))
+            identity = identity_of(element)
+            if identity and not identity.startswith("FR-") and identity in element.doc:
+                faults.append(("TR-18", key, element.line, f"{identity} names itself"))
+            if identity and identity.startswith("CL-"):
+                doc = element.doc
+                if len(sentences(doc)) != 1:
+                    faults.append(("TR-18", key, element.line, f"{identity} is {len(sentences(doc))} sentences"))
+                if not re.search(r"\b(?:MUST|SHOULD|MAY)\b", doc):
+                    faults.append(("TR-18", key, element.line, f"{identity} has no MUST, SHOULD or MAY"))
+                if not any(re.search(r"\b" + re.escape(name) + r"\b", doc) for name in names):
+                    faults.append(("TR-18", key, element.line, f"{identity} names no element of its file"))
+    return faults
+
+
+# ---- The deployment (TR-06, TR-07, TR-08), read from the Pilot inventory ----
+
+# M2.2, M5.5 with Context.sysml and Shack.sysml: each role by its path below the deployment,
+# the simple name of its type where the rule fixes it, and its multiplicity.
+DEPLOYMENT = ("context", "ShackContext")
+ROLES = (("shack", "Shack", "1:1"), ("shack.stations", "Station", "0:-1"), ("shack.stations.frontend", None, "1:1"),
+         ("shack.stations.frontend.browsers", "BrowserClient", "0:-1"), ("shack.stations.backend", None, "1:1"),
+         *(("shack.stations.backend." + name, None, "1:1") for name in (
+             "supervisor", "web", "mcp", "profile", "receive", "modes", "clock", "transmit", "operating",
+             "operating.ranking", "operating.auto", "operating.qso", "log", "spots", "udp", "audio", "radioControl")),
+         ("shack.stations.backend.flexAdapter", None, "0:1"),
+         ("shack.stations.backend.audioAdapter", "AudioDeviceAdapter", "1:1"),
+         ("shack.stations.backend.catAdapter", "CatAdapter", "1:1"))
+EXCLUSIVE_TYPES = ("AudioDeviceAdapter", "CatAdapter")
+OPERATOR_INTERACTION = "interfaces/external/OperatorInteraction.sysml"
+OUTSIDE_MEMBERS = {"port", "attribute", "metadata"}
+
+
+def of_type(values: list, type_name: str) -> bool:
+    """A PART row's definition, or a definition it specializes, has the simple name
+    `type_name`, in any package."""
+    return len(values) > 4 and any(kind.rsplit("::", 1)[-1] == type_name for kind in values[4].split(",") if kind)
+
+
+def fixed_rules(records: dict, root=None) -> None:
+    """TR-09's fixed rules, whatever the oracle file lists: one package-level part usage (and,
+    given `root`, the oracle's) and no view that adds a part or a connection."""
+    roots = records.get("ROOTPART", [])
+    if len(roots) != 1 or root is not None and roots != [[root]]:
+        raise ValueError("Architecture integrity: expected one physical deployment")
+    if records.get("VIEWSEMANTIC"):
+        raise ValueError("Architecture integrity: views may expose, not create runtime parts/connections")
+
+
+class Deployment:
+    """The resolved deployment of an inventory: parts, ports, connections and element files."""
+
+    def __init__(self, records: dict, keys: list[str]):
+        self.records = records
+        roots = records.get("ROOTPART", [])
+        self.root = roots[0][0].rsplit("::", 1)[-1] if len(roots) == 1 else None
+        self.parts = {row[0]: row[1:] for row in records.get("PART", [])}
+        self.ports = {row[0]: row[1] for row in records.get("PORT", [])}
+        refs = {row[0]: row[1:] for row in records.get("REF", [])}
+        self.files = {}
+        for name, _kind, index, *_rest in records.get("ELEM", []):
+            position = int(index)
+            self.files.setdefault(name, keys[position] if 0 <= position < len(keys) else "")
+        self.kinds = {row[0]: row[1] for row in records.get("ELEM", [])}
+        resolved = end_resolver(self.root or "", refs)
+        self.connections = []
+        for owner, name, ends, types, _index, anchor in records.get("CONN", []):
+            written = ends.split("|")
+            if len(written) == 2:
+                self.connections.append({"label": f"{owner}.{name}" if name else owner, "ends": [resolved(owner, end) for end in written],
+                                         "types": [typed for typed in types.split(",") if typed], "anchor": anchor})
+
+    def joined(self, port: str) -> list[dict]:
+        return [connection for connection in self.connections if port in connection["ends"]]
+
+
+def within(path: str, base: str) -> bool:
+    return path == base or path.startswith(base + ".")
+
+
+def role_faults(deployment: Deployment) -> list[tuple]:
+    """TR-06: the one deployment, the fixed roles (M2.2, M5.5) and the browser client's two
+    ports, each joined as M5.5 says."""
+    faults = []
+    root = deployment.root
+    if root != DEPLOYMENT[0] or not of_type(deployment.parts.get(root, []), DEPLOYMENT[1]):
+        faults.append(("TR-06", "docs/sysml", None, "expected one deployment context : ShackContext"))
+        return faults
+    for view in deployment.records.get("VIEWSEMANTIC", []):
+        faults.append(("TR-06", view[0], None, "view adds a part or a connection"))
+    for relative, type_name, bounds in ROLES:
+        path = root + "." + relative
+        values = deployment.parts.get(path)
+        if values is None:
+            faults.append(("TR-06", path, None, "role missing"))
+        elif type_name and not of_type(values, type_name):
+            faults.append(("TR-06", path, None, "role not typed " + type_name))
+        elif values[1] != bounds:
+            faults.append(("TR-06", path, None, "role with multiplicity " + population(values[1])))
+    for type_name in EXCLUSIVE_TYPES:
+        role = next(root + "." + relative for relative, typed, _bounds in ROLES if typed == type_name)
+        for path, values in deployment.parts.items():
+            if path != role and of_type(values, type_name):
+                faults.append(("TR-06", path, None, "second part of type " + type_name))
+    frontend = root + ".shack.stations.frontend"
+    browsers = frontend + ".browsers"
+    web = root + ".shack.stations.backend.web"
+    operator = root + ".operator"
+    own = sorted(port for port in deployment.ports if port.startswith(browsers + ".") and "." not in port[len(browsers) + 1:])
+
+    def file_of(port: str) -> str:
+        return deployment.files.get(deployment.ports[port].removeprefix("~"), "")
+
+    toward_station = [port for port in own if file_of(port).startswith("interfaces/internal/")]
+    allowed = {}
+    if len(toward_station) != 1:
+        faults.append(("TR-06", browsers, None, f"browser client with {len(toward_station)} ports toward the station"))
+    for port in toward_station:
+        if file_of(port) != STATION_LINK:
+            faults.append(("TR-06", port, None, "port toward the station not typed by StationLink"))
+        elif not any(any(within(end, web) for end in connection["ends"] if end != port) for connection in deployment.joined(port)):
+            faults.append(("TR-06", port, None, "StationLink port not joined to web"))
+        allowed[port] = web
+    for port in own:
+        if port in toward_station:
+            continue
+        if file_of(port) != OPERATOR_INTERACTION:
+            faults.append(("TR-06", port, None, "browser port that is neither toward the station nor the operator's"))
+            continue
+        if not any(any(within(end, operator) for end in connection["ends"] if end != port) for connection in deployment.joined(port)):
+            faults.append(("TR-06", port, None, "operator port not joined to the operator"))
+        allowed[port] = operator
+    for connection in deployment.connections:
+        first, second = connection["ends"]
+        for inside, other in ((first, second), (second, first)):
+            if within(inside, frontend) and not within(other, frontend) and \
+                    not any(within(inside, port) and within(other, peer) for port, peer in allowed.items()):
+                faults.append(("TR-06", connection["label"], None, "frontend connection ends at " + other))
+    return faults
+
+
+def context_faults(deployment: Deployment) -> list[tuple]:
+    """TR-07 (M4.1): each outside thing of the deployment is a black box of ports, each port
+    joined once, through an interface of `interfaces/external`, to a station function, and
+    no requirement names it as its subject."""
+    faults, root = [], deployment.root
+    if root is None:
+        return faults
+    shack = root + ".shack"
+    outside = sorted(path for path in deployment.parts if path.count(".") == 1 and path.startswith(root + ".") and path != shack)
+    members = {}
+    for path, side, category, name in deployment.records.get("MEMBER", []):
+        members.setdefault(path, []).append((side, category, name))
+    for path in outside:
+        for side, category, name in members.get(path, []):
+            if category not in OUTSIDE_MEMBERS:
+                faults.append(("TR-07", path, None, f"outside thing with {category} {name}" + (" in its type" if side == "type" else "")))
+        ports = sorted(port for port in deployment.ports if port.startswith(path + ".") and "." not in port[len(path) + 1:])
+        if not ports:
+            faults.append(("TR-07", path, None, "outside thing without a port"))
+        for port in ports:
+            joined = deployment.joined(port)
+            if not joined:
+                faults.append(("TR-07", port, None, "port joined to nothing"))
+                continue
+            if len(joined) > 1:
+                faults.append(("TR-07", port, None, f"port joined {len(joined)} times"))
+            for connection in joined:
+                if not any(deployment.files.get(typed, "").startswith("interfaces/external/") for typed in connection["types"]):
+                    faults.append(("TR-07", port, None, "port joined by no interface of interfaces/external"))
+                if not all(within(end, shack) for end in connection["ends"] if end != port):
+                    faults.append(("TR-07", port, None, "port joined to no station function"))
+        types = [typed for typed in deployment.parts[path][0].split(",") if typed and deployment.files.get(typed)]
+        usage = deployment.parts[root][0].split(",")[0] + "::" + path.split(".", 1)[1]
+        for anchor, _index, subject_types, subsetted in deployment.records.get("SUBJECT", []):
+            if set(subject_types.split(",")) & set(types) or usage in subsetted.split(","):
+                faults.append(("TR-07", path, None, "outside thing is the subject of " + anchor))
+    return faults
+
+
+def connection_faults(deployment: Deployment) -> list[tuple]:
+    """TR-08 (M5.8): every connection typed by an interface of `interfaces/`; no empty item in
+    a port definition: none untyped (an abstract one stands when a typed item subsets it),
+    none typed by a definition with neither doc nor feature."""
+    faults = []
+    for connection in deployment.connections:
+        interfaces = [typed for typed in connection["types"] if deployment.kinds.get(typed) == "InterfaceDefinition"]
+        if not connection["types"]:
+            faults.append(("TR-08", connection["label"], None, "untyped connection"))
+        elif not interfaces:
+            faults.append(("TR-08", connection["label"], None, "connection typed by no interface"))
+        elif not any(deployment.files.get(typed, "").startswith("interfaces/") for typed in interfaces):
+            faults.append(("TR-08", connection["label"], None, "connection typed by an interface outside interfaces/"))
+    empty = {row[0] for row in deployment.records.get("ELEM", []) if len(row) > 6 and row[1].endswith("Definition")
+             and row[5] == "0" and row[6] == "0"}
+    items = deployment.records.get("PITEM", [])
+    subsetted = {name for row in items if row[2] for name in row[3].split(",") if name}
+    for name, abstract, typing, _subsets, redefines, index, line in items:
+        if redefines == "true":
+            continue
+        if not typing:
+            if abstract == "true" and name in subsetted:
+                continue
+            faults.append(("TR-08", name, None, "abstract item no typed item subsets" if abstract == "true" else "untyped item"))
+        for typed in typing.split(","):
+            if typed in empty:
+                faults.append(("TR-08", name, None, f"item typed by {typed}, which has neither doc nor feature"))
+    return faults
+
+
+def served_and_ends(deployment: Deployment, model: Model) -> tuple[dict, dict]:
+    """The FRs Shack gives each part definition (by simple name), and the part definitions at
+    the ends of each interface and port definition (by simple name)."""
+    served, ends = {}, {}
+    tree = model.trees.get(SHACK_FILE)
+    satisfied = []
+    if tree is not None:
+        for element in tree.walk():
+            if element.kind == "part def":
+                for child in element.children:
+                    if child.kind == "satisfy" and (found := SATISFY_FR.match(child.head)):
+                        satisfied.append((element.name, found[1], found[2]))
+
+    def simple(values) -> str:
+        return values[0].split(",")[0].rsplit("::", 1)[-1] if values and values[0] else ""
+
+    for path, values in deployment.parts.items():
+        for owner, fr, by in satisfied:
+            if simple(values) == owner and (target := deployment.parts.get(path + "." + by)):
+                served.setdefault(simple(target), set()).add(fr)
+    for connection in deployment.connections:
+        owners = [simple(deployment.parts.get(end.rsplit(".", 1)[0], [])) for end in connection["ends"]]
+        names = {typed.rsplit("::", 1)[-1] for typed in connection["types"]}
+        names.update(deployment.ports[end].removeprefix("~").rsplit("::", 1)[-1] for end in connection["ends"] if end in deployment.ports)
+        for name in names:
+            ends.setdefault(name, set()).update(owner for owner in owners if owner)
+    return served, ends
+
+
+ENTRY_COMMANDS = ("createEntry", "updateEntry", "deleteEntry")
+
+
+def agent_faults(model: Model) -> list[tuple]:
+    """TR-06 for M5.10: `WstxStationCommands::AgentRefusal` names commands of
+    StationOperations and collections of `SettingsCollection`; mcp's port toward the
+    supervisor is typed by AgentOperations: StationOperations with exactly the refused
+    commands redefined to `[0]` and its entry commands' `collection` typed by
+    AgentCollection, which admits exactly the collections AgentRefusal does not name."""
+    faults = []
+    operations = model.definition(STATION_COMMANDS, "StationOperations", {"port def"}) if STATION_COMMANDS in model.trees else None
+    if operations is None:
+        return [("TR-06", STATION_COMMANDS, 0, "no port def StationOperations")]
+    commands = {child.name for child in operations.children if child.kind == "item" and re.search(r":>\s*commands\b", child.head)}
+    collection_def = next((element for key in model.trees for element in model.elements(key)
+                           if element.kind == "enum def" and element.name == "SettingsCollection"), None)
+    collections = {child.name for child in collection_def.children if child.kind == "enum" and child.name} if collection_def else set()
+    refusal = next((element for key in model.trees for element in model.elements(key)
+                    if element.kind == "enum def" and element.name == "AgentRefusal"), None)
+    if refusal is None:
+        return [("TR-06", STATION_COMMANDS, 0, "no enum def AgentRefusal")]
+    refused = {child.name: child for child in refusal.children if child.kind == "enum" and child.name}
+    for name, literal in refused.items():
+        if name not in commands and name not in collections:
+            faults.append(("TR-06", literal.key, literal.line, f"AgentRefusal literal {name} names no command or collection"))
+    agent = next((element for key in model.trees for element in model.elements(key)
+                  if element.kind == "port def" and element.name == "AgentOperations"), None)
+    if agent is None or not re.search(r"(?::>|\bspecializes\b)\s*(?:\w+::)*StationOperations\b", agent.head):
+        return faults + [("TR-06", STATION_COMMANDS, 0, "no port def AgentOperations :> StationOperations")]
+    removed, entries = {}, {}
+    for child in agent.children:
+        if child.kind == "item" and (found := re.search(r"(?::>>|\bredefines\b)\s*(\w+)\s*\[\s*0\s*\]", child.head)):
+            removed[found[1]] = child
+        elif child.kind == "item" and (found := re.search(r"(?::>>|\bredefines\b)\s*(\w+)\s*$", child.head.strip())):
+            entries[found[1]] = child
+    for name in sorted((set(refused) & commands) - set(removed)):
+        faults.append(("TR-06", agent.key, agent.line, f"mcp offers the refused command {name}"))
+    for name in sorted(set(removed) - set(refused)):
+        faults.append(("TR-06", agent.key, removed[name].line, f"mcp lacks the command {name}"))
+    for name in ENTRY_COMMANDS:
+        if name not in commands:
+            continue
+        child = entries.get(name)
+        if child is None or not any(grand.kind == "attribute" and re.search(r":>>\s*collection\s*:\s*(?:\w+::)*AgentCollection\b", grand.head)
+                                    for grand in child.children):
+            faults.append(("TR-06", agent.key, (child or agent).line, f"an agent's {name} takes every collection"))
+    admitted = next((element for key in model.trees for element in model.elements(key)
+                     if element.kind == "attribute def" and element.name == "AgentCollection"), None)
+    refused_collections = set(refused) & collections
+    if admitted is None or not re.search(r"(?::>|\bspecializes\b)\s*(?:\w+::)*SettingsCollection\b", admitted.head):
+        faults.append(("TR-06", STATION_COMMANDS, 0, "no attribute def AgentCollection :> SettingsCollection"))
+    else:
+        text = model.codes[admitted.key][admitted.begin:admitted.stop]
+        named = set(re.findall(r"\bSettingsCollection::(\w+)", text))
+        for name in sorted(named & refused_collections):
+            faults.append(("TR-06", admitted.key, admitted.line, f"an agent's entry command on {name}"))
+        for name in sorted(collections - refused_collections - named):
+            faults.append(("TR-06", admitted.key, admitted.line, f"AgentCollection lacks the collection {name}"))
+    mcp = model.definition("backend/mcp/Mcp.sysml", "McpAdapter", {"part def"}) if "backend/mcp/Mcp.sysml" in model.trees else None
+    if mcp is not None:
+        typed = [child.type_name() for child in mcp.children if child.kind == "port"]
+        if "AgentOperations" not in typed:
+            faults.append(("TR-06", mcp.key, mcp.line, "mcp has no port typed AgentOperations"))
+        if "StationOperations" in typed:
+            faults.append(("TR-06", mcp.key, mcp.line, "mcp offers every command of StationOperations"))
+    return faults
+
+
+# ---- The identity history (TR-15, M6.12) ----
+
+MAIN_BRANCH = "master"
+
+
+def repository_git(root: Path, *args: str) -> str:
+    """git in the repository at `root`; Unreadable when it fails."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    try:
+        result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, encoding="utf-8",
+                                errors="replace", env=env)
+    except OSError as error:
+        raise Unreadable(f"git {' '.join(args)}: {error}") from None
+    if result.returncode:
+        raise Unreadable(f"git {' '.join(args)}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def identity_history(root: Path) -> tuple[set[str], set[str]]:
+    """(used, present): the identities whose declarations were added to model files in the
+    history of `git merge-base HEAD master`, and those declared in that commit's model.
+    Refused as `Identity history unavailable: <reason>` without a repository, a `master` or
+    a working git."""
+    try:
+        base = repository_git(root, "merge-base", "HEAD", MAIN_BRANCH).strip()
+        log = repository_git(root, "log", "-p", "--format=", "-U0", base, "--", "docs/sysml")
+        listing = repository_git(root, "ls-tree", "-r", "--name-only", base, "--", "docs/sysml")
+        declared = []
+        for path in (line for line in listing.splitlines() if line.endswith(".sysml")):
+            declared.append(repository_git(root, "show", f"{base}:{path}"))
+    except Unreadable as error:
+        raise Unreadable(f"Identity history unavailable: {error}") from None
+    used = {match[1] or match[2] for line in log.splitlines() if line.startswith("+") and not line.startswith("+++")
+            for match in IDENTITY_DECLARATION.finditer(line)}
+    present = {match[1] or match[2] for text in declared for match in IDENTITY_DECLARATION.finditer(blanked(text))}
+    return used, present
+
+
+def reuse_faults(entries: dict, used: set[str], present: set[str]) -> list[tuple]:
+    """TR-15: an identity the main branch's history declared and its merge base does not is
+    declared again, whatever its text."""
+    return [("TR-15", entry["file"], entry["line"], "Identity declared again: " + identity)
+            for identity, entry in entries.items() if identity in used and identity not in present]
+
+
+# ---- The code structure (TR-17, M2.3) ----
+
+CODE_PATH = re.compile(r"(?:server|client)/[\w./-]+\.(?:rs|js|html|css)\b")
+RUST_MOD = re.compile(r"((?:#\[[^\]]*\]\s*)*)(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
+
+
+def rust_modules(root: Path) -> list[str]:
+    """The Rust code modules: every `*.rs` below `server/src/` but `*_tests.rs`, `tests.rs`
+    and a module that every declaration declares under `#[cfg(test)]` or from a test file."""
+    source_root = root / "server/src"
+    files = sorted(path for path in source_root.rglob("*.rs") if path.is_file())
+    declared = {}
+    for path in files:
+        code = blanked(path.read_text(encoding="utf-8"))
+        folder = path.parent if path.name in ("mod.rs", "lib.rs", "main.rs") else path.parent / path.stem
+        for match in RUST_MOD.finditer(code):
+            attributes = match[1]
+            source = path.read_text(encoding="utf-8")[match.start():match.end()]
+            explicit = re.search(r'#\[path\s*=\s*"([^"]+)"\]', source)
+            if explicit:
+                target = (path.parent / explicit[1]).resolve()
+            else:
+                target = (folder / (match[2] + ".rs")).resolve()
+                if not target.is_file():
+                    target = (folder / match[2] / "mod.rs").resolve()
+            # A declaration in a test file is one under `#[cfg(test)]`.
+            test_file = path.name == "tests.rs" or path.name.endswith("_tests.rs")
+            declared.setdefault(target, []).append(test_file or "cfg(test)" in attributes.replace(" ", ""))
+    modules = []
+    for path in files:
+        if path.name == "tests.rs" or path.name.endswith("_tests.rs"):
+            continue
+        flags = declared.get(path.resolve())
+        if flags and all(flags):
+            continue
+        modules.append(path.relative_to(root).as_posix())
+    return modules
+
+
+def code_modules(root: Path) -> list[str]:
+    """The code modules of M2.3: the Rust modules and every `*.js` below `client/`."""
+    scripts = sorted(path.relative_to(root).as_posix() for path in (root / "client").rglob("*.js") if path.is_file())
+    return rust_modules(root) + scripts
+
+
+def code_folders(folder: str) -> tuple[str, str]:
+    """A part's code folders: `server/src/<folder>/` and `client/src/<folder>/`, `<folder>` its
+    model folder below `backend/`, or `frontend`."""
+    below = folder.removeprefix("backend/")
+    return f"server/src/{below}/", f"client/src/{below}/"
+
+
+def code_differs(model: Model, element: Element) -> list[tuple[Element, str]]:
+    """The `@CodeDiffers` annotations directly in an element, with their `what` text."""
+    found, source = [], model.sources[element.key]
+    for child in element.children:
+        if child.kind == "@" and child.name == "CodeDiffers" and child.opening >= 0:
+            body = source[child.opening + 1:child.stop - 1]
+            texts = [string_literal(value) for feature, value in assignments(body, blanked(body)) if feature == "what"]
+            found.append((child, texts[0] if texts and texts[0] is not None else ""))
+    return found
+
+
+def structure_faults(model: Model, links: dict, root: Path) -> list[tuple]:
+    """TR-17: every code module belongs to exactly one part by its part definition's
+    `@ImplementedIn`; a part's modules, and the modules its clauses name, stand in its folder
+    or are named by its part definition's `@CodeDiffers`; such a marker names no module
+    inside the folder."""
+    faults, owners, parts = [], {}, part_definitions(model)
+    for folder, definition in parts.items():
+        for module in part_link(model, definition):
+            owners.setdefault(module, []).append(folder)
+    for module in code_modules(root):
+        found = owners.get(module, [])
+        if not found and not module.startswith("server/src/shared/"):
+            faults.append(("TR-17", module, None, "module of no part"))
+        if len(found) > 1:
+            faults.append(("TR-17", module, None, "module of two parts: " + ", ".join(sorted(found))))
+    for folder, definition in parts.items():
+        inside = code_folders(folder)
+        named = {path for _marker, text in code_differs(model, definition) for path in CODE_PATH.findall(text)}
+        used = set(part_link(model, definition))
+        for identity, modules in links.items():
+            if part_folder(model_entry_file(model, identity)) == folder:
+                used.update(modules)
+        for module in sorted(used):
+            if not module.startswith(inside) and module not in named:
+                faults.append(("TR-17", module, None, f"module of {definition.name} outside its folder without CodeDiffers"))
+        for marker, text in code_differs(model, definition):
+            for path in CODE_PATH.findall(text):
+                if path.startswith(inside):
+                    faults.append(("TR-17", definition.key, marker.line, f"CodeDiffers names a module inside the folder: {path}"))
+    return faults
+
+
+def model_entry_file(model: Model, identity: str) -> str:
+    """The model file that declares `identity`."""
+    if not hasattr(model, "declared_in"):
+        model.declared_in = {identity_of(element): key for key in model.trees for element in model.elements(key)
+                             if identity_of(element)}
+    return model.declared_in.get(identity, "")
+
+
+# ---- Model and code (TR-16, M6.8, M6.13) ----
+
+UNIT_SCALE = {"Ms": 1.0, "Seconds": 1000.0}
+RUST_SUFFIX = r"(?:u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize|f32|f64)"
+CODE_TOKEN = re.compile(r"/\*[\s\S]*?\*/|//[^\n]*|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|[^/\"'`]+|.")
+WIRE_FILES = ("interfaces/internal/StationLink.sysml", STATION_COMMANDS, "interfaces/external/Mcp.sysml",
+              "backend/profile/ProfileDocument.sysml")
+VARIABLE = re.compile(r"\bWSTX_[A-Z0-9_]+\b")
+
+
+def snake(name: str) -> str:
+    """A model name as `WstxStationLink::WireNames` writes it: each capital letter becomes an
+    underscore and its small letter; digits stay with the word before them."""
+    special = {"treat73AsCq": "treat_73_as_cq", "onePlusPer3000Km": "one_plus_per_3000_km",
+               "onePlusPer500KmUp": "one_plus_per_500_km_up"}
+    if name in special:
+        return special[name]
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def upper_camel(name: str) -> str:
+    return "".join(part[:1].upper() + part[1:] for part in snake(name).split("_") if part)
+
+
+def code_text(source: str) -> tuple[str, set[str], set[str]]:
+    """A code file without comments (strings kept), its identifiers, and its string values
+    with the words each holds."""
+    kept, identifiers, strings = [], set(), set()
+    for token in CODE_TOKEN.finditer(source):
+        text = token.group()
+        if text.startswith(("//", "/*")):
+            kept.append(re.sub(r"[^\n]", " ", text))
+            continue
+        kept.append(text)
+        if text[:1] in "\"'`" and len(text) > 1:
+            strings.add(text[1:-1])
+            strings.update(re.findall(r"[A-Za-z0-9_]+", text[1:-1]))
+        else:
+            identifiers.update(re.findall(r"[A-Za-z_]\w*", text))
+    return "".join(kept), identifiers, strings
+
+
+class CodeScope:
+    """The constants of the code modules: per module its top-level ones, the ones of each
+    `impl D` and `mod d` block, and for JavaScript each `const D = Object.freeze({...})`."""
+
+    def __init__(self, root: Path, modules: list[str]):
+        self.root = root
+        self.modules = modules
+        self.text, self.identifiers, self.strings = {}, {}, {}
+        self.top, self.impl, self.mod, self.types = {}, {}, {}, set()
+        for module in modules:
+            path = root / module
+            if not path.is_file():
+                continue
+            text, identifiers, strings = code_text(path.read_text(encoding="utf-8"))
+            self.text[module], self.identifiers[module], self.strings[module] = text, identifiers, strings
+            if module.endswith(".rs"):
+                self.read_rust(module, text)
+            else:
+                self.read_script(module, text)
+
+    def read_rust(self, module: str, text: str):
+        code = re.sub(r"\"(?:\\.|[^\"\\])*\"", lambda match: '"' + "_" * (len(match[0]) - 2) + '"', text)
+        stack, start = [], 0
+        for index, character in enumerate(code):
+            if character in ";{}":
+                if character == "{":
+                    header = code[start:index]
+                    impl = re.search(r"\bimpl\b(?:\s*<[^{]*?>)?\s+(?:(?:[\w:]+)(?:<[^{]*?>)?\s+for\s+)?(?:[\w]+::)*(\w+)(?:<[^{]*>)?\s*(?:where\b[^{]*)?$", header)
+                    mod = re.search(r"\bmod\s+(\w+)\s*$", header)
+                    kind = ("impl", impl[1]) if impl else ("mod", mod[1]) if mod else ("other", "")
+                    shaped = re.search(r"\b(?:struct|enum)\s+(\w+)(?:<[^{]*>)?\s*(?:where\b[^{]*)?$", header)
+                    if shaped and re.search(r"\w", code[index + 1:code.find("}", index)] if code.find("}", index) > 0 else ""):
+                        self.types.add(shaped[1])
+                    stack.append(kind)
+                elif character == "}":
+                    if stack:
+                        stack.pop()
+                start = index + 1
+            if character == "(" and re.search(r"\bstruct\s+(\w+)\s*$", code[start:index]):
+                self.types.add(re.search(r"\bstruct\s+(\w+)\s*$", code[start:index])[1])
+        for match in re.finditer(r"(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+(?:mut\s+)?([A-Z][A-Z0-9_]*)\s*:\s*[^=;]+?=\s*([^;]+);", code):
+            depth = self.context(code, match.start())
+            value = text[match.start(2):match.end(2)]
+            if depth == []:
+                self.top.setdefault(module, {})[match[1]] = value
+            elif len(depth) == 1 and depth[0][0] == "impl":
+                self.impl.setdefault((module, depth[0][1]), {})[match[1]] = value
+            elif len(depth) == 1 and depth[0][0] == "mod":
+                self.mod.setdefault((module, depth[0][1]), {})[match[1]] = value
+
+    @staticmethod
+    def context(code: str, offset: int) -> list:
+        stack, start = [], 0
+        for index in range(offset):
+            character = code[index]
+            if character == "{":
+                header = code[start:index]
+                impl = re.search(r"\bimpl\b(?:\s*<[^{]*?>)?\s+(?:(?:[\w:]+)(?:<[^{]*?>)?\s+for\s+)?(?:[\w]+::)*(\w+)(?:<[^{]*>)?\s*(?:where\b[^{]*)?$", header)
+                mod = re.search(r"\bmod\s+(\w+)\s*$", header)
+                stack.append(("impl", impl[1]) if impl else ("mod", mod[1]) if mod else ("other", ""))
+                start = index + 1
+            elif character == "}":
+                if stack:
+                    stack.pop()
+                start = index + 1
+            elif character == ";":
+                start = index + 1
+        return stack
+
+    def read_script(self, module: str, text: str):
+        depth = 0
+        for index, line in enumerate(text.split("\n")):
+            if depth == 0:
+                if frozen := re.match(r"\s*(?:export\s+)?const\s+([A-Za-z_]\w*)\s*=\s*Object\.freeze\(\{", line):
+                    body = text.split("\n")[index:]
+                    joined = "\n".join(body)
+                    end = joined.find("})")
+                    for key, value in re.findall(r"\b([A-Z][A-Z0-9_]*)\s*:\s*([^,\n}]+)", joined[:end]):
+                        self.impl.setdefault(("client/", frozen[1]), {})[key] = value.strip()
+                elif plain := re.match(r"\s*(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*=\s*([^;]+);", line):
+                    self.top.setdefault("client/", {})[plain[1]] = plain[2]
+            depth += line.count("{") - line.count("}")
+
+    def scope_of(self, module: str) -> str:
+        return "client/" if module.endswith(".js") else module
+
+
+def evaluate(text: str, names: dict, seen=()):
+    """The value of a constant or model expression: a number, a string, a bool, None, a list,
+    ("duration", milliseconds) or ("enum", literal); a ValueError when it is no constant."""
+    text = text.strip()
+    text = re.sub(r"(?<=\d)_(?=\d)", "", text)
+    text = re.sub(r"(\d)_?" + RUST_SUFFIX + r"\b", r"\1", text)
+    text = re.sub(r"\bas\s+" + RUST_SUFFIX + r"\b", "", text)
+    text = re.sub(r"(?:std::time::)?Duration::from_secs(?:_f64)?\s*\(", "__seconds(", text)
+    text = re.sub(r"(?:std::time::)?Duration::from_millis\s*\(", "__milliseconds(", text)
+    text = re.sub(r"&\s*\[", "[", text)
+    text = re.sub(r"(?<![\w.])(\d+)\.(?![\d\w])", r"\1.0", text)
+    text = re.sub(r"\bSelf::", "", text)
+    enum = re.fullmatch(r"(?:\w+::)*\w+::('[^']+'|\w+)", text)
+    if enum and not re.fullmatch(r"\d.*", text):
+        return ("enum", enum[1].strip("'"))
+    text = re.sub(r"\btrue\b", "True", re.sub(r"\bfalse\b", "False", re.sub(r"\bnull\b", "None", text)))
+    try:
+        tree = ast.parse(text, mode="eval")
+    except SyntaxError:
+        raise ValueError("no constant: " + text) from None
+    operators = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Mod: operator.mod,
+                 ast.LShift: operator.lshift, ast.FloorDiv: operator.floordiv}
+
+    def value(node):
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, (ast.List, ast.Tuple)):
+            return [value(item) for item in node.elts]
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+            inner = value(node.operand)
+            return -inner if isinstance(node.op, ast.USub) else inner
+        if isinstance(node, ast.BinOp):
+            left, right = value(node.left), value(node.right)
+            if isinstance(node.op, ast.Div):
+                return int(left / right) if isinstance(left, int) and isinstance(right, int) else left / right
+            if type(node.op) in operators:
+                return operators[type(node.op)](left, right)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and len(node.args) == 1:
+            scale = {"__seconds": 1000.0, "__milliseconds": 1.0}.get(node.func.id)
+            if scale is not None:
+                return ("duration", value(node.args[0]) * scale)
+        if isinstance(node, ast.Name) and node.id in names and node.id not in seen:
+            return evaluate(names[node.id], names, (*seen, node.id))
+        raise ValueError("no constant: " + text)
+
+    return value(tree.body)
+
+
+def equal(model_text: str, model_value, code_value, feature: str) -> bool:
+    """Whether a code constant holds the model value, read in the unit of the feature's name."""
+    if isinstance(code_value, tuple) and code_value[0] == "duration":
+        unit = next((suffix for suffix in UNIT_SCALE if feature.endswith(suffix)), None)
+        if unit is None:
+            return False
+        code_value = code_value[1] / UNIT_SCALE[unit]
+    if isinstance(model_value, tuple) and model_value[0] == "enum":
+        return isinstance(code_value, str) and code_value in (model_value[1], snake(model_value[1]))
+    if isinstance(model_value, list):
+        return isinstance(code_value, list) and len(model_value) == len(code_value) and \
+            all(equal(str(item), item, other, feature) for item, other in zip(model_value, code_value))
+    if isinstance(model_value, bool) or isinstance(code_value, bool):
+        return model_value is code_value
+    if isinstance(model_value, (int, float)) and isinstance(code_value, (int, float)):
+        decimals = re.search(r"\.(\d+)\s*$", model_text)
+        if decimals and isinstance(model_value, float):
+            return round(code_value, len(decimals[1])) == round(model_value, len(decimals[1]))
+        return code_value == model_value
+    return model_value == code_value
+
+
+class Compared:
+    """One compared element of the model: a value, a name or a variable."""
+
+    def __init__(self, kind: str, element: Element, qualified: str, owner, feature: str, text: str = ""):
+        self.kind, self.element, self.qualified, self.owner, self.feature, self.text = kind, element, qualified, owner, feature, text
+
+
+def compared_elements(model: Model, controls: set[str]) -> list[Compared]:
+    """The elements TR-16 compares: each attribute value below a definition, each enumeration
+    literal outside `shared/`, each feature name of the wire files and control interfaces,
+    each `'type'` value and each `WSTX_*` variable the model names; Requirements.sysml left
+    out."""
+    found = []
+    wire = set(WIRE_FILES) | {key for key, package in model.packages.items() if package in controls}
+    for key, tree in model.trees.items():
+        if key == REQUIREMENTS_FILE:
+            continue
+        package = model.packages.get(key)
+        source = model.sources[key]
+        for element in list(tree.walk())[1:]:
+            owner = element.parent
+            while owner is not None and not owner.kind.endswith("def"):
+                owner = owner.parent
+            if owner is None or not element.name:
+                continue
+            name = element.name.strip("'")
+            qualified = f"{package}::{owner.name}::{element.name}"
+            if element.kind == "enum" and owner.kind == "enum def":
+                if not key.startswith("shared/"):
+                    found.append(Compared("name", element, qualified, owner, name))
+                continue
+            if element.kind not in ("attribute", "item"):
+                continue
+            equals = re.search(r"(?<![=!<>:])=(?![=>])", element.head)
+            if element.kind == "attribute" and equals:
+                text = source[element.begin + equals.end():element.begin + len(element.head)].strip().rstrip(";").strip()
+                if name == "type":
+                    literal = string_literal(text)
+                    found.append(Compared("name", element, qualified, owner, literal if literal is not None else text))
+                elif key in wire and owner.kind == "item def":
+                    found.append(Compared("name", element, qualified, owner, name))
+                else:
+                    found.append(Compared("value", element, qualified, owner, name, text))
+            elif key in wire and owner.kind.endswith("def"):
+                found.append(Compared("name", element, qualified, owner, name))
+        for number, line in enumerate(source.split(chr(10)), 1):
+            for match in VARIABLE.finditer(line):
+                holder = Element(key, "variable", match[0], 0, 0, -1, None, "")
+                holder.line = number
+                found.append(Compared("variable", holder, match[0], None, match[0]))
+    unique = {}
+    for item in found:
+        unique.setdefault((item.kind, item.qualified, item.element.key, item.element.line), item)
+    return list(unique.values())
+
+
+def clause_reach(model: Model, entries: dict) -> dict[int, list[str]]:
+    """For each definition (by id of its element) the clauses that name it in their sentence
+    or reach it through the typed features of one they name."""
+    definitions = {}
+    for key in model.trees:
+        for element in model.elements(key):
+            if element.kind.endswith("def") and element.name:
+                definitions.setdefault((key, element.name), element)
+
+    def resolve(key: str, written: str):
+        return model.find_definition(key, written)
+
+    def typed(definition: Element) -> list[Element]:
+        reached = []
+        for child in definition.children:
+            if child.kind in ("attribute", "item", "part", "port", "ref", "enum") and child.type_written():
+                if found := resolve(definition.key, child.type_written()):
+                    reached.append(found)
+        if supertype := re.search(r"(?::>|\bspecializes\b)\s*((?:\w+::)*\w+)", definition.head):
+            if found := resolve(definition.key, supertype[1]):
+                reached.append(found)
+        return reached
+
+    reach = {}
+    for identity, entry in entries.items():
+        if not identity.startswith("CL-"):
+            continue
+        key = entry["file"]
+        element = next((element for element in model.elements(key) if identity_of(element) == identity), None)
+        if element is None:
+            continue
+        doc = element.doc
+        named = [definition for (file, name), definition in definitions.items()
+                 if file == key and re.search(r"\b" + re.escape(name) + r"\b", doc)]
+        for qualified in re.findall(r"\b(Wstx\w+)::(\w+)", doc):
+            if (target := model.package_files.get(qualified[0])) and (found := definitions.get((target, qualified[1]))):
+                named.append(found)
+        queue, seen = list(named), set()
+        while queue:
+            definition = queue.pop()
+            if id(definition) in seen:
+                continue
+            seen.add(id(definition))
+            reach.setdefault(id(definition), []).append(identity)
+            queue.extend(typed(definition))
+    return reach
+
+
+def part_code(model: Model, links: dict, all_modules: list[str]) -> dict[str, list[str]]:
+    """The code of each part folder: its part definition's modules and those its clauses name."""
+    code = {}
+    for folder, definition in part_definitions(model).items():
+        code[folder] = set(part_link(model, definition))
+    for identity, modules in links.items():
+        if folder := part_folder(model_entry_file(model, identity)):
+            code.setdefault(folder, set()).update(modules)
+    return {folder: sorted(module for module in modules if module in all_modules) for folder, modules in code.items()}
+
+
+def value_faults(model: Model, entries: dict, links: dict, root: Path) -> list[tuple]:
+    """TR-16: each compared element is covered, in this order, by V3 (every clause naming or
+    reaching it is target or partial), V4 (its `@CodeDiffers`, refused where its code
+    matches), V1 (its constant, name or variable in its code) or V2 (a test bound to a case
+    of a clause reaching it holds its qualified name)."""
+    modules = code_modules(root)
+    scope = CodeScope(root, modules)
+    controls = control_packages(model)
+    elements = compared_elements(model, controls)
+    reach = clause_reach(model, entries)
+    codes = part_code(model, links, modules)
+    faults = []
+
+    def code_of(element: Element) -> list[str]:
+        if element.key.startswith(("interfaces/", "shared/")) or part_folder(element.key) is None:
+            return modules
+        return codes.get(part_folder(element.key), [])
+
+    values_by_feature = {}
+    for item in elements:
+        if item.kind == "value":
+            for module in code_of(item.element):
+                values_by_feature.setdefault((scope.scope_of(module), item.feature), set()).add(item.qualified)
+
+    def candidates(item: Compared, mine: list[str]):
+        constant = snake(item.feature).upper()
+        owner = item.owner.name
+        scopes = sorted({scope.scope_of(module) for module in mine})
+        first = [(module, values[constant]) for (module, typed), values in scope.impl.items()
+                 if typed == owner and constant in values and module in scopes
+                 and (module == "client/" or owner in scope.types)]
+        if first:
+            return first, None
+        second = [(module, values[constant]) for (module, name), values in scope.mod.items()
+                  if name == snake(owner) and constant in values and module in scopes]
+        if second:
+            return second, None
+        third = [(module, scope.top[module][constant]) for module in scopes if constant in scope.top.get(module, {})]
+        if len(third) == 1 and len(values_by_feature.get((third[0][0], item.feature), set())) > 1:
+            return third, "shared"
+        return third, None
+
+    def matches(item: Compared, mine: list[str]):
+        """(found, equal, what) for V1."""
+        if item.kind == "variable":
+            found = any(item.feature in scope.strings.get(module, ()) for module in mine)
+            return found, found, ""
+        if item.kind == "name":
+            forms = {item.feature, snake(item.feature), upper_camel(item.feature)}
+            found = any(forms & (scope.identifiers.get(module, set()) | scope.strings.get(module, set())) for module in mine)
+            return found, found, ""
+        found, shared = candidates(item, mine)
+        if not found:
+            return False, False, ""
+        if len(found) > 1 or shared:
+            return True, None, "twice"
+        module, text = found[0]
+        names = dict(scope.top.get(module, {}))
+        for (holder, _owner), values in list(scope.impl.items()) + list(scope.mod.items()):
+            if holder == module:
+                names.update(values)
+        try:
+            model_value = evaluate(item.text, {})
+            code_value = evaluate(text, names)
+        except (ValueError, ZeroDivisionError, TypeError, RecursionError):
+            return True, False, f"model {item.text}, code {text.strip()}"
+        return True, equal(item.text, model_value, code_value, item.feature), f"model {item.text}, code {text.strip()}"
+
+    for item in elements:
+        element = item.element
+        mine = code_of(element)
+        line = element.line
+        owner_reach = reach.get(id(item.owner), []) if item.owner is not None else []
+        clauses = sorted(set(owner_reach))
+        if clauses and all(entries[clause]["state"] in ("target", "partial") for clause in clauses):
+            continue
+        markers = code_differs(model, element) if item.kind != "variable" else []
+        found, same, what = matches(item, mine)
+        if markers:
+            if same:
+                faults.append(("TR-16", element.key, line, "Code matches its CodeDiffers: " + item.qualified))
+            continue
+        if same is None:
+            faults.append(("TR-16", element.key, line, "Name twice in one code: " + snake(item.feature).upper()))
+            continue
+        if same:
+            continue
+        if found and item.kind == "value":
+            faults.append(("TR-16", element.key, line, f"Model and code differ: {item.qualified}: {what}"))
+            continue
+        tests = {binding.partition("::")[0] for clause in clauses for case in entries[clause]["cases"]
+                 for binding in entries[case]["bindings"]}
+        package, _, rest = item.qualified.partition("::")
+        definition = package + "::" + rest.rsplit("::", 1)[0]
+        if item.kind != "variable" and any(held_in(root / test, item.qualified, definition, item.element.name) for test in tests):
+            continue
+        faults.append(("TR-16", element.key, line, "Value not verified: " + item.qualified))
+    return faults
+
+
+def held_in(path: Path, qualified: str, definition: str, name: str) -> bool:
+    """V2: a test file holds the qualified name, or its definition's and the feature's name."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return qualified in text or definition in text and re.search(r"(?<![\w'])" + re.escape(name.strip("'")) + r"(?![\w'])", text) is not None
+
+
+def model_keys(directory: Path) -> tuple[list[str], list[Path]]:
+    """The model file keys and paths in the order the Pilot reads them: Requirements first."""
+    files = model_files(directory)
+    keys = [REQUIREMENTS_FILE, *(key for key in files if key != REQUIREMENTS_FILE)]
+    return keys, [files[key] for key in keys if key in files]
+
+
+def trace_faults(entries: dict, model: Model, root: Path) -> tuple[dict, list[tuple]]:
+    """The checks of `traces` after the catalog and the tags: code links (TR-13), model and
+    code (TR-16) and the code structure (TR-17)."""
+    links, faults = code_links(model, entries)
+    faults += value_faults(model, entries, links, root)
+    faults += structure_faults(model, links, root)
+    return links, faults
+
+
+def refuse(lines: list[str]) -> None:
+    if lines:
+        print("\n".join(lines))
+        raise ValueError(f"{len(lines)} faults")
+
+
+def checked_entries() -> dict:
+    """The authority, the catalog, the tags and the tag bindings, as `traces` and `check`
+    begin."""
+    authority(MODELS, FSD)
+    entries = canonical_catalog(MODELS, ROOT)
+    refuse(tag_faults(entries, ROOT))
+    binding_agreement(entries, ROOT)
+    return entries
 
 
 def main(argv=None):
@@ -2958,11 +3339,10 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Download and verify pinned portable tools; no global installation")
     commands.add_parser("fingerprints", help="Print canonical model fingerprints for review; never updates models")
-    commands.add_parser("check", help="Check canonical SysML authority and run full semantic validation")
-    commands.add_parser("traces", help="Check canonical source/model bindings only; no Pilot or behavior execution")
-    listing = commands.add_parser("markers", help="List the ModelNotes markers of the model by file key and line; checks and writes nothing")
+    commands.add_parser("check", help="Check the model whole: traces, the Pilot validation, the oracle and every rule")
+    commands.add_parser("traces", help="Check the catalog, tags, code links, model values and code structure; no Pilot")
+    listing = commands.add_parser("markers", help="List the WstxModelNotes markers of the model by file key and line; checks and writes nothing")
     listing.add_argument("kinds", nargs="*", metavar="Kind")
-    commands.add_parser("retired", help="Check the catalog as fingerprints does, then list the retired cases by identity; writes nothing")
     commands.add_parser("status", help="Check the catalog, then print each FR's status computed from its clauses; writes nothing")
     commands.add_parser("oracle", help="Write the architecture oracle file from the resolved inventory after validation and the fixed rules; print its changes")
     semantic = commands.add_parser("validate", help="Run real semantic validation on ordered files")
@@ -2974,10 +3354,9 @@ def main(argv=None):
     listed = commands.add_parser("identities", help="List the FR/CL/TC identities of two revisions with their status; writes nothing")
     listed.add_argument("base")
     listed.add_argument("head", nargs="?")
-    renames = commands.add_parser("paths", help="Rewrite the code paths the model names from a rename list, after the files were moved (CL-014-20)")
+    renames = commands.add_parser("paths", help="Rewrite the code paths the model names from a rename list, after the files were moved")
     renames.add_argument("list", type=Path)
     args = parser.parse_args(argv)
-    scratch = None
     try:
         if args.command == "setup":
             setup(args.cache_dir)
@@ -2997,9 +3376,9 @@ def main(argv=None):
             print("\n".join(lines))
             return code
         if args.command == "traces":
-            authority(MODELS, FSD)
-            entries = canonical_catalog(MODELS, ROOT)
-            binding_agreement(entries, ROOT)
+            entries = checked_entries()
+            _links, faults = trace_faults(entries, Model(MODELS), ROOT)
+            refuse(fault_lines(faults))
             print(f"Canonical source/model trace checks passed: {len(entries)} identities; no semantic validation or behavior execution.")
             return 0
         if args.command == "markers":
@@ -3011,14 +3390,6 @@ def main(argv=None):
             code, lines = rewrite_paths(args.list, MODELS, ROOT)
             print("\n".join(lines))
             return code
-        if args.command == "retired":
-            authority(MODELS, FSD)
-            canonical_catalog(MODELS, ROOT)
-            lines = sorted(f"{identity}: {'superseded by ' + ', '.join(names) if names else test}: {key}:{line}"
-                           for key, path in model_files(MODELS).items()
-                           for identity, test, line, names in file_retirements(key, path.read_text(encoding="utf-8")))
-            print("\n".join(lines + [f"{len(lines)} retired cases"]))
-            return 0
         if args.command == "status":
             authority(MODELS, FSD)
             print("\n".join(status_lines(canonical_catalog(MODELS, ROOT))))
@@ -3032,49 +3403,42 @@ def main(argv=None):
             canonical_catalog(MODELS, ROOT)
             print(json.dumps({key: digest(path.read_text(encoding="utf-8")) for key, path in model_files(MODELS).items()}, indent=2))
             return 0
-        if args.command == "check":
-            authority(MODELS, FSD)
-            entries = canonical_catalog(MODELS, ROOT)
-            binding_agreement(entries, ROOT)
-            entry = "Requirements.sysml"
-            files = model_files(MODELS)
-            keys = [entry, *(key for key in files if key != entry)]
-            paths = [MODELS / entry, *(path for key, path in files.items() if key != entry)]
-            # The pending list is refused whole before any passed line (CL-014-18). A pinned
-            # check reads the commit's list, key set and structure sources instead.
-            if CHECK_COMMIT is None:
-                structure_models, structure_keys = MODELS, keys
-                pending = pending_list(PENDING, set(files))
-            else:
-                scratch = tempfile.TemporaryDirectory(prefix="sysml-pinned-check-")
-                structure_models, structure_keys, pending = pinned_structure(CHECK_COMMIT, Path(scratch.name))
-        else:
-            paths = args.files
-        result = validate(paths, args.cache_dir, inventory=args.command == "check")
-        if args.command == "check":
-            if result.returncode == 0 and pending is not None:
-                named = pending_elements(pending[1], inventory_records(result.stdout) if pending[1] else {}, structure_keys)
-            print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
+        if args.command == "validate":
+            result = validate(args.files, args.cache_dir)
+            for line in result.stdout.splitlines():
+                if not line.startswith("Reading "):
+                    print(line)
+            if result.stderr:
+                print(result.stderr, file=sys.stderr, end="")
+            return result.returncode
+        entries = checked_entries()
+        model = Model(MODELS)
+        _links, faults = trace_faults(entries, model, ROOT)
+        used, present = identity_history(ROOT)
+        keys, paths = model_keys(MODELS)
+        result = validate(paths, args.cache_dir, inventory=True)
+        print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
         for line in result.stdout.splitlines():
             if not line.startswith(("Reading ", "AST\t")):
                 print(line)
         if result.stderr:
             print(result.stderr, file=sys.stderr, end="")
-        if result.returncode == 0 and args.command == "check":
-            counts = architecture_integrity(result.stdout)
-            print("Architecture integrity passed: " + ", ".join(f"{count} {kind}" for kind, count in counts.items()) + "; runtime behavior not proved.")
-            if pending is None:
-                print(f"Structure checks not run: {CHECK_COMMIT} has no pending list")
-            else:
-                records = inventory_records(result.stdout) if "AST\t" in result.stdout else {}
-                print("\n".join(structure_lines(structure_models, records, structure_keys, pending, named)))
-        return result.returncode
+        if result.returncode:
+            return result.returncode
+        counts = architecture_integrity(result.stdout)
+        print("Architecture integrity passed: " + ", ".join(f"{count} {kind}" for kind, count in counts.items()) + "; runtime behavior not proved.")
+        deployment = Deployment(inventory_records(result.stdout), keys)
+        served, ends = served_and_ends(deployment, model)
+        faults += tree_faults(MODELS, model) + layer_faults(model) + content_faults(model)
+        faults += clause_faults(model, entries, served, ends) + role_faults(deployment) + agent_faults(model)
+        faults += context_faults(deployment) + connection_faults(deployment) + reuse_faults(entries, used, present)
+        faults += writing_faults(model)
+        refuse(fault_lines(faults))
+        print(f"Model rules passed: {len(model.files)} model files.")
+        return 0
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"SysML check failed: {error}", file=sys.stderr)
         return 2
-    finally:
-        if scratch is not None:
-            scratch.cleanup()
 
 
 if __name__ == "__main__":

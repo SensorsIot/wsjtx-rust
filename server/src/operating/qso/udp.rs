@@ -23,7 +23,7 @@ pub const FILE_NAME: &str = "udp.json";
 /// CL-112-01 the base form of the instance name without a radio.
 pub const INSTANCE_BASE: &str = "WSTX-Rust";
 /// The model of a CAT control: every CAT endpoint is icom7300:// or a plain COMn of one
-/// (WstxRadioIO), the IC-7300 of the radio model table.
+/// (WstxCatControl::RadioConnection), the IC-7300 of the radio model table.
 const CAT_MODEL: &str = "IC-7300";
 /// A clash beyond this many live servers takes the base form (bounded by the processes
 /// that run).
@@ -52,7 +52,7 @@ const QSO_LOGGED_BIT: u8 = 16;
 const CLOSE_BIT: u8 = 32;
 const LOGGED_ADIF_BIT: u8 = 64;
 
-/// WstxUdp::UdpTarget.
+/// WstxUdpControl::UdpTarget.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Target {
     pub address: SocketAddr,
@@ -102,7 +102,7 @@ impl Target {
         (self.address, self.enabled, self.ttl, self.interface)
     }
 }
-/// WstxUdp::UdpConfiguration (without its revision): the target list.
+/// WstxUdpControl::UdpConfiguration (without its revision): the target list.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Config {
     pub targets: Vec<Target>,
@@ -226,7 +226,7 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, String> {
 }
 
 /// CL-112-01 the base form of the instance name of a CAT or no-radio profile.
-pub(crate) fn base_name(document: &profile::Document) -> String {
+pub(crate) fn base_name(document: &profile::ProfileDocument) -> String {
     let c = &document.control;
     let cat = c.mode == "cat"
         && c.endpoint
@@ -352,7 +352,7 @@ pub(crate) fn exchanges_of(record: &logbook::Record) -> (String, String) {
     }
 }
 
-/// Volatile per-target state (WstxUdp::TargetStatus) and its socket.
+/// Volatile per-target state (WstxUdpControl::TargetStatus) and its socket.
 #[derive(Default)]
 struct Runtime {
     socket: Option<UdpSocket>,
@@ -380,6 +380,11 @@ struct Inner {
     name: Option<String>,
     /// The last operating selection band seen (CL-112-04: a change sends Clear).
     band: Option<&'static str>,
+}
+/// WSTX_UDP=off: the station opens no socket and claims no instance name (isolated tests of
+/// the executable never reach port 2237).
+pub(crate) fn disabled_by_environment() -> bool {
+    std::env::var("WSTX_UDP").is_ok_and(|v| v == "off")
 }
 /// The UDP interface of one station.
 pub(crate) struct Owner {
@@ -1000,7 +1005,7 @@ impl Owner {
     }
 }
 /// CL-112-06 the exit guard (Ctrl+C, Ctrl+Break, console close, logoff, shutdown): the
-/// transmit release (WstxTransmit::ExitRelease) first, then Close to the UDP targets.
+/// transmit release (WstxTransmitState::SafetyReleases) first, then Close to the UDP targets.
 pub(crate) fn exit(recording: &recording::Recording, release: impl FnOnce()) {
     release();
     if let Some(owner) = recording.udp.get() {
@@ -1018,7 +1023,7 @@ fn negotiate(inner: &mut Inner) {
         let Some(socket) = &rt.socket else {
             continue;
         };
-        let mut buffer = [0u8; nm::INBOUND_BYTES_MAX + 1];
+        let mut buffer = [0u8; nm::INBOUND_MAX_BYTES + 1];
         for _ in 0..DATAGRAMS_PER_STEP {
             match socket.recv_from(&mut buffer) {
                 Ok((n, from)) => {

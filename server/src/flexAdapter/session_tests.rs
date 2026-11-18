@@ -1,6 +1,6 @@
 use super::*;
 
-// Proves: TC-023-002. Slice status frequencies are exact integers in hertz.
+// Slice status frequencies are exact integers in hertz.
 #[test]
 fn megahertz_text_round_trips_exact_hertz() {
     assert_eq!(megahertz("14.074000"), Some(14_074_000));
@@ -24,8 +24,9 @@ fn reordered(counts: &[u8]) -> (Vec<(u8, u64)>, Vec<u8>) {
     (out, dropped)
 }
 
-// Proves: TC-023-001. Swapped packets go on in their count's order and lose nothing, also across
+// Swapped packets go on in their count's order and lose nothing, also across
 // the wrap of the 4-bit count.
+// Proves: TC-023-001
 #[test]
 fn reorder_restores_the_order_and_counts_nothing_lost() {
     let (out, dropped) = reordered(&[14, 15, 1, 0, 2, 4, 5, 3, 6]);
@@ -34,8 +35,9 @@ fn reorder_restores_the_order_and_counts_nothing_lost() {
     assert!(dropped.is_empty());
 }
 
-// Proves: TC-023-001. A packet waits until 5 packets wait behind it, not longer: 4 places is still
+// A packet waits until 5 packets wait behind it, not longer: 4 places is still
 // put back, while at 5 its turn is given up, it counts lost once, and its late arrival is dropped.
+// Proves: TC-023-001
 #[test]
 fn reorder_gives_up_a_turn_at_its_depth() {
     let (out, dropped) = reordered(&[0, 2, 3, 4, 5, 1, 6]);
@@ -51,9 +53,10 @@ fn reorder_gives_up_a_turn_at_its_depth() {
     assert_eq!(dropped, vec![1]);
 }
 
-// Proves: TC-023-001. A burst of 7 lost packets counts in full, once the wait is over, and no
+// A burst of 7 lost packets counts in full, once the wait is over, and no
 // packet after it is mistaken for a late one. At 8 the count cannot tell: those packets read as
 // late, and the stream carries on at the wrap.
+// Proves: TC-023-001
 #[test]
 fn reorder_counts_a_burst_of_lost_packets_up_to_half_the_count() {
     let (out, dropped) = reordered(&[0, 8, 9, 10, 11, 12, 13]);
@@ -68,8 +71,9 @@ fn reorder_counts_a_burst_of_lost_packets_up_to_half_the_count() {
     assert_eq!(dropped, vec![9, 10, 11, 12, 13, 14, 15, 0]);
 }
 
-// Proves: TC-023-001. A duplicate never reaches the timeline, whether its turn has passed or its
+// A duplicate never reaches the timeline, whether its turn has passed or its
 // first copy still waits.
+// Proves: TC-023-001
 #[test]
 fn reorder_drops_duplicates() {
     assert_eq!(reordered(&[0, 1, 1, 2]).1, vec![1]);
@@ -79,8 +83,9 @@ fn reorder_drops_duplicates() {
     assert_eq!(dropped, vec![2]);
 }
 
-// Proves: TC-023-001. After a stall the count may have wrapped: what waits goes on first and the
+// After a stall the count may have wrapped: what waits goes on first and the
 // next packet starts the count over, whatever its value, with no loss derived from it.
+// Proves: TC-023-001
 #[test]
 fn reorder_starts_over_after_a_stall() {
     let (mut order, mut out) = (Reorder::new(), Vec::new());
@@ -94,7 +99,7 @@ fn reorder_starts_over_after_a_stall() {
     assert_eq!(out.last(), Some(&(15, 0)));
 }
 
-// Proves: TC-023-002. A slice's ownership and liveness follow the latest status;
+// A slice's ownership and liveness follow the latest status;
 // removal and another client's handle are visible to the reconciler.
 #[test]
 fn view_tracks_ownership_and_removal_from_status_lines() {
@@ -122,7 +127,7 @@ fn view_tracks_ownership_and_removal_from_status_lines() {
     assert!(view.streams.len() <= MAX_TRACKED);
 }
 
-// Proves: TC-023-001. The measurement is this host's clock minus the packet's own time, with
+// The measurement is this host's clock minus the packet's own time, with
 // the sub-second part only where the timestamp kind carries real time.
 #[test]
 fn vita_offset_measures_host_clock_minus_packet_time() {
@@ -234,9 +239,112 @@ fn tune_against_scripted_radio(tune_code: u32) -> (Result<u64, Error>, Option<Sl
     (replied, slice)
 }
 
-// Proves: TC-023-001. A confirmed selection is never reported beside the slice's earlier
+// A scripted radio on localhost for one session setup on a saved address: the greeting gives
+// API 1.4.0.0 and the handle 0x10, every command is answered with success (`slice create` with
+// the slice 0), and `statuses` gives the status lines sent right after a command's reply.
+// Returns the attempt's result and the commands the radio received.
+fn setup_against_scripted_radio(statuses: fn(&str) -> String) -> (Result<(), Error>, Vec<String>) {
+    use std::io::{BufRead, BufReader};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let radio = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut out = stream.try_clone().unwrap();
+        out.write_all(b"V1.4.0.0\nH00000010\n").unwrap();
+        let mut commands = Vec::new();
+        for line in BufReader::new(stream).lines() {
+            let Ok(line) = line else { break };
+            let (sequence, text) = line[1..].split_once('|').unwrap();
+            let index = if text.starts_with("slice create") {
+                "0"
+            } else {
+                ""
+            };
+            let answer = format!("R{sequence}|0|{index}\n{}", statuses(text));
+            commands.push(text.to_owned());
+            if out.write_all(answer.as_bytes()).is_err() {
+                break;
+            }
+        }
+        commands
+    });
+    let session = Session::double();
+    session.shared.allowed.store(true, Ordering::Release);
+    let intent = Intent {
+        client_id: "72e8c7f3-5766-4ade-9286-ebf2f525c77a".into(),
+        rx_antenna: "ANT1".into(),
+        radio_address: Some(address),
+    };
+    let unused = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let config = Config {
+        discovery: SocketAddr::from(([127, 0, 0, 1], 0)),
+        register_ports: [unused.local_addr().unwrap().port(); 2],
+    };
+    let (_requests, tunes) = sync_channel(1);
+    let result = attempt(&session.shared, &intent, config, &tunes, &mut false);
+    (result, radio.join().unwrap())
+}
+
+// A slice the radio shows under another handle after `slice create` is not taken up, and is
+// left as it is.
+// Proves: TC-023-002
+#[test]
+fn a_slice_created_under_another_handle_is_left_alone_slice_ownership() {
+    let (result, commands) = setup_against_scripted_radio(|command| match command {
+        "slice create rxant=ANT1 mode=DIGU" => {
+            "S20|slice 0 in_use=1 client_handle=0x20 rxant=ANT1\n".into()
+        }
+        _ => String::new(),
+    });
+    assert_eq!(result, Err(Error::SliceOwnership));
+    assert_eq!(
+        commands.last().map(String::as_str),
+        Some("slice create rxant=ANT1 mode=DIGU")
+    );
+}
+
+// A created slice with another antenna is given back.
+// Proves: TC-023-002
+#[test]
+fn a_created_slice_with_another_antenna_is_removed_antenna_unavailable() {
+    let (result, commands) = setup_against_scripted_radio(|command| match command {
+        "slice create rxant=ANT1 mode=DIGU" => {
+            "S10|slice 0 in_use=1 client_handle=0x10 rxant=ANT2\n".into()
+        }
+        _ => String::new(),
+    });
+    assert_eq!(result, Err(Error::AntennaUnavailable));
+    assert_eq!(commands.last().map(String::as_str), Some("slice remove 0"));
+}
+
+// With every DAX channel used by another client's slice, the own slice is given back and no
+// other client's slice or channel is touched.
+// Proves: TC-023-001
+#[test]
+fn no_free_dax_channel_removes_the_own_slice_only_capacity_dax() {
+    let (result, commands) = setup_against_scripted_radio(|command| match command {
+        "sub slice all" => (1..=8)
+            .map(|c| format!("S20|slice {c} in_use=1 client_handle=0x20 rxant=ANT1 dax={c}\n"))
+            .collect(),
+        "slice create rxant=ANT1 mode=DIGU" => {
+            "S10|slice 0 in_use=1 client_handle=0x10 rxant=ANT1\n".into()
+        }
+        _ => String::new(),
+    });
+    assert_eq!(result, Err(Error::CapacityDax));
+    assert_eq!(commands.last().map(String::as_str), Some("slice remove 0"));
+    assert!(
+        commands
+            .iter()
+            .all(|c| !c.starts_with("slice set") && !c.starts_with("stream")),
+        "{commands:?}"
+    );
+}
+
+// A confirmed selection is never reported beside the slice's earlier
 // frequency: when the caller hears that the tune succeeded, the shared snapshot already
 // carries the frequency the radio read back.
+// Proves: TC-023-001
 #[test]
 fn a_confirmed_tune_is_published_before_the_caller_hears_of_it() {
     let (result, slice) = tune_against_scripted_radio(0);
@@ -244,8 +352,9 @@ fn a_confirmed_tune_is_published_before_the_caller_hears_of_it() {
     assert_eq!(slice.and_then(|s| s.frequency_hz), Some(14_074_000));
 }
 
-// Proves: TC-023-001. A refused tune confirms nothing, and the snapshot at the reply shows the
+// A refused tune confirms nothing, and the snapshot at the reply shows the
 // slice as the radio reports it.
+// Proves: TC-023-001
 #[test]
 fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
     let (result, slice) = tune_against_scripted_radio(0x5000_002C);
@@ -253,9 +362,43 @@ fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
     assert_eq!(slice.and_then(|s| s.frequency_hz), Some(7_000_000));
 }
 
-// Proves: TC-023-001. GET /native-flex reports the packets, the peak, the VITA time and the
+// A tune outside the state ready, or withdrawn before it is served, sends the radio nothing
+// and confirms nothing.
+// Proves: TC-023-001
+#[test]
+fn a_tune_outside_ready_or_withdrawn_sends_nothing_and_confirms_nothing() {
+    let deadline = Instant::now() + STEP;
+    let session = Session::double();
+    let go_on = Arc::new(AtomicBool::new(false));
+    assert_eq!(
+        session.tune(14_074_000, deadline, &go_on),
+        Err(Error::NotReady)
+    );
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let tcp = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut radio, _) = listener.accept().unwrap();
+    let mut conn = Conn::new(&session.shared, tcp, listener.local_addr().unwrap().ip());
+    conn.own = Some(0x10);
+    conn.slice = Some(0);
+    let (reply, _answer) = sync_channel(1);
+    let request = TuneRequest {
+        frequency_hz: 14_074_000,
+        deadline,
+        cancelled: Arc::new(AtomicBool::new(true)),
+        reply,
+    };
+    assert_eq!(conn.tune(&request), Err(Error::Cancelled));
+    assert_eq!(session.shared.tuned_hz.load(Ordering::Acquire), 0);
+    drop(conn);
+    let mut sent = Vec::new();
+    radio.read_to_end(&mut sent).unwrap();
+    assert!(sent.is_empty(), "{}", String::from_utf8_lossy(&sent));
+}
+
+// GET /native-flex reports the packets, the peak, the VITA time and the
 // arrival jitter of the current session: when the next session becomes ready they start over,
 // and the session number changes.
+// Proves: TC-023-001
 #[test]
 fn a_ready_session_starts_its_packet_counters_and_measurements_over() {
     let mut s = Snapshot {
@@ -312,5 +455,6 @@ fn intent_domains() {
         },
     ] {
         assert!(!bad.valid());
+        assert!(Session::start(bad, Config::default()).is_err());
     }
 }

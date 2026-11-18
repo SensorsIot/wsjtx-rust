@@ -9,7 +9,10 @@ use std::sync::OnceLock;
 pub const FILE_NAME: &str = "most_wanted.json";
 pub const FILE_BYTES_MAX: u64 = 262_144;
 pub const ENTRIES_MAX: usize = 1000;
-pub const SOURCE_URL: &str = "https://clublog.org/mostwanted.php?api=1";
+/// WstxClubLog::MostWantedQuery: where the list is asked for.
+pub mod most_wanted_query {
+    pub const SOURCE_URL: &str = "https://clublog.org/mostwanted.php?api=1";
+}
 pub const USER_AGENT: &str = concat!(
     "WSTX-Rust/",
     env!("CARGO_PKG_VERSION"),
@@ -86,9 +89,10 @@ fn known_numbers() -> std::collections::HashSet<u16> {
 pub fn adif_number(entity: &str) -> Option<u16> {
     table().get(entity).copied()
 }
-/// #39 Download now, once on the operator's click: the list text of SOURCE_URL.
+/// Download now, once on the operator's click: the list text of SOURCE_URL
+/// (most_wanted_query).
 pub fn fetch() -> Result<String, String> {
-    fetch_url(SOURCE_URL)
+    fetch_url(most_wanted_query::SOURCE_URL)
 }
 
 /// cty.dat entity full name -> ADIF DXCC number, from AD1C's cty.csv of 2026-11 (its third
@@ -516,7 +520,7 @@ fn response_body(reply: &[u8]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    // Proves: TC-039-031. Hand-written list text and replies; no network.
+    // Hand-written list text and replies; no network.
     use super::*;
     #[test]
     fn tc_039_031_parser_refuses_all_but_the_exact_list() {

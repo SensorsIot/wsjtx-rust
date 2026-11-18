@@ -7,6 +7,7 @@ use super::snr::{Ft8Snr, Signal};
 use super::subtraction::Subtractor;
 use super::synchronization::{Candidate, Spectrum};
 use super::{APriori, Channel, Mode, Payload, quadratures, unpack};
+use super::{DECODE_BAND_HIGH_HZ, DECODE_BAND_LOW_HZ};
 use rustfft::num_complex::Complex64;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -798,8 +799,8 @@ async fn refine_known(
     let ranges = [(n / 2, wave.len() - n / 2)];
     let step = 6000. / wave.len() as f64;
     let count = mode.symbol_count() as i32;
-    let lower = (c.frequency - mode.spacing() / 2.).max(200.);
-    let upper = (c.frequency + mode.spacing() / 2.).min(3500.);
+    let lower = (c.frequency - mode.spacing() / 2.).max(DECODE_BAND_LOW_HZ);
+    let upper = (c.frequency + mode.spacing() / 2.).min(DECODE_BAND_HIGH_HZ);
     let mut frequencies = (-count..=count)
         .map(|df| c.frequency + df as f64 * step)
         .filter(|&f| f >= lower && f <= upper)
@@ -807,7 +808,7 @@ async fn refine_known(
         .collect::<Vec<_>>();
     frequencies.sort_by(f64::total_cmp);
     frequencies.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
-    frequencies.retain(|f| (200. - 1e-7..=3500. + 1e-7).contains(f));
+    frequencies.retain(|f| (DECODE_BAND_LOW_HZ - 1e-7..=DECODE_BAND_HIGH_HZ + 1e-7).contains(f));
     let fits = |start: isize| start >= 0 && start as usize + wave.len() <= samples.len();
     let band = pass.window(c.frequency, budget).await?;
     let ranking = band.as_ref().map(|band| Ranking {
@@ -841,7 +842,7 @@ async fn refine_known(
     let coarse = best;
     let fine_frequencies = (-4..=4)
         .map(|df| coarse.frequency + df as f64 * step / 8.)
-        .filter(|f| (200. - 1e-7..=3500. + 1e-7).contains(f))
+        .filter(|f| (DECODE_BAND_LOW_HZ - 1e-7..=DECODE_BAND_HIGH_HZ + 1e-7).contains(f))
         .collect::<Vec<_>>();
     let fine_points = (-(n as isize / 16)..=n as isize / 16)
         .filter(|dt| dt % (n as isize / 128).max(1) == 0)
@@ -897,8 +898,8 @@ async fn refine_exhaustive(
     let ranges = [(n / 2, wave.len() - n / 2)];
     let step = 6000. / wave.len() as f64;
     let count = mode.symbol_count() as i32;
-    let lower = (c.frequency - mode.spacing() / 2.).max(200.);
-    let upper = (c.frequency + mode.spacing() / 2.).min(3500.);
+    let lower = (c.frequency - mode.spacing() / 2.).max(DECODE_BAND_LOW_HZ);
+    let upper = (c.frequency + mode.spacing() / 2.).min(DECODE_BAND_HIGH_HZ);
     let mut frequencies = (-count..=count)
         .map(|df| c.frequency + df as f64 * step)
         .filter(|&f| f >= lower && f <= upper)
@@ -917,7 +918,7 @@ async fn refine_exhaustive(
             if cancel() {
                 return Err(DecodeError::Cancelled);
             }
-            if !(200. - 1e-7..=3500. + 1e-7).contains(&frequency) {
+            if !(DECODE_BAND_LOW_HZ - 1e-7..=DECODE_BAND_HIGH_HZ + 1e-7).contains(&frequency) {
                 continue;
             }
             let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);
@@ -949,7 +950,7 @@ async fn refine_exhaustive(
                 return Err(DecodeError::Cancelled);
             }
             let frequency = coarse.frequency + df as f64 * step / 8.;
-            if !(200. - 1e-7..=3500. + 1e-7).contains(&frequency) {
+            if !(DECODE_BAND_LOW_HZ - 1e-7..=DECODE_BAND_HIGH_HZ + 1e-7).contains(&frequency) {
                 continue;
             }
             let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);

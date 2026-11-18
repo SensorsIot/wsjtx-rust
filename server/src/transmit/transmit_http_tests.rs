@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
-// Proves: CL-009-03, CL-009-04; TC-008-003. The actual station transmit owner with the
+// The actual station transmit owner with the
 // automatic CL-022 lifecycle and an independent scripted CI-V peer; wire strictness of
-// WstxTransmitControl::TransmitWire on the actual router.
+// WstxTransmitControl on the actual router.
 use super::*;
 use crate::cat_lifecycle::{Gate, Key};
 use crate::cat_lifecycle_tests::{Device, ENDPOINT, attach_peer};
@@ -10,7 +10,7 @@ use tower::ServiceExt;
 use wstx_rust::radio_control as cat;
 use wstx_rust::transmit::service::{ArmState, Capability, OutcomeKind};
 
-fn document(id: &str, ptt: &str, output: Option<&str>) -> profile::Document {
+fn document(id: &str, ptt: &str, output: Option<&str>) -> profile::ProfileDocument {
     serde_json::from_value(json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Transmit fixture",
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard",
         "audio":{"input_device":null,"output_device":output},"control":{"mode":"cat","endpoint":ENDPOINT,"ptt":ptt}}))
@@ -62,7 +62,7 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
     );
     let g = gate(3);
     let start = Instant::now();
-    let tick = |doc: &profile::Document| {
+    let tick = |doc: &profile::ProfileDocument| {
         recording.cat_maintain(&g, Instant::now());
         station.update(doc, &g, recording.radio_actor());
         std::thread::sleep(Duration::from_millis(50));
@@ -407,7 +407,7 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Proves: CL-009-04, CL-022-03; TC-008-003. Startup safety release: a radio found
+// Startup safety release: a radio found
 // transmitting by the first fresh readback after boot gets exactly one off-only switch.
 #[test]
 fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() {
@@ -459,7 +459,7 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
     let _ = std::fs::remove_dir_all(&directory);
 }
 
-// Proves: CL-009-05; TC-006-003, TC-092-003. GET /transmit reports the station's SNTP
+// GET /transmit reports the station's SNTP
 // measurement (exact keys) and the clock state the transmit owner plans with: the station
 // clock, which SNTP never makes unsynchronized (#92); SNTP beyond 500 ms only warns.
 #[tokio::test]
@@ -503,8 +503,9 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// Proves: CL-044-14; TC-044-017 (g). The transmit step's call reaches the sink through the
+// The transmit step's call reaches the sink through the
 // boxed hardware the station really runs on.
+// Proves: TC-044-017
 #[test]
 fn the_meter_call_of_the_transmit_step_reaches_the_sink() {
     let station =

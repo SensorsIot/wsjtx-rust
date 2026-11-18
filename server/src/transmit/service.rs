@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxTransmit slice B (#9): the station's single transmit owner. It holds the armed
+//! WstxTransmitPart::TransmitService: the station's single transmit owner. It holds the armed
 //! state, admits TransmitRequests, replaces the pending request until its audio starts,
 //! keys PTT with readback before audio, releases it after the last sample, halts with
 //! priority, runs Tune and the Tx watchdog, and reports every TransmitOutcome.
@@ -23,7 +23,7 @@ use std::{
 
 /// Native playback rate of every transmission (WstxMessageEncode::Ft8WaveformContract).
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
-/// WstxTransmit::TransmitTiming haltMs: audio stopped, PTT released and read back.
+/// WstxTransmitState::HaltTransmit haltBoundMs: audio stopped, PTT released and read back.
 pub const HALT_BOUND_MS: u64 = 250;
 /// Playback scale of the unit-peak waveform (-6.02 dBFS, TransmitTiming playbackScale).
 pub const PLAYBACK_SCALE: f32 = 0.5;
@@ -36,21 +36,30 @@ pub const METER_MIN_REMAINING_MS: i64 = 2_000;
 pub fn level_scale(level_db: i32) -> f32 {
     PLAYBACK_SCALE * 10f32.powf(level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB) as f32 / 20.)
 }
-/// WstxTransmit::TransmitTiming releaseMarginMs: PTT is released at the latest this long
+/// WstxTransmitState::Transmission releaseMarginMs: PTT is released at the latest this long
 /// after the waveform's last sample was due, whatever the device reports. It covers the
 /// render drain (RENDER_BUFFER_MS) and scheduling delays under load with headroom, and
 /// keeps the release inside the period (releaseBoundFt8Ms, releaseBoundFt4Ms).
 pub const RELEASE_MARGIN_MS: i64 = 1000;
-/// WstxTransmit::TransmitTiming releaseBoundFt8Ms / releaseBoundFt4Ms: the latest
+/// WstxTransmitState::Transmission releaseBoundFt8Ms / releaseBoundFt4Ms: the latest
 /// device-independent release deadline, from the period start.
+pub const RELEASE_BOUND_FT8_MS: i64 = 14_500;
+pub const RELEASE_BOUND_FT4_MS: i64 = 7_000;
+/// The release bound of `mode`.
 pub const fn release_bound_ms(mode: Mode) -> i64 {
     match mode {
-        Mode::Ft8 => 14_500,
-        Mode::Ft4 => 7_000,
+        Mode::Ft8 => RELEASE_BOUND_FT8_MS,
+        Mode::Ft4 => RELEASE_BOUND_FT4_MS,
     }
 }
 pub const MAX_SAFE: u64 = 9_007_199_254_740_991;
-const OUTCOMES: usize = 32;
+/// WstxTransmitState::Transmission keptOutcomes: the outcomes the view holds.
+const KEPT_OUTCOMES: usize = 32;
+/// WstxTransmitControl::TransmitConfig tuneSeconds: the Tune limit at station start.
+const TUNE_SECONDS: u32 = 90;
+/// WstxTransmitState::TuneTone: the range of the Tune offset.
+const OFFSET_MIN_HZ: u32 = 200;
+const OFFSET_MAX_HZ: u32 = 2950;
 const HALT_RECEIPTS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,7 +177,7 @@ pub enum Capability {
     Unavailable,
     Available,
 }
-/// Station facts the transmit authority is evaluated against (WstxTransmit::TransmitAuthority).
+/// Station facts the transmit authority is evaluated against (WstxTransmitState::Admission).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Context {
     pub capability: Capability,
@@ -178,7 +187,7 @@ pub struct Context {
     /// the CAT owner, whoever queried it; None when no fresh readback exists.
     pub radio_transmitting: Option<bool>,
 }
-/// WstxTransmit::StartupSafetyRelease: the once-per-boot off-only release.
+/// WstxTransmitState::SafetyReleases: the once-per-boot off-only release.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StartupRelease {
     /// No fresh transmit-state readback yet in this boot.
@@ -298,8 +307,8 @@ pub struct View {
     pub clock_measurement: Option<super::clock::Measurement>,
     pub tx_calls: u32,
     pub tx_remaining_calls: u32,
-    /// #97 (WstxTransmitControl::TransmitWatchdog): armed for a strategy run's own contact, which the
-    /// Tx watchdog does not bound while attended: tx_remaining_calls is null on the wire.
+    /// Armed for a strategy run's own contact, which the Tx watchdog does not bound while
+    /// attended: tx_remaining_calls is null on the wire.
     pub tx_remaining_null: bool,
     pub tx_expired: bool,
     pub tune_seconds: u32,
@@ -353,15 +362,14 @@ pub struct Core<H: Hardware> {
     refusal: Option<TransmitRefusal>,
     outcomes: VecDeque<Outcome>,
     outcome_sequence: u64,
-    /// WstxTransmitControl::TransmitWatchdog: the limit of repetitions of one message (#39,
-    /// 2026-11-06).
+    /// WstxQsoTransmit::RepetitionLimit: the limit of repetitions of one message.
     tx_calls: u32,
     tune_seconds: u32,
     /// The contact dialogue's Rep of the message due next, as its consumer reports it
     /// (no count of its own): only tx_remaining_calls reads it.
     tx_repetitions: u32,
-    /// #97 WstxStrategy::StrategyWatchdog: the consumer's message is for a strategy run's own
-    /// contact that the Tx watchdog does not bound (no count is reported for it).
+    /// The consumer's message is for a strategy run's own contact that the Tx watchdog does
+    /// not bound (no count is reported for it).
     tx_unbounded: bool,
     /// #39: an operator action (operator arm or accepted browser activity) was seen this
     /// boot; automation never sets it.
@@ -374,9 +382,9 @@ pub struct Core<H: Hardware> {
     /// #44 the Tx level (dB): Tune follows it at once, a transmission takes it at its
     /// audio start and keeps it to its end.
     level_db: i32,
-    /// WstxTransmit::StationModeGate: the station's operating mode (None: not gated).
+    /// WstxTransmitControl::StationMode: the station's operating mode (None: not gated).
     station_mode: Option<Mode>,
-    /// The station's call hash table (WstxOfflineDecode::HashResolution): every
+    /// The station's call hash table (WstxMessagePayload::HashResolution): every
     /// accepted request teaches it its calls.
     hashes: Option<Arc<Mutex<crate::decoder::HashTable>>>,
 }
@@ -399,8 +407,8 @@ fn ptt_failure(error: PttError) -> TransmitFailure {
 }
 fn audio_delay_ms(mode: Mode) -> i64 {
     match mode {
-        Mode::Ft8 => 500,
-        Mode::Ft4 => 300,
+        Mode::Ft8 => super::schedule::FT8_AUDIO_DELAY_MS,
+        Mode::Ft4 => super::schedule::FT4_AUDIO_DELAY_MS,
     }
 }
 /// Packs, encodes and renders the 48 kHz waveform of a request.
@@ -456,7 +464,7 @@ impl<H: Hardware> Core<H> {
             outcomes: VecDeque::new(),
             outcome_sequence: 0,
             tx_calls: 6,
-            tune_seconds: 90,
+            tune_seconds: TUNE_SECONDS,
             tx_repetitions: 0,
             tx_unbounded: false,
             operator_seen: false,
@@ -478,7 +486,7 @@ impl<H: Hardware> Core<H> {
     pub fn hash_table(&self) -> Option<&Arc<Mutex<crate::decoder::HashTable>>> {
         self.hashes.as_ref()
     }
-    /// WstxTransmit::StationModeGate: the station's operating mode. A request of
+    /// WstxTransmitControl::StationMode: the station's operating mode. A request of
     /// another mode is refused staleRequest at admission and never keyed or started.
     pub fn set_station_mode(&mut self, mode: Option<Mode>) {
         self.station_mode = mode;
@@ -550,7 +558,7 @@ impl<H: Hardware> Core<H> {
             failure,
             audio_start_utc_ms,
         };
-        if self.outcomes.len() == OUTCOMES {
+        if self.outcomes.len() == KEPT_OUTCOMES {
             self.outcomes.pop_front();
         }
         self.outcomes.push_back(outcome.clone());
@@ -642,8 +650,7 @@ impl<H: Hardware> Core<H> {
         self.operator_seen = true;
         Ok(())
     }
-    /// #39 (WstxStrategy::WatchdogFromOperator): an arm requested by automation records
-    /// no operator action.
+    /// An arm requested by automation records no operator action.
     pub fn arm_automatic(&mut self, safety_revision: u64) -> Result<(), TransmitRefusal> {
         let seen = self.operator_seen;
         self.arm(safety_revision)?;
@@ -662,7 +669,7 @@ impl<H: Hardware> Core<H> {
         self.cancel_unstarted(OutcomeKind::Refused, Some(TransmitRefusal::NotArmed));
     }
     /// Accepted operator activity in the browser: a human was seen this boot. It changes
-    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxQsoControl::TxWatchdog).
+    /// nothing of the Tx watchdog's limit, repetitions or stop (WstxQsoTransmit::RepetitionLimit).
     pub fn activity(&mut self) {
         self.operator_seen = true;
     }
@@ -671,7 +678,7 @@ impl<H: Hardware> Core<H> {
         self.operator_seen = true;
         self.tx_expired = false;
     }
-    /// The limit of repetitions of one message (WstxQsoControl::TxWatchdog).
+    /// The limit of repetitions of one message (WstxQsoTransmit::RepetitionLimit).
     pub fn tx_limit(&self) -> u32 {
         self.tx_calls
     }
@@ -679,8 +686,8 @@ impl<H: Hardware> Core<H> {
     pub fn report_tx_repetitions(&mut self, repetitions: u32) {
         self.tx_repetitions = repetitions;
     }
-    /// #97 WstxStrategy::StrategyWatchdog, LeaveCountLabel: a strategy run's own contact (attended)
-    /// has no Tx watchdog count: tx_remaining_calls is null for it, never the leave count.
+    /// A strategy run's own contact (attended) has no Tx watchdog count: tx_remaining_calls
+    /// is null for it, never the leave count.
     pub fn report_tx_unbounded(&mut self, unbounded: bool) {
         self.tx_unbounded = unbounded;
     }
@@ -818,7 +825,7 @@ impl<H: Hardware> Core<H> {
         };
         self.halt_state
     }
-    /// Abort QSO (#39, 2026-11-04, WstxTransmit::AbortTransmission): stop the current
+    /// Abort QSO (WstxTransmitState::HaltTransmit): stop the current
     /// transmission or Tune now (audio stopped, PTT released with readback), drop every
     /// request and disarm with `cause`. Not a halt: halt_state and the halt count stay.
     pub fn abort(&mut self, cause: DisarmCause) {
@@ -928,7 +935,7 @@ impl<H: Hardware> Core<H> {
             Some(TransmitRefusal::NotAuthorized)
         } else if self.current.is_some() || self.next.is_some() || self.tune.is_some() {
             Some(TransmitRefusal::Busy)
-        } else if !(200..=2950).contains(&hz) {
+        } else if !(OFFSET_MIN_HZ..=OFFSET_MAX_HZ).contains(&hz) {
             Some(TransmitRefusal::FrequencyOutOfRange)
         } else {
             None
@@ -1522,7 +1529,7 @@ fn map_actor_error(e: crate::radio_control::Error) -> PttError {
         _ => PttError::Unavailable,
     }
 }
-/// PTT through the station's single CI-V owner (WstxRadioIO::PttControl).
+/// PTT through the station's single CI-V owner (WstxCatControl::KeyingRules).
 pub fn actor_ptt(
     actor: &crate::radio_control::actor::Actor,
     on: bool,

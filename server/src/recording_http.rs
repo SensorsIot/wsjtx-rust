@@ -2,6 +2,9 @@ use crate::*;
 use axum::{extract::Path, http::Method};
 use serde::Deserialize;
 
+/// WstxRecordingTransfer::RecordingLimits: the largest part of a file one PUT carries.
+pub(crate) const RAW_CHUNK_BYTES: usize = 2048;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Start {
@@ -194,7 +197,12 @@ pub async fn import(
             return error("request_too_large");
         }
     };
-    if bytes.len() > if method == Method::PUT { 2048 } else { 0 } {
+    let limit = if method == Method::PUT {
+        RAW_CHUNK_BYTES
+    } else {
+        0
+    };
+    if bytes.len() > limit {
         return error(if method == Method::PUT {
             "request_too_large"
         } else {
@@ -240,7 +248,7 @@ pub async fn import(
     ) else {
         return error("invalid_request");
     };
-    if total > recording::FILE_LIMIT {
+    if total > recording::FILE_BYTES {
         return error("request_too_large");
     }
     if total == 0

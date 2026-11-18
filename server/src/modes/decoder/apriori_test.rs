@@ -11,7 +11,7 @@ fn calls() -> APriori {
     }
 }
 
-// Proves: FR-003, CL-007-03 (#56 slice 5). WSJT-X's naptypes per QSO state, lapcqonly, the
+// WSJT-X's naptypes per QSO state, lapcqonly, the
 // MyCall/DxCall availability rules and the 50 Hz napwid (FT8: Rx or Tx, FT4: Rx only).
 #[test]
 fn a_priori_types_follow_the_wsjtx_state_table() {
@@ -54,7 +54,7 @@ fn a_priori_types_follow_the_wsjtx_state_table() {
     assert_eq!(types(Mode::Ft8, &APriori::default(), 1500.), vec![1]);
 }
 
-// Detail test of WstxModemDecode (#56 slice 5). The fixed bits are the packed message bits: CQ token and i3
+// Detail test of WstxDecode. The fixed bits are the packed message bits: CQ token and i3
 // for FT8 type 1, MyCall/DxCall from the packed calls, RRR/73/RR73 tails, FT4 scrambled and
 // without i3 for types 1..3.
 #[test]
@@ -93,7 +93,7 @@ fn a_priori_bits_are_the_packed_message_bits() {
     }
 }
 
-// Proves: CL-007-03 (#56 slice 5). WSJT-X's qual = 1 - (nharderrors + dmin)/60 >= 0.17.
+// WSJT-X's qual = 1 - (nharderrors + dmin)/60 >= 0.17.
 #[test]
 fn low_confidence_boundary() {
     let word = [0u8; 174];

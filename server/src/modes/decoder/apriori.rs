@@ -35,7 +35,7 @@ pub struct APriori {
     pub cq_only: bool,
 }
 /// WSJT-X's AP decoding bandwidth (napwid) for the types that name DxCall.
-pub(super) const AP_WIDTH_HZ: f64 = 50.;
+pub(super) const NEAR_HZ: f64 = 50.;
 /// The 19 tail bits (ir, g15, i3=1) of RRR, 73 and RR73 (grid codes 32402, 32404, 32403).
 fn tail(code: u32) -> [u8; 19] {
     std::array::from_fn(|i| match i {
@@ -60,8 +60,8 @@ pub(super) fn types(mode: Mode, ap: &APriori, frequency: f64) -> Vec<u8> {
         }
     };
     // FT8 runs the DxCall types near the Rx or the Tx frequency, FT4 near the Rx frequency.
-    let near = (frequency - ap.rx_hz).abs() <= AP_WIDTH_HZ
-        || mode == Mode::Ft8 && (frequency - ap.tx_hz).abs() <= AP_WIDTH_HZ;
+    let near = (frequency - ap.rx_hz).abs() <= NEAR_HZ
+        || mode == Mode::Ft8 && (frequency - ap.tx_hz).abs() <= NEAR_HZ;
     table
         .iter()
         .copied()
@@ -148,13 +148,13 @@ pub(super) fn hypotheses(
 }
 /// WSJT-X's low-confidence mark: qual = 1 - (nharderrors + dmin)/60 < 0.17, where dmin sums
 /// |LLR| over the bits the word disagrees with. An assisted word is published only without it.
-pub(super) const LOW_CONFIDENCE_QUALITY: f64 = 0.17;
+pub(super) const MIN_CONFIDENCE: f64 = 0.17;
 pub(super) fn confident(word: &[u8; 174], llr: &[f32; 174], hard_errors: usize) -> bool {
     let dmin = (0..174)
         .filter(|&i| (word[i] == 1) != (llr[i] < 0.))
         .map(|i| llr[i].abs() as f64)
         .sum::<f64>();
-    1. - (hard_errors as f64 + dmin) / 60. >= LOW_CONFIDENCE_QUALITY
+    1. - (hard_errors as f64 + dmin) / 60. >= MIN_CONFIDENCE
 }
 
 #[cfg(test)]

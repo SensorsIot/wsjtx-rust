@@ -1,8 +1,8 @@
-"""TC-DOC-015: `equivalence` and `identities` (CL-014-17).
+"""TR-21: `equivalence` and `identities`.
 
 The synthetic cases build commits of a small model in a temporary git repository and
 compare them with the real pinned Pilot; each mutation's oracle is the edit itself. E1 and
-E10 (b) read this repository's own history.
+E10 (b) read this repository's own history as fixed input.
 """
 import contextlib
 import io
@@ -131,7 +131,7 @@ CITING = {
     "server/main.rs": "// See Core::Run.\n// See Core::Nothing.\nfn main() {}\n",
     "harness/project/suites.yaml": "paths: [docs/sysml/Extra.sysml]\n",
 }
-# The registry of a branch still in the old layout (before #230): its root stays checked.
+# A branch whose registry stands at .harness/: that root stays checked.
 OLD_ROOT = "harness/project/suites.yaml", ".harness/suites.yaml"
 
 
@@ -229,7 +229,7 @@ CASES = {
     "E12 m": (BASE, edit(BASE, CORE_PATH, "[spec](Spec.md)", "[spec](Other.md)")),
     "E12 n": (BASE, limits_moved(BASE, "101")),
     "E12 n unchanged": (BASE, limits_moved(BASE)),
-    # Review repair of a3e4ddd7: owners of same-named elements, expose, members of no package.
+    # Owners of same-named elements, expose, members of no package.
     "E12 o": (BASE, edit(edit(BASE, CORE_PATH, "bufferBytes : Integer = 8192;", "bufferBytes : Integer = 100;"),
                          "docs/sysml/Extra.sysml", "bufferBytes : Integer = 100;", "bufferBytes : Integer = 8192;")),
     "E12 p": (BASE, edit(edit(BASE, CORE_PATH, "        attribute peers : Integer [0..4];\n", ""),
@@ -246,34 +246,22 @@ CASES = {
     "E13": (MODES, MODES_MOVED),
     "E14": (MODES, {**MODES_MOVED, "docs/sysml/Z/A.sysml": modes("A", "a", "enum ft4; enum ft8; enum ft2;")}),
 }
-PROBE = "tools/sysml/tests/test_probe.py"
 FIXTURE_PROBE = "tools/sysml/tests/test_fixture_probe.py"
 PLAIN_PROBE = "tools/sysml/tests/test_plain.py"
-# The base without Run (the head of E3 action): a pinned model in which Core::Run is absent.
-NO_RUN = edit(BASE, CORE_PATH, RUN, "")
 
 
-def probe(pinned: str, extra: str = "") -> str:
-    """A test below tools/sysml/tests/ naming `pinned` as PINNED; it cites Core::Run at line 3."""
-    return f'"""A probe."""\nPINNED = "{pinned}"\n# Reads Core::Run.\n' + extra
-
-
-def pinned_cases(base: str, no_run: str) -> dict:
-    """E15 a to f: (base files, head files), the base committed as `base`, NO_RUN as `no_run`."""
+def reader_cases() -> dict:
+    """E15 d and e: (base files, head files)."""
     run_moved = moved(BASE, ticket=False)
     return {
-        "E15 a": (BASE, {**run_moved, PROBE: probe(base)}),
-        "E15 b": (BASE, {**run_moved, PROBE: probe(no_run)}),
-        "E15 c": (BASE, {**run_moved, PROBE: probe("deadbeefdeadbeef")}),
         "E15 d": (BASE, {**limits_moved(BASE), FIXTURE_PROBE: 'STATION = "package Core {"\n# Reads Core::Limits.\n'
                                                               "# Reads Extra::Limits.\n"}),
-        "E15 e": (BASE, {**run_moved, "tests/probe.cjs": f'PINNED = "{base}"\n// package Core {{\n// Reads Core::Run.\n',
+        "E15 e": (BASE, {**run_moved, "tests/probe.cjs": "// package Core {\n// Reads Core::Run.\n",
                          PLAIN_PROBE: "# Reads Core::Run.\n"}),
-        "E15 f": (BASE, {**run_moved, PROBE: probe(no_run, 'FIXTURE = "package Core {"\n')}),
     }
 
 
-# The #170 assignment table (issue #170, Technical details): part file -> moved identities.
+# The assignment table of 5da7aab02: part file -> moved identities.
 TABLE = {
     "backend/modes/ModesCatalog.sysml": "CL-007-03 CL-007-04 CL-009-01 TC-005-001 TC-005-002 TC-004-001 TC-004-002 TC-004-003",
     "backend/receive/ReceiveCatalog.sysml": "CL-007-01 CL-007-05 CL-008-02 TC-004-004 CL-045-01 CL-045-02 CL-045-03 TC-045-001 TC-045-002",
@@ -352,7 +340,7 @@ class SyntheticEquivalenceTests(unittest.TestCase):
                 commits[key] = repository.commit(files)
             return commits[key]
 
-        cases = {**CASES, **pinned_cases(sha(BASE), sha(NO_RUN))}
+        cases = {**CASES, **reader_cases()}
         names = list(cases)
         pairs = [(sha(base), sha(head)) for base, head in cases.values()]
         cls.broken = sha(edit(BASE, CORE_PATH, "part def Base;", "part def Base :> Missing;"))
@@ -381,44 +369,44 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.assertTrue(any(line.startswith(prefix) and word in line for line in lines),
                         f"{name}: no {prefix!r} line naming {word}:\n" + "\n".join(lines))
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e2_doc_character(self):
+        """TV-050 (TR-21): E2: doc character."""
         self.outcome("E2", 1, "changed Station doc Core.sysml -> Core.sysml")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e3_dropped_element(self):
+        """TV-051 (TR-21): E3: dropped element."""
         self.outcome("E3 attribute", 1, "missing Limits::peers Core Core.sysml")
         self.outcome("E3 action", 1, "missing Run Core Core.sysml")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e4_changed_target(self):
+        """TV-052 (TR-21): E4: changed target."""
         self.kind("E4 dependency", "changed d1 ", "Dependency")
         self.kind("E4 verify", "changed check1 ", "RequirementVerificationMembership")
         lines = self.outcome("E4 type", 1, "changed Engine::size ")
         self.assertTrue(any("FeatureTyping" in line for line in lines if line.startswith("changed Engine::size ")), lines)
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e5_value_multiplicity_rename(self):
+        """TV-053 (TR-21): E5: value multiplicity rename."""
         self.outcome("E5 value", 1, "changed Engine::rpm ")
         lines = self.outcome("E5 multiplicity", 1, "changed Limits::peers ")
         self.assertTrue(any("MultiplicityRange" in line for line in lines), lines)
         self.outcome("E5 rename", 1, "missing Run Core Core.sysml", "added Execute Core Core.sysml")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e6_reference_resolving_to_another_element(self):
+        """TV-054 (TR-21): E6: reference resolving to another element."""
         self.outcome("E6", 1, "changed Gauge::limit ")
         self.outcome("E6 qualified", 0, "moved Gauge Extra Extra.sysml -> Core Core.sysml")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e7_move_listed_and_equivalent(self):
+        """TV-055 (TR-21): E7: move listed and equivalent."""
         lines = self.outcome("E7", 0, "moved Run Core Core.sysml -> Ops sub/Ops.sysml",
                              "moved Ticket Core Core.sysml -> Ops sub/Ops.sysml", "pair Core.sysml -> sub/Ops.sysml: 2")
         self.assertEqual(len([line for line in lines if line.startswith("moved ")]), 2, lines)
         self.outcome("E7 citation", 1, "changed Size doc ")
         self.outcome("E7 note", 1, 'missing note "Keep the core small." Core.sysml')
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e8_citations_outside_the_model(self):
+        """TV-056 (TR-21): E8: citations outside the model."""
         self.outcome("E8 a", 1, "stale-by-change server/main.rs:1 Core::Run")
         lines = self.outcome("E8 a updated", 0, "unresolved server/main.rs:2 Core::Nothing")
         self.assertFalse(any(line.startswith("stale-by-change") for line in lines), lines)
@@ -436,47 +424,20 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.assertFalse([line for line in lines if line.startswith("exempt " + path)], lines)
         self.assertNotIn("; exempt:", lines[-1])
 
-    # E15 a: a citation that resolves in the pinned commit's model is exempt
-    # Proves: CL-014-17; TC-DOC-015
-    def test_e15a_pinned_reader_citation_resolving_in_its_model_is_exempt(self):
-        lines = self.outcome("E15 a", 0, f"exempt {PROBE}:3 Core::Run (pinned)")
-        self.assertTrue(lines[-1].startswith("equivalent: ") and lines[-1].endswith(f"; exempt: {PROBE} 1"), lines)
-        self.assertFalse([line for line in lines if line.startswith("stale-by-change")], lines)
-
-    # E15 b: the guard; a citation that resolves neither in the pinned model nor at head stays stale
-    # Proves: CL-014-17; TC-DOC-015
-    def test_e15b_pinned_reader_citation_absent_from_its_model_stays_stale(self):
-        self.outcome("E15 b", 1, f"stale-by-change {PROBE}:3 Core::Run")
-        self.assertNoExemption("E15 b")
-
-    # E15 c: PINNED naming no commit of the repository
-    # Proves: CL-014-17; TC-DOC-015
-    def test_e15c_pinned_line_naming_no_commit_keeps_p6(self):
-        self.outcome("E15 c", 1, f"stale-by-change {PROBE}:3 Core::Run")
-        self.assertNoExemption("E15 c")
-
-    # E15 d: a fixture reader's citations of its own package are exempt, of another package not
-    # Proves: CL-014-17; TC-DOC-015
     def test_e15d_fixture_reader_exempts_only_its_declared_package(self):
+        """TV-057 (TR-21): E15 d: a fixture reader's citations of its own package are exempt, of another package not."""
         lines = self.outcome("E15 d", 1, f"exempt {FIXTURE_PROBE}:2 Core::Limits (fixture)",
                              f"stale-by-change {FIXTURE_PROBE}:3 Extra::Limits")
         self.assertNotIn(f"stale-by-change {FIXTURE_PROBE}:2 Core::Limits", lines)
         self.assertTrue(lines[-1].endswith(f"; exempt: {FIXTURE_PROBE} 1"), lines)
 
-    # E15 e: the guard; a file outside tools/sysml/tests/ or with neither sign keeps P6
-    # Proves: CL-014-17; TC-DOC-015
     def test_e15e_other_files_keep_p6(self):
-        self.outcome("E15 e", 1, "stale-by-change tests/probe.cjs:3 Core::Run", f"stale-by-change {PLAIN_PROBE}:1 Core::Run")
+        """TV-058 (TR-21): E15 e: a file outside tools/sysml/tests/, or one declaring no package, keeps P6."""
+        self.outcome("E15 e", 1, "stale-by-change tests/probe.cjs:2 Core::Run", f"stale-by-change {PLAIN_PROBE}:1 Core::Run")
         self.assertNoExemption("E15 e")
 
-    # E15 f: the guard; a pinned reader that also declares the package is judged by the pinned rule only
-    # Proves: CL-014-17; TC-DOC-015
-    def test_e15f_pinned_rule_takes_precedence_over_the_fixture_rule(self):
-        self.outcome("E15 f", 1, f"stale-by-change {PROBE}:3 Core::Run")
-        self.assertNoExemption("E15 f")
-
-    # Proves: CL-014-17; TC-DOC-015
     def test_e9_cannot_compare(self):
+        """TV-059 (TR-21): E9: cannot compare."""
         code, _out, err = run("equivalence", "no-such-revision", self.base)
         self.assertEqual(code, 2)
         self.assertIn("unknown revision: no-such-revision", err)
@@ -484,8 +445,8 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("fails the Pilot validation", err)
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e12_each_mutation_is_named(self):
+        """TV-060 (TR-21): E12: each mutation is named."""
         expected = {
             "E12 a": ("changed Spare kind",),
             "E12 b": ("changed Engine ",),
@@ -525,37 +486,37 @@ class SyntheticEquivalenceTests(unittest.TestCase):
                 self.kind(name, prefix, word)
         self.outcome("E12 n unchanged", 0)
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e12o_values_swapped_between_same_named_owners(self):
+        """TV-061 (TR-21): E12 o: values swapped between same named owners."""
         lines = self.outcome("E12 o", 1)
         self.assertTrue(any("Limits" in line for line in lines if not line.startswith(("moved", "pair", "equivalent"))), lines)
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e12s_same_named_owners_pair_by_their_members(self):
+        """TV-062 (TR-21): E12 s: same named owners pair by their members."""
         self.outcome("E12 s", 0, "moved Limits Extra Extra.sysml -> Extra A/Extra.sysml")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e12p_member_moved_between_same_named_owners(self):
+        """TV-063 (TR-21): E12 p: member moved between same named owners."""
         self.outcome("E12 p", 1, "changed Limits::peers owner Core.sysml -> Extra.sysml")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e12q_expose_is_compared(self):
+        """TV-064 (TR-21): E12 q: expose is compared."""
         self.kind("E12 q", "changed overview ", "Expose")
         self.kind("E12 q dropped", "changed overview ", "Expose")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e12r_comment_outside_any_package(self):
+        """TV-065 (TR-21): E12 r: comment outside any package."""
         self.outcome("E12 r", 1, 'missing package-level Comment "Shared metadata header." Meta.sysml',
                      'added package-level Comment "Shared metadata header!" Meta.sysml')
         self.outcome("E12 r dropped", 1, 'missing package-level Comment "Shared metadata header." Meta.sysml')
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e13_equal_same_named_elements_pair_in_their_package(self):
+        """TV-066 (TR-21): E13: equal same named elements pair in their package."""
         lines = self.outcome("E13", 0, "moved Mode A A.sysml -> A Z/A.sysml")
         self.assertFalse(any(line.startswith("moved ") and " B " in line for line in lines), lines)
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e14_changed_element_leaves_its_equal_namesake_paired(self):
+        """TV-067 (TR-21): E14: changed element leaves its equal namesake paired."""
         lines = self.outcome("E14", 1, "missing Mode A A.sysml", "added Mode A Z/A.sysml",
                              "added Mode::ft2 A Z/A.sysml")
         for line in lines:
@@ -565,26 +526,18 @@ class SyntheticEquivalenceTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
-    # Proves: CL-014-17; TC-DOC-015
     def test_e10a_one_identity_of_each_status(self):
+        """TV-068 (TR-21): E10 a: one identity of each status."""
         base = """package R {
     requirement 'FR-001' { doc /* unchanged */ }
     requirement 'CL-001-01' { doc /* moved */ }
     requirement 'CL-001-02' { doc /* changed */ }
     verification 'TC-001-001' { doc /* removed */ }
-    verification 'TC-001-002' { doc /* retired */ }
-    part def Holder {
-        @DetailTests { tests = "tests/x.rs"; }
-    }
 }
 """
         head = base.replace("    requirement 'CL-001-01' { doc /* moved */ }\n", "") \
             .replace("/* changed */", "/* changed! */") \
-            .replace("    verification 'TC-001-001' { doc /* removed */ }\n", "") \
-            .replace("    verification 'TC-001-002' { doc /* retired */ }\n", "    requirement 'FR-002' { doc /* added */ }\n") \
-            .replace('        @DetailTests { tests = "tests/x.rs"; }\n',
-                     '        @DetailTests { tests = "tests/x.rs"; }\n'
-                     '        @RetiredCase { identity = "TC-001-002"; test = "tests/x.rs"; }\n')
+            .replace("    verification 'TC-001-001' { doc /* removed */ }\n", "    requirement 'FR-002' { doc /* added */ }\n")
         other = "package R2 {\n    requirement 'CL-001-01' { doc /* moved */ }\n}\n"
         with tempfile.TemporaryDirectory() as folder:
             repository = Repository(Path(folder))
@@ -599,33 +552,7 @@ class IdentityTests(unittest.TestCase):
             "CL-001-01 moved R.sysml -> sub/Other.sysml",
             "CL-001-02 changed R.sysml -> R.sysml",
             "TC-001-001 removed R.sysml -> -",
-            "TC-001-002 retired R.sysml -> - test tests/x.rs",
-            "6 identities: 1 unchanged, 1 moved, 1 changed, 1 added, 1 retired, 1 removed",
-        ])
-
-    # R1 of #183: a case declared in the base and superseded in the head
-    # Proves: CL-014-17; TC-DOC-015
-    def test_e10c_superseded_case_is_retired_with_its_cases(self):
-        base = """package R {
-    verification 'TC-001-001' { doc /* superseded */ }
-    verification 'TC-001-002' { doc /* takes over */ }
-    verification 'TC-001-003' { doc /* takes over */ }
-}
-"""
-        head = base.replace("    verification 'TC-001-001' { doc /* superseded */ }\n",
-                            '    @RetiredCase { identity = "TC-001-001"; supersededBy = "TC-001-002; TC-001-003"; }\n')
-        with tempfile.TemporaryDirectory() as folder:
-            repository = Repository(Path(folder))
-            old = repository.commit({"docs/sysml/R.sysml": base})
-            new = repository.commit({"docs/sysml/R.sysml": head})
-            with mock.patch.object(tool, "ROOT", repository.root):
-                code, out, _err = run("identities", old, new)
-        self.assertEqual(code, 0, out)
-        self.assertEqual(out.splitlines(), [
-            "TC-001-001 retired R.sysml -> - superseded by TC-001-002, TC-001-003",
-            "TC-001-002 unchanged R.sysml -> R.sysml",
-            "TC-001-003 unchanged R.sysml -> R.sysml",
-            "3 identities: 2 unchanged, 0 moved, 0 changed, 0 added, 1 retired, 0 removed",
+            "5 identities: 1 unchanged, 1 moved, 1 changed, 1 added, 1 removed",
         ])
 
     @staticmethod
@@ -647,16 +574,16 @@ class IdentityTests(unittest.TestCase):
         assert code == 0, out
         return out.splitlines()[0]
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e15_link_following_a_moved_file(self):
+        """TV-069 (TR-21): E15: link following a moved file."""
         self.assertEqual(self.moved_case("../station/Proto.sysml"), "TC-001-001 moved R.sysml -> web/W.sysml")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e15_guard_link_retargeted_to_another_file(self):
+        """TV-070 (TR-21): E15: guard link retargeted to another file."""
         self.assertEqual(self.moved_case("../Other.sysml"), "TC-001-001 changed R.sysml -> web/W.sysml")
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e10b_real_revisions_list_the_union(self):
+        """TV-071 (TR-21): E10 b: real revisions list the union."""
         code, out, _err = run("identities", "8245ec5f0", "0e4b4c73a")
         self.assertEqual(code, 0, out)
         lines = out.splitlines()
@@ -675,10 +602,10 @@ class IdentityTests(unittest.TestCase):
 
 
 class RealHistoryTests(unittest.TestCase):
-    """E1: #170's parent 0a7a57162 against 5da7aab02, which divided Requirements.sysml."""
+    """E1: the parent of 5da7aab02 against 5da7aab02, which divided Requirements.sysml."""
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_e1_divided_requirements_are_equivalent(self):
+        """TV-072 (TR-21): E1: divided requirements are equivalent."""
         status = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"], capture_output=True, text=True).stdout
         results, exports = tool.compare_revisions([("5da7aab02^1", "5da7aab02"), ("5da7aab02", "5da7aab02")], CACHE)
         (code, lines), (same, same_lines) = results
@@ -701,47 +628,31 @@ class RealHistoryTests(unittest.TestCase):
         self.assertEqual(sum(1 for row in rows.values() if row[0] == "unchanged"), 320)
         self.assertIn("TC-021-005", moved)
         self.assertIn("TC-021-008", moved)
-        self.assertEqual(lines[-1], "522 identities: 320 unchanged, 202 moved, 0 changed, 0 added, 0 retired, 0 removed")
+        self.assertEqual(lines[-1], "522 identities: 320 unchanged, 202 moved, 0 changed, 0 added, 0 removed")
 
 
 class ReaderRecognitionTests(unittest.TestCase):
-    """R-real: the pinned and fixture readers of this repository."""
+    """R-real: the fixture readers of this repository."""
 
-    # Proves: CL-014-17; TC-DOC-015
     def test_r_real_readers_of_this_repository(self):
+        """TV-073 (TR-21): R-real: the architecture tests' fixture trees are fixture readers of the
+        packages they declare; server/src/main.rs reads no model of its own."""
         integrity, oracle = "tools/sysml/tests/test_architecture_integrity.py", "tools/sysml/tests/test_architecture_oracle.py"
         texts = {path: (ROOT / path).read_text(encoding="utf-8") for path in (integrity, oracle, "server/src/main.rs")}
-        lines = {path: text.splitlines() for path, text in texts.items()}
-        self.assertEqual(lines[integrity][24], 'PINNED = "1df1ba3a5"')
-        self.assertEqual(lines[integrity][269], 'PACKAGE = "package WstxArchitecture {"')
-        commit = tool.commit_of("1df1ba3a5")
-        self.assertEqual(tool.citation_reader(integrity, texts[integrity]), ("pinned", commit))
-        kind, tops = tool.citation_reader(oracle, texts[oracle])
-        self.assertEqual(kind, "fixture")
-        self.assertIn("WstxArchitecture", tops)
+        shared = {"WstxRequirements", "WstxStationLink", "WstxReceiveControl", "WstxCat", "WstxSupervisorPart", "WstxWebPart",
+                  "WstxReceivePart", "WstxRadioControlPart", "WstxBrowserClientPart", "WstxProfilePart", "WstxShack",
+                  "WstxContext"}
+        self.assertEqual(tool.citation_reader(integrity, texts[integrity]), ("fixture", shared | {
+            "WstxStationCommands", "WstxOperatorInteraction", "WstxRadioProperties", "WstxMcpPart", "WstxAudioPart",
+            "WstxModesPart", "WstxClockPart", "WstxTransmitPart", "WstxOperatingPart", "WstxRankingPart",
+            "WstxAutoPart", "WstxQsoPart", "WstxLogPart", "WstxSpotsPart", "WstxUdpPart", "WstxFlexAdapterPart"}))
+        self.assertEqual(tool.citation_reader(oracle, texts[oracle]), ("fixture", shared))
         self.assertIsNone(tool.citation_reader("server/src/main.rs", texts["server/src/main.rs"]))
-        for number in (135, 136):
-            cited = [match[0] for match in tool.QNAME.finditer(lines[oracle][number - 1])]
-            self.assertTrue(cited and all(name.startswith("WstxArchitecture::") for name in cited), (number, cited))
-        # The issue's line numbers are master f9bee57bb's; R7's lines (607, 609, 611 there)
-        # moved with the setup lines added above them, so they are found by their case.
-        shift = next(index for index, line in enumerate(lines[integrity]) if '("port path twice", ' in line) + 1 - 607
-        cited = {}
-        for number in (118, 119, 125, 187, 190, 191, 192, 607 + shift, 609 + shift, 611 + shift):
-            cited[number] = [match[0] for match in tool.QNAME.finditer(lines[integrity][number - 1])
-                             if match[0].startswith("WstxArchitecture::")]
-            self.assertTrue(cited[number], number)
-        names = sorted({name for found in cited.values() for name in found})
-        with tempfile.TemporaryDirectory() as folder:
-            pinned = Path(folder) / "pinned"
-            tool.extract(commit, pinned, ["docs/sysml"])
-            export = tool.run_export(tool.Side("pinned", pinned, commit), names, CACHE, Path(folder))
-        self.assertEqual([name for name in names if export["resolved"].get(name) is None], [])
 
 
 class MarkedCommitTests(unittest.TestCase):
-    # Proves: CL-014-17; TC-DOC-015
     def test_e11_marked_commits_against_their_first_parent(self):
+        """TV-074 (TR-21): E11: marked commits against their first parent."""
         with tempfile.TemporaryDirectory() as folder:
             repository = Repository(Path(folder))
             repository.commit(BASE, "base")

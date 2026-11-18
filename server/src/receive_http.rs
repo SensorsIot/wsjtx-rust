@@ -47,7 +47,7 @@ fn empty(body: Result<Bytes, BytesRejection>) -> Result<(), &'static str> {
     }
 }
 
-/// The data of receive.state (WstxStationLink::PushedStationState): the identity and what a
+/// The data of receive.state (WstxReceiveControl::ReceiveStatus): the identity and what a
 /// browser holding it would otherwise read GET /receive for. It leaves out what frames carry.
 pub(crate) fn receive_state_data(s: &Value) -> Value {
     let (j, c) = (&s["job"], &s["clock"]);
@@ -332,8 +332,8 @@ pub async fn start(
     contact_step(station).await;
     reply
 }
-/// WstxQsoTransmit::ModeChange: one synchronous station contact step before a receive or
-/// selection mutation is answered, so a mode change is applied to the contact at once.
+/// WstxOperatingSelection::OperatingModeRule: one synchronous station contact step before a
+/// receive or selection mutation is answered, so a mode change is applied to the contact at once.
 pub(crate) async fn contact_step(state: Arc<ProfileState>) {
     let _ = tokio::task::spawn_blocking(move || crate::contact_http::station_tick(&state)).await;
 }

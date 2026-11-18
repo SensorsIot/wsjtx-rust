@@ -1,4 +1,4 @@
-// Fixture of the model-value readers (TC-DOC-014): read by server/tests/model_values.rs and
+// Fixture of the model-value readers (TR-20): read by server/tests/model_values.rs and
 // tests/model-values.test.cjs against ../../../expected.json. Two folders deep, and the file
 // name differs from its package.
 package FixtureValues {
@@ -22,6 +22,7 @@ package FixtureValues {
         enum first;
         second;
         enum third { doc /* a member with a doc body */ }
+        enum fifth { doc /* a member with an annotation */ @Marked { what = "a note"; } }
     }
 
     attribute def Entry {

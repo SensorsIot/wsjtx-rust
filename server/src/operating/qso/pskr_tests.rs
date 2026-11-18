@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-039-20; TC-039-020. Everything here stays on the loopback interface: a local
+// Everything here stays on the loopback interface: a local
 // peer written from the OASIS MQTT 3.1.1 packet tables stands in for the broker, spots are
 // hand-authored in the form of the broker's published payload schema.
 use super::*;
@@ -32,7 +32,8 @@ fn spot(sender: &str, receiver: &str, hz: u64, utc_s: i64) -> Spot {
     }
 }
 
-// Proves: CL-039-20; TC-039-020. The payload fields and the choice of t_tx over t.
+// The payload fields and the choice of t_tx over t.
+// Proves: TC-039-020
 #[test]
 fn parse_spot_reads_the_schema_and_refuses_the_rest() {
     let mut expected = spot("HB9BLA", "K1ABC", 7075512, 990);
@@ -54,7 +55,7 @@ fn parse_spot_reads_the_schema_and_refuses_the_rest() {
     }
 }
 
-// Proves: CL-039-20; TC-039-020. Exactly the two filters, and no data ever becomes a wildcard.
+// Exactly the two filters, and no data ever becomes a wildcard.
 #[test]
 fn filters_are_exact_and_no_call_makes_a_wildcard() {
     assert_eq!(
@@ -86,7 +87,7 @@ fn filters_are_exact_and_no_call_makes_a_wildcard() {
     }
 }
 
-// Proves: CL-039-20; TC-039-020. The id names the call and stays inside what 3.1.1 obliges a
+// The id names the call and stays inside what 3.1.1 obliges a
 // server to accept.
 #[test]
 fn client_id_carries_the_call_and_stays_legal() {
@@ -98,7 +99,7 @@ fn client_id_carries_the_call_and_stays_legal() {
     );
 }
 
-// Proves: CL-097-05; TC-097-010. "He reports": a spot he received counts 600 s and no longer.
+// "He reports": a spot he received counts 600 s and no longer.
 #[test]
 fn reports_counts_up_to_600_s_and_no_longer() {
     let mut h = Hearing::default();
@@ -112,8 +113,9 @@ fn reports_counts_up_to_600_s_and_no_longer() {
     assert!(!h.reports("K1ABC", "FT8", "40m", 1601));
 }
 
-// Proves: CL-039-20; TC-039-020. A spot counts for its band and mode inside the window, and no
+// A spot counts for its band and mode inside the window, and no
 // longer.
+// Proves: TC-039-020
 #[test]
 fn hears_us_expires_and_ignores_other_band_and_mode() {
     let mut h = Hearing::default();
@@ -162,8 +164,9 @@ fn hears_us_expires_and_ignores_other_band_and_mode() {
     assert!(!h.hears_us("K1ABC", "FT8", "40m", 1000));
 }
 
-// Proves: CL-039-20; TC-039-020. RF to audio from the dial, newest first, distinct, inside the
+// RF to audio from the dial, newest first, distinct, inside the
 // range.
+// Proves: TC-039-020
 #[test]
 fn decoded_offsets_come_from_the_dial_of_this_band_and_mode() {
     let mut h = Hearing::default();
@@ -214,7 +217,8 @@ fn decoded_offsets_come_from_the_dial_of_this_band_and_mode() {
     );
 }
 
-// Proves: CL-039-20; TC-039-020. Memory stays bounded whatever the broker sends; the newest stay.
+// Memory stays bounded whatever the broker sends; the newest stay.
+// Proves: TC-039-020
 #[test]
 fn the_model_is_bounded() {
     let mut h = Hearing::default();
@@ -251,7 +255,7 @@ fn the_model_is_bounded() {
     assert_eq!(offsets[0], 300 + DECODED_MAX as u32 + 49);
 }
 
-// Proves: CL-039-20; TC-039-020. The packets, byte by byte, from the OASIS 3.1.1 tables.
+// The packets, byte by byte, from the OASIS 3.1.1 tables.
 #[test]
 fn packets_match_the_specification() {
     assert_eq!(
@@ -277,7 +281,7 @@ fn packets_match_the_specification() {
     assert_eq!(&long[..3], &[0x82, 200, 1]);
 }
 
-// Proves: CL-039-20; TC-039-020. Whole, split and hostile input; nothing panics or grows.
+// Whole, split and hostile input; nothing panics or grows.
 #[test]
 fn next_packet_parses_and_bounds() {
     let mut buffer = vec![0x20, 2, 0];
@@ -299,7 +303,7 @@ fn next_packet_parses_and_bounds() {
     assert_eq!(next_packet(&mut buffer), Ok(Some(Packet::UnsubAck)));
     for hostile in [
         vec![0x30, 0xff, 0xff, 0xff, 0xff, 0x7f], // a length of too many bytes
-        vec![0x30, 0x81, 0x80, 0x04],             // past PACKET_MAX
+        vec![0x30, 0x81, 0x80, 0x04],             // past MAX_PACKET_BYTES
         vec![0x32, 2, 0, 0],                      // QoS 1
         vec![0x30, 3, 0, 9, 1],                   // a topic past the packet
         vec![0x10, 0],                            // a server never sends CONNECT
@@ -314,18 +318,18 @@ fn next_packet_parses_and_bounds() {
     }
 }
 
-// Proves: CL-039-20; TC-039-020. The reconnect delay doubles to its bound and starts over only
+// The reconnect delay doubles to its bound and starts over only
 // after a healthy session.
 #[test]
 fn backoff_doubles_to_the_bound() {
-    let mut b = Backoff::new(&Timing::BROKER);
+    let mut b = Backoff::new(&FeedSession::BROKER);
     let delays: Vec<u64> = (0..9).map(|_| b.step().as_secs()).collect();
     assert_eq!(delays, [5, 10, 20, 40, 80, 160, 300, 300, 300]);
     b.reset();
     assert_eq!(b.step().as_secs(), 5);
 }
 
-const FAST: Timing = Timing {
+const FAST: FeedSession = FeedSession {
     poll: Duration::from_millis(10),
     handshake: Duration::from_secs(5),
     ping: Duration::from_millis(100),
@@ -388,9 +392,10 @@ fn next_ping(log: &mpsc::Receiver<(u8, Vec<u8>)>) -> (u8, Vec<u8>) {
     }
 }
 
-// Proves: CL-039-20; TC-039-020. The whole session against a local peer: only the handshake, the
+// The whole session against a local peer: only the handshake, the
 // two filters and pings on the wire; a target change replaces its subscription; spots reach the
 // model only by their payload; status from connecting through connected to off.
+// Proves: TC-039-020
 #[test]
 fn session_against_a_local_peer() {
     let dir = Dir::new();
@@ -518,7 +523,7 @@ fn session_against_a_local_peer() {
     );
 }
 
-// Proves: CL-039-20; TC-039-020. A peer that accepts and drops at once sees the attempts spread
+// A peer that accepts and drops at once sees the attempts spread
 // by the doubling delay; the status names the error, then recovers without any operator step.
 #[test]
 fn reconnect_backs_off_against_a_failing_peer_and_recovers() {
@@ -567,7 +572,7 @@ fn reconnect_backs_off_against_a_failing_peer_and_recovers() {
     }
 }
 
-// Proves: CL-039-20; TC-039-020. The switch on is never shown as off: connecting during the backoff,
+// The switch on is never shown as off: connecting during the backoff,
 // and off and on again faster than the session looks ends that session, so connected is true.
 #[test]
 fn the_status_follows_the_switch() {
@@ -594,7 +599,7 @@ fn the_status_follows_the_switch() {
             }
         }
     });
-    let slow = Timing {
+    let slow = FeedSession {
         poll: Duration::from_millis(100),
         backoff_first: Duration::from_millis(600),
         backoff_max: Duration::from_millis(600),
@@ -622,7 +627,7 @@ fn the_status_follows_the_switch() {
     assert_eq!(none.set_enabled("p", "b", true).unwrap()["state"], "off");
 }
 
-// Proves: CL-039-20; TC-039-020. Refused and broken brokers: a named error, never a panic.
+// Refused and broken brokers: a named error, never a panic.
 #[test]
 fn a_refusing_or_broken_peer_is_a_named_error() {
     for (script, code) in [
@@ -648,8 +653,9 @@ fn a_refusing_or_broken_peer_is_a_named_error() {
     }
 }
 
-// Proves: CL-039-20; TC-039-020. The default is on; a setting from another profile or a broken
+// The default is on; a setting from another profile or a broken
 // file reads as the default.
+// Proves: TC-039-020
 #[test]
 fn the_setting_defaults_on_and_survives() {
     let dir = Dir::new();
@@ -672,7 +678,7 @@ fn the_setting_defaults_on_and_survives() {
     );
 }
 
-// Proves: CL-039-20; TC-039-020. Only WSTX_PSKR=tcp: with a loopback address replaces the broker;
+// Only WSTX_PSKR=tcp: with a loopback address replaces the broker;
 // anything else unknown opens no connection.
 #[test]
 fn the_broker_can_only_be_replaced_on_loopback() {
@@ -710,7 +716,7 @@ fn verify(host: &'static str, utc_s: u64) -> Result<(), rustls::Error> {
         )
         .map(|_| ())
 }
-// Proves: CL-039-20; TC-039-020. The compiled-in roots validate the chain the broker presented on
+// The compiled-in roots validate the chain the broker presented on
 // 2026-11-06 (captured once, checked here with no network) and refuse another name or time.
 #[test]
 fn the_compiled_roots_validate_the_captured_broker_chain() {
@@ -720,7 +726,7 @@ fn the_compiled_roots_validate_the_captured_broker_chain() {
     assert!(verify(HOST, CAPTURED + 200 * 86_400).is_err(), "expired");
 }
 
-// Proves: CL-039-20; TC-039-020. A peer without valid TLS is never spoken to in MQTT.
+// A peer without valid TLS is never spoken to in MQTT.
 #[test]
 fn a_peer_without_tls_is_refused() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -739,7 +745,7 @@ fn a_peer_without_tls_is_refused() {
     assert_eq!(peer.join().unwrap(), 0x16, "the client spoke TLS first");
 }
 
-// Proves: CL-039-20; TC-039-020. GET and POST /pskr through the station router; the push event.
+// GET and POST /pskr through the station router; the push event.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn http_routes_read_and_switch_the_feed() {
     let f = crate::contact_http_tests::fixture("http://127.0.0.1:18453", false);
@@ -786,8 +792,9 @@ fn payload(sender: &str, receiver: &str, hz: u64, t_tx: i64, rp: Option<&str>) -
     )
 }
 
-// Proves: TC-039-048. rp is the receiver's reported SNR: an integer -99..99; absent or anything
+// rp is the receiver's reported SNR: an integer -99..99; absent or anything
 // else is unknown and the spot still counts.
+// Proves: TC-039-048
 #[test]
 fn tc_039_048_rp_is_read_as_the_reported_snr() {
     for (rp, expected) in [
@@ -821,8 +828,9 @@ fn tc_039_048_rp_is_read_as_the_reported_snr() {
     );
 }
 
-// Proves: TC-039-048. His decoded offsets are kept once for each parity of the sender's t_tx; an
+// His decoded offsets are kept once for each parity of the sender's t_tx; an
 // offset of the other parity excludes nothing of mine.
+// Proves: TC-039-048
 #[test]
 fn tc_039_048_decoded_offsets_are_kept_per_parity() {
     // 1_000_005 s lies in FT8 period 66_667 (odd), 1_000_020 s in 66_668 (even), hand-divided by
@@ -860,7 +868,7 @@ fn tc_039_048_decoded_offsets_are_kept_per_parity() {
     assert_eq!(of(Parity::Odd), Vec::<u32>::new());
 }
 
-// Proves: TC-039-048. pskr.json schema 2 with use: schema 1 reads use true and is written as 2 by
+// pskr.json schema 2 with use: schema 1 reads use true and is written as 2 by
 // the next change; use false is kept; a broken file reads enabled and use true, invalid_pskr.
 #[test]
 fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
@@ -924,7 +932,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
     }
 }
 
-// Proves: TC-039-048. POST /pskr/use saves the setting with the refusals of POST /pskr; GET /pskr
+// POST /pskr/use saves the setting with the refusals of POST /pskr; GET /pskr
 // and pskr.state carry use; an MCP principal is refused 401.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_048_post_pskr_use_saves_and_refuses() {
@@ -988,8 +996,9 @@ async fn tc_039_048_post_pskr_use_saves_and_refuses() {
     assert_eq!(feed.view()["use"], true, "nothing changed");
 }
 
-// Proves: TC-039-048. Use off unsubscribes the target and Use on subscribes it again; the hearing
+// Use off unsubscribes the target and Use on subscribes it again; the hearing
 // state is heard (time and rp), no (connected and subscribed, no spot) or unknown.
+// Proves: TC-039-048
 #[test]
 fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
     let dir = Dir::new();
@@ -1097,8 +1106,9 @@ fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
     peer.join().unwrap();
 }
 
-// Proves: TC-039-048. What a run reads of the feed on the station band: the hearing of its target
+// What a run reads of the feed on the station band: the hearing of its target
 // and his decoded offsets of my Tx parity, both unknown with Use off or without a band or dial.
+// Proves: TC-039-048
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use() {
     let f = crate::mcp_tests::station(false).await;

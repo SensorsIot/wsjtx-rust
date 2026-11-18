@@ -762,7 +762,7 @@ fn map(error: ::windows::core::Error) -> Error {
 
 #[cfg(test)]
 mod line_tests {
-    // Proves: CL-044-01. DCB bit layout (winbase.h): fDtrControl bits 4-5, fRtsControl
+    // DCB bit layout (winbase.h): fDtrControl bits 4-5, fRtsControl
     // bits 12-13, fOutxCtsFlow 2, fOutxDsrFlow 3; all zero means both lines disabled.
     #[test]
     fn opened_ports_hold_dtr_and_rts_disabled() {

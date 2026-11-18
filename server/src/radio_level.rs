@@ -20,16 +20,14 @@ use wstx_rust::transmit::service::{ArmState, DisarmCause, LEVEL_MAX_DB, LEVEL_MI
 pub(crate) const LEVEL_FILE: &str = "tx-level.json";
 const LEVEL_FILE_MAX: u64 = 256;
 /// Where the assistant starts: well below any ALC on a radio with a sane USB MOD level.
-pub(crate) const ASSISTANT_START_DB: i32 = -30;
+pub(crate) const START_DB: i32 = -30;
 /// Tune level settle time before each meter read of the assistant.
-#[cfg(not(test))]
-const SETTLE: Duration = Duration::from_millis(400);
-#[cfg(test)]
-const SETTLE: Duration = Duration::from_millis(5);
+const SETTLE_MS: u64 = 400;
+const SETTLE: Duration = Duration::from_millis(if cfg!(test) { 5 } else { SETTLE_MS });
 /// Bound of one meter read (all its frames).
-const METER_READ: Duration = Duration::from_millis(400);
+const METER_READ_MAX_MS: Duration = Duration::from_millis(400);
 /// Meter display while Tune runs outside the assistant.
-const TUNE_READ_EVERY: Duration = Duration::from_secs(1);
+const TUNE_READ_MS: Duration = Duration::from_millis(1000);
 /// IC-7300 SWR meter (15 12): 0120 is SWR 3.0 (Full Manual section 19). A clear fault.
 pub(crate) const SWR_FAULT_RAW: u16 = 120;
 
@@ -88,7 +86,11 @@ pub(crate) const ALC_HIGH_RAW: u16 = 60;
 /// CL-044-14 SWR 2.0: a warning when it persists; SWR_FAULT_RAW stops transmitting.
 pub(crate) const SWR_HIGH_RAW: u16 = 80;
 /// CL-044-14 consecutive transmissions before an entry appears in the error field.
-pub(crate) const PERSISTENT: u8 = 3;
+pub(crate) const PERSISTENT_READINGS: u8 = 3;
+/// The level goes up only while the output power is below this share of the
+/// band's output power; below the second share the power is low.
+const STEP_UP_BELOW_PCT: u32 = 80;
+const PO_LOW_PCT: u32 = 50;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Counts {
     alc_high: u8,
@@ -121,8 +123,8 @@ pub(crate) fn monitor_step(
         .map(|(l, p)| (po_percent(p), u32::from(l)));
     let alc_high = meters.alc.is_some_and(|a| a >= ALC_HIGH_RAW);
     let over = po.is_some_and(|(p, l)| p > l);
-    let low = po.is_some_and(|(p, l)| p * 5 < l * 4);
-    let very_low = po.is_some_and(|(p, l)| p * 2 < l);
+    let low = po.is_some_and(|(p, l)| p * 100 < l * STEP_UP_BELOW_PCT);
+    let very_low = po.is_some_and(|(p, l)| p * 100 < l * PO_LOW_PCT);
     let swr_high = meters.swr.is_some_and(|s| s >= SWR_HIGH_RAW);
     let count = |n: &mut u8, on: bool| *n = if on { n.saturating_add(1) } else { 0 };
     count(&mut counts.alc_high, alc_high);
@@ -146,7 +148,7 @@ pub(crate) fn monitor_step(
         ("po_low", counts.po_low),
         ("swr_high", counts.swr_high),
     ] {
-        if n >= PERSISTENT {
+        if n >= PERSISTENT_READINGS {
             warnings.push(entry);
         }
     }
@@ -184,7 +186,7 @@ struct Inner {
     /// SWR stopped transmitting; held until a later reading or Set level shows it clear.
     swr_fault: bool,
     revision: u64,
-    /// Test seam only (#87): a fixture's bound of one meter read instead of METER_READ.
+    /// Test seam only: a fixture's bound of one meter read instead of METER_READ_MAX_MS.
     #[cfg(test)]
     read_bound: Option<Duration>,
 }
@@ -208,7 +210,7 @@ impl Owner {
         if let Some(bound) = self.lock().read_bound {
             return bound;
         }
-        METER_READ
+        METER_READ_MAX_MS
     }
     /// Test seam only (#87): every meter read of this owner takes `bound` instead.
     #[cfg(test)]
@@ -331,7 +333,7 @@ pub(crate) fn tick(recording: &Arc<Recording>, radio: Option<profile::Radio>, no
             return;
         }
         if i.read_at
-            .is_some_and(|t| now.duration_since(t) < TUNE_READ_EVERY)
+            .is_some_and(|t| now.duration_since(t) < TUNE_READ_MS)
         {
             return;
         }
@@ -459,7 +461,7 @@ pub(crate) fn start_assistant(state: &Arc<ProfileState>, hz: u32) -> Result<(), 
                 .ok_or("radio_unavailable")?;
             c.arm(revision).map_err(name)?;
         }
-        c.set_tx_level(ASSISTANT_START_DB);
+        c.set_tx_level(START_DB);
         if let Err(refusal) = c.set_tune(true, hz) {
             c.set_tx_level(prior);
             if armed_here {
@@ -505,7 +507,7 @@ fn assistant(
     let recording = &state.recording;
     let limit = recording.tx_level.lock().power_limit;
     let lost = || station.service.halt_requests() != halts || !station.service.view().tune;
-    let mut level = ASSISTANT_START_DB;
+    let mut level = START_DB;
     recording.tx_level.update(|i| i.level_db = level);
     let (stored, result) = loop {
         let settled = Instant::now() + SETTLE;

@@ -2,7 +2,7 @@
 // Copyright the WSJT-X contributors. GPL-3.0-only; see the project LICENSE.
 // Reference: WSJTX/wsjtx 0f7d5928449ec747c3d1f6da1306f8c94404c3a9.
 use super::{
-    DecodeError, Mode,
+    DECODE_BAND_HIGH_HZ, DECODE_BAND_LOW_HZ, DecodeError, Mode,
     baseband::{BandWindow, PassBand},
     bitmetrics,
     search::CpuBudget,
@@ -14,7 +14,7 @@ use std::f64::consts::PI;
 fn complete(start: isize, frequency: f64, frames: usize, mode: Mode) -> bool {
     start >= 0
         && start as usize + mode.symbol_count() * mode.symbol_frames() <= frames
-        && (200. - 1e-7..=3500. + 1e-7).contains(&frequency)
+        && (DECODE_BAND_LOW_HZ - 1e-7..=DECODE_BAND_HIGH_HZ + 1e-7).contains(&frequency)
 }
 fn better(candidate: Candidate, best: Option<Candidate>) -> bool {
     candidate.score.is_finite()
@@ -101,7 +101,7 @@ async fn ft8(
         }
         let c = Candidate {
             start: time.start,
-            frequency: frequency.clamp(200., 3500.),
+            frequency: frequency.clamp(DECODE_BAND_LOW_HZ, DECODE_BAND_HIGH_HZ),
             score: sync8(&window, time.start / 60, frequency, &mut table),
         };
         if better(c, best) {

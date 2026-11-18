@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// TC-080-001 link byte log (WstxStationLink::LinkTrafficLog): the actual router in the test
+// The link byte log (WstxListener::LinkTrafficLog): the actual router in the test
 // process, served by the station's own listener (TLS on a selected HTTPS profile with one enrolled
 // browser grant and one MCP client; plaintext loopback in case (i)). The log's period clock and
 // mode are driven by the test, and so is the runtime clock (paused): the station's heartbeat and
@@ -123,7 +123,7 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Wire<T> {
     }
 }
 
-/// WstxStationLink::LinkTrafficLog estimate with IndependentLinkAccounting, as the contract
+/// WstxListener::LinkTrafficLog estimate, as the contract
 /// states it: t = 29 on TLS, 0 on plaintext; each message of b bytes takes
 /// w = b + t x ceil(b / 16384) wire bytes and ceil(w / 512) segments, the rest of the bytes
 /// ceil(r / 512); estimate = bytes + 80 x S(this direction) + 80 x S(other direction).
@@ -676,12 +676,13 @@ async fn http2_get(
     (status.as_u16(), client)
 }
 
-// Proves: CL-003-05; TC-080-001 cases (a)-(h). One JSON line per client with traffic at each
+// Cases (a)-(h): one JSON line per client with traffic at each
 // period end with the bytes its peers wrote and read, the types by the log's rule, other and the
 // estimate; refused requests on their connection's client; MCP on its own line; a connection
 // without credentials local, also on TLS; display per socket; FT4, mode change and no-mode
 // periods; HTTP/2 by the same rule; rotation; no secret in a line and nothing of the log on a
 // socket or response.
+// Proves: TC-080-001
 #[tokio::test(start_paused = true)]
 async fn link_byte_log_counts_each_client_per_period() {
     rustls::crypto::ring::default_provider()
@@ -857,8 +858,9 @@ async fn link_byte_log_counts_each_client_per_period() {
     service.abort();
 }
 
-// Proves: CL-003-05; TC-080-001 case (i). On a plaintext loopback profile t is 0 and the client
+// Case (i): on a plaintext loopback profile t is 0 and the client
 // is local.
+// Proves: TC-080-001
 #[tokio::test(start_paused = true)]
 async fn link_byte_log_on_a_plaintext_profile() {
     let (app, dir) = plaintext_station("link-log");
@@ -904,9 +906,10 @@ async fn link_byte_log_on_a_plaintext_profile() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Proves: CL-003-05; TC-080-001 (review finding on #80): the set of types is bounded. A request
+// The set of types is bounded. A request
 // method outside the standard ones (FOO1, FOO2) on a route and on an unknown path is typed
 // "OTHER /" and "OTHER unrouted"; no client text reaches a key.
+// Proves: TC-080-001
 #[tokio::test(start_paused = true)]
 async fn link_byte_log_bounds_the_request_methods() {
     let (app, dir) = plaintext_station("link-methods");

@@ -1,4 +1,4 @@
-// Proves: CL-024-01; TC-024-001 (#24 S1). The station's call hash table learns the calls
+// The station's call hash table learns the calls
 // WSJT-X's packjt77 saves and fills hashed calls in as unpack77 (nrx=1) does; the pure
 // unpack is unchanged.
 use super::{CallKind, Fields, HashTable, MAX_HASH22, Payload, ihashcall, unpack, unpack_with};
@@ -64,7 +64,7 @@ fn to_call(p: &Payload) -> serde_json::Value {
     }
 }
 
-// Proves: TC-024-001.
+// Proves: TC-024-001
 #[test]
 fn hashed_calls_fill_in_from_heard_calls_and_stay_unknown_otherwise() {
     let m1 = packed("<PJ4/K1ABC> W9XYZ -05");
@@ -117,7 +117,7 @@ fn hashed_calls_fill_in_from_heard_calls_and_stay_unknown_otherwise() {
     );
 }
 
-// Proves: TC-024-001.
+// Proves: TC-024-001
 #[test]
 fn my_call_fills_the_to_slot_even_after_the_list_has_dropped_it() {
     let mut t = HashTable::new();
@@ -165,7 +165,7 @@ fn my_call_fills_the_to_slot_even_after_the_list_has_dropped_it() {
     assert_eq!(shown(&t, &mine), "<...> K1ABC -05");
 }
 
-// Proves: TC-024-001.
+// Proves: TC-024-001
 #[test]
 fn the_later_of_two_calls_with_one_hash_wins() {
     let mut seen = std::collections::HashMap::new();
@@ -190,7 +190,7 @@ fn the_later_of_two_calls_with_one_hash_wins() {
     );
 }
 
-// Proves: TC-024-001.
+// Proves: TC-024-001
 #[test]
 fn sent_messages_teach_their_calls() {
     let mut t = HashTable::new();
@@ -225,7 +225,7 @@ fn sent_messages_teach_their_calls() {
     ));
 }
 
-// Proves: CL-024-01; TC-024-003 (f). unpack77's nonstandard DX-call rule: a 'to' hash equal
+// unpack77's nonstandard DX-call rule: a 'to' hash equal
 // to my 12-bit hash is my call when the full call is the contact's DX call, even when
 // calls12 holds another call with that hash.
 #[test]
@@ -252,9 +252,10 @@ fn the_dx_call_rule_prefers_my_call_over_a_colliding_call() {
     assert_eq!(shown(&t, &to_me), format!("<{x}> PJ4/K1ABC"));
 }
 
-// Proves: CL-024-01; TC-024-010 (#24 S4a). unpack77 n3=1, nrx=1: a 0.1 hash equal to the
+// unpack77 n3=1, nrx=1: a 0.1 hash equal to the
 // 10-bit hash of the current DX call shows the DX call, also over a colliding calls10
 // entry; another or a too-short DX call leaves the table entry; my call is not filled in.
+// Proves: TC-024-010
 #[test]
 fn a_dxpedition_hash_of_the_dx_call_shows_the_dx_call() {
     let dx = dxpedition("KH1/KH7Z");

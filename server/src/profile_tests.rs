@@ -6,11 +6,23 @@ use std::cell::Cell;
 mod model_values;
 
 /// A launch refusal the model lists: the name is checked against the members of
-/// `WstxProfiles::StartupOutcome`, so a test fails when the model no longer lists it.
+/// `WstxStartup::StartupOutcome`, written as `WstxStationLink::WireNames` says, so a test
+/// fails when the model no longer lists it.
 fn outcome(name: &'static str) -> &'static str {
     let members = model_values::Model::load()
-        .enum_members("WstxProfiles::StartupOutcome")
-        .unwrap_or_else(|e| panic!("model value {e}"));
+        .enum_members("WstxStartup::StartupOutcome")
+        .unwrap_or_else(|e| panic!("model value {e}"))
+        .iter()
+        .map(|m| {
+            m.chars().fold(String::new(), |mut wire, c| {
+                if c.is_ascii_uppercase() {
+                    wire.push('_');
+                }
+                wire.push(c.to_ascii_lowercase());
+                wire
+            })
+        })
+        .collect::<Vec<_>>();
     assert!(
         members.iter().any(|m| m == name),
         "{name} is not a StartupOutcome of the model {members:?}"
@@ -43,11 +55,11 @@ pub(super) fn checkpoint(stage: &'static str) -> std::io::Result<()> {
     Ok(())
 }
 
-fn independent_document() -> Document {
+fn independent_document() -> ProfileDocument {
     serde_json::from_str(r#"{"schema_version":1,"profile_id":"00000000-0000-4000-8000-000000000001","revision":0,"display_name":"Station 1","callsign":"TEST1","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":"fixture-input-1","output_device":"fixture-output-1"},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}}"#).unwrap()
 }
 
-// CL-022-02: an expected private authorization record cannot be silently reset.
+// An expected private authorization record cannot be silently reset.
 // This uses only the preexisting Store API so the unchanged parent compiles and
 // fails on its actual accepted startup, rather than a missing new module/API.
 #[test]
@@ -89,7 +101,7 @@ fn expected_authorization_corruption_blocks_profile_startup_without_rewriting_fi
     }
 }
 
-// Proves: FR-001, FR-016; CL-005-02, CL-005-05; TC-022-001, TC-022-002.
+// Proves: TC-022-001
 #[test]
 fn exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys() {
     let raw = serde_json::to_string(&independent_document()).unwrap();
@@ -104,11 +116,11 @@ fn exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys() {
             "\"unexpected\":null",
         ),
     ] {
-        assert!(serde_json::from_str::<Document>(&bad).is_err());
+        assert!(serde_json::from_str::<ProfileDocument>(&bad).is_err());
     }
 }
 
-// Proves: FR-001, FR-022; CL-005-02, CL-005-05; TC-022-001.
+// Proves: TC-022-001
 #[test]
 fn settings_validation_uses_utf8_bytes_and_independent_audio_control_domains() {
     let mut settings = independent_document().settings();
@@ -144,7 +156,7 @@ fn settings_validation_uses_utf8_bytes_and_independent_audio_control_domains() {
     assert_eq!(settings.validate(), Err("control.ptt"));
 }
 
-// Proves: FR-022; CL-005-02, CL-005-04; TC-022-002, TC-022-003.
+// Proves: TC-022-002, TC-022-003
 #[test]
 fn storage_commit_point_and_os_ownership_survive_reopen() {
     let directory = std::env::temp_dir().join(format!("wstx-profile-unit-{}", new_uuid().unwrap()));
@@ -175,7 +187,7 @@ fn storage_commit_point_and_os_ownership_survive_reopen() {
     fs::remove_dir_all(directory).unwrap();
 }
 
-// Proves: FR-016, FR-022; CL-005-02, CL-005-04; TC-022-002.
+// Proves: TC-022-002
 #[test]
 fn save_failures_and_interruptions_preserve_the_defined_commit_point() {
     for stage in [
@@ -234,12 +246,13 @@ fn native_document() -> serde_json::Value {
     value
 }
 
-// Proves: TC-023-002. The native intent is a separate schema-2 document without a radio
+// The native intent is a separate schema-2 document without a radio
 // identity; standard schema-1 bytes, refusals and the absence of a runtime handle are preserved.
+// Proves: TC-022-002, TC-023-007
 #[test]
 fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
     let accept = |value: &serde_json::Value| {
-        serde_json::from_value::<Document>(value.clone())
+        serde_json::from_value::<ProfileDocument>(value.clone())
             .map_err(|_| outcome("invalid_profile"))
             .and_then(|d| d.validate().map(|_| d))
     };
@@ -336,7 +349,7 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
     assert_eq!(cat.validate_native(), Err("control.ptt"));
 }
 
-// Proves: TC-023-002. Creation persists only the intent and a fresh client identity, and
+// Creation persists only the intent and a fresh client identity, and
 // no writer can give the native profile a device or CAT selection afterwards.
 #[test]
 fn native_profile_creation_persists_intent_without_runtime_handles() {
@@ -379,4 +392,88 @@ fn native_profile_creation_persists_intent_without_runtime_handles() {
     );
     drop(store);
     fs::remove_dir_all(directory).unwrap();
+}
+
+// A missing folder, a settings value outside its rule in the file and a lock that cannot be
+// taken refuse the open; the open makes and changes no file.
+// Proves: TC-022-002
+#[test]
+fn an_open_it_cannot_carry_out_is_refused_and_changes_no_file() {
+    let missing =
+        std::env::temp_dir().join(format!("wstx-profile-missing-{}", new_uuid().unwrap()));
+    assert!(matches!(Store::open(&missing), Err(e) if e == outcome("resource_unavailable")));
+    assert!(!missing.exists(), "an open makes no folder");
+    let directory =
+        std::env::temp_dir().join(format!("wstx-profile-refused-{}", new_uuid().unwrap()));
+    fs::create_dir(&directory).unwrap();
+    let file = directory.join("profile.json");
+    let mut nameless = serde_json::to_value(independent_document()).unwrap();
+    nameless["display_name"] = "".into();
+    let bytes = serde_json::to_vec(&nameless).unwrap();
+    fs::write(&file, &bytes).unwrap();
+    assert!(matches!(Store::open(&directory), Err(e) if e == outcome("invalid_profile")));
+    assert_eq!(fs::read(&file).unwrap(), bytes);
+    let valid = serde_json::to_vec(&independent_document()).unwrap();
+    fs::write(&file, &valid).unwrap();
+    fs::create_dir(directory.join(".profile.lock")).unwrap();
+    assert!(matches!(Store::open(&directory), Err(e) if e == outcome("resource_unavailable")));
+    assert_eq!(fs::read(&file).unwrap(), valid);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+// A creation whose file cannot be written ends with resourceUnavailable and leaves no
+// profile.json.
+// Proves: TC-022-002
+#[test]
+fn a_creation_whose_file_cannot_be_written_is_resource_unavailable() {
+    for native in [false, true] {
+        let directory =
+            std::env::temp_dir().join(format!("wstx-profile-unwritten-{}", new_uuid().unwrap()));
+        let created = with_fault("write", || {
+            if native {
+                Store::create_native(&directory, "ANT1", None)
+            } else {
+                Store::create(&directory)
+            }
+        });
+        assert_eq!(
+            created,
+            Err(outcome("resource_unavailable")),
+            "native {native}"
+        );
+        assert!(!directory.join("profile.json").exists(), "native {native}");
+        let _ = fs::remove_dir_all(&directory);
+    }
+}
+
+// A save of a native profile is refused with the first device or radio control value it holds.
+// Proves: TC-023-007
+#[test]
+fn a_native_save_names_each_device_and_radio_control_value() {
+    let native = serde_json::from_value::<ProfileDocument>(native_document())
+        .unwrap()
+        .settings();
+    type Change = (&'static str, fn(&mut Settings));
+    let cases: [Change; 5] = [
+        ("audio.input_device", |s: &mut Settings| {
+            s.audio.input_device = Some("X".into())
+        }),
+        ("audio.output_device", |s: &mut Settings| {
+            s.audio.output_device = Some("X".into())
+        }),
+        ("control.mode", |s: &mut Settings| {
+            s.control.mode = "cat".into()
+        }),
+        ("control.endpoint", |s: &mut Settings| {
+            s.control.endpoint = Some("COM3".into())
+        }),
+        ("control.ptt", |s: &mut Settings| {
+            s.control.ptt = "cat".into()
+        }),
+    ];
+    for (field, edit) in cases {
+        let mut settings = native.clone();
+        edit(&mut settings);
+        assert_eq!(settings.validate_native(), Err(field));
+    }
 }

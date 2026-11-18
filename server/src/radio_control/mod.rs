@@ -37,6 +37,8 @@ pub enum Error {
     FailedClose,
 }
 pub type Result<T> = std::result::Result<T, Error>;
+/// A ready connection reads the facts once in this many seconds while nothing else runs.
+pub const POLL_SECONDS: u64 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Baud {

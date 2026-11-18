@@ -57,6 +57,8 @@ pub struct Actor {
 }
 // 0 idle,1 ordinary operation,2 reserved transition,3 reserved exchange,4 transmit hold.
 const TRANSMIT_HOLD: u8 = 4;
+/// The time (ms) for the unkey of a connection that closes while it may be keyed.
+const CLOSING_UNKEY_MAX_MS: u64 = 250;
 struct Lease(Arc<AtomicU8>, Option<Arc<AtomicBool>>);
 impl Drop for Lease {
     fn drop(&mut self) {
@@ -254,7 +256,7 @@ impl Actor {
                         }
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         Err(mpsc::RecvTimeoutError::Timeout) => {
-                            if last_poll.elapsed() >= Duration::from_secs(1)
+                            if last_poll.elapsed() >= Duration::from_secs(super::POLL_SECONDS)
                                 && busy
                                     .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
                                     .is_ok()
@@ -273,7 +275,7 @@ impl Actor {
                     && executor
                         .set_ptt(
                             false,
-                            Instant::now() + Duration::from_millis(250),
+                            Instant::now() + Duration::from_millis(CLOSING_UNKEY_MAX_MS),
                             &AtomicBool::new(false),
                         )
                         .is_ok()
@@ -297,7 +299,7 @@ impl Actor {
             thread: Some(worker),
         })
     }
-    /// WstxRadioIO::PttControl. Keys (`on`) or releases the transmit switch with
+    /// WstxCatControl::KeyingRules. Keys (`on`) or releases the transmit switch with
     /// readback through this single I/O owner. Keying first takes the transmit hold
     /// (lease 4), waiting until `deadline` for a running poll or operation to finish;
     /// the hold excludes every ordinary operation, transition and poll until a release

@@ -1,4 +1,4 @@
-//! The station's call hash table (WstxOfflineDecode::HashResolution, CL-024-01, #24 S1):
+//! The station's call hash table (WstxMessagePayload::HashResolution):
 //! WSJT-X 3.3.0-beta5 packjt77.f90 save_hash_call, hash10/12/22 and hashmy10/12/22. One
 //! table per station instance, fed by decoded and transmitted calls and by my own call;
 //! the pure `unpack` never uses one.
@@ -7,6 +7,8 @@ use std::collections::{HashMap, VecDeque};
 
 /// MAXHASH of packjt77.f90: entries of the 22-bit list.
 pub const MAX_HASH22: usize = 1000;
+/// A call shorter than this is not remembered.
+const MIN_CALL_LENGTH: usize = 3;
 const BASE38: &[u8] = b" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/";
 
 /// ihashcall: the top `m` bits of the low 64 bits of 47055833459 times the base-38 value
@@ -79,7 +81,7 @@ impl HashTable {
         }
         let call = call.strip_prefix('<').unwrap_or(call);
         let call = call.split('>').next().unwrap_or("").trim();
-        if call.len() < 3 {
+        if call.len() < MIN_CALL_LENGTH {
             return;
         }
         let (Some(h10), Some(h12), Some(h22)) = (

@@ -1,4 +1,4 @@
-//! The Rust model-value reader on the fixture tree `tests/fixtures/model-values/` (TC-DOC-014),
+//! The Rust model-value reader on the fixture tree `tests/fixtures/model-values/` (TR-20),
 //! against the hand-written list of expected values there.
 #[allow(dead_code)]
 #[path = "../src/model_values.rs"]
@@ -201,7 +201,7 @@ fn accepted(eol: &str) -> usize {
     count
 }
 
-// Proves: CL-014-16; TC-DOC-014 (the Rust reader accepts every value of the fixture list).
+// TV-156 (TR-20): the Rust reader accepts every value of the fixture list.
 #[test]
 fn model_values_reads_every_fixture_value_in_lf_and_crlf() {
     let lf = accepted("\n");
@@ -210,7 +210,7 @@ fn model_values_reads_every_fixture_value_in_lf_and_crlf() {
     assert_eq!(lf, crlf);
 }
 
-// Proves: CL-014-16; TC-DOC-014 (the Rust reader refuses every fault of the fixture list).
+// TV-157 (TR-20): the Rust reader refuses every fault of the fixture list.
 #[test]
 fn model_values_refuses_every_fixture_fault_naming_name_and_reason() {
     let list = expected();

@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-// Proves: CL-012-01, CL-012-02, CL-012-03, CL-012-04; TC-020-001, TC-020-002.
 // The actual station router (selected HTTPS profile with its auth-v1 owner, the contact
 // engine and the #9 transmit owner thread on the recording hardware double: no audio,
 // PTT or radio) and an independent MCP test client that writes the literal JSON-RPC
@@ -382,7 +381,7 @@ pub(crate) fn even_period() -> i64 {
     now_ms().div_euclid(30_000) * 30_000
 }
 
-// Proves: TC-020-001.
+// Proves: TC-020-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     let f = station(true).await;
@@ -407,7 +406,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     );
     assert!(saved.is_ok());
     f.state.logbook.worked_set().unwrap();
-    // Modern discovery and the fixed WstxMcpInterface::ToolCatalog.
+    // Modern discovery and the fixed tools of WstxMcp::ToolRule.
     let d = f.modern("server/discover", json!({})).await;
     assert_eq!(d.status, StatusCode::OK);
     assert_eq!(
@@ -611,7 +610,6 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     assert_eq!(f.keys(), 0, "observation never keys");
 }
 
-// Proves: TC-020-002.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_before_effects() {
     let f = station(true).await;
@@ -1094,7 +1092,7 @@ async fn mcp_clients(f: &Mcp) -> Value {
     r.json
 }
 
-// Proves: CL-012-03; TC-020-004. #58: the MCP client token is a credential of its own,
+// The MCP client token is a credential of its own,
 // shown once and stored hashed; it never opens a browser route or becomes a browser
 // session, a browser credential never opens /mcp, every use is audited and revocation
 // is immediate.
@@ -1353,7 +1351,7 @@ async fn tc_020_004_the_mcp_client_token_is_separate_from_the_browser_credential
     assert_eq!(f.read("profile").await["profile_id"], f.id.as_str());
 }
 
-// Proves: CL-039-06, CL-012-03; TC-020-004. #58: the principal comes from the
+// The principal comes from the
 // credential, whatever route carries it: an MCP request never resets the Tx watchdog,
 // also when its MCP-principal transport reaches /contact/command directly.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1474,8 +1472,8 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
     assert_eq!(f.keys(), 2, "only the one CQ was keyed (key and release)");
 }
 
-// Proves: CL-110-01; TC-110-001 (h). A change through the MCP tool is saved like a change in
-// the browser (CL-110-01 point 2): the file holds it and a new station owner on the same
+// A change through the MCP tool is saved like a change in
+// the browser: the file holds it and a new station owner on the same
 // profile directory starts with it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_110_001_h_a_change_through_the_mcp_tool_is_saved() {

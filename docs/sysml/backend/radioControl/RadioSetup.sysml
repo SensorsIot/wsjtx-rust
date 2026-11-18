@@ -1,231 +1,341 @@
 package WstxRadioSetup {
     private import ScalarValues::*;
-    private import WstxRequirements::ImplementationState;
+    private import RequirementDerivation::*;
     private import WstxRequirements::'FR-009';
-    private import WstxRequirements::'FR-001';
-    private import WstxRequirements::'FR-008';
-    private import WstxRequirements::'FR-002';
-    private import WstxRequirements::AutomationState;
-    private import WstxProfiles::'CL-044-05';
-    private import WstxRadioIO::'CL-044-11';
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::TestedBy;
+    private import WstxRadioControlPart::RadioControlInterface;
+    private import WstxRadioControl::*;
+    private import WstxRadioProperties::Setting;
+    private import WstxRadioProperties::Agc;
+    private import WstxKeying::SplitOperation;
+    private import WstxModelNotes::CodeDiffers;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
-    // #44 Automatic radio detection and setup (operator decision 2026-11-01 on issue #44:
-    // IC-7300 settings may be written via CI-V, each read back, old values kept for undo).
-    // IC-7300 1A 05 item numbers: Icom IC-7300 Full Manual, section 19 "Control command",
-    // command table pages 19-4/19-5.
     requirement 'CL-044-01' {
-        doc /* POST /radio/detect {v 1, profile_id, boot_id, keying_inhibit_confirmed} (operating access and Origin as POST /receive/stop, exact keys, empty query) enumerates the present COM ports (port, friendly name, USB VID/PID, device instance), at most one detection at a time (a second is refused busy). Opening a port can pulse DTR/RTS before they are disabled (RadioIO: no guarantee of no initial USB-line glitch; USB SEND/CW/RTTY OFF or an independent inhibit before open), so detection is refused confirmation_required unless keying_inhibit_confirmed is true, the operator's confirmation that USB SEND and USB keying are OFF or the radio is on a dummy load; and only ports of a known radio USB bridge (Silicon Labs CP210x, VID 10C4 PID EA60) are opened, others are reported not_radio_bridge and never opened. Each such port is probed read-only: it is opened exclusively under the same per-device ownership claim as the CAT owner, with DTR and RTS disabled before the first byte and kept disabled, at 9600, 19200, 38400 and 115200 baud; at each rate it sends the CI-V broadcast "read transceiver ID" FE FE 00 E0 19 00 FD and, when no reply arrives, the same command addressed to each address of the model table. A reply FE FE E0 <address> 19 00 <id> FD identifies the address, the model and the rate; the station's own echo, collision (FC) frames, other traffic, garbage and timeouts are not replies. Probing never writes any other frame than these ID reads and the menu reads of CL-044-03: never a transmit, frequency, mode or setting command. Model table: 94h IC-7300 (station CAT supported), A4h IC-705, A2h IC-9700, 98h IC-7610 (identified, configured manually); Yaesu, Kenwood and Elecraft text CAT is not probed (listed as manual). A port held by another program or station reports in_use; the port of this station's running CAT owner (CL-022-03/04) is never opened a second time: it is reported from that owner, whose ID and menu reads go through the owner's single I/O lease. */
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST find the radios on the serial ports of the PC by
+             reading only, and only after the operator has confirmed that opening a
+             port cannot key a transmitter (RadioDetection). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_control/setup.rs; server/src/radioControl/windows.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/radio_setup.rs; server/src/main.rs"; }
     }
-    dependency CL_044_01_to_FR_009 from 'CL-044-01' to 'FR-009';
-    dependency CL_044_01_to_FR_001 from 'CL-044-01' to 'FR-001';
-    dependency CL_044_01_to_FR_008 from 'CL-044-01' to 'FR-008';
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-01'; }
+
+    attribute def KeyingConfirmation {
+        doc /* The operator's word, given once, that the radios of this PC do not key
+             from a serial line or stand on a dummy load. It is needed because opening
+             a port can raise a line for a moment (WstxCat::SerialLine).
+             It is RadioRecords::keyingConfirmed. The first DetectRadios that carries
+             the confirmation sets it, and radio control hands the record over to be
+             kept (RadioMemory). It counts when it has come back as kept; until then,
+             and without a record, the keying is not confirmed.
+             RadioStatus::keyingConfirmed reports it. */
+    }
+    attribute def RadioDetection {
+        doc /* How DetectRadios is carried out.
+             Without keyingInhibitConfirmed it is refused with confirmationRequired
+             and no port is opened. One detection runs at a time; a second is refused
+             with busy.
+             Every serial port present gets a PortReport, the first maxPorts of them.
+             The port of the station's own radio connection is not opened a second
+             time (PortState::stationCat); while that connection is ready, the radio's
+             identity and its menu items are read through it.
+             Of the other ports only those on a serial adapter of a known radio are
+             opened: the Silicon Labs CP210x with the USB vendor 10C4 and product
+             EA60. A port is opened as for the radio connection (OpenRadio).
+             On an opened port the radio is asked for its transceiver identity at
+             9600, 19200, 38400 and 115200 bits per second in this order: first every
+             radio on the link at once, and when none answers, the address of each
+             known model. The asking ends at the first rate at which a radio answered.
+             An answer is an identity from a radio's address to the controller's; the
+             echo, a collision, other frames and noise are not.
+             The known models are the IC-7300 at 94, which the station can control,
+             and the IC-705 at A4, the IC-9700 at A2 and the IC-7610 at 98, which it
+             names only. An identity it does not know is reported as it is.
+             The frames sent while detecting are the read of the identity and the
+             reads of the menu items of SettingsCheck, and no other.
+             Detection changes nothing on a radio and nothing in the profile.
+             Detection and the asking of one port are bounded in time; a port not
+             reached in time is PortState::notProbed. */
+        attribute maxPorts : Integer = 64;
+    }
+
     requirement 'CL-044-02' {
-        doc /* For each identified radio the detection matches the USB audio endpoints to its serial port by the shared USB parent: an active capture or render endpoint matches when its device has the same Windows container ID as the serial device (not the null container), or when the nearest USB device of both has the same parent hub and that parent is not a root hub. Exactly one matching capture and one matching render endpoint are proposed by their WASAPI endpoint IDs with their friendly names for display; none or several leave that side unproposed (state none or ambiguous). The response holds the proposal of the single supported radio found (none or several: proposal null): {port COMn, model, civ_address, baud, control {mode cat, endpoint icom7300://COMn?baud=<rate>&radio=<address>&controller=e0, ptt cat}, audio {input_device, output_device}}. Applying it is the operator's PUT /profile and the existing receive-only confirmation (CL-022-03); detection writes nothing. */
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST report where the port of each radio it identifies is
+             attached, and propose the control of the one radio found that the station
+             can control (DetectionProposal). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_control/setup.rs; server/src/radioControl/windows.rs; server/src/audio/windows.rs; server/src/radio_setup.rs"; }
     }
-    dependency CL_044_02_to_FR_002 from 'CL-044-02' to 'FR-002';
-    dependency CL_044_02_to_FR_001 from 'CL-044-02' to 'FR-001';
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-02'; }
+
+    attribute def DetectionProposal {
+        doc /* What a DetectionReport says beyond the ports.
+             PortReport::place is the RadioPlace of the port: the model of its radio,
+             the container Windows puts the port in, and the USB hub its device hangs
+             on. By it the sound endpoints of the same radio are found.
+             RadioStatus::place is the same for the port the profile's endpoint names,
+             read from the list of the PC's ports without opening one.
+             A proposal is made when exactly one radio among all ports is one the
+             station can control. Its control is the mode cat, the endpoint
+             "icom7300://COMn?baud=<rate>&radio=<address>&controller=e0" with the port,
+             the rate and the address the radio answered at, and PTT by CAT; its AGC
+             is slow. With none or several such radios there is no proposal. */
+    }
+
     requirement 'CL-044-03' {
-        doc /* For an identified IC-7300 the detection reads (1A 05, never written while detecting) DATA OFF MOD 0066, DATA MOD 0067, USB MOD level 0065, CI-V transceive 0071, USB SEND 0078, USB keying CW 0079 and USB keying RTTY 0080, and reports each value with guidance: USB SEND, CW and RTTY keying not OFF are blocking (a DTR/RTS line can key the transmitter; this station keys by CI-V 1C 00); DATA MOD other than USB is blocking (MIC/USB is advice); USB MOD level 0 is blocking; CI-V transceive ON is advice; DATA OFF MOD is information. The CI-V baud rate is not readable by CI-V and is reported as the rate the radio answered at. A refused (FA) read is reported unreadable. */
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST read the menu items of an identified IC-7300 that
+             decide whether the station can transmit through it, and say what each
+             value means for that (SettingsCheck). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_control/setup.rs; server/src/radio_setup.rs"; }
     }
-    dependency CL_044_03_to_FR_009 from 'CL-044-03' to 'FR-009';
-    dependency CL_044_03_to_FR_008 from 'CL-044-03' to 'FR-008';
-    requirement 'CL-044-04' {
-        doc /* "Apply recommended radio settings" is a separate operator action, never part of detection: POST /radio/settings/apply {v 1, profile_id, boot_id, connection_generation} (same access rules) requires this station's CAT owner ready on an IC-7300 (ID read 94h), the transmitter disarmed and the radio reporting RX. It reads the items, plans USB SEND OFF, USB keying CW OFF, USB keying RTTY OFF, DATA MOD USB and CI-V transceive OFF for each item that differs, saves the undo record radio-settings-undo.json in the profile directory {schema_version 1, profile_id, civ_address, items [{item, old, new}]} before the first write (an item already recorded keeps its first old value), then writes each item through the owner's lease and reads it back; a refused write, a mismatching readback or an exchange failure stops the remaining writes and is reported with the items done, and the record then keeps only items that may have changed (recorded before, written in this run, or the failed item unless it was refused FA or refused before its frame), so that undo restores them; an empty record is removed. POST /radio/settings/undo (same body and rules) writes each recorded old value back in reverse order with readback and removes the record only when all succeeded; without a record it is refused nothing_to_undo. Apply and undo never key the transmitter and never change frequency, mode or the profile. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_control/setup.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/radio_setup.rs; server/src/profile.rs"; }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-03'; }
+
+    attribute def SettingsCheck {
+        doc /* The SettingFinding of each of the seven items of Setting. The items are
+             read and not set.
+             usbSend, usbKeyingCw, usbKeyingRtty: OFF is ok; DTR and RTS are blocking,
+             because a serial line could key the transmitter. Recommended: OFF.
+             dataMod: USB is ok; MIC/USB is advice; every other value is blocking,
+             because the transmit audio would not come from the station. Recommended:
+             USB.
+             usbModLevel: 0 is blocking; every other value is ok. Not set by the
+             station.
+             civTransceive: OFF is ok; ON is advice. Recommended: OFF.
+             dataOffMod: information. Not set by the station.
+             An item the radio does not give is unreadable.
+             The rate of the link is not an item the radio gives; it is reported as
+             the rate the radio answered at. */
     }
-    dependency CL_044_04_to_FR_009 from 'CL-044-04' to 'FR-009';
-    dependency CL_044_04_to_FR_008 from 'CL-044-04' to 'FR-008';
+
     verification 'TC-044-001' {
-        doc /* Read-only probe on scripted serial ports
-             Setup: the probe and the IC-7300 menu reader driven over scripted fake serial transports that record every configure, write and line state, independent hand-written CI-V byte scripts.
-             Steps: (a) IC-7300 at 94h answering the broadcast only at 19200, with echo of every frame; (b) IC-705 answering only the addressed read at A4h at 115200; (c) collision frames FE FE FC FC FC FD and garbage bytes before the reply; (d) a silent port; (e) a port whose reads time out; (f) an unknown ID 99h; (g) the IC-7300 menu read with values 0078=01, 0079=00, 0080=02, 0066=00, 0067=03, 0065 0128, 0071=01, and a FA refusal of 0065; (h) a station whose CAT owner holds COM3, other CP210x ports and an FTDI port.
-             Expected (hand table): (a) IC-7300, 94h, 19200; (b) IC-705, A4h, 115200, manual; (c) identified as (a); (d) and (e) no_reply after all four rates; (f) unknown_model with ID 99h; every written frame is FE FE 00 E0 19 00 FD, FE FE <table address> E0 19 00 FD or FE FE 94 E0 1A 05 00 <item> FD, the lines are disabled before the first write and never raised; (g) values and guidance: usb_send DTR blocking, rtty RTS blocking, data_mod USB ok, level 128 ok, transceive advice, FA unreadable; (h) COM3 is never opened, reported station_cat from the owner, the CP210x ports probed, the FTDI port not_radio_bridge and never opened.
-             no serial port, radio or RF. */
+        doc /* Detection reads and does not write. */
+        subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        // Partial: the line state (lines disabled before the first write, never raised) is not asserted: the fake records configure and write only.
-        @Automation { run = AutomationState::partial; }
+        @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-044-01';
             verify 'CL-044-03';
         }
-        @TestedBy { test = "server/src/radio_control/setup_tests.rs; server/src/radio_setup_tests.rs"; }
-    }
-    verification 'TC-044-003' {
-        doc /* Apply recommended radio settings and undo
-             Setup: the actual Recording owner and CAT actor on a scripted IC-7300 transport holding menu values 0078=01, 0079=00, 0080=02, 0067=00, 0071=01; the actual router on a disposable profile.
-             Steps: apply; read the undo record; apply again; undo; undo again; apply with the radio reporting TX; apply with the transmitter armed; apply with a radio that answers FA to 0080; apply with a radio whose readback of 0067 stays 00; apply against an IC-705 ID; HTTP refusals as TC-044-002 (e).
-             Expected: writes FE FE 94 E0 1A 05 00 78 00 FD, 00 80 00, 00 67 03, 00 71 00 each acknowledged and read back, never 0079; the record holds {0078 1→0, 0080 2→0, 0067 0→3, 0071 1→0} before the first write; the second apply writes nothing and keeps the record; undo writes 0071=01, 0067=00, 0080=02, 0078=01 in that order and removes the record; the second undo nothing_to_undo; TX and armed refused with no write; FA stops after 0078 with the failed item named and the record reduced to 0078 1→0, a following undo writes 0078=01 and removes the record; TX leaves no record; mismatch reported readback_mismatch; IC-705 refused unsupported_radio; no 1C 00 01, frequency or mode frame in any case.
-             no radio or RF. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        // Partial: the undo record is read only after apply returns, not before the first write; no test checks for 1C 00 01, frequency or mode frames in the TX, FA and readback-mismatch cases.
-        @Automation { run = AutomationState::partial; }
-        objective {
-            verify 'CL-044-04';
+        @TestedBy {
+            test = "server/src/radio_control/setup_tests.rs; "
+                + "server/src/radio_setup_tests.rs; "
+                + "server/src/radioControl/windows.rs::"
+                + "opened_ports_hold_dtr_and_rts_disabled";
         }
+    }
+
+    verification 'TC-044-002' {
+        doc /* The place of a radio's port, the proposal and the refusals. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective {
+            verify 'CL-044-01';
+            verify 'CL-044-02';
+        }
+        @TestedBy {
+            test = "server/src/radio_control/setup_tests.rs; "
+                + "server/src/radio_setup_tests.rs";
+        }
+    }
+
+    requirement 'CL-044-04' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST set the recommended menu items of the connected IC-7300
+             only on the operator's request (RecommendedSettings). */
+        @Status { build = ImplementationState::partial; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-04'; }
+
+    attribute def RecommendedSettings {
+        doc /* How ApplyRecommended is carried out.
+             It is refused: with stateConflict for another connection than the
+             current one; with radioUnavailable unless the state is ready; with
+             transmitArmed while the transmitter is armed (TransmitterActivity);
+             with unsupportedRadio unless the radio answers with the identity of an
+             IC-7300.
+             Apply reads usbSend, usbKeyingCw, usbKeyingRtty, dataMod and
+             civTransceive and sets, in this order, each one that differs from its
+             recommended value (SettingsCheck). An item the radio does not give is
+             not set. With nothing to set, nothing is written.
+             Every item is set by ReadCompareWriteVerify. The first item that fails
+             ends the request; SettingsOutcome names it and the error.
+             The values before the Apply are not kept. */
+        @CodeDiffers {
+            what = "server/src/radio_setup.rs keeps the values before an Apply in "
+                + "radio-settings-undo.json, offers an Undo that writes them back, and "
+                + "refuses an Apply with undo_pending while that file names another radio "
+                + "address.";
+        }
+    }
+
+    verification 'TC-044-003' {
+        doc /* The recommended menu items are set. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-044-04'; }
         @TestedBy { test = "server/src/radio_setup_tests.rs"; }
     }
 
-    // #44 AGC as a station-managed radio setting (operator decision 2026-11-04 on #44,
-    // comment 6626074726: AGC SLOW removed the IC-7300 AGC recovery line between FT8
-    // periods, #54) and the operator rule of 2026-11-04: CI-V reads first and changes a
-    // setting only when it does not fit. IC-7300 AGC: Icom IC-7300 Full Manual section 19,
-    // command table "16 12 AGC" (01 FAST, 02 MID, 03 SLOW; read: the command without data).
-    requirement 'CL-044-09' {
-        doc /* Every CI-V change of a radio setting by the station is read, compare, write, verify: the station first reads the setting's current value; when it already equals the wanted value no write frame is sent and the read is the confirmation; otherwise it sends the write with the radio in RX (1C 00 00, checked as stated at the end of this clause), requires its ACK (FB; FA is refused radio_rejected) and reads the setting back, a different value being readback_mismatch and a failed readback indeterminate. No write is sent while this station's transmit hold is taken (the CAT owner's single lease excludes it). The transmit switch 1C 00 is a keying action, not a setting, and is not subject to this rule (CL-009 PTT readback). The rule holds for every setter path of the station: the AGC (16 12, CL-044-10); the receive setup of a mode or band selection, where mode (06), DATA mode (1A 06) and frequency (05) are each read first and written only when they differ, and the final state is read again only after a write (with nothing written the three reads are the confirmation); the CAT owner's single setter operations SetFrequency, SetMode and SetData, which answer from the read without a write when the value fits (POST /radio/operation itself refuses these three with selection_unavailable and sends no frame); and the IC-7300 menu writes of Apply recommended radio settings and Undo (1A 05, CL-044-04), where an item already at its value is not written again. A setter whose read is refused (FA) is refused radio_rejected without a write. The RX check of a write is per write for 16 12 and 1A 05; the 05, 06 and 1A 06 setters of a selection's receive setup rely on the selection's single RX read (1C 00) inside its CAT reservation, before the first of them. With all three differing a receive setup is twelve exchanges inside the 5 s composite bound (TC-009-005 proves it at 360 ms per exchange, down from 470 ms for the nine exchanges without the reads); the CAT owner's single setter operations have no RX check of their own, and no route reaches them. */
-        @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_control/executor.rs; server/src/radio_control/actor.rs"; }
+    requirement 'CL-044-19' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST hold the menu items of the last completed Apply, VOX and
+             split on the radio, and set back and show an item changed there
+             (HeldSettings). */
+        @Status { build = ImplementationState::target; }
     }
-    verification 'TC-044-012' {
-        doc /* Existing CI-V setters read first
-             Setup: the actual executor on the scripted CI-V transport of TC-009-001 (hand-written replies, every written frame recorded).
-             Steps: (a) the CAT owner's SetFrequency 14.074 MHz, SetMode USB FIL2 and SetData ON FIL2 with the radio already there, then each with its read answered FA; (b) SetFrequency with the radio at 7.074 MHz; (c) the receive setup 14.074 MHz USB-D FIL2 with the radio already there; (d) with the radio at USB FIL1, DATA OFF, 7.074 MHz; (e) a 1A 05 write of USB SEND OFF with the item already OFF, and with it at DTR.
-             Expected: (a) one read frame each (03, 04, 1A 06) and no setter frame; with FA radio_rejected, the same single frame and the connection open; (b) 03, 05 00 40 07 14 00, 03, the frequency fact unconfirmed when the setter frame is sent and confirmed by the read-back; (c) 04, 1A 06, 03 and nothing else; (d) 04, 06 01 02, 04, 1A 06, 1A 06 01 02, 1A 06, 03, 05 00 40 07 14 00, 03, then the final 04, 1A 06, 03; (e) only FE FE 94 E0 1A 05 00 78 FD, then 1A 05 00 78, 1C 00, 1A 05 00 78 00, 1A 05 00 78; a read answered FA is refused with no further frame.
-             no radio or RF. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-044-09';
-        }
-        @TestedBy { test = "server/tests/radio_control.rs; server/src/radio_control/executor.rs"; }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-19'; }
+
+    attribute def HeldSettings {
+        doc /* What radio control holds on the radio of a ready connection.
+             The menu items the last completed ApplyRecommended set, with their values,
+             are one record of the station's memory (records); a later completed Apply
+             takes its place.
+             VOX is held off.
+             Split is held on for the split mode rig and off for every other split mode
+             (splitMode).
+             An item found changed on the radio is set back, and the operator is shown
+             that it was changed. */
+        attribute records : RadioRecords;
+        attribute splitMode : WstxKeying::SplitOperation {
+            doc /* The station's split setting. */ }
     }
-    dependency CL_044_09_to_FR_009 from 'CL-044-09' to 'FR-009';
+
     requirement 'CL-044-10' {
-        doc /* The radio profile holds the radio settings the station manages: settings.radio {agc FAST|MID|SLOW}, present exactly when settings.control is CAT with an endpoint that is a supported IC-7300 CI-V configuration (the only radio with a known CI-V AGC command; every other control has no settings.radio key and the setting is hidden). GET /profile and the PUT response carry it; PUT /profile refuses settings.radio for an unmanaged control (400 invalid_settings, field radio) and settings.radio.agc outside FAST/MID/SLOW (400 invalid_settings, field settings.radio.agc); a PUT without settings.radio keeps the saved value, or takes SLOW for a newly managed radio. settings.radio is not part of settings.control, so changing it never changes the receive-only CAT confirmation's checked control (CL-022-03); like every profile save it advances the revision, which reconnects CAT. Migration: a profile saved without radio whose control is IC-7300 CAT is read with agc SLOW (the FT8/FT4 default); other profiles stay without it; the file is rewritten only by a later save. The station applies the saved AGC with one read-compare-write-verify exchange (CL-044-09; CI-V read FE FE <address> E0 16 12 FD, write FE FE <address> E0 16 12 <01|02|03> FD) through its CAT owner: once per ready connection (a refusal busy, e.g. the lease held or the radio reporting TX, is tried again after 2 s; any other outcome ends the attempt for that connection) and on each FT8 or FT4 mode selection inside the selection's CAT reservation, after its receive setup and before receive restarts. Nothing is sent while the transmitter is armed, tuning or transmitting (the connection attempt waits for disarm). An AGC failure never fails the selection. */
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST set the AGC of its configuration on the radio whenever
+             a connection becomes ready and whenever the supervisor asks for it
+             within a change of the operating selection (ManagedAgc). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/profile.rs; server/src/main.rs; server/src/radioControl/radio_agc.rs; server/src/radio_control/setup.rs; server/src/radio_control/executor.rs; server/src/radio_control/actor.rs; server/src/recording.rs; server/src/authorization_http.rs"; }
     }
-    dependency CL_044_10_to_FR_009 from 'CL-044-10' to 'FR-009';
-    dependency CL_044_10_to_FR_001 from 'CL-044-10' to 'FR-001';
-    verification 'TC-044-008' {
-        doc /* AGC CI-V read, compare, write, verify on the scripted IC-7300
-             Setup: the actual CAT actor and executor on a scripted IC-7300 transport (echo of each frame, hand-written replies) holding AGC 01, 02 or 03; independent byte expectations from the IC-7300 command table.
-             Steps: (a) EnsureAgc SLOW with the radio at SLOW; (b) with the radio at MID; (c) with the radio reporting TX and MID; (d) a radio that answers FA to the write; (e) a radio that acknowledges but stays MID; (f) a radio that answers FA to the read; (h) the codec: frames and decoding of 16 12 replies, an unknown code 04.
-             Expected: (a) exactly one written frame FE FE 94 E0 16 12 FD, reply SLOW, written false; (b) frames FE FE 94 E0 16 12 FD, FE FE 94 E0 1C 00 FD, FE FE 94 E0 16 12 03 FD, FE FE 94 E0 16 12 FD in this order, written true; (c) busy after the read and the RX check, no 16 12 03 frame; (d) radio_rejected; (e) readback_mismatch; (f) radio_rejected and no write; (h) FAST 01, MID 02, SLOW 03; 04 is no AGC. CAT stays ready in (a)-(f).
-             no radio or RF. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-044-09';
-            verify 'CL-044-10';
-        }
-        @TestedBy { test = "server/src/radioControl/radio_agc_tests.rs"; }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-10'; }
+
+    attribute def ManagedAgc {
+        doc /* When RadioConfig::agc is set on the radio, each time by
+             ReadCompareWriteVerify.
+             Once for every connection that becomes ready, and once more on that
+             connection when the assignment names another AGC. It waits while the
+             transmitter is not at rest (TransmitterActivity). An attempt that ends with
+             busy is made again after retrySeconds; every other end is final for that
+             connection. An attempt the radio does not answer in time ends with timeout.
+             On ApplyAgc, inside the reservation of the supervisor, at once.
+             Nothing is sent while the transmitter is not at rest. What comes of it
+             is reported and does not fail the change it belongs to.
+             Without an AGC in the configuration nothing is read or set. */
+        attribute retrySeconds : Integer = 2;
     }
-    // Operator requirement 2026-11-06 (#44 comment 6679345317, from #22): pragmatic discovery.
-    requirement 'CL-044-15' {
-        doc /* Coordinator default pending the operator (#44 comment 6682191117): the keying risk of an open is not accepted, so nothing opens automatically without the persisted confirmation. Discovery opens no port at all until the operator has confirmed keying inhibit once: the tick and press of Detect radio (CL-044-01) stores it in radio-keying-confirmed.json of the profile, and Settings > Radio says so until then (radio.tx_level data keying_confirmed). A commissioned saved radio still opens under CL-022-03 through the CAT lifecycle regardless. With the confirmation, on start, before the CAT lifecycle first runs, the station discovers its radio read-only: the same port opening as Detect radio (the per-device ownership claim, DTR and RTS low) and the same probe (CI-V 19 00 only, CL-044-01). A profile with control cat whose saved endpoint's port is present and answers with a radio this station has CAT for keeps its radio, and no other port is opened. Otherwise (the port is held by another station process or another program, is absent or silent), and on a profile never saved (revision 0, control disabled), the ports on a known radio USB bridge are tried in port order, without the saved one and within the budget: a port that cannot be opened is passed over, which is how a radio another station process holds is recognised, and a radio discovery chose or kept is also reserved for the life of the process (a lock per port under radio-reservation), so a station waiting for its confirmation holds it too; a port reserved by another process is passed over, so each process takes the next free radio and more than one transceiver on one PC works. The first that answers with such a radio is saved as the profile's control (icom7300://COMn?baud=b&radio=aa&controller=e0, ptt kept from a CAT control, otherwise cat), with the capture and render endpoints that match it and none otherwise (never the old radio's audio); settings.radio stays or takes the default; its stored Tx level (CL-044-12) and settings undo (CL-044-03) are removed, they belonged to the other radio. This is a profile save, so the revision advances and the receive-only confirmation (CL-022-03) binds to the new control: CAT opens only after the operator confirmed this radio. Nothing is found: nothing changes and the lifecycle keeps retrying the saved endpoint. A control of an operator's saved Disabled, or an endpoint that does not parse, is left alone and no port is opened. Discovery runs once per process start, before the station listens and before anything loads the Tx level or the audio names, so a port that does not answer delays listening by its probe; all of discovery, saved port included, ends within 40 s (each probe is cut at that bound). It does not write a radio setting. WSTX_RADIO_DISCOVERY=off turns it off, for the test stations. Limit: a saved radio reserved by another process with no other radio free changes nothing, and the lifecycle retries it. */
+
+    requirement 'CL-044-11' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST report the AGC it wants on the radio, what the radio
+             answered and what came of it, at every change (AgcReport). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/radio_setup.rs; server/src/radio_level.rs; server/src/main.rs; client/recording.js"; }
     }
-    dependency CL_044_15_to_FR_009 from 'CL-044-15' to 'FR-009';
-    verification 'TC-044-020' {
-        doc /* Discovery on start
-             Setup: the actual profile store and authorization owner, a detection hardware double of ports, held ports, radios and audio endpoints, recording every frame.
-             Steps: (a) saved COM3 answers, COM5 too; (b) saved COM3 held, COM4 held, COM5 silent, COM6 an IC-7300 with matching audio; (c) saved silent, the other held; (d) an operator's saved Disabled with a radio present; (e) a profile never saved with an FTDI board, an IC-705 and an IC-7300; (f) three stations in turn on two free radios, the third with a saved one already reserved; (g) no confirmation with a radio present, never saved and saved, then Detect radio without and with the tick; (h) three silent ports with a 200 ms budget.
-             Expected: (a) nothing saved, only COM3 opened; (b) control COM6 with the probed rate and address, a disabled ptt kept, the matching endpoints, settings.radio kept, the Tx level and undo files gone, revision +1, ports opened 3, 4, 5, 6; on the actual authorization owner, a commissioned control moved this way gives CommissioningRequired, no commissioning, safety revision +1 and the new checked control; (c) nothing saved; (d) no port opened; (e) COM6, ptt cat, the FTDI board never opened; (f) COM3, then COM6, and the third keeps its saved control; (g) no port opened, keying_confirmed false; no file after the refused Detect, the file and keying_confirmed true after the other, and only then the saved port is opened; (h) only the first opened, over in under 2 s; in all of them only 19 00 frames are written.
-             no radio or RF. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-044-15';
-        }
-        @TestedBy { test = "server/src/radio_setup_tests.rs; server/src/auth_tests.rs"; }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-11'; }
+
+    attribute def AgcReport {
+        doc /* What AgcStatus holds.
+             Without a wanted AGC every feature is absent. With one, and before the
+             radio has been asked, the target alone is present.
+             After an attempt: the connection it was made on, the value the radio
+             reported, the outcome, and the trigger: connect for a connection that
+             became ready, selection for ApplyAgc.
+             An attempt that failed keeps the value last reported on the same
+             connection and gives the error. */
+        ref item status : AgcStatus;
     }
-    verification 'TC-044-022' {
-        doc /* The one-time confirmation in Settings
-             Setup: candidate server and Chromium; radio.tx_level events injected.
-             Steps: inject keying_confirmed false, then true.
-             Expected: the Detect radio section says discovery is off until confirmed once, then that it is on.
-             no radio or RF. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        @Automation { run = AutomationState::implemented; }
-        objective {
-            verify 'CL-044-15';
-        }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+
+    requirement 'CL-044-18' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST set the output power of the station's band on the
+             radio and report what came of it, as ManagedPower says. */
+        @Status { build = ImplementationState::target; }
     }
-    verification 'TC-044-021' {
-        doc /* Discovery on HB9BLA
-             Setup: the gated candidate on HB9BLA, the IC-7300 on COM3, keying inhibit confirmed through Detect radio on both profiles; a second station process on its own profile; the operator's consent.
-             Steps: start the station with COM3 saved; start a second process with COM3 saved while the first holds it; start it with a second transceiver connected, if one is available; with two transceivers, start two processes on unconfirmed CAT, so one holds its radio only by reservation. The second-transceiver steps can't run on this station, which has only one radio.
-             Expected: the first keeps COM3; the second reports port_in_use with nothing changed when no other radio is free, and takes the second transceiver when one is; a radio reserved but not yet held is passed over.
-             Not run by the automated gate. */
-        @TestLevel { cost = 4; location = TestLocation::station; }
-        @Automation { run = AutomationState::planned; method = "manual"; }
-        objective {
-            verify 'CL-044-15';
-        }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-18'; }
+
+    attribute def ManagedPower {
+        doc /* The band's entry of RadioConfig::powers is set on the radio's RF power
+             (Hamlib's level RFPOWER), each time by ReadCompareWriteVerify: once for
+             every connection that becomes ready, once more when the assignment names
+             another power for the band, when the dial radio control confirms lies on
+             another band, and on ApplyPower inside the reservation of the supervisor at
+             once. It waits while the transmitter is not at rest (TransmitterActivity);
+             an attempt that ends with busy is made again after
+             ManagedAgc::retrySeconds. A band without an entry, and a radio whose RF
+             power cannot be set, leave the power to the radio. What comes of it is
+             reported as PowerStatus, as AgcReport says for the AGC, and does not fail
+             the change it belongs to. */
+        ref item status : PowerStatus;
     }
-    verification 'TC-044-002' {
-        doc /* Audio matching, proposal, validation and migration
-             Setup: fake port and endpoint lists with hand-written container IDs and USB parents; the actual router on a disposable profile with an injected detection hardware double.
-             Steps: (a) one IC-7300 port and its CODEC capture and render under the same hub, a webcam microphone elsewhere; (b) two capture endpoints under the hub; (c) same container ID, different parents; (d) only a root-hub parent shared; (e) POST /radio/detect valid, other profile, other boot, extra key, v 2, without keying_inhibit_confirmed, with it false, foreign Origin, a query, a concurrent second detect; (f) PUT /profile with "Speakers (USB Audio CODEC )", a capture ID as output, a render ID as input, valid IDs, null; (g) startup migration with a unique name, a duplicated name, an unknown name and an ID.
-             Expected: (a) proposal COM3 IC-7300 94h 19200, endpoint icom7300://COM3?baud=19200&radio=94&controller=e0, ptt cat, both CODEC endpoint IDs; (b) input ambiguous, output proposed; (c) matched; (d) none; (e) 200 report, 403 wrong_profile, 409 state_conflict, 400 invalid_request, 400 unsupported_version, 400 invalid_request, 409 confirmation_required, 403 forbidden_origin, 400, 409 busy; (f) 400 audio_device_not_endpoint with the field for the first three, 200 for the rest; (g) ID saved with revision + 1, the others unchanged with reasons ambiguous, not_found, unchanged.
-             no radio, audio or RF. */
-        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
-        // Partial: (e) the concurrent second detect is not run (the test sets busy itself); (a) no test proposes COM3 at 19200 (the tests show COM3 at 9600 from the station CAT and an unconfigured COM4 at 19200).
-        @Automation { run = AutomationState::partial; }
-        objective {
-            verify 'CL-044-01';
-            verify 'CL-044-02';
-            verify 'CL-044-05';
-        }
-        @TestedBy { test = "server/src/radio_control/setup_tests.rs; server/src/radio_setup_tests.rs; tests/profiles.test.cjs"; }
-    }
-    verification 'TC-044-004' {
-        doc /* Live detection and setup on HB9BLA
-             Setup: the gated candidate installed on HB9BLA with only the IC-7300 plugged in, its USB Audio CODEC, the operator present.
-             Steps: Detect radio; compare the proposal; apply it with the receive-only confirmation; read the settings check; Apply recommended radio settings; Undo; Apply again; FT8 transmit test on a dummy load or a clear frequency.
-             Expected: proposal COM3, IC-7300, 94h, the station baud, the CODEC capture and render endpoint IDs; CAT ready after apply; the radio never keys during detection; the menu values match the radio's menu; undo restores them; the transmit test produces RF with audio from USB.
-             Not run by the automated gate. */
-        @TestLevel { cost = 4; location = TestLocation::station; }
-        @Automation { run = AutomationState::planned; }
-        objective {
-            verify 'CL-044-01';
-            verify 'CL-044-02';
-            verify 'CL-044-03';
-            verify 'CL-044-04';
-            verify 'CL-044-05';
-        }
-    }
+
     verification 'TC-044-009' {
-        doc /* AGC applied on connect and FT8/FT4 selection, never while transmitting; profile field and migration
-             Setup: the actual router, Recording owner, CAT lifecycle tick and CAT actor on a disposable profile with a scripted IC-7300 on COM3.
-             Steps: (a) profile with IC-7300 CAT and agc SLOW, radio at MID: AGC tick after ready, then another tick; (b) radio already at SLOW; (c) radio reporting TX: tick, then RX after 2 s; (d) the transmitter armed: tick; (e) FT8 band selection with the radio changed to FAST meanwhile; (f) FT4 mode selection with the radio at SLOW; (g) radio.agc event before and after (a); (h) profile files: IC-7300 CAT without radio, CAT disabled without radio, GET /profile; PUT without radio, with agc MID, with agc LOW, with radio for a disabled control; (i) Detect radio proposal.
-             Expected: (a) one 16 12 03 write after the read, read back, status written SLOW, the second tick sends nothing; (b) only the read, status unchanged; (c) no write while TX (busy), the write after RX; (d) no AGC frame at all; (e) a 16 12 03 write inside the selection after the dial setter, trigger selection; (f) only the AGC read, result unchanged, trigger selection; (g) target SLOW with result null, then value SLOW result written; (h) settings.radio {agc SLOW} for IC-7300, no radio key for disabled, the file unchanged; PUT keeps SLOW, saves MID, 400 settings.radio.agc, 400 radio; (i) proposal radio {agc SLOW}.
-             no radio or RF. */
+        doc /* The wanted AGC is set at a connection and a change of selection, and reported. */
+        subject radioControl : RadioControlInterface;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective {
             verify 'CL-044-10';
             verify 'CL-044-11';
         }
-        @TestedBy { test = "server/src/radioControl/radio_agc_tests.rs; server/src/radio_setup_tests.rs"; }
+        @TestedBy {
+            test = "server/src/radioControl/radio_agc_tests.rs; "
+                + "server/src/radio_setup_tests.rs";
+        }
     }
-    verification 'TC-044-011' {
-        doc /* AGC on HB9BLA
-             Setup: the gated candidate installed on HB9BLA with the IC-7300, the operator present.
-             Steps: set the radio's AGC to FAST by hand; restart CAT (Apply ⟳); read the Settings line and the radio display; select FT8 40 m; select FT4; watch the waterfall between periods.
-             Expected: the radio shows AGC SLOW after connect and the line reads "set to SLOW and read back"; the following selections read "already as set" with no write; no AGC recovery line between periods.
-             Not run by the automated gate. */
-        @TestLevel { cost = 4; location = TestLocation::station; }
-        @Automation { run = AutomationState::planned; method = "manual"; }
-        objective {
-            verify 'CL-044-09';
-            verify 'CL-044-10';
-            verify 'CL-044-11';
+
+    requirement 'CL-044-15' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST make sure at station start, by reading only, which
+             radio is the profile's, and take the next free radio the station can
+             control when the profile's own does not answer (StartDiscovery). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-15'; }
+
+    attribute def StartDiscovery {
+        doc /* How DiscoverRadio is answered.
+             Without the KeyingConfirmation no port is opened and the answer is
+             RadioKept. So it is on a profile whose radio is on its native network
+             connection.
+             A profile with the mode cat and an endpoint RadioConnection takes keeps
+             its radio when the port is present, answers with a radio the station can
+             control and is granted to this station (ReserveDevice); no other port is
+             opened.
+             When it does not, and on a profile that was never saved, the other ports
+             on a serial adapter of a known radio (RadioDetection) are tried in the
+             order of the list of ports. The first that can be opened, answers with a
+             radio the station can control and is granted to this station is the
+             station's radio: RadioDiscovered gives its control, with the mode cat,
+             the endpoint as in DetectionProposal, and PTT as the profile had it with
+             the mode cat and by CAT otherwise.
+             A port that cannot be opened, and one reserved for another station, are
+             passed over; so each station of a PC takes a radio of its own.
+             A profile that was saved with the mode disabled, and one whose endpoint
+             RadioConnection does not take, keep their control, and no port is
+             opened.
+             With no radio found the answer is RadioKept.
+             The frames sent are reads of the transceiver identity.
+             The reservation of the radio kept or discovered lasts as long as the
+             station process.
+             Discovery is bounded in time: no port is opened after its limit, and the
+             asking of a port ends at it. */
+    }
+
+    verification 'TC-044-020' {
+        doc /* The radio of the profile at station start. */
+        subject radioControl : RadioControlInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-044-15'; }
+        @TestedBy {
+            test = "server/src/radio_setup_tests.rs";
         }
     }
 }

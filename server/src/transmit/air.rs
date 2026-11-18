@@ -1,4 +1,4 @@
-//! #43/#92 WstxTransmitClock::AirClock: the stations heard are the time reference. Station UTC
+//! WstxStationClock::AirClock: the stations heard are the time reference. Station UTC
 //! is always the system clock plus a correction from the air; the station keeps itself in
 //! the middle of the stations it decodes. There is no source setting and no basis: the
 //! SNTP measurement (TransmitClock) only measures the system clock for warnings, it is
@@ -18,8 +18,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub const MIN_SNR_DB: f64 = -20.0;
 /// A raw |DT| above this is implausible (beyond any clock error the station corrects).
 pub const MAX_DT_MS: i64 = 3000;
-/// Decodes of the last WINDOW_MS of system time form the estimate (8 FT8 periods).
-pub const WINDOW_MS: i64 = 120_000;
+/// Decodes of the last WINDOW_SECONDS of system time form the estimate (8 FT8 periods).
+pub const WINDOW_SECONDS: i64 = 120;
+pub const WINDOW_MS: i64 = WINDOW_SECONDS * 1000;
 /// Evidence needs at least this many stations (votes) ...
 pub const MIN_STATIONS: usize = 4;
 /// ... of which at least this share (percent) lies on one side ...
@@ -29,13 +30,15 @@ pub const SIDE_MARGIN_MS: i64 = 100;
 /// Evidence moves the correction by at most this much in total within one period.
 pub const MAX_SLEW_PER_PERIOD_MS: i64 = 1000;
 /// An estimate counts while at most this old (ms) and unstepped.
-pub const MAX_AGE_MS: i64 = 60_000;
+pub const MAX_AGE_MS: i64 = AirClock::MAX_AGE_SECONDS * 1000;
 /// A counting evidence estimate with |median| above this is unsynchronized (Tx refused).
 pub const TX_BOUND_MS: i64 = 1000;
 /// A correction beyond this after a system clock step restarts at 0.
 pub const MAX_STEP_RESTART_MS: i64 = 3000;
 /// stations_off: SNTP synchronized and |correction| above this.
 pub const STATIONS_OFF_MS: i64 = 500;
+/// The correction (ms) at station start.
+pub const START_CORRECTION_MS: i64 = 0;
 
 /// The air estimate of one completed decode window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,7 +125,7 @@ struct Sample {
 }
 /// The air estimator: decodes of the window, the latest estimate and the applied
 /// correction. Times are explicit (monotonic and system ms) so it runs on virtual clocks.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct AirClock {
     samples: VecDeque<Sample>,
     /// (monotonic ms, system ms) of the latest observation, for step detection.
@@ -132,7 +135,20 @@ pub struct AirClock {
     /// (period index of the system clock, |movement| spent in it).
     slewed: Option<(i64, i64)>,
 }
+impl Default for AirClock {
+    fn default() -> Self {
+        Self {
+            samples: VecDeque::new(),
+            reference: None,
+            latest: None,
+            applied_ms: START_CORRECTION_MS,
+            slewed: None,
+        }
+    }
+}
 impl AirClock {
+    /// An estimate counts up to this age (s).
+    pub const MAX_AGE_SECONDS: i64 = 60;
     /// Forgets everything observed when the system clock stepped by more than 100 ms
     /// since the last observation (the raw DT before and after no longer describe the
     /// same clock) and subtracts the step from a nonzero correction, so station UTC stays

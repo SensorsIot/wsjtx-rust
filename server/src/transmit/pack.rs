@@ -199,7 +199,7 @@ fn letters(s: &str) -> bool {
     s.bytes().all(|c| c.is_ascii_uppercase())
 }
 
-/// ihashcall (shared with the station's hash table, WstxOfflineDecode::HashResolution).
+/// ihashcall (shared with the station's hash table, WstxMessagePayload::HashResolution).
 fn hash(call: &str, m: u32) -> Option<u128> {
     crate::decoder::ihashcall(call, m).map(u128::from)
 }

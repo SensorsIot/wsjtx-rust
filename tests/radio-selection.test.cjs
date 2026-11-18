@@ -9,7 +9,6 @@ const {randomUUID}=require('node:crypto');
 const {gunzipSync,gzipSync}=require('node:zlib');
 const selfsigned=require('selfsigned');
 const {server,grant,loginPage,browserPort,listenBrowser}=require('./support.cjs');
-const {openModel}=require('./model-values.cjs');
 
 async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-selection-'));
@@ -26,15 +25,15 @@ async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'})
       const chunks=[];res.on('data',b=>chunks.push(b));res.on('end',()=>{try{const raw=Buffer.concat(chunks),text=(res.headers['content-encoding']==='gzip'?gunzipSync(raw):raw).toString('utf8');resolve({status:res.statusCode,headers:res.headers,raw,text,body:text&&(res.headers['content-type']||'').startsWith('application/json')?JSON.parse(text):null});}catch(error){reject(error);}});
     });req.on('error',reject);if(body!==undefined)req.write(typeof body==='string'||Buffer.isBuffer(body)?body:JSON.stringify(body));req.end();
   });
-  // Selected HTTPS profile: raw requests use the real CL-022-01 grant flow, not the token cookie.
+  // Selected HTTPS profile: raw requests use the real grant flow, not the token cookie.
   cookie=(await grant(origin,token,(route,method,body,extra)=>request(route,method,body,extra))).cookie;
   return {origin,id,request,cookie,token};
 }
 
-// Proves: CL-008-07; TC-009-005 cases2/5. Parent has no selection route, so this
+// Parent has no selection route, so this
 // fails on actual HTTP404 rather than a build/import error.
 if(!process.env.WSTX_SELECTION_FIXTURE){
-test('TC-009-005 network lifetime and correlated Off oracle reject true violations',()=>{
+test('network lifetime and correlated Off oracle reject true violations',()=>{
   // Frozen52311 CDP finished before the next admission; response.json callbacks overlapped.
   const transfers=[{route:'/receive/selection',started:245504.2448,ended:246268.4788},{route:'/receive/selection',started:246269.0282,ended:247211.7476}];
   assert.equal(selectionNetworkSummary(transfers,245000,248000).maxActive,1);
@@ -90,7 +89,7 @@ test('Failure evidence of a Thin or Off window lists each socket, stale and clos
   assert.equal(shown.length,1+3+2+2+2,'nothing more: window, sockets, stale records, in-window and close lines');
 });
 
-test('TC-009-005 no timer reads the selection: source and caller fault controls',async t=>{
+test('no timer reads the selection: source and caller fault controls',async t=>{
   await t.test('actual source: every selection read has an explicit caller, an unknown stack is refused',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
     const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:line}]}});
@@ -164,7 +163,7 @@ test('TC-009-005 no timer reads the selection: source and caller fault controls'
   });
 });
 
-test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
+test('H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
   const {request,cookie}=await station(t);
   for(const route of ['/profile','/receive/selection','/receive','/radio','/recording']){
     const identity=await request(route,'GET',undefined,{'Accept-Encoding':'identity'});
@@ -184,47 +183,17 @@ test('TC-009-005 H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000
   }
 });
 
-// Read the reviewed SysML oracle through the model-value reader, never candidate negotiation output.
-function canonicalNegotiations(model){
-  const vectors=[];
-  for(const [name,expected]of [
-    ['negotiationSourceSha256','329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56'],
-    ['originalVectorArtifactSha256','d8da8bdb86485cc8691e2ad4f37afcbbaf84969c5b1a145f3a187a86d114a3c9'],
-  ])assert.equal(model.string(`WstxHttpContentCoding::${name}`),expected);
-  const table='WstxHttpContentCoding::NegotiationOracleVector';
-  for(const usage of model.table('WstxHttpContentCoding',table)){
-    // Each failure names the usage it was read from.
-    const at=message=>`${usage.qualified}: ${message}`;
-    const match=/^negotiation(\d{2})$/.exec(usage.name);
-    assert.ok(match,at('malformed canonical negotiation declaration'));const id=Number(match[1]);
-    assert.equal(id,vectors.length+1,at('all cases occur once in canonical order'));
-    assert.deepEqual(usage.fieldNames(),['caseId','orderedRawHeaderFieldsJson','expected'],at('no extra or missing oracle fields'));
-    assert.ok(usage.literal('caseId').integer===true,at('integer case ID'));
-    assert.equal(usage.number('caseId'),id,at('declaration and case ID agree'));
-    const encoded=usage.string('orderedRawHeaderFieldsJson');assert.equal(typeof encoded,'string');
-    const fields=JSON.parse(encoded);assert.ok(Array.isArray(fields)&&fields.every(field=>typeof field==='string'),at('ordered raw-header string array'));
-    const [def,outcome]=usage.enumValue('expected');assert.ok(def==='HttpCodingSelection'&&['gzip','identity','noAcceptable'].includes(outcome),at('known independent outcome'));
-    vectors.push({fields,expected:outcome==='noAcceptable'?'406':outcome});
-  }
-  assert.equal(vectors.length,49,`${table}: all 49 frozen cases must execute`);return vectors;
+// The independent Accept-Encoding vectors of WstxContentCoding::CodingRule, read from the
+// fixture that names their source, never from candidate negotiation output.
+function negotiationVectors(){
+  const fixture=require('./fixtures/http/content-coding-negotiations.json');
+  const vectors=fixture.vectors.map(vector=>({fields:vector.accept_encoding,expected:vector.expected}));
+  assert.equal(vectors.length,49,'all 49 negotiation vectors must execute');return vectors;
 }
 
-test('TC-009-005 SysML negotiation reader refuses missing malformed and duplicate oracles',async()=>{
-  const model=openModel(),source=model.packageText('WstxHttpContentCoding');
-  assert.equal(canonicalNegotiations(model).length,49);
-  for(const damaged of [
-    source.replace('attribute negotiation01 :','attribute omitted01 :'),
-    source.replace('attribute :>> caseId = 2;','attribute :>> caseId = 1;'),
-    source.replace('attribute :>> caseId = 2;','attribute :>> caseId = 2.0;'),
-    source.replace('attribute :>> orderedRawHeaderFieldsJson = "[]";','attribute :>> orderedRawHeaderFieldsJson = "{bad}";'),
-    source.replace('HttpCodingSelection::noAcceptable;','HttpCodingSelection::unknown;'),
-    source.replace('329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56','changed'),
-  ])assert.throws(()=>canonicalNegotiations(model.withPackageText('WstxHttpContentCoding',damaged)));
-});
-
-test('TC-009-005 H1 all 49 ordered header cases use the real authenticated TLS router',{timeout:30000},async t=>{
+test('H1 all 49 ordered header cases use the real authenticated TLS router',{timeout:30000},async t=>{
   const {request}=await station(t);
-  const vectors=canonicalNegotiations(openModel());
+  const vectors=negotiationVectors();
   assert.equal(vectors.length,49);const identity=await request('/profile');assert.equal(identity.status,200);
   for(const [index,vector]of vectors.entries()){
     const actual=await request('/profile','GET',undefined,vector.fields.length?{'Accept-Encoding':vector.fields}:{});
@@ -235,7 +204,7 @@ test('TC-009-005 H1 all 49 ordered header cases use the real authenticated TLS r
   }
 });
 
-test('TC-009-005 H1 authentication errors mutations static and HEAD bypass negotiation',{timeout:30000},async t=>{
+test('H1 authentication errors mutations static and HEAD bypass negotiation',{timeout:30000},async t=>{
   const {id,request}=await station(t),forbidden={'Accept-Encoding':'identity;q=0,gzip;q=0'};
   for(const [route,method,body,headers,status]of [
     ['/profile','GET',undefined,{Cookie:''},401],
@@ -262,7 +231,7 @@ test('TC-009-005 H1 authentication errors mutations static and HEAD bypass negot
   const after=(await request('/receive/selection')).body;assert.equal(after.operating_revision,prior.operating_revision);assert.equal(after.generation,prior.generation);assert.equal(after.receive.job_id,null);
 });
 
-test('TC-009-005 authenticated TLS selection reports unknown nominal and early refusal',{timeout:30000},async t=>{
+test('authenticated TLS selection reports unknown nominal and early refusal',{timeout:30000},async t=>{
   const {id,request}=await station(t);
   const initial=await request('/receive/selection');assert.equal(initial.status,200,'selection route exists');
   const s=initial.body;assert.deepEqual(Object.keys(s).sort(),'v,profile_id,boot_id,profile_revision,generation,operating_revision,snapshot_sequence,monotonic_ms,control,selection,available_bands,operation,cancellation,receive,radio'.split(',').sort());
@@ -273,9 +242,9 @@ test('TC-009-005 authenticated TLS selection reports unknown nominal and early r
   const radio=await request('/radio');assert.equal(radio.status,200);assert.equal(radio.body.state,'closed');assert.equal(radio.body.observation,null);
 });
 
-// Proves: CL-008-07; TC-009-005 cases5/6. Fixed expectations come from the
+// Fixed expectations come from the
 // canonical CAS/fence contract, independently of the candidate's state machine.
-test('TC-009-005 unseen mutation fencing rejects delayed POST without creating operation',{timeout:30000},async t=>{
+test('unseen mutation fencing rejects delayed POST without creating operation',{timeout:30000},async t=>{
   const {id,request}=await station(t);const initial=await request('/receive/selection');assert.equal(initial.status,200);
   const s=initial.body,target=randomUUID(),cancel={v:1,profile_id:id,boot_id:s.boot_id,command_id:randomUUID(),action:'cancel',operating_revision:s.operating_revision,target_command_id:target};
   const ack=await request('/receive/select','POST',cancel);assert.equal(ack.status,202);assert.equal(ack.body.phase,'cancelled');assert.equal(ack.body.operating_revision,s.operating_revision+1);assert.ok(Buffer.byteLength(ack.text)<=384);
@@ -286,9 +255,9 @@ test('TC-009-005 unseen mutation fencing rejects delayed POST without creating o
   const changedRevision=await request('/receive/select','POST',{...cancel,operating_revision:ack.body.operating_revision});assert.equal(changedRevision.status,409);assert.equal(changedRevision.body.error.code,'state_conflict');
 });
 
-// Proves: CL-008-07; TC-009-005 cases2/5/7. These responses come from the actual
+// These responses come from the actual
 // authenticated router; no serial device or positive response is intercepted.
-test('TC-009-005 strict TLS unions, early identity barriers and manual preferred defaults',{timeout:30000},async t=>{
+test('strict TLS unions, early identity barriers and manual preferred defaults',{timeout:30000},async t=>{
   const {id,request}=await station(t);let s=(await request('/receive/selection')).body;
   const normal={v:1,profile_id:id,boot_id:s.boot_id,command_id:randomUUID(),action:'band',profile_revision:0,generation:s.generation,operating_revision:s.operating_revision,band:'40m'};
   const cases=[
@@ -324,9 +293,9 @@ test('TC-009-005 strict TLS unions, early identity barriers and manual preferred
   const manualClose=await request('/radio/disconnect','POST',{v:1,profile_id:id,boot_id:s.boot_id,connection_generation:0});assert.equal(manualClose.status,409);assert.equal(manualClose.body.error.code,'automatic_lifecycle');
 });
 
-// Proves: CL-008-07; TC-009-005 case6 (#10). selection.state during a held POST (another client's
+// selection.state during a held POST (another client's
 // revision, then the command's own) does not take away the barrier of its unknown outcome.
-test('TC-009-005 an event during a pending command keeps the unknown outcome barrier',{timeout:60000},async t=>{
+test('an event during a pending command keeps the unknown outcome barrier',{timeout:60000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
   const page=await (await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}})).newPage();
@@ -356,10 +325,9 @@ test('TC-009-005 an event during a pending command keeps the unknown outcome bar
   assert.ok(reads.length>before,'a reconciling read resolved the unknown outcome');
 });
 
-// Proves: CL-008-07; CL-010-05/07/08; TC-009-005 cases1/2/6. Interception only
+// Interception only
 // delays a mutation body; all successful replies/state originate in the real server.
-// Proves: CL-044-16; TC-044-023 (d), the step inside this test.
-test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed POST',{timeout:45000},async t=>{
+test('browser preferred selection and Stop fence a genuinely delayed POST',{timeout:45000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
   const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}}),page=await context.newPage();
@@ -371,7 +339,7 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
   await page.selectOption('#operating-band','40m');await page.locator('#operating-selection-status').filter({hasText:'audio_unconfigured'}).waitFor();
   await page.locator('#exception-chips [data-chip=selection]').filter({hasText:'audio_unconfigured'}).waitFor();
   assert.match(await page.locator('#operating-radio').textContent(),/Nominal 7\.074000 MHz.*manual, actual rig unconfirmed/);
-  // Proves: CL-044-16; TC-044-023 (d). A refused band change leaves the control on the station's band.
+  // A refused band change leaves the control on the station's band.
   await page.route('**/receive/select',route=>route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({error:{code:'busy',field:null}})}),{times:1});
   await page.selectOption('#operating-band','20m');await page.locator('#operating-selection-status').filter({hasText:'Selection refused · busy'}).waitFor();
   await page.waitForFunction(()=>document.querySelector('#operating-band').value==='40m'&&!mutationPending);
@@ -395,9 +363,9 @@ test('TC-009-005 browser preferred selection and Stop fence a genuinely delayed 
   assert.deepEqual(errors,[]);
 });
 
-// Proves: CL-008-03/07; TC-009-005 case7. A status of the socket reads no receive snapshot while receive.state
+// A status of the socket reads no receive snapshot while receive.state
 // holds it; the socket's first status, a changed saved profile and a failed read do, one each.
-test('TC-009-005 a status on the same socket reads no receive snapshot unless the state is in doubt',{timeout:30000},async t=>{
+test('a status on the same socket reads no receive snapshot unless the state is in doubt',{timeout:30000},async t=>{
   const {origin,token}=await station(t),{chromium}=require('playwright');const browser=await chromium.launch();t.after(()=>browser.close());
   const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();
   await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();await page.waitForFunction(()=>!livePending&&!!live);await page.waitForTimeout(200);
@@ -433,10 +401,10 @@ test('TC-009-005 a status on the same socket reads no receive snapshot unless th
   await refreshStatus(page);await page.waitForTimeout(250);assert.equal(reads.length,failed+1,'then none again');
 });
 
-// Proves: CL-022-03, CL-022-05; TC-022-009. Actual TLS server/browser. COM250 is an
+// Actual TLS server/browser. COM250 is an
 // absent exact endpoint (read-only name resolution fails; no UART is opened), so the
 // station reports a truthful retry reason and never a fresh frequency.
-test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT buttons and shows retry reason',{timeout:60000},async t=>{
+test('browser confirms receive-only setup once, has no Connect CAT buttons and shows retry reason',{timeout:60000},async t=>{
   const {origin,token,request}=await station(t,{mode:'cat',endpoint:'COM250',ptt:'disabled'}),{chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
   const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}}),page=await context.newPage();
@@ -457,7 +425,7 @@ test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT bu
   await page.locator('#cat-confirm').waitFor({state:'hidden',timeout:20000});
   await page.locator('#cat-status[data-condition="retryWaiting"]').waitFor({timeout:30000});
   assert.match(await page.locator('#cat-status').textContent(),/^CAT unavailable · [a-z_]+ · automatic retry in [1-8] s$/);
-  // CL-022-05 (operator finding 2026-11-02): a serial port held by another program
+  // WstxSettings::RadioLine: a serial port held by another program
   // (Windows access denied) is named in the status and its exception chip.
   const held=await page.evaluate(()=>{catStatus={...catStatus,error:'port_in_use'};catShow();return document.querySelector('#cat-status').textContent;});
   assert.match(held,/^CAT unavailable · COM250 in use by another program · automatic retry in [0-8] s$/);
@@ -476,7 +444,7 @@ test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT bu
 // body after its headers. The real Chromium page here abandons one the same way, and the same
 // evidence reader must keep it aside only until the route is read complete again, while a
 // completed malformed body, and an abandoned body never read again, stay refused.
-test('TC-009-005 evidence reader tolerates only a page-abandoned receive body that is read again',{timeout:30000},async t=>{
+test('evidence reader tolerates only a page-abandoned receive body that is read again',{timeout:30000},async t=>{
   const {chromium}=require('playwright'),http=require('node:http');
   const fixture=http.createServer((request,response)=>{
     if(request.url==='/'){response.end('<!doctype html><title>x</title>');return;}
@@ -675,7 +643,7 @@ async function observeReceiveResponse(response,entry,seen,reads,errors){
 function abandonedBodiesNotReRead(seen){return seen.abandonedBodies.filter(a=>!seen.http.some(e=>e.route===a.route&&e.parsed&&e.at>a.at));}
 
 function liveSelectionFixture(){
-  test('TC-009-005 actual native/CAT/TLS two-browser Thin and Off selection workload',{timeout:510000},async t=>{
+  test('actual native/CAT/TLS two-browser Thin and Off selection workload',{timeout:510000},async t=>{
     const {performance}=require('node:perf_hooks'),{chromium}=require('playwright');
     const oracle=JSON.parse(process.env.WSTX_SELECTION_EXPECTED),token=process.env.WSTX_SELECTION_TOKEN;
     assert.ok(oracle.ft8&&oracle.ft4&&token,'both independent mode oracles and authentication are mandatory');
@@ -737,10 +705,10 @@ function liveSelectionFixture(){
     report.cold={state:'running',startedUtc:new Date().toISOString(),startedMonotonic:coldStarted,deadlineMonotonic:coldDeadline};await save();
     try{await Promise.all(pages.map(async(page,index)=>{
       const seen=observations[index];seen.navigationStarted=performance.now();await page.goto(origin,{timeout:coldRemaining()});seen.navigationCompleted=performance.now();
-      // Selected HTTPS profile: each browser enrolls through the real token form (CL-022-01).
+      // Selected HTTPS profile: each browser enrolls through the real token form.
       // The link has one FIFO bottleneck per direction: while the other browser's cold assets are
       // queued, this browser's 10 s authorization attempts can time out. The client retries a
-      // timed-out step itself (CL-022-01, #22); only if every attempt fails ("Could not authenticate")
+      // timed-out step itself; only if every attempt fails ("Could not authenticate")
       // does the operator press Connect securely again. Each such press is kept as evidence (#55).
       seen.loginRetries=[];
       for(;;){

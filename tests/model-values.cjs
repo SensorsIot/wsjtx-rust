@@ -1,6 +1,6 @@
 'use strict';
 // The model-value reader of the JavaScript tests (Project-Specifics, "Model values read by
-// tests"; CL-014-16). A contract test names a value the model holds as data by its qualified
+// tests"). A contract test names a value the model holds as data by its qualified
 // name `Package::Element(::Feature)*`, and this module finds it in the `.sysml` text at run
 // time. It reads only the subset of that section and throws on anything else; the pinned
 // Pilot of `tools/sysml.py check` validates the SysML itself. The Rust reader
@@ -266,7 +266,8 @@ class Model{
       if(member.doc)continue;
       const h=member.head;
       const short=h.length===1?nameOf(h[0]):h.length===2&&isW(h[0],'enum')?nameOf(h[1]):null;
-      const docOnly=!member.body||statements(toks,...member.body).every(m=>m.doc);
+      // A member's body holds docs and annotations (@CodeDiffers {...}) only.
+      const docOnly=!member.body||statements(toks,...member.body).every(m=>m.doc||isP(m.head[0],'@'));
       if(short===null||!docOnly)fail(name,'not an enumeration member in the read form');
       members.push(short);
     }

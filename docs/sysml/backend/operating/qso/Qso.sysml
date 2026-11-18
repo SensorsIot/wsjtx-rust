@@ -1,22 +1,53 @@
 package WstxQsoPart {
     private import ScalarValues::*;
     private import WstxQsoControl::QsoControlPort;
+    private import WstxStationTime::StationTimePort;
+    private import WstxStrategies::ActivitySharePort;
     private import WstxDecodes::DecodesPort;
-    private import WstxPeriodTiming::PeriodTimingPort;
+    private import WstxDisplayData::DisplayDataPort;
     private import WstxOperatingChain::TargetChoicePort;
-    private import WstxOperatingChain::CompletedContactPort;
     private import WstxOperatingChain::MessageToSendPort;
-    private import WstxHearing::HearingPort;
-    part def QsoAndLogging {
-        doc /* Own exchange/completion/cancel and durable contacts; never bypass transmit authority or another profile storage. Stable completion identity and explicit persisted/unsaved outcome prevent silent duplicate contacts when completion replays. Concrete log schema/compatibility remains a target decision. */
+    private import WstxOperatingChain::CompletedContactPort;
+    private import WstxHearing::TargetHearingPort;
+    private import WstxModeProcessing::PackProcessing;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
+    private import WstxModelNotes::CodeDiffers;
+
+    part def QsoService {
+        doc /* Level 3 of the operating chain: the contact, made by hand or started by Auto,
+             and where it transmits. */
+        @ImplementedIn {
+            module = "server/src/contact.rs; server/src/contact_http.rs; "
+                + "server/src/operating/qso/freeslot.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/contact.rs, server/src/contact_http.rs, outside "
+                + "server/src/operating/qso/ and client/src/operating/qso/.";
+        }
+        @DetailTests {
+            tests = "server/src/contact_tests.rs; server/src/operating/qso/freeslot_tests.rs";
+            covers = "the contact engine, the quiet-space function and the waterfall's periods";
+        }
         port operations : ~QsoControlPort;
-        port transmit : MessageToSendPort;
-        port decodes : ~DecodesPort;
-        port timing : ~PeriodTimingPort;
+        port time : ~StationTimePort;
+        port activity : ~ActivitySharePort;
         port target : ~TargetChoicePort;
+        port transmit : MessageToSendPort;
         port completed : CompletedContactPort;
-        port hearing : ~HearingPort;
-        doc /* transmit carries contact transmissions only to TransmitService (WstxContact);
-             no PTT, audio or radio port exists here. */
+        port decodes : ~DecodesPort {
+            doc /* The decoded frames: the partner's messages and the stations decoded in a
+                 period. */
+        }
+        port display : ~DisplayDataPort {
+            doc /* The detailed spectrum rows, whose levels the quiet space judges. */
+        }
+        port hearing : ~TargetHearingPort {
+            doc /* What the partner hears: the frequencies he decodes, for the quiet space. */
+        }
+        port pack : PackProcessing {
+            doc /* Whether a text can be sent unaltered, and its family: every message a
+                 contact would send is asked before it is set. */
+        }
     }
 }

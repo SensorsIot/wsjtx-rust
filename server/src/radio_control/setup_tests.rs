@@ -1,4 +1,3 @@
-// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-05; CL-044-07; TC-044-001; TC-044-002; TC-044-006.
 // Independent hand-written CI-V scripts (IC-7300 Full Manual section 19 command table)
 // drive the probe over a scripted serial port that records every configure and write.
 use super::*;
@@ -144,7 +143,7 @@ fn assert_read_only(port: &Port) {
     }
 }
 
-// Proves: TC-044-001.
+// Proves: TC-044-001
 #[test]
 fn ic7300_answers_broadcast_at_19200_with_echo() {
     let mut port = Port {
@@ -174,7 +173,7 @@ fn ic7300_answers_broadcast_at_19200_with_echo() {
     assert_read_only(&port);
 }
 
-// Proves: TC-044-001.
+// Proves: TC-044-001
 #[test]
 fn ic705_answers_only_addressed_read_at_115200() {
     let mut port = Port {
@@ -212,7 +211,7 @@ fn ic705_answers_only_addressed_read_at_115200() {
     assert_read_only(&port);
 }
 
-// Proves: TC-044-001.
+// Proves: TC-044-001
 #[test]
 fn collisions_and_garbage_before_reply_are_not_replies() {
     let mut port = Port {
@@ -232,7 +231,7 @@ fn collisions_and_garbage_before_reply_are_not_replies() {
     assert_read_only(&port);
 }
 
-// Proves: TC-044-001.
+// Proves: TC-044-001
 #[test]
 fn silent_and_timing_out_ports_report_no_reply_after_all_rates() {
     for timeouts in [false, true] {
@@ -259,7 +258,7 @@ fn silent_and_timing_out_ports_report_no_reply_after_all_rates() {
     }
 }
 
-// Proves: TC-044-001.
+// Proves: TC-044-001
 #[test]
 fn unknown_id_is_reported_with_its_id() {
     let mut port = Port {
@@ -276,7 +275,7 @@ fn unknown_id_is_reported_with_its_id() {
     assert!(model(0x99).is_none());
 }
 
-// Proves: TC-044-001.
+// Proves: TC-044-001
 #[test]
 fn ic7300_menu_read_and_guidance() {
     let mut port = Port {
@@ -387,7 +386,7 @@ fn endpoint(id: &str, name: &str, flow: Flow, topology: Topology) -> AudioEndpoi
 const CAPTURE: &str = "{0.0.1.00000000}.{11111111-2222-3333-4444-555555555555}";
 const RENDER: &str = "{0.0.0.00000000}.{f4069c8a-0000-4000-8000-000000000001}";
 
-// Proves: TC-044-002.
+// Proves: TC-044-002
 #[test]
 fn audio_endpoints_match_by_shared_usb_parent() {
     let hub = "USB\\VID_0424&PID_2512\\6&1";
@@ -460,7 +459,7 @@ fn audio_endpoints_match_by_shared_usb_parent() {
     assert_eq!(match_audio(&port_d, &[in_d], Flow::Capture), Match::None);
 }
 
-// Proves: TC-044-002.
+// Proves: TC-044-002
 #[test]
 fn endpoint_id_syntax_and_friendly_name_migration() {
     assert!(endpoint_id(CAPTURE, Flow::Capture));
@@ -522,7 +521,8 @@ fn endpoint_id_syntax_and_friendly_name_migration() {
     assert_eq!(migrate(RENDER, &list, Flow::Render), Migration::Unchanged);
 }
 
-// Proves: CL-044-07; TC-044-006 (a)-(c). Hand-written names and an expected table.
+// Hand-written names and an expected table.
+// Proves: TC-044-006
 #[test]
 fn endpoint_choices_show_names_suffixes_radio_and_missing() {
     let hub = r"USB\VID_0424&PID_2512\6&1";

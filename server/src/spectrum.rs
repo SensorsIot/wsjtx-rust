@@ -4,6 +4,11 @@ use std::sync::Arc;
 pub const SIZE: usize = 2048;
 pub const HOP: u64 = 256;
 pub const RATE: u64 = 12000;
+/// WstxSpectrum::DetailedSpectrum: the transform of a detailed window, the samples between
+/// two windows and the samples of a detailed row.
+pub const DETAIL_SIZE: usize = 4096;
+pub const DETAIL_HOP: u64 = 480;
+pub const ROW_FRAMES: u64 = 2400;
 
 /// Worker-owned FFT storage. Samples are copied before windowing; source blocks stay immutable.
 pub struct Spectrum {
@@ -17,7 +22,7 @@ impl Spectrum {
         Self::with_size(scalar, SIZE)
     }
     pub fn detailed(scalar: bool) -> Self {
-        Self::with_size(scalar, 4096)
+        Self::with_size(scalar, DETAIL_SIZE)
     }
     fn with_size(scalar: bool, size: usize) -> Self {
         let plan = if scalar {

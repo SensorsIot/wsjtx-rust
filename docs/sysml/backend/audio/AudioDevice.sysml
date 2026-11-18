@@ -1,31 +1,57 @@
-package WstxAudio {
+package WstxAudioDevice {
     private import ScalarValues::*;
-    private import WstxAudioStreams::SourceDescriptor;
-    enum def AudioState { enum closed; enum opening; enum running; enum closing; enum unavailable; }
-    attribute def DeviceIntent {
-        attribute audioEndpointId : String[0..1];
-        attribute audioChannel : Integer = 0;
-        attribute controlEndpoint : String[0..1];
-        attribute pttDisabled : Boolean = true;
-        doc /* Existing schema1 profile/audio/control shape and revision own persistence.
-             Exact opaque audio ID, no default fallback. COMn compatibility or strict
-             icom7300://COMn?baud=auto&radio=94&controller=E0 with contract 4.5 grammar.
-             Catalogue/live observations are not persisted intent or permission. */
+    private import RequirementDerivation::*;
+    private import WstxRequirements::'FR-002';
+    private import WstxAudioPart::AudioInterface;
+    private import WstxAudioControl::AudioState;
+    private import WstxAudioControl::AudioConfig;
+    private import WstxAudioStreams::SourceError;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
+
+    requirement 'CL-008-08' {
+        subject audio : AudioInterface;
+        doc /* Audio MUST capture from the input device of its configuration, report the
+             state of that capture, and open the device again after it is lost
+             (DeviceLifecycle). */
+        @Status { build = ImplementationState::implemented; }
     }
-    item def SampleBlock :> WstxAudioStreams::SampleBlock {
-        attribute source : SourceDescriptor;
-        attribute first_frame : Integer;
-        attribute samples : Real[1..4096];
-        attribute discontinuity : Boolean;
-        attribute end_of_stream : Boolean;
-        assert constraint nonnegativePosition { first_frame >= 0 }
-        doc /* Finite f32 mono real,signedPCM16/32768 exactly. Arc<[f32]> or equivalent
-             immutable shared owner;borrowers cannot mutate,producer reuse waits for
-             last reference release. #6 spectrum path retains<=2blocks incl producer/
-             consumers,no whole-file float array/backlog. #7 separately bounds modem
-             history,not restricted to2blocks. Recordings start0,contiguous positions,
-             discontinuityfalse,EOS last nonempty block. Semantic incompatible changes
-             need coordinated new version. Unit conversion !=AGC/preprocessing/resampling. */
+    #derivation connection { end #original ::> 'FR-002'; end #derive ::> 'CL-008-08'; }
+
+    attribute def DeviceLifecycle {
+        doc /* How the capture from a sound device is opened, lost and closed.
+             The device is the capture endpoint of AudioConfig::inputDevice.
+             A capture without a named endpoint is refused with SourceError::unavailable.
+             The state is one of AudioState and is reported at once, also while the
+             device opens or closes.
+             A device that fails with SourceError::unavailable while the capture is
+             wanted is opened again, the same endpoint; every other error ends the
+             capture until it is started again.
+             Every opening starts a new epoch of the receive stream.
+             A device that does not close has the state unavailable with
+             SourceError::failedClose; closing is tried again until it succeeds, and the
+             device is not opened meanwhile. */
+        attribute firstRetryMs : Integer = 1000 {
+            doc /* The wait before the first attempt to open again. */ }
+        attribute maxRetryMs : Integer = 8000 {
+            doc /* Each further attempt waits twice as long as the one before, up to
+                 this. A new start of the capture begins at firstRetryMs again. */ }
+        attribute closeMaxMs : Integer = 250 {
+            doc /* A stop is answered with the state closed within this time, or with
+                 failedClose. */ }
     }
-    dependency sharedInput from SampleBlock to WstxArchitecture::StationProcess::audio;
+
+    verification 'TC-002-003' {
+        doc /* The capture from a sound device: its state, its loss and its end. */
+        subject audio : AudioInterface;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-008-08'; }
+        @TestedBy { test = "server/tests/audio_contract.rs"; }
+    }
 }

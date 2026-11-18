@@ -1,4 +1,6 @@
 'use strict';
+// The timing of the link (WstxOperatingScreen::LinkRule).
+const LinkRule = Object.freeze({SILENCE_MS: 12000, RETRY_MS: 1000, RETRY_MAX_MS: 4000, CONNECT_MS: 5000});
 const connection = document.querySelector('#connection');
 const version = document.querySelector('#version');
 const radio = document.querySelector('#radio');
@@ -16,13 +18,13 @@ const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
 let socket, timer, pendingId, handshakeProbe;
-// WstxOperatingLayout::AutomationIndicator (#74): the socket that has carried an automation.state, so that
+// The socket that has carried an automation.state, so that
 // the operating client, loaded after the first snapshots, reads GET /automation only after one.
 let automationAnnounced = null;
 // #82 FreeTxSlotMarks: the socket's latest free_tx_slots.state value, for an operating client that
 // loads after it.
 let freeTxSlotsHeld = null;
-let retry = 1000, lastMessage = 0, nextId = 1;
+let retry = LinkRule.RETRY_MS, lastMessage = 0, nextId = 1;
 // #102: every call names the path that made the page stale (station-stale detail.path), as evidence.
 function stale(path) { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(Object.assign(new Event('station-stale'), {detail: {path}})); }
 function requestStatus() {
@@ -36,7 +38,7 @@ function disconnect(current, path) {
   current.close();
   const retained = selectedHttps && authorization && ['ready', 'recovering'].includes(authorization.snapshot().state);
   login.hidden = location.protocol !== 'https:' || retained;
-  clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 4000);
+  clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, LinkRule.RETRY_MAX_MS);
 }
 let loginRetry = null;
 const loginRetryText = () => `Slow link · Retrying authorization (attempt ${loginRetry.attempt} of ${loginRetry.attempts})…`;
@@ -66,7 +68,7 @@ async function connect() {
     catch (error) {
       if (attempt !== connecting) return;
       showAuthorizationUnavailable(error, 'authorization-unavailable');
-      clearTimeout(timer); timer = setTimeout(connect, 4000); return;
+      clearTimeout(timer); timer = setTimeout(connect, LinkRule.RETRY_MAX_MS); return;
     }
     if (attempt !== connecting || !authorized()) return;
   }
@@ -89,7 +91,7 @@ async function connect() {
       .catch(() => {})
       .finally(() => {if (handshakeProbe === probe) handshakeProbe = null;});
   };
-  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) loseSocket('opening-timeout');}, 5000);
+  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) loseSocket('opening-timeout');}, LinkRule.CONNECT_MS);
   current.onopen = () => {
     opened = true; clearTimeout(openingTimer);
     if (lost || current !== socket || !authorized()) return;
@@ -104,7 +106,7 @@ async function connect() {
       if (message.type === 'automation.state') automationAnnounced = current;
       if (message.type === 'free_tx_slots.state' && message.data) freeTxSlotsHeld = {current, value: message.data.free_tx_slots};
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
-      // WstxStationLink::PushedStationState: the first status of a socket reads the profile, then only a newer announced revision does.
+      // WstxStationLink::SocketProtocol: the first status of a socket reads the profile, then only a newer announced revision does.
       if (message.type === 'profile.state' && profileRefresh.initialized && (message.data?.boot_id !== profileData?.boot_id || message.data?.revision > profileData?.revision)) refreshProfile(current, profileRefresh).catch(() => disconnect(current, 'profile-refresh-failed'));
       if (message.type === 'station.status' && message.id === pendingId && typeof message.data?.version === 'string' && message.data.radio === 'unconfigured') {
         if (stationUpdated(message.data.build)) return;
@@ -120,14 +122,14 @@ async function connect() {
         connection.textContent = 'Connected'; connection.dataset.state = 'connected';
         document.querySelector('#updated').textContent = new Date().toLocaleTimeString([], {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
         refresh.disabled = false;
-        retry = 1000; login.hidden = true;
+        retry = LinkRule.RETRY_MS; login.hidden = true;
         if (profileMode) window.dispatchEvent(new CustomEvent('station-ready', {detail: current}));
       }
     } catch { disconnect(current, 'message-rejected'); }
   };
   current.onclose = () => loseSocket('socket-closed');
 }
-// WstxOperatingLayout::PageUpdate (#51): a page served with another client build than the
+// WstxOperatingScreen::PageUpdate: a page served with another client build than the
 // station's reloads itself once (local settings stay in browser storage). The operating
 // screen may hold the reload (window.wstxReloadHeld: QSO, dialog, unsaved settings); it then
 // shows its "Station updated" chip. A second mismatch for the same build never loops.
@@ -142,7 +144,7 @@ function stationUpdated(build) {
   window.dispatchEvent(new CustomEvent('station-updated', {detail: build}));
   return false;
 }
-// WstxOperatingLayout::BrowserLinkLifecycle (#8): the page's own deferred client download shares
+// WstxOperatingScreen::LinkRule: the page's own deferred client download shares
 // the one station-to-browser bottleneck, so on a 32 kbit/s link the station's messages can queue
 // behind it for more than 12 s. While one is pending the silence bound is 30 s; its completion
 // or failure counts as a message. No other request extends the bound.
@@ -151,7 +153,7 @@ function deferredDownload(promise) {
   deferredDownloads++;
   return promise.finally(() => {deferredDownloads--; lastMessage = Date.now();});
 }
-setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > (deferredDownloads ? 30000 : 12000)) disconnect(socket, 'watchdog'); }, 1000);
+setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > (deferredDownloads ? 30000 : LinkRule.SILENCE_MS)) disconnect(socket, 'watchdog'); }, 1000);
 refresh.addEventListener('click', requestStatus);
 login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
@@ -168,7 +170,7 @@ login.addEventListener('submit', async event => {
     else {const response = await fetch('/session', {method: 'POST', body: secret}); secret = null; if (!response.ok) throw new Error('Access denied');}
     document.querySelector('#login-error').textContent = ''; clearTimeout(timer);
     if (socket && socket.readyState < WebSocket.CLOSING) { socket.onclose = null; socket.close(); }
-    retry = 1000; connect();
+    retry = LinkRule.RETRY_MS; connect();
   } catch (error) {
     if (authorization && (submittedEpoch === null || authorization.snapshot().epoch !== submittedEpoch || authorization.snapshot().ready)) return;
     if (error?.authorizationCondition) {
@@ -178,7 +180,7 @@ login.addEventListener('submit', async event => {
   finally {secret = null;}
 });
 const logoutButton = document.querySelector('#logout'), forgetButton = document.querySelector('#forget');
-// CL-022-01 slow-link setup retry: the token login stays in progress; say so instead of failing.
+// Slow-link setup retry: the token login stays in progress; say so instead of failing.
 addEventListener('station-authorization-retry', event => {
   if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
   loginRetry = event.detail; document.querySelector('#login-error').textContent = loginRetryText();
@@ -193,7 +195,7 @@ addEventListener('station-authorization', event => {
   if (event.detail.authorizationCondition) showAuthorizationUnavailable(event.detail, 'authorization-not-ready');
   else {stale('authorization-not-ready'); connection.textContent = 'Authorization unavailable · station data stale';}
   if (socket && socket.readyState < WebSocket.CLOSING) {socket.onclose = null; socket.close();}
-  clearTimeout(timer); timer = setTimeout(connect, 4000);
+  clearTimeout(timer); timer = setTimeout(connect, LinkRule.RETRY_MAX_MS);
 });
 for (const [button, action] of [[logoutButton, 'logout'], [forgetButton, 'forget']]) {
   button.addEventListener('click', async () => {
@@ -254,7 +256,7 @@ function applyProfile(data, reload) {
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return false;
   const newBoot = !!profileData && data.boot_id !== profileData.boot_id;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
-  // WstxStationLink::PushedStationState (#74): a new boot is learned here; each view of
+  // WstxOperatingScreen::BootRule: a new boot is learned here; each view of
   // station state drops what it holds at once and shows its freshly loaded form.
   if (newBoot) window.dispatchEvent(new CustomEvent('station-boot', {detail: data.boot_id}));
   // FR-023: the connection type is read-only and shown as saved.

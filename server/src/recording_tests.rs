@@ -63,7 +63,8 @@ fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
     (job, decoded)
 }
 
-// Proves: CL-008-03; TC-009-004 live ring2047/2048/2049 and explicit cursors.
+// Live ring2047/2048/2049 and explicit cursors.
+// Proves: TC-009-004
 #[test]
 fn live_results_evict_oldest_and_never_restart_sequence() {
     let fixture = Fixture::new();
@@ -102,7 +103,8 @@ fn live_results_evict_oldest_and_never_restart_sequence() {
     );
 }
 
-// Proves: CL-008-03; TC-009-004 seeded byte/safe-counter bounds and invalid/stale publication.
+// Seeded byte/safe-counter bounds and invalid/stale publication.
+// Proves: TC-009-004
 #[test]
 fn live_publication_is_atomic_at_byte_counter_and_context_boundaries() {
     let fixture = Fixture::new();
@@ -167,7 +169,7 @@ fn live_publication_is_atomic_at_byte_counter_and_context_boundaries() {
     );
 }
 
-// Proves: CL-008-02; TC-009-004 source clock metadata never invents external accuracy.
+// Source clock metadata never invents external accuracy.
 #[test]
 fn live_clock_filetime_mapping_handles_epoch_leap_and_range() {
     assert_eq!(
@@ -182,7 +184,8 @@ fn live_clock_filetime_mapping_handles_epoch_leap_and_range() {
     assert!(utc_from_filetime(u64::MAX).is_none());
 }
 
-// Proves: CL-008-02/03/05; TC-009-004 actual provider epoch and owner identity.
+// Actual provider epoch and owner identity.
+// Proves: TC-009-004
 #[test]
 fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() {
     let fixture = Fixture::new();
@@ -277,7 +280,7 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
     assert_eq!(worker.input.status().state, audio::AudioState::Closed);
 }
 
-// Proves: CL-008-02/03; TC-002-003 (#38). Through the real queue, converter and live worker:
+// Through the real queue, converter and live worker:
 // a WASAPI engine glitch on a continuous device/QPC timeline keeps job, generation and
 // spectrum/decode window; a real unknown loss rotates once and GET /receive names it.
 #[test]
@@ -339,7 +342,7 @@ fn live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs() {
     worker.input.request_stop();
 }
 
-// Proves: CL-008-03; TC-009-004 resource release precedes terminal publication.
+// Resource release precedes terminal publication.
 #[test]
 fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
     let fixture = Fixture::new();
@@ -377,7 +380,7 @@ fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
     assert_eq!(r.receive_snapshot()["job"]["state"], "cancelled");
 }
 
-// Proves: CL-008-03; TC-009-004 a refused OS worker cannot strand station admission.
+// A refused OS worker cannot strand station admission.
 #[test]
 fn live_worker_spawn_failure_releases_admission_without_reusing_generation() {
     let fixture = Fixture::new();
@@ -407,7 +410,7 @@ fn live_worker_spawn_failure_releases_admission_without_reusing_generation() {
     assert_eq!(reservation["generation"], 2);
 }
 
-// Proves: CL-008-03; TC-009-004 a failed fresh source identity cannot orphan the old owner.
+// A failed fresh source identity cannot orphan the old owner.
 #[test]
 fn live_second_epoch_source_uuid_failure_releases_original_admission() {
     let fixture = Fixture::new();
@@ -456,8 +459,9 @@ pub(super) fn checkpoint(stage: &'static str) -> Result<()> {
 }
 struct Fixture(PathBuf);
 
-// Proves: CL-008-07; TC-009-005 case6. Deterministically hold the operation in
+// Deterministically hold the operation in
 // restarting while the real PacketQueue/LiveSource rotates its continuing worker.
+// Proves: TC-009-005
 #[test]
 fn selection_cancel_tracks_its_worker_through_unknown_source_epoch() {
     let fixture = Fixture::new();
@@ -524,8 +528,9 @@ fn selection_cancel_tracks_its_worker_through_unknown_source_epoch() {
     );
 }
 
-// Proves: CL-008-07; TC-009-005 case6. A later real Start owns a distinct
+// A later real Start owns a distinct
 // cancellation Arc even if old operation metadata remains visible.
+// Proves: TC-009-005
 #[test]
 fn selection_old_command_cannot_cancel_unrelated_later_start() {
     let fixture = Fixture::new();
@@ -671,8 +676,9 @@ fn selection_released(r: &Recording) {
     }
 }
 
-// Proves: CL-008-07; TC-009-005 cases2/5. Domain refusal is earlier than missing
+// Domain refusal is earlier than missing
 // configured CAT and every counter increments only for a genuinely admitted command.
+// Proves: TC-009-005
 #[test]
 fn selection_unknown_band_and_safe_counter_refuse_without_effects() {
     let fixture = Fixture::new();
@@ -701,7 +707,7 @@ fn selection_unknown_band_and_safe_counter_refuse_without_effects() {
     assert_eq!(r.receive_snapshot()["generation"], 0);
 }
 
-// Proves: CL-008-07 and unchanged TC-009-004 Start revision guard. A loaded saved
+// The Start revision guard. A loaded saved
 // revision is independent station state; later edits invalidate a captured old input.
 #[test]
 fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
@@ -739,105 +745,39 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     assert_eq!(r.state.lock().unwrap().operating.profile_revision, 9);
 }
 
-// Proves: CL-008-07; TC-009-005 case2. Independent canonical SysML data,
-// never generated from the implementation's band/frequency table.
-type CanonicalBandEntry = (String, u64, Option<u64>);
-
 // Each test module of the station executable includes the test-only reader itself.
 #[allow(dead_code, clippy::duplicate_mod)]
 #[path = "model_values.rs"]
 mod model_values;
 use model_values::{Model, Number};
 
-fn canonical_preferred_entries(
-    model: &Model,
-) -> std::result::Result<Vec<CanonicalBandEntry>, String> {
-    let pin = model
-        .string("WstxOperatingReceive::preferredTableSourceSha256")
-        .map_err(|e| e.to_string())?;
-    if pin != "e556d7ab30462ee8d8b1480f7781a7575101b71d5213c05fa1300344622cc0d4" {
-        return Err("missing, changed or duplicate preferred-table source pin".into());
-    }
-    // An integer frequency in Hz; null where the table has no cell.
-    let hertz = |value: Option<Number>, invalid: &str| match value {
-        None => Ok(None),
-        Some(Number::Integer(hz)) => u64::try_from(hz).map(Some).map_err(|_| invalid.to_string()),
-        Some(Number::Real(_)) => Err(invalid.to_string()),
-    };
-    let table = "WstxOperatingReceive::PreferredBandEntry";
-    let mut rows = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    for usage in model
-        .table("WstxOperatingReceive", table)
-        .map_err(|e| e.to_string())?
-    {
-        // Each failure names the usage it was read from.
-        let mut row = || -> std::result::Result<CanonicalBandEntry, String> {
-            let label = usage
-                .name
-                .strip_prefix("preferred")
-                .ok_or("malformed canonical preferred-band declaration")?;
-            if usage.field_names() != ["band", "ft8Hz", "ft4Hz"] {
-                return Err("extra, missing or zero-valued preferred-band field".into());
-            }
-            let band = usage.string("band").map_err(|e| e.to_string())?;
-            if band.is_empty() || band != label || !seen.insert(band.clone()) {
-                return Err("missing, duplicate or mismatched band label".into());
-            }
-            let ft8 = hertz(
-                usage.number_with_unit("ft8Hz").map_err(|e| e.to_string())?,
-                "invalid FT8 integer frequency",
-            )?
-            .ok_or("invalid FT8 integer frequency")?;
-            let ft4 = hertz(
-                usage.number_with_unit("ft4Hz").map_err(|e| e.to_string())?,
-                "invalid FT4 integer frequency",
-            )?;
-            if ft8 == 0 || ft4 == Some(0) {
-                return Err("extra, missing or zero-valued preferred-band field".into());
-            }
-            Ok((band, ft8, ft4))
-        };
-        rows.push(row().map_err(|e| format!("{}: {e}", usage.qualified))?);
-    }
-    if rows.len() != 12 || rows.iter().filter(|row| row.2.is_none()).count() != 2 {
-        return Err(format!(
-            "{table}: all 12 band rows and both unsupported FT4 cells are required"
-        ));
-    }
-    Ok(rows)
-}
-
-#[test]
-fn canonical_preferred_table_rejects_missing_malformed_and_duplicate_data() {
-    let model = Model::load();
-    assert_eq!(canonical_preferred_entries(&model).unwrap().len(), 12);
-    let source = model.package_text("WstxOperatingReceive").unwrap();
-    for damaged in [
-        source.replace("attribute preferred160m :", "attribute omitted160m :"),
-        source.replace(
-            "attribute :>> band = \"80m\";",
-            "attribute :>> band = \"160m\";",
-        ),
-        source.replace(
-            "attribute :>> ft8Hz = 1840000;",
-            "attribute :>> ft8Hz = invalid;",
-        ),
-        source.replace("attribute :>> ft4Hz = null;", "attribute :>> ft4Hz = 1;"),
-    ] {
-        let damaged = model
-            .with_package_text("WstxOperatingReceive", &damaged)
-            .unwrap();
-        assert!(canonical_preferred_entries(&damaged).is_err());
-    }
-}
+// The preferred FT8 and FT4 dial frequency of each band in WSJT-X's default
+// list of frequencies (WstxOperatingSelection::BandFrequency), copied by hand from
+// WSJT-X v3.3.0-beta4 (commit 0f7d5928449ec747c3d1f6da1306f8c94404c3a9),
+// models/FrequencyList.cpp (SHA-256
+// e556d7ab30462ee8d8b1480f7781a7575101b71d5213c05fa1300344622cc0d4); never generated
+// from the implementation's band table. None: WSJT-X lists no FT4 frequency on the band.
+const PREFERRED_BAND_ENTRIES: [(&str, u64, Option<u64>); 12] = [
+    ("160m", 1_840_000, None),
+    ("80m", 3_573_000, Some(3_575_000)),
+    ("60m", 5_357_000, Some(5_357_000)),
+    ("40m", 7_074_000, Some(7_047_500)),
+    ("30m", 10_136_000, Some(10_140_000)),
+    ("20m", 14_074_000, Some(14_080_000)),
+    ("17m", 18_100_000, Some(18_104_000)),
+    ("15m", 21_074_000, Some(21_140_000)),
+    ("12m", 24_915_000, Some(24_919_000)),
+    ("10m", 28_074_000, Some(28_180_000)),
+    ("6m", 50_313_000, Some(50_318_000)),
+    ("4m", 70_154_000, None),
+];
 
 #[test]
 fn selection_preferred_entries_match_complete_canonical_integer_table() {
-    let rows = canonical_preferred_entries(&Model::load()).unwrap();
+    let rows = PREFERRED_BAND_ENTRIES;
     assert_eq!(selection::BANDS.len(), rows.len());
     for (index, (band, ft8, ft4)) in rows.iter().enumerate() {
-        assert_eq!(selection::BANDS[index], band);
+        assert_eq!(selection::BANDS[index], *band);
         for (mode, expected) in [("ft8", Some(*ft8)), ("ft4", *ft4)] {
             assert_eq!(selection::frequency(mode, band), expected, "{mode} {band}");
         }
@@ -849,8 +789,9 @@ fn selection_preferred_entries_match_complete_canonical_integer_table() {
     );
 }
 
-// Proves: CL-008-07; TC-009-005 cases4/6. Real native-wrapper Drop is deliberately
+// Real native-wrapper Drop is deliberately
 // held. A failed release never becomes timeout permission to tune or open again.
+// Proves: TC-009-005
 #[test]
 fn selection_release_timeout_retains_owner_and_never_commits_target() {
     let fixture = Fixture::new();
@@ -882,8 +823,9 @@ fn selection_release_timeout_retains_owner_and_never_commits_target() {
     assert_eq!(snapshot["radio"]["connection_generation"], 0);
 }
 
-// Proves: CL-008-07; TC-009-005 case4. The same owner restarts in an immutable new
+// The same owner restarts in an immutable new
 // mode only after actual release; Stop/profile edit invalidate every late restart.
+// Proves: TC-009-005
 #[test]
 fn selection_manual_mode_switch_uses_same_owner_and_profile_change_blocks_restart() {
     let fixture = Fixture::new();
@@ -1039,9 +981,10 @@ fn selection_edit_request(
     (headers, Ok(crate::Bytes::from(bytes)))
 }
 
-// Proves: CL-008-07; TC-009-005 case4. A persisted rename is deliberately observed
+// A persisted rename is deliberately observed
 // while Recording invalidation is held. The SAME Store mutex prevents a new reader
 // from seeing the edit until cancellation has been published, before HTTP success.
+// Proves: TC-009-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn selection_profile_success_publishes_cancellation_before_new_reader() {
     let (fixture, r, app, settings, cancelled) = selection_profile_fixture();
@@ -1097,7 +1040,7 @@ async fn selection_profile_success_publishes_cancellation_before_new_reader() {
     );
 }
 
-// Proves: CL-008-07 and unchanged CL-005-02; TC-009-005 case4. A real atomic-store
+// A real atomic-store
 // refusal cannot invalidate the old operation. This uses only a disposable fixture,
 // no ACL changes or production fault switch.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1169,7 +1112,8 @@ fn recording_limit(feature: &str) -> usize {
         other => panic!("model value {name}: not a positive integer: {other:?}"),
     }
 }
-// Proves: CL-006-01, CL-006-02; TC-018-001, cost 2 on Windows.
+// Runs at cost 2 on Windows.
+// Proves: TC-018-001
 #[test]
 fn original_bytes_samples_blocks_and_restart_identity() {
     let f = Fixture::new();
@@ -1219,7 +1163,8 @@ fn original_bytes_samples_blocks_and_restart_identity() {
         assert_eq!(restarted.snapshot()["recording"]["frames"], count);
     }
 }
-// Proves: CL-006-01, CL-006-04; TC-018-002, cost 2 on Windows.
+// Runs at cost 2 on Windows.
+// Proves: TC-018-002
 #[test]
 fn byte_level_riff_limits_and_rejection_table() {
     let f = Fixture::new();
@@ -1297,7 +1242,8 @@ fn byte_level_riff_limits_and_rejection_table() {
         "recording_limit"
     );
 }
-// Proves: CL-006-02, CL-006-04; TC-018-002/003, cost 2 on Windows.
+// Runs at cost 2 on Windows.
+// Proves: TC-018-002
 #[test]
 fn import_failures_keep_old_source_and_quarantine_until_real_release() {
     let f = Fixture::new();
@@ -1346,7 +1292,8 @@ fn import_failures_keep_old_source_and_quarantine_until_real_release() {
     assert_eq!(r.snapshot()["storage_error"], Value::Null);
     assert!(!r.state.lock().unwrap().import.as_ref().unwrap().worker);
 }
-// Proves: CL-006-02, CL-006-04; TC-018-003 held worker failure + EOS vector, cost 2 Windows.
+// A held worker failure and the EOS vector, at cost 2 on Windows.
+// Proves: TC-018-003
 #[test]
 fn processing_failure_with_eos_cannot_complete_before_or_after_release() {
     let f = Fixture::new();
@@ -1397,7 +1344,8 @@ fn processing_failure_with_eos_cannot_complete_before_or_after_release() {
     assert_eq!(r.snapshot()["job"], current);
 }
 
-// Proves: CL-006-02; TC-018-002, manifest is authoritative even when final HTTP outcome is lost.
+// The manifest is authoritative even when the final HTTP outcome is lost.
+// Proves: TC-018-002
 #[test]
 fn post_commit_failure_never_reverts_new_original_on_restart() {
     let f = Fixture::new();
@@ -1412,7 +1360,8 @@ fn post_commit_failure_never_reverts_new_original_on_restart() {
     assert_eq!(f.recording().snapshot()["recording"]["id"], committed);
 }
 
-// Proves: CL-006-02/04; TC-018-002, reservation/idle/total timeout and failed real cleanup quarantine.
+// Reservation/idle/total timeout and failed real cleanup quarantine.
+// Proves: TC-018-002
 #[test]
 fn deadlines_release_only_after_cleanup_and_startup_reconciles_quarantine() {
     let f = Fixture::new();
@@ -1485,7 +1434,8 @@ fn dft(samples: &[f32], k: usize) -> f64 {
     }
     re.hypot(im) * (if k == 0 { 1.0 } else { 2.0 }) / 1024.0
 }
-// Proves: CL-006-03; TC-010-001, independently computed DFT and analytic tones, cost 2 Windows.
+// Independently computed DFT and analytic tones, at cost 2 on Windows.
+// Proves: TC-010-001
 #[test]
 fn both_fft_paths_agree_with_direct_dft_and_analytic_dbfs() {
     let vectors: Vec<Vec<f32>> = vec![
@@ -1532,7 +1482,8 @@ fn both_fft_paths_agree_with_direct_dft_and_analytic_dbfs() {
     }
 }
 
-// Proves: CL-006-03/04; TC-010-001, actual worker row boundary/right padding against original DFT.
+// Actual worker row boundary/right padding against original DFT.
+// Proves: TC-010-001
 #[test]
 fn replay_window_start_and_partial_last_row_follow_source_clock() {
     let f = Fixture::new();
@@ -1582,7 +1533,8 @@ fn replay_window_start_and_partial_last_row_follow_source_clock() {
     }
 }
 
-// Proves: CL-006-01/02; TC-018-002 review regression; readable truncation differs from OS read failure.
+// A readable truncation differs from an OS read failure.
+// Proves: TC-018-002
 #[test]
 fn parser_preserves_non_eof_os_read_errors() {
     let f = Fixture::new();
@@ -1604,7 +1556,7 @@ fn parser_preserves_non_eof_os_read_errors() {
     );
 }
 
-// Proves: CL-006-02; TC-018-003 review regression, absent manifest never authorizes guessing which UUID original to delete.
+// An absent manifest never authorizes guessing which UUID original to delete.
 #[test]
 fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
     let f = Fixture::new();
@@ -1639,7 +1591,8 @@ fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
     assert!(!recovered.path(&id, "wav").exists());
 }
 
-// Proves: CL-006-02/04; TC-018-003 review regression; worker preempted across a pacing deadline releases the slot.
+// A worker preempted across a pacing deadline releases the slot.
+// Proves: TC-018-003
 #[test]
 fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
     let f = Fixture::new();
@@ -1660,7 +1613,8 @@ fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
     drop(resources);
     assert!(r.reserve(&r.profile, &r.boot, generation + 1).is_ok());
 }
-// Proves: CL-006-03/04; TC-010-004, independent f64 DFT, native bins and power/EOS rows.
+// Independent f64 DFT, native bins and power/EOS rows.
+// Proves: TC-010-004
 #[test]
 fn detailed_native_bins_and_power_rows_follow_independent_dft() {
     use base64::{Engine, engine::general_purpose::STANDARD};
@@ -1786,7 +1740,8 @@ fn relative_clock(r: &Recording, mode: &'static str, anchor: &str, anchor_frame:
     });
 }
 
-// Proves: CL-010-09; TC-007-006. Independent hand-calculated UTC/frame vectors.
+// Independent hand-calculated UTC/frame vectors.
+// Proves: TC-007-006
 #[test]
 fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
     for (mode, starts, period) in [
@@ -1894,7 +1849,8 @@ fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
     );
 }
 
-// Proves: CL-010-09; TC-007-006. Actual numerical silence completes; result inputs are explicit manager fixtures.
+// Actual numerical silence completes; result inputs are explicit manager fixtures.
+// Proves: TC-007-006
 #[test]
 fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_rows() {
     let fixture = Fixture::new();
@@ -2011,7 +1967,8 @@ impl LiveInput for DecodeBoundaryInput {
         }
     }
 }
-// Proves: CL-010-09; TC-007-006. Actual cooperative numerical/manager overrun, not a pre-labelled wire response.
+// Actual cooperative numerical/manager overrun, not a pre-labelled wire response.
+// Proves: TC-007-006
 #[test]
 fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
     let fixture = Fixture::new();
@@ -2074,7 +2031,8 @@ fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
         "2026-10-27T12:00:15.0000000Z"
     );
 }
-// Proves: CL-007-05; TC-004-004. A late window waits for the prompt decode instead of abandoning it.
+// A late window waits for the prompt decode instead of abandoning it.
+// Proves: TC-004-004
 #[test]
 fn late_window_waits_for_the_prompt_decode_without_overrun() {
     let fixture = Fixture::new();
@@ -2129,10 +2087,11 @@ fn late_window_waits_for_the_prompt_decode_without_overrun() {
     assert_eq!(s["job"]["latest_decode"]["id"], 2);
     assert_eq!(s["job"]["latest_decode"]["complete"], true);
 }
-// Proves: CL-040-07; TC-012-007. The actual live worker marks each analysis window's
+// The actual live worker marks each analysis window's
 // decode (the UDP Status decoding flag) while it runs and clears it when it returns,
 // observed from the capture poll the decode in progress drives, also when a window
 // abandons the decode before it as an overrun.
+// Proves: TC-012-007
 #[test]
 fn live_worker_marks_decoding_for_each_window_and_clears_it_after() {
     for late in [true, false] {
@@ -2193,7 +2152,8 @@ fn live_worker_marks_decoding_for_each_window_and_clears_it_after() {
         assert_eq!(r.decoder_activity(), (false, 2), "late {late}");
     }
 }
-// Proves: CL-010-09; TC-007-006. Real terminal owner path preserves last view, never an invented completion.
+// Real terminal owner path preserves last view, never an invented completion.
+// Proves: TC-007-006
 #[test]
 fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identity() {
     for cancelled in [false, true] {
@@ -2234,7 +2194,6 @@ fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identi
     }
 }
 
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_old_ready_cannot_overwrite_closed() {
     use wstx_rust::radio_control::State;
@@ -2266,7 +2225,6 @@ fn selection_radio_cache_old_ready_cannot_overwrite_closed() {
         "a delayed Ready capture must not resurrect a closed actor"
     );
 }
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_reordered_capture_cannot_erase_mode_query() {
     use wstx_rust::radio_control::{Operation, Request};
@@ -2316,7 +2274,6 @@ fn selection_radio_cache_reordered_capture_cannot_erase_mode_query() {
     );
     actor.request_close();
 }
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
     let fixture = Fixture::new();
@@ -2331,7 +2288,6 @@ fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
     actor.request_close();
 }
 
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_connect_profile_edit_before_install_releases_own_reservation() {
     let fixture = Fixture::new();
@@ -2364,7 +2320,6 @@ fn review_connect_profile_edit_before_install_releases_own_reservation() {
     assert_eq!(next, generation + 1);
     r.radio_disconnect(next).unwrap();
 }
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_stale_profile_frequency_cannot_infer_unknown_manual_band() {
     let fixture = Fixture::new();
@@ -2410,7 +2365,6 @@ fn review_stale_profile_frequency_cannot_infer_unknown_manual_band() {
     actor.request_close();
 }
 
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_obsolete_connect_cannot_clear_newer_or_disconnected_reservation() {
     for newer in [false, true] {
@@ -2450,7 +2404,6 @@ fn review_obsolete_connect_cannot_clear_newer_or_disconnected_reservation() {
         }
     }
 }
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_frequency_inference_requires_profile_boot_and_connection_authority() {
     let fixture = Fixture::new();
@@ -2478,7 +2431,8 @@ fn review_frequency_inference_requires_profile_boot_and_connection_authority() {
     actor.request_close();
 }
 
-// Proves: CL-007-05; TC-004-004. Hand-calculated residues from a correlated UTC anchor.
+// Hand-calculated residues from a correlated UTC anchor.
+// Proves: TC-004-004
 #[test]
 fn live_window_schedule_follows_the_utc_period_grid() {
     let timing = |anchor: Option<&str>, frame: u64| source::SourceTiming {
@@ -2517,7 +2471,7 @@ fn live_window_schedule_follows_the_utc_period_grid() {
     );
 }
 
-// Proves: CL-007-02. Hand-calculated FT8 period starts for the SNR measurement (#52).
+// Hand-calculated FT8 period starts for the SNR measurement
 #[test]
 fn ft8_snr_period_start_follows_the_utc_period_grid() {
     let timing = |anchor: Option<&str>| source::SourceTiming {
@@ -2686,7 +2640,7 @@ fn drifting_prompt_windows(track: bool, seconds: u64, ppm: f64) -> (Vec<(f64, bo
     (prompts, r.receive_clock())
 }
 
-// Proves: CL-007-05; TC-004-004. Re-anchoring keeps ordinary frames in the prompt window
+// Re-anchoring keeps ordinary frames in the prompt window
 // through more than 1 s of cumulative capture-clock drift and a clock step.
 #[test]
 fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
@@ -2720,7 +2674,7 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
     assert!(last.0 > 1.2, "fixed schedule drifted only {:.3} s", last.0);
 }
 
-// Proves: CL-043-03, CL-007-05; TC-043-002. The clock from the air shifts the UTC reference
+// The clock from the air shifts the UTC reference
 // of live windows, periods and DT on top of the measured capture drift: with the system
 // clock 2 s ahead, prompt windows complete at +13.8 s of corrected UTC through 300 ppm of
 // drift, none is lost or repeated, and the estimator is fed DT against the uncorrected
@@ -2840,7 +2794,7 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
     );
 }
 
-// Proves: CL-057-01 (#57). Both a new period view and the late window's growth
+// Both a new period view and the late window's growth
 // of that view signal the Detailed WebSocket peers' publication watch.
 #[test]
 fn new_and_grown_views_signal_the_publication_watch() {
@@ -2871,9 +2825,10 @@ fn new_and_grown_views_signal_the_publication_watch() {
     assert!(watch.has_changed().unwrap(), "a grown view signals");
 }
 
-// Proves: CL-007-05; TC-004-004. The FT8 late window (UTC +0.7..+15.7 s) extends its period's
+// The FT8 late window (UTC +0.7..+15.7 s) extends its period's
 // view under the same id: nothing new publishes nothing, a late starter (DT +1.2 s) only grows
 // next_sequence, so the browser keeps its rows and cursor.
+// Proves: TC-004-004
 #[test]
 fn late_window_republishes_its_period_view_with_late_starters() {
     let fixture = Fixture::new();
@@ -2994,7 +2949,7 @@ fn ft8_period_audio(frames: usize, period: usize) -> Vec<f32> {
         .collect()
 }
 
-// Proves: CL-007-02; TC-004-002. #52: the live worker with a correlated UTC clock names
+// The live worker with a correlated UTC clock names
 // the period start to the decoder, so the published FT8 SNR equals the file decode of the
 // same period-aligned audio.
 #[test]
@@ -3051,7 +3006,7 @@ fn live_ft8_snr_measures_from_the_utc_period_start() {
     assert_eq!(w["window_offset_ms"], -1200);
 }
 
-// Proves: CL-043-03; TC-043-002 (c). #43 with #52: the live worker names the FT8 period
+// The live worker names the FT8 period
 // start and the window diagnostics on station UTC (system clock plus the air-clock
 // correction), the same timing the published records use. The system clock here is 2 s
 // slow (anchor 11:59:58 at frame 0) and the correction +2 s puts station UTC 12:00:00 there,
@@ -3114,9 +3069,10 @@ fn live_ft8_period_start_and_window_diagnostics_follow_the_air_clock_correction(
     assert_eq!(w["window_offset_ms"], -1200, "{w}");
 }
 
-// Proves: CL-024-01; TC-024-002 (#24 S1). The live publication fills hashed calls in from
+// The live publication fills hashed calls in from
 // the calls heard so far and my call; earlier records keep their text; UDP Decode messages
 // carry the same text; a hashed 'from' still gives no strategy facts.
+// Proves: TC-024-002
 #[test]
 fn live_publication_fills_in_hashed_calls() {
     let fixture = Fixture::new();
@@ -3173,4 +3129,513 @@ fn live_publication_fills_in_hashed_calls() {
     assert_eq!(crate::strategy::facts(&plain).unwrap().from, "W9XYZ");
     r.set_my_call(Some("HB9BLB"));
     assert_eq!(publish("<HB9BLB> VP2X/K1JT")["text"], "<HB9BLB> VP2X/K1JT");
+}
+
+/// A RIFF WAVE file of these chunks, each padded to an even length.
+fn riff(chunks: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+    let mut b = Vec::from(*b"RIFF");
+    b.extend([0; 4]);
+    b.extend(b"WAVE");
+    for (name, body) in chunks {
+        b.extend(*name);
+        b.extend((body.len() as u32).to_le_bytes());
+        b.extend(body);
+        if body.len() % 2 == 1 {
+            b.push(0);
+        }
+    }
+    let size = (b.len() - 8) as u32;
+    b[4..8].copy_from_slice(&size.to_le_bytes());
+    b
+}
+
+// Proves: TC-018-002
+#[test]
+fn chunk_order_count_and_fmt_faults_are_refused() {
+    let f = Fixture::new();
+    let fmt = wav(&[])[20..36].to_vec();
+    let data = vec![1, 0, 2, 0];
+    let with = |extra: &[u8]| [fmt.as_slice(), extra].concat();
+    let mut other = fmt.clone();
+    other[0] = 3;
+    for chunks in [
+        vec![(b"fmt ", fmt.clone()), (b"data", data.clone())],
+        vec![(b"fmt ", with(&[0, 0])), (b"data", data.clone())],
+    ] {
+        assert_eq!(validate(&mut f.wave(&riff(&chunks))).unwrap().frames, 2);
+    }
+    for (chunks, expected) in [
+        (
+            vec![
+                (b"fmt ", fmt.clone()),
+                (b"fmt ", fmt.clone()),
+                (b"data", data.clone()),
+            ],
+            "invalid_recording",
+        ),
+        (
+            vec![(b"data", data.clone()), (b"fmt ", fmt.clone())],
+            "invalid_recording",
+        ),
+        (vec![(b"fmt ", fmt.clone())], "invalid_recording"),
+        (
+            vec![
+                (b"fmt ", fmt.clone()),
+                (b"data", data.clone()),
+                (b"data", data.clone()),
+            ],
+            "invalid_recording",
+        ),
+        (
+            vec![(b"fmt ", fmt.clone()), (b"data", vec![1, 0, 2])],
+            "invalid_recording",
+        ),
+        (
+            vec![(b"fmt ", with(&[1, 0])), (b"data", data.clone())],
+            "invalid_recording",
+        ),
+        (
+            vec![(b"fmt ", with(&[0; 4])), (b"data", data.clone())],
+            "unsupported_audio",
+        ),
+        (
+            vec![(b"fmt ", other.clone()), (b"data", data.clone())],
+            "unsupported_audio",
+        ),
+        // Another form and a fault of the build: the fault decides.
+        (vec![(b"fmt ", other.clone())], "invalid_recording"),
+    ] {
+        assert_eq!(
+            validate(&mut f.wave(&riff(&chunks))).unwrap_err(),
+            expected,
+            "{:?}",
+            chunks.iter().map(|(n, b)| (n, b.len())).collect::<Vec<_>>()
+        );
+    }
+}
+
+// Proves: TC-018-002
+#[test]
+fn a_cancelled_import_keeps_the_stored_recording() {
+    let f = Fixture::new();
+    let r = f.recording();
+    let bytes = wav(&[1, 2, 3]);
+    let old = import(&r, &bytes).unwrap();
+    let generation = r.state.lock().unwrap().generation;
+    let reserved = r.reserve(&r.profile, &r.boot, generation).unwrap();
+    let id = reserved["id"].as_str().unwrap().to_owned();
+    r.begin_chunk(&id, 0, 100).unwrap();
+    r.chunk(&id, 0, 100, vec![0, 0]).unwrap();
+    assert_eq!(r.cancel_import(&id).unwrap()["state"], "cancelling");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while r.import_view(&id).unwrap()["state"] != "cancelled" {
+        assert!(Instant::now() < deadline, "the cancel did not end");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(!r.path(&id, "wav").exists());
+    assert_eq!(r.snapshot()["recording"]["id"], old);
+    assert_eq!(fs::read(r.path(&old, "wav")).unwrap(), bytes);
+    assert_eq!(f.recording().snapshot()["recording"]["id"], old);
+}
+
+// Proves: TC-018-002
+#[test]
+fn import_commands_it_does_not_carry_out_are_refused_and_change_nothing() {
+    let f = Fixture::new();
+    let r = f.recording();
+    let unknown = profile::new_uuid().unwrap();
+    assert_eq!(r.import_view(&unknown).unwrap_err(), "not_found");
+    assert_eq!(r.begin_chunk(&unknown, 0, 100).unwrap_err(), "not_found");
+    assert_eq!(r.cancel_import(&unknown).unwrap_err(), "not_found");
+    // ReserveImport while a live job has not given up what it held.
+    r.state.lock().unwrap().live_owner_released = false;
+    assert_eq!(r.reserve(&r.profile, &r.boot, 0).unwrap_err(), "busy");
+    r.state.lock().unwrap().live_owner_released = true;
+    // ReserveImport while a job has not ended.
+    r.state.lock().unwrap().job = Some(Job {
+        id: profile::new_uuid().unwrap(),
+        source_id: Some(profile::new_uuid().unwrap()),
+        generation: 0,
+        kind: "spectrum",
+        state: "running",
+        processed_frames: 0,
+        error: None,
+        cancel: Arc::new(AtomicBool::new(false)),
+    });
+    assert_eq!(r.reserve(&r.profile, &r.boot, 0).unwrap_err(), "busy");
+    r.state.lock().unwrap().job = None;
+    assert_eq!(r.snapshot()["import"], Value::Null);
+    assert_eq!(r.snapshot()["generation"], 0);
+    // ImportChunk with another total than its first part.
+    let reserved = r.reserve(&r.profile, &r.boot, 0).unwrap();
+    let id = reserved["id"].as_str().unwrap().to_owned();
+    r.begin_chunk(&id, 0, 100).unwrap();
+    r.chunk(&id, 0, 100, vec![0, 0]).unwrap();
+    let before = r.import_view(&id).unwrap();
+    assert_eq!(r.begin_chunk(&id, 2, 200).unwrap_err(), "state_conflict");
+    assert_eq!(r.import_view(&id).unwrap(), before);
+    // CancelImport of an import that commits.
+    r.state.lock().unwrap().import.as_mut().unwrap().state = "committing";
+    assert_eq!(r.cancel_import(&id).unwrap_err(), "invalid_state");
+    r.state.lock().unwrap().import.as_mut().unwrap().state = "receiving";
+    r.cancel_import(&id).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while r.import_view(&id).unwrap()["state"] != "cancelled" {
+        assert!(Instant::now() < deadline, "the cancel did not end");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // ReserveImport while the files of an import that ended are still being removed.
+    r.state.lock().unwrap().import.as_mut().unwrap().worker = true;
+    let generation = r.state.lock().unwrap().generation;
+    assert_eq!(
+        r.reserve(&r.profile, &r.boot, generation).unwrap_err(),
+        "busy"
+    );
+    r.state.lock().unwrap().import.as_mut().unwrap().worker = false;
+    // ImportChunk to an import that has ended.
+    let bytes = wav(&[1, 2]);
+    let done = import(&r, &bytes).unwrap();
+    let total = bytes.len() as u64;
+    let view = r.import_view(&done).unwrap();
+    assert_eq!(view["state"], "completed");
+    assert_eq!(
+        r.begin_chunk(&done, total, total).unwrap_err(),
+        "invalid_state"
+    );
+    assert_eq!(r.import_view(&done).unwrap(), view);
+}
+
+/// A selection of the station that is pending.
+fn pending_selection(command: &str, revision: u64) -> selection::Operation {
+    selection::Operation {
+        command_id: command.into(),
+        base_revision: revision.saturating_sub(1),
+        revision,
+        action: "band",
+        requested: selection::Requested {
+            mode: "ft8",
+            band: "40m",
+            nominal_hz: 7074000,
+        },
+        phase: "releasing",
+        result: "pending",
+        error: None,
+        monitor_before: false,
+        monitor_wanted: true,
+        old_job_id: None,
+        new_job_id: None,
+        new_generation: None,
+        old_generation: 0,
+        new_worker_cancel: None,
+        cancelled: Arc::new(AtomicBool::new(false)),
+    }
+}
+
+// Proves: TC-018-003
+#[test]
+fn a_replay_start_it_does_not_admit_is_refused_and_changes_nothing() {
+    let f = Fixture::new();
+    let r = f.recording();
+    let other = profile::new_uuid().unwrap();
+    assert_eq!(
+        r.replay(&r.profile, &r.boot, 0, &other).unwrap_err(),
+        "no_recording"
+    );
+    let id = import(&r, &wav(&[1, 2, 3])).unwrap();
+    let g = r.state.lock().unwrap().generation;
+    let refused = |expected: &str| {
+        assert_eq!(r.replay(&r.profile, &r.boot, g, &id).unwrap_err(), expected);
+        assert_eq!(r.state.lock().unwrap().generation, g, "{expected}");
+    };
+    assert_eq!(
+        r.replay(&r.profile, &r.boot, g, &other).unwrap_err(),
+        "not_found"
+    );
+    r.state.lock().unwrap().source_error = Some("recording_unavailable");
+    refused("recording_unavailable");
+    r.state.lock().unwrap().source_error = None;
+    r.state.lock().unwrap().live_owner_released = false;
+    refused("busy");
+    r.state.lock().unwrap().live_owner_released = true;
+    r.state.lock().unwrap().operating.operation =
+        Some(pending_selection(&profile::new_uuid().unwrap(), 0));
+    refused("busy");
+    r.state.lock().unwrap().operating.operation = None;
+    r.state.lock().unwrap().storage_error = Some("storage_unavailable");
+    refused("storage_unavailable");
+    r.state.lock().unwrap().storage_error = None;
+    r.state.lock().unwrap().import.as_mut().unwrap().state = "receiving";
+    refused("busy");
+    r.state.lock().unwrap().import.as_mut().unwrap().state = "completed";
+    r.state.lock().unwrap().job = Some(Job {
+        id: profile::new_uuid().unwrap(),
+        source_id: Some(id.clone()),
+        generation: g,
+        kind: "spectrum",
+        state: "running",
+        processed_frames: 0,
+        error: None,
+        cancel: Arc::new(AtomicBool::new(false)),
+    });
+    refused("busy");
+}
+
+// Proves: TC-009-004
+#[test]
+fn a_frame_outside_its_limits_never_becomes_a_record_and_reads_are_refused() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    type Edit = (&'static str, fn(&mut decoder::Decode));
+    let edits: [Edit; 6] = [
+        ("at the sample reached", |d: &mut decoder::Decode| {
+            d.start_frame = 180000
+        }),
+        ("below the band", |d: &mut decoder::Decode| {
+            d.frequency_hz = decoder::DECODE_BAND_LOW_HZ - 1.0
+        }),
+        ("above the band", |d: &mut decoder::Decode| {
+            d.frequency_hz = decoder::DECODE_BAND_HIGH_HZ + 1.0
+        }),
+        ("SNR not a number", |d: &mut decoder::Decode| {
+            d.snr_db = Some(f64::NAN)
+        }),
+        ("SNR above the limit", |d: &mut decoder::Decode| {
+            d.snr_db = Some(SNR_LIMIT_DB + 1.0)
+        }),
+        ("SNR below the limit", |d: &mut decoder::Decode| {
+            d.snr_db = Some(-SNR_LIMIT_DB - 1.0)
+        }),
+    ];
+    for (what, edit) in edits {
+        let (job, valid) = live_ring(&r);
+        let mut bad = valid.clone();
+        edit(&mut bad);
+        assert_eq!(
+            r.publish_decode(&job, &bad),
+            Err(decoder::DecodeError::DecodeLimit),
+            "{what}"
+        );
+        assert_eq!(
+            r.publish_decode(&job, &valid),
+            Err(decoder::DecodeError::DecodeLimit),
+            "{what}: no later frame becomes a record"
+        );
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        assert_eq!(
+            (l.next_sequence, l.records.len(), l.publication_error),
+            (0, 0, Some("decode_limit")),
+            "{what}"
+        );
+    }
+    let (job, valid) = live_ring(&r);
+    r.publish_decode(&job, &valid).unwrap();
+    let source = job.source_id.clone().unwrap();
+    let other = profile::new_uuid().unwrap();
+    assert_eq!(
+        r.receive_results(&source, &other, 1, 0, 1),
+        Err("not_found")
+    );
+    assert_eq!(
+        r.receive_results(&other, &job.id, 1, 0, 1),
+        Err("not_found")
+    );
+    assert_eq!(
+        r.receive_results(&source, &job.id, 2, 0, 1),
+        Err("not_found")
+    );
+    r.state.lock().unwrap().live.as_mut().unwrap().mode = "spectrum";
+    assert_eq!(
+        r.receive_results(&source, &job.id, 1, 0, 1),
+        Err("invalid_request")
+    );
+    r.state.lock().unwrap().live = None;
+    assert_eq!(
+        r.receive_results(&source, &job.id, 1, 0, 1),
+        Err("not_found")
+    );
+}
+
+// Proves: TC-009-005
+#[test]
+fn a_selection_refused_by_the_selection_rule_changes_nothing() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let refused = |intent: selection::Intent, cat: bool, expected: &str| {
+        let (revision, generation) = {
+            let s = r.state.lock().unwrap();
+            (s.operating.revision, s.generation)
+        };
+        assert_eq!(r.selection_begin(intent, None, cat).unwrap_err(), expected);
+        let s = r.state.lock().unwrap();
+        assert_eq!(
+            (s.operating.revision, s.generation, s.operating.nominal.band),
+            (revision, generation, None),
+            "{expected}"
+        );
+    };
+    let band = |r: &Recording| selection_intent(r, "band", None, Some("40m"));
+    let mut intent = band(&r);
+    intent.profile_revision += 1;
+    refused(intent, false, "state_conflict");
+    let mut intent = band(&r);
+    intent.revision += 1;
+    refused(intent, false, "state_conflict");
+    r.state.lock().unwrap().operating.operation =
+        Some(pending_selection(&profile::new_uuid().unwrap(), 0));
+    refused(band(&r), false, "busy");
+    r.state.lock().unwrap().operating.operation = None;
+    let reserved = r.reserve(&r.profile, &r.boot, 0).unwrap();
+    refused(band(&r), false, "busy");
+    r.cancel_import(reserved["id"].as_str().unwrap()).unwrap();
+    r.state.lock().unwrap().job = Some(Job {
+        id: profile::new_uuid().unwrap(),
+        source_id: Some(profile::new_uuid().unwrap()),
+        generation: 1,
+        kind: "spectrum",
+        state: "running",
+        processed_frames: 0,
+        error: None,
+        cancel: Arc::new(AtomicBool::new(false)),
+    });
+    refused(band(&r), false, "busy");
+    r.state.lock().unwrap().job = None;
+    refused(
+        selection_intent(&r, "band", Some("ft4"), Some("160m")),
+        false,
+        "selection_unavailable",
+    );
+    refused(band(&r), true, "radio_unavailable");
+    assert!(r.flex.set(wstx_rust::flex::Session::double()).is_ok());
+    refused(band(&r), false, "radio_unavailable");
+}
+
+// Proves: TC-009-005
+#[test]
+fn a_cancel_it_does_not_carry_out_is_refused_and_changes_nothing() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let uuid = || profile::new_uuid().unwrap();
+    let cancel = |command: &str, target: &str, revision: u64| {
+        r.selection_cancel(&r.profile, &r.boot, command.into(), target.into(), revision)
+    };
+    let target = uuid();
+    {
+        let mut s = r.state.lock().unwrap();
+        s.operating.revision = 1;
+        s.operating.operation = Some(pending_selection(&target, 1));
+    }
+    // Neither the revision the selection was made from nor the one it was admitted at.
+    assert_eq!(
+        cancel(&uuid(), &target, 5).unwrap_err(),
+        "operation_superseded"
+    );
+    // The operating revision has moved since the selection was admitted.
+    r.state.lock().unwrap().operating.revision = 2;
+    assert_eq!(
+        cancel(&uuid(), &target, 1).unwrap_err(),
+        "operation_superseded"
+    );
+    // An unseen command id while a selection is pending.
+    assert_eq!(
+        cancel(&uuid(), &uuid(), 2).unwrap_err(),
+        "operation_superseded"
+    );
+    {
+        let s = r.state.lock().unwrap();
+        assert_eq!(s.operating.revision, 2);
+        assert_eq!(s.operating.operation.as_ref().unwrap().result, "pending");
+        assert!(s.operating.cancellation.is_none());
+    }
+    // An unseen command id from another revision.
+    r.state
+        .lock()
+        .unwrap()
+        .operating
+        .operation
+        .as_mut()
+        .unwrap()
+        .result = "success";
+    assert_eq!(
+        cancel(&uuid(), &uuid(), 1).unwrap_err(),
+        "operation_superseded"
+    );
+    // A fence, then the same cancel with another target or revision.
+    let (command, unseen) = (uuid(), uuid());
+    let (receipt, repeated) = cancel(&command, &unseen, 2).unwrap();
+    assert!(!repeated);
+    assert_eq!(receipt["operating_revision"], 3);
+    assert_eq!(cancel(&command, &uuid(), 2).unwrap_err(), "state_conflict");
+    assert_eq!(cancel(&command, &unseen, 3).unwrap_err(), "state_conflict");
+    assert_eq!(cancel(&command, &unseen, 2).unwrap(), (receipt, true));
+    // The fenced selection, arriving from the revision it was made at.
+    let mut late = selection_intent(&r, "band", None, Some("40m"));
+    late.command_id = unseen;
+    late.revision = 2;
+    assert_eq!(
+        r.selection_begin(late, None, false).unwrap_err(),
+        "state_conflict"
+    );
+    assert_eq!(r.state.lock().unwrap().operating.revision, 3);
+}
+
+// Proves: TC-009-008
+#[test]
+fn the_dial_is_not_taken_while_a_selection_pends_or_on_another_revision() {
+    use crate::cat_lifecycle::{Gate, Key};
+    use crate::cat_lifecycle_tests::{Device, ENDPOINT, attach_peer};
+    let gate = Gate::Eligible {
+        key: Key {
+            radio_id: "00000000-0000-4000-8000-0000000000aa".into(),
+            safety_revision: 1,
+            profile_revision: 0,
+            endpoint: ENDPOINT.into(),
+        },
+        configuration: wstx_rust::radio_control::Configuration::parse(ENDPOINT).unwrap(),
+    };
+    for pending in [true, false] {
+        let fixture = Fixture::new();
+        let r = fixture.recording();
+        attach_peer(&r, Device::Present);
+        let t0 = Instant::now();
+        r.cat_maintain(&gate, t0);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while r.radio_actor().map(|a| a.snapshot().unwrap().state)
+            != Some(wstx_rust::radio_control::State::Ready)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "the connection did not become ready"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        if pending {
+            r.state.lock().unwrap().operating.operation =
+                Some(pending_selection(&profile::new_uuid().unwrap(), 0));
+        } else {
+            r.initialize_profile_revision(5);
+        }
+        r.cat_maintain(&gate, t0 + Duration::from_millis(100));
+        {
+            let s = r.state.lock().unwrap();
+            assert_eq!(
+                (s.operating.nominal.band, s.operating.nominal.origin),
+                (None, "unknown"),
+                "pending {pending}"
+            );
+        }
+        // Without the pending selection, on the connection's revision, the dial is taken.
+        if pending {
+            r.state.lock().unwrap().operating.operation = None;
+        } else {
+            r.initialize_profile_revision(0);
+        }
+        r.cat_maintain(&gate, t0 + Duration::from_millis(200));
+        assert_eq!(
+            r.state.lock().unwrap().operating.nominal.band,
+            Some("40m"),
+            "pending {pending}"
+        );
+        r.radio_actor().unwrap().request_close();
+    }
 }

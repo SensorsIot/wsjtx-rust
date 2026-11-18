@@ -5,7 +5,7 @@ package WstxUnits {
     enum def UnitSuffix {
         doc /* Hz: hertz. Ms: milliseconds. Seconds: seconds. Bytes: bytes. MiB: mebibytes,
              1,048,576 bytes. Db: decibels. Frames: audio sample frames at the rate of the
-             audio stream. */
+             audio stream. Pct: percent. */
         enum Hz;
         enum Ms;
         enum Seconds;
@@ -13,5 +13,6 @@ package WstxUnits {
         enum MiB;
         enum Db;
         enum Frames;
+        enum Pct;
     }
 }

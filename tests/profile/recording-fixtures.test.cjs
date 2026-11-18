@@ -28,7 +28,7 @@ function riff(bytes){
   const fmt=chunks['fmt '].at;
   return {format:bytes.readUInt16LE(fmt),channels:bytes.readUInt16LE(fmt+2),rate:bytes.readUInt32LE(fmt+4),bits:bytes.readUInt16LE(fmt+14),data:chunks.data.size};
 }
-// Proves: CL-006-01, CL-006-02; TC-018-001
+// Proves: TC-018-001
 test('TC-018-001 all 22 FT8 and 3 FT4 originals match provenance and fit the PCM capability',{timeout:10000},async()=>{
   const {execFileSync}=require('node:child_process');
   const common=path.resolve(execFileSync('git',['rev-parse','--git-common-dir'],{encoding:'utf8',windowsHide:true}).trim());
@@ -46,7 +46,7 @@ test('TC-018-001 all 22 FT8 and 3 FT4 originals match provenance and fit the PCM
     assert.ok(header.data>0&&header.data<=importCap&&bytes.length<=importCap,`${input.file}: data ${header.data} bytes within the import cap`);
   }
 });
-test('TC-018-002 fixture setup rejects traversal, repository writes, missing inputs and forged WAV capability',async t=>{
+test('fixture setup rejects traversal, repository writes, missing inputs and forged WAV capability',async t=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-fixture-refusal-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));const bytes=wave(),e=entry(bytes);let fetched=false;
   for(const name of ['../escape.wav','CON.wav','sub/abc.','a\\b.wav'])await assert.rejects(provision(dir,{entries:[{...e,name}]}),/Unsafe/);
   await assert.rejects(provision(process.cwd(),{entries:[e]}),/outside a Git/);
@@ -55,7 +55,7 @@ test('TC-018-002 fixture setup rejects traversal, repository writes, missing inp
   await assert.rejects(provision(dir,{entries:[e],fetchFile:async()=>{fetched=true;return forged;}}),/hash mismatch/);assert.equal(fetched,true);assert.deepEqual(await fs.readdir(dir),[]);
   const elsewhere=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-fixture-link-'));t.after(()=>fs.rm(elsewhere,{recursive:true,force:true}));await fs.symlink(elsewhere,path.join(dir,'linked'),'junction');await assert.rejects(provision(path.join(dir,'linked'),{entries:[e]}),/ordinary directories/);
 });
-test('TC-018-002 fixture downloader refuses HTTP errors, downgrade redirects and oversized streams offline',async t=>{
+test('fixture downloader refuses HTTP errors, downgrade redirects and oversized streams offline',async t=>{
   const original=global.fetch;t.after(()=>{global.fetch=original;});const e=entry(wave());let calls=0;
   global.fetch=async(_url,options)=>{calls++;assert.ok(options.signal instanceof AbortSignal);return {ok:false,status:403};};
   await assert.rejects(download(e),/HTTP 403/);

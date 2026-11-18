@@ -8,8 +8,8 @@ const {chromium}=require('playwright');
 const origin=process.env.WSTX_RECEIVE_FIXTURE_ORIGIN;
 const expected=JSON.parse(process.env.WSTX_RECEIVE_FIXTURE_EXPECTED||'null');
 
-// Proves: FR-004; CL-010-05/07/08; TC-009-004; TC-007-002 readable decoded-row subset.
-test('TC-009-004 real native audio reaches Rust manager HTTP and literal browser callsign',{timeout:60000},async()=>{
+// A readable subset of the decoded rows is checked.
+test('real native audio reaches Rust manager HTTP and literal browser callsign',{timeout:60000},async()=>{
   assert.ok(origin&&expected,'run through the Rust live native manager/browser test');
   const mode=expected.mode;assert.ok(['ft4','ft8'].includes(mode));
   const oracle=expected.expected_receive;

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
-// Proves: CL-055-01, CL-055-02; TC-055-001 (known answers against the bundled cty.dat and
-// WSJT-X's own Radio::effective_prefix unit vectors) and TC-055-002 (worked categories).
+// Known answers against the bundled cty.dat and WSJT-X's own Radio::effective_prefix unit
+// vectors, and the worked categories.
 // The expected entities, zones and names are read from the cty.dat lines cited beside
 // each case and WSJT-X logbook/AD1CCty.cpp, not from this resolver's output.
 use super::*;
@@ -209,7 +209,6 @@ fn tc_055_001_overrides_and_refused_files() {
     }
 }
 
-// Proves: TC-055-002
 #[test]
 fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
     let t = bundled();
@@ -291,8 +290,9 @@ fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
     );
 }
 
-// Proves: TC-055-002 the actual /receive/results route adds dxcc and only the flags that
+// The actual /receive/results route adds dxcc and only the flags that
 // hold to each decoded sender, from the profile log and the station band.
+// Proves: TC-055-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
     use crate::automation_tests::{at_even, publish};
@@ -396,7 +396,7 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
     );
 }
 
-// Proves: CL-010-13; TC-011-003 the actual /receive/results route marks each decoded record
+// The actual /receive/results route marks each decoded record
 // with the worked-before status of its concrete 'from' call on this band and mode, and the
 // browser needs no query. Hand-written log and expected statuses.
 #[tokio::test]
@@ -472,9 +472,10 @@ async fn tc_011_003_receive_results_carry_the_worked_status() {
     assert_eq!(read().await[3], "worked_this_band_and_mode");
 }
 
-// Proves: TC-055-006 (CL-055-04) every decoded sender, not only a CQ caller, carries its
+// Every decoded sender, not only a CQ caller, carries its
 // entity and flags: a report and an R-report to other stations from new senders, and an
 // RR73 from a sender worked on this band and mode (entity, no flag).
+// Proves: TC-055-006
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_055_006_non_cq_senders_carry_entity_and_flags() {
     use crate::automation_tests::{at_even, publish};
@@ -543,9 +544,10 @@ async fn tc_055_006_non_cq_senders_carry_entity_and_flags() {
     assert_eq!(records[2].get("flags"), None, "worked on 20m FT8: no flag");
 }
 
-// Proves: CL-055-02; TC-055-002 (#55, live 2026-11-06): every decoded sender call resolves,
+// Every decoded sender call resolves,
 // also a nonstandard one without a grid and a filled-in hash; a hash nobody heard and a free
 // text have no sender.
+// Proves: TC-055-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_055_002_every_decoded_sender_call_resolves() {
     let f = crate::mcp_tests::station(false).await;
@@ -623,7 +625,7 @@ async fn tc_055_002_every_decoded_sender_call_resolves() {
     );
 }
 
-// Proves: TC-055-002 the cached worked set follows every country-table change: after
+// The cached worked set follows every country-table change: after
 // repeated uploads (freed tables whose memory may be reused) the set is always the one
 // of the current table.
 #[test]
@@ -666,7 +668,7 @@ fn tc_055_002_worked_set_follows_each_uploaded_table() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// Proves: TC-039-030 WstxValueOrder::WpxPrefix, the examples of the CQ WPX Contest rules.
+// WstxValueOrder::WpxPrefix, the examples of the CQ WPX Contest rules.
 #[test]
 fn tc_039_030_wpx_prefix_table() {
     for (call, prefix) in [
@@ -702,7 +704,7 @@ fn tc_039_030_wpx_prefix_table() {
     }
 }
 
-// Proves: TC-039-030 the per-call and per-prefix facts of the worked set.
+// The per-call and per-prefix facts of the worked set.
 #[test]
 fn tc_039_030_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls() {
     let t = bundled();

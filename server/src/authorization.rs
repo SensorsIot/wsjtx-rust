@@ -220,7 +220,7 @@ pub struct Verifier {
 pub struct Commissioning {
     pub scope: Scope,
     pub receive_only_confirmed: bool,
-    pub control: profile::Control,
+    pub control: profile::ControlSelection,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -257,7 +257,7 @@ pub struct JournalEntry {
 pub struct Record {
     pub schema_version: u8,
     // Durable reconciliation watermark, not another current configuration owner.
-    pub checked_control: profile::Control,
+    pub checked_control: profile::ControlSelection,
     #[serde(deserialize_with = "required_nullable")]
     pub current_scope: Option<Scope>,
     #[serde(deserialize_with = "required_nullable")]
@@ -275,7 +275,7 @@ impl Record {
         scope.validate()?;
         Ok(Self {
             schema_version: 1,
-            checked_control: profile::Control {
+            checked_control: profile::ControlSelection {
                 mode: "disabled".into(),
                 endpoint: None,
                 ptt: "disabled".into(),
@@ -536,7 +536,7 @@ impl Authority {
     /// commissioning of exactly the current scope and saved control settings.
     /// Returns None when no grant authorizes it, Some(false) when commissioning is
     /// missing or invalidated, Some(true) when the lifecycle may run.
-    pub fn automatic_cat(&self, control: &profile::Control) -> Option<bool> {
+    pub fn automatic_cat(&self, control: &profile::ControlSelection) -> Option<bool> {
         let scope = self.record.current_scope.as_ref()?;
         if self.available().is_err()
             || !self.record.grants.iter().any(|g| g.scope.same_radio(scope))

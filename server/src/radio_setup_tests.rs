@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-04; CL-044-05; CL-044-07; CL-044-11; TC-044-001; TC-044-002; TC-044-003; TC-044-006; TC-044-009.
 // The actual router, Recording owner and CAT actor; a scripted IC-7300 behind
 // the station's CAT owner, a detection hardware double of ports and audio endpoints.
 // Expected bytes are hand-written from the IC-7300 Full Manual section 19 command table.
@@ -96,7 +95,7 @@ fn hb9bla_menu() -> HashMap<[u8; 2], Vec<u8>> {
 /// The fixture station with its CAT owner Ready on COM3 against the scripted radio.
 fn station(radio: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
     let f = fixture("http://127.0.0.1:18044", true);
-    f.state.store.lock().unwrap().document.control = profile::Control {
+    f.state.store.lock().unwrap().document.control = profile::ControlSelection {
         mode: "cat".into(),
         endpoint: Some("COM3".into()),
         ptt: "cat".into(),
@@ -166,7 +165,7 @@ fn undo_file(f: &Fixture) -> Option<Value> {
         .map(|b| serde_json::from_slice(&b).unwrap())
 }
 
-// Proves: TC-044-003.
+// Proves: TC-044-003
 #[test]
 fn apply_writes_recommended_items_with_undo_record_then_undo_restores() {
     let (f, radio) = station(Ic7300 {
@@ -231,7 +230,7 @@ fn apply_writes_recommended_items_with_undo_record_then_undo_restores() {
     assert!(f.bench.keys.lock().unwrap().is_empty(), "PTT never keyed");
 }
 
-// Proves: TC-044-003.
+// Proves: TC-044-003
 #[test]
 fn apply_refusals_and_failures_stop_without_keying() {
     // Radio in TX: no menu write at all.
@@ -465,7 +464,7 @@ pub(crate) fn double(
     })
 }
 
-// Proves: TC-044-001, TC-044-002, TC-044-009.
+// Proves: TC-044-001, TC-044-002, TC-044-009
 #[test]
 fn detection_never_opens_station_port_and_proposes_the_station_radio() {
     let (f, radio) = station(Ic7300 {
@@ -580,7 +579,7 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
     assert!(f.bench.keys.lock().unwrap().is_empty());
 }
 
-// Proves: TC-044-002.
+// Proves: TC-044-002
 #[test]
 fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
     let f = fixture("http://127.0.0.1:18045", false);
@@ -613,7 +612,7 @@ fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
     );
 }
 
-// Proves: TC-044-002, TC-044-003.
+// Proves: TC-044-002, TC-044-003
 #[tokio::test]
 async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     let f = fixture("http://127.0.0.1:18046", false);
@@ -732,7 +731,7 @@ async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     assert_eq!(v["error"]["code"], "nothing_to_undo");
 }
 
-// Proves: TC-044-002.
+// Proves: TC-044-002
 #[tokio::test]
 async fn profile_put_refuses_friendly_names_and_accepts_endpoint_ids() {
     let f = fixture("http://127.0.0.1:18047", false);
@@ -779,7 +778,7 @@ async fn profile_put_refuses_friendly_names_and_accepts_endpoint_ids() {
     assert_eq!(s, StatusCode::OK);
 }
 
-// Proves: TC-044-002.
+// Proves: TC-044-002
 #[test]
 fn startup_migration_replaces_unique_friendly_names_only() {
     let dir = std::env::temp_dir().join(format!("wstx-migrate-{}", profile::new_uuid().unwrap()));
@@ -869,13 +868,14 @@ impl radio_setup::Hardware for Listing {
     }
 }
 
-// Proves: CL-044-07; TC-044-006 (d)-(e). Hand-written endpoint list; expected labels by hand.
+// Hand-written endpoint list; expected labels by hand.
+// Proves: TC-044-006
 #[tokio::test]
 async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_input() {
     let f = fixture("http://127.0.0.1:18049", false);
     {
         let mut store = f.state.store.lock().unwrap();
-        store.document.control = profile::Control {
+        store.document.control = profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("COM3".into()),
             ptt: "cat".into(),
@@ -985,6 +985,81 @@ async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_in
     );
 }
 
+/// CL-044-07: the answer code of GET /audio/endpoints over `endpoints` (None when listed).
+async fn list_code(endpoints: Vec<AudioEndpoint>) -> Option<String> {
+    let f = fixture("http://127.0.0.1:18049", false);
+    let hw = Arc::new(Listing {
+        ports: vec![],
+        endpoints: Mutex::new(Some(endpoints)),
+    });
+    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+    let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
+    let _ = std::fs::remove_dir_all(&f.dir);
+    match s {
+        StatusCode::OK => None,
+        _ => v["error"]["code"].as_str().map(String::from),
+    }
+}
+fn endpoint(id: &str, name: &str, flow: Flow) -> AudioEndpoint {
+    AudioEndpoint {
+        id: id.into(),
+        name: name.into(),
+        flow,
+        topology: under("USB\\HUB\\OTHER"),
+    }
+}
+fn endpoints(n: usize, flow: Flow) -> Vec<AudioEndpoint> {
+    (0..n)
+        .map(|i| endpoint(&format!("id-{i}"), &format!("Endpoint {i}"), flow))
+        .collect()
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn a_list_longer_than_max_endpoints_is_refused_device_limit() {
+    for flow in [Flow::Capture, Flow::Render] {
+        assert_eq!(list_code(endpoints(64, flow)).await, None);
+        assert_eq!(
+            list_code(endpoints(65, flow)).await.as_deref(),
+            Some("device_limit")
+        );
+    }
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn an_empty_endpoint_id_is_refused_device_limit() {
+    let mut list = endpoints(1, Flow::Capture);
+    list.push(endpoint("", "Microphone", Flow::Capture));
+    assert_eq!(list_code(list).await.as_deref(), Some("device_limit"));
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn an_empty_endpoint_name_is_refused_device_limit() {
+    for name in ["", " \t "] {
+        let mut list = endpoints(1, Flow::Render);
+        list.push(endpoint("id-blank", name, Flow::Render));
+        assert_eq!(list_code(list).await.as_deref(), Some("device_limit"));
+    }
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn an_endpoint_id_longer_than_max_text_bytes_is_refused_device_limit() {
+    let long = |n: usize| vec![endpoint(&"i".repeat(n), "Microphone", Flow::Capture)];
+    assert_eq!(list_code(long(256)).await, None);
+    assert_eq!(list_code(long(257)).await.as_deref(), Some("device_limit"));
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn an_endpoint_name_longer_than_max_text_bytes_is_refused_device_limit() {
+    let long = |n: usize| vec![endpoint("id-long", &"n".repeat(n), Flow::Capture)];
+    assert_eq!(list_code(long(256)).await, None);
+    assert_eq!(list_code(long(257)).await.as_deref(), Some("device_limit"));
+}
+
 /// The saved control of a fixture: IC-7300 CAT on `port`, saved once.
 fn saved_on(f: &Fixture, port: u16) {
     saved_with(f, port, "cat");
@@ -992,7 +1067,7 @@ fn saved_on(f: &Fixture, port: u16) {
 fn saved_with(f: &Fixture, port: u16, ptt: &str) {
     let mut store = f.state.store.lock().unwrap();
     let mut settings = store.document.settings();
-    settings.control = profile::Control {
+    settings.control = profile::ControlSelection {
         mode: "cat".into(),
         endpoint: Some(format!("COM{port}")),
         ptt: ptt.into(),
@@ -1006,7 +1081,7 @@ fn saved_with(f: &Fixture, port: u16, ptt: &str) {
 fn hardware_of(f: &Fixture, hw: &Arc<Double>) {
     *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
 }
-fn saved_control(f: &Fixture) -> (profile::Control, u64) {
+fn saved_control(f: &Fixture) -> (profile::ControlSelection, u64) {
     let store = f.state.store.lock().unwrap();
     (store.document.control.clone(), store.document.revision)
 }
@@ -1016,7 +1091,7 @@ fn only_id_reads(hw: &Double) {
     }
 }
 
-// Proves: CL-044-15; TC-044-020.
+// Proves: TC-044-020
 #[test]
 fn discovery_keeps_a_saved_radio_that_answers() {
     let f = fixture("http://127.0.0.1:18047", false);
@@ -1039,8 +1114,9 @@ fn discovery_keeps_a_saved_radio_that_answers() {
     only_id_reads(&hw);
 }
 
-// Proves: CL-044-15; TC-044-020. Two transceivers on one PC: the second station process
+// Two transceivers on one PC: the second station process
 // takes the next free one; its audio follows; the confirmation is not carried over.
+// Proves: TC-044-020
 #[test]
 fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held() {
     let f = fixture("http://127.0.0.1:18048", false);
@@ -1070,7 +1146,7 @@ fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held
     assert_eq!(after, revision + 1);
     assert_eq!(
         control,
-        profile::Control {
+        profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("icom7300://COM6?baud=19200&radio=94&controller=e0".into()),
             ptt: "disabled".into(),
@@ -1097,7 +1173,7 @@ fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held
     only_id_reads(&hw);
 }
 
-// Proves: CL-044-15; TC-044-020.
+// Proves: TC-044-020
 #[test]
 fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() {
     // Nothing else free: the saved radio stays for the lifecycle's retries.
@@ -1131,8 +1207,9 @@ fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() 
     assert!(hw.opened.lock().unwrap().is_empty());
 }
 
-// Proves: CL-044-15; TC-044-020. A profile never saved takes the first radio this station
+// A profile never saved takes the first radio this station
 // supports; a radio without station CAT and a port without a radio bridge are passed over.
+// Proves: TC-044-020
 #[test]
 fn discovery_sets_up_a_profile_never_saved() {
     let f = fixture("http://127.0.0.1:18051", false);
@@ -1168,8 +1245,9 @@ fn discovery_sets_up_a_profile_never_saved() {
     only_id_reads(&hw);
 }
 
-// Proves: CL-044-15; TC-044-020 (f). A radio chosen but not yet confirmed counts as taken:
+// A radio chosen but not yet confirmed counts as taken:
 // two stations set up one after the other take one radio each, however long apart.
+// Proves: TC-044-020
 #[test]
 fn a_second_station_passes_over_a_radio_the_first_reserved() {
     let hw = double(
@@ -1202,8 +1280,9 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
     assert_eq!(saved_control(&c).0.endpoint.as_deref(), Some("COM3"));
 }
 
-// Proves: CL-044-15; TC-044-020 (g). No automatic open without the persisted confirmation,
+// No automatic open without the persisted confirmation,
 // neither of the saved port nor of another; Detect radio with the tick stores it, once.
+// Proves: TC-044-020
 #[tokio::test]
 async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
     let f = fixture("http://127.0.0.1:18055", false);
@@ -1240,8 +1319,9 @@ async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
     );
 }
 
-// Proves: CL-044-15; TC-044-020 (h). The whole discovery stays inside its budget however
+// The whole discovery stays inside its budget however
 // many silent ports there are.
+// Proves: TC-044-020
 #[test]
 fn silent_ports_stay_within_the_budget() {
     let f = fixture("http://127.0.0.1:18056", false);
@@ -1273,7 +1353,8 @@ fn silent_ports_stay_within_the_budget() {
     );
 }
 
-// Proves: CL-044-15; TC-044-020 (f). The reservation is a real lock that stays held.
+// The reservation is a real lock that stays held.
+// Proves: TC-044-020
 #[cfg(windows)]
 #[test]
 fn the_reservation_lock_stays_held_and_is_per_port() {
@@ -1285,4 +1366,80 @@ fn the_reservation_lock_stays_held_and_is_per_port() {
     held.lock().unwrap().clear();
     assert!(radio_setup::reserve_in(&Mutex::new(Vec::new()), &root, 3));
     std::fs::remove_dir_all(root).unwrap();
+}
+
+// Apply on a station whose radio connection is not ready.
+// Proves: TC-044-003
+#[test]
+fn apply_without_a_ready_connection_is_radio_unavailable() {
+    let f = fixture("http://127.0.0.1:18061", false);
+    assert_eq!(radio_setup::apply(&f.state, 0), Err("radio_unavailable"));
+}
+
+// A native profile, and an endpoint RadioConnection does not take, open no port at start.
+// Proves: TC-044-020
+#[test]
+fn discovery_opens_nothing_on_a_native_profile_or_an_endpoint_radio_control_does_not_take() {
+    let radio = || {
+        double(
+            vec![port(3, "USB\\HUB\\IC7300")],
+            HashMap::from([(3, (0x94, 19200))]),
+            vec![],
+        )
+    };
+    let native = fixture("http://127.0.0.1:18062", false);
+    radio_setup::confirm_keying(&native.state);
+    assert!(
+        native
+            .state
+            .recording
+            .flex
+            .set(wstx_rust::flex::Session::double())
+            .is_ok()
+    );
+    let hw = radio();
+    hardware_of(&native, &hw);
+    assert_eq!(radio_setup::discover_on_start(&native.state), None);
+    assert!(hw.opened.lock().unwrap().is_empty());
+    let foreign = fixture("http://127.0.0.1:18063", false);
+    radio_setup::confirm_keying(&foreign.state);
+    {
+        let mut store = foreign.state.store.lock().unwrap();
+        let mut settings = store.document.settings();
+        settings.control = profile::ControlSelection {
+            mode: "cat".into(),
+            endpoint: Some("fixture-cat-1".into()),
+            ptt: "cat".into(),
+        };
+        store.save(settings).unwrap();
+    }
+    let hw = radio();
+    hardware_of(&foreign, &hw);
+    assert_eq!(radio_setup::discover_on_start(&foreign.state), None);
+    assert!(hw.opened.lock().unwrap().is_empty());
+    assert_eq!(
+        saved_control(&foreign).0.endpoint.as_deref(),
+        Some("fixture-cat-1")
+    );
+}
+
+// Detection without the keying confirmation opens no port and sends nothing.
+// Proves: TC-044-002
+#[tokio::test]
+async fn detect_without_the_keying_confirmation_opens_no_port() {
+    let f = fixture("http://127.0.0.1:18064", false);
+    let hw = double(
+        vec![port(3, "USB\\HUB\\IC7300")],
+        HashMap::from([(3, (0x94, 19200))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":false});
+    let (s, v, _, _) = f.call("POST", "/radio/detect", Some(body)).await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("confirmation_required"))
+    );
+    assert!(hw.opened.lock().unwrap().is_empty());
+    assert!(hw.writes.lock().unwrap().is_empty());
 }

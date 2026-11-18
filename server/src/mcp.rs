@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxMcpInterface::McpEndpoint: the station's MCP Streamable HTTP endpoint (POST /mcp).
+//! WstxMcp::McpEndpoint: the station's MCP Streamable HTTP endpoint (POST /mcp).
 //! Dual-era: modern 2026-07-28 (per-request `_meta`, `server/discover`) and legacy
 //! 2025-11-25/2025-06-18 (`initialize`, stateless: no Mcp-Session-Id). 2025-03-26 is not
 //! offered: it requires JSON-RPC batches, which this endpoint refuses.
@@ -14,9 +14,17 @@ use axum::extract::RawQuery;
 use axum::http::Method;
 use tower::ServiceExt;
 
-pub const BODY_MAX: usize = 8192;
-pub const MODERN: &str = "2026-07-28";
-pub const LEGACY: [&str; 2] = ["2025-11-25", "2025-06-18"];
+/// WstxMcp::McpEndpoint.
+pub mod mcp_endpoint {
+    pub const BODY_BYTES_MAX: usize = 8192;
+}
+/// WstxMcp::ProtocolVersions: modern, then legacy.
+pub mod protocol_versions {
+    pub const MODERN: &str = "2026-07-28";
+    pub const LEGACY: &[&str] = &["2025-11-25", "2025-06-18"];
+}
+use protocol_versions::{LEGACY, MODERN};
+pub const BODY_MAX: usize = mcp_endpoint::BODY_BYTES_MAX;
 /// Station responses carried in one tool result (the largest is a results page).
 const STATION_BYTES_MAX: usize = 65536;
 
@@ -132,7 +140,7 @@ const VIEWS: [(&str, &str); 9] = [
     ("strategy", "/strategy"),
     ("alerts", "/strategy/alerts"),
 ];
-/// The station routes an MCP tool call dispatches to (WstxMcpInterface::ToolCatalog).
+/// The station routes an MCP tool call dispatches to (WstxMcp::ToolRule).
 fn tool_route(method: &Method, path: &str) -> bool {
     match *method {
         Method::GET => path == "/receive/results" || VIEWS.iter().any(|(_, p)| *p == path),
@@ -184,7 +192,7 @@ pub(crate) async fn principal_guard(
     }
     response
 }
-/// WstxMcpInterface::ToolCatalog, in this fixed order.
+/// The tools of WstxMcp::ToolRule, in this fixed order.
 pub fn tools() -> Value {
     let output = json!({"type":"object","properties":{"v":{"const":1},"tool":{"type":"string"},
         "status":{"type":"integer"},"result":{}},"required":["v","tool","status","result"],"additionalProperties":false});
@@ -436,7 +444,7 @@ pub async fn endpoint(
             );
         }
     };
-    // #39 an authenticated client is here (WstxAutoControl::StrategyRun; MCP is per request).
+    // An authenticated client is here (MCP is per request).
     if let Some(p) = &app.profile {
         p.recording.clients.mcp_request();
     }

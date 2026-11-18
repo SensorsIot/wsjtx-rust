@@ -8,7 +8,7 @@ pub const MAGIC: u32 = 0xADBC_CBDA;
 pub const SCHEMA_OUT: u32 = 2;
 /// The maximum schema this station accepts from a target and advertises in Heartbeat.
 pub const SCHEMA_MAX: u32 = 3;
-pub const INBOUND_BYTES_MAX: usize = 4096;
+pub const INBOUND_MAX_BYTES: usize = 4096;
 /// Qt QDate::toJulianDay of 1970-01-01.
 const JULIAN_EPOCH: i64 = 2_440_588;
 const DAY_MS: i64 = 86_400_000;
@@ -240,7 +240,7 @@ pub struct Heartbeat {
 /// null, truncated or invalid UTF-8 id) or any other message type. The Heartbeat's fields after
 /// the header are not read (protocol rule 2 allows more of them).
 pub fn heartbeat_of(bytes: &[u8]) -> Option<Heartbeat> {
-    if bytes.len() > INBOUND_BYTES_MAX {
+    if bytes.len() > INBOUND_MAX_BYTES {
         return None;
     }
     let field = |at: usize| Some(u32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?));

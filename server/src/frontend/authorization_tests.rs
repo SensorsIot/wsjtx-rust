@@ -148,7 +148,6 @@ impl Drop for Fixture {
     }
 }
 
-// Proves: TC-022-006.
 #[test]
 fn strict_wire_scope_and_enrollment_reject_duplicate_unknown_omission_and_noncanonical_bytes() {
     let text = format!(
@@ -180,7 +179,6 @@ fn strict_wire_scope_and_enrollment_reject_duplicate_unknown_omission_and_noncan
     assert!(decode::<65>(SIGNATURE).is_err());
 }
 
-// Proves: TC-022-006.
 #[test]
 fn independent_node_openssl_fixed_vector_binds_exact_bytes_purpose_origin_and_revision() {
     let s = scope("00000000-0000-4000-8000-000000000001");
@@ -229,7 +227,6 @@ fn independent_node_openssl_fixed_vector_binds_exact_bytes_purpose_origin_and_re
     assert_eq!(validate_verifier(&invalid), Err(Error::Invalid));
 }
 
-// Proves: TC-022-006.
 #[test]
 fn valid_proof_is_one_use_and_expiry_wrong_origin_and_wrong_purpose_do_not_consume_it() {
     let now = Instant::now();
@@ -308,7 +305,6 @@ fn valid_proof_is_one_use_and_expiry_wrong_origin_and_wrong_purpose_do_not_consu
     assert_eq!(a.record().grants, vec![v]);
 }
 
-// Proves: TC-022-006.
 #[test]
 fn committed_verifier_survives_lock_release_reopen_and_has_no_clock_expiry() {
     let mut f = Fixture::new();
@@ -340,7 +336,6 @@ fn committed_verifier_survives_lock_release_reopen_and_has_no_clock_expiry() {
     );
 }
 
-// Proves: TC-022-006.
 #[test]
 fn expected_missing_corrupt_and_cross_profile_records_never_reset_grants() {
     for corrupt in [false, true] {
@@ -373,7 +368,6 @@ fn expected_missing_corrupt_and_cross_profile_records_never_reset_grants() {
     assert_eq!(f.reopen(), Err(Error::PersistenceFailed));
 }
 
-// Proves: TC-022-006.
 #[test]
 fn failed_revocation_keeps_committed_bytes_but_quarantines_current_process() {
     for stage in ["write", "flush", "replace"] {
@@ -404,7 +398,6 @@ fn failed_revocation_keeps_committed_bytes_but_quarantines_current_process() {
     }
 }
 
-// Proves: TC-022-006.
 #[test]
 fn committed_revocation_retains_receipt_verifier_without_control_authority() {
     let mut f = Fixture::new();
@@ -436,7 +429,6 @@ fn committed_revocation_retains_receipt_verifier_without_control_authority() {
     );
 }
 
-// Proves: TC-022-006.
 #[test]
 fn transport_rotation_changes_only_same_grant_slot_and_retains_durable_state() {
     let mut f = Fixture::new();
@@ -497,7 +489,6 @@ fn transport_rotation_changes_only_same_grant_slot_and_retains_durable_state() {
     );
 }
 
-// Proves: TC-022-006.
 #[test]
 fn failed_proof_or_response_preparation_preserves_prior_handle_and_consumed_nonce_cannot_replay() {
     let mut f = Fixture::new();
@@ -544,7 +535,6 @@ fn failed_proof_or_response_preparation_preserves_prior_handle_and_consumed_nonc
     );
 }
 
-// Proves: TC-022-006.
 #[test]
 fn monotonic_boundary_and_actual_store_reopen_expire_only_volatile_transport() {
     let mut f = Fixture::new();
@@ -596,7 +586,6 @@ fn monotonic_boundary_and_actual_store_reopen_expire_only_volatile_transport() {
     );
 }
 
-// Proves: TC-022-006.
 #[test]
 fn caps_do_not_evict_active_grants_and_monotonic_attempt_window_is_bounded() {
     let mut f = Fixture::new();
@@ -636,7 +625,6 @@ fn caps_do_not_evict_active_grants_and_monotonic_attempt_window_is_bounded() {
     assert!(budget.admit(now + Duration::from_secs(60)).is_ok());
 }
 
-// Proves: TC-022-006.
 #[test]
 fn repair_retained_revoked_grant_id_cannot_bind_different_key_or_operation_after_reopen() {
     let mut f = Fixture::new();
@@ -681,7 +669,6 @@ fn repair_retained_revoked_grant_id_cannot_bind_different_key_or_operation_after
     );
 }
 
-// Proves: TC-022-006.
 #[test]
 fn repair_semantically_corrupt_commissioning_fails_closed_without_rewrite() {
     let changes = [
@@ -702,7 +689,7 @@ fn repair_semantically_corrupt_commissioning_fails_closed_without_rewrite() {
         record.commissioning = Some(Commissioning {
             scope: selected.clone(),
             receive_only_confirmed: true,
-            control: profile::Control {
+            control: profile::ControlSelection {
                 mode: "cat".into(),
                 endpoint: Some("fixture-cat".into()),
                 ptt: "disabled".into(),
@@ -741,7 +728,6 @@ fn repair_semantically_corrupt_commissioning_fails_closed_without_rewrite() {
     }
 }
 
-// Proves: TC-022-006.
 #[test]
 fn repair_valid_same_radio_older_verifier_and_receipt_remain_valid() {
     let mut f = Fixture::new();
@@ -785,7 +771,6 @@ fn repair_valid_same_radio_older_verifier_and_receipt_remain_valid() {
     );
 }
 
-// Proves: TC-022-006.
 #[test]
 fn safety_watermark_reconciles_public_private_commit_gap_once_after_failed_private_write() {
     let mut f = Fixture::new();
@@ -794,7 +779,7 @@ fn safety_watermark_reconciles_public_private_commit_gap_once_after_failed_priva
     a.enroll(store, grant.clone()).unwrap();
     let old = a.record.clone();
     let mut settings = store.document.settings();
-    settings.control = profile::Control {
+    settings.control = profile::ControlSelection {
         mode: "cat".into(),
         endpoint: Some("fixture-cat".into()),
         ptt: "disabled".into(),

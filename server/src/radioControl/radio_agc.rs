@@ -16,7 +16,8 @@ use wstx_rust::radio_control::{self as cat, SetupCommand, SetupReply, setup::Agc
 /// Bound of one AGC exchange (read, RX check, write, readback).
 const EXCHANGE: Duration = Duration::from_secs(3);
 /// A busy CAT owner (lease held, radio reports TX) is tried again after this delay.
-pub(crate) const RETRY: Duration = Duration::from_secs(2);
+pub(crate) const RETRY_SECONDS: u64 = 2;
+pub(crate) const RETRY: Duration = Duration::from_secs(RETRY_SECONDS);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Status {

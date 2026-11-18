@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! FR-023 per-station native session (WstxFlexSession::NativeFlexBoundary). One
+//! The per-station native session (WstxFlexSession::SessionLifecycle). One
 //! station process is one GUI-class API client; the radio's client-scoped resource
 //! ownership is the arbitration authority between stations. This session only ever
 //! changes the one slice and stream it created and confirmed under its own current
@@ -64,18 +64,34 @@ impl Default for Config {
     }
 }
 
-const STEP: Duration = Duration::from_secs(5);
-const DISCOVERY_WAIT: Duration = Duration::from_secs(3);
-const BACKOFF_MAX_MS: u64 = 4000;
+/// The radio's time to take the connection, to answer and to report.
+const STEP_SECONDS: u64 = 5;
+const STEP: Duration = Duration::from_secs(STEP_SECONDS);
+/// An attempt listens this long for announcements.
+const LISTEN_SECONDS: u64 = 3;
+const DISCOVERY_WAIT: Duration = Duration::from_secs(LISTEN_SECONDS);
+/// The wait before the first new attempt, doubled up to MAX_RETRY_MS.
+const FIRST_RETRY_MS: u64 = 1000;
+const MAX_RETRY_MS: u64 = 4000;
 const MAX_TRACKED: usize = 64;
 /// A real path reorders about one packet in 300 by one or two places and truly loses far fewer
 /// (2026-11-06); 5 packets (27 ms) of waiting tells the two apart.
-const REORDER_DEPTH: u8 = 5;
-const REGISTER_EVERY: Duration = Duration::from_secs(5);
-const UNKNOWN_GAP_100NS: u64 = 2_000_000;
+const REORDER_PACKETS: u8 = 5;
+/// The registration of a saved address (WstxFlexSession::RadioChoice).
+mod radio_choice {
+    /// A registration is sent again after this.
+    pub const KEEP_ALIVE_SECONDS: u64 = 5;
+}
+const REGISTER_EVERY: Duration = Duration::from_secs(radio_choice::KEEP_ALIVE_SECONDS);
+/// A pause longer than this between two stream packets is a loss of unknown length.
+const UNKNOWN_GAP_MS: u64 = 200;
+const UNKNOWN_GAP_100NS: u64 = UNKNOWN_GAP_MS * 10_000;
 const DAX_RATE: u32 = 24_000;
-/// 10 ms at 48 kHz.
-const GROUP_FRAMES: usize = 480;
+/// The rate of the stream given to audio.
+const OUTPUT_RATE_HZ: u32 = 48_000;
+/// A packet given to audio holds this much or more.
+const GROUP_MS: usize = 10;
+const GROUP_FRAMES: usize = OUTPUT_RATE_HZ as usize * GROUP_MS / 1000;
 /// Reply codes the pinned API documents for missing receiver/license/resources.
 const CAPACITY_CODES: [u32; 3] = [0x5000_0001, 0x5000_0003, 0x5000_001D];
 
@@ -546,7 +562,7 @@ impl Drop for Session {
 }
 
 fn run(shared: &Shared, intent: &Intent, config: Config, tunes: &Receiver<TuneRequest>) {
-    let mut backoff = 1000;
+    let mut backoff = FIRST_RETRY_MS;
     while !shared.stopping() {
         if !shared.allowed() {
             shared.update(|s| {
@@ -570,7 +586,7 @@ fn run(shared: &Shared, intent: &Intent, config: Config, tunes: &Receiver<TuneRe
             Err(error) => error,
         };
         if reached {
-            backoff = 1000;
+            backoff = FIRST_RETRY_MS;
         }
         shared.update(|s| {
             s.state = error.state();
@@ -585,7 +601,7 @@ fn run(shared: &Shared, intent: &Intent, config: Config, tunes: &Receiver<TuneRe
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        backoff = (backoff * 2).min(BACKOFF_MAX_MS);
+        backoff = (backoff * 2).min(MAX_RETRY_MS);
     }
     shared.fail_sink();
     shared.update(|s| {
@@ -702,7 +718,10 @@ fn attempt(
         }
         conn.pump()?;
         // Refuse an unadmitted API before sending any command.
-        if conn.version.is_some_and(|v| v != wire::SUPPORTED_PROTOCOL) {
+        if conn
+            .version
+            .is_some_and(|v| v.to_string() != wire::ProtocolVersion::ADMITTED)
+        {
             radio.protocol = conn.version.map(|v| v.to_string());
             shared.update(|s| s.radio = Some(radio.clone()));
             return Err(Error::IncompatibleApi);
@@ -890,7 +909,7 @@ fn serve_tune(
 }
 
 /// Puts packets back in the order of their 4-bit count. One ahead of its turn waits; a turn is
-/// given up only when `REORDER_DEPTH` packets wait behind it. The count tells a jump forward from
+/// given up only when `REORDER_PACKETS` packets wait behind it. The count tells a jump forward from
 /// a late packet only by which half it falls in: 8 or more lost in a row read as late, and the
 /// timeline then falls short by up to 16 packets (85 ms) with no epoch.
 struct Reorder<T> {
@@ -935,7 +954,7 @@ impl<T> Reorder<T> {
             self.end = count.wrapping_add(1) & 15;
         }
         self.held.push((count, packet));
-        self.release(usize::from(REORDER_DEPTH), &mut hand_on);
+        self.release(usize::from(REORDER_PACKETS), &mut hand_on);
         true
     }
     fn release(&mut self, depth: usize, hand_on: &mut impl FnMut(T, u64)) {
@@ -1489,7 +1508,7 @@ pub struct NativeInput {
 }
 impl NativeInput {
     pub const FORMAT: NativeFormat = NativeFormat {
-        rate: 48_000,
+        rate: OUTPUT_RATE_HZ,
         channels: 2,
         encoding: Encoding::Float32,
     };

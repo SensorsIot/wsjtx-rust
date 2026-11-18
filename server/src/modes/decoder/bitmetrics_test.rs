@@ -1,6 +1,5 @@
 use super::super::search::complete;
 use super::*;
-// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn independent_decimal_exhaustive_metric_families() {
     let fixture: serde_json::Value = serde_json::from_str(include_str!(
@@ -53,7 +52,6 @@ fn independent_decimal_exhaustive_metric_families() {
         }
     }
 }
-// Proves: FR-003, FR-004, CL-007-03, CL-007-04.
 #[test]
 fn population_normalization_has_no_mean_subtraction_or_clipping() {
     let constant = normalize(&[2.; 174]).unwrap();
@@ -100,7 +98,6 @@ fn sync_rows(mode: Mode, correct: usize, single_bit_errors: usize) -> Vec<Vec<Co
     }
     rows
 }
-// Proves: FR-003, FR-004, CL-007-03, CL-007-04.
 #[test]
 fn physical_sync_boundaries_are_independent_tone_and_bit_barriers() {
     assert!(!physical_accepts(Mode::Ft8, &sync_rows(Mode::Ft8, 8, 0)));
@@ -145,7 +142,6 @@ fn weak_errors(bits: &[u8], errors: usize) -> [f32; 174] {
     }
     llr
 }
-// Proves: FR-003, FR-004, CL-007-03.
 #[test]
 fn a_rejected_word_does_not_erase_later_metric_family() {
     let bits = vector_word();
@@ -181,7 +177,7 @@ fn a_rejected_word_does_not_erase_later_metric_family() {
     .unwrap();
     assert_eq!(result.unwrap().as_slice(), bits.as_slice());
 }
-// Proves: FR-003, FR-004, CL-007-03 (#56). ft8b accepts a word with up to 36 hard
+// ft8b accepts a word with up to 36 hard
 // disagreements; the former 24-disagreement gate refused 25..36.
 #[test]
 fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
@@ -210,7 +206,7 @@ fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
         );
     }
 }
-// Detail test of WstxModemDecode (#56). ft8b a-priori type 1: a CQ frame whose CQ and i3
+// Detail test of WstxDecode. ft8b a-priori type 1: a CQ frame whose CQ and i3
 // bits are buried (strongly wrong) decodes once those 32 bits are fixed, and only then.
 #[test]
 fn cq_a_priori_bits_recover_a_buried_cq_word() {
@@ -257,7 +253,7 @@ fn cq_a_priori_bits_recover_a_buried_cq_word() {
     assert_eq!(word.map(|w| w.to_vec()), Some(bits));
 }
 
-// Proves: CL-007-03 (#56 slice 5 APrioriHypotheses acceptance). An a-priori word is published
+// An a-priori word is published
 // only with a decoded payload, and (except FT8's CQ type 1) at WSJT-X confidence
 // qual >= 0.17: 24 hard errors of |LLR| 1 pass (24 + 24 = 48), 25 do not (50 > 49.8).
 #[test]

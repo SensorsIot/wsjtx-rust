@@ -1,4 +1,4 @@
-//! WstxTransmitControl::TransmitWire and the station hardware of the transmit owner: PTT via
+//! WstxTransmitControl and the station hardware of the transmit owner: PTT via
 //! the CL-022 lifecycle's single CI-V actor (explicit transmit path, never from the
 //! lifecycle itself), audio via the profile's exact output device.
 use crate::*;
@@ -14,6 +14,12 @@ use wstx_rust::transmit::service::{
     self as tx, AudioError, AudioPoll, Capability, Context, HaltState, Hardware, Outcome, Program,
     PttError, Service, View,
 };
+
+/// WstxTransmitState::Failures: how long transmit waits for radio control to confirm a key or
+/// a release.
+const KEY_EXCHANGE_MAX_MS: u64 = 1000;
+/// WstxTransmitState::SafetyReleases: the wait for the release at the end of the process.
+const EXIT_RELEASE_MAX_MS: u64 = 500;
 
 /// Station facts published by the CL-022 tick (store -> authorization -> recording).
 #[derive(Default)]
@@ -74,7 +80,7 @@ impl Hardware for StationHardware {
             + self.clock.correction_ms()
     }
     fn clock(&self) -> ClockState {
-        // WstxTransmitClock::AirClock (#92): the station clock state, never unknown; the SNTP
+        // WstxStationClock::AirClock: the station clock state, never unknown; the SNTP
         // state only warns and never refuses.
         self.clock.state()
     }
@@ -120,9 +126,13 @@ impl Hardware for StationHardware {
             .clone()
             .ok_or(PttError::Unavailable)?;
         if on {
-            tx::actor_ptt_abortable(&actor, Duration::from_secs(1), &self.abort)
+            tx::actor_ptt_abortable(
+                &actor,
+                Duration::from_millis(KEY_EXCHANGE_MAX_MS),
+                &self.abort,
+            )
         } else {
-            tx::actor_ptt(&actor, false, Duration::from_secs(1))
+            tx::actor_ptt(&actor, false, Duration::from_millis(KEY_EXCHANGE_MAX_MS))
         }
     }
     #[cfg(windows)]
@@ -263,7 +273,7 @@ impl Station {
             revision: Mutex::new((None, 0)),
         }))
     }
-    /// WstxTransmit::ExitRelease for process exit and panics: stop output and, only if
+    /// WstxTransmitState::SafetyReleases for process exit and panics: stop output and, only if
     /// the CI-V switch may be keyed, send one off-only release bounded to 500 ms. Uses
     /// try_lock only, so a panicking holder cannot deadlock it.
     pub(crate) fn emergency_release(&self) {
@@ -276,13 +286,16 @@ impl Station {
         if let Some(actor) = actor
             && actor.ptt_indeterminate()
         {
-            let _ = actor.ptt(false, Instant::now() + Duration::from_millis(500));
+            let _ = actor.ptt(
+                false,
+                Instant::now() + Duration::from_millis(EXIT_RELEASE_MAX_MS),
+            );
         }
     }
     /// Called by the CL-022 tick with the current profile, gate and actor.
     pub(crate) fn update(
         &self,
-        document: &profile::Document,
+        document: &profile::ProfileDocument,
         gate: &crate::cat_lifecycle::Gate,
         actor: Option<Arc<Actor>>,
     ) {
@@ -352,7 +365,7 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
         "outcomes":recent,"startup_release":name(v.startup_release)})
 }
-/// WstxTransmitControl::TransmitWire transmit.state: the station-wide revision of the read view
+/// WstxTransmitControl::TransmitStatus transmit.state: the station-wide revision of the read view
 /// (every field of GET /transmit except clock_measurement.age_ms). It increases at each
 /// change any peer's step observes; None without a transmit owner.
 pub(crate) fn state_revision(r: &recording::Recording) -> Option<u64> {

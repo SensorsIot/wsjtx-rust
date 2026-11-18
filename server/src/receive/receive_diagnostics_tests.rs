@@ -45,8 +45,9 @@ fn wait_for(dir: &Path, count: usize) -> Vec<String> {
     }
 }
 
-// Proves: CL-052-01; TC-052-001. Hand-counted zeros, their longest run and those inside the
+// Hand-counted zeros, their longest run and those inside the
 // FT8 early buffer [period, period + 141696).
+// Proves: TC-052-001
 #[test]
 fn window_zero_counts_follow_the_early_buffer() {
     let mut x = vec![0.5f32; 20];
@@ -61,7 +62,8 @@ fn window_zero_counts_follow_the_early_buffer() {
     assert_eq!(zero_counts(&[], 0, Some(0)), (0, 0, Some(0)));
 }
 
-// Proves: CL-052-01; TC-052-001. A 12 kHz mono PCM16 WAV, as jt9 reads it.
+// A 12 kHz mono PCM16 WAV, as jt9 reads it.
+// Proves: TC-052-001
 #[test]
 fn window_dump_is_a_12_khz_pcm16_wav() {
     let bytes = wav_bytes(&[0.0, 0.5, -1.0, 1.0]);
@@ -82,8 +84,9 @@ fn window_dump_is_a_12_khz_pcm16_wav() {
     assert_eq!(samples, vec![0, 16384, -32768, 32767]);
 }
 
-// Proves: CL-052-01; TC-052-001. Off by default and after a foreign or corrupt file; the
+// Off by default and after a foreign or corrupt file; the
 // operator's choice persists next to profile.json; wrong profile or boot is refused.
+// Proves: TC-052-001
 #[test]
 fn window_dump_setting_defaults_off_and_persists() {
     let dir = Dir::new();
@@ -127,8 +130,9 @@ fn window_dump_setting_defaults_off_and_persists() {
     }
 }
 
-// Proves: CL-052-01; TC-052-001. Only an FT8 prompt window with the dump on is written (WAV
+// Only an FT8 prompt window with the dump on is written (WAV
 // and sidecar); the last 20 windows' counters are kept; the dump keeps the newest 20.
+// Proves: TC-052-001
 #[test]
 fn window_dump_writes_prompt_windows_and_rotates() {
     let dir = Dir::new();
@@ -174,7 +178,7 @@ fn window_dump_writes_prompt_windows_and_rotates() {
     assert!(names[0].starts_with("000000000000010-"), "{names:?}");
     let v = r.diagnostics_view();
     let windows = v["windows"].as_array().unwrap();
-    assert_eq!(windows.len(), WINDOWS);
+    assert_eq!(windows.len(), KEPT_WINDOWS);
     assert_eq!(windows[0]["origin"], 10);
     assert_eq!(
         windows[0]["dump"],
@@ -184,7 +188,8 @@ fn window_dump_writes_prompt_windows_and_rotates() {
     assert_eq!(v["dump_error"], Value::Null);
 }
 
-// Proves: CL-052-01; TC-052-001. The size cap removes the oldest windows first.
+// The size cap removes the oldest windows first.
+// Proves: TC-052-001
 #[test]
 fn window_dump_rotation_keeps_the_byte_cap() {
     let dir = Dir::new();
@@ -206,9 +211,10 @@ fn window_dump_rotation_keeps_the_byte_cap() {
     assert_eq!(names, vec!["3.json", "3.wav", "4.json", "4.wav"]);
 }
 
-// Proves: CL-052-01; TC-052-001. GET/POST /receive/diagnostics through the station router,
+// GET/POST /receive/diagnostics through the station router,
 // with the station's refusal codes and no change on a refused request; GET /receive does
 // not carry the window counters.
+// Proves: TC-052-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn diagnostics_http_view_and_dump_update() {
     let f = crate::contact_http_tests::fixture("http://127.0.0.1:18461", false);
