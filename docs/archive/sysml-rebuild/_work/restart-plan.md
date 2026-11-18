@@ -224,3 +224,5 @@ migrations; README in #235 or #231; where harness issues live.
 3. Source values (A4): `ModeProcessing::Period` (FT8/FT4 periods, starts, frames), the safe JSON
    integer (2^53−1, three places) and `DialRange` leave the model's values; each keeps its source
    reference; the dial range becomes a property of `RigModel` from the catalogue.
+4. Decode tolerances and repeatability are promises: they stay in the model and the contract tests
+   read them (V2).
