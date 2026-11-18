@@ -211,3 +211,10 @@ migrations; README in #235 or #231; where harness issues live.
 8. Timing classes (operator 2026-11-18, A): labels on the tests only; #108 and #130 closed as
    overtaken; #207 shrinks to labelling the timed tests; #126 rewritten.
 9. #191 (operator 2026-11-18, A): closed as done; the simulator setup exists.
+
+## #235 Check round 1: model values (operator 2026-11-18)
+
+1. A value is verified by V1 (a code constant named after the feature, equal; a binding check of
+   the tool, not a test) or V2 (a contract test bound to the clause's case reads it from the model
+   by qualified name and compares a measured behaviour with it, M6.8); neither: refused. No test
+   compares a program variable with itself.
