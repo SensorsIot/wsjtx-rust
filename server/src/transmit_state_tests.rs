@@ -200,7 +200,7 @@ fn cancelled() -> Station {
     s
 }
 
-// ---------------------------------------------------------------- TC-111-001
+// ----------------------------------------------------------------
 // Proves: CL-111-03; TC-111-001 (a). The partner works another station on my Tx frequency:
 // off, cause partnerWorksOther, the QSO state kept.
 #[test]
@@ -610,7 +610,7 @@ fn tc_111_003_a_stale_safety_revision_prepares_nothing_and_a_hound_calls_no_cq()
     assert_eq!(s.engine.contact, None);
 }
 
-// ---------------------------------------------------------------- TC-111-006
+// ----------------------------------------------------------------
 // Proves: CL-111-05; TC-111-006. A start never becomes a CQ: send_next and reset_repetitions on
 // a completed and a cancelled QSO and with no contact are no_contact and nothing is sent in
 // three own periods; reply and call_dx after a completed QSO call their own partner; only
@@ -651,7 +651,7 @@ fn tc_111_006_a_start_never_becomes_a_cq() {
     }
 }
 
-// ---------------------------------------------------------------- TC-111-009
+// ----------------------------------------------------------------
 /// The QSO with K1ABC in rogerReport on 20 m, the state on.
 fn roger_report() -> Station {
     let mut s = qso_on();

@@ -1,5 +1,5 @@
 'use strict';
-// Independent oracle: the profile model (WstxProfiles, its values read through
+// Independent oracle: the profile model (WstxProfileAccess, its values read through
 // tests/model-values.cjs) and hand-authored tables, NOT the product serializers.
 const {test, before, after} = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,31 +19,37 @@ const WebSocket = require('ws');
 const {receive} = require('./peer.cjs');
 const {openModel} = require('./model-values.cjs');
 let root, browser, tls, retainFixtureRoot = false;
-// Values the model holds for the profile part (WstxProfiles), read where a test uses them.
-const profileValue = name => openModel().numberWithUnit(`WstxProfiles::${name}`);
-const readinessMs = () => profileValue('readinessDeadlineSeconds') * 1000;
-// The members of an outcome enumeration of WstxProfiles: naming one the model does not list
-// throws, so the test fails when the model no longer has it.
+// The bounds of a saved profile (WstxProfileAccess::ProfileLimits), read where a test uses them.
+const profileValue = name => openModel().numberWithUnit(`WstxProfileAccess::ProfileLimits::${name}`);
+// A launch reports readiness or exits within this time.
+const readinessMs = () => 10000;
+// A model name as WstxStationLink::WireNames writes it on the wire.
+const wireName = name => name.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`);
+// The wire names of the members of the model's refusal enumerations: naming one the model does
+// not list throws, so the test fails when the model no longer has it.
+const OUTCOMES = {StartupOutcome: ['WstxStartup::StartupOutcome'], HttpOutcome: ['WstxStationLink::WireRefusal', 'WstxStationCommands::StationRefusal', 'WstxProfileAccess::SaveRefusal']};
 function outcomes(definition) {
-  const qualified = `${definition === 'HttpOutcome' ? 'WstxProfileAccess' : 'WstxProfiles'}::${definition}`;
-  const members = openModel().enumMembers(qualified);
+  const qualified = OUTCOMES[definition].join(', ');
+  const members = OUTCOMES[definition].flatMap(name => openModel().enumMembers(name)).map(wireName);
   return new Proxy({}, {get: (_, name) => {
     if (typeof name !== 'string' || !members.includes(name)) throw new Error(`${String(name)} is not a member of ${qualified}: ${members.join(', ')}`);
     return name;
   }});
 }
-// The document --create-profile writes: the defaults of ProfileDocument, Settings, Endpoint,
-// AudioSelection and ControlSelection, read from the model (an enumeration value by its member,
-// a quoted member without its quotes). The JSON keys and their nesting stay the test's.
+// The document --create-profile writes: the defaults of ProfileDocument, ProfileConfig,
+// ShackConfig, Endpoint, AudioConfig and ControlSelection, read from the model (an enumeration
+// value by its member, a quoted member without its quotes, a name as the wire writes it). The
+// JSON keys and their nesting, the revision and the absent control endpoint stay the test's.
 function defaultDocument() {
   const model = openModel();
   const value = name => {
-    const literal = model.literal(`${name.startsWith('ControlSelection::') ? 'WstxRadioControl' : 'WstxProfileAccess'}::${name}`);
+    const literal = model.literal(name);
     if (literal.kind === 'null') return null;
-    if (literal.kind === 'enum') return literal.member.replace(/^'(.*)'$/, '$1');
+    if (literal.kind === 'enum') return wireName(literal.member.replace(/^'(.*)'$/, '$1'));
     return literal.value;
   };
-  return {schema_version: value('ProfileDocument::schema_version'), revision: value('ProfileDocument::revision'), display_name: value('Settings::display_name'), callsign: value('Settings::callsign'), locator: value('Settings::locator'), endpoint: {bind: value("Endpoint::'bind'"), origin: value('Endpoint::origin')}, connection_type: value('ProfileDocument::connection_type'), audio: {input_device: value('AudioSelection::input_device'), output_device: value('AudioSelection::output_device')}, control: {mode: value('ControlSelection::mode'), endpoint: value('ControlSelection::endpoint'), ptt: value('ControlSelection::ptt')}};
+  const access = name => value(`WstxProfileAccess::${name}`);
+  return {schema_version: access('ProfileDocument::schemaVersion'), revision: 0, display_name: access('ProfileConfig::displayName'), callsign: access('ShackConfig::callsign'), locator: access('ShackConfig::locator'), endpoint: {bind: access("Endpoint::'bind'"), origin: access('Endpoint::origin')}, connection_type: access('ProfileConfig::connectionType'), audio: {input_device: value('WstxAudioControl::AudioConfig::inputDevice'), output_device: value('WstxAudioControl::AudioConfig::outputDevice')}, control: {mode: value('WstxRadioControl::ControlSelection::mode'), endpoint: null, ptt: value('WstxRadioControl::ControlSelection::ptt')}};
 }
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', 'wstx-rust.exe');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -87,7 +93,7 @@ async function start(profile, env = {}, cwd) {
   }
   return app;
 }
-// A refused launch or creation: category is a member of WstxProfiles::StartupOutcome.
+// A refused launch or creation: category is a member of WstxStartup::StartupOutcome.
 async function refusal(args, member, env = {}, cwd) {
   const category = outcomes('StartupOutcome')[member];
   const app = launch(args, env, cwd); const timer = setTimeout(() => app.child.kill(), readinessMs());
@@ -168,7 +174,7 @@ async function announceProfile(page) {await page.evaluate(() => socket.onmessage
 async function refreshStatus(page) {const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function savedBytes(profiles) {return Promise.all(profiles.map(p => fs.readFile(path.join(p.dir, 'profile.json'), 'utf8')));}
 
-// Proves the CL-022-01 browser proof path against independent cryptographic bytes.
+// The browser proof path against independent cryptographic bytes.
 test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
@@ -214,10 +220,10 @@ test('TC-022-006: retained HTTPS browser authorization', {timeout: 45000}, async
   }), true);
 });
 
-// Proves the CL-022-01 slow-link setup retry (operator decision 2026-11-03, #22): one token
+// The slow-link setup retry: one token
 // press survives a late or network-failed setup step; refusals are never retried.
-// #70: the page's clock is driven (Playwright page.clock fakes setTimeout and AbortSignal.timeout),
-// so each bound of CL-022-01 (10 s attempt, 1 s/2 s pauses, 3 attempts, 45 s login) is watched
+// The page's clock is driven (Playwright page.clock fakes setTimeout and AbortSignal.timeout),
+// so each bound of the setup retry (10 s attempt, 1 s/2 s pauses, 3 attempts, 45 s login) is watched
 // crossing in one run without real waiting.
 // Proves: CL-022-01; TC-022-006
 test('TC-022-006: token login retries a slow or failed setup step without another press', {timeout: 60000}, async t => {
@@ -318,7 +324,7 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
     assert.deepEqual([seen['/session'], seen['/authorization/v1/bootstrap-scope'], seen['/authorization/v1/enroll']], [1, 1, 0]);
     assert.equal((await texts(page)).some(text => text.includes('Retrying authorization')), false);
   }
-  // Leaving the page (pagehide on the live page, CL-022-01) during a held attempt sends no further
+  // Leaving the page (pagehide on the live page) during a held attempt sends no further
   // setup request. Navigating away is no proof: without a back-forward cache it destroys the page.
   {
     const p = profiles[3], page = await fresh(), seen = counted(page); let arrived;
@@ -332,7 +338,7 @@ test('TC-022-006: token login retries a slow or failed setup step without anothe
   }
 });
 
-// Proves CL-022-01/02/05 ordinary cross-tab transport rotation; response-order faults remain separate.
+// Ordinary cross-tab transport rotation; response-order faults are tested apart.
 // Proves: CL-022-01; TC-022-006. #10 first status: the renewal of a retained credential waits for the page's load event.
 test('TC-022-006: reopening a page renews its retained credential only after the load event', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
@@ -471,7 +477,7 @@ test('TC-022-006: actual two tabs share retained authorization and rotated trans
   }
 });
 
-// Proves CL-022-01/02: a real proof commit is distinct from delivery of its cookie.
+// A real proof commit is distinct from delivery of its cookie.
 test('TC-022-006: real proof cookie waits for browser delivery', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}), page = await context.newPage();
@@ -582,7 +588,7 @@ test('TC-022-006: real proof cookie waits for browser delivery', {timeout: 45000
   }
 });
 
-// Proves CL-022-01/02/05: actual record corruption/erasure is distinct from server-grant revocation.
+// Actual record corruption/erasure is distinct from server-grant revocation.
 test('TC-022-006: actual browser reports corrupt and erased retained credentials', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true); let completed = 0;
   for (const mode of [1, 2]) { // Corrupt present record FIRST; erased record second, in independent profile/process buckets.
@@ -797,7 +803,7 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
     const window = {dispatchEvent(event) {if (event.type === 'station-authorization-retry') {retries.push(event.detail); return;} events.push(event.detail); if (fault === 'retry-stale' && event.detail.state === 'recovering' && !bootstrap) bootstrap = window.stationAuthorization.bootstrap('fixture-bootstrap-input').then(() => false, () => true);}};
     const deadlineSource = {timeout(milliseconds) {timeoutValues.push(milliseconds); const controller = new AbortController(); controllers.push(controller); return controller.signal;},
       any(signals) {const combined = new AbortController(); for (const signal of signals) {if (signal.aborted) {combined.abort(signal.reason); break;} signal.addEventListener('abort', () => combined.abort(signal.reason), {once: true});} return combined.signal;}};
-    // Controlled clock: a setup retry pause elapses at once and is recorded (CL-022-01 slow-link retry).
+    // Controlled clock: a setup retry pause elapses at once and is recorded (slow-link setup retry).
     const realm = vm.createContext({window, document: {readyState: 'complete'}, location: {origin}, indexedDB, fetch, TextEncoder, Uint8Array, AbortController,
       setTimeout: (callback, milliseconds) => {pauses.push(milliseconds); queueMicrotask(callback); return pauses.length;}, clearTimeout() {},
       addEventListener: (type, listener) => pageListeners.push([type, listener]), removeEventListener: (type, listener) => {const index = pageListeners.findIndex(([t, l]) => t === type && l === listener); if (index >= 0) pageListeners.splice(index, 1);},
@@ -951,7 +957,7 @@ test('TC-022-006: authorization owner distinguishes credential lookup and retain
   t.diagnostic(JSON.stringify({owner_boundary_cases: checked, expected_cases: 49, app_consumer_cases: consumerChecked, expected_app_consumer_cases: 7}));
 });
 
-// Proves CL-022-01/02/05: real overlapping proof delivery must not create a false-ready UI or replay Save.
+// Real overlapping proof delivery creates no false-ready UI and replays no Save.
 for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recover after ${deliveryMode} proof delivery`, {timeout: 45000}, async t => {
   const {profiles, apps} = await fixture(t, true), p = profiles[0], context = await browser.newContext({ignoreHTTPSErrors: true});
   const held = {}, firstSeen = {}, firstHandled = {}, captured = {}, ended = {}, wire = [], inFlightProofs = new Set(), requestInfo = new WeakMap();
@@ -1256,7 +1262,7 @@ for (const action of ['reload', 'save']) test(`TC-022-006: held ${action} body c
   if (action === 'save') assert.equal(await page.locator('#settings-save').isEnabled(), true, 'a received save reply needs no reload');
 });
 
-// #73 CL-073-01: a selected HTTPS profile with an enrolled grant (the TC-022-006 fixture), connected.
+// CL-073-01: a selected HTTPS profile with an enrolled grant, connected.
 // Every #settings-result text is recorded from page load; in-page counters see each real
 // PUT /profile and each GET /profile started after the test marks a reply's release while saving.
 async function selectedPage(t, {clock = false} = {}) {
@@ -1583,7 +1589,7 @@ test('TC-022-006: actual browser and server process restart', {timeout: 90000}, 
   const originalMetadata = await metadata(page), originalBoot = await page.locator('#profile-boot').textContent();
   assert.equal(originalMetadata.extractable, false); assert.deepEqual(originalMetadata.usages, ['sign']);
   assert.equal(counts.session, 1); assert.equal(counts.enroll, 1);
-  // Proves CL-022-01/02/05: initial authorization must not leave an extra reconnect/socket owner.
+  // Initial authorization leaves no extra reconnect/socket owner.
   const idleBefore = {...counts}, idleStart = await page.evaluate(() => {
     window.__idleOriginalSocket = socket;
     return {at: performance.now(), timeline: window.__idleAuthorizationTimeline.slice(), epoch: window.stationAuthorization.snapshot().epoch};
@@ -1641,7 +1647,7 @@ test('TC-022-006: actual browser and server process restart', {timeout: 90000}, 
 });
 
 
-// Proves CL-022-01/02/05, partial TC-022-006: browser/store loss, not native CAT or durable-write failure.
+// Browser/store loss, not native CAT or durable-write failure.
 for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committed' : 'undelivered'} enrollment survives actual process restart`, {timeout: 90000}, async t => {
   const assets = [], assetWork = [];
   // Completed stages: 1 initial pending/store/auth, 2 pending UI, 3 cookie, 4 processes, 5 DCL, 6 window, 7 all assertions.
@@ -1751,7 +1757,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
       try {
         if (initial && ['/authorization/v1/challenge','/authorization/v1/proof','/authorization/v1/receipt'].includes(pathname)) {await initialClosed; try {await route.abort('failed');} catch {} return;}
         if (initial && pathname.endsWith('/enroll')) {
-          // CL-022-01 retries a network-failed enrollment within the login: the initial link stays
+          // The login retries a network-failed enrollment within itself: the initial link stays
           // down, so each identical retry fails without reaching the server and the outcome stays unknown.
           if (enrollment) {if (req.postData() !== enrollmentBody) routeError = true; await route.abort('failed'); return;}
           enrollmentBody = req.postData(); enrollment = JSON.parse(enrollmentBody); retained = await metadata(page);
@@ -2408,7 +2414,7 @@ test('suite stations own profile UUIDs in per-run station data', {timeout: 30000
   assert.equal((await request(`http://127.0.0.1:${ownPort}`)).body.profile_id, id);
 });
 
-// Proves CL-022-05, TC-022-008: a constructed reproduction of the 2026-10-29 freeze (an open page
+// A constructed freeze: an open page
 // whose transport cookie is lost while its WebSocket stays OPEN). The first protected read
 // that gets 401 makes the page stop claiming Connected within 2 s; the retained key then
 // proves again and the page reconnects with one OPEN socket, without a token, an enrollment

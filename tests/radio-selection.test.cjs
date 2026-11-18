@@ -26,7 +26,7 @@ async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'})
       const chunks=[];res.on('data',b=>chunks.push(b));res.on('end',()=>{try{const raw=Buffer.concat(chunks),text=(res.headers['content-encoding']==='gzip'?gunzipSync(raw):raw).toString('utf8');resolve({status:res.statusCode,headers:res.headers,raw,text,body:text&&(res.headers['content-type']||'').startsWith('application/json')?JSON.parse(text):null});}catch(error){reject(error);}});
     });req.on('error',reject);if(body!==undefined)req.write(typeof body==='string'||Buffer.isBuffer(body)?body:JSON.stringify(body));req.end();
   });
-  // Selected HTTPS profile: raw requests use the real CL-022-01 grant flow, not the token cookie.
+  // Selected HTTPS profile: raw requests use the real grant flow, not the token cookie.
   cookie=(await grant(origin,token,(route,method,body,extra)=>request(route,method,body,extra))).cookie;
   return {origin,id,request,cookie,token};
 }
@@ -457,7 +457,7 @@ test('TC-022-009 browser confirms receive-only setup once, has no Connect CAT bu
   await page.locator('#cat-confirm').waitFor({state:'hidden',timeout:20000});
   await page.locator('#cat-status[data-condition="retryWaiting"]').waitFor({timeout:30000});
   assert.match(await page.locator('#cat-status').textContent(),/^CAT unavailable · [a-z_]+ · automatic retry in [1-8] s$/);
-  // CL-022-05 (operator finding 2026-11-02): a serial port held by another program
+  // WstxSettings::RadioLine: a serial port held by another program
   // (Windows access denied) is named in the status and its exception chip.
   const held=await page.evaluate(()=>{catStatus={...catStatus,error:'port_in_use'};catShow();return document.querySelector('#cat-status').textContent;});
   assert.match(held,/^CAT unavailable · COM250 in use by another program · automatic retry in [0-8] s$/);
@@ -737,10 +737,10 @@ function liveSelectionFixture(){
     report.cold={state:'running',startedUtc:new Date().toISOString(),startedMonotonic:coldStarted,deadlineMonotonic:coldDeadline};await save();
     try{await Promise.all(pages.map(async(page,index)=>{
       const seen=observations[index];seen.navigationStarted=performance.now();await page.goto(origin,{timeout:coldRemaining()});seen.navigationCompleted=performance.now();
-      // Selected HTTPS profile: each browser enrolls through the real token form (CL-022-01).
+      // Selected HTTPS profile: each browser enrolls through the real token form.
       // The link has one FIFO bottleneck per direction: while the other browser's cold assets are
       // queued, this browser's 10 s authorization attempts can time out. The client retries a
-      // timed-out step itself (CL-022-01, #22); only if every attempt fails ("Could not authenticate")
+      // timed-out step itself; only if every attempt fails ("Could not authenticate")
       // does the operator press Connect securely again. Each such press is kept as evidence (#55).
       seen.loginRetries=[];
       for(;;){

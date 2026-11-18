@@ -407,7 +407,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     );
     assert!(saved.is_ok());
     f.state.logbook.worked_set().unwrap();
-    // Modern discovery and the fixed WstxMcpInterface::ToolCatalog.
+    // Modern discovery and the fixed tools of WstxMcp::ToolRule.
     let d = f.modern("server/discover", json!({})).await;
     assert_eq!(d.status, StatusCode::OK);
     assert_eq!(
@@ -1475,7 +1475,7 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
 }
 
 // Proves: CL-110-01; TC-110-001 (h). A change through the MCP tool is saved like a change in
-// the browser (CL-110-01 point 2): the file holds it and a new station owner on the same
+// the browser: the file holds it and a new station owner on the same
 // profile directory starts with it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_110_001_h_a_change_through_the_mcp_tool_is_saved() {

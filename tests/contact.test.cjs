@@ -92,8 +92,8 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
 });
 
 test('TC-007-001 double-click starts transmission, partner report advances to Tx3, Esc aborts the QSO (no halt) with a panel open',{timeout:90000},async()=>{
-  // #37 WstxQsoTransmit::SetEnableTx: no Enable Tx control and no Reply button (gone since the #50
-  // double-click fix); a double-click on the decoded row selects it again and arms.
+  // WstxQsoTransmit::StartRule: no Enable Tx control and no Reply button;
+  // a double-click on the decoded row selects it again and arms.
   assert.equal(await page.locator('#contact-enable,#qso-reply').count(),0);
   const shown=(await snapshot()).transmit.safety_revision;
   await page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K1ABC FN42'}).dblclick();
@@ -761,7 +761,7 @@ test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the n
   const s=await snapshot();assert.equal(s.transmit.arm_state,'armed','Enable Tx stays on');
   assert.notEqual(s.transmit.last_disarm_cause,'contact_cancelled');
   await completes('DL1ABC','-03');
-  // CQ right after the completed contact, while its revision still moves (#61 CL-061-02).
+  // CQ right after the completed contact, while its revision still moves.
   await page.locator('#qso-cq').click();
   await waitFor(async()=>{const v=await snapshot();return v.transmit.arm_state==='armed'&&v.contact?.state==='calling';},async()=>`calling CQ after DL1ABC: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(commands().slice(-2))} ${JSON.stringify((await snapshot()).transmit)} ${JSON.stringify((await snapshot()).contact?.state)}`,15000);
   assert.deepEqual(page.errors,[]);

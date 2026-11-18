@@ -16,7 +16,7 @@ const {server,loginPage,browserPort}=require('./support.cjs');
 const {openModel}=require('./model-values.cjs');
 // A bound of the profile's recordings, WstxRecordingTransfer::RecordingLimits, read from the model.
 const recordingLimit=feature=>openModel().numberWithUnit(`WstxRecordingTransfer::RecordingLimits::${feature}`);
-// Selected HTTPS profile: each browser context enrolls its own CL-022-01 key through the
+// Selected HTTPS profile: each browser context enrolls its own key through the
 // real token form, then the cache is cleared so later cold measurements stay uncached.
 async function enroll(context,origin,token){const p=await context.newPage();await loginPage(p,origin,token,120000);const cdp=await context.newCDPSession(p);await cdp.send('Network.clearBrowserCache');await p.close();}
 let root,browser,tls;
@@ -145,7 +145,8 @@ test('TC-018-002/003 HTTP admission, malformed chunks, busy and partial cancella
   for(const [range,code,status] of [['bad','invalid_request',400],['bytes 1-2/100','state_conflict',409],[`bytes 0-1/${fileCap+1}`,'request_too_large',413]]){const r=await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':range});assert.equal(r.status,status);assert.equal(r.value.error.code,code);}
   assert.equal((await f.req(route,'PUT',Buffer.alloc(chunkCap+1),{'Content-Type':'audio/wav','Content-Range':`bytes 0-${chunkCap}/3000`})).status,413);
   assert.equal((await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':'bytes 0-1/100'})).status,202);
-  const ackMs=recordingLimit('importCancelAckMs'),began=performance.now();assert.equal((await f.req(route,'DELETE')).status,200);const acked=performance.now()-began;assert.ok(acked<ackMs,`import DELETE answered in ${acked} ms, bound ${ackMs} ms`);
+  // WstxRecordings::ImportAdmission: a CancelImport is answered at once.
+  const ackMs=250,began=performance.now();assert.equal((await f.req(route,'DELETE')).status,200);const acked=performance.now()-began;assert.ok(acked<ackMs,`import DELETE answered in ${acked} ms, bound ${ackMs} ms`);
   for(let n=0;n<30;n++){const r=await f.req(route);if(r.value.state==='cancelled')break;await sleep(20);}assert.equal((await f.req(route)).value.state,'cancelled');
   assert.equal((await f.req(route,'PUT',Buffer.from([1,2]),{'Content-Type':'audio/wav','Content-Range':'bytes 2-3/100'})).value.error.code,'cancelled');
   const valid=await f.upload(wav(.1));assert.ok(valid.recording);const malformed=wav(.1);malformed.writeUInt32LE(1,4);const replacement=await f.reserve();const error=await f.req('/recording/imports/'+replacement.id,'PUT',malformed.subarray(0,2048),{'Content-Type':'audio/wav','Content-Range':`bytes 0-2047/${malformed.length}`});assert.equal(error.status,202);
@@ -187,7 +188,7 @@ test('TC-018-003 review: cancel pending reservation response deletes returned re
   await p.setInputFiles('#recording-file',{name:'pending.wav',mimeType:'audio/wav',buffer:wav(.1)});await p.locator('#recording-import').click();await accepted;
   assert.equal(await p.evaluate(()=>snapshot.import===null&&snapshot.job===null&&uploading&&!uploadId),true);
   await p.locator('#tab-general').click();
-  // Escape closes no panel (WstxQsoTransmit::AbortQso); the Close control returns.
+  // Escape closes no panel (WstxOperatingScreen::KeyRule); the Close control returns.
   await p.keyboard.press('Escape');await p.locator('.op-secondary:not([hidden]) .return-operate').click();await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();
   assert.equal(await p.locator('#recording-file').evaluate(el=>el.files[0].name),'pending.wav');
   assert.equal(await p.evaluate(()=>uploading&&!uploadId),true,'navigation preserves pending reservation state');

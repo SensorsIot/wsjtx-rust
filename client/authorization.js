@@ -164,7 +164,7 @@ window.stationAuthorization = (() => {
     }
   }
 
-  // Slow-link setup retry (CL-022-01, operator decision 2026-11-03): each token-login step
+  // Slow-link setup retry: each token-login step
   // has its own 10 s attempt; only a transient attempt is repeated (3 attempts, 1 s/2 s
   // pauses), the whole login stops at 45 s or on page unload. HTTP refusals are definitive.
   const attemptMs = 10000, attempts = 3, pauses = [1000, 2000], loginMs = 45000;

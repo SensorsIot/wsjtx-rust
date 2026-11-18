@@ -221,7 +221,7 @@ fn tc_024_007_field_day_and_rtty_roundup_pack_exactly() {
     }
 }
 
-/// TC-099-001: the EU VHF messages WSJT-X 3.3.0-beta5 encodes unaltered as type 5
+/// The EU VHF messages WSJT-X 3.3.0-beta5 encodes unaltered as type 5
 /// (fixtures/transmit/generate.py MESSAGES), and the shapes it rejects or alters.
 const EU_VHF: [&str; 8] = [
     "<K1ABC> <HB9BLA> 550001 JN37VL",

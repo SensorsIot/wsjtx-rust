@@ -6,11 +6,23 @@ use std::cell::Cell;
 mod model_values;
 
 /// A launch refusal the model lists: the name is checked against the members of
-/// `WstxProfiles::StartupOutcome`, so a test fails when the model no longer lists it.
+/// `WstxStartup::StartupOutcome`, written as `WstxStationLink::WireNames` says, so a test
+/// fails when the model no longer lists it.
 fn outcome(name: &'static str) -> &'static str {
     let members = model_values::Model::load()
-        .enum_members("WstxProfiles::StartupOutcome")
-        .unwrap_or_else(|e| panic!("model value {e}"));
+        .enum_members("WstxStartup::StartupOutcome")
+        .unwrap_or_else(|e| panic!("model value {e}"))
+        .iter()
+        .map(|m| {
+            m.chars().fold(String::new(), |mut wire, c| {
+                if c.is_ascii_uppercase() {
+                    wire.push('_');
+                }
+                wire.push(c.to_ascii_lowercase());
+                wire
+            })
+        })
+        .collect::<Vec<_>>();
     assert!(
         members.iter().any(|m| m == name),
         "{name} is not a StartupOutcome of the model {members:?}"
@@ -47,7 +59,7 @@ fn independent_document() -> Document {
     serde_json::from_str(r#"{"schema_version":1,"profile_id":"00000000-0000-4000-8000-000000000001","revision":0,"display_name":"Station 1","callsign":"TEST1","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":"fixture-input-1","output_device":"fixture-output-1"},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}}"#).unwrap()
 }
 
-// CL-022-02: an expected private authorization record cannot be silently reset.
+// An expected private authorization record cannot be silently reset.
 // This uses only the preexisting Store API so the unchanged parent compiles and
 // fails on its actual accepted startup, rather than a missing new module/API.
 #[test]

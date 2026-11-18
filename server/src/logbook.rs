@@ -1,5 +1,5 @@
-//! CR #10 persistent contact log (WstxLogbook::LogRecord, SaveContact, UpdateLogbook,
-//! ExportAdi, ContactHistory, WorkedBeforeQuery, AdiLimits). The selected profile's
+//! Persistent contact log (WstxLogControl::LogRecord, WstxLogbook::SaveContact, UpdateLogbook,
+//! ExportAdi, ContactHistory, WorkedBeforeQuery). The selected profile's
 //! `contacts.adi` is ADIF 3.1.8 ADI, always written as a complete new file in the
 //! profile directory, flushed and atomically replaced. The in-memory view changes only
 //! after a successful replace. Field order and spelling follow WSJT-X
@@ -31,7 +31,7 @@ const ID_FIELD: &str = "app_wstxrust_contact_id";
 const SOURCE_FIELD: &str = "app_wstxrust_source";
 /// CL-112-05 the contact's activity at logging time (absent for activity none).
 const ACTIVITY_FIELD: &str = "app_wstxrust_activity";
-/// The values of APP_WSTXRUST_ACTIVITY (WstxLogbook::LogRecord).
+/// The values of APP_WSTXRUST_ACTIVITY (WstxLogControl::LogRecord).
 pub const ACTIVITIES: [&str; 7] = [
     "field_day",
     "rtty",
@@ -102,7 +102,7 @@ const QSO_DATE_OFF: usize = 8;
 const TIME_OFF: usize = 9;
 const BAND: usize = 10;
 const FREQ: usize = 11;
-/// #97 the ADIF STATE (WstxValueOrder::UsStateOf).
+/// The ADIF STATE (WstxValueOrder::UsStateFilterRule).
 const STATE: usize = 23;
 /// The contest fields are FIELDS[CONTEST..CONFIRMATION].
 const CONTEST: usize = 16;
@@ -466,7 +466,7 @@ fn printable(value: &str) -> bool {
 fn confirmation(value: &str) -> bool {
     value.eq_ignore_ascii_case("Y") || value.eq_ignore_ascii_case("V")
 }
-/// Report rendering of WstxContact::ReportRange, "%+2.2d" in -50..+49, an RTTY
+/// Report rendering of WstxMessageChoice::ReportRange, "%+2.2d" in -50..+49, an RTTY
 /// Roundup 5n9 RST (#24 S2b, LogRecord) or an EU VHF RS 52..59 (#99, EuVhfExchange).
 pub fn valid_report(value: &str) -> bool {
     let b = value.as_bytes();
@@ -1001,7 +1001,7 @@ impl WorkedIndex {
 fn square(grid: &str) -> Option<String> {
     grid.get(..4).map(str::to_ascii_uppercase)
 }
-/// The most windows of worked sets kept (WstxValueOrder::WorkedWindowRule).
+/// The most windows of worked sets kept (WstxLogbook::WorkedBeforeQuery).
 const WORKED_WINDOWS: usize = 4;
 /// (log revision, country table, (first date, last date), worked set).
 type WindowCache = (
@@ -1040,7 +1040,7 @@ pub struct Logbook {
     /// The table is held (not its address), so a later table can never match it.
     worked_set: Mutex<Option<WorkedCache>>,
     worked_windows: Mutex<Vec<WindowCache>>,
-    /// #39 the keys a background build is running for (WstxValueOrder::WorkedWindowRule).
+    /// The keys a background build is running for (WstxLogbook::WorkedBeforeQuery).
     worked_building: Mutex<Vec<Option<(u32, u32)>>>,
     /// #10 the worked-before index for the records revision it was built from.
     worked_index: Mutex<Option<(u64, std::sync::Arc<WorkedIndex>)>>,
@@ -1447,7 +1447,7 @@ impl Logbook {
             Some((revision, table.cty.clone(), worked.clone()));
         Ok(worked)
     }
-    /// #39 WstxValueOrder::WorkedWindowRule: WorkedBefore of the records dated first..=last
+    /// WstxLogbook::WorkedBeforeQuery: WorkedBefore of the records dated first..=last
     /// (YYYYMMDD), cached per log revision, country table and window, at most
     /// WORKED_WINDOWS of them.
     pub fn worked_window(
@@ -1487,7 +1487,7 @@ impl Logbook {
         cache.push((revision, table.cty.clone(), (first, last), worked.clone()));
         Ok(worked)
     }
-    /// #39 WstxValueOrder::WorkedWindowRule for the station step: the last built set of this window
+    /// WstxLogbook::WorkedBeforeQuery for the station step: the last built set of this window
     /// (all time: None) at once, without building (a rebuild of the operator's log takes about
     /// 100 ms, two station steps). A set that is missing or behind the log or the country
     /// table is built on its own thread for a later step; None until the first is ready.
@@ -1545,7 +1545,7 @@ impl Logbook {
     pub fn revision_now(&self) -> Option<u64> {
         self.inner.try_lock().ok().map(|inner| inner.revision)
     }
-    /// #63 WstxContest::ContestLog: the log revision and the contacts that started in [start,
+    /// WstxOperatingChain::ContestPeriod: the log revision and the contacts that started in [start,
     /// end) (Unix ms).
     pub fn contest_qsos(
         &self,

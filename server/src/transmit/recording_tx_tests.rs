@@ -259,7 +259,7 @@ fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
     let keyed = rows(&r);
     assert!(!keyed.is_empty());
     assert!(keyed.iter().all(|t| t == &Some(json!(true))), "{keyed:?}");
-    // #66 WstxStrategy::FreeTxSlot: neither Tx period is kept in the per-period power, also
+    // WstxHoldTx::SlotLevel: neither Tx period is kept in the per-period power, also
     // 12:00:30, keyed late (its rows before the keying unmarked).
     let kept: Vec<i64> = r
         .waterfall

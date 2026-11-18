@@ -23,7 +23,7 @@ pub const FILE_NAME: &str = "udp.json";
 /// CL-112-01 the base form of the instance name without a radio.
 pub const INSTANCE_BASE: &str = "WSTX-Rust";
 /// The model of a CAT control: every CAT endpoint is icom7300:// or a plain COMn of one
-/// (WstxRadioIO), the IC-7300 of the radio model table.
+/// (WstxCatControl::RadioConnection), the IC-7300 of the radio model table.
 const CAT_MODEL: &str = "IC-7300";
 /// A clash beyond this many live servers takes the base form (bounded by the processes
 /// that run).
@@ -52,7 +52,7 @@ const QSO_LOGGED_BIT: u8 = 16;
 const CLOSE_BIT: u8 = 32;
 const LOGGED_ADIF_BIT: u8 = 64;
 
-/// WstxUdp::UdpTarget.
+/// WstxUdpControl::UdpTarget.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Target {
     pub address: SocketAddr,
@@ -102,7 +102,7 @@ impl Target {
         (self.address, self.enabled, self.ttl, self.interface)
     }
 }
-/// WstxUdp::UdpConfiguration (without its revision): the target list.
+/// WstxUdpControl::UdpConfiguration (without its revision): the target list.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Config {
     pub targets: Vec<Target>,
@@ -352,7 +352,7 @@ pub(crate) fn exchanges_of(record: &logbook::Record) -> (String, String) {
     }
 }
 
-/// Volatile per-target state (WstxUdp::TargetStatus) and its socket.
+/// Volatile per-target state (WstxUdpControl::TargetStatus) and its socket.
 #[derive(Default)]
 struct Runtime {
     socket: Option<UdpSocket>,
@@ -1000,7 +1000,7 @@ impl Owner {
     }
 }
 /// CL-112-06 the exit guard (Ctrl+C, Ctrl+Break, console close, logoff, shutdown): the
-/// transmit release (WstxTransmit::ExitRelease) first, then Close to the UDP targets.
+/// transmit release (WstxTransmitState::SafetyReleases) first, then Close to the UDP targets.
 pub(crate) fn exit(recording: &recording::Recording, release: impl FnOnce()) {
     release();
     if let Some(owner) = recording.udp.get() {

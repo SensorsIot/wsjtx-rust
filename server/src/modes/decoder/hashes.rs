@@ -1,4 +1,4 @@
-//! The station's call hash table (WstxOfflineDecode::HashResolution, CL-024-01, #24 S1):
+//! The station's call hash table (WstxMessagePayload::HashResolution, CL-024-01):
 //! WSJT-X 3.3.0-beta5 packjt77.f90 save_hash_call, hash10/12/22 and hashmy10/12/22. One
 //! table per station instance, fed by decoded and transmitted calls and by my own call;
 //! the pure `unpack` never uses one.

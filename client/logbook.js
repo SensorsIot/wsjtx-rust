@@ -102,9 +102,9 @@ $('log-export').addEventListener('click',async()=>{
 
 // ---------------------------------------------------------------- Band Activity worked-before
 // #55 CL-055-04: the New call slots come from the record flags; worked_status, which the station
-// sets on each record, feeds only the row's hover text (WstxBandActivity::BandActivityHover), never a colour.
+// sets on each record, feeds only the row's hover text, never a colour.
 // The statuses of the latest and the previous period also mark the QSO pane's callers
-// (CL-010-13, WstxQsoPane::QsoPane item 3).
+// (CL-010-13, WstxQsoPane::CallingMe).
 let askedPeriod=null,answered=new Map(),previous=new Map(),answeredOn='';
 window.wstxWorkedOf=call=>{const status=answered.get(call)??previous.get(call);return status?{status,on:answeredOn}:null;};
 function annotate(body,records){
@@ -124,7 +124,7 @@ if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(acti
 window.wstxLogbook=Object.freeze({annotate,loadHistory});
 
 // ---------------------------------------------------------------- country file (#55)
-// WstxDxcc::CountryFile in Settings > General: the cty.dat in use, an upload replaces it
+// WstxLogControl::CountryFile in Settings: the cty.dat in use, an upload replaces it
 // (the station validates it), "Use bundled file" removes the upload. No automatic download.
 const general=document.querySelector('#settings-general');
 if(general&&typeof block==='function'){

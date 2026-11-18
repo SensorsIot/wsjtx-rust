@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 // Proves: CL-012-02, CL-012-03, CL-012-04; TC-020-003 (and TC-020-002 for the
 // configuration barrier). Hand-authored candidate tables and contact scenarios; the
-// expected selections, states and stop reasons are the WstxMcp::CandidateSelection and
-// OperatingAutomation tables written below, not automation output. Integration cases use
+// expected selections, states and stop reasons are the WstxTargetChoice::PickRule and
+// WstxAutoMode::AutoStops tables written below, not automation output. Integration cases use
 // the actual station router, contact engine and #9 transmit owner on the recording
 // hardware double (virtual UTC; no audio, PTT or radio) through the MCP test client.
 use super::*;
@@ -193,7 +193,7 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
     );
 }
 
-/// #89 WstxStrategy::FreeTxSlot Due: the instant of a slot judgement, the station time and the
+/// WstxHoldTx::QuietSpace: the instant of a slot judgement, the station time and the
 /// period start of the latest complete publication, as the slot functions take it. The tests
 /// state both; a slot function that takes the station time alone (the parent of #89) is handed
 /// that, so a test that needs the publication is red there by its assertion, not by its build.
@@ -451,7 +451,7 @@ async fn tc_020_003_automation_selects_progresses_completes_and_takes_the_next_c
         (json!("contact_active"), json!("W1AW"))
     );
     assert_eq!(a["last_decision"]["candidates"], 2);
-    // The contact engine progresses the contact (WstxStandardQso::AutoSequence), not automation.
+    // The contact engine progresses the contact (WstxStandardQso::SequenceRule), not automation.
     publish(&f, e + 30_000, &[("HB9BLA W1AW -05", 905.0, Some(-6.0))]);
     assert_eq!(f.read("contact").await["contact"]["state"], "roger_report");
     publish(&f, e + 60_000, &[("HB9BLA W1AW RR73", 905.0, Some(-6.0))]);
@@ -953,7 +953,7 @@ async fn tc_020_003_the_run_ends_with_its_transport_and_its_duration() {
     skew(&f, Duration::ZERO);
     // A newer proof of the browser's grant is another credential (#58): the MCP
     // client's run keeps its own transport and waits on; the client's revocation ends
-    // it (TC-020-003 d).
+    // it.
     cfg["max_run_minutes"] = json!(480);
     reconfigure(&f, cfg).await;
     let started = start_again(&f).await;

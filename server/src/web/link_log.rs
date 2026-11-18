@@ -1,4 +1,4 @@
-//! WstxStationLink::LinkTrafficLog (#80, CL-003-05): the bytes between each client and the
+//! WstxListener::LinkTrafficLog (CL-003-05): the bytes between each client and the
 //! station, per period, in `link-traffic.log` of the profile directory.
 //!
 //! Counting only adds to counters: each accepted TCP stream is wrapped below TLS (`Counted`),
@@ -32,7 +32,7 @@ pub(crate) const FILE: &str = "link-traffic.log";
 pub(crate) const ROTATE_BYTES: u64 = 4_194_304;
 const TLS_RECORD_OVERHEAD_BYTES: u64 = 29;
 const TLS_RECORD_PAYLOAD_MAX: u64 = 16_384;
-// WstxStationProtocol::IndependentLinkAccounting.
+// WstxListener::LinkTrafficLog.
 const SEGMENT_BYTES_MAX: u64 = 512;
 const HEADER_BYTES_PER_SEGMENT: u64 = 80;
 const REVERSE_ACK_BYTES_PER_SEGMENT: u64 = 80;

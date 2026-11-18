@@ -1130,7 +1130,7 @@ fn full_rate_metric_distinguishes_conjugate_modulated_interferer() {
     }
 }
 
-// Detail test of WstxModemDecode: pruned grid scoring keeps the exhaustive result.
+// Detail test of WstxDecode: pruned grid scoring keeps the exhaustive result.
 #[test]
 fn ranked_refinement_matches_exhaustive_grid_search() {
     let channel = Channel::new();

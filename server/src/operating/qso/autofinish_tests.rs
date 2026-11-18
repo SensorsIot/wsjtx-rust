@@ -1,8 +1,8 @@
 // Proves: CL-081-01; TC-081-001..005 (#81, each test names its case below). A started QSO is finished
-// whatever ends the run (WstxStrategy::StartedQso). Oracle: the operator's rule of 2026-11-08 on #81
+// whatever ends the run (WstxAutoMode::StartedQsoRule). Oracle: the operator's rule
 // ("Auto only starts"; a QSO is started once he has sent a message to my call and our transmission to
-// him has started), the standard sequence of WstxContact::QsoAndLogging (Tx1, R-report, 73 after his
-// RR73), WstxQsoControl::TxWatchdog (the stop at N) and the FT8 transmission length of 12.64 s
+// him has started), the standard sequence of WstxStandardQso::SequenceRule (Tx1, R-report, 73 after his
+// RR73), WstxQsoTransmit::RepetitionLimit (the stop at N) and the FT8 transmission length of 12.64 s
 // (79 symbols of 0.16 s). The actual station router, contact engine, logbook and #9 transmit owner on
 // the recording hardware double (virtual UTC; no audio, PTT or radio) with the scripted IC-7300 dial
 // on 14.074 MHz (the log's band); hand-authored decodes packed with the real codec.

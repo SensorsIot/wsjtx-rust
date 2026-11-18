@@ -1,4 +1,4 @@
-//! WstxTransmitControl::TransmitWire and the station hardware of the transmit owner: PTT via
+//! WstxTransmitControl and the station hardware of the transmit owner: PTT via
 //! the CL-022 lifecycle's single CI-V actor (explicit transmit path, never from the
 //! lifecycle itself), audio via the profile's exact output device.
 use crate::*;
@@ -74,7 +74,7 @@ impl Hardware for StationHardware {
             + self.clock.correction_ms()
     }
     fn clock(&self) -> ClockState {
-        // WstxTransmitClock::AirClock (#92): the station clock state, never unknown; the SNTP
+        // WstxStationClock::AirClock: the station clock state, never unknown; the SNTP
         // state only warns and never refuses.
         self.clock.state()
     }
@@ -263,7 +263,7 @@ impl Station {
             revision: Mutex::new((None, 0)),
         }))
     }
-    /// WstxTransmit::ExitRelease for process exit and panics: stop output and, only if
+    /// WstxTransmitState::SafetyReleases for process exit and panics: stop output and, only if
     /// the CI-V switch may be keyed, send one off-only release bounded to 500 ms. Uses
     /// try_lock only, so a panicking holder cannot deadlock it.
     pub(crate) fn emergency_release(&self) {
@@ -352,7 +352,7 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
         "outcomes":recent,"startup_release":name(v.startup_release)})
 }
-/// WstxTransmitControl::TransmitWire transmit.state: the station-wide revision of the read view
+/// WstxTransmitControl::TransmitStatus transmit.state: the station-wide revision of the read view
 /// (every field of GET /transmit except clock_measurement.age_ms). It increases at each
 /// change any peer's step observes; None without a transmit owner.
 pub(crate) fn state_revision(r: &recording::Recording) -> Option<u64> {

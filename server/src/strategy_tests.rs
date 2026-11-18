@@ -4,7 +4,7 @@
 // Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-09, CL-039-10, CL-042-01, CL-042-02,
 // CL-042-03, CL-042-04; TC-039-001..005, TC-039-010, TC-039-030..032, TC-042-001, TC-042-002,
 // TC-042-004, TC-042-006 (each test names its case below). Hand-authored records, logs and
-// strategies; the expected verdicts, orders, stop reasons and requests are the WstxStrategy
+// strategies; the expected verdicts, orders, stop reasons and requests are the WstxValueOrder
 // tables written in these tests (entities from the cited cty.dat columns), not evaluator output.
 // Integration cases use the actual station router, contact engine and #9 transmit owner
 // on the recording hardware double (virtual UTC; no audio, PTT or radio).
@@ -16,11 +16,11 @@ use crate::mcp_tests::{Mcp, station};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use wstx_rust::transmit::service::Hardware;
-// #81 WstxStrategy::StartedQso (TC-081-001..005), on this file's station helpers.
+// WstxAutoMode::StartedQsoRule (TC-081-001..005), on this file's station helpers.
 #[path = "operating/qso/autofinish_tests.rs"]
 mod autofinish;
-// #89 WstxStrategy::FreeTxSlot Due and Waiting for the newest period (TC-089-002..004), on this
-// file's station helpers.
+// WstxHoldTx::QuietSpace and WstxCqWhenIdle::CqRule for the newest period (TC-089-002,
+// TC-089-004), on this file's station helpers.
 #[path = "operating/qso/newest_rx_tests.rs"]
 mod newest_rx;
 
@@ -1136,7 +1136,7 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
 }
 
 // ------------------------------------------------------------------ strategy runs
-/// POST /strategy/auto from the browser (WstxAutoControl::AutoToggle).
+/// POST /strategy/auto from the browser (WstxAutoControl::SwitchAuto).
 pub(crate) async fn auto(f: &Mcp, on: bool, confirmed: Option<bool>) -> crate::mcp_tests::Reply {
     let mut body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"auto":on});
     if let Some(c) = confirmed {
@@ -1242,7 +1242,7 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
         (json!("DL1XYZ"), json!("replying"), json!("armed"))
     );
     // Proves: CL-039-08; TC-039-009: after the strategy's pick Tx stays (clear of the station);
-    // with Hold Tx on Rx follows the row (#39 holdtx D16, WstxStrategy::FreeTxSlot).
+    // with Hold Tx on Rx follows the row (WstxHoldTx::HoldTxRule).
     let c = f.read("contact").await;
     assert_eq!(
         (
@@ -1260,8 +1260,8 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
         ),
         (json!("contact_active"), json!(2), json!("DL1XYZ"))
     );
-    // #39 holdtx: the run's Rx = Tx steps below run with Hold Tx explicitly off (TC-039-004; with
-    // it on: TC-039-049).
+    // The run's Rx = Tx steps below run with Hold Tx explicitly off (TC-039-004; Hold Tx on is
+    // tested apart).
     hold_off(&f).await;
     // Repetitions 2: two partner periods without an answer leave DL1XYZ, quiet for a minute
     // (quiet_minutes 1); no stop.
@@ -2376,7 +2376,7 @@ async fn tc_039_031_update_most_wanted_status_failures_and_mcp_refusal() {
     );
 }
 
-/// The operator switches Hold Tx off (#39 holdtx: the Rx = Tx rule of WstxStrategy::FreeTxSlot).
+/// The operator switches Hold Tx off (the Rx = Tx rule of WstxHoldTx::HoldTxRule).
 async fn hold_off(f: &Mcp) {
     browser_ok(f, "set_hold_tx", json!({"enabled":false})).await;
     assert_eq!(f.read("contact").await["settings"]["hold_tx"], false);
@@ -2483,7 +2483,7 @@ async fn tc_039_010_a_double_click_racing_the_slot_move_stays_the_operators() {
 }
 
 // Proves: CL-039-09; TC-039-010. A pounce answers as a strategy run does (Hold Tx explicitly off,
-// #39 holdtx; with it on: TC-039-049 (k)).
+// Hold Tx on is tested apart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_010_a_pounce_never_calls_on_the_called_station() {
     let f = station(true).await;
@@ -3930,7 +3930,7 @@ async fn tc_125_001_a_run_never_answers_a_caller_matched_by_a_pattern() {
 }
 
 // ------------------------------------------------------------------ #42 Pounce
-/// The browser's Pounce configuration (WstxStrategy::Pounce) with these unanswered periods.
+/// The browser's Pounce configuration with these unanswered periods.
 fn pounce_json(call: Value, unanswered: u64) -> Value {
     json!({"modes":["ft8"],"ranking":"first_seen","min_snr_db":null,"allowed_calls":[],"blocked_calls":[],
         "max_contacts":1,"max_unanswered_periods":unanswered,"completion_action":"stop","max_run_minutes":480,
@@ -6045,7 +6045,7 @@ async fn wd(f: &Mcp) -> Value {
     f.read("contact").await["watchdog"]["tx_remaining_calls"].clone()
 }
 /// #97 note on TC-039-043: the former WD:n of a run's own contact is the leave label's remaining
-/// (WstxStrategy::LeaveCountLabel); WD itself is null there.
+/// (WstxAutoControl::LeaveCount); WD itself is null there.
 async fn leave_left(f: &Mcp) -> Value {
     assert_eq!(wd(f).await, Value::Null, "no WD in the run's own contact");
     run_of(f).await["leave"]["remaining"].clone()
@@ -6575,8 +6575,8 @@ async fn tc_039_044_a_contest_caller_is_answered_at_once() {
 // Proves: TC-039-044 (f), (g). Run: the caller K2NEW is answered from the CQ's slot (900 stays, not
 // the quietest of my Rx parity), then silent it is left at the 2nd, the run calls CQ again and does
 // not answer K2NEW in its quiet time. Repetitions 3 and quiet_minutes 1 from the selection: left at
-// the 3rd, answered again after 1 minute. Hold Tx explicitly off (#39 holdtx; with it on the
-// Run's CQ stays on the held Tx: TC-039-049 (j)); the CQ's slot 900, the quiet one of my Rx
+// the 3rd, answered again after 1 minute. Hold Tx explicitly off (with it on the
+// Run's CQ stays on the held Tx); the CQ's slot 900, the quiet one of my Rx
 // parity (cq_quiet_rows, #66).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
@@ -6851,7 +6851,7 @@ fn wf_row(f: &Mcp, start: i64, floor: u8, bands: &[(u32, u32, u8)], tx: bool) {
 async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet() {
     let t = casual(true).await;
     let (f, e) = (&t.f, t.e);
-    // #39 holdtx: Hold Tx explicitly off, the CQ takes its slot (with it on: TC-039-049 (h)).
+    // Hold Tx explicitly off, the CQ takes its slot (Hold Tx on is tested apart).
     hold_off(f).await;
     browser_watchdog(f, 2).await;
     cq_quiet_rows(f, e);
@@ -6937,7 +6937,7 @@ async fn tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity() {
 // floor 20 against the floor 20.65 (1810 also holds only floor bins, the band and the segment's
 // floor bins 629..636, but is farther from 1500; every other slot holds busy bins); the whole QSO
 // stays there; with Hold Tx off the selection's Tx goes back to the slot. Hold Tx explicitly off
-// from the start (with it on: TC-039-049).
+// from the start (Hold Tx on is tested apart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_010_the_run_calls_from_the_quietest_slot_of_its_rx_parity() {
     let f = station(true).await;
@@ -7066,7 +7066,7 @@ async fn tc_039_010_a_band_change_a_caller_on_my_slot_and_a_pounce() {
 }
 
 /// The TC-039-022 run: Tx watchdog 2, repetitions 4, calling K1ABC (CQ at 1800 Hz) from Tx 1500 on
-/// 20 m with no power yet, Hold Tx explicitly off (#39 holdtx; with it on: TC-039-049); `set`
+/// 20 m with no power yet, Hold Tx explicitly off (Hold Tx on is tested apart); `set`
 /// prepares the feed. My odd period before the run transmits reads 0 everywhere (my Tx parity, not
 /// judged, #66). The even rows of `slot_rows` move the quietest slot: 1400 at the 1st repetition,
 /// 1300 at the 2nd, tied with 1300 at the 3rd.
@@ -7376,8 +7376,8 @@ async fn tc_097_013_no_wd_in_the_runs_own_contact_and_the_leave_count() {
 // Proves: TC-039-045. A caller is answered from the CQ's slot: the CQ on 900 (the quiet slot of my
 // Rx parity, cq_quiet_rows), a caller at 1200 Hz keeps Tx and Rx on 900; a caller at 920 Hz,
 // within 50 Hz of the slot, moves Tx and Rx to the nearest candidate away from it: 820 (my 50 Hz
-// signal 50 Hz below its 920..970). Hold Tx explicitly off (#39 holdtx; with it on: TC-039-049
-// (h)).
+// signal 50 Hz below its 920..970). Hold Tx explicitly off (Hold Tx on is
+// tested apart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_045_a_caller_is_answered_from_the_cqs_slot() {
     for (hz, expected) in [(1200.0, 900), (920.0, 820)] {
@@ -7438,7 +7438,7 @@ async fn tc_039_042_a_selection_with_auto_off_leaves_a_pounce_running() {
     );
 }
 
-// #39 holdtx (TC-039-049, TC-039-050). Oracle: the operator's rule of 2026-11-07, hand-worked in
+// Hold Tx (WstxHoldTx::HoldTxRule; TC-039-050). Oracle: the operator's rule, hand-worked in
 // each test: with Hold Tx on a run keeps Tx and Rx is on the station; Tx alone moves at the slot
 // check of a target that does not hear us, or 50 Hz clear of a station within 50 Hz of it; a CQ
 // goes out on the held Tx. Quietness is a slot's largest rise above the passband floor in my Rx
@@ -7729,7 +7729,7 @@ async fn tc_039_049_the_cq_goes_out_on_the_held_tx_and_its_callers_keep_it() {
 }
 
 // Proves: TC-039-049 (i). Hold Tx switched off during the contact: the next repetition moves Tx
-// and Rx together onto the slot (1300, as TC-039-049 (b) computes it).
+// and Rx together onto the slot (1300, as the Hold Tx case (b) computes it).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_hold_tx_switched_off_mid_contact_moves_rx_with_tx() {
     let t = held_run("ft8", None, &[K1ABC_CQ]).await;
@@ -8307,9 +8307,9 @@ async fn tc_039_050_a_period_counts_only_when_its_levels_reach_bin_921() {
     }
 }
 
-// #65 WstxAutoControl::FreeTxSlots on the wire (TC-065-002). Oracle: the operator's rules of
-// 2026-11-08 (issue #65 Functionality 1-2) worked by hand from the hand-authored waterfall rows
-// below, and the model's exact keys (WstxMcp::AutomationWire, WstxStationProtocol).
+// WstxQsoControl::OpenSlots on the wire (TC-082-003). Oracle: the open rule
+// (WstxHoldTx::OpenSlotRule) worked by hand from the hand-authored waterfall rows
+// below, and the model's exact keys (WstxStationLink::WireNames).
 
 /// A status WebSocket peer over the served router with the browser's cookie and Origin and one
 /// display subscription (RFC 6455 frames written and read here; client frames masked).
@@ -8468,10 +8468,10 @@ async fn free_tx_slots(f: &Mcp) -> Value {
     get["free_tx_slots"].clone()
 }
 
-// #82 WstxAutoControl::FreeTxSlots: the station's open slots with or without a run (TC-082-002,
-// TC-082-003). Oracle: CL-065-01's parity rule and build times (the operator's round 1 Q3 and round
-// 2 Q1 answers), its open rule worked by hand from the hand-authored rows below, and the model's
-// exact keys (WstxMcp::AutomationWire, WstxStationLink::PushedStationState).
+// WstxHoldTx::OpenSlotRule: the station's open slots with or without a run (TC-082-001,
+// TC-082-003). Oracle: CL-065-01's parity rule and build times, its open rule worked by hand
+// from the hand-authored rows below, and the model's exact keys (WstxQsoControl::OpenSlots,
+// WstxStationCommands::StationOperations).
 
 /// The station clock stands still at `at`; then one station step (the build runs in it).
 fn step_at(f: &Mcp, at: i64) {
@@ -8818,7 +8818,7 @@ async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_nu
 // {at_utc_ms, mode, rx_parity, qso, periods, open}, equal to the MCP view's), none to Off. A fourth
 // peer subscribing Thin gets exactly one, the current value. FT4: a new live job (mode ft4) at
 // e + 60 s builds at once, then at e + 67.5, e + 75 and e + 82.5 s: 4 in 30 s, rx_parity even, odd,
-// even, odd (TC-082-002 (a) in FT4). The live receive
+// even, odd (case (a) in FT4). The live receive
 // stops: one event with free_tx_slots null, GET null, no further event. No automation.state to any
 // peer, and none of run_id, slots, rise_db, level_db, floor_db or listening in an event. The 48-range
 // value with two UUIDs and a 13-digit at_utc_ms is at most 1024 bytes. Red on the parent: no event
@@ -8981,8 +8981,8 @@ async fn tc_082_003_free_tx_slots_on_the_socket_and_in_the_snapshot_without_a_ru
     server.abort();
 }
 
-// #66 quiet slots across the passband (TC-066-001, TC-066-002). Oracle: the operator's rules of
-// 2026-11-08 (issue #66 Functionality 1-8), hand-computed in each test from the waterfall rows and
+// Quiet slots across the passband (WstxHoldTx::QuietSpace; TC-066-002). Oracle: the rules of
+// WstxHoldTx::QuietSpace and SlotLevel, hand-computed in each test from the waterfall rows and
 // the decodes written here.
 
 /// The decodes of the HB9BLA capture of 2026-11-08 10:28:58 UTC (10 m FT8, the run's CQ decision,
@@ -9231,8 +9231,8 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
 }
 
 // Proves: CL-039-09; TC-066-002.
-// The TC-066-003 defect (HB9BLA 2026-11-08 18:02-18:13 UTC): after the run's first transmission
-// every decision counted 0 Rx periods. A strategy run with Hold Tx on
+// After the run's first transmission each decision still counts its Rx periods, not 0.
+// A strategy run with Hold Tx on
 // (as live) selects K1ABC (CQ in the even period e at 1800 Hz) and calls him in my odd periods
 // e + 15 s and e + 45 s; the hardware double keys PTT at each period start. The detailed waterfall
 // comes from the actual live worker, fed with silent blocks from e - 30 s, observing the transmit

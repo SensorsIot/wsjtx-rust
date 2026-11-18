@@ -322,9 +322,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .await?;
             recording.initialize_profile_revision(store.document.revision);
-            // WstxTransmit slice B: one transmit owner per station, disarmed at startup.
-            // WstxTransmitClock::TransmitClock: the station measures its UTC offset by SNTP
-            // on its own thread, at start and every minute. WSTX_SNTP_SERVERS replaces
+            // WstxTransmitPart::TransmitService: one transmit owner per station, disarmed at
+            // startup. WstxStationClock::TimeServerCheck: the station measures its UTC offset
+            // by SNTP on its own thread, at start and every minute. WSTX_SNTP_SERVERS replaces
             // the server order (comma-separated; empty: never measure, no NTP warning).
             let mut sntp = wstx_rust::transmit::clock::Sntp::station();
             if let Ok(list) = env::var("WSTX_SNTP_SERVERS") {
@@ -361,7 +361,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = recording.transmit.set(transmit);
             recording.start_hashes(&store.document.callsign);
             recording.sync_transmit_mode();
-            // WstxContact: one contact engine per station, consuming the transmit owner.
+            // WstxQsoPart::QsoService: one contact engine per station, consuming the transmit
+            // owner.
             let _ = recording.contact.set(contact_http::Station::start(&store));
             // FR-023: a native profile starts its own direct radio session; a standard
             // profile never opens a native socket.
@@ -415,7 +416,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 radio_level::startup(&named);
             })
             .await?;
-            // WstxContact: the station-wide contact step, whether or not a browser is connected.
+            // WstxQsoPart::QsoService: the station-wide contact step, whether or not a browser is
+            // connected.
             let contacts = state.clone();
             tokio::spawn(async move {
                 let mut timer = interval(Duration::from_millis(50));
@@ -500,7 +502,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => None,
     };
-    // #80 WstxStationLink::LinkTrafficLog: a station with a profile directory counts the
+    // WstxListener::LinkTrafficLog: a station with a profile directory counts the
     // bytes of every accepted connection and writes them per period; without one, no log.
     let log = profile.as_ref().map(|state| {
         let log = link_log::Log::new(Box::new(link_log::StationClock(state.recording.clone())));
@@ -955,13 +957,13 @@ async fn upgrade(
         .max_write_buffer_size(4096)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
-            // #39 an authenticated client is here (WstxAutoControl::StrategyRun).
+            // An authenticated client is here.
             let _client = app.profile.as_ref().map(|p| p.recording.clients.session());
             connection(link_log::Socket::new(socket, link), app.profile, authority).await
         })
 }
 
-/// WstxStationProtocol::ClientBuild (#51): the identity of the embedded browser client, the
+/// WstxListener::ClientBuild: the identity of the embedded browser client, the
 /// first 16 hex digits of the SHA-256 over every served client file in route order. The page
 /// carries the build it was served with; station.status carries the station's.
 fn client_build() -> &'static str {
@@ -1195,26 +1197,28 @@ async fn connection(
     // #57 CL-057-01: a Detailed peer is told of each new or grown decode view at once; Thin
     // and Off keep the 2 s receive tick that their link budget is measured with.
     let mut publication = recording.as_ref().map(|r| r.publication.subscribe());
-    // WstxQsoControl::ContactStateEvent / StationTickEvent pacing (optional writes).
+    // WstxQsoControl::QsoState / StationTickEvent pacing (optional writes).
     let mut contact_tick = interval(Duration::from_secs(1));
     contact_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut contact_seen: Option<(u64, Option<u64>)> = None;
     // What this peer holds of the contact snapshot, and when it was last sent.
     let mut contact_sent = Value::Null;
     let mut contact_sent_at = Instant::now();
-    // WstxTransmitControl::TransmitWire transmit.state (pushed state, coalesced like contact.state).
+    // WstxTransmitControl::TransmitStatus transmit.state (pushed state, coalesced like
+    // contact.state).
     let mut transmit_seen: Option<u64> = None;
     // What this peer holds: the fields it was last sent, and when.
     let mut transmit_sent = Value::Null;
     let mut transmit_sent_at = Instant::now();
-    // WstxMcp::AutomationStateEvent: only after a change since boot (no event while unused).
+    // WstxAutoControl::AutoActivity: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
     // #82 free_tx_slots.state: the build this Detailed or Thin peer holds (None: none, also
     // while Off, so that a peer coming from Off gets the current value once).
     let mut free_tx_slots_seen: Option<u64> = None;
-    // #39 WstxStrategies::StrategyHttp strategy.state: only after a change since this peer subscribed.
+    // WstxStrategies::StrategiesState strategy.state: only after a change since this peer
+    // subscribed.
     let mut strategy_seen: Option<u64> = None;
-    // #42 WstxStationLink::AlertWire alert.state: only after a change since this peer subscribed.
+    // WstxRankingControl::Alert alert.state: only after a change since this peer subscribed.
     let mut alert_seen: Option<u64> = None;
     // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).
@@ -1222,7 +1226,8 @@ async fn connection(
     // #39 WstxHearingFeed::HearingFeed pskr.state: after a change since this peer subscribed
     // (the first event follows its GET /pskr snapshot).
     let mut pskr_seen: u64 = 0;
-    // #44 CL-044-13 radio.tx_level: after each change of the level, assistant or meters.
+    // WstxTransmitControl::TxLevelStatus radio.tx_level: after each change of the level,
+    // assistant or meters.
     let mut tx_level_seen: u64 = 0;
     // FR-023 radio.native: this peer's snapshot, then each change of the native session.
     let mut native_seen: u64 = 0;
@@ -1237,7 +1242,7 @@ async fn connection(
     clock_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut clock_seen: Option<u64> = None;
     let mut clock_sent_at: Option<Instant> = None;
-    // WstxStationCommands::SelectionStateEvent: what this peer holds, and when it was last sent.
+    // WstxStationCommands::SelectionState: what this peer holds, and when it was last sent.
     let mut selection_sent = Value::Null;
     let mut selection_sent_at = Instant::now();
     let mut last_station_tick: Option<Instant> = None;

@@ -775,7 +775,7 @@ fn partner_working_another_call_within_50_hz_stops_in_replying_and_skipped_repor
             s.deliver(&[elsewhere]);
             assert_eq!(!s.armed(), stops, "offset {offset} skipped {skipped}");
             assert_eq!(!s.core.view().transmitting, stops);
-            // #39: the stop is an abort, never a halt (WstxTransmitControl::TransmitHaltUse).
+            // The stop is an abort, never a halt (WstxTransmitControl::Abort).
             assert_eq!(s.core.view().halt_state, HaltState::Idle, "no halt");
             if stops {
                 assert_eq!(
@@ -828,7 +828,7 @@ fn sends(s: &Station) -> Vec<i64> {
 }
 
 // Proves: TC-097-012 (a), (c), (d), (e) (CL-097-06, #93 reproduction of 2026-11-09 14:39 UTC).
-// Oracle: operator #93 "Keep calling, don't count" and the bound of WstxQsoControl::TxWatchdog
+// Oracle: "Keep calling, don't count" and the bound of WstxQsoTransmit::RepetitionLimit
 // (at most N paused calls per message). 10m FT4, Tx watchdog 6. (a) KE1J works W9XYZ for 8 of his
 // periods: our Tx1 is keyed in each of the 8 following periods, the first 6 paused (WD stays 6),
 // the 7th and 8th counted (5, 4); his RR73 ends it, the 9th..12th count (3..0) and the 13th is
@@ -2109,8 +2109,8 @@ fn choosing_a_slot_on_a_finished_contact_never_changes_its_state() {
 
 // ---------------------------------------------------------------- FT4 (#11 slice B)
 // Proves: CL-011-03, CL-011-04; TC-007-008. The same engine and #9 owner core in FT4;
-// expected periods, texts, samples and times are hand-written from WstxContact
-// ContactMode/ModeChange, the FT4-NOTE rules and WSJT-X (Modulator.cpp FT4 delay
+// expected periods, texts, samples and times are hand-written from WstxStandardQso
+// FtModeRule/ModeChangeRule, the FT4-NOTE rules and WSJT-X (Modulator.cpp FT4 delay
 // 300 ms; 105 symbols x 576 x 4 = 241920 samples at 48 kHz; m_TRperiod 7.5 s).
 const FT4: i64 = 7_500;
 const FT4_SAMPLES_48K: usize = 241_920;
@@ -2277,7 +2277,7 @@ fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
     assert_eq!((c.state, c.next), (State::Cancelled, Slot::Tx6));
     assert_eq!(c.dx_call, None);
     assert!(!s.armed());
-    // TC-111-001 (b) (#111 CL-111-03): the mode change is the cause shown.
+    // CL-111-03: the mode change is the cause shown.
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::ModeChanged);
     assert_eq!(s.core.view().pending_sequence, None);
     assert_eq!(s.engine.settings.tx_hz, 2916, "clamped into the FT4 domain");
@@ -3084,7 +3084,7 @@ fn the_contact_dialogue_holds_the_exchanged_messages_in_order() {
 }
 
 // ---------------------------------------------------------------- #24 S1b
-/// A decoded row as the station builds it (WstxOfflineDecode::HashResolution, then the
+/// A decoded row as the station builds it (WstxMessagePayload::HashResolution, then the
 /// station's row reader): packed, unpacked, filled in from `table`, which then learns it.
 fn decoded(
     s: &mut Station,
@@ -5706,7 +5706,7 @@ fn station_started_with_saved(auto_seq: bool, call_first: bool) -> Station {
 }
 
 // Proves: CL-110-01, CL-010-17; TC-110-004 (a), (b). The restored Call 1st governs the own
-// CQ: off keeps calling (WstxStandardQso::CallFirst), on answers the first caller as TC-010-010 (a).
+// CQ: off keeps calling (WstxStandardQso::CallFirstRule), on answers the first caller as TC-010-010 (a).
 #[test]
 fn tc_110_004_the_restored_call_first_governs_the_own_cq() {
     for (call_first, state, sent) in [
@@ -5733,7 +5733,7 @@ fn tc_110_004_the_restored_call_first_governs_the_own_cq() {
 }
 
 // Proves: CL-110-01, CL-010-02; TC-110-004 (c). The restored Auto Seq off: the partner's
-// report changes neither state nor next slot and offers Tx3 (WstxStandardQso::AutoSequence).
+// report changes neither state nor next slot and offers Tx3 (WstxStandardQso::SequenceRule).
 #[test]
 fn tc_110_004_the_restored_auto_seq_off_only_offers_the_next_message() {
     let mut s = station_started_with_saved(false, true);

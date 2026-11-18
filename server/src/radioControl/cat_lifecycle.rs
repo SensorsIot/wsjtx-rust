@@ -51,7 +51,7 @@ pub(crate) enum Action {
 }
 pub(crate) const DELAYS: [u64; 4] = [1, 2, 4, 8];
 
-/// CL-022-05 status reason of a released failed attempt: a port held by another
+/// The status reason of a released failed attempt: a port held by another
 /// program (access denied / sharing violation, or another station's ownership lock)
 /// is named port_in_use; every other cause keeps the common radio error code.
 pub(crate) fn reason(error: cat::Error) -> &'static str {

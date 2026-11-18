@@ -1,4 +1,4 @@
-//! FR-023 optional native FlexRadio connection (WstxFlexSession::NativeFlexBoundary).
+//! FR-023 optional native FlexRadio connection (WstxFlexAdapterPart::FlexAdapter).
 //! Control and receive samples share one per-station session; audio reaches the station
 //! only through the existing sample-source interface, separate from control.
 #[path = "../flexAdapter/session.rs"]

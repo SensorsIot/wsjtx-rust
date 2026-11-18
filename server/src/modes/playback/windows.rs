@@ -308,7 +308,7 @@ unsafe extern "system" fn console_exit(_: u32) -> ::windows::core::BOOL {
     // Not handled: the default handler then ends the process as before.
     ::windows::core::BOOL(0)
 }
-/// WstxTransmit::ExitRelease: runs `guard` (stop audio, one bounded off-only PTT release)
+/// WstxTransmitState::SafetyReleases: runs `guard` (stop audio, one bounded off-only PTT release)
 /// on Ctrl+C, Ctrl+Break, console close, logoff and shutdown before the default exit.
 pub fn install_exit_guard(guard: Box<dyn Fn() + Send + Sync>) -> bool {
     if EXIT_GUARD.set(guard).is_err() {

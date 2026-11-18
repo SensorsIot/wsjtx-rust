@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxDxcc (#55): the AD1C cty.dat country table and the WSJT-X entity resolution of a
+//! WstxCountryFile: the AD1C cty.dat country table and the WSJT-X entity resolution of a
 //! call (logbook/AD1CCty.cpp lookup, Radio.cpp effective_prefix), plus the WSJT-X
 //! "new DXCC / continent / CQ zone / ITU zone" status of an entity against the log
 //! (logbook/WorkedBefore.cpp, highlight by mode off as in the WSJT-X default).
@@ -404,7 +404,7 @@ pub struct Logged {
     pub confirmed: bool,
     /// #39 QSO_DATE as YYYYMMDD (None: counts only for the all-time window).
     pub date: Option<u32>,
-    /// #97 the ADIF STATE (WstxValueOrder::UsStateOf), upper case.
+    /// The ADIF STATE (WstxValueOrder::UsStateFilterRule), upper case.
     pub state: Option<String>,
 }
 /// #10 award standing of a key (for example a DXCC entity) in a scope: worked by any
@@ -441,10 +441,10 @@ impl Category {
 /// The index of the CQ WPX prefix in the per-band and per-band-and-mode maps (#97 NewNeeded
 /// prefix per band and band_mode).
 const WPX: u8 = 6;
-/// #97 WstxValueOrder::UsStateOf: the entities whose ADIF STATE is a US state (291 United States,
-/// 6 Alaska, 110 Hawaii), by their cty.dat names.
+/// WstxValueOrder::UsStateFilterRule: the entities whose ADIF STATE is a US state (291 United
+/// States, 6 Alaska, 110 Hawaii), by their cty.dat names.
 pub const US_ENTITIES: [&str; 3] = ["United States", "Alaska", "Hawaii"];
-/// WstxValueOrder::WpxPrefix: the CQ WPX prefix of a call.
+/// The CQ WPX prefix of a call (WstxOperatingChain::WorkedCategory).
 pub fn wpx_prefix(call: &str) -> String {
     /// Letters and digits up to the last digit; without a digit two letters and a zero.
     fn prefix_of(part: &str) -> String {
@@ -494,11 +494,11 @@ pub struct Worked {
     band: HashMap<(u8, String, String), bool>,
     /// #42 per band and mode (the strategy's scope), for the entity categories.
     band_mode: HashMap<(u8, String, String, String), bool>,
-    /// #39 the CQ WPX prefixes (WstxValueOrder::WpxPrefix) with their confirmation.
+    /// The CQ WPX prefixes (WstxOperatingChain::WorkedCategory) with their confirmation.
     wpx: HashMap<String, bool>,
     /// #39 calls with a logged contact that has no grid: their grid status is unknown.
     gridless: HashSet<String>,
-    /// #97 WstxValueOrder::UsStateOf: per call the STATE of its newest record that has one, a
+    /// WstxValueOrder::UsStateFilterRule: per call the STATE of its newest record that has one, a
     /// confirmed record before an unconfirmed one: (confirmed, date, state). Every record
     /// counts, whatever the window.
     states: HashMap<String, (bool, u32, String)>,
@@ -532,7 +532,7 @@ impl Worked {
     pub fn from_log(table: &Table, logged: &[Logged]) -> Self {
         Self::from_log_window(table, logged, None)
     }
-    /// #39 WstxValueOrder::WorkedWindowRule: only the records dated in `window` (first and last
+    /// WstxLogbook::WorkedBeforeQuery: only the records dated in `window` (first and last
     /// date as YYYYMMDD, inclusive), if given; a record without a date counts only without.
     pub fn from_log_window(table: &Table, logged: &[Logged], window: Option<(u32, u32)>) -> Self {
         let mut w = Self::default();
@@ -624,18 +624,18 @@ impl Worked {
     pub fn grid_scoped(&self, grid: &str, band: Option<&str>, mode: Option<&str>) -> Standing {
         square(grid).map_or(Standing::default(), |g| self.scoped(1, g, band, mode))
     }
-    /// #97 NewNeeded prefix (WstxValueOrder::WpxPrefix) per ever, band or band and mode.
+    /// NewNeeded prefix (WstxOperatingChain::WorkedCategory) per ever, band or band and mode.
     pub fn wpx_scoped(&self, call: &str, band: Option<&str>, mode: Option<&str>) -> Standing {
         self.scoped(WPX, wpx_prefix(call), band, mode)
     }
-    /// #97 WstxValueOrder::UsStateOf from the log: the STATE of the call's newest record that has
-    /// one, a confirmed record first.
+    /// WstxValueOrder::UsStateFilterRule from the log: the STATE of the call's newest record
+    /// that has one, a confirmed record first.
     pub fn state_of(&self, call: &str) -> Option<&str> {
         self.states
             .get(&call.to_ascii_uppercase())
             .map(|s| s.2.as_str())
     }
-    /// #39 the call has a logged contact without a grid (WstxStrategy D13).
+    /// The call has a logged contact without a grid.
     pub fn gridless(&self, call: &str) -> bool {
         self.gridless.contains(&call.to_ascii_uppercase())
     }

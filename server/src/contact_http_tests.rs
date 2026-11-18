@@ -1525,7 +1525,7 @@ async fn select_mode(f: &Fixture, mode: &str) -> (StatusCode, Value) {
 }
 
 // Proves: CL-011-02; TC-006-002. The station's operating mode follows the live FT4 job
-// (WstxQsoTransmit::StationOperatingMode) and a mode selection is refused busy while #9
+// (WstxTransmitControl::StationMode) and a mode selection is refused busy while transmit
 // keys the radio (ModeChange; WSJT-X updateModeControlLock).
 #[tokio::test]
 async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change() {
@@ -1668,7 +1668,7 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
         (
             Some("cancelled"),
             Some("disarmed"),
-            // #111 CL-111-03, TC-111-001 (b): the wire names the mode change.
+            // CL-111-03: the wire names the mode change.
             Some("mode_changed")
         )
     );
@@ -2477,7 +2477,7 @@ fn directory_content(dir: &std::path::Path) -> Vec<(String, Option<Vec<u8>>)> {
 // Proves: CL-110-01; TC-110-003 (a)-(c). The fault is the profile store's test seam at the
 // replace of the file (profile::tests::with_fault "replace"); the command runs through
 // Station::operate, the browser's validation and execution, on the test's own thread, which
-// is where the seam acts. Expected values are CL-110-01 point 4.
+// is where the seam acts. A refused save leaves the values as they were.
 #[tokio::test]
 async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
     let f = fixture("http://127.0.0.1:18113", true);
@@ -2517,7 +2517,7 @@ async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
 // Proves: CL-111-01, CL-111-02, CL-111-03, CL-111-06.
 // Proves: TC-111-002, TC-111-003, TC-111-007, TC-111-009, TC-111-010.
 // TC-111-002: snapshot reload and repeated command_id. TC-111-003: each start is one
-// ContactCommand with its safety revision. TC-111-007: the causes on the wire. TC-111-009: the
+// ContactCommand with its safety revision. TC-111-007: the causes on the wire. CL-111-03: the
 // station's band reaches the engine. TC-111-010 (b) on the wire. The station: router, contact
 // engine and transmit owner on the recording double. Expected values are the tables of
 // CL-111-02 and CL-111-03.
@@ -2681,7 +2681,7 @@ async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station()
     assert_eq!(snap["contact"]["dx_call"], "DL1XYZ");
     assert_ne!(snap["contact"]["id"], contact);
     assert_eq!(snap["transmit"]["arm_state"], "armed");
-    // TC-111-009: the station band changes (20 m to 40 m): off, band_changed, cancelled.
+    // CL-111-03: the station band changes (20 m to 40 m): off, band_changed, cancelled.
     r.fixture_band("40m");
     f.tick();
     let snap = f.snapshot().await;

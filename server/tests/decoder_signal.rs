@@ -22,7 +22,7 @@ use wstx_rust::decoder::{Decode, DecodeError, DecodeState, Decoder, Mode, quadra
 #[path = "../src/model_values.rs"]
 mod model_values;
 
-/// A value of WstxModemDecode or WstxOfflineDecode, read from the model: with its unit
+/// A value of WstxDecode, read from the model: with its unit
 /// when its name ends in a unit suffix, as a count otherwise.
 fn model_value(name: &str) -> f64 {
     static MODEL: std::sync::OnceLock<model_values::Model> = std::sync::OnceLock::new();
@@ -36,11 +36,11 @@ fn model_value(name: &str) -> f64 {
         model_values::Number::Real(x) => x,
     }
 }
-/// A value of WstxModemDecode::DecodeQuality.
+/// A value of WstxDecode::DecodeQuality.
 fn quality(feature: &str) -> f64 {
-    model_value(&format!("WstxModemDecode::DecodeQuality::{feature}"))
+    model_value(&format!("WstxDecode::DecodeQuality::{feature}"))
 }
-/// The start tolerance of a decoded frame in frames (WstxModemDecode::DecodeQuality).
+/// The start tolerance of a decoded frame in frames (WstxDecode::DecodeQuality).
 fn start_tolerance(mode: Mode) -> u64 {
     quality(if mode == Mode::Ft8 {
         "ft8StartToleranceFrames"
@@ -49,7 +49,7 @@ fn start_tolerance(mode: Mode) -> u64 {
     }) as u64
 }
 /// The lowest-tone frequency tolerance of a decoded frame in Hz
-/// (WstxModemDecode::DecodeQuality).
+/// (WstxDecode::DecodeQuality).
 fn frequency_tolerance(mode: Mode) -> f64 {
     quality(if mode == Mode::Ft8 {
         "ft8FrequencyToleranceHz"
@@ -57,9 +57,9 @@ fn frequency_tolerance(mode: Mode) -> f64 {
         "ft4FrequencyToleranceHz"
     })
 }
-/// A value of WstxModemDecode::DecodeBudgets.
+/// A value of WstxDecode::DecodeBudgets.
 fn budget(feature: &str) -> f64 {
-    model_value(&format!("WstxModemDecode::DecodeBudgets::{feature}"))
+    model_value(&format!("WstxDecode::DecodeBudgets::{feature}"))
 }
 fn prepared(kind: &str) -> PathBuf {
     static QUALITY: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -196,7 +196,7 @@ fn independent_waveforms_decode() {
             v["payload77"].as_str().unwrap(),
             "{id}"
         );
-        // WstxModemDecode::DecodeQuality: the start and frequency tolerances of the mode.
+        // WstxDecode::DecodeQuality: the start and frequency tolerances of the mode.
         assert!(
             d.start_frame.abs_diff(6000) <= start_tolerance(mode),
             "{id}: start {}",
@@ -293,7 +293,7 @@ fn quality_corpus() {
                     x["text"],
                     "text {id}"
                 );
-                // WstxModemDecode::DecodeQuality: the start and frequency tolerances.
+                // WstxDecode::DecodeQuality: the start and frequency tolerances.
                 assert!(
                     d.start_frame.abs_diff(x["start_frame"].as_u64().unwrap())
                         <= start_tolerance(mode),
@@ -307,7 +307,7 @@ fn quality_corpus() {
                 if let (Some(snr), Some(fixture_tolerance)) =
                     (x["snr2500_db"].as_f64(), x["snr_tolerance_db"].as_f64())
                 {
-                    // WstxModemDecode::DecodeQuality: the SNR limit of a strong isolated
+                    // WstxDecode::DecodeQuality: the SNR limit of a strong isolated
                     // signal; the weak signals keep the fixture's own tolerance.
                     let tolerance = if group == "strong" {
                         quality("strongAwgnSnrToleranceDb")
@@ -335,39 +335,43 @@ fn quality_corpus() {
         assert_eq!(count, 2286);
         assert_eq!(totals.len(), 18);
     }
-    // WstxModemDecode::DecodeQuality: the counts per level and per overlap group.
-    let level = quality("signalsPerLevel") as usize;
-    let pairs = quality("overlapPairs") as usize;
+    // The corpus has 40 signals per level and 20 pairs per overlap group; at least the
+    // share of WstxDecode::DecodeQuality decodes in each.
+    let level = 40;
+    let pairs = 20;
+    let reaches = |decoded: usize, of: usize, share: &str| {
+        decoded as f64 * 100. >= quality(share) * of as f64
+    };
     for (key, (n, success, individual)) in totals {
         if key.ends_with("/strong") {
-            assert_eq!(n, level, "{key}: group size against signalsPerLevel");
+            assert_eq!(n, level, "{key}: group size");
             assert!(
-                success >= quality("strongDecodedMin") as usize,
+                reaches(success, n, "strongDecodedPct"),
                 "{key}: {success}/{n}"
             );
         } else if key.ends_with("/weak") {
-            assert_eq!(n, level, "{key}: group size against signalsPerLevel");
+            assert_eq!(n, level, "{key}: group size");
             assert!(
-                success >= quality("weakDecodedMin") as usize,
+                reaches(success, n, "weakDecodedPct"),
                 "{key}: {success}/{n}"
             );
         } else if key.ends_with("/offset") {
             assert_eq!(success, n, "{key}");
         } else if key.ends_with("/two-spacing") {
-            assert_eq!(n, pairs, "{key}: group size against overlapPairs");
+            assert_eq!(n, pairs, "{key}: group size");
             assert!(
-                success >= quality("overlapDecodedMin") as usize,
+                reaches(success, n, "overlapDecodedPct"),
                 "{key}: {success}/{n}"
             );
         } else if key.ends_with("/one-spacing-6db") {
-            assert_eq!(n, pairs, "{key}: group size against overlapPairs");
+            assert_eq!(n, pairs, "{key}: group size");
             assert!(
-                individual[0] >= quality("oneSpacingStrongDecodedMin") as usize,
+                reaches(individual[0], n, "oneSpacingStrongDecodedPct"),
                 "{key} stronger: {:?}",
                 individual
             );
             assert!(
-                individual[1] >= quality("oneSpacingWeakDecodedMin") as usize,
+                reaches(individual[1], n, "oneSpacingWeakDecodedPct"),
                 "{key} weaker: {:?}",
                 individual
             );
@@ -546,10 +550,22 @@ fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
                 serde_json::to_value(d.payload.status).unwrap(),
                 expected["expected_status"]
             );
-            // The status names of WstxDecodes::FrameStatus, read from the model.
+            // The status names of WstxModeProcessing::FrameStatus, read from the model and
+            // written as WstxStationLink::WireNames says.
             let statuses = model_values::Model::load()
-                .enum_members("WstxDecodes::FrameStatus")
-                .unwrap_or_else(|e| panic!("model value {e}"));
+                .enum_members("WstxModeProcessing::FrameStatus")
+                .unwrap_or_else(|e| panic!("model value {e}"))
+                .iter()
+                .map(|s| {
+                    s.chars().fold(String::new(), |mut wire, c| {
+                        if c.is_ascii_uppercase() {
+                            wire.push('_');
+                        }
+                        wire.push(c.to_ascii_lowercase());
+                        wire
+                    })
+                })
+                .collect::<Vec<_>>();
             let status = serde_json::to_value(d.payload.status).unwrap();
             assert!(
                 statuses.iter().any(|s| status == s.as_str()),
@@ -783,24 +799,9 @@ fn official_modern_recording_baselines() {
             "BASELINE {id}: {matches}/{}; missing {missing:?}",
             observations.len()
         );
-        // WstxModemDecode::DecodeQuality: at least the official minimum of the messages.
-        let (messages, minimum) = if mode == Mode::Ft8 {
-            (
-                quality("ft8OfficialMessages"),
-                quality("ft8OfficialDecodedMin"),
-            )
-        } else {
-            (
-                quality("ft4OfficialMessages"),
-                quality("ft4OfficialDecodedMin"),
-            )
-        };
-        assert_eq!(
-            observations.len(),
-            messages as usize,
-            "{id}: official messages"
-        );
-        if matches < minimum as usize {
+        // At least the fixture's minimum of the official messages.
+        let minimum = case["minimum_matches"].as_u64().unwrap() as usize;
+        if matches < minimum {
             failures.push((id, matches));
         }
     }
@@ -1490,7 +1491,7 @@ fn resource_runtime_parent() {
                         .join(case["id"].as_str().unwrap())
                         .join("000000_000000.wav");
                     assert_eq!(resource_hash(&input), case["sha256"].as_str().unwrap());
-                    // WstxModemDecode::DecodeBudgets, read from the model.
+                    // WstxDecode::DecodeBudgets, read from the model.
                     let ceiling = if long {
                         budget("recordingMaxSeconds")
                     } else if mode == "ft8" {

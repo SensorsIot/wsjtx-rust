@@ -1,4 +1,4 @@
-//! CR #5 implementation of WstxProfiles (approved FSD 4.2 and 12.5).
+//! The profile of a station (WstxProfileDocument).
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -574,7 +574,7 @@ impl Store {
             address,
         ))
     }
-    /// Another JSON document of this profile directory (WstxUdp::UdpConfiguration): None
+    /// Another JSON document of this profile directory (WstxUdpControl::UdpConfiguration): None
     /// when absent; larger than `maximum` bytes is an error.
     pub fn read_document_file(
         &self,

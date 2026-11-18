@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxStrategy::FreeTxSlot: the quietest Tx slot a strategy or contest run or a pounce calls
+//! WstxHoldTx::QuietSpace: the quietest Tx slot a strategy or contest run or a pounce calls
 //! from (#39 strategydef, operator grill 2026-11-07 Q18, Q30-Q32, Q36, Q39), judged in my Rx
 //! periods by each slot's level above the WSJT-X passband floor, clear of the stations decoded in
 //! them (#66). Pure: the counted periods and their decodes, the bounds, the called station and his
@@ -56,7 +56,7 @@ pub(crate) fn band(mode: Mode) -> (u32, u32) {
         (PASSBAND_TOP_HZ - width_hz(mode)).min(tx_max_hz(mode)),
     )
 }
-/// #97 (#90) Auto's candidates start at 500 Hz (WstxStrategy::FreeTxSlot candidateLowHz).
+/// Auto's candidates start at 500 Hz (WstxHoldTx::SlotLimits::candidateLowHz).
 pub(crate) const CANDIDATE_LOW_HZ: u32 = 500;
 /// #97 (#90, Q3) a slot whose signal reaches above 2400 Hz loses every tie.
 pub(crate) const UPPER_EDGE_HZ: u32 = 2400;
@@ -108,7 +108,7 @@ pub(crate) fn split_target(
     }
     nearest(&list, current)
 }
-/// #97 WstxStrategy::TxMoveRule: another quiet slot. FreeTxSlot's choice (from 500 Hz, clear of
+/// WstxTxSlot::MoveRule: another quiet slot. QuietSpace's choice (from 500 Hz, clear of
 /// every signal in `avoid`, of the decoded stations while one is free) with two exclusions of its
 /// own and no fallback: never overlapping the current Tx (|f - tx| below the width), never within
 /// 50 Hz of a frequency he decodes in my Tx parity (`his`). None: no candidate left (Tx stays).
@@ -247,7 +247,7 @@ fn nearest(slots: &[u32], current: u32) -> Option<u32> {
         .copied()
         .min_by_key(|f| ((i64::from(*f) - i64::from(current)).abs(), *f))
 }
-/// WstxStrategy::FreeTxSlot choice. Candidates every STEP_HZ and the current Tx inside the Tx
+/// WstxHoldTx::QuietSpace choice. Candidates every STEP_HZ and the current Tx inside the Tx
 /// range, never within CLEARANCE_HZ of the called station; while one is free, none overlapping a
 /// station `decoded` in the counted periods; where his decoded frequencies of my Tx parity are
 /// known (`his`), only those at least CLEARANCE_HZ from each (when that leaves none, his end is
@@ -404,7 +404,7 @@ pub(crate) struct Numbers {
     pub level: f64,
     pub floor: f64,
 }
-/// WstxAutoControl::FreeTxSlots Open (#82): the Tx frequencies f of FreeTxSlot's candidate grid
+/// WstxHoldTx::OpenSlotRule: the Tx frequencies f of QuietSpace's candidate grid
 /// (every STEP_HZ inside the Tx range, `band`) whose compared value is 0 (at or under the floor;
 /// None, no counted period, is not 0) and whose signal [f, f + width) overlaps no station
 /// `decoded` in a counted period. No other filter, no fallback, no ranking, no limit.
@@ -419,7 +419,7 @@ pub(crate) fn open_slots(
         .filter(|f| !occupied(*f, decoded, width) && value(*f).map(compared) == Some(0))
         .collect()
 }
-/// WstxAutoControl::FreeTxSlots Open ranges (#82): the union of the half-open signals [f, f + width)
+/// WstxQsoControl::OpenRange: the union of the half-open signals [f, f + width)
 /// of the ascending open `slots`; overlapping signals join, touching ones stay separate.
 pub(crate) fn open_ranges(mode: Mode, slots: &[u32]) -> Vec<(u32, u32)> {
     let width = width_hz(mode);
@@ -458,8 +458,8 @@ impl Open {
         })
     }
 }
-/// The per-period waterfall power of the live receive (WstxStrategy::FreeTxSlot "Counted
-/// periods"): fed with every detailed row, its period and whether that period is a Tx period (one
+/// The per-period waterfall power of the live receive (WstxHoldTx::QuietSpace, counted
+/// periods): fed with every detailed row, its period and whether that period is a Tx period (one
 /// I transmitted in, #61), never whether the station was on the air when the row completed (#66:
 /// the last rows of a received period complete after PTT is keyed for the next). A period I
 /// transmitted in is not kept; a new live job starts empty.
@@ -551,7 +551,7 @@ impl Waterfall {
         out
     }
 }
-/// WstxStrategy::FreeTxSlot Due (#89, operator 2026-11-09 "Count once decoded"): the period of
+/// WstxHoldTx::QuietSpace, due: the period of
 /// `period_ms` starting at `start_ms` has ended at `now_ms`, or is in progress and `published` (the
 /// period start of the latest complete publication) names it; a period not yet started is never
 /// due, also when a publication names it.
@@ -588,7 +588,7 @@ pub(crate) fn floor_bins() -> (usize, usize) {
         (FLOOR_HIGH_HZ / BIN_HZ).ceil() as usize - 1,
     )
 }
-/// WstxStrategy::FreeTxSlot Floor: the WSJT-X passband floor of one period's mean levels (dB per
+/// WstxHoldTx::SlotLevel, floor: the WSJT-X passband floor of one period's mean levels (dB per
 /// native bin) over the floor bins, in dB per bin (the WSJT-X decoder baseline: ten segments of
 /// 81 bins from bin 103, the points at or below each segment's 8th lowest level, a fourth-order
 /// least-squares fit plus 0.65 dB). None when the levels do not reach the last floor bin
@@ -611,8 +611,8 @@ pub(crate) struct Counted<'a> {
     pub period: &'a Period,
     pub floor: Vec<f64>,
 }
-/// What one slot decision judges (WstxStrategy::FreeTxSlot Parity, Counted periods, Floor,
-/// Value, decoded stations): the counted periods, my Rx parity's received periods among its last
+/// What one slot decision judges (WstxHoldTx::QuietSpace and SlotLevel: parity, counted
+/// periods, floor, value, decoded stations): the counted periods, my Rx parity's received periods among its last
 /// PERIODS_PER_PARITY due ones (#89), from a band change on, with a floor; and the stations decoded
 /// in them.
 #[derive(Debug)]
@@ -703,7 +703,7 @@ fn parity_name(of: Parity) -> &'static str {
         Parity::Odd => "odd",
     }
 }
-/// The value of one build (#82 WstxAutoControl::FreeTxSlots, WstxMcp::AutomationWire
+/// The value of one build (WstxQsoControl::OpenSlots, on the wire
 /// free_tx_slots): {at_utc_ms, mode, rx_parity, qso, periods (the counted number), open [[lo_hz,
 /// hi_hz], ...]}, no per-slot numbers.
 pub(crate) fn value(

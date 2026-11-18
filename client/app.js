@@ -16,7 +16,7 @@ const settingsForm = document.querySelector('#settings');
 const settingsResult = document.querySelector('#settings-result');
 let profileData, editingRevision, dirty = false, conflict = false, saving = false;
 let socket, timer, pendingId, handshakeProbe;
-// WstxOperatingLayout::AutomationIndicator (#74): the socket that has carried an automation.state, so that
+// The socket that has carried an automation.state, so that
 // the operating client, loaded after the first snapshots, reads GET /automation only after one.
 let automationAnnounced = null;
 // #82 FreeTxSlotMarks: the socket's latest free_tx_slots.state value, for an operating client that
@@ -104,7 +104,7 @@ async function connect() {
       if (message.type === 'automation.state') automationAnnounced = current;
       if (message.type === 'free_tx_slots.state' && message.data) freeTxSlotsHeld = {current, value: message.data.free_tx_slots};
       window.dispatchEvent(new CustomEvent('station-message', {detail: {message, current}}));
-      // WstxStationLink::PushedStationState: the first status of a socket reads the profile, then only a newer announced revision does.
+      // WstxStationLink::SocketProtocol: the first status of a socket reads the profile, then only a newer announced revision does.
       if (message.type === 'profile.state' && profileRefresh.initialized && (message.data?.boot_id !== profileData?.boot_id || message.data?.revision > profileData?.revision)) refreshProfile(current, profileRefresh).catch(() => disconnect(current, 'profile-refresh-failed'));
       if (message.type === 'station.status' && message.id === pendingId && typeof message.data?.version === 'string' && message.data.radio === 'unconfigured') {
         if (stationUpdated(message.data.build)) return;
@@ -127,7 +127,7 @@ async function connect() {
   };
   current.onclose = () => loseSocket('socket-closed');
 }
-// WstxOperatingLayout::PageUpdate (#51): a page served with another client build than the
+// WstxOperatingScreen::PageUpdate: a page served with another client build than the
 // station's reloads itself once (local settings stay in browser storage). The operating
 // screen may hold the reload (window.wstxReloadHeld: QSO, dialog, unsaved settings); it then
 // shows its "Station updated" chip. A second mismatch for the same build never loops.
@@ -142,7 +142,7 @@ function stationUpdated(build) {
   window.dispatchEvent(new CustomEvent('station-updated', {detail: build}));
   return false;
 }
-// WstxOperatingLayout::BrowserLinkLifecycle (#8): the page's own deferred client download shares
+// WstxOperatingScreen::LinkRule: the page's own deferred client download shares
 // the one station-to-browser bottleneck, so on a 32 kbit/s link the station's messages can queue
 // behind it for more than 12 s. While one is pending the silence bound is 30 s; its completion
 // or failure counts as a message. No other request extends the bound.
@@ -178,7 +178,7 @@ login.addEventListener('submit', async event => {
   finally {secret = null;}
 });
 const logoutButton = document.querySelector('#logout'), forgetButton = document.querySelector('#forget');
-// CL-022-01 slow-link setup retry: the token login stays in progress; say so instead of failing.
+// Slow-link setup retry: the token login stays in progress; say so instead of failing.
 addEventListener('station-authorization-retry', event => {
   if (!authorization || event.detail.epoch !== authorization.snapshot().epoch) return;
   loginRetry = event.detail; document.querySelector('#login-error').textContent = loginRetryText();
@@ -254,7 +254,7 @@ function applyProfile(data, reload) {
   if (profileData && data.boot_id === profileData.boot_id && data.revision < profileData.revision) return false;
   const newBoot = !!profileData && data.boot_id !== profileData.boot_id;
   profileData = data; document.querySelector('#profile-panel').hidden = false;
-  // WstxStationLink::PushedStationState (#74): a new boot is learned here; each view of
+  // WstxOperatingScreen::BootRule: a new boot is learned here; each view of
   // station state drops what it holds at once and shows its freshly loaded form.
   if (newBoot) window.dispatchEvent(new CustomEvent('station-boot', {detail: data.boot_id}));
   // FR-023: the connection type is read-only and shown as saved.

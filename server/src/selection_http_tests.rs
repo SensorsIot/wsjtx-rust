@@ -234,7 +234,7 @@ async fn live_native_selection_tls_thin_and_off() {
     )
     .unwrap();
     let (mut store, _) = profile::Store::open(&dir).unwrap();
-    // Selected HTTPS profile: browsers enroll real CL-022-01 grants through the token form.
+    // Selected HTTPS profile: browsers enroll real grants through the token form.
     let authorization =
         crate::authorization_http::Service::initialize(&mut store, &origin).unwrap();
     let recording = recording::Recording::open(&dir, id.clone(), boot.clone());

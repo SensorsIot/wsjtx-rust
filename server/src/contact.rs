@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxContact (#10, FT4 #11): the server-owned standard FT8/FT4 contact engine. It owns contact
+//! WstxQsoPart::QsoService: the server-owned standard FT8/FT4 contact engine. It owns contact
 //! identity, the AutoSequence state, the next-message choice, completion and which
 //! contacts are due for the log (WstxLogbook::DirectLog, #41); it never keys PTT, opens audio or touches a radio. Every transmission
 //! is a WstxOperatingChain::TransmitRequest submitted in-process to the #9 slice B transmit
@@ -12,11 +12,11 @@ use wstx_rust::transmit::service::{
 };
 use wstx_rust::transmit::{self, ClockState, Family, Parity};
 
-/// WstxContact::ReportRange.
+/// WstxMessageChoice::ReportRange.
 pub const REPORT_MIN: i32 = -50;
 pub const REPORT_MAX: i32 = 49;
 pub const REPORT_DEFAULT: i32 = -15;
-/// WstxContact::FrequencyControls (FT8; FT4-NOTE 2916).
+/// WstxHoldTx::OffsetRule (FT8; FT4-NOTE 2916).
 pub const RX_MAX_HZ: u32 = 3000;
 pub const TX_MIN_HZ: u32 = 200;
 pub fn tx_max_hz(mode: Mode) -> u32 {
@@ -37,7 +37,7 @@ pub const STOP_TOLERANCE_HZ: f64 = 50.0;
 /// A request is planned for the first period whose start window is still open this
 /// long from now, so it never turns stale between admission and keying.
 pub const LEAD_MS: i64 = 1000;
-/// WstxQsoControl::TxWatchdog: the stop waits this long into the due period, past the latest
+/// WstxQsoTransmit::RepetitionLimit: the stop waits this long into the due period, past the latest
 /// live decode measured (#47: up to 1.1 s after the FT8 period start), so a partner
 /// message that changes the next message still counts. Nothing is planned meanwhile.
 const WATCHDOG_STOP_AFTER_DUE_MS: i64 = 1200;
@@ -110,7 +110,7 @@ impl Tx4 {
         }
     }
 }
-/// WstxContact::SequenceStateName.
+/// WstxQsoControl::SequenceState.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
     Idle,
@@ -200,7 +200,7 @@ pub enum Call {
     Sign(String),
     /// CQ, DE, QRZ and directed CQ tokens.
     Token(String),
-    /// A hash the station filled in (`<CALL>`, WstxOfflineDecode::HashResolution, #24).
+    /// A hash the station filled in (`<CALL>`, WstxMessagePayload::HashResolution).
     Hashed(String),
     /// An unresolved hash (`<...>`).
     Hash,
@@ -232,7 +232,7 @@ pub struct Standard {
     pub ack: bool,
     pub exchange: Exchange,
 }
-/// A validated live result row (WstxDecodes::StandardFields when standard).
+/// A validated live result row (WstxModeProcessing::StandardFields when standard).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     pub key: RowKey,
@@ -276,7 +276,7 @@ impl Vhf {
         wstx_rust::decoder::ihashcall(dx, 22) == Some(self.from_h22)
     }
 }
-/// The fields of a 0.1 DXpedition multi-message (WstxOfflineDecode Dxpedition fields).
+/// The fields of a 0.1 DXpedition multi-message (WstxModeProcessing::DxpeditionFields).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dxpedition {
     pub rr73_to: Call,
@@ -285,7 +285,7 @@ pub struct Dxpedition {
     pub fox: Call,
     pub report: i32,
 }
-/// WstxContact::ReceivedKind for a partner message addressed to my call.
+/// The kind of a partner message addressed to my call (WstxStandardQso::SequenceRule).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Received {
     Grid,
@@ -301,8 +301,8 @@ pub enum ContestKind {
     FieldDay,
     Rtty,
 }
-/// WstxSpecialActivities::GridExchangeContest: the station's special operating activity (#24 S2a,
-/// Field Day and RTTY Roundup #24 S2b).
+/// WstxSpecialActivities::ActivityRule: the station's special operating activity (grid exchange,
+/// Field Day and RTTY Roundup).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Activity {
     #[default]
@@ -474,7 +474,7 @@ pub fn classify(standard: &Standard) -> Received {
         Exchange::Blank | Exchange::Contest(..) => Received::Other,
     }
 }
-/// WstxStandardQso::AutoSequence transitions on a counted partner message (receivedFromPartner).
+/// WstxStandardQso::SequenceRule transitions on a counted partner message (receivedFromPartner).
 pub fn transition(state: State, received: Received) -> Option<State> {
     use Received as R;
     use State as S;
@@ -493,7 +493,7 @@ pub fn transition(state: State, received: Received) -> Option<State> {
         _ => return None,
     })
 }
-/// WstxContact::FirstSlotOnSelection.
+/// WstxStandardQso::PrepareRule: the first slot of a selection.
 pub fn first_slot(to_is_my_call: bool, received: Received, tx1_skipped: bool) -> Slot {
     if !to_is_my_call {
         return if tx1_skipped { Slot::Tx2 } else { Slot::Tx1 };
@@ -575,7 +575,7 @@ pub fn valid_grid(grid: &str) -> bool {
         && b[3].is_ascii_digit()
         && (b.len() == 4 || ((b'A'..=b'X').contains(&b[4]) && (b'A'..=b'X').contains(&b[5])))
 }
-/// WstxStandardQso::StandardMessageSet; None when a generated text would not pack unaltered.
+/// WstxMessageChoice::MessageSet; None when a generated text would not pack unaltered.
 pub fn generate(
     my_call: &str,
     grid4: &str,
@@ -771,7 +771,7 @@ pub struct Exchanged {
     /// An operator Enable Tx closed this entry: the next equal transmission opens a new
     /// one, so a station stopped by the Tx watchdog may send the same message again.
     pub closed: bool,
-    /// #97 WstxQsoControl::TxWatchdog busy pause: the sends of this entry that were paused (the
+    /// WstxStandardQso::BusyPause: the sends of this entry that were paused (the
     /// partner busy at their stop point), at most the Tx watchdog limit.
     pub paused: u32,
 }
@@ -785,7 +785,7 @@ pub struct Heard {
     pub count: u32,
 }
 impl Contact {
-    /// #81 WstxStrategy::StartedQso: a partner in progress, and the dialogue holds a message of the
+    /// WstxAutoMode::StartedQsoRule: a partner in progress, and the dialogue holds a message of the
     /// partner to my call and an own transmission that has started (keyed, also still on the air).
     pub fn started(&self) -> bool {
         self.state.active()
@@ -826,7 +826,7 @@ impl Contact {
             .find(|e| e.tx)
             .filter(|e| e.text == text && !e.closed)
     }
-    /// WstxQsoControl::TxWatchdog: the Rep of the transmitted `text`, 0 when the next
+    /// WstxQsoTransmit::RepetitionLimit: the Rep of the transmitted `text`, 0 when the next
     /// transmission of it opens a new entry.
     fn repetitions(&self, text: &str) -> u32 {
         self.tx_entry(text).map_or(0, |e| e.count)
@@ -853,7 +853,7 @@ impl Contact {
             count,
         });
     }
-    /// WstxLogbook::LogRecord start time (MW set_dateTimeQSO).
+    /// WstxStandardQso::LogTimes: the start time (MW set_dateTimeQSO).
     pub fn start_utc_ms(&self) -> Option<i64> {
         self.first_tx2_period
             .or_else(|| self.first_tx3_period.map(|p| p - period_ms(self.mode)))
@@ -884,7 +884,7 @@ pub struct Ctx {
     /// A current CL-022 grant of the requesting browser (transmit authority).
     pub granted: bool,
     pub mode: Option<Mode>,
-    /// #39: the command comes from station automation (WstxMcp::OperatingAutomation),
+    /// The command comes from station automation (WstxAutoPart::AutoService),
     /// not from an operator: it never resets the Tx watchdog.
     pub automatic: bool,
     /// #111 CL-111-03: the station band (the radio's dial band, else the band of the
@@ -993,8 +993,8 @@ pub struct Engine {
     pub revision: u64,
     pub settings: Settings,
     pub contact: Option<Contact>,
-    /// WstxStrategy::StrategyWatchdog: the strategy run's own contact, which sends past the
-    /// Tx watchdog limit (#97: no WD shown for it). Set by the station before every step.
+    /// WstxLeave::LeaveRule: the strategy run's own contact, which sends past the
+    /// Tx watchdog limit (no WD shown for it). Set by the station before every step.
     pub repeat_exempt: Option<String>,
     /// #97 WstxOperatingChain::BusyPartner: the contact the station's automation owns, with whether it
     /// takes the split move and whether its sends pause now. Every other contact is manual and
@@ -1036,7 +1036,7 @@ pub struct Engine {
     fingerprint: String,
     new_id: Box<dyn FnMut() -> Option<String> + Send>,
     /// The own CQ that station automation started: its callers are chosen by the
-    /// automation strategy, never by Call 1st (WstxStandardQso::CallFirst).
+    /// automation strategy, never by Call 1st (WstxStandardQso::CallFirstRule).
     automatic_cq: Option<String>,
     /// FT4 TU; (ContestExchange, MW ~9783): the start of the last transmission and the
     /// time the last partner RR73 was counted.
@@ -1227,7 +1227,7 @@ impl Engine {
                 .map_or(ctx.mode(), |c| c.mode),
         )
     }
-    /// WstxQsoTransmit::ModeChange: a calling or active contact of another mode than the
+    /// WstxStandardQso::ModeChangeRule: a calling or active contact of another mode than the
     /// station's operating mode is cancelled with Enable Tx off; the Tx offset is kept
     /// inside the station mode's domain.
     fn follow_mode<H: Hardware>(&mut self, core: Option<&mut Core<H>>, ctx: &Ctx) {
@@ -1390,7 +1390,7 @@ impl Engine {
             self.new_count();
         }
     }
-    /// WstxQsoControl::TxWatchdog: the next transmission of the last sent message opens a new
+    /// WstxQsoTransmit::RepetitionLimit: the next transmission of the last sent message opens a new
     /// dialogue entry, so its repetition count starts anew.
     fn new_count(&mut self) {
         if let Some(last) = self
@@ -2325,7 +2325,7 @@ impl Engine {
                 self.to_log.push((LogKind::LogQso, c.clone(), counts));
             }
         }
-        // A human was seen (WstxQsoControl::TxWatchdog); automation is no operator (#39).
+        // A human was seen (WstxQsoTransmit::RepetitionLimit); automation is no operator.
         if let Some(core) = core {
             if !ctx.automatic {
                 core.activity();
@@ -2651,7 +2651,7 @@ impl Engine {
                             })
                             && self.repeat_exempt.as_ref() != Some(&c.id)
                             && (self.pending.is_some() || now >= due + WATCHDOG_STOP_AFTER_DUE_MS);
-                        // Normal flow never halts (WstxTransmitControl::TransmitHaltUse): the
+                        // Normal flow never halts (WstxTransmitState::HaltTransmit): the
                         // transmission on top of the partner's QSO stops by an abort.
                         if view.transmitting {
                             core.abort(DisarmCause::PartnerWorksOther);
@@ -2759,7 +2759,7 @@ impl Engine {
         }
         true
     }
-    /// WstxStandardQso::CallFirst (#10, MW readFromStdout cbFirst): while my own CQ runs
+    /// WstxStandardQso::CallFirstRule (MW readFromStdout cbFirst): while my own CQ runs
     /// with Auto Seq and Call 1st on, the first row of this step in decode order that
     /// calls me with a grid or a report (not R+report, RRR, RR73 or 73) is answered as a
     /// selection of that row (Enable Tx unchanged, not operator activity).
@@ -2854,7 +2854,7 @@ impl Engine {
         )
     }
     /// Keeps exactly one pending request for the next period of the contact's parity
-    /// with the current next text and Tx offset (WstxQsoTransmit::TransmitSubmission).
+    /// with the current next text and Tx offset (WstxTransmitState::Admission).
     fn submit<H: Hardware>(&mut self, core: &mut Core<H>, ctx: &Ctx) {
         let hound = self.is_hound();
         let Some(c) = self.contact.as_mut() else {
@@ -2874,7 +2874,7 @@ impl Engine {
         let now = ctx.now_utc_ms;
         let mode = c.mode;
         let next = c.next;
-        // WstxQsoControl::TxWatchdog: nothing is planned for a send beyond the limit; a
+        // WstxQsoTransmit::RepetitionLimit: nothing is planned for a send beyond the limit; a
         // partner message may still change the next message until 1.2 s into its period.
         // A request still pending would key, so it stops at once; after the Nth send none is.
         // #97 BusyPartner: the counted repetitions (Rep less the paused calls); a send while
@@ -3065,7 +3065,7 @@ impl Engine {
         self.hound.reply = HoundReply::Pending;
         self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
     }
-    /// The counted repetitions of the message due next (WstxQsoControl::TxWatchdog): its Rep less
+    /// The counted repetitions of the message due next (WstxQsoTransmit::RepetitionLimit): its Rep less
     /// its paused calls (#97).
     pub fn repetitions_due(&self) -> u32 {
         self.contact.as_ref().map_or(0, |c| {
@@ -3144,7 +3144,7 @@ impl Engine {
         crate::freeslot::split_target(mode, tx, his, decoded, &self.his_psk)
             .filter(|hz| (TX_MIN_HZ..=tx_max_hz(mode)).contains(hz))
     }
-    /// #97 WstxQsoControl::TxWatchdog busy pause: once the stop point (1.2 s into its period) of the
+    /// WstxStandardQso::BusyPause: once the stop point (1.2 s into its period) of the
     /// latest started send of this contact has passed, the send is a paused call when the
     /// partner is busy then, the contact pauses and its message has fewer than N paused calls.
     fn judge_stop_point<H: Hardware>(&mut self, core: &Core<H>, now: i64) {
@@ -3172,8 +3172,8 @@ impl Engine {
         self.decided = Some((period, paused));
     }
     /// tx_remaining_calls (limit - reported) reads the Rep of the message due next; a strategy
-    /// run's own contact (attended) has no stop and no count: null (#97 WstxStrategy::
-    /// StrategyWatchdog, LeaveCountLabel; the leave count is the run's own label).
+    /// run's own contact (attended) has no stop and no count: null (WstxLeave::LeaveRule;
+    /// the leave count is the run's own label).
     fn report_repetitions<H: Hardware>(&self, core: &mut Core<H>) {
         core.report_tx_repetitions(self.repetitions_due());
         let own = self

@@ -43,7 +43,7 @@ function emptyResults(s){return {v:1,profile_id:s.profile_id,boot_id:s.boot_id,s
 
 async function chooseDisplay(page,value){
   await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
-  // Display preferences are a Settings section (WstxOperatingLayout::SettingsSection display).
+  // Display preferences are a Settings section (WstxSettings::DisplaySection).
   await page.locator('#open-server-settings').click();await page.selectOption('#display-profile',value);
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
 }
@@ -163,7 +163,7 @@ test('receive frame race updates its live owner while recording job is absent',{
   assert.equal(await page.locator('#connection').getAttribute('data-state'),'connected');assert.deepEqual(errors,[]);
 });
 
-// Band Activity sorts by its column headers (WstxOperatingLayout::ActivityOrdering): a new
+// Band Activity sorts by its column headers (WstxBandActivityPane::Ordering): a new
 // header chooses its field with its default direction, the active header reverses it.
 async function clickSort(page,field){await page.locator(`#band-activity th[data-sort="${field}"]`).click();}
 async function sortState(page){return page.evaluate(()=>{const th=document.querySelector('#band-activity th[aria-sort=ascending],#band-activity th[aria-sort=descending]');return th?[th.dataset.sort,th.getAttribute('aria-sort')==='ascending'?'asc':'desc']:null;});}
@@ -191,7 +191,7 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
   await chip.filter({hasText:'Receive stopped'}).waitFor();
   assert.deepEqual(errors,[]);
 });
-// WstxQsoTransmit::AbortQso (#39) / OperatingLayout escapeClosesRegion=false: Escape aborts
+// WstxOperatingScreen::KeyRule: Escape aborts
 // the QSO but closes no panel or drawer; its Back/Close control returns.
 async function returnToOperation(page){
   const open=await page.locator('.op-secondary:not([hidden])').count();
@@ -319,7 +319,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
  for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).count(),0,`${id} is gone`);
  assert.equal(await page.locator('#activity-value').isVisible(),true,'the Value control is visible');
  assert.equal(await page.locator('#station-automation').textContent(),'Automation idle');
- // WstxQsoWire::OperatorDisplays (D11): server UTC in the top bar. #50: one period bar only, the QSO pane's NEXT bar.
+ // WstxOperatingScreen::TimeRule: server UTC in the top bar. One period bar only, the QSO pane's NEXT bar (WstxQsoPane::PeriodBar).
  await page.locator('#radio-toolbar .op-period > span').filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
  assert.deepEqual(await page.locator('#radio-toolbar .op-period').evaluate(p=>[p.children.length,!!p.querySelector('.op-period-track,small')]),[1,false],'no period bar in the top bar');
  assert.equal(await page.locator('#rx-focus .op-qso-progress #qso-progress').count(),1,'the period bar stays in the QSO pane');
@@ -337,7 +337,7 @@ test('TC-007-002 agreed workspace has the top bar, waterfall with Rx/Tx strip, B
 });
 
 // ---------------------------------------------------------------- #37 operating screen
-// WstxOperatingLayout::OperatingScreen and friends (operator design interview 2026-11-01). The
+// WstxOperatingScreen::ScreenLayout and friends. The
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
 const operateItems=['#operating-band','#operating-mode','#op-dial','#radio-toolbar .op-period','#open-logbook','#open-server-settings','#qso-halt','#waterfall','#contact-rx','#contact-tx','#contact-hold','#strip-tx-from-rx','#strip-rx-from-tx','#strategy-element','#band-activity','#rx-focus','#display-sensitivity','#display-speed','#qso-cq','#contact-tune','#qso-halt','#contact-log'];
@@ -1498,7 +1498,7 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
   }
 });
 
-// #82 WstxSignalArea::FreeTxSlotMarks (TC-082-004). Oracle: the CL-050-07 mapping (the waterfall
+// WstxSignalArea::OpenSlotMarks (TC-082-004). Oracle: the CL-050-07 mapping (the waterfall
 // canvas's own box carries 0..3000 Hz), the operator's #82 answers ("open slots are shown all the time
 // as a part of the waterfall", "nothing else on screen") and #76 numbers (bars 8 px high, 2 px inset
 // at each end, a drawn colour difference of at least 40); the free_tx_slots values are hand-written.
@@ -1806,7 +1806,7 @@ test('TC-007-009 an unauthorized browser sees only the token form until it is au
     const visible=await page.evaluate(()=>[...document.querySelectorAll('main *')].filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&(el.matches('button,input,select,textarea,a,canvas,table,[tabindex]')||[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim()))).map(el=>({id:el.id,inLogin:!!el.closest('#login-view'),connection:el.id==='connection'})).filter(e=>!e.inLogin&&!e.connection));
     assert.deepEqual(visible,[],`only the token form and its status line are shown at ${width}px`);
     assert.equal(await page.locator('#token').isVisible(),true);assert.equal(await page.locator('#login button').isVisible(),true);
-    assert.equal(await page.locator('#full-screen').isVisible(),false,'#96 TC-096-001 (i): no full-screen button in the unauthorized view');
+    assert.equal(await page.locator('#full-screen').isVisible(),false,'(i): no full-screen button in the unauthorized view');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     await page.screenshot({path:`test-results/ui-operating/unauthorized-${width}.png`});
   }
@@ -1838,7 +1838,7 @@ test('TC-007-002 in-page navigation preserves unsaved profile and selected recor
  await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();assert.equal(await page.locator('#display-name').inputValue(),'Unsaved operator edit');
  await page.locator('#tab-expert').click();
  assert.equal(await page.locator('#recording-file').evaluate(el=>el.files[0].name),'selected-but-not-imported.wav');
- // Escape is Abort QSO (WstxQsoTransmit::AbortQso, #39): with no contact in progress it sends
+ // Escape is Abort QSO (WstxOperatingScreen::KeyRule): with no contact in progress it sends
  // nothing, and it is never a halt.
  assert.deepEqual(mutations,[],'navigation does not save/import or issue station mutations, and Esc sends no halt');
  assert.deepEqual(errors,[]);
@@ -2931,7 +2931,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   for(let i=0;i<60&&!evaluations.length;i++)await page.waitForTimeout(50);
   assert.equal(await page.locator('#op-confirm[open]').count(),0,'selecting asks nothing');
   assert.deepEqual(puts.map(b=>[b.expected_revision,b.configuration.active,b.configuration.strategies]),[[4,'DX first',[strategy]]]);
-  // WstxAutoControl::AutoToggle: a selection only marks; it never switches Auto.
+  // WstxStrategies::SelectStrategy: a selection only marks; it never switches Auto.
   await page.locator('#station-automation').filter({hasText:'Strategy DX first · Auto off'}).waitFor();
   assert.deepEqual(switches,[],'selecting sends no POST /strategy/auto');
   assert.deepEqual(evaluations.map(b=>[b.source_id,b.job_id,b.generation,b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[state.source.id,state.job.id,state.generation,0,3,null,false]]);
@@ -2999,7 +2999,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   await page.locator('#se-save').click();for(let i=0;i<40&&puts.length<3;i++)await page.waitForTimeout(50);
   assert.deepEqual([puts[2].configuration.active,puts[2].configuration.strategies],['DX first',[edited,{...edited,name:'DX first copy'}]]);
   await page.locator('#strategy-editor button[value=cancel]').click();assert.equal(await page.locator('#strategy-editor').evaluate(d=>d.open),false);
-  // A HALT is pushed: Auto off, the selection and its marks stay (WstxAutoControl::StrategyRun).
+  // A HALT is pushed: Auto off, the selection and its marks stay (WstxAutoMode::AutoStops).
   view={...view,revision:view.revision+1,auto:false};
   await announce('strategy.state',{strategy_revision:view.revision});
   await page.waitForFunction(()=>document.querySelector('#qso-auto').getAttribute('aria-pressed')==='false',null,{timeout:5000});
@@ -3148,12 +3148,12 @@ const BUILTIN_NAMES=STRATEGY_BUILTINS.map(s=>s.name);
 const userStrategy=(name,extra={})=>strategyOf(name,{filters:{new:['call'],new_per:'ever',new_means:'not_worked',treat_73_as_cq:false},order:['most_wanted'],...extra});
 const contestProfile=(id,name,extra)=>({id,name,cabrillo:null,cabrillo_confirmed:false,activity:'none',bands:['20m'],modes:'',exchange:'',dupes:'band',points:'one_per_call',multipliers:'none',score:'',automation:'silent',automation_text:'The rules do not address automatic operation.',schedule:`${name} schedule`,notes:[],source:'',period:{start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',band:null},...extra});
 const CONTEST_PROFILES=[contestProfile('ww_digi','WW Digi',{activity:'ww_digi',automation:'forbidden',automation_text:'A human operator must initiate calling each QSO partner.'}),contestProfile('ft8_activity','FT8 Activity')];
-// A run of the GET /automation snapshot (WstxMcp::AutomationWire) with the strategydef keys.
+// A run of the GET /automation snapshot (WstxAutoControl::AutoActivity) with the strategydef keys.
 const strategyRunOf=(state,extra={})=>({id:'7d1f6c2e-0000-4000-8000-000000000039',state,reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],left:null,quiet:[],hearing:null,tx_slot:null,slot_check:null,pounce:null,...extra});
-// The routed station of the strategydef browser cases (TC-039-046): GET and PUT /strategy, POST
+// The routed station of the strategydef browser cases: GET and PUT /strategy, POST
 // /strategy/auto, GET /pskr, POST /pskr/use, GET /strategy/contests and GET /automation answer with
-// the model's wire shapes (WstxStrategies::StrategyHttp, AutoToggle, HearingFeed, PskrUse;
-// WstxStrategies::ContestSelection; WstxMcp::AutomationWire). The station changes its state on a
+// the model's wire shapes (WstxStrategies::StrategiesState, WstxAutoControl::SwitchAuto,
+// WstxHearing::FeedStatus, WstxStrategies::ContestList, WstxAutoControl::AutoActivity). The station changes its state on a
 // command; the page learns it only from the pushes strategy.state, pskr.state and automation.state.
 async function strategydefStation(t,viewport,{strategies=[userStrategy('Mine')]}={}){
   const s={view:null,pskr:null,automation:{policy:0,runRevision:0,configuration:null,run:null,refusal:null},transmit:{},contact:null,puts:[],autos:[],uses:[],requests:[],commands:[]};
@@ -3165,7 +3165,7 @@ async function strategydefStation(t,viewport,{strategies=[userStrategy('Mine')]}
     p.on('request',r=>{const u=new URL(r.url());if(u.origin===app.origin&&u.pathname!=='/'&&!/\.(js|css|svg|png|ico|woff2?)$/.test(u.pathname))s.requests.push(`${r.method()} ${u.pathname}`);});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{transmit:s.transmit,contact:s.contact})}));
     await contactCommands(p,s.commands);
-    // None turns Auto off (WstxAutoControl::AutoToggle); another selection keeps it.
+    // None turns Auto off (WstxAutoMode::AutoStops); another selection keeps it.
     // s.refuse(body): the station's refusal of a PUT (its error object), else null.
     await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());s.puts.push(b);const refused=s.refuse?.(b);if(refused)return route.fulfill({status:400,json:{error:refused}});s.view={...s.view,revision:s.view.revision+1,configuration:b.configuration,auto:b.configuration.active||b.configuration.contest?s.view.auto:false};}await route.fulfill({json:s.view});});
     await p.route('**/strategy/auto',async route=>{const b=JSON.parse(route.request().postData());s.autos.push(b);s.view={...s.view,revision:s.view.revision+1,auto:b.auto};await route.fulfill({json:s.view});});
@@ -3579,7 +3579,7 @@ const strategyElement=page=>page.evaluate(()=>{const a=document.querySelector('#
 // restart of the isolated station, with the new socket's GET /strategy held back, never shows the
 // previous boot's "Strategy Casual" and ends as a freshly opened page shows the new
 // boot, without a GET /automation. Oracles: the station's state after a restart (active None, Auto
-// off: WstxStrategy D2) and a second page opened on the restarted station.
+// off: WstxStrategies::StrategyConfiguration) and a second page opened on the restarted station.
 test('TC-074-001 a page kept open across a station restart shows the new boot strategy line without a reload',{timeout:120000},async t=>{
   let requests,holdStrategy=false;const held=deferred(),release=deferred();
   const {page,app,errors,dir}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -3623,7 +3623,7 @@ test('TC-074-001 a page kept open across a station restart shows the new boot st
 // Proves: CL-074-01; TC-074-002 the strategy line with None and no strategy run: drawn from the
 // strategy and automation snapshots together at each change of either; with None and no strategy
 // run it is the automation snapshot's text, "Automation idle" without a run; GET /automation only
-// after automation.state. Expected texts: WstxOperatingLayout::AutomationIndicator, WstxOperatingLayout::StrategySelector.
+// after automation.state. Expected texts: WstxBandActivityPane::StrategyElement.
 test('TC-074-002 the strategy line with None and no strategy run shows the automation text',{timeout:60000},async t=>{
   const {page,errors,s,announce,settle,status}=await strategydefStation(t,{width:1366,height:768});
   const reads=()=>s.requests.filter(r=>r==='GET /automation').length;
@@ -3644,7 +3644,7 @@ test('TC-074-002 the strategy line with None and no strategy run shows the autom
   await run(null);await status('Automation idle');assert.equal(reads(),3);
   assert.deepEqual(errors,[]);
 });
-// The views of station state a page shows (WstxStationLink::PushedStationState), read in the page.
+// The views of station state a page shows (WstxStationLink::SocketProtocol), read in the page.
 function stationViews(){
   const q=s=>document.querySelector(s),a=q('#qso-auto'),sel=q('#strategy-name'),use=q('#qso-pskr'),layer=q('#free-tx-slots');
   return {line:q('#station-automation').textContent,active:q('#station-automation').dataset.active??null,
@@ -3663,7 +3663,7 @@ const heldBoots=page=>page.evaluate(()=>({contact:window.wstxContact?.snapshot()
 // alert; then a new socket whose GET /profile names boot B, with boot B's replies held until the page
 // has been read, and boot A's late replies to GET /strategy and GET /pskr. From then on every station
 // reply and socket message of the page names boot B (the test rewrites the boot id). Oracles: the boot
-// B replies written here, the freshly loaded form (WstxOperatingLayout::StrategySelector and the page's own
+// B replies written here, the freshly loaded form (WstxBandActivityPane::StrategyElement and the page's own
 // initial texts) and a second page on boot B.
 test('TC-074-003 on a new boot every view drops the previous boot at once, discards its late replies and ends as a fresh page',{timeout:240000},async t=>{
   for(const failing of [false,true]){
@@ -4610,7 +4610,7 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
 });
 
 // ---------------------------------------------------------------- #37 lower panel
-// WstxLowerPanel::LowerPanel, ControlPanel, ErrorField. Oracle: the operator's #37 comments
+// WstxLowerPanel::ControlPanel, ErrorField. Oracle: the operator's comments
 // of 2026-11-03 (vertical stack, the QSO card's width, the controls always visible, the error
 // field with current problems only and no history), not the candidate markup.
 const panelControls=['#dx-call','#dx-grid','#dx-generate','#contact-report','#contact-auto','#contact-call-first','#contact-hold','#contact-parity'];
@@ -4884,7 +4884,7 @@ test('TC-061-003 CQ retries a stale_revision refusal with the reloaded snapshot'
       if(stale>0){stale--;revision++;await route.fulfill({status:409,json:{v:1,error:{code:'stale_revision'}}});}else await route.fulfill({status:202,json:{v:1,accepted:true}});});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-cq').disabled,null,{timeout:25000});
-  // WstxTransmit late start (live 2026-11-06, #10): a click 10 s into my Tx period keys at once for the rest.
+  // Late start (WstxTransmitControl::StartWindow): a click 10 s into my Tx period keys at once for the rest.
   assert.equal(await page.locator('#qso-cq').getAttribute('title'),'Call CQ: keys at once for the rest of my Tx period when it is early enough, otherwise from my next Tx period');
   // From here on page time moves only by runFor: a retry before 2.5 s, or by a timer, cannot pass.
   await page.clock.pauseAt(await page.evaluate(()=>Date.now())+1000);
@@ -5115,7 +5115,7 @@ test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and 
 });
 
 // ---------------------------------------------------------------- #96 full screen
-// WstxOperatingLayout::FullScreenToggle (CL-096-01). The expected values are the operator's words on #96 and
+// WstxOperatingScreen::AppWindow. The expected values are the operator's words and
 // the WHATWG Fullscreen Standard (requestFullscreen on the document element, fullscreenElement,
 // fullscreenEnabled, exitFullscreen), not the candidate markup.
 const fullScreenVariants={
@@ -5267,7 +5267,7 @@ test('TC-096-001 a refused full-screen request changes nothing and reports no er
 // ---------------------------------------------------------------- #110 saved Auto Seq and Call 1st
 // Proves: CL-110-01; TC-110-005 (a)-(d). The candidate server on a disposable profile directory
 // configured for transmission (CAT PTT and an output device, neither opened: nothing is armed), so
-// that Call 1st is an enabled setting. Oracle: CL-110-01 points 1 and 2, not the candidate's file.
+// that Call 1st is an enabled setting. Oracle: WstxQsoControl::QsoConfig, kept per profile, not the candidate's file.
 test('TC-110-005 Call 1st unticked in the browser stays unticked after a station restart',{timeout:120000},async t=>{
   const port=await browserPort(),dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA saved settings',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',
@@ -5319,7 +5319,7 @@ test('TC-110-005 Call 1st unticked in the browser stays unticked after a station
   assert.deepEqual([second_view['contact-call-first'].checked,second_view['contact-auto'].checked],[false,true],'(b) the second browser');
   assert.deepEqual(errors,[]);
 });
-// The answer of a station whose save failed (CL-110-01 point 4), as the issue states it.
+// The answer of a station whose save failed, as the issue states it.
 const refuseStorage=route=>route.fulfill({status:503,json:{error:{code:'storage_unavailable',field:null}}});
 // Proves: CL-110-01; TC-110-005 (d) for Auto Seq. Its box is enabled only with an available transmit
 // capability, which no disposable station has: the snapshot is the fixture's, the refusal as in (d).
@@ -5355,20 +5355,6 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
     assert.ok(s>=0&&e>s,`${file}: ${name} has no doc`);
     return {file,s,e:e+2};
   };
-  // The package doc: its text before D1 (head) and its decision lines D<n>.
-  const packageDoc=file=>{const text=files[file],s=text.indexOf('doc /*');return {s,e:text.indexOf('*/',s)+2};};
-  const decisions=file=>{
-    const text=files[file],p=packageDoc(file),re=/^[ \t]*D(\d+) /gm,list=[];let m;
-    re.lastIndex=p.s;
-    while((m=re.exec(text))&&m.index<p.e)list.push([Number(m[1]),m.index]);
-    return {p,list};
-  };
-  const decision=(file,n)=>{
-    const {p,list}=decisions(file),i=list.findIndex(([k])=>k===n);
-    assert.ok(i>=0,`${file}: D${n} not found`);
-    return {file,s:list[i][1],e:i+1<list.length?list[i+1][1]:p.e};
-  };
-  const head=file=>{const {p,list}=decisions(file);return {file,s:p.s,e:list.length?list[0][1]:p.e};};
   // Every match of re inside the span, as file:line: text; keep(index) filters by offset.
   const hits=(span,re,keep=()=>true)=>{
     const text=files[span.file],out=[],g=new RegExp(re.source,re.flags+'g');
@@ -5389,41 +5375,26 @@ test('TC-097-019 the model carries no superseded wording',async()=>{
     return file;
   };
   const element=qualified=>{const [pkg,name]=qualified.split('::');return doc(fileOf(pkg),name);};
-  const S=fileOf('WstxStrategy'),C=fileOf('WstxContest'),R='Requirements.sysml';
+  const R='Requirements.sysml';
   const scope=[
-    ...[2,15,19].map(n=>decision(S,n)),
     ...['NewWhat','NewPer','ValueCriterion','Needed','StrategyBands','CountryList','UsStateFilter','CqTargetList','Verdict'].map(n=>element(`WstxRankingControl::${n}`)),
     ...['StrategyClass','LeaveMode','Strategy'].map(n=>element(`WstxStrategies::${n}`)),
-    element('WstxStrategy::PskCase'),
-    ...['UsStateOf','NewNeeded','CallerOfMyCall','Candidate','ValueOrder'].map(n=>element(`WstxValueOrder::${n}`)),
+    ...['NewNeeded','CallerOfMyCall','Candidate','ValueOrder'].map(n=>element(`WstxValueOrder::${n}`)),
     ...['StrategyBandsRule','CountryListRule','UsStateFilterRule','CqTargetListRule','VerdictRule'].map(n=>element(`WstxValueOrder::${n}`)),
     element('WstxContestRanking::ContestVerdictRule'),
     ...['BuiltinStrategies','StrategyConfiguration'].map(n=>element(`WstxStrategies::${n}`)),
     element("WstxSettings::StrategyEditor"),
-    head(C),decision(C,1),decision(C,11),
-    ...['ContestSelection','ContestPrompt'].map(n=>element(`WstxStrategies::${n}`)),
+    element('WstxStrategies::ContestSelection'),
+    element('WstxStrategySelection::ContestOffering'),
     element('WstxContestRanking::ContestValueOrder'),
-    element("WstxSettings::ContestView"),
     ...['CL-039-01','CL-039-02','CL-039-04','CL-039-11','CL-042-01','CL-063-03'].map(n=>doc(R,n)),
   ];
   assert.deepEqual(scope.flatMap(span=>[P1,P2,P3].flatMap(re=>hits(span,re))),[],'(1) run vocabulary in a rewritten element');
-  // (2) No old setting vocabulary anywhere, except the kept texts: the refused-keys sentences of
-  // WstxStrategies::Strategy and WstxStrategies::ContestSelection, StrategyConfiguration's upgrade text,
-  // TC-097-001 and TC-097-002.
+  // (2) No old setting vocabulary anywhere, except the kept texts: TC-097-001, TC-097-002 and
+  // the names of the tests that @TestedBy lists.
   const OLD=/S&P|operation "sp"|\bsp:|[Rr]epetitions before leaving|cq_when_no_target|CQ when no target|quiet_minutes|GoalNeeded|enum def Goal|always answered|Callers of my call first|award strateg|class award/;
-  const sentence=(span,lead,end)=>{
-    const text=files[span.file],s=text.indexOf(lead,span.s);
-    assert.ok(s>=0&&s<span.e,`${span.file}: the kept text "${lead}" not found`);
-    const e=end?text.indexOf(end,s):span.e;
-    assert.ok(e>s&&e<=span.e,`${span.file}: the end of the kept text "${lead}" not found`);
-    return {file:span.file,s,e};
-  };
-  const kept=[
-    sentence(element('WstxStrategies::Strategy'),'Nothing else exists:'),
-    sentence(element('WstxStrategies::StrategyConfiguration'),'Upgrade: a file of schema_version 1','Names: in every schema'),
-    sentence(element('WstxStrategies::ContestSelection'),'The keys operation,','null or absent'),
-    doc(R,'TC-097-001'),doc(R,'TC-097-002'),
-  ];
+  const tests=Object.keys(files).flatMap(file=>[...files[file].matchAll(/@TestedBy\s*\{[^}]*\}/g)].map(m=>({file,s:m.index,e:m.index+m[0].length})));
+  const kept=[doc(R,'TC-097-001'),doc(R,'TC-097-002'),...tests];
   const outside=(file,i)=>!kept.some(k=>k.file===file&&i>=k.s&&i<k.e);
   const old=Object.keys(files).flatMap(file=>hits({file,s:0,e:files[file].length},OLD,at=>outside(file,at)));
   assert.deepEqual(old,[],'(2) old setting vocabulary');

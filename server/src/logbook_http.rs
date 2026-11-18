@@ -1,6 +1,6 @@
-//! WstxQsoControl::ContactWire log routes: POST/GET /contacts, GET /contacts/export.adi,
+//! WstxLogControl log routes: POST/GET /contacts, GET /contacts/export.adi,
 //! POST /contacts/imports and GET/PUT /contacts/imports/{id}.
-//! Validation order follows WstxOperatingReceive S2: route, Origin, TLS/session,
+//! Validation order follows WstxStationLink::RequestOrder: route, Origin, TLS/session,
 //! size/media/syntax, version/UUIDs/integers, profile, boot, state. Every log mutation
 //! publishes its atomic replace only under the authorization lock with the operating
 //! grant (HTTPS) or runtime token (plaintext) rechecked.
@@ -469,7 +469,7 @@ pub async fn export(
     }
 }
 
-/// #55 WstxDxcc::CountryFile view: which cty.dat the station uses.
+/// WstxLogControl::CountryFileState view: which cty.dat the station uses.
 fn dxcc_view(state: &ProfileState) -> Value {
     let (table, unreadable) = state.logbook.dxcc();
     let r = &state.recording;

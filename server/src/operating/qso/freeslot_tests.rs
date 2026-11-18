@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// WstxStrategy::FreeTxSlot worked by hand: compared values in dB per candidate written here, the
+// WstxHoldTx::QuietSpace worked by hand: compared values in dB per candidate written here, the
 // detailed bin of 12000/4096 Hz, and the operator's rule (lowest whole dB, a tie keeps the current
 // Tx, else nearer, then lower; 50 Hz from the called station and from his decoded frequencies;
 // #66: my Rx periods only, the recent ones, each slot's largest rise above the WSJT-X passband
@@ -706,7 +706,7 @@ fn tc_066_002_his_end_applies_among_the_candidates_left_by_decodes() {
     assert!(!open.iter().any(|f| (1460..=1540).contains(f)), "{open:?}");
 }
 
-// #82 WstxAutoControl::FreeTxSlots Open and Open ranges (TC-082-001). Oracle: the open rule of
+// WstxHoldTx::OpenSlotRule and WstxQsoControl::OpenRange (TC-082-001). Oracle: the open rule of
 // CL-065-01 (value 0 and no counted decode overlapped, no other filter, no fallback, no ranking, no
 // limit) and FreeTxSlot's floor and value, the flat-floor floor F + 0.65 of TC-039-050; every range
 // below is a hand computation written in the comment above its test.
@@ -892,8 +892,8 @@ fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_perio
 }
 
 // Proves: CL-065-01; TC-082-001, TC-065-001 (#82: replaced by TC-082-001). The value of one build has exactly {at_utc_ms, mode, rx_parity,
-// qso, periods, open} with the ranges as [lo_hz, hi_hz] integer pairs (WstxAutoControl::FreeTxSlots
-// Value): no run_id, listening, slots or per-slot numbers.
+// qso, periods, open} with the ranges as [lo_hz, hi_hz] integer pairs (WstxQsoControl::OpenSlots):
+// no run_id, listening, slots or per-slot numbers.
 #[test]
 fn tc_082_001_the_value_of_a_build() {
     assert_eq!(
@@ -914,8 +914,8 @@ fn tc_082_001_the_value_of_a_build() {
     );
 }
 
-// #89 WstxStrategy::FreeTxSlot Due (TC-089-001). Oracle: the operator's rule of 2026-11-09 ("Count
-// once decoded"): a period is due once it has ended, or earlier, while in progress, once its
+// WstxHoldTx::QuietSpace, due (TC-089-001). Oracle: the rule "count
+// once decoded": a period is due once it has ended, or earlier, while in progress, once its
 // complete publication is published, never before it starts; the counted periods are the last 4
 // due ones of my Rx parity. Every number below is a hand computation written above its test.
 
@@ -962,8 +962,8 @@ fn judge_p(
 // does not count. A station decoded at 2340 Hz in P closes the candidates f with |f - 2340| below
 // 50: 2300..2380; 2290 and 2390 (50 Hz) stay open. (b) The same instant without it: P is not due,
 // the 4 before it count (P - 120 .. P - 30 s), 2340 closes nothing. (c) A partial publication is no
-// complete one: the station passes no publication (automation published_start; router: TC-089-003
-// (c)), so as (b). (g) A complete publication naming P + 30 s (the next odd period) while P + 15 s
+// complete one: the station passes no publication (automation published_start; router: case
+// (c) of the router test), so as (b). (g) A complete publication naming P + 30 s (the next odd period) while P + 15 s
 // is in progress, at P + 20 s: P + 30 s has not started, so it is not due and its decode at 1200
 // closes nothing; P has ended: P .. P - 90 s count. Red on the parent: (a) P not counted and 2340
 // open.

@@ -36,7 +36,7 @@ impl Call {
         }
     }
     /// A hashed call, filled in with `call` when the station's table knows it
-    /// (WstxOfflineDecode::HashResolution).
+    /// (WstxMessagePayload::HashResolution).
     fn hashed_as(bits: u8, n: u32, call: Option<String>) -> Self {
         Self {
             text: call,
@@ -210,7 +210,7 @@ fn grid(mut n: u32, six: bool) -> Option<String> {
     }
 }
 /// The WSJT-X 3.3.0-beta5 PACK77_ARRL_SECTIONS (86) and PACK77_RTTY_MULTIPLIERS (171)
-/// in order; unpack and the transmit packer share them (WstxOfflineDecode::UnpackPayload).
+/// in order; unpack and the transmit packer share them (WstxMessagePayload::UnpackPayload).
 pub fn arrl_sections() -> &'static [String] {
     static T: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     T.get_or_init(|| {
@@ -493,7 +493,7 @@ pub fn unpack(bits: &[u8; 77]) -> Payload {
     unpack_with(bits, None)
 }
 /// As `unpack`, filling hashed calls in from the station's table (unpack77 nrx=1,
-/// WstxOfflineDecode::HashResolution).
+/// WstxMessagePayload::HashResolution).
 pub fn unpack_with(bits: &[u8; 77], table: Option<&HashTable>) -> Payload {
     let b = Bits(bits);
     let i3 = b.get(74, 3) as u8;

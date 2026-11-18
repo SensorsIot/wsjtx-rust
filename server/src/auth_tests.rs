@@ -228,7 +228,7 @@ impl Drop for HttpFixture {
     }
 }
 
-// CL-022-01/02 replaces the old token cookie without removing ambiguity checks.
+// The current grant cookie stands beside the old token cookie; the ambiguity checks stay.
 #[tokio::test]
 async fn http_auth_current_grant_cookie_positive_duplicates_legacy_and_wrong_profile_negative() {
     let f = HttpFixture::new("https://localhost:8080");

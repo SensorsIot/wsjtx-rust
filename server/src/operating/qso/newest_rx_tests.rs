@@ -1,5 +1,5 @@
-// #89 WstxStrategy::FreeTxSlot Due and Waiting for the newest period, StrategyRun Decision timing
-// (TC-089-002, TC-089-003, TC-089-004; TC-089-001 (c) at the station). Oracle: the operator's rules
+// WstxHoldTx::QuietSpace Due and Waiting for the newest period, Auto's decision timing
+// (TC-089-002, TC-089-004; TC-089-001 (c) at the station). Oracle: the operator's rules
 // of 2026-11-09 ("Count once decoded"; "decision always fastest when needed info is available"):
 // my newest Rx period counts once its complete publication is published, also while in progress;
 // a contest Run's CQ decided in waiting without a fresh publication waits for that publication, at

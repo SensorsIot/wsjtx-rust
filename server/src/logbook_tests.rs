@@ -1648,7 +1648,7 @@ fn tc_085_002_terms_of_the_same_station_again() {
     assert!(!qso("K1ABC", None, false, None).same_station_again(&k1, None));
     // Another station.
     assert!(!qso("W1AW", M20, false, None).same_station_again(&k1, None));
-    // TC-085-004 (d): under band_grid K1ABC/R from FN43 after FN42 is no dupe (logged); from
+    // Under band_grid K1ABC/R from FN43 after FN42 is no dupe (logged); from
     // FN42 again, or without a grid on either side, it is a dupe (not logged).
     use crate::contest::Dupes;
     let rover = qso("K1ABC/R", Some(50_313_000), false, Some("FN42"));

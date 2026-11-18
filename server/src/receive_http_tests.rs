@@ -11,10 +11,10 @@ use native_fixture::{NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES};
 #[path = "model_values.rs"]
 mod model_values;
 
-/// A value of WstxModemDecode::DecodeBudgets, read from the model.
+/// A value of WstxDecode::DecodeBudgets, read from the model.
 #[cfg(all(windows, not(debug_assertions)))]
 fn decode_budget(feature: &str) -> u64 {
-    let name = format!("WstxModemDecode::DecodeBudgets::{feature}");
+    let name = format!("WstxDecode::DecodeBudgets::{feature}");
     match model_values::Model::load()
         .number_with_unit(&name)
         .unwrap_or_else(|e| panic!("model value {e}"))

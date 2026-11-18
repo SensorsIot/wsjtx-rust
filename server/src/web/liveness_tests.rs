@@ -178,7 +178,7 @@ async fn read_frames(
 }
 
 /// A plaintext loopback profile: no authorization owner, the runtime-token contract without a
-/// token (WstxStationProtocol::SessionSecurity, explicit loopback development).
+/// token (explicit loopback development).
 pub(crate) fn plaintext_station(name: &str) -> (App, std::path::PathBuf) {
     let root = std::env::temp_dir().join(format!("wstx-{name}-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&root).unwrap();

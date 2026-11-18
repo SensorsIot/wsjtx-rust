@@ -329,7 +329,7 @@ fn tc_006_002_ft4_start_plan_late_start_and_refusals() {
     }
 }
 
-/// FT4 carries the EU VHF type 5 payload (#99): every message of TC-099-001 that ft4sim
+/// FT4 carries the EU VHF type 5 payload: every EU VHF message of the FT8 vectors that ft4sim
 /// encodes unaltered packs to its bits, codeword and tones.
 // Proves: TC-099-001, CL-099-01
 #[test]

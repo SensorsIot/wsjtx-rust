@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// #97 strategy redesign (WstxStrategy D19, CL-097-01..07): TC-097-001..008 and TC-097-010 at cost 2.
+// The strategies (CL-097-01..07): TC-097-001..008 and TC-097-010 at cost 2.
 // The expected values, refusal paths, tables and orders are written here from the model
 // (WstxStrategies::Strategy, BuiltinStrategies, StrategyConfiguration, Candidate, CountryList,
 // UsStateFilter, CqTargetList, CallerOfMyCall, ValueOrder, TxMoveRule, FreeTxSlot) and from the
@@ -1991,8 +1991,8 @@ async fn tc_097_011_g_unattended_the_busy_calls_count_and_tx_still_moves() {
 }
 
 // Proves: TC-097-015, TC-097-018 (CL-097-07 refusals; CL-097-04 the contest strategy's run;
-// hand-worked from WstxContest D11, WstxStrategies::BuiltinStrategies
-// and LeaveRule). WW Digi on 20m, the period in force, W1DUP a dupe in the log, Auto on. The
+// hand-worked from WstxStrategies::ContestTable, WstxStrategies::BuiltinStrategies
+// and WstxLeave::LeaveRule). WW Digi on 20m, the period in force, W1DUP a dupe in the log, Auto on. The
 // built-in "WW Digi" (cq_when_idle on): no CQ after one empty publication, the CQ after the second;
 // CQ JA1XYZ (new multiplier, farthest), CQ K1ABC and the dupe W1DUP calling my call: JA1XYZ
 // selected (first by ContestValueOrder), the CQ ended, W1DUP never answered; a JA caller of my call
@@ -2160,7 +2160,7 @@ async fn empties(f: &Mcp, e: i64, from: i64, n: i64, label: &str) {
 }
 
 // Proves: TC-097-018
-// CL-097-08 (hand-worked from WstxStrategy::CqWhenNoTarget with cq_wait_periods): with
+// CL-097-08 (hand-worked from WstxCqWhenIdle::CqRule with cq_wait_periods): with
 // cq_when_idle on and the CQ wait 1, 2 and 5 the run waits after one fewer empty publication and
 // calls CQ (calling, Tx6 "CQ HB9BLA JN47", armed) at exactly that many; the publications alternate
 // parity, so both count. With cq_when_idle off and the CQ wait 1, eight empty publications call no

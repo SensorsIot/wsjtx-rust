@@ -260,7 +260,7 @@ pub struct State {
     operating: selection::Operating,
     live_worker: Option<std::thread::JoinHandle<()>>,
     live_owner_released: bool,
-    /// WstxQsoTransmit::StationOperatingMode: the mode of the last started ft4/ft8 live job
+    /// WstxOperatingSelection::OperatingModeRule: the mode of the last started ft4/ft8 live job
     /// or admitted mode selection, whichever came last (FT8 at a fresh boot).
     operating_mode: &'static str,
 }
@@ -271,17 +271,19 @@ pub struct Recording {
     pub boot: String,
     /// The one CL-022-03/04 automatic CAT policy of this station.
     cat: Mutex<crate::cat_lifecycle::Lifecycle>,
-    /// WstxTransmit slice B transmit owner of this station, started once by the process.
+    /// The transmit owner of this station (WstxTransmitPart::TransmitService), started once by
+    /// the process.
     pub(crate) transmit: std::sync::OnceLock<Arc<crate::transmit_http::Station>>,
     /// #61 the periods this station transmitted in, observed from the transmit owner.
     pub(crate) tx: Mutex<TxPeriods>,
-    /// WstxContact engine of this station (#10), started once by the process.
+    /// The contact engine of this station (WstxQsoPart::QsoService), started once by the
+    /// process.
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     /// FR-023 native session of a native profile, started once by the process.
     pub(crate) flex: std::sync::OnceLock<Arc<wstx_rust::flex::Session>>,
-    /// #39 who is connected, for WstxAutoControl::StrategyRun's rule without a client.
+    /// Who is connected, for the rule without a client.
     pub(crate) clients: crate::automation::Clients,
-    /// #39 WstxStrategy::FreeTxSlot: the per-period waterfall power of the live receive.
+    /// WstxHoldTx::SlotLevel: the per-period waterfall power of the live receive.
     pub(crate) waterfall: Mutex<crate::freeslot::Waterfall>,
     /// WstxUdp interface of this station (#40), opened once by the process.
     pub(crate) udp: std::sync::OnceLock<Arc<crate::udp::Owner>>,
@@ -298,7 +300,7 @@ pub struct Recording {
     /// Bumped at each latest_decode publication so Detailed WebSocket peers announce it at
     /// once instead of on the 2 s receive tick (#57 CL-057-01).
     pub(crate) publication: tokio::sync::watch::Sender<u64>,
-    /// The station's call hash table (WstxOfflineDecode::HashResolution, CL-024-01), shared
+    /// The station's call hash table (WstxMessagePayload::HashResolution, CL-024-01), shared
     /// with the transmit owner; kept for the process lifetime.
     pub(crate) hashes: Arc<Mutex<decoder::HashTable>>,
     /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).
@@ -351,7 +353,7 @@ struct LatestDecode {
 }
 
 /// #61 Tx periods (CL-061-04): the T/R period starts (station UTC ms) in which this
-/// station was on the air (WstxTransmit PTT keyed, a transmission or Tune), the latest 16,
+/// station was on the air (PTT keyed, a transmission or Tune), the latest 16,
 /// and whether it is on the air now. The receive path neither decodes nor measures the Rx
 /// level in them; capture keeps running.
 #[derive(Default)]
@@ -404,7 +406,7 @@ struct LiveState {
     /// applied with the drift: windows, period and DT refer to system UTC plus both.
     clock_correction: i128,
     publication_error: Option<&'static str>,
-    /// WstxQsoWire::OperatorDisplays Rx level accumulation (sum of squares in 16-bit
+    /// WstxLiveReceive::RxLevel accumulation (sum of squares in 16-bit
     /// full-scale units, sample count, window start) and the last published value.
     level: (f64, u64, Option<Instant>, Option<i32>),
     /// Unknown-loss epoch rotations of this live receive and the latest trigger code;
@@ -607,8 +609,8 @@ impl Recording {
             .get()
             .map_or(0, |c| i128::from(c.station.correction_ms()) * 10_000)
     }
-    /// The latest Rx level while audio runs and the station receives (WstxContact::
-    /// OperatorDisplays), else None: never while on the air or in the rest of a Tx period
+    /// The latest Rx level while audio runs and the station receives
+    /// (WstxLiveReceive::RxLevel), else None: never while on the air or in the rest of a Tx period
     /// (#61 CL-061-04; the live worker resets the measurement there).
     pub(crate) fn rx_level(&self) -> Option<i32> {
         if self.observe_transmit() {
@@ -676,7 +678,7 @@ impl Recording {
         let source = l.source.as_ref()?.source_id.clone();
         matches!(l.mode, "ft8" | "ft4").then(|| (source, j.id.clone(), j.generation, l.mode))
     }
-    /// WstxQsoTransmit::StationOperatingMode: the mode of the last started ft4/ft8 live job
+    /// WstxOperatingSelection::OperatingModeRule: the mode of the last started ft4/ft8 live job
     /// or admitted operating mode selection (persists across a receive stop).
     pub(crate) fn operating_mode(&self) -> &'static str {
         self.state.lock().unwrap().operating_mode
@@ -689,7 +691,7 @@ impl Recording {
     pub(crate) fn operating_nominal_hz(&self) -> Option<u64> {
         self.state.lock().unwrap().operating.nominal.nominal_hz
     }
-    /// Gives the #9 owner the station's operating mode (WstxTransmit::StationModeGate).
+    /// Gives the transmit owner the station's operating mode (WstxTransmitControl::StationMode).
     /// Called after every change, never under the station mutex.
     pub(crate) fn sync_transmit_mode(&self) {
         let mode = match self.operating_mode() {
@@ -923,7 +925,7 @@ impl Recording {
     }
     /// Test seam: one detailed waterfall row of the live job in the period starting at
     /// `period_start_ms` (FT8 periods), with its levels per native bin, as the receive worker
-    /// feeds WstxStrategy::FreeTxSlot.
+    /// feeds WstxHoldTx::SlotLevel.
     #[cfg(test)]
     pub(crate) fn fixture_detail_row(&self, period_start_ms: i64, levels: &[u8], tx: bool) {
         let (job, generation, mode) = {
@@ -1827,7 +1829,7 @@ impl Recording {
             self.adopt_readback_selection(key.profile_revision);
         }
     }
-    /// WstxOperatingReceive S1 ReadbackSelectionAdoption (#22): while the selection band
+    /// WstxOperatingSelection::ReadbackRule: while the selection band
     /// is unknown, the lifecycle's Ready connection with a confirmed fresh dial that
     /// exactly equals the station operating mode's preferred entry of one band becomes
     /// the selection. Read-only: no CAT bytes, no receive restart, no revision advance,
@@ -2757,11 +2759,11 @@ impl LiveWorker {
                 } else {
                     l.accumulate_level(&block.samples, Instant::now());
                 }
-                // #39 WstxStrategy::FreeTxSlot: each row's period, for the per-period power, and
+                // WstxHoldTx::SlotLevel: each row's period, for the per-period power, and
                 // whether that period is a Tx period. The row's mark (#61) also holds while on the
                 // air, which the per-period power must not use: a detailed row completes 0.4 s
                 // after its middle (its last 4096-point transform), so keying PTT at a Tx period's
-                // start marks the last 2 rows of the received period before it (#66 TC-066-003).
+                // start marks the last 2 rows of the received period before it.
                 let drift = l.capture_drift.map_or(0, |(d, _)| d) + l.clock_correction;
                 let period_ms = if l.mode == "ft4" { 7500 } else { 15000 };
                 let tx_rows = frames
@@ -3768,7 +3770,7 @@ impl Recording {
         });
         json!({"v":1,"profile_id":self.profile,"boot_id":self.boot,"generation":s.generation,"recording":recording,"source_error":s.source_error,"storage_error":s.storage_error,"import":import,"job":s.job})
     }
-    /// WstxStationLink::PushedStationState profile.state: the saved revision this station runs.
+    /// WstxProfileAccess::ProfileSnapshot profile.state: the saved revision this station runs.
     pub(crate) fn profile_state_event(&self) -> (u64, String) {
         let revision = self.state.lock().unwrap().operating.profile_revision;
         (
@@ -3777,7 +3779,7 @@ impl Recording {
                 .to_string(),
         )
     }
-    /// RecordingReceive pushed recording.state data (WstxStationLink::PushedStationState).
+    /// The pushed recording.state data (WstxRecordingTransfer::RecordingStatus).
     pub fn state_event_data(&self) -> Value {
         let s = self.snapshot();
         let source = if s["job"]["kind"] == "live" {
