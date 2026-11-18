@@ -311,7 +311,13 @@ package WstxStandardQso {
                 + "server/src/contact_tests.rs::"
                 + "auto_seq_off_offers_tx5_after_the_partners_rr73_and_choosing_it_completes; "
                 + "server/src/contact_tests.rs::"
-                + "ft8_rrr_or_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once";
+                + "ft8_rrr_or_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once; "
+                + "server/src/contact_tests.rs::"
+                + "choose_next_without_a_contact_or_for_a_slot_without_text_is_refused; "
+                + "server/src/contact_tests.rs::"
+                + "receive_only_station_prepares_and_logs_but_refuses_transmit; "
+                + "server/src/contact_tests.rs::"
+                + "a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged";
         }
     }
 
@@ -415,7 +421,11 @@ package WstxStandardQso {
             test = "server/src/strategy_tests.rs::"
                 + "tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation; "
                 + "server/src/strategy_tests.rs::"
-                + "tc_099_002_cq_test_needs_no_confirmation_in_eu_vhf";
+                + "tc_099_002_cq_test_needs_no_confirmation_in_eu_vhf; "
+                + "server/src/strategy_tests.rs::"
+            + "tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser_confirms; "
+                + "server/src/strategy_tests.rs::"
+                + "a_reply_to_a_cq_not_for_the_station_needs_the_confirmation";
         }
     }
 

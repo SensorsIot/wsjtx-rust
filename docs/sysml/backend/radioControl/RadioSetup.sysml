@@ -7,6 +7,7 @@ package WstxRadioSetup {
     private import WstxRadioProperties::Setting;
     private import WstxRadioProperties::Agc;
     private import WstxKeying::SplitOperation;
+    private import WstxModelNotes::CodeDiffers;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -148,7 +149,7 @@ package WstxRadioSetup {
         subject radioControl : RadioControlInterface;
         doc /* Radio control MUST set the recommended menu items of the connected IC-7300
              only on the operator's request (RecommendedSettings). */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-04'; }
 
@@ -166,6 +167,12 @@ package WstxRadioSetup {
              Every item is set by ReadCompareWriteVerify. The first item that fails
              ends the request; SettingsOutcome names it and the error.
              The values before the Apply are not kept. */
+        @CodeDiffers {
+            what = "server/src/radio_setup.rs keeps the values before an Apply in "
+                + "radio-settings-undo.json, offers an Undo that writes them back, and "
+                + "refuses an Apply with undo_pending while that file names another radio "
+                + "address.";
+        }
     }
 
     verification 'TC-044-003' {

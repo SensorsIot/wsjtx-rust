@@ -7,6 +7,7 @@ package WstxOperatingScreen {
     private import WstxBrowserClientPart::BrowserClient;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelNotes::CodeDiffers;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -97,7 +98,7 @@ package WstxOperatingScreen {
         subject browser : BrowserClient;
         doc /* The browser client MUST be fully usable by keyboard and on a narrow window,
              and show the station's texts as KeyRule says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-010-08'; }
 
@@ -113,6 +114,10 @@ package WstxOperatingScreen {
              1 Hz (SetFrequency). A letter key and ? act only while no text field has the
              focus; Esc and Alt+H act always. */
         @FollowsSource { reference = "WSJT-X at the behaviour baseline: keyboard shortcuts"; }
+        @CodeDiffers {
+            what = "Alt+T and Alt+Q act also while a text field has the focus (the keydown "
+                + "handler in client/contact.js).";
+        }
         attribute txStepFt8Hz : Integer = 60;
         attribute txStepFt4Hz : Integer = 90;
     }
@@ -200,7 +205,7 @@ package WstxOperatingScreen {
         subject browser : BrowserClient;
         doc /* The browser client MUST tell the operator of station data it cannot read as
              DataNotUnderstood says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-051-03'; }
 
@@ -208,13 +213,19 @@ package WstxOperatingScreen {
         doc /* A view, an answer or a row that is not the form of its item is not shown: the
              error field shows "Station data not understood (<which>) · reload", whose click
              loads the page again; the next one of that kind in its form clears the entry. */
+        @CodeDiffers {
+            what = "Only the receive, selection, contact and result views and the waterfall "
+                + "frames are checked against their form. Other views, such as /pskr, and the "
+                + "answers to commands are taken without that check: a contact command "
+                + "answered 200 or 202 shows accepted whatever its body (client/contact.js).";
+        }
     }
 
     requirement 'CL-010-07' {
         subject browser : BrowserClient;
         doc /* The browser client MUST show the station's abilities apart as HealthRule
              says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-019'; end #derive ::> 'CL-010-07'; }
 
@@ -224,6 +235,12 @@ package WstxOperatingScreen {
              not known is shown as not known, never as a default. A control the station
              cannot carry out now is disabled with its reason beside it. A radio port held by
              another program is named: "<port> in use by another program". */
+        @CodeDiffers {
+            what = "A value not known is shown as Unavailable: the abilities in Settings > "
+                + "Expert before their views arrive, the Transmission line there always, and "
+                + "the QSO pane's badge before the first contact view (client/recording.js, "
+                + "client/contact.js).";
+        }
     }
 
     requirement 'CL-111-04' {

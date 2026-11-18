@@ -218,6 +218,10 @@ package WstxRecordings {
                 + "deadlines_release_only_after_cleanup_and_startup_reconciles_quarantine; "
                 + "server/src/recording_tests.rs::"
                 + "absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit; "
+                + "server/src/recording_tests.rs::chunk_order_count_and_fmt_faults_are_refused; "
+                + "server/src/recording_tests.rs::a_cancelled_import_keeps_the_stored_recording; "
+                + "server/src/recording_tests.rs::"
+                + "import_commands_it_does_not_carry_out_are_refused_and_change_nothing; "
                 + "tests/recording.test.cjs";
         }
     }

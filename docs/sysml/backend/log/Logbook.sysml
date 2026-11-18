@@ -432,7 +432,13 @@ package WstxLogbook {
                 + "server/src/log/udp_tests.rs::"
                 + "tc_011_002_update_logbook_adds_records_without_any_udp_datagram; "
                 + "server/src/logbook_tests.rs::"
-                + "history_pages_have_stable_indexes_and_stay_within_the_byte_bound";
+                + "history_pages_have_stable_indexes_and_stay_within_the_byte_bound; "
+                + "server/src/logbook_tests.rs::"
+                + "update_refuses_a_broken_tag_a_header_without_eoh_and_a_long_name_whole; "
+                + "server/src/logbook_tests.rs::"
+                + "an_update_whose_write_fails_stores_none_of_its_records; "
+                + "server/src/logbook_http_tests.rs::"
+                + "history_and_export_routes_follow_the_wire_contract";
         }
     }
 

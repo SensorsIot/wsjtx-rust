@@ -133,7 +133,9 @@ package WstxCatControl {
         objective { verify 'CL-008-06'; }
         @TestedBy {
             test = "server/tests/radio_control.rs; "
-                + "server/src/radio_level_tests.rs::a_transmit_hold_refuses_the_lease_at_once";
+                + "server/src/radio_level_tests.rs::a_transmit_hold_refuses_the_lease_at_once; "
+                + "server/tests/transmit_service.rs::"
+                + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing";
         }
     }
 
@@ -275,7 +277,9 @@ package WstxCatControl {
                 + "meters_are_read_only_under_the_transmit_hold_in_the_manual_frames; "
                 + "server/src/radio_level_tests.rs::"
                 + "a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection; "
-                + "server/src/radio_level_tests.rs::meter_scales_follow_the_manual_table";
+                + "server/src/radio_level_tests.rs::meter_scales_follow_the_manual_table; "
+                + "server/tests/transmit_service.rs::"
+                + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing";
         }
     }
 }

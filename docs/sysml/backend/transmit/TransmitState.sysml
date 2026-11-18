@@ -99,7 +99,8 @@ package WstxTransmitState {
                 + "tc_111_013_of_two_stops_in_one_step_the_first_of_the_order_is_shown; "
                 + "server/tests/transmit_service.rs::"
                 + "tx_watchdog_stop_never_keys_and_tune_ends_at_its_limit; "
-                + "server/tests/transmit_service.rs::watchdog_stop_never_touches_ptt";
+                + "server/tests/transmit_service.rs::watchdog_stop_never_touches_ptt; "
+                + "server/tests/transmit_service.rs::a_lost_capability_drops_an_unkeyed_request";
         }
     }
 
@@ -211,7 +212,26 @@ package WstxTransmitState {
                 + "server/tests/transmit_service.rs::"
                 + "a_late_completion_report_inside_the_bound_completes_and_stays_armed; "
                 + "server/tests/transmit_service.rs::"
-                + "a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline";
+                + "a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline; "
+                + "server/tests/transmit_service.rs::"
+            + "arm_is_refused_while_ptt_is_indeterminate_and_submit_checks_the_safety_revision; "
+                + "server/tests/transmit_service.rs::"
+                + "startup_safety_release_is_off_only_once_per_boot_and_only_when_tx_is_observed; "
+                + "server/tests/transmit_service.rs::"
+                + "owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers; "
+                + "server/tests/transmit_service.rs::"
+                + "a_refused_arm_leaves_the_state_and_both_causes; "
+                + "server/tests/transmit_service.rs::"
+                + "a_request_while_transmit_is_unsupported_is_refused_and_switches_off; "
+                + "server/tests/transmit_service.rs::"
+                + "a_request_while_the_radio_is_unavailable_is_refused_and_switches_off; "
+                + "server/tests/transmit_service.rs::a_request_while_tune_is_on_is_refused_busy; "
+                + "server/tests/transmit_service.rs::"
+                + "a_start_that_cannot_be_planned_at_the_period_start_is_refused_unkeyed; "
+                + "server/tests/transmit_service.rs::"
+                + "a_key_refused_for_a_switch_in_use_refuses_the_request_busy; "
+                + "server/tests/transmit_service.rs::"
+                + "a_start_that_cannot_be_planned_at_the_audio_delay_is_refused_and_released";
         }
     }
 
@@ -333,7 +353,10 @@ package WstxTransmitState {
                 + "server/tests/transmit_service.rs::"
                 + "abort_with_a_failed_release_is_reported_not_silent; "
                 + "server/tests/transmit_service.rs::"
-                + "abort_stops_tune_without_a_halt";
+                + "abort_stops_tune_without_a_halt; "
+                + "server/tests/transmit_service.rs::"
+                + "a_failed_transmission_drops_the_next_request_unkeyed; "
+                + "server/src/log/udp_tests.rs::tc_112_006_close_at_shutdown";
         }
     }
 
@@ -405,7 +428,20 @@ package WstxTransmitState {
             test = "server/src/transmit_state_tests.rs::"
                 + "tc_111_010_tune_is_independent_of_the_transmit_state; "
                 + "server/tests/transmit_service.rs::"
-                + "tx_watchdog_stop_never_keys_and_tune_ends_at_its_limit";
+                + "tx_watchdog_stop_never_keys_and_tune_ends_at_its_limit; "
+                + "server/tests/transmit_service.rs::"
+                + "tune_is_refused_while_the_switch_is_indeterminate; "
+                + "server/tests/transmit_service.rs::"
+                + "tune_is_refused_after_a_failed_startup_release; "
+                + "server/tests/transmit_service.rs::tune_is_refused_after_transmit_has_failed; "
+                + "server/tests/transmit_service.rs::tune_is_refused_busy_while_a_tone_is_on; "
+                + "server/tests/transmit_service.rs::tune_is_refused_outside_the_offset_range; "
+                + "server/tests/transmit_service.rs::"
+                + "tune_is_refused_busy_when_the_output_does_not_open; "
+                + "server/tests/transmit_service.rs::"
+                + "tune_is_refused_when_the_key_is_not_confirmed; "
+                + "server/tests/transmit_service.rs::"
+                + "tune_is_refused_busy_when_the_output_refuses_the_program";
         }
     }
 }

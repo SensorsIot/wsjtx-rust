@@ -24,6 +24,7 @@ package WstxReceiveJob {
     private import WstxModelBindings::TestedBy;
     private import WstxModelBindings::TestLevel;
     private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::CodeDiffers;
 
     requirement 'CL-006-02' {
         subject receive : ReceiveService;
@@ -106,6 +107,8 @@ package WstxReceiveJob {
                 + "live_worker_spawn_failure_releases_admission_without_reusing_generation; "
                 + "server/src/recording_tests.rs::"
                 + "live_second_epoch_source_uuid_failure_releases_original_admission; "
+                + "server/src/recording_tests.rs::"
+                + "a_replay_start_it_does_not_admit_is_refused_and_changes_nothing; "
                 + "tests/recording.test.cjs";
         }
     }
@@ -170,6 +173,10 @@ package WstxReceiveJob {
              id; the stream goes on with a new epoch.
              A later epoch that cannot be given a source id ends the job as failed,
              with storageUnavailable. */
+        @CodeDiffers {
+            what = "The code refuses a StopLive that names the job of an earlier epoch with "
+                + "stateConflict.";
+        }
     }
 
     verification 'TC-009-004' {
@@ -186,7 +193,9 @@ package WstxReceiveJob {
                 + "server/src/recording_tests.rs::"
                 + "live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results; "
                 + "server/src/recording_tests.rs::"
-                + "live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs";
+                + "live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs; "
+                + "server/src/recording_tests.rs::"
+                + "a_frame_outside_its_limits_never_becomes_a_record_and_reads_are_refused";
         }
     }
 

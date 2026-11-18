@@ -12,13 +12,14 @@ package WstxEndpoints {
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::TestLevel;
     private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::CodeDiffers;
 
     requirement 'CL-044-07' {
         subject audio : AudioInterface;
         doc /* Audio MUST list the sound endpoints of the PC by name, so that the operator
              can tell them apart and sees which one belongs to the radio
              (EndpointNaming). */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
         @ImplementedIn {
             module = "server/src/radio_setup.rs; server/src/radio_control/setup.rs";
         }
@@ -47,6 +48,11 @@ package WstxEndpoints {
              The list is refused with deviceLimit when a list would be longer than
              maxEndpoints or an id or a name is empty or longer than maxTextBytes, and
              with audioUnavailable when the endpoints cannot be read. */
+        @CodeDiffers {
+            what = "The code checks only the present endpoints: the not present endpoint of "
+                + "AudioConfig counts toward no maxEndpoints, and its last known name is not "
+                + "held to maxTextBytes (endpoints_view in server/src/radio_setup.rs).";
+        }
         attribute maxEndpoints : Integer = 64;
         attribute maxTextBytes : Integer = 256;
     }

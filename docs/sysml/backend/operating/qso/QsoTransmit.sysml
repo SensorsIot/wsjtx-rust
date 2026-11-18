@@ -216,7 +216,11 @@ package WstxQsoTransmit {
                 + "server/src/contact_tests.rs::"
                 + "auto_seq_off_cancel_halt_and_watchdog_while_calling; "
                 + "server/src/contact_tests.rs::"
-                + "a_non_disarming_refusal_is_not_resubmitted_every_step";
+                + "a_non_disarming_refusal_is_not_resubmitted_every_step; "
+                + "server/src/contact_tests.rs::"
+                + "a_contact_cancelled_after_the_roger_report_is_not_handed_over; "
+                + "server/src/contact_tests.rs::"
+                + "a_second_request_replaces_the_pending_one_and_one_message_is_sent";
         }
     }
 

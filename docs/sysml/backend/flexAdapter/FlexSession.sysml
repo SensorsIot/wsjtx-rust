@@ -15,6 +15,7 @@ package WstxFlexSession {
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::TestLevel;
     private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::CodeDiffers;
 
     requirement 'CL-013-01' {
         subject adapter : FlexAdapter;
@@ -345,7 +346,7 @@ package WstxFlexSession {
         doc /* The Flex adapter MUST give audio the radio's receive stream as packets of
              the form audio takes from any radio connection, with every loss it knows of
              filled or flagged (StreamIntake). */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-023'; end #derive ::> 'CL-013-06'; }
 
@@ -386,6 +387,11 @@ package WstxFlexSession {
              arrival time, ends the NativePacket before it early and starts a new one.
              NativePacket::silent is false in every packet.
              Outside the state ready no NativePacket is given. */
+        @CodeDiffers {
+            what = "The code gives audio the packets of its stream from the moment the stream "
+                + "is known, also while a new session brings its slice to the frequency "
+                + "confirmed before (Conn::datagrams in server/src/flexAdapter/session.rs).";
+        }
         attribute outputRateHz : Integer = 48000;
         attribute reorderPackets : Integer = 5;
         attribute unknownGapMs : Integer = 200;
@@ -461,6 +467,10 @@ package WstxFlexSession {
                 + "a_refused_tune_confirms_nothing_and_keeps_the_reported_slice; "
                 + "server/src/flexAdapter/session_tests.rs::"
                 + "a_ready_session_starts_its_packet_counters_and_measurements_over; "
+                + "server/src/flexAdapter/session_tests.rs::"
+                + "no_free_dax_channel_removes_the_own_slice_only_capacity_dax; "
+                + "server/src/flexAdapter/session_tests.rs::"
+                + "a_tune_outside_ready_or_withdrawn_sends_nothing_and_confirms_nothing; "
                 + "server/src/flexAdapter/wire_tests.rs::"
                 + "dax_packet_of_a_real_radio_decodes; "
                 + "server/src/flexAdapter/wire_tests.rs::"
@@ -478,7 +488,11 @@ package WstxFlexSession {
         }
         @TestedBy {
             test = "tests/flexAdapter/native-flex.test.cjs; "
-                + "server/src/flexAdapter/session_tests.rs::intent_domains";
+                + "server/src/flexAdapter/session_tests.rs::intent_domains; "
+                + "server/src/flexAdapter/session_tests.rs::"
+                + "a_slice_created_under_another_handle_is_left_alone_slice_ownership;"
+                + "server/src/flexAdapter/session_tests.rs::"
+                + "a_created_slice_with_another_antenna_is_removed_antenna_unavailable";
         }
     }
 

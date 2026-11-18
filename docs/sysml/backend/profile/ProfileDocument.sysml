@@ -214,7 +214,13 @@ package WstxProfileDocument {
                 + "server/src/profile_tests.rs::"
                 + "storage_commit_point_and_os_ownership_survive_reopen; "
                 + "server/src/profile_tests.rs::"
-                + "save_failures_and_interruptions_preserve_the_defined_commit_point";
+                + "save_failures_and_interruptions_preserve_the_defined_commit_point; "
+                + "server/src/profile_tests.rs::"
+                + "an_open_it_cannot_carry_out_is_refused_and_changes_no_file; "
+                + "server/src/profile_tests.rs::"
+                + "a_creation_whose_file_cannot_be_written_is_resource_unavailable; "
+                + "server/src/profile_tests.rs::"
+                + "native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged";
         }
     }
 
@@ -608,7 +614,9 @@ package WstxProfileDocument {
             test = "server/src/profile_tests.rs::"
                 + "native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged; "
                 + "server/src/profile_tests.rs::"
-                + "native_profile_creation_persists_intent_without_runtime_handles";
+                + "native_profile_creation_persists_intent_without_runtime_handles; "
+                + "server/src/profile_tests.rs::"
+                + "a_native_save_names_each_device_and_radio_control_value";
         }
     }
 }

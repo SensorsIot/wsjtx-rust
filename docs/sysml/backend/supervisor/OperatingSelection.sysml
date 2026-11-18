@@ -22,6 +22,7 @@ package WstxOperatingSelection {
     private import WstxTransmitControl::StationMode;
     private import WstxTransmitControl::StationBand;
     private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::CodeDiffers;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -37,7 +38,7 @@ package WstxOperatingSelection {
         subject supervisor : Supervisor;
         doc /* The supervisor MUST change the operating mode and band by a selection
              only, and carry it out as SelectionRule says. */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-008-07'; }
 
@@ -96,6 +97,12 @@ package WstxOperatingSelection {
              pending, failed with stateConflict, and counts the operating revision up.
              One selection runs at a time; no command waits in a queue.
              The state is given as SelectionState at every change. */
+        @CodeDiffers {
+            what = "server/src/selection_http.rs takes no nominalHz in a SelectBand: a "
+                + "request with one is refused with invalidRequest; and "
+                + "server/src/recording.rs refuses no frequency outside "
+                + "RadioStatus::txRanges.";
+        }
     }
     attribute def BandFrequency {
         doc /* The dial frequency of a band for a mode: SelectBand::nominalHz, else the
@@ -230,7 +237,11 @@ package WstxOperatingSelection {
                 + "server/src/recording_tests.rs::"
                 + "selection_profile_success_publishes_cancellation_before_new_reader; "
                 + "server/src/recording_tests.rs::"
-                + "selection_profile_save_failure_preserves_existing_token";
+                + "selection_profile_save_failure_preserves_existing_token; "
+                + "server/src/recording_tests.rs::"
+                + "a_selection_refused_by_the_selection_rule_changes_nothing; "
+                + "server/src/recording_tests.rs::"
+                + "a_cancel_it_does_not_carry_out_is_refused_and_changes_nothing";
         }
     }
 
@@ -244,7 +255,9 @@ package WstxOperatingSelection {
             test = "server/src/radio_level_tests.rs::"
                 + "a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted; "
                 + "server/src/radio_level_tests.rs::"
-                + "a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing";
+                + "a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing; "
+                + "server/src/radio_level_tests.rs::"
+                + "a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing";
         }
     }
 
@@ -274,7 +287,9 @@ package WstxOperatingSelection {
             test = "server/src/radioControl/cat_lifecycle_tests.rs::"
                 + "station_port_released_by_other_program_reconnects_and_restores_selection; "
                 + "server/src/radioControl/cat_lifecycle_tests.rs::"
-                + "station_readback_adoption_needs_exact_operating_mode_entry_and_unknown_band";
+                + "station_readback_adoption_needs_exact_operating_mode_entry_and_unknown_band; "
+                + "server/src/recording_tests.rs::"
+                + "the_dial_is_not_taken_while_a_selection_pends_or_on_another_revision";
         }
     }
 }
