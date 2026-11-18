@@ -177,8 +177,8 @@ package WstxListener {
              at the end of each period; at rotateBytes the file moves to
              link-traffic.1.log in the place of the older one. Nothing of the log goes on a
              socket or into an answer; counting never makes a request wait.
-             Period: the station's operating mode's, FT8 15000 ms, FT4 7500 ms, aligned to
-             the starts of the periods in UTC; a change of the mode ends the open period
+             Period: that of the station's operating mode (WstxModeProcessing::Mode),
+             aligned to the starts of the periods in UTC; a change of the mode ends the open period
              at once, and the next runs to the next start of the new mode.
              Client: browser and the remote address for the page, the routes and the
              sockets; mcp and the remote address for the requests of MCP.
