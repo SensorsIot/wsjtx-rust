@@ -210,3 +210,4 @@ migrations; README in #235 or #231; where harness issues live.
 7. #13 (operator 2026-11-18): FlexRadio stays phase 2; #13 stays open and paused as its place.
 8. Timing classes (operator 2026-11-18, A): labels on the tests only; #108 and #130 closed as
    overtaken; #207 shrinks to labelling the timed tests; #126 rewritten.
+9. #191 (operator 2026-11-18, A): closed as done; the simulator setup exists.
