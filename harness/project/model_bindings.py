@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The model bindings at a commit, as the harness gate reads them (gate.model_bindings,
 harness/general/core/tools/candidate.py), for its binding check and its report-only
-candidate selection (harness#40).
+candidate selection.
 
     python harness/project/model_bindings.py --rev REV
 

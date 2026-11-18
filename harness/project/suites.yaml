@@ -51,7 +51,7 @@
   cost: 2
   # The decoder unit tests, optimized (debug assertions and overflow checks kept, as in the
   # test profile): wrong_dx_call_never_yields_a_false_word takes about 610 s unoptimized
-  # and 27 s optimized (#56, harness#28). A separate profile directory (target/unit-opt).
+  # and 27 s optimized. A separate profile directory (target/unit-opt).
   run: >-
     cargo test --locked -p wstx-rust --lib
     --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
@@ -117,7 +117,7 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
-  needs: "Node 24, npm ci, Playwright Chromium. Windows PC; disposable server/browser/TLS. Functional status, session, reconnect and TLS cases; the TC-021-007 silence bounds run in protocol-thin (TC-021-008 dead peer removal and the TC-080-001 link byte log are Rust tests of wstx-rust, #80)."
+  needs: "Node 24, npm ci, Playwright Chromium. Windows PC; disposable server/browser/TLS. Functional status, session, reconnect and TLS cases; the TC-021-007 silence bounds run in protocol-thin (TC-021-008 dead peer removal and the TC-080-001 link byte log are Rust tests of wstx-rust)."
 
 - suite: protocol-thin
   cost: 2
@@ -143,7 +143,7 @@
   build: cargo build --workspace --locked
   shared: [link-measurement]
   timing_classes: [display]
-  needs: "Node 24, npm ci, Playwright Chromium. Windows PC; timing suite (#28): TC-021-007 silence detection and recovery bounds through the controllable local proxy (support.cjs link). Runs only when the router with the status websocket (main.rs), compression, the status client (app.js, index.html, style.css), its test file, the proxy or the toolchain change, or on request (Harness-Timing: yes)."
+  needs: "Node 24, npm ci, Playwright Chromium. Windows PC; timing suite: TC-021-007 silence detection and recovery bounds through the controllable local proxy (support.cjs link). Runs only when the router with the status websocket (main.rs), compression, the status client (app.js, index.html, style.css), its test file, the proxy or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: profiles
   cost: 2
@@ -247,7 +247,7 @@
   # Code that sets the pushed-state and display cadence: router and status websocket, compression,
   # the recording/spectrum producers, the clients that read them, its own test file and the receive
   # peer, the toolchain and the dependency versions. Not recording.css or the Cargo.toml and
-  # package.json pins (Harness-Timing: yes reruns it). No 32 kbit/s link since #80. The model files
+  # package.json pins (Harness-Timing: yes reruns it). No 32 kbit/s link. The model files
   # and the reader of the RecordingLimits values its TC-018 tests read are inputs too.
   timing_inputs:
   - server/src/main.rs
@@ -270,7 +270,7 @@
   build: cargo build --workspace --locked
   shared: [link-measurement]
   timing_classes: [display]
-  needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite (#28): the TC-010-002 recording.state push, failed-read reconnect and 120-row cap, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds (no 32 kbit/s link since #80). Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients (app.js, index.html, recording.js), its test file, the support and peer helpers, the model-value reader with the Recordings and Units model files it reads, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
+  needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite: the TC-010-002 recording.state push, failed-read reconnect and 120-row cap, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds (no 32 kbit/s link). Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients (app.js, index.html, recording.js), its test file, the support and peer helpers, the model-value reader with the Recordings and Units model files it reads, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
 
 - suite: recording-fixtures
   cost: 2
@@ -343,9 +343,9 @@
   select:
   - tools/sysml.py
   - tools/sysml/
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the SysML tool's own unit tests (test_canonical_authority, test_sysml, test_trace_selection and any new test file not named for the other three suites), which judge the tool on isolated models: selected only when the tool changes (harness#38). No radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the SysML tool's own unit tests (test_canonical_authority, test_sysml, test_trace_selection and any new test file not named for the other three suites), which judge the tool on isolated models: selected only when the tool changes. No radio or live service."
 
-# The working-model checks of the architecture (#202): the module that reads docs/sysml, the
+# The working-model checks of the architecture: the module that reads docs/sysml, the
 # oracle file and the pending list without the Pilot. An edit to either data file selects this
 # suite and sysml-documentation (whose `check` reads both), not the validator tests below.
 - suite: sysml-architecture-context
@@ -386,7 +386,7 @@
   - tools/sysml/tests/test_architecture_context.py
   needs: "Python 3.12. Windows PC; TC-DOC-005's context list: the outside things of WstxContext and their owners, read from the working model text, the oracle file and the pending list. No Java, Pilot, radio or live service."
 
-# The validator tests of the architecture (#202): every test_a*.py but the working-model module
+# The validator tests of the architecture: every test_a*.py but the working-model module
 # above. One unittest pattern cannot leave out a single name, so -p takes the test_a*.py names
 # whose next-to-last letter before .py is not `x` (test_architecture_context.py ends in `xt`).
 # A new test_a*.py file ending in x and one letter matches no suite's pattern, and test_trace_selection.py (sysml-tools, selected by
@@ -436,7 +436,7 @@
   needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout (E1 reads 5da7aab02 and its parent, E10 8245ec5f0 and 0e4b4c73a) and git to build temporary repositories. No radio or live service."
 
 # CL-014-17: a commit marked `Model-Move: pure` must not change the meaning of the model.
-# A gate check the operator accepted as project-only (#179 Q6); registration is additive.
+# A gate check the operator accepted as project-only; registration is additive.
 - suite: sysml-equivalence
   cost: 2
   run: python tools/sysml.py equivalence --marked
@@ -559,7 +559,7 @@
   # CPU-heavy (12-thread busy-period decode): kept apart from the timing suites that run
   # beside other groups (gate.timing_alone: false).
   exclusive: [link-measurement]
-  needs: "Pinned Rust, 64-bit Windows. The decoder_signal correctness passes: the original quality cases, independent waveforms, gain invariance, unmodulated and wrong-mode sources, CRC/payload retention, forged-cache refusal, phase-drift/dynamic-range regressions, official recording baselines, the #56 jt9 deep-decode parity corpus, same-frequency frames, physical noise, the #57 thread parity on 1/4/12 threads (its speed-up is only printed), owned-worker cleanup and the concurrency-qualification logic. WSTX_SAMPLE_DIR, WSTX_DECODER_OFFICIAL_FT8, WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION name the verified inputs; missing inputs fail closed. Not a measurement: it runs beside other groups."
+  needs: "Pinned Rust, 64-bit Windows. The decoder_signal correctness passes: the original quality cases, independent waveforms, gain invariance, unmodulated and wrong-mode sources, CRC/payload retention, forged-cache refusal, phase-drift/dynamic-range regressions, official recording baselines, the jt9 deep-decode parity corpus, same-frequency frames, physical noise, the thread parity on 1/4/12 threads (its speed-up is only printed), owned-worker cleanup and the concurrency-qualification logic. WSTX_SAMPLE_DIR, WSTX_DECODER_OFFICIAL_FT8, WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION name the verified inputs; missing inputs fail closed. Not a measurement: it runs beside other groups."
 
 - suite: decoder-quality
   cost: 2
@@ -638,7 +638,7 @@
   build: cargo test --release --locked --test decoder_signal --no-run
   exclusive: ["*"]
   timing_classes: [compute, signal]
-  needs: Pinned Rust and Python, 64-bit Windows. Preserve all original13 quality cases plus cleanup/concurrency controls; one release Cargo producer binds all17 ordinary named passes (including the #47 live-latency, #57 thread-parity and #56 jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job with16 configurations/40 workers/160 rounds/400 completions. API-free guardian/metrics tests precede execution. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red (#36); every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
+  needs: Pinned Rust and Python, 64-bit Windows. Preserve all original13 quality cases plus cleanup/concurrency controls; one release Cargo producer binds all17 ordinary named passes (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job with16 configurations/40 workers/160 rounds/400 completions. API-free guardian/metrics tests precede execution. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
 
 - suite: live-receive-integration
   cost: 2
@@ -736,7 +736,7 @@
   - package.json
   - package-lock.json
   build: cargo test --release --locked --bin wstx-rust --no-run
-  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. WSTX_SAMPLE_DIR names the busy recording of the page kept across a restart and periods (tests/frontend/receive-page.test.cjs, its own loopback server, no transmit). Cheap seeded manager/epoch/ring cases remain in debug. The #57 busy-period latency case runs in live-station-latency."
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. WSTX_SAMPLE_DIR names the busy recording of the page kept across a restart and periods (tests/frontend/receive-page.test.cjs, its own loopback server, no transmit). Cheap seeded manager/epoch/ring cases remain in debug. The busy-period latency case runs in live-station-latency."
 
 - suite: live-station-latency
   cost: 2
@@ -799,7 +799,7 @@
   - tools/windows_process_metrics.py
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/shared/Units.sysml
-  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; timing suite (#28, #57): the busy-period browser latency case through the actual isolated Router, receive owner and browser, and the station process case (#71, CL-007-04 regression detector only, never its evidence: at most 96 MiB private-commit delta, at most 250 ms owner release) through tools/windows_process_metrics.py. WSTX_DECODER_VECTORS and WSTX_SAMPLE_DIR must name the verified fixtures; missing inputs fail closed. Runs only when the router, the receive/source/audio/decoder pipeline, the recording client that polls and paints the rows, its test files or the toolchain change, or on request (Harness-Timing: yes)."
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; timing suite: the busy-period browser latency case through the actual isolated Router, receive owner and browser, and the station process case (CL-007-04 regression detector only, never its evidence: at most 96 MiB private-commit delta, at most 250 ms owner release) through tools/windows_process_metrics.py. WSTX_DECODER_VECTORS and WSTX_SAMPLE_DIR must name the verified fixtures; missing inputs fail closed. Runs only when the router, the receive/source/audio/decoder pipeline, the recording client that polls and paints the rows, its test files or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: native-flex
   cost: 2
@@ -904,7 +904,7 @@
   - client/index.html
   - client/authorization.js
   build: cargo test --release --locked --bin wstx-rust --no-run
-  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated Router with the contact engine, the #9 transmit owner on a recording hardware double and hand-authored codec-packed result rows published by a test-only control peer. No transceiver, audio device, PTT or network service.
+  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated Router with the contact engine, the transmit owner on a recording hardware double and hand-authored codec-packed result rows published by a test-only control peer. No transceiver, audio device, PTT or network service.
 
 - suite: simulator-fixtures
   cost: 2
@@ -986,8 +986,8 @@
   # and spectrum pushes, the clients that read them, its Rust and browser test files and their
   # helpers, the toolchain and the dependency versions. Not capture (source.rs, audio): it reaches
   # the browsers only through the owners above. Not recording.css or the Cargo.toml and package.json
-  # pins. No 32 kbit/s link since #80; it shares link-measurement again so that the CPU-heavy
-  # decoder groups do not run beside it (#102, operator 2026-11-11).
+  # pins. No 32 kbit/s link; it shares link-measurement so that the CPU-heavy decoder groups
+  # do not run beside it.
   timing_inputs:
   - server/src/main.rs
   - server/src/http_compression.rs
@@ -1015,7 +1015,7 @@
   exclusive: [radio-selection-evidence]
   shared: [link-measurement]
   timing_classes: [display]
-  needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite (#28): actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on an unshaped TLS connection (#80). Thin and Off windows as long as their gestures need, all five known-answer contexts and pending seen through an event or a read; no physical radio, device or production fault switch. Runs only when the router, compression, the selection, CAT, receive or spectrum code, the status and receive/selection clients (app.js, index.html, recording.js), its Rust and browser test files and helpers, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
+  needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite: actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on an unshaped TLS connection. Thin and Off windows as long as their gestures need, all five known-answer contexts and pending seen through an event or a read; no physical radio, device or production fault switch. Runs only when the router, compression, the selection, CAT, receive or spectrum code, the status and receive/selection clients (app.js, index.html, recording.js), its Rust and browser test files and helpers, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
 
 - suite: mcp
   cost: 2

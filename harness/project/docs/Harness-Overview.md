@@ -11,7 +11,7 @@ contract; the references below are the constraints a change must respect.
 | The finished model: the rules every model change and its check name (M1–M8) | [Finished model](Finished-Model.md); read first by the definer and the reviewer of a model change |
 | Product SysML artifacts and view scope | [Architecture model](../../../docs/sysml/Station.sysml); [catalog and validation](../../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings) |
 | Behavior baseline and provenance | [Functional model](../../../docs/sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../../README.md#license-and-attribution) |
-| Which machine is needed for what (HB9BLA has the transceiver) | [Machines and roles](Project-Specifics.md#machines-and-roles) |
+| The machine (HB9BLA, with the transceiver) | [Machine](Project-Specifics.md#machine) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
 | Language rules | [Rust standard](../../general/lang/rust/standard.md) |
 | Security | [principles](../../general/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
@@ -39,8 +39,7 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   - `model_bindings.py`: the gate's model bindings (`gate.model_bindings`);
   - `deploy/`: the radio preflight (`radio-preflight.ps1`, `radio-port.json`), the station
     switch for simulator tests (`station-switch.ps1`), their shared station control
-    (`station-control.ps1`), the prepared deploy authority (`authority/`, switched off) and
-    their tests (`tests/`);
+    (`station-control.ps1`) and their tests (`tests/`);
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
     [Escapes ledger](Escapes-Ledger.md), [Finished model](Finished-Model.md), this overview,
@@ -67,16 +66,18 @@ instructions are in [Project specifics](Project-Specifics.md).
   Shared or unmapped changes select broader checks. `--plan` explains the selection;
   `--full` executes every eligible group without memo reuse.
 - **Deploy:** a Windows release executable built and installed on HB9BLA
-  ([machines and roles](Project-Specifics.md#machines-and-roles)); the dry run uses that
+  ([machine](Project-Specifics.md#machine)); the dry run uses that
   candidate on HB9BLA. The manual hosted workflow can supply build and test evidence
   when explicitly chosen; its artifact is never installed on the station. A deploy needs no
-  OK under the standing deploy policy, approved 2026-11-13, also for a change to the deploy
+  OK under the standing deploy policy, also for a change to the deploy
   mechanism ([deployment authority](Project-Specifics.md#deployment-authority)).
 - **Live tests:** tests that need a radio, a sound device or the network are cost 3–5,
   marked `#[ignore]`, get their own suites and run only on HB9BLA, where the transceiver is
-  connected. Cost 4 and 5 run without asking under the standing consent at 1 %, approved
-  2026-11-12 ([deployment authority](Project-Specifics.md#deployment-authority)); QSO tests
-  are not covered by it.
+  connected. Live tests key the simulator; the real IC-7300 once the operator has decided
+  #239 ([simulator live tests](Project-Specifics.md#simulator-live-tests)). Cost 4 and 5 then
+  run without asking under the standing consent at 1 %
+  ([deployment authority](Project-Specifics.md#deployment-authority)); QSO tests are not
+  covered by it.
 
 ## Harness paths
 
@@ -152,7 +153,7 @@ GitHub issues of `SensorsIot/wsjtx-rust` are the project's one to-do list.
 
 - **Labels say how:** `cr`, `efficiency` or `operator-task`; `waiting`
   is added to any of them. Harness issues are not here: they live in
-  [SensorsIot/harness](https://github.com/SensorsIot/harness/issues) (SensorsIot/harness#46).
+  [SensorsIot/harness](https://github.com/SensorsIot/harness/issues).
 - **Types say what:** `Bug`, `Feature`, `Task`.
 - **Ageing:** an open issue is overdue 30 days after it was created; a `waiting` issue
   never ages and names what it waits for.

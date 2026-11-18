@@ -1,4 +1,4 @@
-"""station-switch.ps1: switches the station to SIM-IC7300 and back (harness#114).
+"""station-switch.ps1: switches the station to SIM-IC7300 and back.
 
 The station folder is a temporary fake (launcher, profiles, receipt) and everything that reaches
 the system (station process, Ctrl+C helper, scheduled task, station HTTP) is a mock function; the
@@ -265,7 +265,7 @@ function Agent-Get($c, $Route) {{
         self.assertEqual(self.system(), [])
 
     def test_without_agent_client_and_pin_the_checkouts_own_files_are_used(self):
-        # #230 item 14: the defaults resolve tools/deploy/ from the repository root. -To back
+        # The defaults resolve tools/deploy/ from the repository root. -To back
         # -DryRun with the station stopped reads the pin and changes nothing.
         self.write("launcher.ps1", LAUNCHER.replace("'profiles\\ic7300'", "'profiles\\SIM-IC7300'"))
         seen = os.path.join(self.tmp.name, "seen.txt")

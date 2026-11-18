@@ -26,7 +26,7 @@ hooks:
 <!-- source harness/general/core/agents/roles.md sha256=71189ab61efb38d9a9541d2cfadeb40d491622ad404b7ca1166672c7809f3f0d -->
 <!-- source harness/general/lang/rust/standard.md sha256=6c408f1fb3f626252e9650b9cc35975f982ea1a49112f1317c0924a626b4a25e -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=05ae3519f1194389f9612624baa5437dd2676c700c89cf927f855ced61366164 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9185509d431cf396eb6c1038848ed148dc21ea0d85d5e1a3a92ba0e0930b2978 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (log|show|diff)( .*)?", "gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py history( --flakes| --conflicts)?( --json)?", "(python3?|py)(\\.exe)? \\S*report_cr\\.py (--meter|--gate)( --(since|until) [0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)?| --period (all|day|week)| --json)*", "gh issue comment [0-9]+ --repo [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+ --body '[^']*'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "\\s(--repo(?=[\\s=]|$)|-R)(?!\\sSensorsIot/harness(\\s|$))"], "model": {"files": [], "facts": []}} -->
 
 You run the [improvement](../../harness/general/core/skills/improvement/SKILL.md) review of the harness; the
@@ -74,4 +74,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `\s(--repo(?=[\s=]|$)|-R)(?!\sSensorsIot/harness(\s|$))`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=109035a209b51ac285ddce1cd450e5fb7463dbc6d1d8f5e523a77a857c96174d -->
+<!-- harness-agent-v1 sha256=c35d0a5e4c62c922ac218a62a6c0526b8c2297aa2143ed490c6080dd6f140570 -->

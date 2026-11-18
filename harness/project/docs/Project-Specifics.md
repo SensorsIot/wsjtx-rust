@@ -8,43 +8,18 @@ defines reusable Rust rules and checks. This document binds those reusable instr
 to this repository's toolchain, paths, test prerequisites and selected execution mode.
 Run the commands below from the repository root.
 
-## Machines and roles
+## Machine
 
-Two Windows PCs work on this repository with the same GitHub account: **HB9BLA**
-(`192.168.0.37`) and **Andreas** (hostname `Andreas`), both with the checkout
-`D:\Github\wsjtx-rust`. Neither has a role: which one is used is a matter of convenience,
-and both are set up alike (operator 2026-11-11). Two things decide the machine:
+The factory runs on one Windows PC, **HB9BLA** (`192.168.0.37`), with the checkout
+`D:\Github\wsjtx-rust`. The transceiver (IC-7300, COM3), the station, the test inputs that
+are not in the repository, the timing baseline, the gate and the merge queue are there.
+`machines:` in `harness/project/config.yaml` names it, so a gate and the queue worker start
+only there. Heavy builds and gates share it with the live station: do not operate the radio
+during a heavy gate.
 
-| Work | Machine |
-|---|---|
-| Anything that needs the transceiver (IC-7300, COM3): live and hardware tests (cost 3 to 5), radio acceptance, installs on the station | HB9BLA, where the transceiver and the station are |
-| A test of client and server across the network | Both, one as server and one as client |
-| Everything else: definition, model, harness, coding, builds, tests, the gate, FlexRadio work (the FlexRadio is reached over the network) | Either |
-
-What holds whichever machine is used:
-
-- The main branch moves by one gate at a time. Before a hand-in or a push to the main
-  branch, the machine checks that no gate runs on the other one.
-- Test inputs that are not in the repository, and the timing baseline, exist only where
-  they were set up. A suite that needs them runs on a machine that has them; today that
-  is HB9BLA.
-- Heavy builds and gates on HB9BLA share it with the live station: do not operate the
-  radio during a heavy gate (#49, harness#35).
-
-- The `windows-rust.yml` artifact (`wstx-rust-windows-x64`) is build evidence only. It
-  shows that the build and tests pass on a clean Windows runner and is never installed
-  on the station (operator decision, [#26](https://github.com/SensorsIot/wsjtx-rust/issues/26)).
-- The machine that currently builds an issue is named by the issue's single
-  `owner: HB9BLA` or `owner: Andreas` label. A machine does not start an issue owned
-  by the other one ([harness #23](https://github.com/SensorsIot/harness/issues/23)).
-- One PC holds development at a time. `python harness/general/core/tools/handover.py to <machine>`,
-  run on the PC that is left, moves it: the checks, the owner labels, the checkpoints, the
-  holder and the arriving PC's setup are the tool's
-  ([several machines](../../general/core/docs/Workspaces.md#several-machines)). The binding
-  is `machines:` and `handover:` in `harness/project/config.yaml`: HB9BLA is reached from Andreas
-  over SSH; on Andreas the arriving half is run by hand (`handover.py arrive`). The test
-  inputs it verifies are those of `.git/migration-data/MANIFEST.json`. Everything local is
-  pushed before a transfer: the tool pushes nothing (operator 2026-11-11).
+The `windows-rust.yml` artifact (`wstx-rust-windows-x64`) is build evidence only. It shows
+that the build and tests pass on a clean Windows runner and is never installed on the
+station.
 
 ## Windows build and packaging
 
@@ -116,7 +91,7 @@ Release packaging also runs on this PC; start the packaged candidate for the dry
 
 `paths` lists a group's complete inputs for evidence fingerprints and dirty-input
 checks. `select` lists the files whose edits directly select it; only `select` decides
-selection (harness#28). No group declares `depends_on`: the harness follows those edges
+selection. No group declares `depends_on`: the harness follows those edges
 transitively, so one server edit fanned out over every browser group. A group instead
 names in its own `select` the files whose behaviour its test cases prove.
 
@@ -133,7 +108,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
 | `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
 | `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test, the model (`docs/sysml/`), whose values its tests read, the JavaScript model-value reader |
-| `radio-selection-thin` | Timing: the native/CAT selection workload on an unshaped TLS connection (no 32 kbit/s link since #80) and its 4230-5000 ms native setup bound | Timing inputs: router, compression, selection/CAT/receive/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
+| `radio-selection-thin` | Timing: the native/CAT selection workload on an unshaped TLS connection (no 32 kbit/s link) and its 4230-5000 ms native setup bound | Timing inputs: router, compression, selection/CAT/receive/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, the model file whose values its provenance sweep reads (`docs/sysml/backend/profile/Recordings.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader, plus Node package metadata |
@@ -144,10 +119,10 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `sysml-equivalence` | CL-014-17: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
 | `sysml-architecture-context` | TC-DOC-005's context list on the working model: `test_architecture_context.py` reads `docs/sysml`, the oracle file and the pending list, without the Pilot | `Station.sysml`, `Context.sysml`, `Requirements.sysml`, `interfaces/`, the part files, the SysML tool, the oracle file `architecture-oracle.json`, the pending list `pending-structure.json` and its test file |
 | `sysml-architecture` | TC-DOC-005 architecture integrity, the validator tests: every `test_a*.py` but `test_architecture_context.py` (`-p "test_a*[!x]?.py"`), the mutation tests on the pinned model of `1df1ba3a5` and its oracle file, and the `oracle` tests and TC-DOC-016's structure-check tests on fixture trees, one Pilot validation per mutation or model state | The SysML tool, `Validate.java`, the toolchain pin and its own test files (the pin and the fixtures); not a model edit, the oracle file or the pending list. The model and the client/server/test source are fingerprint inputs only |
-| `decoder-correctness` | The release `decoder_signal` correctness, #57 thread-parity and #56 jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
+| `decoder-correctness` | The release `decoder_signal` correctness, thread-parity and jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
 | `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
-| `live-station-latency` | Timing: the #57 busy-period browser latency case | Timing inputs: router, receive/source/audio/decoder pipeline, recording client, its test files, the model files holding the budgets the station process case reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and toolchain |
+| `live-station-latency` | Timing: the busy-period browser latency case | Timing inputs: router, receive/source/audio/decoder pipeline, recording client, its test files, the model files holding the budgets the station process case reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and toolchain |
 | `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
 
 All existing test files remain registered. The recording test file is partitioned by
@@ -155,7 +130,7 @@ names: `^TC-018-` goes to storage, except its two 250 ms cancellation bounds;
 those, `^TC-010-002` and the TC-010-005 Detailed peer cadence go to thin-link checks,
 and the complement to display. The communication test file sends `^TC-021-007`
 (silence detection and recovery bounds) to `protocol-thin`, the complement to `protocol`;
-TC-021-008 (dead peer removal on a driven clock) and TC-080-001 (the link byte log) are Rust tests in `wstx-rust` (#80). The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
+TC-021-008 (dead peer removal on a driven clock) and TC-080-001 (the link byte log) are Rust tests in `wstx-rust`. The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
 runs in `radio-selection-thin`, the other selection tests in `radio-selection`. Each
 complement includes future names instead of silently omitting them. No test assertion,
 budget or test case is removed by selection.
@@ -164,23 +139,22 @@ A group that holds a test reading a model value (`### Model values read by tests
 `paths` and `select`, every model file those readers read: each file holding a value they
 read, and `docs/sysml/shared/Units.sysml` when they read a value by its unit. `docs/sysml/`
 covers them all. The change that adds the first such test to another functional group adds
-these files there, as additive wiring of its new coverage (#148). A timing test that reads
-its bound from the model has the same files in its suite's `timing_inputs` and `paths`
-(SensorsIot/harness#74).
+these files there, as additive wiring of its new coverage. A timing test that reads
+its bound from the model has the same files in its suite's `timing_inputs` and `paths`.
 
 The resource matrix of `decoder-quality` re-measures a configuration whose 50 ms CPU quantum
 stayed unmeasured, at most three attempts, and the runtime (including the four-worker 2x
 bound), cold-start and 64 MiB budgets of `WstxModemDecode::DecodeBudgets` bind every attempt:
 any exceedance in any attempt is a failure.
 
-The **live page check** (`tools/deploy/live-page-check.ps1`, harness#38 item 3) is in no
+The **live page check** (`tools/deploy/live-page-check.ps1`) is in no
 suite: it needs the installed station and one real restart. It runs on HB9BLA after every
 deploy under the [standing deploy policy](#standing-deploy-policy) and at live
 acceptance (CR step 6) of a change to `client/`, the receive, recording or logbook owners or
 `tests/page-watch.cjs`, receive only, and restarts the station only while nothing is armed,
 keyed, in a contact or an automation run. `live-station-browser` gates the same oracle in-process.
 
-Measurements run only when the change touches time-critical code (harness#28). Every
+Measurements run only when the change touches time-critical code. Every
 timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`:
 `protocol-thin`, `recording-thin`, `radio-selection-thin`, `live-station-latency`,
 `decoder-quality`). A timing suite has no `select`; its `timing_inputs` name the code that
@@ -193,11 +167,9 @@ The timing inputs are, per suite: the router `main.rs` (status websocket, thin a
 and detail cadence) and HTTP compression for the link suites `protocol-thin` and `recording-thin` and for `radio-selection-thin`; the status client
 (`app.js`, `index.html`, `style.css`) for `protocol-thin`, and the status and receive
 clients (`app.js`, `index.html`, `recording.js`) for the two others, because those clients
-read over the 32 kbit/s link and cross it cold (the #55 cold-load red came from a
-client-only change; `recording.js` re-reading `/audio/endpoints` every 5 s, 1b4706c36, was
-the one real catch of 481 green minutes); the recording/spectrum producers for
+read over the 32 kbit/s link and cross it cold; the recording/spectrum producers for
 `recording-thin`; the selection, CAT, receive and spectrum owners for `radio-selection-thin`,
-but not capture, whose bounds rerun on request (harness#38);
+but not capture, whose bounds rerun on request;
 the receive/source/audio/decoder pipeline and the recording client that polls and paints
 the rows for `live-station-latency`; the production decoder sources (every one sets the
 checkpoint spacing, per-item work or budgets the quantum, latency and matrix measure),
@@ -208,7 +180,7 @@ times (the jt9 parity corpus, baselines, vectors) runs only the functional
 the busy-period latency. Each suite's own test files
 and the link simulator (`tests/support.cjs`, `tests/peer.cjs`) are timing inputs, and so
 are the Rust toolchain and dependency pins (and the Node pins for the browser suites);
-for `recording-thin` and `radio-selection-thin` (harness#38) only `tests/support.cjs`,
+for `recording-thin` and `radio-selection-thin` only `tests/support.cjs`,
 `rust-toolchain.toml`, `Cargo.lock` and `package-lock.json` of these, their own test files, and
 `tests/peer.cjs` for `recording-thin`. `recording-thin` also names the model-value reader
 `tests/model-values.cjs` and the model files whose values its TC-018 tests read
@@ -232,18 +204,14 @@ The gate runs up to three groups at a time (`gate.parallel: 3` in
 `harness/project/config.yaml`), longest first, and prints each group's output whole in name
 order. `protocol-thin`, `recording-thin` and `radio-selection-thin` run beside other groups
 (`gate.timing_alone: false`). The bounds of the first two are wall-clock bounds on the
-simulated 32 kbit/s link (byte budgets are judged from the link byte log since #80, not tested); besides those, `recording-thin` holds two local 250 ms TC-018
+simulated 32 kbit/s link (byte budgets are judged from the link byte log, not tested); besides those, `recording-thin` holds two local 250 ms TC-018
 cancellation bounds (one while four stations replay a recording) and
 `radio-selection-thin` the 4230-5000 ms native setup and 2 s Off-acknowledgement bounds.
-All were measured stable beside other groups on HB9BLA (harness#28, 2026-11-03): three
-gates of a compression-module edit ran the three concurrently with `wstx-rust`,
-`radio-selection` and `source-model-traces`, all green, with the suite times of their
-alone runs (177-178 s, 321-324 s, 262-268 s against 177, 319-320 and 260 s) and 373-382 s
-wall instead of about 14 min. That evidence does not cover the CPU-heavy decoder groups as
-neighbours, so `decoder-correctness` (12-thread busy-period decode) and
-`wstx-rust-decoder` hold `exclusive: [link-measurement]`, which the three share
-(`radio-selection-thin` again since #102: its socket qualification failed in a gate where
-`decoder-quality` ran beside it, operator 2026-11-11). The CPU
+All were measured stable beside other groups on HB9BLA, with the suite times of their alone
+runs. That evidence does not cover the CPU-heavy decoder groups as neighbours, so
+`decoder-correctness` (12-thread busy-period decode) and `wstx-rust-decoder` hold
+`exclusive: [link-measurement]`, which the three share (`radio-selection-thin`'s socket
+qualification fails beside `decoder-quality`). The CPU
 measurements run alone (`exclusive: ["*"]`): `decoder-quality` and
 `live-station-latency` (a browser row-latency budget on the busy decoder). The groups
 declare what they must not share:
@@ -252,8 +220,7 @@ declare what they must not share:
   the dev-dependency features, and Windows refuses to replace a running executable. So
   `wstx-rust` builds and runs in its own Cargo output directory
   (`$CARGO_TARGET_DIR/unit`) and `wstx-rust-decoder` in its own profile directory
-  (`unit-opt`); neither touches the browser groups' executable, and both run beside them
-  (harness#28; before, a `debug-exe` tag kept `wstx-rust` apart from every browser group);
+  (`unit-opt`); neither touches the browser groups' executable, and both run beside them;
 - `radio-selection-evidence`: both radio-selection groups write
   `test-results/radio-selection/`;
 - `decoder-quality` runs alone (`exclusive: ["*"]`): its owned-Job CPU matrix measures
@@ -264,7 +231,7 @@ serially, before the groups start, so that the groups share one up-to-date build
 checkout's own `CARGO_TARGET_DIR` instead of queuing on Cargo's lock. The groups' `run`
 still repeats its build, which is then up to date. Ports are chosen free per test
 (`tests/support.cjs`), and each browser test station gets its own `LOCALAPPDATA`
-(`stationEnv`, #8), so the profile and radio-ownership locks of concurrent groups do not
+(`stationEnv`), so the profile and radio-ownership locks of concurrent groups do not
 meet.
 
 The model has an explicit documentation owner. Its edits select the catalog/trace check,
@@ -275,7 +242,7 @@ pending list `pending-structure.json` also selects the architecture's working-mo
 (`sysml-architecture-context`, no Pilot); `sysml-documentation` judges the same files with
 `check`. The architecture validator tests (`sysml-architecture`, one Pilot JVM per mutation
 or fixture state) judge the pinned model of `1df1ba3a5` and fixture trees, so they run only
-when the tool, `Validate.java`, the toolchain pin or their own test files change (#202).
+when the tool, `Validate.java`, the toolchain pin or their own test files change.
 Runtime oracles are selected by changed implementation and executable tests. Source
 edits also select the fast binding check, without a dependency that runs the full Pilot
 mutation suite on every code edit. `sysml-documentation` and `sysml-architecture`
@@ -354,21 +321,20 @@ see the [measurement limits](../../../docs/sysml/Requirements.sysml).
 
 A reviewed CR reaches master through the harness
 [merge queue](../../general/core/docs/Merge-Queue.md),
-whose worker runs on the PC that holds development, either one
-([machines and roles](#machines-and-roles), operator 2026-11-11): the coordinator hands in
-the reviewed tip (`python harness/general/core/tools/merge_queue.py submit <issue> <tip>`) and
-builds no merge itself. The queue's records are local to that PC.
+whose worker runs on HB9BLA ([machine](#machine)): the coordinator hands in the reviewed tip
+(`python harness/general/core/tools/merge_queue.py submit <issue> <tip>`) and builds no merge
+itself. The queue's records are local to HB9BLA.
 The `queue:` section of `harness/project/config.yaml` names the tools the gate needs (Node 24
 or later, npm, Cargo, rustc, `gh`, the MSVC linker), 20 GB free on every drive the gate uses, the
-input environment of the [HB9BLA handover](MEMORY.md#inputs-and-unfinished-work) and the `npm ci` setup of
+input environment of [Inputs](MEMORY.md#inputs) and the `npm ci` setup of
 the queue's worktree. A long build or test run outside the gate does not wait for `busy`;
 it runs beside the gate under the priorities below and reruns a timing-sensitive failure once.
 
-Priorities on HB9BLA ([harness#28](https://github.com/SensorsIot/harness/issues/28)): the
+Priorities on HB9BLA: the
 station task `WSTX Rust Station HB9BLA` runs at High, above the gate; the gate runs at
 ABOVE_NORMAL with unbounded build parallelism; agent builds and tests outside the gate
-run at BelowNormal with a bounded `CARGO_BUILD_JOBS` (2, as the
-[HB9BLA handover](MEMORY.md#inputs-and-unfinished-work) sets it).
+run at BelowNormal with a bounded `CARGO_BUILD_JOBS` (2, as
+[Inputs](MEMORY.md#inputs) sets it).
 
 ## Same-machine development
 
@@ -378,11 +344,11 @@ Both applications can be developed on one Windows computer: the station-server p
 
 This is the project's binding of the harness
 [deployment authority](../../general/core/docs/standards/security.md#deployment-authority)
-rules (#26).
+rules.
 
 **Mechanism.** There is one deploy mechanism: the Windows release executable built on
 HB9BLA and installed there at user level by the reviewed, versioned deploy scripts under
-`tools/deploy/` (operator decisions 2026-10-31, see #30, and 2026-11-13, see #171).
+`tools/deploy/`.
 `tools/deploy/` is a product path: a change to it is a CR with review and the merge
 queue's gate, and suite `deploy-tooling` tests it. The **mechanism paths** are every file
 under `tools/deploy/station-update/` (`station-update.ps1`, `make_package.py`,
@@ -420,13 +386,12 @@ operator's one-time `setup-once.ps1` (in `.git\harness-parallel\resources\statio
 not used by deploys) points the scheduled task at `station\launcher.ps1`, which runs the
 version named in `active.json`; the task names no repository path and no deploy changes it.
 The manual `windows-rust.yml` workflow and its `wstx-rust-windows-x64` artifact are build
-evidence only (operator decision 2026-10-30): that artifact is never installed on the station.
+evidence only: that artifact is never installed on the station.
 
 ### Standing deploy policy
 
-Approved by the operator on 2026-11-13 (#171 comments 6859504815, 6861452505,
-6861571300; #196 comments 6866528840, 6867219074), on the decision of 2026-11-12: "The operator is kept out of the loop, with one
-exception: when a decision is needed." It binds the deploy part of the harness rule
+Approved by the operator (#171): "The operator is kept out of the loop, with one exception:
+when a decision is needed." It binds the deploy part of the harness rule
 [standing deploy and consent policies](../../general/core/docs/CR-Process.md#standing-deploy-and-consent-policies). A deploy
 under it needs no OK per install.
 
@@ -503,9 +468,9 @@ under it needs no OK per install.
    commit, the previous version, the SHA-256 of the package executable, the SHA-256 of each
    mechanism file, the probe result line, the page check result line, and any return to the
    previous version. It holds no quote, dollar sign or backtick.
-7. **Accepted limits** (operator, verbatim):
-   - 2026-11-13 (6859504815): "I accept knowingly that this guards against accidents and
-     shortcuts, not against a deliberate swap by a session running under my account."
+7. **Accepted limit** (operator, verbatim): "I accept knowingly that this guards against
+   accidents and shortcuts, not against a deliberate swap by a session running under my
+   account."
 
    The rules of the table under [rules not met yet](#rules-not-met-yet) stay not met.
 
@@ -527,9 +492,10 @@ CR (policy item 4). Suite `deploy-tooling`
 
 ### Standing consent at 1 %
 
-Approved by the operator on 2026-11-12: "Transmitting is not a concern: tests transmit at
-1 % RF power, except QSO tests." Cost 4 and 5 live tests run without asking when all of
-these hold:
+Approved by the operator (#171): "Transmitting is not a concern: tests transmit at 1 % RF
+power, except QSO tests." It covers the real IC-7300 once the operator has decided #239;
+until then live tests key the simulator ([Simulator live tests](#simulator-live-tests)).
+Cost 4 and 5 live tests run without asking when all of these hold:
 
 - `harness/project/deploy/radio-preflight.ps1` has taken the radio lease and set RF power to
   `0003` (1 %, 1.2 % of the control) with read-back before anything keys;
@@ -540,8 +506,8 @@ QSO tests, their power and their bounds are not covered by this consent (#192).
 
 ### Simulator live tests
 
-Live tests may run against the FT-8 Band Simulator instead of the transceiver
-(operator 2026-11-14; handoff: SensorsIot/FT-8-Band-Simulator
+Live tests run against the FT-8 Band Simulator instead of the transceiver
+(handoff: SensorsIot/FT-8-Band-Simulator
 `docs/ImplementerPackage/README.md`). Transmitting into the simulator, QSOs included, needs
 no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs FT8.
 
@@ -569,11 +535,11 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   `GET /radio` reads `ready` when CAT works.
 - **Deploys.** A deploy writes the pinned launcher, so the station returns to `ic7300`;
   switch back to the simulator afterwards if the run continues.
-- **Keying the emulator** is not a transmission (operator 2026-11-14, #192). Before every
-  keying the agent confirms that the active profile is SIM-IC7300; no simulated contact
-  reaches the real logbook, Club Log, PSK Reporter or a UDP target; no agent switches the
-  station to the `ic7300` profile. Agents do not transmit on the real radio until #192 is
-  accepted.
+- **Keying the emulator** is not a transmission. Before every keying the agent confirms
+  that the active profile is SIM-IC7300; no simulated contact reaches the real logbook,
+  Club Log, PSK Reporter or a UDP target; no agent switches the station to the `ic7300`
+  profile. Live tests key the simulator: the IC-7300 emulator and the band simulator. The
+  real IC-7300 is keyed once the operator has decided so in #239 (`alex.restrictions`).
 - **Administrator rights.** Agents have none. A step that needs them is a script the
   operator runs in an elevated shell, restoring what it changed in a `finally` block.
 
@@ -597,17 +563,16 @@ It is read-only. It asks Windows which process listens on TCP 18081, hashes that
 process's executable itself and requires the candidate's commit directory and the digest
 of the package's own `wstx-rust.exe` (recomputed, not read from the manifest), then HTTP
 200 from `https://192.168.0.37:18081/` over TLS that Windows trusts. In the same
-response, the station's `x-wstx-source-commit` header must be the candidate's commit (#33,
-CL-033-01). This is the commit the running service itself reports. `make_package.py`
+response, the station's `x-wstx-source-commit` header must be the candidate's commit
+(CL-033-01). This is the commit the running service itself reports. `make_package.py`
 compiles it in as `WSTX_SOURCE_COMMIT`, and a build without one reports `unknown`, which
-fails. A build from before #33 sends no header, for example a rollback target. The probe
+fails. An older build sends no header, for example a rollback target. The probe
 then says so and keeps the image digest as the identity. Last, it checks that the launcher
 receipt agrees with what it observed. Tests of the deploy mechanism, its pins and its drill
 are suite `deploy-tooling` (cost 2, `harness/project/suites.yaml`):
 `python -m unittest discover -s tools/deploy/tests -v`.
 
-The operator can check the result without any agent, from PC Andreas (the only address
-the firewall admits). This is not a step of each install (operator decision 2026-11-01):
+The operator can check the result without any agent; this is not a step of each install:
 
 ```powershell
 (Invoke-WebRequest -UseBasicParsing https://192.168.0.37:18081/).Headers['x-wstx-source-commit']
@@ -640,17 +605,18 @@ escape or name a stream, gate record outside the package, no executable, wrong f
 scope, task not on the launcher and a staged copy that differs. Two controls show the
 mocks refuse nothing by themselves: the intact package passes `-DryRun`, and without it
 the script reaches the station stop. Two `LIMIT` cases are expected to be accepted: a
-consistent rewrite of executable and records, and an older commit on master. With the
-authority patch applied, two more cases cover an approved and a refused approval.
+consistent rewrite of executable and records, and an older commit on master. Its two
+approval cases apply only with a deploy authority, which this project does not use; the
+drill reports them not applicable.
 
 The drill runs the package's own pinned copy with a scripted clock (10 s polls from
 12:00:00) and a sandbox station whose state the package's agent client reports. The idle
-cases (#171, TC-171-01) each require the busy reason in the refusal, no stop sentinel and an
+cases (TC-171-01) each require the busy reason in the refusal, no stop sentinel and an
 unchanged destination: update lock held, a live radio lease, no and two station processes,
 transmit armed, PTT keyed, transmitting, a contact replying, a contact replying after a
 `device_lost` disarm, an automation run active, and a state that cannot be read. Busy that
 clears at 290 s proceeds to the stop; still busy at 300 s gives up. The radio cases
-(#196, TC-196-04) add a radio `closed`, `connecting`, `closing`, `unavailable` or whose
+(TC-196-04) add a radio `closed`, `connecting`, `closing`, `unavailable` or whose
 reply cannot be read: each waits to `12:05:00 WAITING FOR THE RADIO` with exit 6 and no
 stop; a radio `ready` from the first reading, or from 290 s, proceeds to the stop; transmit
 armed until 310 s with the radio closed ends with the busy reason and exit 3. A second
@@ -666,113 +632,16 @@ or with the radio closed reaches the stop without asking, and `-DryRun` does not
 
 ### Rules not met yet
 
-Until each issue is done, the [standing deploy policy](#standing-deploy-policy) authorizes
-this mechanism in place of an OK per install; it bounds the operator's standing permission
-to run `station-update.ps1` (decision 2026-10-31, recorded on #30).
+The [standing deploy policy](#standing-deploy-policy) authorizes this mechanism in place of an
+OK per install. These rules of the harness's deployment authority stay not met:
 
-| Rule | State today | Issue |
-|---|---|---|
-| Credentials outside the agents | Off (today): agents run as the HB9BLA user and can write the version directory, `active.json`, the receipt, the gates record and the package and station-update scripts. Only the task and firewall changes need the operator's elevation. Prepared: the deploy authority below keeps policy, verifier and launcher where only Administrators write and the signing key with the operator. Still not met when on: the launcher and verifier run as HB9BLA, so the agents can alter them while they run (see its limits). | #30 |
-| Approval names the candidate | Off (today): the manifest names commit and executable SHA-256, but the agents write it and no approval is bound to it. Prepared: an operator-signed approval of one commit, one digest and one destination. | #31 |
-| Verify before writing | Off (today): `station-update.ps1` refuses a changed artifact, package path, gates record, push-gate log, unpublished commit, task or firewall scope before writing, but against an agent-written manifest beside the artifact. Prepared: the protected verifier hashes the executable itself against the signed digest before the switch, and the protected launcher again before it starts it. | #32 |
-| Prove the result | `station-update.ps1` checks the launcher receipt and HTTP 200. `station-probe.ps1` then checks, independently of the receipt, that the process listening on 18081 runs the candidate's bytes, answers over trusted TLS and reports the candidate's commit itself (`x-wstx-source-commit`). The operator can read that report from PC Andreas without an agent. Not met in full: an agent runs the probe and the rollback after it. On HB9BLA everything except the operator runs with the agents' rights, so a prober the agents cannot alter needs another account (an operator decision, see the deploy authority's limits). | #33 |
-| Show the refusals | `station_drill.py` shows each refusal of `station-update.ps1` before the destination changes (above). Not met in full: the drill shows that a consistent rewrite of artifact and records and an older commit on master are accepted (#32, #31), and a mismatched approval exists only with the deploy authority on. | #34 |
-
-No rule is met in full.
-
-### Deploy authority (prepared, switched off)
-
-`harness/project/deploy/authority/` holds an operator approval for each install (#30, #31, #32).
-It is **off**: nothing in the install path calls it, the task runs `station\launcher.ps1`,
-and agents install with `station-update.ps1` as above. Only the operator switches it on,
-because from then on every install needs the operator's signature.
-
-When on, the operator approves a package by signing
-`{schema, commit, artifact_sha256, destination, requested_utc}` with an OpenSSH key the
-agents never see (on PC Andreas or a hardware key; `ssh-keygen -Y sign`, namespace
-`wstx-station-approval`). The root `C:\ProgramData\WstxRust\deploy-authority` is owned by
-Administrators and only readable by HB9BLA. It holds `policy.json` (destination and signer),
-`allowed_signers` (the operator's public key), `revoked.txt` (digests no longer allowed),
-`verify-approval.ps1`, `protected-launcher.ps1` and `authority-lib.ps1`. Both entry
-scripts refuse to run from anywhere else or when the root, an ancestor, PowerShell or
-`ssh-keygen` can be changed by an account other than SYSTEM, Administrators or
-TrustedInstaller. They load modules only from `$PSHOME` and run `ssh-keygen` with an empty
-environment. They hash the executable themselves with the file pinned against change and
-refuse unless the signed approval names exactly that commit, that digest and the policy's
-destination and the digest is not revoked. `verify-approval.ps1` runs inside
-`station-update.ps1` before anything is staged. `protected-launcher.ps1`, which the
-scheduled task then runs instead of `station\launcher.ps1`, checks again and starts
-nothing unapproved; `station-update.ps1` then sees the version not become ready and
-switches back.
-
-**To switch it on** (operator, once):
-
-1. Create the signing key on your own machine, e.g. `ssh-keygen -t ed25519 -f %USERPROFILE%\.ssh\wstx_operator`
-   (with a passphrase), and copy only `wstx_operator.pub` to HB9BLA.
-2. Approve the running version first, so the switch cannot stop the station. The agent runs
-   `harness\project\deploy\authority\request-approval.ps1 -Manifest <its package>\manifest.json`. You
-   check the commit, digest and gate record it prints, then sign
-   `ssh-keygen -Y sign -f wstx_operator -n wstx-station-approval <commit>.approval.json`.
-   The agent copies `<commit>.approval.json` and `.sig` to
-   `%LOCALAPPDATA%\WstxRust\station\approvals\`.
-3. As HB9BLA, unelevated, try it:
-   `powershell -NoProfile -ExecutionPolicy Bypass -File harness\project\deploy\authority\enable-authority.ps1 -OperatorPublicKey <path>\wstx_operator.pub -DryRun`.
-   The real run has Administrator rights, so nothing the agents can write may take part:
-   not the checkout, not git, not HB9BLA's environment (an elevated shell of HB9BLA still
-   reads `HKCU\Environment`, which can load a DLL into it). In an elevated
-   `powershell -NoProfile` of a **separate administrator account**:
-
-   ```powershell
-   & {
-     $ErrorActionPreference = 'Stop'
-     # A fresh, unpredictable folder created with its final permissions in one step, so
-     # no agent can create it first or drop a file into it before it is locked.
-     $sid = (New-Object Security.Principal.NTAccount('HB9BLA')).Translate([Security.Principal.SecurityIdentifier]).Value
-     $s = New-Object Security.AccessControl.DirectorySecurity
-     $s.SetSecurityDescriptorSddlForm("O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;$sid)")
-     $d = "C:\ProgramData\WstxRust-install-$([guid]::NewGuid())"
-     $null = [IO.Directory]::CreateDirectory($d, $s)
-     if (@(Get-ChildItem -Force $d).Count) { throw "$d is not empty" }
-     Copy-Item D:\Github\wsjtx-rust\.harness\deploy\authority\* $d
-     Get-FileHash $d\* | Format-Table Hash, Path   # must equal the digests in the review record
-     if ((Read-Host 'Digests equal the review record? (yes)') -ne 'yes') { throw 'stopped' }
-     powershell -NoProfile -ExecutionPolicy Bypass -File $d\enable-authority.ps1 -OperatorPublicKey <path>\wstx_operator.pub
-     $d   # keep: disable-authority.ps1 runs from this folder
-   }
-   ```
-
-   It refuses as HB9BLA, from an unprotected folder, when the task is not the
-   `setup-once.ps1` launcher, when the root existed unprotected or when the running version
-   is not approved. It prints the digests of the files it installs, points the task at the
-   protected launcher and does not restart the station.
-4. Apply `harness/project/deploy/authority/station-update-authority.patch` to
-   `station-update.ps1` (it accepts the protected launcher in `Assert-Setup` and calls
-   the verifier after the package checks). Then run
-   `python tools/deploy/station_drill.py`: it must show the two approval cases.
-   Without the patch, `station-update.ps1` refuses every install and rollback with
-   "setup-once.ps1 has not been run".
-
-From then on each install is: `make_package.py`, `request-approval.ps1`, your signature,
-copy to `approvals\`, `station-update.ps1`, `station-probe.ps1`. To revoke an approved
-build, add its digest to `revoked.txt` (elevated). **To switch it off**:
-`$d\disable-authority.ps1`, run the same way as the enable (separate administrator account,
-protected copy), points the task back at `station\launcher.ps1`; then reverse the patch.
-
-**Limits when on.** The approval has no expiry and no one-time nonce: the protected side
-has no state the agents cannot write. An approved build stays startable (after a reboot
-or a rollback) until its digest is revoked. Replay for another commit, digest or
-destination is refused. **The checks still run with the agents' rights:** the task's
-principal stays HB9BLA (LeastPrivilege), so `protected-launcher.ps1` runs as the agents'
-own account. They can alter it while it runs, for example with a profiler DLL from
-`HKCU\Environment` or by writing to the memory of a process they own. They can also start
-any program themselves, and the firewall rule has no program condition. When on, the
-authority makes the approval tamper-evident and stops an unapproved build in the ordinary
-path; it is not a boundary against agents that act deliberately. A real boundary needs the
-task (and the verifier) under another account whose environment and processes the agents
-cannot reach, which is an operator decision. `station-probe.ps1` detects a listener that
-is not the expected image. The required checks
-(the push gate) still run with the agents' rights. The operator's signature covers the
-gate record shown at signing, but no protected configuration re-runs those checks.
+| Rule | State |
+|---|---|
+| Credentials outside the agents | Not met: agents run as the HB9BLA user and can write the version directory, `active.json`, the receipt, the gates record and the package and station-update scripts. Only the task and firewall changes need the operator's elevation. |
+| Approval names the candidate | Not met: the manifest names commit and executable SHA-256, but the agents write it and no approval is bound to it. |
+| Verify before writing | Not met in full: `station-update.ps1` refuses a changed artifact, package path, gates record, push-gate log, unpublished commit, task or firewall scope before writing, but against an agent-written manifest beside the artifact. |
+| Prove the result | Not met in full: `station-update.ps1` checks the launcher receipt and HTTP 200, and `station-probe.ps1` checks, independently of the receipt, that the process listening on 18081 runs the candidate's bytes, answers over trusted TLS and reports the candidate's commit itself (`x-wstx-source-commit`); the operator can read that report without an agent. But an agent runs the probe and the rollback after it, and on HB9BLA everything except the operator runs with the agents' rights. |
+| Show the refusals | Not met in full: `station_drill.py` shows each refusal of `station-update.ps1` before the destination changes (above), and that a consistent rewrite of artifact and records and an older commit on master are accepted. |
 
 **Platform limits.** `execution_mode: local`: the hooks and the push gate run on the
 client with the agents' own rights. The repository has no branch protection and no

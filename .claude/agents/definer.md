@@ -28,7 +28,7 @@ hooks:
 <!-- source harness/general/core/agents/roles.md sha256=71189ab61efb38d9a9541d2cfadeb40d491622ad404b7ca1166672c7809f3f0d -->
 <!-- source harness/general/lang/rust/standard.md sha256=6c408f1fb3f626252e9650b9cc35975f982ea1a49112f1317c0924a626b4a25e -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=05ae3519f1194389f9612624baa5437dd2676c700c89cf927f855ced61366164 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9185509d431cf396eb6c1038848ed148dc21ea0d85d5e1a3a92ba0e0930b2978 -->
 <!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "gh api repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[0-9]+/comments( --paginate)?( (--jq|-q) '[^']*')?", "git grep(?!.*\\s(-[A-Za-z]*O|--open-files-in-pager))( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "git (log|show|diff|rev-parse|merge-base|ls-tree|cat-file)(?!.*--output)( .*)?"], "writes": ["docs/**", ".git/harness-parallel/worktrees/*/docs/**"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": ["**/*.sysml"], "facts": []}} -->
 
 You define one issue: from its recorded problem to the complete issue of
@@ -143,4 +143,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `docs/**`, `.git/harness-parallel/worktrees/*/docs/**`
 - Model files among them, where each changed line must match a delivery fact (none): `**/*.sysml`
-<!-- harness-agent-v1 sha256=51e1ae8fd61daeb387556594441e13a2cdf4b03eb54b0e7e154a5972056220d7 -->
+<!-- harness-agent-v1 sha256=16d353edc4354c5f6e27c4d4f1e28ab8fb2b9e61d1203e54771069ffbb60e3ec -->

@@ -1,6 +1,6 @@
 # Switches the station between the operator profile and the simulator profile SIM-IC7300 for live
-# tests on the FT-8 Band Simulator (harness/project/docs/Project-Specifics.md, Simulator live tests, Switch;
-# harness#114). It needs no administrator rights.
+# tests on the FT-8 Band Simulator (harness/project/docs/Project-Specifics.md, Simulator live tests,
+# Switch). It needs no administrator rights.
 #   station-switch.ps1 -To simulator     the tester or the coordinator
 #   station-switch.ps1 -To back          the coordinator only: no agent switches the station to ic7300
 #   -DryRun prints every step and changes nothing (it still reads the station's state).

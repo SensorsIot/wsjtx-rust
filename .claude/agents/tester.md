@@ -25,7 +25,7 @@ hooks:
 <!-- source harness/general/core/agents/roles.md sha256=71189ab61efb38d9a9541d2cfadeb40d491622ad404b7ca1166672c7809f3f0d -->
 <!-- source harness/general/lang/rust/standard.md sha256=6c408f1fb3f626252e9650b9cc35975f982ea1a49112f1317c0924a626b4a25e -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=05ae3519f1194389f9612624baa5437dd2676c700c89cf927f855ced61366164 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9185509d431cf396eb6c1038848ed148dc21ea0d85d5e1a3a92ba0e0930b2978 -->
 <!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\\.ps1( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch\\.ps1 -To simulator", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/live/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You run the live tests the coordinator names for one issue: a function test of
@@ -96,4 +96,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/live/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=6700aae905be73d90b8184a2006534961dada83c76a22897823b8d67fc275eaa -->
+<!-- harness-agent-v1 sha256=3f4050a852e36d5de16a5cf0d1bdac9fb3930e08ddf1d51bede0f1247bff3065 -->
