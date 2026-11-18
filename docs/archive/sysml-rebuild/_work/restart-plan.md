@@ -167,3 +167,7 @@ migrations; README in #235 or #231; where harness issues live.
    rule's origin goes; a pointer whose rule depends on the issue's state stays.
 6. Approval records (operator 2026-11-18, A): a standing policy keeps one issue pointer and its
    quoted principle; dates and comment ids go.
+7. Product data migrations (operator 2026-11-18, A): check HB9BLA's saved profiles and strategies
+   for old forms; with none, the migrations (strategy schemas 2 and 3, the authorization hint;
+   device names with #229) go in a product CR; otherwise they stay until those files are
+   converted once.
