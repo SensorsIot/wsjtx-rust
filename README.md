@@ -1,86 +1,41 @@
 # WSTX Rust
 
-A planned, simplified Rust implementation of WSJT-family radio functionality. Requirements will be extracted from documented and observable behavior, with WSJT-X v3.3.0-beta4 as the initial experimental reference. Selected decoder stages adapt the pinned WSJT-X numerical routines into Rust, retaining their GPL notices and source provenance. WSTX Rust is a working name; final release branding remains undecided.
+A Rust implementation of WSJT-family radio functionality, compared with WSJT-X v3.3.0-beta4.
+Selected decoder stages adapt the pinned WSJT-X numerical routines into Rust, retaining their
+GPL notices and source provenance. WSTX Rust is a working name.
 
-The project has a Rust station server, a browser status/settings interface and a Windows/MSVC build workflow. Saved profiles support independently configured server processes and browser windows on distinct ports. The receive implementation includes a Rust FT4/FT8 decoder and separate audio/radio-control providers; live integration and hardware acceptance are in progress. Transmit and complete contact operation remain under development.
+What the station does is stated in its model, `docs/sysml/`, and only there: the
+[functional requirements](docs/sysml/Requirements.sysml), the shack, its stations and
+their parts ([Shack.sysml](docs/sysml/Shack.sysml)), the link between a browser and its
+station ([StationLink.sysml](docs/sysml/interfaces/internal/StationLink.sysml),
+[Listener.sysml](docs/sysml/backend/web/Listener.sysml)). This README gives orientation,
+setup and licensing.
 
-Create a profile with `wstx-rust --create-profile <directory>`, then start it with
-`wstx-rust --profile <directory>` and open the reported URL. Each simultaneous server
-uses its own profile directory and port. The [profile contract](docs/sysml/backend/profile/Profile.sysml)
-defines configuration, locking and recovery, the [station protocol](docs/sysml/backend/web/StationProtocol.sysml)
-access; device selections are saved intent
-and do not activate hardware. No-argument startup retains the original status mode.
-
-Selected-profile pages import one mono 12 kHz PCM16 WAV of up to 120 seconds and
-preserve its original bytes. Choose a file, import it, then explicitly replay its
-measured spectrum/waterfall. The upper display and lower station controls share a
-draggable, keyboard-accessible separator. Replay uses one worker per station and
-does not play audio or decode messages. Cancel stops the current import or replay;
-reconnection refreshes state without retrying operations.
-
-Recording tests use an explicit, separate prerequisite step. In PowerShell:
-
-```powershell
-$env:WSTX_SAMPLE_DIR = Join-Path $env:LOCALAPPDATA 'WstxRust/recording-fixtures'
-node tools/recording-fixtures.cjs --directory "$env:WSTX_SAMPLE_DIR"
-cargo build --workspace --locked
-npm run test:recording
-```
-
-The setup command downloads the 25 pinned WAVs and applicable license/provenance
-files from the two tracked decoder manifests, verifies size, SHA256 and WAV headers,
-and promotes each file atomically into the selected cache. It refuses Git working
-trees, symlinked directories, unsafe manifest paths and changed existing files.
-`--verify` checks an already provisioned cache without downloading. Downloads have
-bounded time/size limits and acquisition errors fail explicitly. Audio stays out of Git.
-The manifests preserve their sample-specific licensing/provenance limitations; a
-software license is not a new claim about a recording's origin or decoder truth.
-
-`npm run test:recording` is offline: it uses disposable Windows servers/Chromium,
-independent byte/DFT fixtures, the acquired read-only recordings and the shared TLS
-link simulator. Missing recordings fail with the setup command. The current parallel
-Windows clone can also discover its pre-existing `resources/issue-7/downloads` inputs;
-other clones should set `WSTX_SAMPLE_DIR` explicitly. Upload/page-load metrics are
-separate from steady display traffic. The manual-only Windows workflow explicitly
-runs setup and both `npm test` and `npm run test:recording` against the same release
-executable. The local harness gate remains the selected authoritative execution mode;
-editing the workflow does not execute it or establish a hosted passing result.
-
-The first release targets Windows desktop. macOS and Linux are planned afterward. The desktop design will use multicore CPUs and evaluate SIMD and optional GPU acceleration where measured benefits justify them, with a usable CPU-only path. A microcontroller edition is a possible secondary product with separately defined capabilities.
+Of the station's 24 functional requirements, 7 are built and tested, 16 are built in part
+and one is not built yet; `python tools/sysml.py status` lists each requirement with its
+clauses. Where the code does not yet do what the model states, the model says so in the
+clause's status or in a `CodeDiffers` marker (`python tools/sysml.py markers CodeDiffers`).
+The first release targets Windows desktop.
 
 ## Repository layout
 
-The [canonical SysML product scope](docs/sysml/Requirements.sysml) and
-[requirements and verification](docs/sysml/Requirements.sysml) define the functional
-contract. The [architecture](docs/sysml/Station.sysml) defines component boundaries,
-internal contract ownership and connections. This README provides orientation, setup
-and licensing; it is not a second functional specification.
-
 | Path | Contents |
 | --- | --- |
-| `server/` | Rust station server, persisted profiles, WebSocket/HTTP settings and optional native TLS. |
-| `client/` | HTML/CSS/JavaScript status/settings interface, embedded into the server executable. |
-| `docs/sysml/` | Canonical functional SysML requirements, interfaces, behaviour, architecture and verification. |
-| `docs/archive/` | Frozen historical Markdown; not an active specification or validation input. |
+| `server/` | Rust station server. |
+| `client/` | Browser client, embedded into the server executable. |
+| `docs/sysml/` | The model: requirements, parts, interfaces, behaviour and verification. |
+| `tools/` | The model tool (`tools/sysml.py`, [its contract](tools/sysml/README.md)) and other tools. |
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |
 | `harness/` | The development harness: the pinned general harness (`harness/general/`) and the project harness (`harness/project/`) with its development instructions. |
 
-Build, test and packaging instructions are in the [project-specific harness](harness/project/docs/Project-Specifics.md). A packaged desktop webview is an optional future client distribution, not a requirement for using the browser interface.
-
-## Documentation
-
-- [Canonical functional model and behaviour baseline](docs/sysml/Requirements.sysml)
-- [Stable requirements and verification cases](docs/sysml/Requirements.sysml)
-- [Architecture](docs/sysml/Station.sysml)
-- [Project-specific harness: Windows builds and model validation](harness/project/docs/Project-Specifics.md)
-- [Reusable SysML authoring instruction](https://github.com/SensorsIot/harness/blob/main/core/docs/standards/sysml-v2.md)
+Build, test and packaging instructions are in the [project-specific harness](harness/project/docs/Project-Specifics.md).
 
 ## Branches
 
-- `master`: specifications and development of the Rust port.
-- `original`: the imported upstream source and history, preserved as the reference baseline.
+- `master`: the Rust implementation and its model.
 
-The original Fortran, C, C++, Qt, and CMake implementation has been removed from the current `master` tree. It remains available on `original` and in Git history. Browse the [original source](https://github.com/SensorsIot/wsjtx-rust/tree/original) or inspect individual files with `git show original:path/to/file`.
+The upstream WSJT-X source (Fortran, C, C++, Qt, CMake) is master's history up to commit
+`967c85a61`; read a file of it with `git show 967c85a61:<path>`.
 
 ## License and attribution
 
