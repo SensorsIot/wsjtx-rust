@@ -229,3 +229,6 @@ migrations; README in #235 or #231; where harness issues live.
 5. ThinLinkBudget gets a clause in StationLink ("the link to a browser MUST stay within
    ThinLinkBudget"), at target; its case is a manual test judging the link log; implemented once
    the operator has judged it.
+6. Mismatches: the display name of a new station is "New station"; the ignore list is one list of
+   100 (the merge into one list is #228); Band Activity sorts descending. #235 corrects the model;
+   the ignore list's code carries `@CodeDiffers` until #228.
