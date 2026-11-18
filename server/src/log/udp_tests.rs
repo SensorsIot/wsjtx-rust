@@ -990,7 +990,7 @@ fn enter(f: &Fixture, call: &str, grid: Option<&str>) {
         false,
     );
 }
-// #41 WstxLogbook::DirectLog: the
+// WstxLogbook::DirectLog: the
 // Proves: TC-011-001, TC-012-002
 // completed contact logs itself (no review, no browser) and reaches the UDP target as QSO
 // Logged + Logged ADIF; exactly one record per contact identity. Expected fields are
@@ -1417,7 +1417,7 @@ async fn tc_012_007_status_follows_each_decode_window_and_the_pulse() {
     assert!(drain(&a).is_empty() && drain(&b).is_empty() && drain(&c).is_empty());
 }
 
-// #10 Update logbook from ADIF sends nothing anywhere: the
+// Update logbook from ADIF sends nothing anywhere: the
 // Proves: TC-011-002
 // added records reach no UDP target as QSO Logged or Logged ADIF (only DirectLog and
 // SaveContact send logged contacts).

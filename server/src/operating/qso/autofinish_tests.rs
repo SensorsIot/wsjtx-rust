@@ -1,4 +1,4 @@
-// (#81, each test names its case below). A started QSO is finished
+// A started QSO is finished
 // whatever ends the run (WstxAutoMode::StartedQsoRule). Oracle: the operator's rule
 // ("Auto only starts"; a QSO is started once he has sent a message to my call and our transmission to
 // him has started), the standard sequence of WstxStandardQso::SequenceRule (Tx1, R-report, 73 after his

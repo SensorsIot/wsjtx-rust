@@ -324,7 +324,7 @@ test('strict TLS unions, early identity barriers and manual preferred defaults',
   const manualClose=await request('/radio/disconnect','POST',{v:1,profile_id:id,boot_id:s.boot_id,connection_generation:0});assert.equal(manualClose.status,409);assert.equal(manualClose.body.error.code,'automatic_lifecycle');
 });
 
-// case6 (#10). selection.state during a held POST (another client's
+// case6 selection.state during a held POST (another client's
 // revision, then the command's own) does not take away the barrier of its unknown outcome.
 test('an event during a pending command keeps the unknown outcome barrier',{timeout:60000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');

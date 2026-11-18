@@ -344,7 +344,7 @@ test('TC-055-004 RR73 sent as a grid square is no grid for the distance, in eith
   assert.deepEqual(page.errors,[]);
 });
 
-// #50 (operator 2026-11-02, US5WFL then YO3GNF;
+// (operator 2026-11-02, US5WFL then YO3GNF;
 // TC2TR): as WSJT-X (handleDecodeSelection with quick_call), a double-click on another
 // station mid-QSO or during my CQ switches at once, without a confirmation, keeps Enable Tx
 // on, and the next own period calls the new station; Auto Seq then runs that QSO to its
@@ -375,7 +375,7 @@ async function completes(call,report){
 // contact, the #61 stale_revision path) and from-CQ (then (c) after the completed contact),
 // each on its own station and browser started by contact_browser_operating_flow, so that
 // their real-clock periods elapse concurrently (harness#28); every step and assertion is kept.
-// (#10 pushed transmit state, browser subset). The actual
+// The actual
 // Proves: TC-007-005
 // station pushes transmit.state: all fields first, then what changed; the page reads no
 // GET /transmit and receives nothing while the view is unchanged.
@@ -402,7 +402,7 @@ test('TC-007-005 transmit state is pushed: the event carries it, no GET /transmi
   assert.deepEqual(page.errors,[]);
 });
 
-// (#10 pushed contact state, browser subset). Another client's change
+// Another client's change
 // Proves: TC-007-005
 // reaches this page in contact.state: only what changed, shown without a GET /contact.
 test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{timeout:60000},async()=>{
@@ -428,7 +428,7 @@ test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{t
   assert.deepEqual(page.errors,[]);
 });
 
-// (#10 PushedStationState). An own contact command reads no GET /contact:
+// An own contact command reads no GET /contact:
 // Proves: TC-007-005
 // the reply shows accepted or the refusal, contact.state carries the result, and two commands in a row
 // both pass (the second waits for the first one's revision). Expected values: the command semantics.
@@ -451,7 +451,7 @@ test('TC-007-005 an own contact command reads no GET /contact; a refusal still s
   assert.deepEqual(page.errors,[]);
 });
 
-// (#10). The next command does not wait for the 1 s contact.state:
+// The next command does not wait for the 1 s contact.state:
 // Proves: TC-007-005
 // it goes with the receipt's revision as soon as the previous reply is in (a LAN fixture: well under 200 ms).
 test('TC-007-005 a command right after another goes at once with the receipt revision',{timeout:90000},async()=>{
@@ -469,7 +469,7 @@ test('TC-007-005 a command right after another goes at once with the receipt rev
   assert.deepEqual(page.errors,[]);
 });
 
-// (#10). A stale safety_revision is no contact revision: the client reads the
+// A stale safety_revision is no contact revision: the client reads the
 // Proves: TC-007-005
 // snapshot at once and the explicit CQ retries with the station's safety revision (expected well under 1 s).
 test('TC-007-005 a stale safety revision is read at once and the CQ retried',{timeout:60000},async()=>{
@@ -487,7 +487,7 @@ test('TC-007-005 a stale safety revision is read at once and the CQ retried',{ti
   assert.deepEqual(page.errors,[]);
 });
 
-// (#10). Esc during a stale-revision retry of a double-click goes at
+// Esc during a stale-revision retry of a double-click goes at
 // Proves: TC-007-005
 // once, and nothing the double-click queued (its retry, its Enable Tx) follows it.
 test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing follows it',{timeout:60000},async()=>{
@@ -511,7 +511,7 @@ test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing fo
   assert.deepEqual(page.errors,[]);
 });
 
-// (#10). Esc while a Calling me reply's select_row is on its way:
+// Esc while a Calling me reply's select_row is on its way:
 // Proves: TC-007-005
 // the abort goes and no Enable Tx follows it.
 test('TC-007-005 Esc during a Calling me reply sends no Enable Tx after the abort',{timeout:60000},async()=>{
@@ -531,7 +531,7 @@ test('TC-007-005 Esc during a Calling me reply sends no Enable Tx after the abor
   assert.deepEqual(page.errors,[]);
 });
 
-// (#10). CQ pressed while a row's select_row is still unanswered decides on the
+// CQ pressed while a row's select_row is still unanswered decides on the
 // Proves: TC-007-005
 // state after it: the running contact asks before it is abandoned, nothing is armed toward the row first.
 test('TC-007-005 CQ waits for an unanswered selection before it decides',{timeout:60000},async()=>{
@@ -555,7 +555,7 @@ test('TC-007-005 CQ waits for an unanswered selection before it decides',{timeou
 
 const idleAgain=async()=>{const s=await snapshot();if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
   await waitFor(async()=>!['replying','calling','report','roger_report','rogers','signoff'].includes((await snapshot()).contact?.state)&&(await snapshot()).transmit.arm_state!=='armed','idle again',10000);};
-// (#10). A row's selection waits for an unanswered command: after F4
+// A row's selection waits for an unanswered command: after F4
 // Proves: TC-007-005
 // clears the running contact, a directed CQ asks for confirmation as with no contact.
 test('TC-007-005 a row selection after an unanswered Clear DX decides on the cleared contact',{timeout:60000},async()=>{
@@ -575,7 +575,7 @@ test('TC-007-005 a row selection after an unanswered Clear DX decides on the cle
   assert.deepEqual(page.errors,[]);
 });
 
-// (#10). Esc during the Change contact of a Calling me line that the
+// Esc during the Change contact of a Calling me line that the
 // Proves: TC-007-005
 // station refused as contact_active (its selection went before the page showed the new contact): no Enable Tx follows.
 test('TC-007-005 Esc during a Calling me Change contact sends no Enable Tx after the abort',{timeout:60000},async()=>{
@@ -681,7 +681,7 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
   }
 });
 
-// case7, TC-007-005 (#10 pushed operating selection).
+// case7, TC-007-005
 // The socket's first event holds the whole snapshot, a later one what changed, and the browser
 // shows a change from outside without any timer read on Detailed or Thin.
 test('operating selection is pushed: the event carries it, no timer read of GET /receive/selection',{timeout:90000},async()=>{
@@ -713,7 +713,7 @@ test('operating selection is pushed: the event carries it, no timer read of GET 
   assert.deepEqual(page.errors,[]);
 });
 
-// case7 (#10). The socket's read getting lost on the link leaves the
+// case7 The socket's read getting lost on the link leaves the
 // controls on the state its first event gave: there is no timer read to repair them.
 test('a lost selection read does not disable the controls the socket event holds',{timeout:60000},async()=>{
   let release,reached;const gate=new Promise(r=>release=r),entered=new Promise(r=>reached=r);
@@ -725,7 +725,7 @@ test('a lost selection read does not disable the controls the socket event holds
   assert.deepEqual(page.errors,[]);
 });
 
-// #85 L1: a QSO with the station logged last is not
+// L1: a QSO with the station logged last is not
 // Proves: TC-085-005
 // logged; the QSO pane says so and why, shows no "Logged" notice, and the log holds the station
 // once. The next logged QSO shows its "Logged" notice. Expected texts: the L1 wording.

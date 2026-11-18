@@ -684,7 +684,7 @@ fn drain(source: &mut LiveSource, blocks: &mut Vec<SampleBlock>) -> Vec<EpochPro
     }
 }
 
-// (#38). The HB9BLA IC-7300 codec packet sequence: WASAPI
+// The HB9BLA IC-7300 codec packet sequence: WASAPI
 // Proves: TC-002-001, TC-002-003
 // flags DATA_DISCONTINUITY on packets whose device position and QPC both continue the
 // previous packet (measured QPC step jitter up to 0.56 ms, flagged or not). That is a
@@ -738,7 +738,7 @@ fn audio_contiguous_engine_discontinuity_keeps_the_source_epoch() {
     );
 }
 
-// (#38). A contiguous-position flag without a consistent QPC,
+// A contiguous-position flag without a consistent QPC,
 // Proves: TC-002-003
 // and every own-queue loss, is still unknown loss; each epoch names its trigger.
 #[test]
@@ -771,7 +771,7 @@ fn audio_unknown_loss_epochs_name_their_trigger() {
     assert!(blocks.last().unwrap().discontinuity);
 }
 
-// (#38). The 2 ms QPC bound for a contiguous flagged packet:
+// The 2 ms QPC bound for a contiguous flagged packet:
 // Proves: TC-002-001
 // +-0.55 ms (the observed jitter) and exactly 2 ms are kept; 2.1 ms early or late is loss.
 #[test]
@@ -806,7 +806,7 @@ fn audio_contiguous_flag_qpc_tolerance_boundary() {
     }
 }
 
-// (#38). A real native FIFO overflow names queue_full.
+// A real native FIFO overflow names queue_full.
 // Proves: TC-002-001
 #[test]
 fn audio_queue_full_epoch_names_its_trigger() {
@@ -836,7 +836,7 @@ fn audio_queue_full_epoch_names_its_trigger() {
     );
 }
 
-// #52: silent packets (zero-filled by the source) and
+// silent packets (zero-filled by the source) and
 // accepted engine glitches are marked on the canonical timeline, so a window can count
 // them; a new epoch forgets them.
 #[test]
@@ -872,7 +872,7 @@ fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
     assert_eq!(s.marked_frames(0, u64::MAX), (0, 0));
 }
 
-// #52 review: sustained silence over more packets than the
+// review: sustained silence over more packets than the
 // mark limit (600 silent 480-frame packets after one signal packet) stays counted in full.
 #[test]
 fn audio_sustained_silence_is_counted_in_full() {

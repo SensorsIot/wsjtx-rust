@@ -544,7 +544,7 @@ async fn tc_055_006_non_cq_senders_carry_entity_and_flags() {
     assert_eq!(records[2].get("flags"), None, "worked on 20m FT8: no flag");
 }
 
-// (#55, live 2026-11-06): every decoded sender call resolves,
+// every decoded sender call resolves,
 // Proves: TC-055-002
 // also a nonstandard one without a grid and a filled-in hash; a hash nobody heard and a free
 // text have no sender.

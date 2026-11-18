@@ -806,7 +806,7 @@ fn official_modern_recording_baselines() {
     );
 }
 
-// (#56). On the recorded corpus the station finds at least
+// On the recorded corpus the station finds at least
 // the pinned number of the complete-frame decodes of WSJT-X jt9 -8/-5 -d 3; jt9's output is a
 // lower bound, not exhaustive truth (CL-007-03).
 #[test]
@@ -2395,7 +2395,7 @@ fn live_busy_period_publishes_every_decode_promptly() {
     );
 }
 
-// (#57). The busy period decodes to exactly the same records in
+// The busy period decodes to exactly the same records in
 // Proves: TC-057-002
 // the same order (payload, frame, frequency and SNR bit for bit) on 1, 4 and 12 threads, and
 // the wall time drops with the thread count (reported, best of three).

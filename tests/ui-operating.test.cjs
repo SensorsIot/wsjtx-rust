@@ -360,7 +360,7 @@ const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'sele
 // Records a page's contact commands and answers them like the station (202) without effects.
 async function contactCommands(page,commands){await page.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});}
 
-// (#11 live stall 2026-11-02, IW9FRA): with Auto Seq off the
+// with Auto Seq off the
 // QSO pane says so, and the partner's RR73 in roger_report offers 73 as one action.
 test('Auto Seq off is shown on the QSO pane and an RR73 offers 73 next',{timeout:40000},async t=>{
   const commands=[];let contact=null,settings={auto_seq:false};
@@ -562,7 +562,7 @@ test('the compact QSO pane shows only the running QSO and clears when it ends',{
   assert.deepEqual(errors,[]);
 });
 
-// (#60, operator 2026-11-03): the QSO dialogue is a table,
+// the QSO dialogue is a table,
 // Proves: TC-060-001
 // UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR (the callers, formerly rows of it, are the
 // #37 Calling me section since 2026-11-04); Direction is the two calls as on
@@ -645,7 +645,7 @@ function ownCq(){return {id:crypto.randomUUID(),origin:'own_cq',dx_call:null,dx_
   messages:[null,null,null,null,null,'CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false,suggested_slot:null,last_rcvd:null,dialogue:[]};}
 const GREEN='rgb(48, 208, 80)',RED='rgb(255, 64, 64)';
 
-// #50 (operator 2026-11-02, CT7BRV): the QSO pane's period bar
+// (operator 2026-11-02, CT7BRV): the QSO pane's period bar
 // Proves: TC-050-003
 // runs on the station's clock (station.tick / snapshot utc_ms over the browser's monotonic
 // clock), not the browser's wall clock, and is red in my Tx periods and while transmitting,
@@ -1346,7 +1346,7 @@ test('the UDP editor reads GET /udp when Settings opens and saves the edited tar
   assert.deepEqual(errors,[]);
 });
 
-// the UDP editor takes an IPv6 multicast group (#46).
+// the UDP editor takes an IPv6 multicast group
 test('the UDP editor saves an IPv6 multicast target with hop limit and interface index',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const puts=[];
@@ -1558,7 +1558,7 @@ function freeTxGap(m,low,high,label){
   assert.ok(a&&b&&a.hi===b.lo,`${label}: touching bars ${low} and ${high}`);
   assert.ok(Math.abs(b.left-a.right-4)<=1,`${label}: gap ${b.left-a.right} px between ${low} and ${high}`);
 }
-// (#82: replaced by TC-082-004) the open slot marks are always part of the waterfall: no checkbox, a
+// the open slot marks are always part of the waterfall: no checkbox, a
 // Proves: TC-082-004
 // bar per open range [lo, hi) inset 2 px at each end on the waterfall's mapping (touching ranges a
 // 4 px gap), 8 px, no text, a drawn colour apart from the Rx line, Tx line and ruler in each theme,
@@ -2008,7 +2008,7 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
   assert.equal(await page.evaluate(()=>resultCursor),37,'old period page cannot move new view cursor');assert.deepEqual(errors,[]);
 });
 
-// (#37/#57). Band Activity keeps only the latest even and odd
+// Band Activity keeps only the latest even and odd
 // Proves: TC-057-004
 // periods: after three consecutive periods only periods 2 and 3 are shown, the newest on top
 // below no divider and the other below one; a same-parity successor (a skipped period) drops
@@ -2046,7 +2046,7 @@ test('TC-057-004 three consecutive periods leave only the latest even and odd pe
   assert.deepEqual(errors,[]);
 });
 
-// (#61, operator decision 2026-11-04). The station marks its Tx
+// The station marks its Tx
 // Proves: TC-061-004
 // period (latest_decode transmitted true, no records, CL-061-04); Band Activity renders that
 // marker and no empty-period block, the receive period before it stays below its divider, and
@@ -2089,7 +2089,7 @@ test('TC-061-004 a Tx period shows the station Tx marker, no empty block, and ke
   assert.deepEqual(errors,[]);
 });
 
-// (#61, operator decision 2026-11-04). The station measures no Rx
+// The station measures no Rx
 // Proves: TC-061-006
 // level in its Tx period (station.tick rx_level_db null) and marks its waterfall rows (tx true);
 // the browser shows level warnings for receive periods only and paints Tx rows as Tx.
@@ -2117,7 +2117,7 @@ test('TC-061-006 Tx rows are painted as Tx and level warnings show for receive p
   assert.deepEqual(errors,[]);
 });
 
-// (#61, operator 2026-11-06). Scripted rows, computed from 0.2 s rows
+// Scripted rows, computed from 0.2 s rows
 // Proves: TC-061-008
 // at 10 px/s with y(s)=floor(s*10*H/C): a Tx period takes a 4 px band, the labels beyond it stay exact.
 test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothing turns pale',{timeout:45000},async t=>{
@@ -2164,7 +2164,7 @@ test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothi
   assert.deepEqual(errors,[]);
 });
 
-// A late window extends the period view in place (#47).
+// A late window extends the period view in place
 test('a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
   let state,records,requested=[];
   const period='2026-10-27T12:00:15.0000000Z';
@@ -2269,7 +2269,7 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   assert.ok(sent.every(m=>!['radio.operation','receive.start'].includes(m.type)));assert.deepEqual(errors,[]);
 });
 
-// browser subset (#41 DirectLog). Actual server and
+// browser subset Actual server and
 // Chromium with the contact snapshot answered by the test: a completed contact opens no
 // review form and the browser never saves; Log QSO is one open_log command; the QSO pane
 // shows the server's log outcome; an open Logbook page lists a newly logged record by
@@ -2314,7 +2314,7 @@ test('completed QSOs log without a review and the open Logbook lists them live',
  assert.deepEqual(errors,[]);
 });
 
-// browser subset (#10 Update logbook from ADIF). Actual server
+// browser subset Actual server
 // and Chromium; a synthetic Log4OM-shaped export (byte order mark, '#' banner, PROGRAMID
 // LOG4OM2, a UTF-8 NAME, MFSK/FT4) and hand-counted summaries.
 test('Update logbook from ADIF in Settings consolidates a logger export and Export downloads contacts.adi',{timeout:30000},async t=>{
@@ -2402,7 +2402,7 @@ test('Band Activity shows the worked_status of each record with no query',{timeo
  assert.deepEqual(errors,[]);
 });
 
-// QSO pane subset (#10 2026-11-04). The station's worked_status on routed records and
+// QSO pane subset The station's worked_status on routed records and
 // query; receive pages, flags and the manual band selection are presentation fixtures, not RF truth.
 // The stations calling me carry the Band Activity marks: only interesting senders coloured, worked
 // before on this band and mode no colour, the status as text, and no extra query.
@@ -2573,7 +2573,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
  assert.deepEqual(errors,[]);
 });
 
-// browser subset (#10 PushedStationState). The receive snapshot, its result pages and
+// browser subset The receive snapshot, its result pages and
 // Proves: TC-007-005
 // the receive.state events are fixtures; what the browser holds and which reads it makes are the served client's.
 test('TC-007-005 receive.state carries the job and the audio; only a new state, a refused event or a failed read reads GET /receive',{timeout:40000},async t=>{
@@ -2642,7 +2642,7 @@ test('TC-007-005 receive.state carries the job and the audio; only a new state, 
   assert.deepEqual(errors,[]);
 });
 
-// (#50, live 2026-11-06, M7OZL UT4PA KO20): the worked-before status of a row
+// the worked-before status of a row
 // Proves: TC-050-008
 // stays while it is on screen, also when the next period moves it to the kept period. The receive pages with their
 // worked_status are routed fixtures.
@@ -2679,7 +2679,7 @@ test('TC-050-008 a kept row keeps its worked-before status in the tip',{timeout:
   assert.deepEqual(errors,[]);
 });
 
-// (#50, operator 2026-11-04). The receive pages (with the #55 flags,
+// The receive pages (with the #55 flags,
 // Proves: TC-050-008
 // dxcc and the station's worked_status), the contact snapshots are routed
 // fixtures; marks, colours, order and the reason tip are the served client's. Expected values come
@@ -3230,7 +3230,7 @@ const TOGGLE_ON='rgb(31, 122, 77)',TOGGLE_OFF='rgb(38, 50, 58)';
 // The QSO pane header items that lie outside the pane (none: nothing is cut off).
 const outsidePane=page=>page.evaluate(()=>{const pane=document.querySelector('#rx-focus').getBoundingClientRect();return [...document.querySelectorAll('#rx-focus .op-qso-buttons button,#qso-more>summary,#rx-focus .op-contact-badge')].filter(e=>{const r=e.getBoundingClientRect();return r.left<pane.left-1||r.right>pane.right+1;}).map(e=>e.id||e.textContent);});
 const toggle=locator=>locator.evaluate(e=>(e.getAnimations().forEach(a=>a.finish()),{pressed:e.getAttribute('aria-pressed'),disabled:e.disabled,title:e.title,background:getComputedStyle(e).backgroundColor}));
-// (#39 strategydef): Auto and PSK in the QSO pane's direct buttons
+// Auto and PSK in the QSO pane's direct buttons
 // follow only the pushed station state, send one POST per click and are disabled with their
 // reasons; the strategy element names the run state and Auto off. Expected values are the model's.
 test('Auto and PSK follow only the push, one POST per click, their disabled states and the strategy status',{timeout:90000},async t=>{
@@ -3301,7 +3301,7 @@ test('Auto and PSK follow only the push, one POST per click, their disabled stat
   assert.equal(s.commands.some(c=>c.action==='enable_tx'),false,'the browser never arms for a strategy');
   assert.deepEqual(errors,[]);
 });
-// (#81, WstxAutoControl::AutoToggle, StrategySelector): with Auto on the Auto
+// with Auto on the Auto
 // Proves: TC-081-006
 // button's title says that a QSO already started is finished; after the pushed Auto off with the run
 // stopped and the contact still in progress the button is grey with the off title, the strategy line
@@ -3327,7 +3327,7 @@ test('TC-081-006 the Auto button says that Auto off finishes a QSO already start
   assert.equal(s.autos.length,0,'the browser sent nothing');
   assert.deepEqual(errors,[]);
 });
-// (#39 strategydef, WstxHearingFeed::PskrUse, WstxQsoPane::QsoPane): the two PSK
+// the two PSK
 // Reporter lines while Use is on and a run's own contact has a target, with the age from
 // station.tick; hidden otherwise; no polling; the QSO pane keeps its height at 1366x768 and 360x740.
 test('the PSK Reporter lines in the QSO pane, their age formats, no polling and the fixed pane',{timeout:90000},async t=>{
@@ -3537,7 +3537,7 @@ test('the contest prompt offers the contest strategies, no operation choice',{ti
   assert.deepEqual([s.puts[1].configuration.active,s.puts[1].configuration.contest],['WW Digi fast',ww]);
   assert.deepEqual(errors,[]);
 });
-// Automatic operation (#39 strategydef): Start only selects; Auto on
+// Automatic operation Start only selects; Auto on
 // asks the warning where the rules forbid it and sends the confirmation with POST /strategy/auto;
 // the run state and Auto off come with the pushes. Station replies are hand-written fixtures; the
 // expected requests are written here.
@@ -3615,7 +3615,7 @@ async function until(condition){for(let i=0;i<400&&!condition();i++)await new Pr
 // The strategy line, the selector and the Auto button as the page shows them.
 const strategyElement=page=>page.evaluate(()=>{const a=document.querySelector('#qso-auto'),s=document.querySelector('#strategy-name');
   return {line:document.querySelector('#station-automation').textContent,value:s.value,options:[...s.options].map(o=>o.textContent),selectorDisabled:s.disabled,pressed:a.getAttribute('aria-pressed'),disabled:a.disabled,title:a.title};});
-// (#74 reproduction, live 2026-11-08): a page kept open across a real
+// a page kept open across a real
 // Proves: TC-074-001
 // restart of the isolated station, with the new socket's GET /strategy held back, never shows the
 // previous boot's "Strategy Casual" and ends as a freshly opened page shows the new
@@ -4233,7 +4233,7 @@ test('Settings > General country file shows its date, uploads and restores',{tim
   assert.deepEqual(errors,[]);
 });
 
-// MCP clients in Settings > General > Access & grants (#58):
+// MCP clients in Settings > General > Access & grants
 // listed when Settings opens, a new token shown once and cleared, revoke after confirmation.
 test('Settings lists MCP clients, shows a new token once and revokes after confirmation',{timeout:60000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
@@ -4426,7 +4426,7 @@ test('TC-054-001 one or two live Thin rows the station paced out are held; only 
   assert.deepEqual(errors,[]);
 });
 
-// (#24 S1b). Tx5 takes free text with no message yet (WSJT-X Tx5
+// Tx5 takes free text with no message yet (WSJT-X Tx5
 // Proves: TC-024-004
 // free text), and Band Activity marks rows to <MYCALL> and nonstandard rows to my call as mine;
 // the QSO pane Others list them as calling me, without the partner's own rows.
@@ -4483,7 +4483,7 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
   assert.deepEqual(errors,[]);
 });
 
-// (#24 S2a). The QSO fold-out's Activity choice shows the station's
+// The QSO fold-out's Activity choice shows the station's
 // Proves: TC-024-006
 // special activity and sends set_activity.
 test('TC-024-006 the Activity choice in the QSO fold-out',{timeout:40000},async t=>{
@@ -4506,7 +4506,7 @@ test('TC-024-006 the Activity choice in the QSO fold-out',{timeout:40000},async 
   assert.deepEqual(errors,[]);
 });
 
-// (#24 S2b). Field Day / RTTY Roundup with the Exchange entry:
+// Field Day / RTTY Roundup with the Exchange entry:
 // Proves: TC-024-009
 // the entry and the serial show the station's setting; choosing and changing send the exchange.
 test('TC-024-009 the contest choice and its Exchange entry',{timeout:40000},async t=>{
@@ -4539,7 +4539,7 @@ test('TC-024-009 the contest choice and its Exchange entry',{timeout:40000},asyn
   assert.deepEqual(errors,[]);
 });
 
-// (#24 S4b). The Hound choice: shown from the settings and sent
+// The Hound choice: shown from the settings and sent
 // Proves: TC-024-013
 // without an exchange.
 test('TC-024-013 the Hound choice in the QSO fold-out',{timeout:40000},async t=>{
@@ -4567,7 +4567,7 @@ test('TC-024-013 the Hound choice in the QSO fold-out',{timeout:40000},async t=>
   assert.deepEqual(errors,[]);
 });
 
-// (#99). The EU VHF choice: offered after NA VHF, shown with the
+// The EU VHF choice: offered after NA VHF, shown with the
 // Proves: TC-099-003
 // next serial, sent without an exchange; a refusal is shown and the choice returns to the
 // station's setting.
@@ -4681,7 +4681,7 @@ function assertStack(s,label){
   for(const k of ['control','error'])assert.ok(Math.abs(s[k].left-s.pane.left)<=1&&Math.abs(s[k].right-s.pane.right)<=1,`${label}: ${k} has the QSO card's edges ${JSON.stringify(s)}`);
   assert.equal(s.scroll,false,`${label}: no horizontal overflow`);
 }
-// (#22, live 2026-11-06, port held by another program): transmit unavailable
+// transmit unavailable
 // Proves: TC-007-002
 // disables CQ, Tune and Now with the reason beside them, and the pane follows each contact.state push.
 test('TC-007-002 the transmit controls and badge follow the pushed transmit capability',{timeout:40000},async t=>{
@@ -4707,7 +4707,7 @@ test('TC-007-002 the transmit controls and badge follow the pushed transmit capa
   assert.deepEqual([back.cq,back.tune,back.badge,back.reason],[false,false,'Ready',null],'back without any action');
   assert.deepEqual(errors,[]);
 });
-// (#22). Without an available capability a double-click and a Calling me line select
+// Without an available capability a double-click and a Calling me line select
 // the station and send no enable_tx, the menu's Reply and "Auto Seq on" are not offered; Call 1st stays a setting.
 test('no arming path sends enable_tx while the transmit capability is unavailable',{timeout:40000},async t=>{
   const period='2026-11-06T10:51:15.0000000Z';
@@ -4756,7 +4756,7 @@ test('no arming path sends enable_tx while the transmit capability is unavailabl
   assert.deepEqual(await sent(2),['select_row','enable_tx'],'available: the double-click arms');
   assert.deepEqual(errors,[]);
 });
-// (#22, live 2026-11-06): a station restart leaves nothing of the previous boot in
+// a station restart leaves nothing of the previous boot in
 // Band Activity: no "Latest undefined period", no kept period, however the two reads are ordered. The real server
 // restarts on its port; the job of the first boot, the new job and their pages are presentation fixtures.
 for(const [name,order] of [['/receive answers first','receive'],['/recording answers first, /receive still pending','recording'],['a new job at a lower generation','job']])test(`TC-007-002 a station restart leaves no heading or rows of the previous boot in Band Activity: ${name}`,{timeout:60000},async t=>{
@@ -4890,7 +4890,7 @@ test('TC-037-002 the error field lists only current problems with their time and
   assert.deepEqual((await entries()).map(e=>e[1]),['✖ Station connection lost · reconnecting']);
   assert.deepEqual(errors,[]);
 });
-// (#37, live 2026-11-06): a long problem text cannot run past the screen at
+// a long problem text cannot run past the screen at
 // Proves: TC-037-002
 // 1366x768: all of it can be scrolled into view inside the block, on screen, and the Control panel stays.
 test('TC-037-002 a long problem scrolls inside the error field on screen and the Control panel stays',{timeout:60000},async t=>{
@@ -4923,7 +4923,7 @@ test('TC-037-002 a long problem scrolls inside the error field on screen and the
   await page.screenshot({path:'test-results/ui-operating/error-field-long-360x800.png'});
   assert.deepEqual(errors,[]);
 });
-// (#83). Scripted contact snapshots, command replies and contact.state events
+// Scripted contact snapshots, command replies and contact.state events
 // (presentation fixtures): the CQ button retries a stale_revision refusal of its enable_tx with the reloaded
 // revision, at most twice, after the contract's wait of up to 2.5 s for a newer revision (ContactStateEvent):
 // the first click on the fallback (GET /contact after 2.5 s on the paused page clock), the second on the event.

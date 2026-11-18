@@ -1,4 +1,4 @@
-// (#24 S1). The station's call hash table learns the calls
+// The station's call hash table learns the calls
 // WSJT-X's packjt77 saves and fills hashed calls in as unpack77 (nrx=1) does; the pure
 // unpack is unchanged.
 use super::{CallKind, Fields, HashTable, MAX_HASH22, Payload, ihashcall, unpack, unpack_with};
@@ -252,7 +252,7 @@ fn the_dx_call_rule_prefers_my_call_over_a_colliding_call() {
     assert_eq!(shown(&t, &to_me), format!("<{x}> PJ4/K1ABC"));
 }
 
-// (#24 S4a). unpack77 n3=1, nrx=1: a 0.1 hash equal to the
+// unpack77 n3=1, nrx=1: a 0.1 hash equal to the
 // Proves: TC-024-010
 // 10-bit hash of the current DX call shows the DX call, also over a colliding calls10
 // entry; another or a too-short DX call leaves the table entry; my call is not filled in.

@@ -2410,7 +2410,7 @@ mod automatic_cat {
     }
 }
 
-// (#24 S1). A saved profile callsign becomes the station's
+// A saved profile callsign becomes the station's
 // own call for HashResolution.
 #[tokio::test]
 async fn profile_save_sets_my_call_for_the_hash_table() {

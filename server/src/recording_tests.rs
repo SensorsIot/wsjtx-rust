@@ -280,7 +280,7 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
     assert_eq!(worker.input.status().state, audio::AudioState::Closed);
 }
 
-// (#38). Through the real queue, converter and live worker:
+// Through the real queue, converter and live worker:
 // a WASAPI engine glitch on a continuous device/QPC timeline keeps job, generation and
 // spectrum/decode window; a real unknown loss rotates once and GET /receive names it.
 #[test]
@@ -2537,7 +2537,7 @@ fn live_window_schedule_follows_the_utc_period_grid() {
     );
 }
 
-// Hand-calculated FT8 period starts for the SNR measurement (#52).
+// Hand-calculated FT8 period starts for the SNR measurement
 #[test]
 fn ft8_snr_period_start_follows_the_utc_period_grid() {
     let timing = |anchor: Option<&str>| source::SourceTiming {
@@ -2860,7 +2860,7 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
     );
 }
 
-// (#57). Both a new period view and the late window's growth
+// Both a new period view and the late window's growth
 // of that view signal the Detailed WebSocket peers' publication watch.
 #[test]
 fn new_and_grown_views_signal_the_publication_watch() {
@@ -3015,7 +3015,7 @@ fn ft8_period_audio(frames: usize, period: usize) -> Vec<f32> {
         .collect()
 }
 
-// #52: the live worker with a correlated UTC clock names
+// the live worker with a correlated UTC clock names
 // the period start to the decoder, so the published FT8 SNR equals the file decode of the
 // same period-aligned audio.
 #[test]
@@ -3072,7 +3072,7 @@ fn live_ft8_snr_measures_from_the_utc_period_start() {
     assert_eq!(w["window_offset_ms"], -1200);
 }
 
-// #43 with #52: the live worker names the FT8 period
+// with #52: the live worker names the FT8 period
 // start and the window diagnostics on station UTC (system clock plus the air-clock
 // correction), the same timing the published records use. The system clock here is 2 s
 // slow (anchor 11:59:58 at frame 0) and the correction +2 s puts station UTC 12:00:00 there,
@@ -3135,7 +3135,7 @@ fn live_ft8_period_start_and_window_diagnostics_follow_the_air_clock_correction(
     assert_eq!(w["window_offset_ms"], -1200, "{w}");
 }
 
-// (#24 S1). The live publication fills hashed calls in from
+// The live publication fills hashed calls in from
 // Proves: TC-024-002
 // the calls heard so far and my call; earlier records keep their text; UDP Decode messages
 // carry the same text; a hashed 'from' still gives no strategy facts.

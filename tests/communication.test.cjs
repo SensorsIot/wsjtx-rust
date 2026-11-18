@@ -191,7 +191,7 @@ async function deferredDownloadHold(t) {
 }
 
 // #70: the 16 s hold runs on the page's driven clock (the watchdog is a page setInterval on Date.now()).
-// case 5 (#8); level 2, profile station, real Chromium.
+// case 5 level 2, profile station, real Chromium.
 test('a deferred client download that holds station messages 16 s is not a lost link', {timeout: 30000}, async t => {
   const {page, state} = await deferredDownloadHold(t);
   await state.whenHeld;

@@ -1135,7 +1135,7 @@ fn update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones(
     assert_eq!(reopened.history(ID1, 0, 2).unwrap()["records"], records);
 }
 
-// ExportAdi streamed (#10 2026-11-04): a 300-record log is
+// ExportAdi streamed a 300-record log is
 // Proves: TC-011-002
 // exported as the header with the first 128 records, then 128 and 44 records, each chunk
 // formatted when taken; the chunks together are exactly the stored log's records after a
@@ -1228,7 +1228,7 @@ fn export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock() {
 /// logger such as Log4OM 2 exports them.
 const CONFIRM_HEADER: &str = "Log4OM 2 test export\n<ADIF_VER:5>3.1.0 <PROGRAMID:7>LOG4OM2 <eoh>\n";
 
-// #10 (2026-11-04) UpdateLogbook keeps LOTW_QSL_RCVD,
+// (2026-11-04) UpdateLogbook keeps LOTW_QSL_RCVD,
 // Proves: TC-011-002
 // QSL_RCVD, EQSL_QSL_RCVD with their dates and QSL_RCVD_VIA, drops invalid ones, and the
 // export carries them (export then update changes nothing); ContactHistory is unchanged.
@@ -1293,7 +1293,7 @@ fn update_keeps_each_confirmation_field_and_the_export_round_trips_them() {
     assert_eq!(dir.file().unwrap(), before);
 }
 
-// #10 (2026-11-04) a rerun upgrades the confirmation of
+// (2026-11-04) a rerun upgrades the confirmation of
 // Proves: TC-011-002
 // records already present (N, R, I or absent to Y/V, with date and via), never removes or
 // downgrades one, leaves every other stored field, and the summary counts the upgrades.
@@ -1537,7 +1537,7 @@ fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {
     assert!(worked(&rebuilt, "G1ABC"));
 }
 
-// #10 (2026-11-04) the award query layer: worked vs confirmed
+// (2026-11-04) the award query layer: worked vs confirmed
 // per DXCC entity, entity x band and entity x band x mode from one lookup of the worked set
 // (needed = not worked or not confirmed), rebuilt when a rerun adds a confirmation.
 #[test]
@@ -1606,7 +1606,7 @@ fn worked_set_reports_worked_and_confirmed_per_entity_band_and_mode() {
     );
 }
 
-// #10 a log written before #10 (the former ImportAdi kept
+// a log written before #10 (the former ImportAdi kept
 // unknown fields verbatim) whose QSL fields are invalid or repeated stays readable: those
 // stay unknown fields; a valid one becomes the record's confirmation.
 /// A QSO as DirectLog writes it (record_of): CALL, MODE (MFSK + SUBMODE FT4 for FT4), BAND and

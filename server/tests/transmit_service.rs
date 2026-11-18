@@ -386,7 +386,7 @@ fn pending_request_is_replaced_until_audio_start_then_queued_for_the_next_period
     );
 }
 
-// #10: a request for another period while the pending one
+// a request for another period while the pending one
 // Proves: TC-008-003
 // is keyed but its audio has not started is queued as the next request (no busy refusal,
 // no disarm); the keyed one plays in its own period.
@@ -602,7 +602,7 @@ fn restart_never_resumes_an_armed_station_or_its_request() {
     assert!(f.log().is_empty());
 }
 
-// (#39 2026-11-04). The owner counts started transmissions; an
+// The owner counts started transmissions; an
 // answer resets the count; at the limit the next request is never keyed and nothing
 // is halted.
 #[test]
@@ -1031,7 +1031,7 @@ fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls
     }
 }
 
-// #49: a device that reports the end 300 or 900 ms late,
+// a device that reports the end 300 or 900 ms late,
 // Proves: TC-008-003
 // still inside the release bound, completes normally; the station stays armed and its
 // next request plays.
@@ -1062,7 +1062,7 @@ fn a_late_completion_report_inside_the_bound_completes_and_stays_armed() {
     }
 }
 
-// #49: the device is asked before the deadline is
+// the device is asked before the deadline is
 // Proves: TC-008-003
 // applied, so a device that consumed every sample completes even when the owner's next
 // step runs only after the deadline (owner thread delayed by load).
@@ -1083,7 +1083,7 @@ fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline(
     assert_eq!(core.view().arm_state, ArmState::Armed);
 }
 
-// #49: a device that stops consuming half way never
+// a device that stops consuming half way never
 // reports the end: PTT is released by the device-independent bound (FT8 audio end
 // + 1 000 ms = P + 14 140 <= P + 14 500, FT4 P + 6 340 <= P + 7 000, also after a late
 // start), the transmission fails audioStalled and the station disarms.
@@ -1504,7 +1504,7 @@ fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
     driver.join().unwrap();
 }
 
-// (#24 S1). Every request the transmit owner accepts teaches
+// Every request the transmit owner accepts teaches
 // Proves: TC-024-001
 // the station's call hash table its calls; a refused request teaches nothing.
 #[test]
@@ -1534,7 +1534,7 @@ fn accepted_requests_teach_the_station_hash_table() {
     assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
 }
 
-// (#39 Abort QSO): a failed PTT release on abort is reported.
+// a failed PTT release on abort is reported.
 #[test]
 fn abort_with_a_failed_release_is_reported_not_silent() {
     let f = Fake::new();
@@ -1550,7 +1550,7 @@ fn abort_with_a_failed_release_is_reported_not_silent() {
     assert_eq!(v.halt_state, HaltState::Idle, "still no halt");
 }
 
-// (#39 Abort QSO): abort also stops Tune.
+// abort also stops Tune.
 #[test]
 fn abort_stops_tune_without_a_halt() {
     let f = Fake::new();

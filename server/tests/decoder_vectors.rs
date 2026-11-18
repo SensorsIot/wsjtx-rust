@@ -75,7 +75,7 @@ fn canonical_payload_boundaries() {
         );
     }
 }
-// (#55 live defect: RR73 packed as the grid square RR73 is the roger).
+//
 #[test]
 fn rr73_packed_as_a_grid_square_is_the_roger() {
     let with_exchange = |text: &str, raw: Option<u32>| {

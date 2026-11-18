@@ -338,7 +338,7 @@ test('token login retries a slow or failed setup step without another press', {t
 });
 
 // Ordinary cross-tab transport rotation; response-order faults are tested apart.
-// #10 first status: the renewal of a retained credential waits for the page's load event.
+// first status: the renewal of a retained credential waits for the page's load event.
 test('reopening a page renews its retained credential only after the load event', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());

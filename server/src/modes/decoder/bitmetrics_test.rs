@@ -177,7 +177,7 @@ fn a_rejected_word_does_not_erase_later_metric_family() {
     .unwrap();
     assert_eq!(result.unwrap().as_slice(), bits.as_slice());
 }
-// (#56). ft8b accepts a word with up to 36 hard
+// ft8b accepts a word with up to 36 hard
 // disagreements; the former 24-disagreement gate refused 25..36.
 #[test]
 fn a_word_with_up_to_36_hard_disagreements_is_accepted() {
@@ -253,7 +253,7 @@ fn cq_a_priori_bits_recover_a_buried_cq_word() {
     assert_eq!(word.map(|w| w.to_vec()), Some(bits));
 }
 
-// (#56 slice 5 APrioriHypotheses acceptance). An a-priori word is published
+// An a-priori word is published
 // only with a decoded payload, and (except FT8's CQ type 1) at WSJT-X confidence
 // qual >= 0.17: 24 hard errors of |LLR| 1 pass (24 + 24 = 48), 25 do not (50 > 49.8).
 #[test]

@@ -300,7 +300,7 @@ fn period(n: i64) -> i64 {
     P0 + n * 15 * SECOND
 }
 
-// (#39, operator 2026-11-04). A fresh station holds Tx: a selection
+// A fresh station holds Tx: a selection
 // Proves: TC-039-009
 // moves Rx only, and only an explicit choice switches that off.
 #[test]
@@ -1122,7 +1122,7 @@ fn tc_097_017_a_contact_that_does_not_pause_counts_every_send() {
     assert_eq!(s.engine.busy_with(), None, "no busy marker");
 }
 
-// (#39 Abort QSO, WstxQsoTransmit::AbortQso). Abort stops the transmission
+// Abort stops the transmission
 // Proves: TC-007-004
 // now, cancels the contact and is no halt; the station stays ready for the next QSO.
 #[test]
@@ -1239,7 +1239,7 @@ fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
     assert_eq!(s.state().0, State::Idle);
 }
 
-// (#39, 2026-11-06). The live reports: SV1DZB repeated -09
+// The live reports: SV1DZB repeated -09
 // Proves: TC-008-001
 // while we repeated R+06 (partner messages), and J88IH sent one report while the operator
 // clicked in the page: 13 R-07 at limit 6 (browser requests).
@@ -1974,7 +1974,7 @@ fn an_operator_disarm_is_not_reported_as_a_refused_transmission() {
     assert_eq!(s.engine.transmit_problem, None, "disarm cancels quietly");
 }
 
-// #49: CQ keeps calling, armed, when every
+// CQ keeps calling, armed, when every
 // transmission's end is reported 900 ms late (inside the release bound).
 #[test]
 fn cq_keeps_calling_armed_when_the_device_reports_each_end_900_ms_late() {
@@ -2748,7 +2748,7 @@ fn the_last_partner_message_counts_identical_repeats() {
     assert_eq!(heard(&s), None, "a new contact starts without one");
 }
 
-// #50 (operator 2026-11-02, US5WFL then YO3GNF): calling
+// (operator 2026-11-02, US5WFL then YO3GNF): calling
 // Proves: TC-050-004
 // another station while Enable Tx is on keeps it on, and the next own period calls the new
 // station; nothing more goes to the old partner.
@@ -2945,7 +2945,7 @@ fn a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_perio
     assert_eq!(s.sent_in(period(3)).as_deref(), Some("DL1ABC HB9BLA JN47"));
 }
 
-// #10: a switch to a station of my own parity
+// a switch to a station of my own parity
 // Proves: TC-050-004
 // in the keyed window (PTT keyed, audio not started) moves the contact to the other parity.
 // The keyed period's message still goes out, the new contact's Tx1 is queued for its next
@@ -2976,7 +2976,7 @@ fn a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period
     assert_eq!(s.sent_in(period(4)).as_deref(), Some("DL1ABC HB9BLA JN47"));
 }
 
-// #10: Enable Tx late in my own period starts that
+// Enable Tx late in my own period starts that
 // period late. When the engine steps after PTT is keyed but before the owner's next tick
 // starts the audio, and its lead already lies past the period's start window, the next
 // own period's request is queued behind the keyed one; Enable Tx stays on (the debug-load
@@ -3008,7 +3008,7 @@ fn a_late_start_keyed_before_audio_queues_the_next_own_period_without_disarming(
     assert_eq!(s.sent_in(period(5)).as_deref(), Some("K1ABC HB9BLA JN47"));
 }
 
-// #37 QSO dialogue: counted partner messages and this
+// QSO dialogue: counted partner messages and this
 // Proves: TC-050-006
 // contact's transmissions as sent, oldest first, repeats counted, bounded; a new contact
 // starts empty and a cancel empties it.

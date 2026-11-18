@@ -909,7 +909,7 @@ async fn cty_upload_replaces_the_country_table_and_refusals_change_nothing() {
     assert_eq!(std::fs::read(&path).unwrap(), b"not a country file");
 }
 
-// ExportAdi over HTTP is streamed (#10 2026-11-04): no
+// ExportAdi over HTTP is streamed no
 // Content-Length and no exact body size (chunked transfer), the 129 records arrive in two
 // data frames (128, then 1), with the export headers unchanged and no content coding.
 #[tokio::test]

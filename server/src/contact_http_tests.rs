@@ -1009,7 +1009,7 @@ async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action
     );
 }
 
-// #41 DirectLog record of an FT4 contact with a confirmed
+// DirectLog record of an FT4 contact with a confirmed
 // Proves: TC-011-001
 // dial. Hand-computed: P = 2026-11-01T12:34:30Z; TIME_ON one FT4 period (7.5 s) before
 // the first transmitted Tx3 at P+22.5 s = 12:34:45; TIME_OFF P+45 s = 12:35:15; FREQ
@@ -1103,7 +1103,7 @@ fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
     assert!((65..=66).contains(&recording::rx_level_db(sum, 120_000)));
 }
 
-// (#10 pushed transmit state, unit subset). The
+// The
 // Proves: TC-007-005
 // transmit.state revision follows the GET /transmit read view only: unchanged while the
 // view is unchanged (no time-driven step), one step per change, age_ms ignored; the event
@@ -1201,7 +1201,7 @@ async fn transmit_state_revision_follows_the_read_view_only() {
     ));
 }
 
-// (#10 contact.state carries the changed fields).
+//
 // Proves: TC-007-005
 #[test]
 fn contact_state_carries_only_what_the_peer_lacks() {
@@ -1781,7 +1781,7 @@ async fn the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_con
     );
 }
 
-// #11 live stall (IW9FRA, 2026-11-02 13:44-13:46 UTC):
+// live stall (IW9FRA, 2026-11-02 13:44-13:46 UTC):
 // Proves: TC-007-008
 // the published FT4 records of the partner (even 7.5 s periods, Î”f 1838 Hz, the real
 // codec's fields and period_start_utc form) reach the engine through the station step
@@ -1914,7 +1914,7 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     assert_eq!(snap["contact"]["saved"], true, "{snap}");
     let log = f.state.logbook.history(&f.id, 0, 10).unwrap();
     assert_eq!(log["records"].as_array().unwrap().len(), 1, "{log}");
-    // (#37): the snapshot's QSO dialogue, as exchanged.
+    // the snapshot's QSO dialogue, as exchanged.
     let p = |n: i64| p0 + n * 7_500;
     assert_eq!(
         snap["contact"]["dialogue"],
@@ -1929,7 +1929,7 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     );
 }
 
-// (#24 S1). The station's startup wiring gives the transmit
+// The station's startup wiring gives the transmit
 // owner the Recording's call hash table and sets my call from the profile.
 #[test]
 fn startup_shares_the_hash_table_with_the_transmit_owner() {
@@ -2120,7 +2120,7 @@ async fn contest_activity_with_its_exchange_reads_back_and_reaches_udp_status() 
     assert_eq!(f.snapshot().await["settings"]["exchange"], Value::Null);
 }
 
-// (#24 S4b). set_activity hound over POST /contact/command:
+// set_activity hound over POST /contact/command:
 // Proves: TC-024-012
 // read-back with Tx parity odd and Hold Tx, no exchange, UDP Status 7; the row reader keeps a
 // 0.1 DXpedition record as its fields, not as a standard message.
@@ -2183,7 +2183,7 @@ async fn hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields
     );
 }
 
-// (#56 slice 5 APrioriContext). The live decode context follows
+// The live decode context follows
 // the profile callsign and the current contact: MyCall alone before a contact, then DxCall,
 // the WSJT-X QSO progress of the contact state and the Rx/Tx offsets. CQ-only (lapcqonly)
 // holds until Enable Tx is on, clears while it is on and returns 300 s after it went off.

@@ -505,10 +505,11 @@ impl KeptPageBoot {
     }
 }
 
-// (#22). Proves: CL-050-08; TC-050-008 (#50). One page across a
+// One page across a
 // restart and busy periods through the actual live source, modem, HTTP and browser; the driver
 // tests/frontend/receive-page.test.cjs holds the oracle. The process stays, because native capture can
 // only be injected in-process; the listener, all connections, the receive owner and the boot go.
+// Proves: TC-050-008
 #[cfg(all(windows, not(debug_assertions)))]
 #[test]
 fn live_native_page_kept_across_restart() {
@@ -588,7 +589,7 @@ fn live_native_page_kept_across_restart() {
     println!("{log}");
 }
 
-// (#57, #72). Busy FT8
+// Busy FT8
 // Proves: TC-057-001
 // periods through the actual live source, window schedule, modem, publication, WebSocket,
 // results API and Detailed browser: each period view is published by its period start
@@ -1046,7 +1047,7 @@ fn resource_station_process_delta_and_owner_release() {
     );
 }
 
-// (#10 PushedStationState): receive.state holds exactly what the browser
+// receive.state holds exactly what the browser
 // Proves: TC-007-005
 // would otherwise read for its identity, not what frames carry, and the largest one fits the
 // 4096-byte write buffer beside a pending 2048-byte optional write (two 14-byte headers).
@@ -1100,7 +1101,7 @@ fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     assert!(data.get("source").is_none(), "a frame carries next_frame");
 }
 
-// (#10): after a socket's first receive.state only what changed goes,
+// after a socket's first receive.state only what changed goes,
 // Proves: TC-007-005
 // beside the identity; a new receive identity goes whole. Hand-written before and after values.
 #[test]

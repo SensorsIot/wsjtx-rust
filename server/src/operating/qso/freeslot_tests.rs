@@ -735,7 +735,7 @@ fn four(bands: &[(u32, u32, u8)]) -> Vec<Period> {
     (1..=4).rev().map(|b| period(b, false, 30, bands)).collect()
 }
 
-// (#82: replaced by TC-082-001). (a) Four counted periods flat 30 (floor 30.65, rise -0.65
+// (a) Four counted periods flat 30 (floor 30.65, rise -0.65
 // everywhere, value 0) with an undecoded station band 12 dB up over 1000..1050 Hz (bins 342..358):
 // 950 covers bins 325..341 (to 999.0 Hz), all on the floor: open; 960 covers 328..344, 3 of them
 // raised, (3 x 42 + 14 x 30) / 17 - 30.65 = 1.47, 1: closed; 1040 covers 355..371, 4 raised, 2.17,
@@ -908,7 +908,7 @@ fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_perio
     );
 }
 
-// (#82: replaced by TC-082-001). The value of one build has exactly {at_utc_ms, mode, rx_parity,
+// The value of one build has exactly {at_utc_ms, mode, rx_parity,
 // qso, periods, open} with the ranges as [lo_hz, hi_hz] integer pairs (WstxQsoControl::OpenSlots):
 // no run_id, listening, slots or per-slot numbers.
 #[test]

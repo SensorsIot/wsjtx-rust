@@ -2398,7 +2398,7 @@ async fn frequencies(f: &Mcp) -> (Value, Value, Value) {
     (settings["rx_hz"].clone(), settings["tx_hz"].clone(), slot)
 }
 
-// Hold Tx explicitly off (#39 holdtx; with it on: TC-039-049 (f)).
+// Hold Tx explicitly off).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
     let f = station(true).await;
@@ -4233,7 +4233,7 @@ async fn tc_042_004_pounce_waits_again_without_an_answer_and_ends_on_a_band_chan
     assert_eq!(f.keys(), 0);
 }
 
-// (#24 S1b). Station automation stays standard-only: a
+// Station automation stays standard-only: a
 // run does not start with a nonstandard profile callsign.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn automation_does_not_start_with_a_nonstandard_own_call() {
@@ -4260,7 +4260,7 @@ async fn automation_does_not_start_with_a_nonstandard_own_call() {
     assert_eq!(started.status, StatusCode::ACCEPTED, "{}", started.json);
 }
 
-// (#24 S2a). Station automation only observes in a contest
+// Station automation only observes in a contest
 // activity: a run does not start.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn automation_does_not_start_in_a_contest_activity() {
@@ -4283,7 +4283,7 @@ async fn automation_does_not_start_in_a_contest_activity() {
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("activity")));
 }
 
-// (#24 S4b). Station automation does not start as a Hound.
+// Station automation does not start as a Hound.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn automation_does_not_start_as_a_hound() {
     let f = station(true).await;
@@ -7356,7 +7356,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     assert_eq!(frequencies(f).await.1, json!(1650));
 }
 
-// #97 (#91): no WD in the run's own contact: tx_remaining_calls is null on
+// no WD in the run's own contact: tx_remaining_calls is null on
 // Proves: TC-097-013
 // GET /contact and GET /transmit while armed, and the run's leave {calls 2, calls_heard 4} counts:
 // 3 calls left at the 1st repetition with the spot (m 4), 2 at the 2nd, 1 once the spot is older
@@ -8826,7 +8826,7 @@ async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_nu
     );
 }
 
-// in FT4, TC-065-002 (#82: replaced by TC-082-003).
+// in FT4, TC-065-002
 // Proves: TC-082-003
 // Automation never used (no configuration, no run), Detailed, Thin
 // and Off peers on the served router, flat rows. FT8: a build at each of the 4 period starts e,
