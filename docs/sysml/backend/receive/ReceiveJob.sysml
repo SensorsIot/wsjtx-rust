@@ -118,7 +118,7 @@ package WstxReceiveJob {
         doc /* Receive MUST number the records of a live job without a gap, keep the
              latest of them for reading, and go on under a new job identity after a loss
              in the capture (LiveResults, EpochHandling). */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-003'; end #derive ::> 'CL-008-03'; }
 
