@@ -6,7 +6,6 @@ fn point(start: usize, frequency: f64) -> Candidate {
         score: 2.,
     }
 }
-// Proves: FR-004, CL-007-03.
 #[test]
 fn qualified_support_geometry_order_and_reset() {
     let a = point(0, 200.);
@@ -29,7 +28,7 @@ fn qualified_support_geometry_order_and_reset() {
     assert!(admit(&[], &mut out, a, true).unwrap()); // new residual pass resets exclusions.
     assert!(admit(&[], &mut out, point(60480, 200.), true).unwrap());
 }
-// Proves: FR-004, CL-007-04; TC-004-003.
+// Proves: TC-004-003
 #[test]
 fn qualified_support_count_keeps_the_256_257_barrier() {
     // WstxDecode::DecodeBudgets::candidateCap, read from the model.

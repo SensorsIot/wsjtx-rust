@@ -35,7 +35,6 @@ fn record(start: u64, id: &str) -> Decode {
     }
 }
 
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn continuous_history_outlives_2048_publications_but_finite_utility_does_not() {
     for mode in [Mode::Ft4, Mode::Ft8] {
@@ -79,7 +78,6 @@ fn continuous_history_outlives_2048_publications_but_finite_utility_does_not() {
     }
 }
 
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn exact_half_symbol_boundary_is_retained_and_byte_charges_retire_exactly() {
     for mode in [Mode::Ft4, Mode::Ft8] {
@@ -123,7 +121,6 @@ fn exact_half_symbol_boundary_is_retained_and_byte_charges_retire_exactly() {
     }
 }
 
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn backwards_origin_rejects_atomically_and_new_context_resets_history() {
     let mut state = DecodeState::new_live(Mode::Ft8);
@@ -142,7 +139,6 @@ fn backwards_origin_rejects_atomically_and_new_context_resets_history() {
     assert_eq!((fresh.available_count(), fresh.encoded_bytes()), (0, 0));
 }
 
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn rejected_publications_do_not_consume_history_or_invoke_limit_callbacks() {
     let mut state = DecodeState::new_live(Mode::Ft4);
@@ -163,7 +159,6 @@ fn rejected_publications_do_not_consume_history_or_invoke_limit_callbacks() {
     assert_eq!((state.available_count(), state.encoded_bytes()), (0, 0));
 }
 
-// Proves: CL-007-02.
 #[test]
 fn ft8_snr_period_start_is_frame_zero_for_recordings_and_named_live() {
     // #52: finite decodes take periods from frame 0; live waits for the receive clock.

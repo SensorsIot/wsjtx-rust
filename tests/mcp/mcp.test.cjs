@@ -3,7 +3,6 @@
 // with a throwaway certificate, no radio, audio or RF), a browser-style grant that creates
 // an MCP client token in Settings (#58) and an independent MCP client writing literal
 // JSON-RPC. Expected values: the fixture profile document and the WstxMcp tool catalog table.
-// Proves: CL-012-01, CL-012-02, CL-012-03; TC-020-001, TC-020-002, TC-020-004.
 const {test, before, after} = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -66,7 +65,7 @@ after(async () => {
   if (root) await fs.rm(root, {recursive: true, force: true});
 });
 
-test('TC-020-001 an MCP client with its own MCP client token observes the browser state of the actual executable', {timeout: 60000}, async () => {
+test('an MCP client with its own MCP client token observes the browser state of the actual executable', {timeout: 60000}, async () => {
   const browser = await browserGrant();
   const created = await settings(browser.cookie, 'create', {name: 'Claude Code'});
   assert.equal(created.status, 200, JSON.stringify(created.body));
@@ -99,7 +98,7 @@ test('TC-020-001 an MCP client with its own MCP client token observes the browse
   assert.equal(init.body.result.protocolVersion, '2025-11-25');
 });
 
-test('TC-020-002 TC-020-004 browser credentials never authorize MCP, an MCP token never opens a browser route and revocation is immediate', {timeout: 60000}, async () => {
+test('browser credentials never authorize MCP, an MCP token never opens a browser route and revocation is immediate', {timeout: 60000}, async () => {
   const browser = await browserGrant();
   const cookieOnly = await send('/mcp', 'POST', {jsonrpc: '2.0', id: 1, method: 'tools/list', params: {_meta: meta}},
     {Cookie: browser.cookie, 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': 'tools/list'});

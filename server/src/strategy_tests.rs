@@ -1,7 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-063-01, CL-063-02, CL-063-03, CL-063-04, CL-063-05, CL-063-06; TC-063-003, TC-063-004,
 // TC-063-007, TC-063-009, TC-063-010, TC-063-011.
-// Proves: CL-039-01, CL-039-02, CL-039-03, CL-039-05, CL-039-06, CL-039-09, CL-039-10, CL-042-01, CL-042-02,
 // CL-042-03, CL-042-04; TC-039-001..005, TC-039-010, TC-039-030..032, TC-042-001, TC-042-002,
 // TC-042-004, TC-042-006 (each test names its case below). Hand-authored records, logs and
 // strategies; the expected verdicts, orders, stop reasons and requests are the WstxValueOrder
@@ -323,7 +321,7 @@ fn of_goal(goal: Goal, needed: Needed, st: &Station) -> Vec<&'static str> {
         .collect()
 }
 
-// Proves: TC-039-030, TC-042-001
+// Proves: TC-042-001
 #[test]
 fn tc_039_030_each_goal_in_both_needed_settings() {
     let st = Station {
@@ -712,7 +710,8 @@ fn config(active: Option<&str>) -> Value {
         "ignore_calls":[],"session_ignore_minutes":30})
 }
 
-// Proves: TC-039-001. The configuration is exact: the valid one round-trips; an extra key, two
+// The configuration is exact: the valid one round-trips; an extra key, two
+// Proves: TC-039-001
 // names equal ignoring case and 17 strategies are refused at their path. (The strategy's own keys
 // and paths are schema 4 since #97: TC-097-001.)
 #[test]
@@ -741,7 +740,7 @@ fn tc_039_001_configuration_is_exact() {
 #[path = "strategy97_tests.rs"]
 mod redesign;
 
-// Proves: TC-039-030 (WstxStrategies::StrategyConfiguration upgrade and restart).
+// (WstxStrategies::StrategyConfiguration upgrade and restart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_030_an_old_file_upgrades_and_active_never_survives_a_restart() {
     let f = station(true).await;
@@ -1011,7 +1010,8 @@ async fn tc_039_003_store_routes_and_evaluate() {
     assert_eq!(f.keys(), 0, "evaluation never keys");
 }
 
-// Proves: TC-039-032 (the expected table is written here from the contract).
+// (the expected table is written here from the contract).
+// Proves: TC-039-032
 #[test]
 fn tc_039_032_the_builtin_table_and_what_a_configuration_may_say() {
     // #97: the table itself is TC-097-003; the refusal, read-only and copy steps stay.
@@ -1241,7 +1241,7 @@ async fn tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_c
         contact(&f).await,
         (json!("DL1XYZ"), json!("replying"), json!("armed"))
     );
-    // Proves: CL-039-08; TC-039-009: after the strategy's pick Tx stays (clear of the station);
+    // after the strategy's pick Tx stays (clear of the station);
     // with Hold Tx on Rx follows the row (WstxHoldTx::HoldTxRule).
     let c = f.read("contact").await;
     assert_eq!(
@@ -1493,7 +1493,7 @@ async fn tc_039_004_halt_turns_auto_off_keeps_the_selection_and_esc_and_a_cancel
     );
 }
 
-// Proves: CL-110-01; TC-110-004 (guard of existing behaviour). A strategy switched to Auto
+// (guard of existing behaviour). A strategy switched to Auto
 // after a station start with Auto Seq saved off waits with reason auto_seq, as it does when
 // Auto Seq is switched off in the running station.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1651,7 +1651,7 @@ async fn tc_039_004_callers_come_first_and_a_cancelled_station_never_again() {
     assert_eq!(contact(&f).await.0, json!("VK2ABC"));
 }
 
-// Proves: TC-039-004. Review 6683200740 finding 1: a stopped strategy run is restarted only
+// Review 6683200740 finding 1: a stopped strategy run is restarted only
 // by a selection; an MCP stop then start is refused.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_an_mcp_client_cannot_restart_a_stopped_strategy() {
@@ -1733,7 +1733,8 @@ async fn tc_039_004_an_mcp_client_cannot_restart_a_stopped_strategy() {
     );
 }
 
-// Proves: TC-039-004, TC-039-043. A station left after its repetitions is quiet (QuietTime): when it
+// A station left after its repetitions is quiet (QuietTime): when it
+// Proves: TC-039-004
 // calls my call it is not answered, the stronger CQ is called instead.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_a_station_left_is_not_answered_in_its_quiet_time() {
@@ -1761,7 +1762,7 @@ async fn tc_039_004_a_station_left_is_not_answered_in_its_quiet_time() {
     assert_eq!(c.2, json!("armed"));
 }
 
-// Proves: TC-039-004. Review finding 3, coordinator's decision: a reload, second tab or 401
+// Review finding 3, coordinator's decision: a reload, second tab or 401
 // recovery (a new proof of the grant) does not stop a strategy; the grant does. The transport's
 // 8 h deadline does not bind it; a policy run keeps its transport (tc_020_003).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1861,7 +1862,8 @@ fn at_skew(f: &Mcp, seconds: u64) {
     f.tick();
 }
 
-// Proves: TC-039-033 (WstxAutoControl::StrategyRun, coordinator default): with no client for 60 s a
+// (WstxAutoControl::StrategyRun, coordinator default): with no client for 60 s a
+// Proves: TC-039-033
 // strategy selects nothing new, the exchange in progress runs on, then it stops no_client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends() {
@@ -1940,7 +1942,8 @@ async fn worked_on_40m_now_on_20m() -> (Mcp, i64, crate::automation::ClientSessi
     (f, e, client)
 }
 
-// Proves: TC-039-004. Review 6685870468 finding 1: a station completed in a run is left out on
+// Review 6685870468 finding 1: a station completed in a run is left out on
+// Proves: TC-039-004
 // that band and mode only: after a retune it is a candidate again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_a_station_completed_on_one_band_is_called_on_another() {
@@ -1965,7 +1968,8 @@ async fn tc_039_004_a_station_completed_on_one_band_is_called_on_another() {
     );
 }
 
-// Proves: TC-039-004. The same for a caller: always answered on the new band.
+// The same for a caller: always answered on the new band.
+// Proves: TC-039-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_a_station_completed_on_one_band_is_answered_on_another() {
     let (f, e, _client) = worked_on_40m_now_on_20m().await;
@@ -1981,7 +1985,8 @@ async fn tc_039_004_a_station_completed_on_one_band_is_answered_on_another() {
     );
 }
 
-// Proves: TC-039-004, TC-039-043. The quiet time of a left station holds on its band and mode only;
+// The quiet time of a left station holds on its band and mode only;
+// Proves: TC-039-004
 // the station the operator gave up stays given up for the rest of the run.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_a_retune_leaves_the_quiet_time_behind_not_the_operators_give_up() {
@@ -2024,7 +2029,7 @@ async fn tc_039_004_a_retune_leaves_the_quiet_time_behind_not_the_operators_give
     );
 }
 
-// Proves: TC-039-033: the status WebSocket itself is what counts: an actual upgrade over the
+// the status WebSocket itself is what counts: an actual upgrade over the
 // served router with the browser's cookie holds a run past 60 s, its close lets the 60 s run.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_033_a_real_status_websocket_keeps_a_strategy_and_its_close_ends_that() {
@@ -2093,7 +2098,7 @@ async fn tc_039_033_a_real_status_websocket_keeps_a_strategy_and_its_close_ends_
     server.abort();
 }
 
-// Proves: TC-039-033 (operator decision 2026-11-06): a run lasts at most 8 hours from its
+// (operator decision 2026-11-06): a run lasts at most 8 hours from its
 // selection, also with a client connected throughout; a new selection starts again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_033_a_strategy_run_lasts_at_most_8_hours_from_its_selection() {
@@ -2204,7 +2209,8 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: TC-039-030 (WstxValueOrder::WorkedWindowRule through the store): a QSO of this UTC date
+// (WstxValueOrder::WorkedWindowRule through the store): a QSO of this UTC date
+// Proves: TC-039-030
 // counts in today, not in a window that ended before.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
@@ -2263,7 +2269,6 @@ async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
     );
 }
 
-// Proves: TC-039-031
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_031_update_most_wanted_status_failures_and_mcp_refusal() {
     let f = station(true).await;
@@ -2393,7 +2398,7 @@ async fn frequencies(f: &Mcp) -> (Value, Value, Value) {
     (settings["rx_hz"].clone(), settings["tx_hz"].clone(), slot)
 }
 
-// Proves: CL-039-09; TC-039-010. Hold Tx explicitly off (#39 holdtx; with it on: TC-039-049 (f)).
+// Hold Tx explicitly off (#39 holdtx; with it on: TC-039-049 (f)).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
     let f = station(true).await;
@@ -2432,7 +2437,7 @@ async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: CL-039-05, CL-039-09; TC-039-010. Between the run's select_row and its Tx
+// Between the run's select_row and its Tx
 // move the operator replaces the contact: the set_frequency is refused stale and the operator's
 // contact stands.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2482,7 +2487,7 @@ async fn tc_039_010_a_double_click_racing_the_slot_move_stays_the_operators() {
     assert_eq!(run_state(&f).await, ("manual".to_owned(), Value::Null));
 }
 
-// Proves: CL-039-09; TC-039-010. A pounce answers as a strategy run does (Hold Tx explicitly off,
+// A pounce answers as a strategy run does (Hold Tx explicitly off,
 // Hold Tx on is tested apart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_010_a_pounce_never_calls_on_the_called_station() {
@@ -2506,7 +2511,6 @@ async fn tc_039_010_a_pounce_never_calls_on_the_called_station() {
 
 /// Moves the bench to 30 ms before the own period `own` and ticks until the transmitter
 /// is disarmed (the Tx watchdog refuses to key it).
-// Proves: TC-039-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_a_double_click_is_a_manual_intervention_and_the_strategy_resumes() {
     let f = station(true).await;
@@ -2578,7 +2582,6 @@ async fn tc_039_004_a_double_click_is_a_manual_intervention_and_the_strategy_res
     assert_eq!(contact(&f).await.0, json!("G4ABC"));
 }
 
-// Proves: TC-039-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser_confirms() {
     let f = station(true).await;
@@ -2680,7 +2683,6 @@ async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser
     assert_eq!(bad.status, StatusCode::BAD_REQUEST);
 }
 
-// Proves: TC-039-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_a_manual_qso_while_the_strategy_waits_completes_and_the_strategy_resumes() {
     let f = station(true).await;
@@ -2725,7 +2727,6 @@ async fn tc_039_004_a_manual_qso_while_the_strategy_waits_completes_and_the_stra
     assert_eq!(run_state(&f).await.0, "contact_active");
 }
 
-// Proves: TC-039-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_stop_and_halt_while_manual() {
     let f = station(true).await;
@@ -2778,7 +2779,6 @@ async fn tc_039_004_stop_and_halt_while_manual() {
     assert_eq!(run_state(&f).await, ("stopped".to_owned(), json!("halted")));
 }
 
-// Proves: TC-039-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_a_double_click_racing_the_run_selection_stays_the_operators() {
     let f = station(true).await;
@@ -2849,7 +2849,6 @@ async fn browser_command(f: &Mcp, action: &str, extra: Value) -> Value {
 
 /// Moves the bench to 30 ms before the own period `own` and ticks until the transmitter
 /// is disarmed (the Tx watchdog refuses to key it).
-// Proves: TC-039-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
     let f = station(true).await;
@@ -2923,7 +2922,7 @@ fn spot(sender: &str, hz: u64, band: &str, age_s: i64) -> String {
     let t = crate::contact_http_tests::now_ms() / 1000 - age_s;
     json!({"f":hz,"md":"FT8","t":t,"sc":sender,"rc":"K1ABC","b":band}).to_string()
 }
-// Proves: CL-039-21; TC-039-022. The unattended bounds hold for a target that hears us: with no
+// The unattended bounds hold for a target that hears us: with no
 // client it is left after its calls and the run stops no_client, and likewise at the run limit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_a_target_that_hears_us_does_not_outlive_the_run_bounds() {
@@ -2951,7 +2950,7 @@ async fn tc_039_022_a_target_that_hears_us_does_not_outlive_the_run_bounds() {
         assert_eq!(quiet_contact(&f).await.2, json!("disarmed"), "{reason}");
     }
 }
-// Proves: CL-039-21; TC-039-022. With no client, or past the run limit, the stop at N is back at once,
+// With no client, or past the run limit, the stop at N is back at once,
 // so the run cannot go on transmitting even when no publication ever arrives to end its contact.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_unattended_the_stop_at_n_is_back_without_a_publication() {
@@ -2979,7 +2978,7 @@ async fn tc_039_022_unattended_the_stop_at_n_is_back_without_a_publication() {
         assert_eq!(quiet_run(&f), ("stopped".into(), json!(reason)));
     }
 }
-// Proves: CL-039-20; CL-039-21; TC-039-022. Only a strategy run's own contact subscribes to its
+// Only a strategy run's own contact subscribes to its
 // target: not a pounce, nor the same contact after the run ended.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
@@ -3006,7 +3005,6 @@ async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
     f.tick();
     assert_eq!(feed.target(), None, "a pounce reads no spots");
 }
-// Proves: TC-039-005
 #[test]
 fn tc_039_005_core_watchdog_needs_an_operator_and_keeps_the_count_for_automation() {
     use wstx_rust::transmit::service::{ArmState, Core};
@@ -3056,7 +3054,6 @@ async fn browser_watchdog(f: &Mcp, calls: u64) {
     assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.json);
 }
 
-// Proves: TC-039-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     let f = station(true).await;
@@ -3156,7 +3153,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
 }
 
 // ------------------------------------------------------------------ #42 ignore lists
-// Proves: TC-042-002 (WstxIgnoreLists::IgnoreListsRule; the expected tiers, reasons, expiries
+// (WstxIgnoreLists::IgnoreListsRule; the expected tiers, reasons, expiries
 // and selections are written here from the contract, not evaluator output).
 #[test]
 fn tc_042_002_ignore_configuration_is_exact() {
@@ -3524,7 +3521,6 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
     assert_eq!(f.keys(), 0, "ignore lists never key");
 }
 
-// Proves: TC-042-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_042_002_a_run_never_selects_an_ignored_station() {
     let f = station(true).await;
@@ -3557,7 +3553,6 @@ async fn tc_042_002_a_run_never_selects_an_ignored_station() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: TC-042-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_042_002_a_run_never_answers_an_ignored_caller() {
     let f = station(true).await;
@@ -3600,7 +3595,7 @@ fn cq_row_from(sequence: u64, call: &str) -> Value {
     r
 }
 
-// Proves: CL-042-02; TC-125-001 (a) validation of the permanent list. The accepted and refused
+// validation of the permanent list. The accepted and refused
 // entries are written here from the rule: 1..13 of A-Z 0-9 / and *, one other than *.
 #[test]
 fn tc_125_001_permanent_list_entries_validate() {
@@ -3630,7 +3625,8 @@ fn tc_125_001_permanent_list_entries_validate() {
     assert_eq!(parse_config(&c4, None).unwrap().json(), c4);
 }
 
-// Proves: CL-042-02; TC-125-001 (b), (c), (d) matching of an entry against the whole resolved
+// matching of an entry against the whole resolved
+// Proves: TC-125-001
 // call, by the hand table below, and the why text naming a pattern entry.
 #[test]
 fn tc_125_001_entries_match_the_whole_call() {
@@ -3713,7 +3709,8 @@ fn tc_125_001_entries_match_the_whole_call() {
     );
 }
 
-// Proves: CL-042-02; TC-125-001 (a) the session add, (d) the why text and (e) a caller or a CQ
+// the session add, (d) the why text and (e) a caller or a CQ
+// Proves: TC-125-001
 // matched by a pattern is neither ranked nor called by Auto (the actual station router and
 // contact engine on the recording hardware double).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3802,7 +3799,7 @@ async fn tc_125_001_session_patterns_and_the_station_skip_matches() {
     assert_eq!(f.keys(), 0, "ignore lists never key");
 }
 
-// Proves: CL-042-02; TC-125-001 (e) a CQ matched by a pattern is not called by Auto.
+// a CQ matched by a pattern is not called by Auto.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_125_001_a_run_never_selects_a_cq_matched_by_a_pattern() {
     let f = station(true).await;
@@ -3835,7 +3832,8 @@ async fn tc_125_001_a_run_never_selects_a_cq_matched_by_a_pattern() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: CL-042-02; TC-125-001 (e) a contest strategy ranks no sender matched by a pattern and
+// a contest strategy ranks no sender matched by a pattern and
+// Proves: TC-125-001
 // names the entry in the why text (the contest evaluator shares the matcher).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_125_001_a_contest_strategy_skips_a_sender_matched_by_a_pattern() {
@@ -3880,7 +3878,7 @@ async fn tc_125_001_a_contest_strategy_skips_a_sender_matched_by_a_pattern() {
     assert_eq!(ja["rank"], json!(0), "{ja}");
 }
 
-// Proves: CL-042-02; TC-125-001 (e) a pounce on a call matched by a pattern gets no answer.
+// a pounce on a call matched by a pattern gets no answer.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_125_001_a_pounce_never_answers_a_call_matched_by_a_pattern() {
     let f = station(true).await;
@@ -3897,7 +3895,7 @@ async fn tc_125_001_a_pounce_never_answers_a_call_matched_by_a_pattern() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: CL-042-02; TC-125-001 (e) a caller matched by a pattern is not answered.
+// a caller matched by a pattern is not answered.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_125_001_a_run_never_answers_a_caller_matched_by_a_pattern() {
     let f = station(true).await;
@@ -3971,7 +3969,7 @@ fn last_text(f: &Mcp) -> Option<String> {
         .last_text
 }
 
-// Proves: TC-042-004 (WstxStrategy::Pounce, WstxMcp::AutomationConfiguration pounce key)
+// (WstxStrategy::Pounce, WstxMcp::AutomationConfiguration pounce key)
 #[test]
 fn tc_042_004_pounce_configuration_is_exact() {
     use crate::automation::parse_config as automation_config;
@@ -4019,7 +4017,6 @@ fn tc_042_004_pounce_configuration_is_exact() {
     );
 }
 
-// Proves: TC-042-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_042_004_pounce_answers_the_chosen_call_in_the_next_own_period_and_ends_on_success() {
     let f = station(true).await;
@@ -4121,7 +4118,6 @@ async fn tc_042_004_pounce_answers_the_chosen_call_in_the_next_own_period_and_en
     assert_eq!(contact(&f).await.2, json!("disarmed"));
 }
 
-// Proves: TC-042-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_directed_cq() {
     let f = station(true).await;
@@ -4172,7 +4168,6 @@ async fn tc_042_004_pounce_answers_a_73_holding_tx_and_never_an_ignored_or_direc
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: TC-042-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_042_004_pounce_waits_again_without_an_answer_and_ends_on_a_band_change() {
     let f = station(true).await;
@@ -4238,7 +4233,7 @@ async fn tc_042_004_pounce_waits_again_without_an_answer_and_ends_on_a_band_chan
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: CL-024-01; TC-024-003 (g) (#24 S1b). Station automation stays standard-only: a
+// (#24 S1b). Station automation stays standard-only: a
 // run does not start with a nonstandard profile callsign.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn automation_does_not_start_with_a_nonstandard_own_call() {
@@ -4265,7 +4260,7 @@ async fn automation_does_not_start_with_a_nonstandard_own_call() {
     assert_eq!(started.status, StatusCode::ACCEPTED, "{}", started.json);
 }
 
-// Proves: CL-024-02; TC-024-005 (e) (#24 S2a). Station automation only observes in a contest
+// (#24 S2a). Station automation only observes in a contest
 // activity: a run does not start.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn automation_does_not_start_in_a_contest_activity() {
@@ -4288,7 +4283,7 @@ async fn automation_does_not_start_in_a_contest_activity() {
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("activity")));
 }
 
-// Proves: CL-024-04; TC-024-012 (#24 S4b). Station automation does not start as a Hound.
+// (#24 S4b). Station automation does not start as a Hound.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn automation_does_not_start_as_a_hound() {
     let f = station(true).await;
@@ -4550,7 +4545,6 @@ fn tc_063_004_the_directive_table_in_a_contest_activity() {
     assert_eq!((contest[0].rank, contest[0].grey), (Some(0), false));
 }
 
-// Proves: TC-063-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation() {
     let f = station(true).await;
@@ -4579,7 +4573,7 @@ async fn tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation() {
     assert_eq!(contact(&f).await.0, "K1ABC");
 }
 
-// Proves: CL-099-02; TC-099-002 (g). In eu_vhf a CQ TEST is the activity's own word: the
+// In eu_vhf a CQ TEST is the activity's own word: the
 // operator's selection needs no directive_confirmed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_099_002_cq_test_needs_no_confirmation_in_eu_vhf() {
@@ -4993,7 +4987,6 @@ async fn built_qsos(f: &Mcp, qsos: u64) {
     }
 }
 
-// Proves: TC-063-009
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation() {
     let f = station(true).await;
@@ -5042,7 +5035,6 @@ async fn tc_063_009_a_manual_qso_of_the_period_is_a_dupe_for_the_next_evaluation
     assert_eq!(run_state(&f).await.0, "waiting");
 }
 
-// Proves: TC-063-011
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band() {
     let f = station(true).await;
@@ -5415,7 +5407,8 @@ fn test_km(a: (f64, f64), b: (f64, f64)) -> u64 {
     (2.0 * 6371.0 * h.sqrt().asin()).floor() as u64
 }
 
-// Proves: TC-039-040. new_call_band and the value list ranked by hand: [snr], [distance] (the
+// new_call_band and the value list ranked by hand: [snr], [distance] (the
+// Proves: TC-039-040
 // haversine written here; the cty.dat entity centre without a grid), [most_wanted], two
 // criteria, [new_dxcc, snr]; the exact tie; callers first on and off; the empty list; a caller
 // failing every filter line; the band unknown; the window today; decode order is no ranking.
@@ -5578,7 +5571,8 @@ fn tc_039_040_the_filter_and_the_value_order() {
     );
 }
 
-// Proves: TC-039-040. Each needed-first criterion alone, each with its own log, before the hidden
+// Each needed-first criterion alone, each with its own log, before the hidden
+// Proves: TC-039-040
 // SNR (goal new_call, grid or dxcc_slot so that every row stays a candidate; Calling stations are
 // answered off, so the caller W1AW has no rank, CL-097-03).
 #[test]
@@ -5710,7 +5704,8 @@ async fn strategy_view(f: &Mcp) -> (Value, Value, u64) {
     )
 }
 
-// Proves: TC-039-042. Auto is station memory, off at start: a selection alone only marks; Auto on
+// Auto is station memory, off at start: a selection alone only marks; Auto on
+// Proves: TC-039-042
 // starts the run, another selection while on restarts it, Auto off ends it at once; Auto on
 // without a selection is refused; None and HALT (route and MCP) turn it off and HALT keeps the
 // selection; one strategy.state per change; the refusals; a restart reads it off.
@@ -5933,7 +5928,8 @@ async fn tc_039_042_auto_starts_and_ends_the_run_and_a_selection_only_marks() {
     assert_eq!(f.keys(), 0, "no PTT exchange");
 }
 
-// Proves: TC-039-042, TC-063-009. A contest whose rules forbid automatic operation needs
+// A contest whose rules forbid automatic operation needs
+// Proves: TC-039-042
 // automation_confirmed on Auto on (strategy_tests::tc_063_009_search_and_pounce...); a silent one
 // (FT8 Activity) needs none; a selection change to a forbidding contest while Auto is on turns
 // Auto off instead of starting it.
@@ -5978,7 +5974,8 @@ async fn tc_039_042_a_silent_contest_switches_auto_on_without_a_confirmation() {
     assert_eq!(r.json["auto"], true, "{}", r.json);
 }
 
-// Proves: TC-039-042. An Auto on from the browser is the operator's action that ends a Tx watchdog
+// An Auto on from the browser is the operator's action that ends a Tx watchdog
+// Proves: TC-039-042
 // stop (WatchdogFromOperator): the run arms afterwards.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_042_a_browser_auto_on_ends_a_watchdog_stop_and_arms() {
@@ -6110,7 +6107,8 @@ fn quiet_entry(call: &str, remaining_s: u64) -> Value {
     json!([{"call":call,"band":"20m","mode":"ft8","remaining_s":remaining_s}])
 }
 
-// Proves: TC-039-043 (a), (b). Situations 1 and 2 count alike: K1ABC silent, or calling CQ again,
+// Situations 1 and 2 count alike: K1ABC silent, or calling CQ again,
+// Proves: TC-039-043
 // is armed after 3 repetitions and left at the 4th: disarmed and cancelled, left {K1ABC,
 // repetitions}, quiet for 600 s on 20 m FT8, the run waiting. WD:4, 3, 2, 1 (TC-039-022).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -6149,7 +6147,8 @@ async fn tc_039_043_a_silent_or_repeating_target_is_left_at_the_4th() {
     }
 }
 
-// Proves: TC-039-043 (c), TC-097-009 (a) (leave {calls 4, calls_heard 8}: 4 without and 8 with the
+// (leave {calls 4, calls_heard 8}: 4 without and 8 with the
+// Proves: TC-039-043
 // spot). A spot of my call at K1ABC 60 s old doubles x: armed after 7, left at
 // the 8th, WD:8 down to 1; with Use PSK Reporter off the spot is not used: left at the 4th.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -6184,7 +6183,8 @@ async fn tc_039_043_a_target_that_hears_us_is_left_at_2x_and_use_off_at_x() {
     assert_eq!(contact(f).await.2, json!("disarmed"), "Use off: at x");
 }
 
-// Proves: TC-039-043 (d), the #63 fix. A repeated message of the target to my call is progress:
+// the #63 fix. A repeated message of the target to my call is progress:
+// Proves: TC-039-043
 // K1ABC answering -05 after the 2nd repetition and repeating it for 6 periods is never left, the
 // count back to 0 at each.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -6203,7 +6203,8 @@ async fn tc_039_043_a_repeated_report_is_progress_and_never_leaves() {
     assert_eq!(run_of(f).await["left"], Value::Null);
 }
 
-// Proves: TC-039-043 (e). A caller selected on its call that repeats that call has not answered:
+// A caller selected on its call that repeats that call has not answered:
+// Proves: TC-039-043
 // W1AW repeating its first call is left at the 4th.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_043_a_caller_repeating_its_first_call_is_left_at_the_4th() {
@@ -6223,7 +6224,8 @@ async fn tc_039_043_a_caller_repeating_its_first_call_is_left_at_the_4th() {
     );
 }
 
-// Proves: TC-039-043 (f). No change before an exit criterion: a stronger new CQ DL1XYZ from the 2nd
+// No change before an exit criterion: a stronger new CQ DL1XYZ from the 2nd
+// Proves: TC-039-043
 // repetition on never ends the contact with K1ABC; DL1XYZ is selected at the step after the 4th.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_043_a_more_valuable_cq_waits_for_the_exit() {
@@ -6247,7 +6249,7 @@ async fn tc_039_043_a_more_valuable_cq_waits_for_the_exit() {
     );
 }
 
-// Proves: TC-039-043 (g). A caller of my call is answered at once while the target has not
+// A caller of my call is answered at once while the target has not
 // answered: left {K1ABC, caller} and JA1XYZ selected from the same publication; with Callers of my
 // call first off, with JA1XYZ in its quiet time and after K1ABC has answered K1ABC is kept.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -6299,7 +6301,8 @@ async fn tc_039_043_a_caller_is_answered_at_once_unless_off_quiet_or_answered() 
     assert_eq!(contact(f).await.2, json!("armed"));
 }
 
-// Proves: TC-039-043 (h). A left station is quiet for 10 minutes: its call to my call is not
+// A left station is quiet for 10 minutes: its call to my call is not
+// Proves: TC-039-043
 // answered at 5 min, its CQ is not selected at 9 min 59 s; at 10 min it is selected again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_043_the_quiet_time_excludes_selection_and_answering() {
@@ -6334,7 +6337,8 @@ async fn tc_039_043_the_quiet_time_excludes_selection_and_answering() {
     );
 }
 
-// Proves: TC-039-043 (i). Repetitions 1: left at the 1st.
+// Repetitions 1: left at the 1st.
+// Proves: TC-039-043
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_043_one_repetition_leaves_at_the_first() {
     let t = leaving(|c| set_repetitions(c, 1), &[K1ABC_CQ]).await;
@@ -6348,7 +6352,8 @@ async fn tc_039_043_one_repetition_leaves_at_the_first() {
     );
 }
 
-// Proves: TC-039-043 (j). Ends at once, with no quiet time: a band change in the contact, a new
+// Ends at once, with no quiet time: a band change in the contact, a new
+// Proves: TC-039-043
 // live identity (FT4), Auto off and HALT disarm and cancel at the next step, left stays null; after
 // the band change the run waits and selects from the next publication, after Auto off and HALT it
 // has stopped.
@@ -6464,7 +6469,8 @@ async fn contest_calling(edit: impl FnOnce(&mut Value)) -> Leaving {
     t
 }
 
-// Proves: TC-039-044 (a), (b). A contest leaves at x = 2; a spot of my call at K1ABC doubles it in
+// A contest leaves at x = 2; a spot of my call at K1ABC doubles it in
+// Proves: TC-039-044
 // situation 2 (not decoded): left at the 4th.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_a_contest_leaves_at_2_and_at_4_with_a_spot() {
@@ -6490,7 +6496,8 @@ async fn tc_039_044_a_contest_leaves_at_2_and_at_4_with_a_spot() {
     assert_eq!(contact(f).await.2, json!("disarmed"));
 }
 
-// Proves: TC-039-044 (c), (d). Situation 1 with the spot: K1ABC calling CQ again stays all 10
+// Situation 1 with the spot: K1ABC calling CQ again stays all 10
+// Proves: TC-039-044
 // repetitions while nothing more valuable is listed, and the dupe W1DUP calling my call never ends
 // the stay (the #63 fix); JA1XYZ (more valuable) at the 6th leaves at once and is selected next;
 // JA1XYZ from the 1st: K1ABC kept until the 2nd, then left and JA1XYZ selected.
@@ -6557,7 +6564,7 @@ async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
     assert_eq!(contact(f).await.0, json!("JA1XYZ"));
 }
 
-// Proves: TC-039-044 (e). A non-dupe caller K2NEW at the 1st repetition: left {K1ABC, caller} at
+// A non-dupe caller K2NEW at the 1st repetition: left {K1ABC, caller} at
 // once and K2NEW selected from the same publication.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_a_contest_caller_is_answered_at_once() {
@@ -6572,7 +6579,8 @@ async fn tc_039_044_a_contest_caller_is_answered_at_once() {
     );
 }
 
-// Proves: TC-039-044 (f), (g). Run: the caller K2NEW is answered from the CQ's slot (900 stays, not
+// Run: the caller K2NEW is answered from the CQ's slot (900 stays, not
+// Proves: TC-039-044
 // the quietest of my Rx parity), then silent it is left at the 2nd, the run calls CQ again and does
 // not answer K2NEW in its quiet time. Repetitions 3 and quiet_minutes 1 from the selection: left at
 // the 3rd, answered again after 1 minute. Hold Tx explicitly off (with it on the
@@ -6654,7 +6662,8 @@ async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
     assert_eq!(run_of(f).await["state"], "contact_active");
 }
 
-// Proves: TC-039-044 (h). The end of the period in a contact disarms and cancels at once and the run
+// The end of the period in a contact disarms and cancels at once and the run
+// Proves: TC-039-044
 // waits outside_period; the contest deselected in a contact stops it, Auto off.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_period_end_and_deselect_end_the_contact_at_once() {
@@ -6709,7 +6718,8 @@ async fn casual(cq: bool) -> Leaving {
     }
 }
 
-// Proves: TC-039-045. CQ when no target: waiting after one empty publication, calling CQ (Tx6
+// CQ when no target: waiting after one empty publication, calling CQ (Tx6
+// Proves: TC-039-045
 // "CQ HB9BLA JN47", armed) after the second (W1AW, worked today, is not listed); W1AW calling my
 // call is answered from the CQ with Enable Tx kept; after its QSO two empty publications call CQ
 // again; a candidate appearing ends the CQ and is called. Off: never a CQ.
@@ -6844,7 +6854,7 @@ fn wf_row(f: &Mcp, start: i64, floor: u8, bands: &[(u32, u32, u8)], tx: bool) {
     f.state.recording.fixture_detail_row(start, &levels, tx);
 }
 
-// Proves: TC-039-045. The Tx watchdog stops the run's CQ at its limit (stopped tx_watchdog, Auto off,
+// The Tx watchdog stops the run's CQ at its limit (stopped tx_watchdog, Auto off,
 // not keyed again); the CQ's slot is the quiet one of my Rx parity (cq_quiet_rows: 900, value 0);
 // unattended the CQ is disarmed and cancelled at once (stopped no_client).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -6896,7 +6906,8 @@ async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet(
     );
 }
 
-// Proves: CL-039-22; TC-039-045 (the slot of the CQ with one parity loud, #66). The CQ judges my
+// (the slot of the CQ with one parity loud, #66). The CQ judges my
+// Proves: TC-039-045
 // Rx parity only (even, the other of its odd Tx parity): 4 periods of each parity flat 20, one
 // parity 60 at 1500..1550 (the current Tx). Loud in my Tx parity: ignored, the CQ stays on 1500,
 // value 0 (rise -0.65 under the floor 20.65, free); loud in my Rx parity: avoided, the CQ goes to the nearest floor slot, 1450
@@ -6927,7 +6938,8 @@ async fn tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity() {
     }
 }
 
-// Proves: TC-039-010. The router: my Rx parity (even, K1ABC's) is busy (comb_row, floor 20, busy
+// The router: my Rx parity (even, K1ABC's) is busy (comb_row, floor 20, busy
+// Proves: TC-039-010
 // 40) except a quiet band at 1800..1850 Hz in its 3 received periods e - 120, e - 90 and e - 60 s;
 // K1ABC's period e is due on its publication 1 s in (#89: no row yet, his decode at 1500 closes
 // 1460..1540), so the counted window is e, e - 30 (transmitted), e - 60 and e - 90, and e - 120
@@ -6992,7 +7004,7 @@ async fn tc_039_010_the_run_calls_from_the_quietest_slot_of_its_rx_parity() {
     assert_eq!(frequencies(&f).await.1, json!(1800));
 }
 
-// Proves: TC-039-010. After a station band change within the job only the new band's periods count:
+// After a station band change within the job only the new band's periods count:
 // no power yet keeps Tx (power_db null); a caller on my slot is answered from the quietest slot away
 // from it; a pounce calls from the quietest slot. Hold Tx explicitly off (#39 holdtx). The new
 // band's even period: a flat floor of 20 (floor 20.65, a free slot 0) with 1350..1450 at 40; its
@@ -7100,7 +7112,8 @@ fn slot_rows(f: &Mcp, e: i64, k: i64) {
     }
 }
 
-// Proves: TC-039-022. Without a known hearing (no spot, 601 s, 40 m, Use off, feed off) Tx and Rx
+// Without a known hearing (no spot, 601 s, 40 m, Use off, feed off) Tx and Rx
+// Proves: TC-039-022
 // move to the quietest slot at each repetition (1400, 1300) and stay on a tie (1300 free, 0, the
 // current Tx among the free slots); every repetition is keyed past the watchdog limit 2 and WD counts 4, 3, 2, 1; a spot 60 s
 // or 590 s old keeps Tx at 1500 and WD counts from 8; slot_check names the repetition and hearing.
@@ -7175,7 +7188,8 @@ async fn tc_039_022_the_slot_check_at_every_repetition() {
     }
 }
 
-// Proves: TC-039-022. A target that has answered keeps its slot for the whole exchange: after the
+// A target that has answered keeps its slot for the whole exchange: after the
+// Proves: TC-039-022
 // partner's report at the 2nd repetition Tx never moves again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_an_answer_keeps_the_slot() {
@@ -7193,7 +7207,8 @@ async fn tc_039_022_an_answer_keeps_the_slot() {
     }
 }
 
-// Proves: TC-039-022. A refused move changes nothing and is checked again at the next repetition.
+// A refused move changes nothing and is checked again at the next repetition.
+// Proves: TC-039-022
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_a_refused_move_is_checked_again() {
     let t = slot_check(|_| {}).await;
@@ -7225,7 +7240,7 @@ async fn tc_039_022_a_refused_move_is_checked_again() {
     assert_eq!(frequencies(f).await.1, json!(1400), "checked again");
 }
 
-// Proves: TC-039-033, TC-039-022. Unattended (no client for 60 s): the stop at N is back at once,
+// Unattended (no client for 60 s): the stop at N is back at once,
 // and K1ABC silent with a spot of my call is left at 4 repetitions, not 8; then the run stops
 // no_client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -7255,7 +7270,7 @@ async fn tc_039_033_unattended_x_is_never_doubled() {
     assert_eq!(f.keys(), 0);
 }
 
-// Proves: TC-039-048. The run snapshot's hearing and his end: heard {t, -12} with a spot of my call,
+// The run snapshot's hearing and his end: heard {t, -12} with a spot of my call,
 // unknown with Use off; his decoded frequency of my Tx parity (odd) at the quietest slot sends Tx to
 // the next quietest with his_end yes, one of the other parity excludes nothing, his frequencies
 // everywhere leave the quietest with his_end no.
@@ -7341,7 +7356,8 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     assert_eq!(frequencies(f).await.1, json!(1650));
 }
 
-// Proves: TC-097-013 (b). #97 (#91): no WD in the run's own contact: tx_remaining_calls is null on
+// #97 (#91): no WD in the run's own contact: tx_remaining_calls is null on
+// Proves: TC-097-013
 // GET /contact and GET /transmit while armed, and the run's leave {calls 2, calls_heard 4} counts:
 // 3 calls left at the 1st repetition with the spot (m 4), 2 at the 2nd, 1 once the spot is older
 // than 600 s (n 2, at least 1 shown), left at the 3rd.
@@ -7373,7 +7389,8 @@ async fn tc_097_013_no_wd_in_the_runs_own_contact_and_the_leave_count() {
     assert_eq!(contact(f).await.2, json!("disarmed"));
 }
 
-// Proves: TC-039-045. A caller is answered from the CQ's slot: the CQ on 900 (the quiet slot of my
+// A caller is answered from the CQ's slot: the CQ on 900 (the quiet slot of my
+// Proves: TC-039-045
 // Rx parity, cq_quiet_rows), a caller at 1200 Hz keeps Tx and Rx on 900; a caller at 920 Hz,
 // within 50 Hz of the slot, moves Tx and Rx to the nearest candidate away from it: 820 (my 50 Hz
 // signal 50 Hz below its 920..970). Hold Tx explicitly off (Hold Tx on is
@@ -7401,7 +7418,7 @@ async fn tc_039_045_a_caller_is_answered_from_the_cqs_slot() {
     }
 }
 
-// Proves: TC-039-042. With Auto off a selection only marks: a pounce armed on K1ABC keeps running
+// With Auto off a selection only marks: a pounce armed on K1ABC keeps running
 // and armed when the browser selects "Test calls"; Auto on then ends it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_042_a_selection_with_auto_off_leaves_a_pounce_running() {
@@ -7502,7 +7519,7 @@ async fn rx_tx(f: &Mcp) -> (Value, Value) {
     (s["rx_hz"].clone(), s["tx_hz"].clone())
 }
 
-// Proves: TC-039-049 (a), (b). Hold Tx on: selecting K1ABC (CQ at 1800) leaves Tx on 1500 and puts
+// Hold Tx on: selecting K1ABC (CQ at 1800) leaves Tx on 1500 and puts
 // Rx on 1800, tx_slot names the held 1500 (no power yet); at the unanswered repetitions with no
 // spot Tx alone takes the quietest slot, 1400 then 1300 (slot_rows, each a free slot of value 0),
 // and Rx stays 1800.
@@ -7542,7 +7559,7 @@ async fn tc_039_049_hold_tx_on_keeps_tx_and_moves_it_alone_when_he_does_not_hear
     }
 }
 
-// Proves: TC-039-049 (c). The slot check keeps 50 Hz from my Rx as well: K1ABC calls CQ again at
+// The slot check keeps 50 Hz from my Rx as well: K1ABC calls CQ again at
 // 1600 (his signal moved, Rx stays 1800). The even period busy (comb_row, floor 20, busy 40)
 // except 1760..1810 at 20 and 1300..1350 at 21 (both value 0, free). 1760 is 50 Hz clear of
 // K1ABC's 1600..1650 but not of my Rx signal 1800..1850 (1760 + 50 + 50 > 1800), so it is
@@ -7570,7 +7587,7 @@ async fn tc_039_049_the_slot_check_never_comes_within_50_hz_of_rx() {
     );
 }
 
-// Proves: TC-039-049 (d), (e). A spot of my call at K1ABC 60 s old: Tx stays 1500 at the
+// A spot of my call at K1ABC 60 s old: Tx stays 1500 at the
 // repetition, hears_us true. His report after the 1st repetition (Tx 1400): Tx never moves again,
 // also with rows that would move it, Rx stays 1800.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -7615,7 +7632,7 @@ async fn tc_039_049_a_target_that_hears_us_or_has_answered_keeps_tx() {
     }
 }
 
-// Proves: TC-039-049 (f). A station within 50 Hz of the held Tx 1500: Tx goes to the nearest slot
+// A station within 50 Hz of the held Tx 1500: Tx goes to the nearest slot
 // 50 Hz clear of its signal, the lower on a tie, no power used; Rx on the station. At 1520
 // (1520..1570): below needs f + 50 + 50 <= 1520, so 1420 (80 Hz away); above f >= 1620 (120 Hz):
 // 1420. A caller at 1530: 1430 (70 Hz) against 1630 (130 Hz): 1430. No power is used (D4): a far
@@ -7647,7 +7664,7 @@ async fn tc_039_049_a_station_within_50_hz_moves_tx_50_hz_clear() {
     }
 }
 
-// Proves: TC-039-049 (g). FT4, the held Tx 2700 outside the Tx range (300..2610), a station at
+// FT4, the held Tx 2700 outside the Tx range (300..2610), a station at
 // 1000: the selection keeps Tx 2700 (D7), Rx 1000. At the unanswered repetition with no spot 2700
 // is no candidate (round 3 Q6): my odd period reads 0, the even one a flat floor of 40, so every
 // candidate ties at a rise of 40; were 2700 a candidate the tie would keep it, but it is not, so Tx
@@ -7688,7 +7705,7 @@ fn held_cq_rows(f: &Mcp, e: i64) {
     }
 }
 
-// Proves: TC-039-049 (h). "Casual 20 m" with Hold Tx on and Tx 900: after two empty publications
+// "Casual 20 m" with Hold Tx on and Tx 900: after two empty publications
 // the CQ is keyed on 900 with no slot decision (tx_slot names 900 with its value in my Rx parity,
 // 0), Rx unchanged. A caller at 1200 is answered from 900, Rx 1200 (tx_slot 900, 0); a caller at
 // 920 (920..970) moves Tx to 820, the nearest slot 50 Hz clear of it (820 + 50 + 50 = 920; above,
@@ -7728,7 +7745,7 @@ async fn tc_039_049_the_cq_goes_out_on_the_held_tx_and_its_callers_keep_it() {
     }
 }
 
-// Proves: TC-039-049 (i). Hold Tx switched off during the contact: the next repetition moves Tx
+// Hold Tx switched off during the contact: the next repetition moves Tx
 // and Rx together onto the slot (1300, as the Hold Tx case (b) computes it).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_hold_tx_switched_off_mid_contact_moves_rx_with_tx() {
@@ -7747,7 +7764,7 @@ async fn tc_039_049_hold_tx_switched_off_mid_contact_moves_rx_with_tx() {
     assert_eq!(rx_tx(f).await, (json!(1300), json!(1300)));
 }
 
-// Proves: TC-039-049 (j). Contest S&P (repetitions 4) as (a) and (b): K1ABC selected at 1800, Tx
+// Contest S&P (repetitions 4) as (a) and (b): K1ABC selected at 1800, Tx
 // held 1500; repetitions 1 and 2 move Tx alone to 1400 and 1300, Rx stays 1800.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_contest_sp_holds_tx_as_a_strategy_run() {
@@ -7794,7 +7811,7 @@ async fn contest_run_held() -> Leaving {
     }
 }
 
-// Proves: TC-039-049 (j). Contest Run as (h): its CQ on the held 900 with no slot decision
+// Contest Run as (h): its CQ on the held 900 with no slot decision
 // (tx_slot 900, value 0 in my Rx parity); K2NEW calling at 1200 is answered from 900, Rx 1200; at
 // 920 Tx moves to 820, Rx 920.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -7823,7 +7840,7 @@ async fn tc_039_049_contest_run_calls_cq_on_the_held_tx() {
     }
 }
 
-// Proves: TC-039-049 (k). A pounce on K1ABC with Hold Tx on: Tx stays 1500, Rx on K1ABC 1800, and
+// A pounce on K1ABC with Hold Tx on: Tx stays 1500, Rx on K1ABC 1800, and
 // it never moves (a pounce has no slot check), also with rows whose quietest slot is 1400.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_049_a_pounce_keeps_the_held_tx() {
@@ -7965,7 +7982,7 @@ fn with_station(hz: f64) -> f64 {
         }
 }
 
-// Proves: CL-039-09; TC-039-050 (a), (k). The 2026-11-07 reproduction, FT4: 30 dB flat to 2400 Hz,
+// The 2026-11-07 reproduction, FT4: 30 dB flat to 2400 Hz,
 // falling to 15 dB at 2700 Hz (a sharp knee the fourth-order floor cannot follow: the roll-off
 // slots read about 2 dB below it), AA3B 12 dB above it at 2621..2711 Hz, not decoded, in my 4
 // counted Rx periods (my Tx-parity periods without him); the selection of KC8ZPI (513 Hz) from Tx
@@ -8032,7 +8049,7 @@ async fn tc_039_050_the_roll_off_is_compared_above_the_passband_floor() {
     }
 }
 
-// Proves: CL-039-09; TC-039-050 (b), (k). FT8, a flat floor of 30 (floor 30.65) in my 4 counted Rx
+// FT8, a flat floor of 30 (floor 30.65) in my 4 counted Rx
 // periods, the current Tx 1500 on a slot 5 dB above it (1500..1550, bins 512..529, at 35), every
 // other slot on the floor. Its value is 35 - 30.65 = 4.35, 4; a floor slot's rise -0.65, free: 0.
 // The selection of K1ABC (2400) with Hold Tx off leaves 1500 for the nearest floor slot: 1450
@@ -8068,7 +8085,7 @@ async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor
     );
 }
 
-// Proves: CL-039-09, CL-065-01; TC-039-050 (c), (k). The busiest period counts. My 4 counted Rx
+// The busiest period counts. My 4 counted Rx
 // periods busy (comb_row, floor 30, busy 40: every slot off the bands holds at least 9 busy bins of
 // 17, so reads at least 35.3, a value of at least 5): e - 90 s to e, e counted on its complete
 // publication 1 s in by its row so far (#89 Due; e - 120 s is no longer among the last 4 due).
@@ -8107,7 +8124,7 @@ async fn tc_039_050_the_busiest_counted_period_counts() {
     assert_eq!(open_ranges(f).await, Vec::<(u64, u64)>::new());
 }
 
-// Proves: CL-039-09, CL-065-01; TC-039-050 (d), (k). The floor follows each period: my counted Rx
+// The floor follows each period: my counted Rx
 // periods flat 30 in the two older and 32 in the two later. A floor slot reads -0.65 in each (30
 // against 30.65, 32 against 32.65), so its value is 0, not raised by the floor change; Tx 1500
 // kept, tx_slot {1500, 0}, and 1500 lies in an open range of the station's build (#82). Red on the
@@ -8132,7 +8149,7 @@ async fn tc_039_050_a_floor_change_does_not_raise_a_free_slot() {
     assert!(in_open(f, 1500).await, "{:?}", open_ranges(f).await);
 }
 
-// Proves: CL-039-09; TC-039-050 (e), (k). One counted period is enough to compare: one Rx period, a
+// One counted period is enough to compare: one Rx period, a
 // flat 30 with the current Tx's slot 1500..1550 (bins 512..529) at 35 (value 4.35, 4): Tx leaves
 // for the nearest free slot. 1460 and 1540 hold 4 of the band's bins, (4 x 35 + 13 x 30) / 17 -
 // 30.65 = 0.53, 1 (not free); so 1450 (the lower of 1450 and 1550), value 0. Red on the parent:
@@ -8151,7 +8168,7 @@ async fn tc_039_050_one_counted_period_compares() {
     );
 }
 
-// Proves: CL-039-09; TC-039-050 (f), (j), (k). Periods that do not count, each with the current Tx's
+// Periods that do not count, each with the current Tx's
 // slot 1500..1550 at 40 on a flat 30 (which would move Tx if counted): an Rx period I transmitted
 // in (30 s before e); a 5th older Rx period (150 s before e); my last Rx periods 3 to 4.5 minutes
 // old, as after a change of my Tx parity; and no period at all. In each no period counts: Tx 1500
@@ -8188,7 +8205,7 @@ async fn tc_039_050_transmitted_old_and_absent_periods_never_count() {
     }
 }
 
-// Proves: CL-039-09; TC-039-050 (g), (k). After a station band change only later periods count: on
+// After a station band change only later periods count: on
 // 20 m my Rx period 30 s before e has the current Tx's slot 1500..1550 at 40 on a flat 30; after
 // the change to 40 m one Rx period flat 30. The selection two periods later keeps Tx 1500 at 0
 // (the 20 m period counted would move it). Red on the parent: its rise over the usual level is 0.
@@ -8222,7 +8239,7 @@ async fn tc_039_050_after_a_band_change_only_later_periods_count() {
     assert_eq!(free_tx_slots(&f).await["periods"], json!(1));
 }
 
-// Proves: CL-039-09; TC-039-050 (h), (k). Values compare in whole dB. One Rx period busy (comb_row,
+// Values compare in whole dB. One Rx period busy (comb_row,
 // floor 30, busy 40); the current Tx's slot 1500 (bins 512..529) at 31 with its bin 520 at 32 or
 // at 35: (17 x 31 + 32) / 18 - 30.65 = 0.41 or (17 x 31 + 35) / 18 - 30.65 = 0.57; slot X 1950
 // (bins 666..682) with 666..671 at 30 and 672..682 at 31: (6 x 30 + 11 x 31) / 17 - 30.65 = -0.003;
@@ -8260,7 +8277,7 @@ async fn tc_039_050_values_compare_in_whole_db() {
     }
 }
 
-// Proves: CL-039-09, CL-065-01; TC-039-050 (i), (k). A period counts only when its levels reach bin
+// A period counts only when its levels reach bin
 // 921 (2698.2 Hz). My Rx periods 90 and 60 s before e flat 30 (1024 bins); the one 30 s before e
 // with the current Tx's slot 1500..1550 at 40 and a station decoded at 1500 in it. Its rows of 922
 // bins (to bin 921): it counts, 1500 is busy and on the decoded station, Tx to 1450 (|1450 - 1500|
@@ -8518,7 +8535,7 @@ fn listening(at: i64, rx: &str, periods: u64, open: Value) -> Value {
     json!({"at_utc_ms":at,"mode":"ft8","rx_parity":rx,"qso":false,"periods":periods,"open":open})
 }
 
-// Proves: CL-065-01; TC-082-002 (a), (d). Listening on 20 m FT8 with no run, then with a strategy
+// Listening on 20 m FT8 with no run, then with a strategy
 // run waiting (Test calls, nothing to call), on `listening_rows`, read right after the period
 // starts e, e + 15, e + 30 and e + 45 s: rx_parity even, odd, even, odd (the parity of the period
 // in progress, the Rx parity for transmitting in the next one), qso false, at_utc_ms the period
@@ -8568,7 +8585,7 @@ fn unfreeze(f: &Mcp) {
     }
 }
 
-// Proves: CL-065-01; TC-082-002 (b). My own CQ, Tx even, no contact: flat rows before e, the odd
+// My own CQ, Tx even, no contact: flat rows before e, the odd
 // period e + 15 s with a station 12 dB up over 2000..2050 Hz (closing 1960..2040, as
 // `listening_rows`' band) and the odd e + 45 s with one over 2400..2450 Hz (bins 820..836,
 // closing 2360..2440: 2360 holds 3 of its bins, 2440 4, 2350 and 2450 none). Enable Tx on at
@@ -8651,7 +8668,7 @@ async fn tc_082_002_my_own_cq_holds_its_rx_parity_over_its_transmissions() {
     );
 }
 
-// Proves: CL-065-01; TC-082-002 (c), (f). (c) A manual contact: K1ABC's CQ decoded at 900 Hz in the odd period e - 15 s; the
+// (c) A manual contact: K1ABC's CQ decoded at 900 Hz in the odd period e - 15 s; the
 // operator double-clicks it at e + 61 s, in the even period e + 60 s, my Tx parity even (replying,
 // Enable Tx off: nothing keyed). Listening just before, rx_parity even; at once qso true and
 // rx_parity odd (the contact's Rx parity: e + 45, e + 15, e - 15 and e - 45 s count, 4), and at
@@ -8763,7 +8780,7 @@ async fn tc_082_002_a_manual_qso_holds_its_rx_parity_and_its_decodes_build_at_on
     assert_eq!(v["open"], json!([[300, 1200], [1250, 2400], [2450, 2700]]));
 }
 
-// Proves: CL-065-01; TC-082-002 (e). Listening on flat rows (my even e - 60 and e - 30 s): at e + 1 s
+// Listening on flat rows (my even e - 60 and e - 30 s): at e + 1 s
 // 2 periods count. A station band change (20 m to 40 m) at e + 2 s builds at once: only later
 // periods count, periods 0 and open []. The live receive stops: null (GET and MCP). A new live job
 // starts: a value at once from its first period (periods 0, open []); its odd period e + 15 s
@@ -8809,7 +8826,8 @@ async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_nu
     );
 }
 
-// Proves: CL-065-01; TC-082-003, TC-082-002 (a) in FT4, TC-065-002 (#82: replaced by TC-082-003).
+// in FT4, TC-065-002 (#82: replaced by TC-082-003).
+// Proves: TC-082-003
 // Automation never used (no configuration, no run), Detailed, Thin
 // and Off peers on the served router, flat rows. FT8: a build at each of the 4 period starts e,
 // e + 15, e + 30 and e + 45 s, and one at Enable Tx on (e + 50 s, Tx even: the odd period is not
@@ -9032,7 +9050,7 @@ fn reports(hz: &[f64]) -> Vec<(&'static str, f64, Option<f64>)> {
         .collect()
 }
 
-// Proves: CL-039-09, CL-065-01; TC-066-001. The 10:28:58 capture (HB9BLA 2026-11-08, 10 m FT8): a
+// The 10:28:58 capture (HB9BLA 2026-11-08, 10 m FT8): a
 // run's CQ decision ("Casual 20 m"), my Tx parity odd and Rx parity even, Tx 1930, Rx 906, the
 // station clock 13.965 s into 10:28:45. Counted: my even periods 10:27:30, 10:28:00 and 10:28:30
 // (periods now 3), each a flat floor of 30 (32 in 10:28:30), every station decoded in it a band
@@ -9120,7 +9138,7 @@ async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
     }
 }
 
-// Proves: CL-039-09, CL-065-01; TC-066-002 (a), (j). The 07:29 reproduction (HB9BLA 2026-11-08,
+// The 07:29 reproduction (HB9BLA 2026-11-08,
 // 20 m): Tx 1550, my Rx parity even; 4 counted periods of each parity, a flat floor of 30 in the
 // two older and 32 in the two later; a station decoded at 659.5 Hz at 38 dB in all 4 even periods,
 // stations decoded at 659.7 and 691.8 Hz at 38 dB in all 4 odd periods. The selection of K1ABC
@@ -9163,7 +9181,7 @@ async fn tc_066_002_the_0729_case_keeps_tx_off_the_station() {
     assert_eq!(open_ranges(f).await, [(300, 650), (710, 2700)]);
 }
 
-// Proves: CL-039-09; TC-039-049 (f); TC-066-002 (g). Hold Tx on, the selection of K1ABC at 1520,
+// Hold Tx on, the selection of K1ABC at 1520,
 // within 50 Hz of the held Tx 1500 (D4): the nearest candidates 50 Hz clear of his signal (and of
 // Rx on him) are 1420 (80 Hz) below and 1620 (120 Hz) above. A station decoded at 1400 in my last
 // Rx period (flat 20) overlaps 1360..1440, so below only 1350 and lower are left (150 Hz) and Tx
@@ -9191,7 +9209,7 @@ async fn tc_066_002_the_hold_tx_50_hz_move_skips_a_decoded_station() {
     }
 }
 
-// Proves: CL-039-22; TC-039-045; TC-066-002 (h). Hold Tx off, "Casual 20 m", Tx 900, my 4 Rx periods
+// Hold Tx off, "Casual 20 m", Tx 900, my 4 Rx periods
 // flat 20 and a station decoded at 800 Hz in the last of them: the CQ stays on 900 (|900 - 800| is
 // 100 Hz; every free slot 0), tx_slot {900, 0}. A caller at 920 is within 50 Hz of the CQ's slot:
 // the nearest candidate 50 Hz clear of his 920..970 below is 820, on the decoded station (20 Hz),
@@ -9230,7 +9248,6 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
     );
 }
 
-// Proves: CL-039-09; TC-066-002.
 // After the run's first transmission each decision still counts its Rx periods, not 0.
 // A strategy run with Hold Tx on
 // (as live) selects K1ABC (CQ in the even period e at 1800 Hz) and calls him in my odd periods

@@ -216,7 +216,8 @@ pub(crate) fn plaintext_station(name: &str) -> (App, std::path::PathBuf) {
     (app, root)
 }
 
-// Proves: CL-003-06, CL-003-02; TC-021-008. A peer that stops answering is removed with "no pong
+// A peer that stops answering is removed with "no pong
+// Proves: TC-021-008
 // for 15 s" at the first heartbeat tick more than 15 s after its last Pong (driven time in
 // (15 s, 20 s], never earlier); another peer's station.get every 5 s is answered within 2 s
 // throughout and after; a peer answering every Ping stays open through 60 s.

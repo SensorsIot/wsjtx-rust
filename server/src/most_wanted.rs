@@ -516,7 +516,7 @@ fn response_body(reply: &[u8]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    // Proves: TC-039-031. Hand-written list text and replies; no network.
+    // Hand-written list text and replies; no network.
     use super::*;
     #[test]
     fn tc_039_031_parser_refuses_all_but_the_exact_list() {

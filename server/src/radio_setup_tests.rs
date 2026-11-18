@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-// Proves: CL-044-01; CL-044-02; CL-044-03; CL-044-04; CL-044-05; CL-044-07; CL-044-11; TC-044-001; TC-044-002; TC-044-003; TC-044-006; TC-044-009.
 // The actual router, Recording owner and CAT actor; a scripted IC-7300 behind
 // the station's CAT owner, a detection hardware double of ports and audio endpoints.
 // Expected bytes are hand-written from the IC-7300 Full Manual section 19 command table.
@@ -166,7 +165,7 @@ fn undo_file(f: &Fixture) -> Option<Value> {
         .map(|b| serde_json::from_slice(&b).unwrap())
 }
 
-// Proves: TC-044-003.
+// Proves: TC-044-003
 #[test]
 fn apply_writes_recommended_items_with_undo_record_then_undo_restores() {
     let (f, radio) = station(Ic7300 {
@@ -231,7 +230,7 @@ fn apply_writes_recommended_items_with_undo_record_then_undo_restores() {
     assert!(f.bench.keys.lock().unwrap().is_empty(), "PTT never keyed");
 }
 
-// Proves: TC-044-003.
+// Proves: TC-044-003
 #[test]
 fn apply_refusals_and_failures_stop_without_keying() {
     // Radio in TX: no menu write at all.
@@ -465,7 +464,7 @@ pub(crate) fn double(
     })
 }
 
-// Proves: TC-044-001, TC-044-002, TC-044-009.
+// Proves: TC-044-001, TC-044-002, TC-044-009
 #[test]
 fn detection_never_opens_station_port_and_proposes_the_station_radio() {
     let (f, radio) = station(Ic7300 {
@@ -580,7 +579,7 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
     assert!(f.bench.keys.lock().unwrap().is_empty());
 }
 
-// Proves: TC-044-002.
+// Proves: TC-044-002
 #[test]
 fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
     let f = fixture("http://127.0.0.1:18045", false);
@@ -613,7 +612,7 @@ fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
     );
 }
 
-// Proves: TC-044-002, TC-044-003.
+// Proves: TC-044-002, TC-044-003
 #[tokio::test]
 async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     let f = fixture("http://127.0.0.1:18046", false);
@@ -732,7 +731,7 @@ async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     assert_eq!(v["error"]["code"], "nothing_to_undo");
 }
 
-// Proves: TC-044-002.
+// Proves: TC-044-002
 #[tokio::test]
 async fn profile_put_refuses_friendly_names_and_accepts_endpoint_ids() {
     let f = fixture("http://127.0.0.1:18047", false);
@@ -779,7 +778,7 @@ async fn profile_put_refuses_friendly_names_and_accepts_endpoint_ids() {
     assert_eq!(s, StatusCode::OK);
 }
 
-// Proves: TC-044-002.
+// Proves: TC-044-002
 #[test]
 fn startup_migration_replaces_unique_friendly_names_only() {
     let dir = std::env::temp_dir().join(format!("wstx-migrate-{}", profile::new_uuid().unwrap()));
@@ -869,7 +868,8 @@ impl radio_setup::Hardware for Listing {
     }
 }
 
-// Proves: CL-044-07; TC-044-006 (d)-(e). Hand-written endpoint list; expected labels by hand.
+// -(e). Hand-written endpoint list; expected labels by hand.
+// Proves: TC-044-006
 #[tokio::test]
 async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_input() {
     let f = fixture("http://127.0.0.1:18049", false);
@@ -1016,7 +1016,7 @@ fn only_id_reads(hw: &Double) {
     }
 }
 
-// Proves: CL-044-15; TC-044-020.
+// Proves: TC-044-020
 #[test]
 fn discovery_keeps_a_saved_radio_that_answers() {
     let f = fixture("http://127.0.0.1:18047", false);
@@ -1039,7 +1039,8 @@ fn discovery_keeps_a_saved_radio_that_answers() {
     only_id_reads(&hw);
 }
 
-// Proves: CL-044-15; TC-044-020. Two transceivers on one PC: the second station process
+// Two transceivers on one PC: the second station process
+// Proves: TC-044-020
 // takes the next free one; its audio follows; the confirmation is not carried over.
 #[test]
 fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held() {
@@ -1097,7 +1098,7 @@ fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held
     only_id_reads(&hw);
 }
 
-// Proves: CL-044-15; TC-044-020.
+// Proves: TC-044-020
 #[test]
 fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() {
     // Nothing else free: the saved radio stays for the lifecycle's retries.
@@ -1131,7 +1132,8 @@ fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() 
     assert!(hw.opened.lock().unwrap().is_empty());
 }
 
-// Proves: CL-044-15; TC-044-020. A profile never saved takes the first radio this station
+// A profile never saved takes the first radio this station
+// Proves: TC-044-020
 // supports; a radio without station CAT and a port without a radio bridge are passed over.
 #[test]
 fn discovery_sets_up_a_profile_never_saved() {
@@ -1168,7 +1170,8 @@ fn discovery_sets_up_a_profile_never_saved() {
     only_id_reads(&hw);
 }
 
-// Proves: CL-044-15; TC-044-020 (f). A radio chosen but not yet confirmed counts as taken:
+// A radio chosen but not yet confirmed counts as taken:
+// Proves: TC-044-020
 // two stations set up one after the other take one radio each, however long apart.
 #[test]
 fn a_second_station_passes_over_a_radio_the_first_reserved() {
@@ -1202,7 +1205,8 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
     assert_eq!(saved_control(&c).0.endpoint.as_deref(), Some("COM3"));
 }
 
-// Proves: CL-044-15; TC-044-020 (g). No automatic open without the persisted confirmation,
+// No automatic open without the persisted confirmation,
+// Proves: TC-044-020
 // neither of the saved port nor of another; Detect radio with the tick stores it, once.
 #[tokio::test]
 async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
@@ -1240,7 +1244,8 @@ async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
     );
 }
 
-// Proves: CL-044-15; TC-044-020 (h). The whole discovery stays inside its budget however
+// The whole discovery stays inside its budget however
+// Proves: TC-044-020
 // many silent ports there are.
 #[test]
 fn silent_ports_stay_within_the_budget() {
@@ -1273,7 +1278,8 @@ fn silent_ports_stay_within_the_budget() {
     );
 }
 
-// Proves: CL-044-15; TC-044-020 (f). The reservation is a real lock that stays held.
+// The reservation is a real lock that stays held.
+// Proves: TC-044-020
 #[cfg(windows)]
 #[test]
 fn the_reservation_lock_stays_held_and_is_per_port() {

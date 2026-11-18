@@ -201,7 +201,7 @@ fn cancelled() -> Station {
 }
 
 // ----------------------------------------------------------------
-// Proves: CL-111-03; TC-111-001 (a). The partner works another station on my Tx frequency:
+// The partner works another station on my Tx frequency:
 // off, cause partnerWorksOther, the QSO state kept.
 #[test]
 fn tc_111_001_a_partner_works_another_station_stops_and_keeps_the_qso() {
@@ -214,7 +214,7 @@ fn tc_111_001_a_partner_works_another_station_stops_and_keeps_the_qso() {
     assert_eq!(dx(&s).as_deref(), Some("K1ABC"));
 }
 
-// Proves: CL-111-03; TC-111-001 (d). After each stop that keeps the QSO state nothing is sent in
+// After each stop that keeps the QSO state nothing is sent in
 // three own periods; Reply on the partner's row then transmits again, the same contact.
 #[test]
 fn tc_111_001_d_a_kept_qso_is_silent_until_reply_on_the_partners_row_continues_it() {
@@ -248,7 +248,8 @@ fn tc_111_001_d_a_kept_qso_is_silent_until_reply_on_the_partners_row_continues_i
 }
 
 // ---------------------------------------------------------------- TC-111-002
-// Proves: CL-111-01; TC-111-002 (the commands and the partner message; the reload, the
+// (the commands and the partner message; the reload, the
+// Proves: TC-111-002
 // reconnect and the repeated command_id are station cases). What is not a start never switches
 // the state on: zero requests over three own periods, state and cause unchanged.
 #[test]
@@ -385,7 +386,7 @@ fn refused(s: &mut Station, command: Command, code: &'static str, label: &str) {
     }
 }
 
-// Proves: CL-111-02; TC-111-003 (the column reply).
+// (the column reply).
 #[test]
 fn tc_111_003_reply_in_each_state() {
     for state in &STATES {
@@ -413,7 +414,7 @@ fn tc_111_003_reply_in_each_state() {
     }
 }
 
-// Proves: CL-111-02, CL-111-05; TC-111-003 (the column call_cq).
+// (the column call_cq).
 #[test]
 fn tc_111_003_call_cq_in_each_state() {
     for state in &STATES {
@@ -440,7 +441,7 @@ fn tc_111_003_call_cq_in_each_state() {
     }
 }
 
-// Proves: CL-111-02; TC-111-003 (the column call_dx).
+// (the column call_dx).
 #[test]
 fn tc_111_003_call_dx_in_each_state() {
     for state in &STATES {
@@ -479,7 +480,7 @@ fn tc_111_003_call_dx_in_each_state() {
     }
 }
 
-// Proves: CL-111-02, CL-111-05; TC-111-003 (the column send_next).
+// (the column send_next).
 #[test]
 fn tc_111_003_send_next_in_each_state() {
     for state in &STATES {
@@ -511,7 +512,7 @@ fn tc_111_003_send_next_in_each_state() {
     }
 }
 
-// Proves: CL-111-02, CL-111-08; TC-111-003 (the column reset_repetitions).
+// (the column reset_repetitions).
 #[test]
 fn tc_111_003_reset_repetitions_in_each_state() {
     for state in &STATES {
@@ -541,7 +542,8 @@ fn own_cq_radio_lost() -> Station {
     s
 }
 
-// Proves: CL-111-02; TC-111-003 (call_cq on an own CQ kept off). With the radio back the same CQ
+// (call_cq on an own CQ kept off). With the radio back the same CQ
+// Proves: TC-111-003
 // goes on (cause operator) and is sent in the next own period; with the radio still away it is
 // refused with the reason and nothing changes.
 #[test]
@@ -564,7 +566,7 @@ fn tc_111_003_call_cq_on_an_own_cq_kept_off() {
     assert_eq!(s.state(), (State::Calling, Slot::Tx6));
 }
 
-// Proves: CL-111-02; TC-111-003 (further negatives). A stale safety revision is stale_revision
+// (further negatives). A stale safety revision is stale_revision
 // and nothing is prepared; a Hound's call_cq is no_contact.
 #[test]
 fn tc_111_003_a_stale_safety_revision_prepares_nothing_and_a_hound_calls_no_cq() {
@@ -611,7 +613,7 @@ fn tc_111_003_a_stale_safety_revision_prepares_nothing_and_a_hound_calls_no_cq()
 }
 
 // ----------------------------------------------------------------
-// Proves: CL-111-05; TC-111-006. A start never becomes a CQ: send_next and reset_repetitions on
+// A start never becomes a CQ: send_next and reset_repetitions on
 // a completed and a cancelled QSO and with no contact are no_contact and nothing is sent in
 // three own periods; reply and call_dx after a completed QSO call their own partner; only
 // call_cq calls CQ.
@@ -662,7 +664,7 @@ fn roger_report() -> Station {
     s
 }
 
-// Proves: CL-111-03; TC-111-009 (a), (b) at the engine (the station band, whether the selection
+// at the engine (the station band, whether the selection
 // or the radio's dial moved it), (c), (d), (e). A band change stops and cancels.
 #[test]
 fn tc_111_009_a_band_change_stops_and_cancels() {
@@ -727,7 +729,8 @@ fn last_key(s: &Station) -> Option<bool> {
     s.fake.0.keys.lock().unwrap().last().map(|k| k.1)
 }
 
-// Proves: CL-111-06; TC-111-010 (a) to (e). Tune is accepted whatever the transmit state and
+// to (e). Tune is accepted whatever the transmit state and
+// Proves: TC-111-010
 // never changes it.
 #[test]
 fn tc_111_010_tune_is_independent_of_the_transmit_state() {
@@ -827,7 +830,7 @@ fn automatic_tune_refused(s: &mut Station, label: &str) {
     assert_eq!(facts(s), before, "{label}: nothing changes");
 }
 
-// Proves: CL-111-06, CL-044-14; TC-111-010 (g). Tune on from an MCP principal is refused
+// Tune on from an MCP principal is refused
 // tx_watchdog at boot before any browser action, after a clear fault and after a repetition-limit
 // stop; after a browser action it keys.
 #[test]
@@ -861,7 +864,8 @@ fn owner_fault(s: &mut Station) {
     s.step(&[]);
 }
 
-// Proves: CL-111-07; TC-111-011 (the transmit owner refuses to arm). call_cq, send_next and
+// (the transmit owner refuses to arm). call_cq, send_next and
+// Proves: TC-111-011
 // reset_repetitions are refused with the reason and change nothing.
 #[test]
 fn tc_111_011_a_start_the_transmit_owner_cannot_arm_is_refused() {
@@ -913,7 +917,8 @@ fn on_under_tune() -> Station {
     s
 }
 
-// Proves: CL-111-07, CL-111-08; TC-111-011 (Reset while the state is on). While transmission is
+// (Reset while the state is on). While transmission is
+// Proves: TC-111-011
 // not possible reset_repetitions is refused with the reason and the count stays: Tune on is
 // busy, a PTT switch left indeterminate is transmit_unavailable.
 #[test]
@@ -944,7 +949,8 @@ fn tc_111_011_reset_while_on_but_unable_to_transmit_is_refused() {
         );
     }
 }
-// Proves: CL-111-07; TC-111-011 (the engine and the transmit view; the operating view shows the
+// (the engine and the transmit view; the operating view shows the
+// Proves: TC-111-011
 // reason in the browser slice). A start that cannot transmit.
 #[test]
 fn tc_111_011_a_start_that_cannot_transmit_prepares_and_stays_off() {
@@ -1031,7 +1037,8 @@ fn count_of(s: &Station, text: &str) -> usize {
     s.sent.iter().filter(|(_, t)| t == text).count()
 }
 
-// Proves: CL-111-08; TC-111-012 (a), (b). Limit 2. Reset while the state is on starts the count
+// Limit 2. Reset while the state is on starts the count
+// Proves: TC-111-012
 // anew; after the limit's stop it starts the count anew and sends the message due next.
 #[test]
 fn tc_111_012_reset_starts_the_count_anew_and_continues_after_the_limit() {
@@ -1070,7 +1077,7 @@ fn tc_111_012_reset_starts_the_count_anew_and_continues_after_the_limit() {
     assert_eq!(s.core.view().tx_remaining_calls, 1);
 }
 
-// Proves: CL-111-08; TC-111-012 (c) to (f). Where Reset is refused.
+// to (f). Where Reset is refused.
 #[test]
 fn tc_111_012_where_reset_is_refused() {
     // (c) a kept QSO after Halt, after the radio was lost and after a refused transmission.
@@ -1174,7 +1181,7 @@ fn to_the_limit(s: &mut Station) {
     assert_eq!(cause(s), DisarmCause::TxWatchdog);
 }
 
-// Proves: CL-111-03; TC-111-013 (stop against start). In one station step any stop wins over
+// (stop against start). In one station step any stop wins over
 // any start.
 #[test]
 fn tc_111_013_a_stop_wins_over_a_start_in_one_step() {
@@ -1218,7 +1225,8 @@ fn tc_111_013_a_stop_wins_over_a_start_in_one_step() {
     assert!(s.armed());
 }
 
-// Proves: CL-111-03; TC-111-013 (two stops in one step). The shown cause is the first of the
+// (two stops in one step). The shown cause is the first of the
+// Proves: TC-111-013
 // order of CL-111-03, whichever stop arrived first.
 #[test]
 fn tc_111_013_of_two_stops_in_one_step_the_first_of_the_order_is_shown() {
@@ -1316,7 +1324,7 @@ fn stops_at(s: &mut Station, at: i64, label: &str) {
     );
 }
 
-// Proves: CL-111-10; TC-111-016. While the Hound still calls with Tx1 the state goes off 300 s
+// While the Hound still calls with Tx1 the state goes off 300 s
 // after the last accepted start; every accepted start restarts the 300 s, Reset does not.
 #[test]
 fn tc_111_016_the_hound_stops_300_s_after_its_last_start() {

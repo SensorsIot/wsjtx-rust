@@ -118,7 +118,8 @@ impl Recording {
     }
 }
 
-// Proves: CL-061-04; TC-061-005. The noted Tx period 12:00:15 gets no decode attempt and a
+// The noted Tx period 12:00:15 gets no decode attempt and a
+// Proves: TC-061-005
 // transmitted view; the receive period after it is decoded as before.
 #[test]
 fn tx_period_has_no_decode_attempt_and_publishes_a_transmitted_view() {
@@ -185,7 +186,8 @@ fn tx_period_has_no_decode_attempt_and_publishes_a_transmitted_view() {
     assert_eq!(page["latest_decode"], *next);
 }
 
-// Proves: CL-061-04, CL-039-09; TC-061-005. No Rx level while on the air or in the rest of a Tx
+// No Rx level while on the air or in the rest of a Tx
+// Proves: TC-061-005
 // period; Tx rows are marked; the next receive period measures again. Capture is never stopped.
 // Neither Tx period is kept in the per-period waterfall power (#66).
 #[test]
@@ -278,7 +280,8 @@ fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
     assert_eq!(s["audio"]["loss_epochs"], 0, "capture is never restarted");
 }
 
-// Proves: CL-061-04; TC-061-005. The actual transmit owner (frozen-clock hardware double, no
+// The actual transmit owner (frozen-clock hardware double, no
+// Proves: TC-061-005
 // radio) puts the station on the air with Tune: the Rx level is unavailable at once, the live
 // worker resets its measurement and marks the block's period, and the period start on the
 // mode's grid (FT8 15 s, FT4 7.5 s) stays a Tx period after the release.

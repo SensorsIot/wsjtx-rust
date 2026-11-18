@@ -28,7 +28,7 @@ function riff(bytes){
   const fmt=chunks['fmt '].at;
   return {format:bytes.readUInt16LE(fmt),channels:bytes.readUInt16LE(fmt+2),rate:bytes.readUInt32LE(fmt+4),bits:bytes.readUInt16LE(fmt+14),data:chunks.data.size};
 }
-// Proves: CL-006-01, CL-006-02; TC-018-001
+// Proves: TC-018-001
 test('TC-018-001 all 22 FT8 and 3 FT4 originals match provenance and fit the PCM capability',{timeout:10000},async()=>{
   const {execFileSync}=require('node:child_process');
   const common=path.resolve(execFileSync('git',['rev-parse','--git-common-dir'],{encoding:'utf8',windowsHide:true}).trim());

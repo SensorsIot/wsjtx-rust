@@ -1024,7 +1024,7 @@ impl Lifecycle {
 #[cfg(test)]
 mod trigger_tests {
     use super::*;
-    // Proves: CL-008-02/03; TC-002-001 (#38). Every capture-thread loss event names its own
+    // (#38). Every capture-thread loss event names its own
     // epoch trigger (pool, contention and clock-step losses have no public injection path).
     #[test]
     fn each_loss_event_names_its_epoch_trigger() {

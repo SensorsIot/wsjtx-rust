@@ -158,7 +158,7 @@ impl Drop for Input {
     }
 }
 
-// Proves: CL-008-07; TC-009-005 cases1..7. This is a mandatory cost2 release
+// cases1..7. This is a mandatory cost2 release
 // fixture, with actual native queue timing, Rust modem, typed actor, TLS and browsers.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_selection_tls_thin_and_off() {
@@ -376,13 +376,13 @@ async fn live_native_selection_tls_thin_and_off() {
     assert!(released);
 }
 
-// Proves: CL-022-03; TC-022-009. Confirmation alone has zero native effects.
+// Confirmation alone has zero native effects.
 #[tokio::test]
 async fn live_native_selection_commission_has_zero_native_effects() {
     crate::auth_tests::commission_zero_native_io_case().await;
 }
 
-// Proves: CL-010-15; TC-009-005 case7 (#10). What selection.state carries and when: the top-level
+// case7 (#10). What selection.state carries and when: the top-level
 // fields that changed, the radio facts' new dates alone at most every 2 s on Detailed and every
 // 30 s below it, a new value at once.
 #[test]
@@ -434,7 +434,7 @@ fn selection_state_paces_only_new_dates_of_the_radio_facts() {
     );
 }
 
-// Proves: CL-010-15; TC-009-005 case7 (#10). The largest valid snapshot reaches the peer through the
+// case7 (#10). The largest valid snapshot reaches the peer through the
 // 2048 B optional write, which would never send a larger event. Hand-built at every field's maximum.
 #[test]
 fn selection_state_of_the_largest_snapshot_passes_the_optional_write() {

@@ -52,7 +52,7 @@ fn stop(r: &Recording) {
     .unwrap();
 }
 
-// Proves: CL-045-01; TC-045-001. Start (direct and band selection) persists mode, band and audio
+// Start (direct and band selection) persists mode, band and audio
 // input next to profile.json; Monitor-off persists; operator Stop clears the choice.
 #[test]
 fn startup_choice_round_trips_and_stop_clears() {
@@ -110,7 +110,7 @@ fn startup_choice_round_trips_and_stop_clears() {
     assert_eq!(dir.open().startup_view()["last_receive"], Value::Null);
 }
 
-// Proves: CL-045-01; TC-045-001. A foreign, malformed, oversize or out-of-domain file resumes
+// A foreign, malformed, oversize or out-of-domain file resumes
 // nothing, reads as the defaults and is reported, never trusted.
 #[test]
 fn startup_file_invalid_or_foreign_is_ignored() {
@@ -148,7 +148,8 @@ fn startup_file_invalid_or_foreign_is_ignored() {
     }
 }
 
-// Proves: CL-045-02; TC-045-001. The stored FT4 20 m choice restarts as the band button would:
+// The stored FT4 20 m choice restarts as the band button would:
+// Proves: TC-045-001
 // FT4 receive on the profile's audio input, nominal dial 14 080 000 Hz (canonical
 // FT4 20 m preferred frequency), with no operator request.
 #[test]
@@ -169,7 +170,7 @@ fn startup_resume_starts_stored_band_and_mode() {
     assert_eq!(receive["audio"]["device_id"], "profile-input");
 }
 
-// Proves: CL-045-02; TC-045-001. Monitor off at startup, a stopped receive (nothing stored) and an
+// Monitor off at startup, a stopped receive (nothing stored) and an
 // operator start that came first each leave the resume without effect.
 #[test]
 fn startup_resume_off_or_stopped_stays_off() {
@@ -212,7 +213,8 @@ fn startup_resume_off_or_stopped_stays_off() {
     assert_eq!(receive["job"]["mode"], "ft8");
 }
 
-// Proves: CL-045-02; TC-045-001. Transient refusals while CAT comes up (radio not yet
+// Transient refusals while CAT comes up (radio not yet
+// Proves: TC-045-001
 // ready, the actor's poll holding its lease, a connection change between preflights)
 // are retried within the wait: the resume still selects the stored band.
 #[test]
@@ -232,7 +234,8 @@ fn startup_resume_retries_transient_selection_refusals() {
     assert_eq!(r.receive_snapshot()["job"]["state"], "running");
 }
 
-// Proves: CL-045-02; TC-045-001. Configured CAT that never becomes ready within the wait still
+// Configured CAT that never becomes ready within the wait still
+// Proves: TC-045-001
 // resumes receive on the stored mode (untuned), and keeps the stored band.
 #[test]
 fn startup_resume_cat_unavailable_falls_back_to_plain_receive() {
@@ -255,7 +258,7 @@ fn startup_resume_cat_unavailable_falls_back_to_plain_receive() {
     assert_eq!(dir.file()["last_receive"]["band"], "40m");
 }
 
-// Proves: CL-045-01; TC-045-001. GET/POST /receive/startup through the station router, with the
+// GET/POST /receive/startup through the station router, with the
 // station's refusal codes and no change on a refused request.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn startup_http_view_and_monitor_off_update() {
@@ -312,7 +315,8 @@ async fn startup_http_view_and_monitor_off_update() {
     let _ = fs::remove_dir_all(&f.dir);
 }
 
-// Proves: CL-045-03; TC-045-001. A resume on a transmit-capable station (CAT PTT configured) leaves
+// A resume on a transmit-capable station (CAT PTT configured) leaves
+// Proves: TC-045-001
 // the transmit owner disarmed and never exchanges PTT.
 #[test]
 fn startup_resume_never_arms_or_keys() {

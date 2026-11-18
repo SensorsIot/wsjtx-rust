@@ -726,7 +726,7 @@ fn tc_097_004_off_the_strategy_bands_nothing_is_ranked() {
     );
 }
 
-// Proves: TC-097-018 (CL-097-04, the run waits with reason band). "Test calls" with bands ["20m",
+// (CL-097-04, the run waits with reason band). "Test calls" with bands ["20m",
 // "40m"], Auto on:
 // on 15m with CQ K1ABC published the run waits with reason band and arms nothing; after the retune
 // to 20m it selects K1ABC from the next publication; the retune to 17m in that contact disarms and
@@ -1064,7 +1064,7 @@ fn tc_097_006_country_state_and_cq_target_lists() {
     assert_eq!(w7.why, "not new");
 }
 
-// Proves: TC-097-018 (CL-097-04: the run's own select_row of CQ POTA under POTA/SOTA passes the
+// (CL-097-04: the run's own select_row of CQ POTA under POTA/SOTA passes the
 // directed-CQ check; selected, armed and its Tx1 keyed).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_006_the_pota_sota_run_selects_and_arms_cq_pota() {
@@ -1089,7 +1089,7 @@ async fn tc_097_006_the_pota_sota_run_selects_and_arms_cq_pota() {
     );
 }
 
-// Proves: TC-097-018 (CL-097-04, DirectedCqRule: the include list admits only the run's own
+// (CL-097-04, DirectedCqRule: the include list admits only the run's own
 // select_row). With POTA/SOTA active (Auto off) the operator's double-click of CQ POTA
 // K1ABC still gets the directive warning (409 directive_not_answerable) and an MCP select_row of it
 // is refused directive_not_answerable; a run of "Test calls" (no POTA on its include list) never
@@ -1134,7 +1134,7 @@ async fn tc_097_006_only_the_runs_own_select_row_passes_the_directive() {
     assert_eq!(contact(&f).await.0, Value::Null, "never selected (grey)");
 }
 
-// Proves: TC-097-018 (CL-097-04, the run answers only callers that pass the filters; oracle: the
+// (CL-097-04, the run answers only callers that pass the filters; oracle: the
 // operator's decision 2 on #97). A
 // duplicate of Casual (call per band, not worked, callers_first on, min SNR -10 dB): W1AW, worked
 // on 20m, calling my call is never answered by the run; N1NEW calling my call is; in a QSO with
@@ -1368,7 +1368,8 @@ async fn calls(
     seen
 }
 
-// Proves: TC-097-009 (a) (CL-097-04, hand-worked from WstxStrategy::LeaveRule calls). A spot of my
+// (CL-097-04, hand-worked from WstxStrategy::LeaveRule calls). A spot of my
+// Proves: TC-097-009
 // call at K1ABC 598 s old: heard, so the leaving is at 8 (remaining 8 - k after the first 4 calls);
 // 3 s later the spot is older than 600 s and the 5th call leaves at 4 {K1ABC, repetitions}.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1386,7 +1387,8 @@ async fn tc_097_009_a_the_spot_ageing_past_600_s_brings_the_leaving_back_to_call
     assert_eq!(run_of(f).await["left"], left_for("K1ABC", "repetitions"));
 }
 
-// Proves: TC-097-009 (b) (CL-097-04, LeaveRule until_logged, gone_minutes 10). K1ABC calling CQ
+// (CL-097-04, LeaveRule until_logged, gone_minutes 10). K1ABC calling CQ
+// Proves: TC-097-009
 // every period for 30 minutes (60 publications) is never left. K1ABC last decoded at t0 (= e), then
 // silent: the publication at t0 + 9 min 45 s (my parity) leaves nothing, the one at t0 + 10 min
 // (his) leaves {K1ABC, gone}. His answer -05 at t0 + 30 s, then silent: not left at t0 + 10 min
@@ -1427,7 +1429,8 @@ async fn tc_097_009_b_until_logged_leaves_only_when_gone_10_minutes() {
     assert_eq!(run_of(f).await["left"], left_for("K1ABC", "gone"));
 }
 
-// Proves: TC-097-009 (c) (CL-097-04, LeaveRule contest {tx_changes 2}, TxMoveRule). Silent with no
+// (CL-097-04, LeaveRule contest {tx_changes 2}, TxMoveRule). Silent with no
+// Proves: TC-097-009
 // spot (no_reports, k 2): Tx moves after the 2nd and the 4th call, left {tx_changes} at the 6th.
 // Calling CQ with a spot and nothing more valuable: stays 20 periods. A more valuable station
 // (+5 dB under order [snr]) from the 3rd period: heard 0 never moves, left at the 5th; heard 1
@@ -1484,7 +1487,8 @@ async fn tc_097_009_c_contest_style_change_points_and_the_stay() {
     assert_eq!(run_of(f).await["left"], left_for("K1ABC", "tx_changes"));
 }
 
-// Proves: TC-097-009 (d), (e) (CL-097-04, LeaveRule and the retry pause). (d) His answer after the
+// (CL-097-04, LeaveRule and the retry pause). (d) His answer after the
+// Proves: TC-097-009
 // 3rd call brings the count back (remaining 4). (e) retry_minutes 10: after the leaving at the 4th,
 // K1ABC's call to my call at 5 min is not answered, his CQ at 9 min 59 s not selected, at 10 min
 // selected.
@@ -1516,7 +1520,7 @@ async fn tc_097_009_d_e_an_answer_resets_and_the_retry_pause() {
     assert_eq!(contact(f).await.0, json!("K1ABC"), "selected at 10 min");
 }
 
-// Proves: TC-097-009 (f) (CL-097-04: unattended no stay, the stop at N). No client for 60 s, Tx
+// (CL-097-04: unattended no stay, the stop at N). No client for 60 s, Tx
 // watchdog 6, K1ABC calling CQ every period with a spot of my call: until_logged and contest both
 // key 6 calls and the Tx watchdog stops the 7th; the run stops no_client (calls: TC-039-033).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1553,7 +1557,7 @@ async fn tc_097_009_f_unattended_until_logged_and_contest_end_at_the_stop_at_n()
     }
 }
 
-// Proves: TC-097-009 (g) (CL-097-04, the caller exception). In each mode a new caller of my call at
+// (CL-097-04, the caller exception). In each mode a new caller of my call at
 // the 2nd call: left {K1ABC, caller} and N1NEW selected from the same publication.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_009_g_a_caller_is_answered_at_once_in_each_mode() {
@@ -1578,7 +1582,8 @@ async fn tc_097_009_g_a_caller_is_answered_at_once_in_each_mode() {
     }
 }
 
-// Proves: TC-097-013 (g) (CL-097-04, WstxQsoControl::ContactSnapshot and Transmit's watchdog):
+// (CL-097-04, WstxQsoControl::ContactSnapshot and Transmit's watchdog):
+// Proves: TC-097-013
 // GET /transmit watchdog.tx_remaining_calls is null in the attended run's own contact, the Tx
 // watchdog's integer once the run is unattended (no client for 60 s) and in a manual contact (the
 // operator's double-click of CQ K1ABC, no run).
@@ -1644,7 +1649,8 @@ async fn moved_at(
     seen
 }
 
-// Proves: TC-097-010 (CL-097-05, the run steps, hand-worked from WstxStrategy::TxMoveRule and
+// (CL-097-05, the run steps, hand-worked from WstxStrategy::TxMoveRule and
+// Proves: TC-097-010
 // HearingFeed "He reports"). The PSK case of slot_check: K1ABC's report of another sender 120 s and
 // 599 s old is not_heard; none (the only report 601 s old is outside the window) is no_reports;
 // slot_check carries case, hears_us, moved and hz. k per case over 6 calls: {0, 0, 0} never moves;
@@ -1803,7 +1809,6 @@ fn tc_097_010_auto_slot_from_500_hz_upper_edge_ties_and_the_move_rule() {
     assert!((500..=2650).contains(&m.hz), "{}", m.hz);
 }
 
-// Proves: TC-097-017
 #[test]
 fn tc_097_017_the_split_clearance_table() {
     use crate::freeslot::split_clear;
@@ -1841,7 +1846,8 @@ fn leave_of(remaining: u64, busy: bool, paused: u64) -> Value {
     json!({"mode":"calls","remaining":remaining,"busy":busy,"paused":paused,"staying":false})
 }
 
-// Proves: TC-097-011 (a), (c), (e) (CL-097-06, hand-worked from WstxStrategy::BusyPause). KE1J's
+// (CL-097-06, hand-worked from WstxStrategy::BusyPause). KE1J's
+// Proves: TC-097-011
 // report to W9XYZ for two of his periods: leave.busy true, paused 1 and 2, remaining stays 4; his
 // RR73 ends it and the next call counts (remaining 3), his CQ the next (2). (c) three publications
 // without his decode after the report stay paused (busy holds). (e) his report to my call resets
@@ -1875,7 +1881,7 @@ async fn tc_097_011_a_busy_target_pauses_the_runs_count() {
     );
 }
 
-// Proves: TC-097-011 (d), (b) (CL-097-06). (d) Tx watchdog 3: KE1J busy for 5 publications, 3
+// (CL-097-06). (d) Tx watchdog 3: KE1J busy for 5 publications, 3
 // paused calls, the 4th and 5th count (remaining 3, 2). (b) his R-report to W9XYZ at 1510 Hz moves
 // Tx to 1410 (the nearest candidate 100 Hz from 1510, FT8), Rx stays 1800, Enable Tx stays on.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1906,7 +1912,7 @@ async fn tc_097_011_d_at_most_n_paused_calls_and_the_split_move() {
     assert_eq!(contact(f).await.2, json!("armed"));
 }
 
-// Proves: TC-097-011 (f) (CL-097-06, busy_pause off). The busy calls count and KE1J is left at the
+// (CL-097-06, busy_pause off). The busy calls count and KE1J is left at the
 // 4th; his R-report to W9XYZ at 1510 Hz disarms as partnerWorksOther does (within 50 Hz of Tx).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_011_f_busy_pause_off_counts_and_keeps_the_wsjtx_stop() {
@@ -1928,7 +1934,8 @@ async fn tc_097_011_f_busy_pause_off_counts_and_keeps_the_wsjtx_stop() {
     assert_eq!(frequencies(f).await.1, json!(1500), "no split move");
 }
 
-// Proves: TC-097-011 (h) (CL-097-06, hand-worked from WstxOperatingChain::BusyPartner). KE1J's grid to
+// (CL-097-06, hand-worked from WstxOperatingChain::BusyPartner). KE1J's grid to
+// Proves: TC-097-011
 // W9XYZ starts busy (leave.busy true, paused 1, remaining stays 4); his 73 to W9XYZ ends it and
 // that publication's call counts (busy false, remaining 3). Red on the parent: a grid to another
 // call is no busy start (the call counts, remaining 3, busy false).
@@ -1943,7 +1950,7 @@ async fn tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it() {
     assert_eq!(contact(f).await.2, json!("armed"));
 }
 
-// Proves: TC-097-011 (g) (CL-097-06: "unattended there is no pause"; WstxOperatingChain::BusyPartner: the
+// (CL-097-06: "unattended there is no pause"; WstxOperatingChain::BusyPartner: the
 // split move applies to every contact that pauses, also while it is not pausing). No client for
 // 60 s, busy_pause on, Tx watchdog 3: KE1J's R-report to W9XYZ at 1510 Hz moves Tx to 1410 (Rx
 // stays 1800, Enable Tx on); the calls while he is busy count (WD 1, 0 after the 2nd and 3rd
@@ -1990,7 +1997,8 @@ async fn tc_097_011_g_unattended_the_busy_calls_count_and_tx_still_moves() {
     assert_eq!(quiet_run(f), ("stopped".into(), json!("no_client")));
 }
 
-// Proves: TC-097-015, TC-097-018 (CL-097-07 refusals; CL-097-04 the contest strategy's run;
+// (CL-097-07 refusals; CL-097-04 the contest strategy's run;
+// Proves: TC-097-015
 // hand-worked from WstxStrategies::ContestTable, WstxStrategies::BuiltinStrategies
 // and WstxLeave::LeaveRule). WW Digi on 20m, the period in force, W1DUP a dupe in the log, Auto on. The
 // built-in "WW Digi" (cq_when_idle on): no CQ after one empty publication, the CQ after the second;
@@ -2092,7 +2100,8 @@ async fn tc_097_015_the_contest_built_in_and_a_saved_contest_strategy_run() {
     );
 }
 
-// Proves: TC-097-011 (i) (CL-097-06, hand-worked from WstxOperatingChain::BusyPartner and the #97
+// (CL-097-06, hand-worked from WstxOperatingChain::BusyPartner and the #97
+// Proves: TC-097-011
 // coordinator default for a free text). KE1J's report to W9XYZ starts busy (paused 1); his report
 // to K2ABC keeps it (busy_with K2ABC, paused 2, remaining stays 4) and Tx stays 1500 (no TxMoveRule
 // move while busy, although tx_move_every no_reports 1 moves at every counted call); his free text

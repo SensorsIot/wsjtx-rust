@@ -1,4 +1,4 @@
-// Proves: CL-081-01; TC-081-001..005 (#81, each test names its case below). A started QSO is finished
+// (#81, each test names its case below). A started QSO is finished
 // whatever ends the run (WstxAutoMode::StartedQsoRule). Oracle: the operator's rule
 // ("Auto only starts"; a QSO is started once he has sent a message to my call and our transmission to
 // him has started), the standard sequence of WstxStandardQso::SequenceRule (Tx1, R-report, 73 after his
@@ -149,7 +149,8 @@ async fn new_calls_answered(limit: Option<u64>) -> Station81 {
     t
 }
 
-// Proves: CL-081-01; TC-081-001, the reproduction. Auto off after K1ABC's report: Auto off at once
+// the reproduction. Auto off after K1ABC's report: Auto off at once
+// Proves: TC-081-001
 // (one strategy.state) and the run stopped, reason stopped; Enable Tx stays on, our R-report goes out
 // in the next own period and 73 after his RR73; the contact completes with Enable Tx off and logs
 // itself once; afterwards nothing is armed, selected or keyed for DL1XYZ's CQ or W1AW's calls. Red
@@ -219,7 +220,8 @@ async fn w1aw_answered(f: &Mcp, e: i64) {
     assert_eq!(run_of(f).await["state"], "contact_active");
 }
 
-// Proves: CL-081-01; TC-081-002 (a). He called us and our reply is on the air: a started QSO. Auto off
+// He called us and our reply is on the air: a started QSO. Auto off
+// Proves: TC-081-002
 // 2 s into the period of our report to W1AW: the report's period ends normally (no abort, no halt),
 // then his R-05 is answered with RR73 and the contact completes and logs W1AW once. Red on the parent:
 // Enable Tx off and the contact cancelled at the Auto off.
@@ -257,7 +259,8 @@ async fn tc_081_002_a_reply_on_the_air_is_a_started_qso() {
     assert_eq!(logged(f, e), vec![qso("W1AW", "FN31")]);
 }
 
-// Proves: CL-081-01; TC-081-002 (b), (c), (d), regression guards (green on the parent). (b) He called
+// regression guards (green on the parent). (b) He called
+// Proves: TC-081-002
 // us and our reply is only armed: no started QSO; Auto off disarms and cancels at once, his further
 // calls are not answered, nothing is keyed or logged. (c) We called K1ABC's CQ and he has sent nothing
 // to my call: Auto off 2 s into our second Tx1 lets it finish its period, then nothing is keyed, the
@@ -324,7 +327,8 @@ async fn tc_081_002_b_c_d_no_started_qso_ends_at_once_and_its_period_on_the_air_
     );
 }
 
-// Proves: CL-081-01; TC-081-003 (a), (b), (h). None, another strategy with Auto on and Auto off twice
+// None, another strategy with Auto on and Auto off twice
+// Proves: TC-081-003
 // let the started QSO finish: (a) the run stopped, Auto off; (b) the old run stopped, Auto on, the new
 // run manual until the completion, then waiting, JA1XYZ (CQ during the QSO) selected only from a
 // publication after the completion; (h) the second Auto off changes no revision and no contact. Red
@@ -435,7 +439,8 @@ async fn contest_finished(f: &Mcp, own: i64, e: i64) {
     assert_eq!(logged(f, e), vec![qso("K1ABC", "FN42")]);
 }
 
-// Proves: CL-081-01; TC-081-003 (c), (d). A contest deselected in a started QSO: the run stopped, Auto
+// A contest deselected in a started QSO: the run stopped, Auto
+// Proves: TC-081-003
 // off, the QSO finished. The end of the contest period in a started QSO: the run manual while it
 // finishes, then waiting outside_period. Red on the parent: K1ABC disarmed and cancelled at the end.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -470,7 +475,7 @@ async fn tc_081_003_a_contest_deselected_or_its_period_end_finishes_the_qso() {
     );
 }
 
-// Proves: CL-081-01; TC-081-003 (e). Auto on ending a pounce in its started QSO: the pounce stopped,
+// Auto on ending a pounce in its started QSO: the pounce stopped,
 // the strategy run manual until the completion, then waiting. Red on the parent: K1ABC disarmed and
 // cancelled at the Auto on.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -496,7 +501,7 @@ async fn tc_081_003_auto_on_ending_a_pounce_finishes_its_qso() {
     assert_eq!(run_state(f).await, ("waiting".into(), Value::Null));
 }
 
-// Proves: CL-081-01; TC-081-003 (f), (g). An MCP policy run's AutomationCommand stop (run stopped
+// An MCP policy run's AutomationCommand stop (run stopped
 // stopped) and its time limit (max_run_minutes 1, the automation clock moved by the seam; stopped
 // time_limit) let its started QSO finish. Red on the parent: K1ABC disarmed at the end.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -567,7 +572,8 @@ async fn rules_ended(f: &Mcp, feed: &crate::pskr::Feed, slot_check: &Value, rema
     assert_eq!(feed.target(), None, "no subscription of K1ABC");
 }
 
-// Proves: CL-081-01; TC-081-004 (a), (b). The finishing QSO is bounded by the Tx watchdog (limit 2),
+// The finishing QSO is bounded by the Tx watchdog (limit 2),
+// Proves: TC-081-004
 // not by the run. (a) Auto off after our 1st R-report, his RR73 after our 2nd: the 2nd R-report goes
 // out (the limit not passed), then 73, completed, one log entry. (b) He repeats his report: the
 // R-report is keyed a 2nd time, never a 3rd; Enable Tx goes off with cause tx_watchdog, no halt,
@@ -620,7 +626,8 @@ async fn tc_081_004_a_b_the_finishing_qso_keeps_the_tx_watchdog_limit() {
     assert_eq!(logged(f, e), vec![]);
 }
 
-// Proves: CL-081-01; TC-081-004 (c). With Auto on the run's exemption sends the R-report a 3rd time
+// With Auto on the run's exemption sends the R-report a 3rd time
+// Proves: TC-081-004
 // (past the limit 2, StrategyWatchdog); after the Auto off it is not sent again: Enable Tx goes off
 // with cause tx_watchdog in the next due period. Red on the parent: the cause is the Auto off's
 // disarm, not the Tx watchdog.
@@ -660,7 +667,8 @@ async fn finishing() -> Station81 {
     t
 }
 
-// Proves: CL-081-01; TC-081-005 (a), (b), (c). What still ends a finishing QSO at once: (a) HALT 2 s
+// What still ends a finishing QSO at once: (a) HALT 2 s
+// Proves: TC-081-005
 // into our next R-report: the transmission stops and the contact is cancelled (the finishing guard),
 // nothing is keyed after it and nothing logged, also after his RR73; (b) Abort
 // QSO likewise, the contact cancelled, no halt; (c) a double-click of W1AW calling my call replaces
@@ -770,7 +778,8 @@ async fn ended_at_once(t: &Station81) {
     assert_eq!(logged(f, e), vec![]);
 }
 
-// Proves: CL-081-01; TC-081-005 (d), (e), (f). After the run's end the finishing guard still ends the
+// After the run's end the finishing guard still ends the
+// Proves: TC-081-005
 // QSO at once on (d) the radio's dial to 7.074 MHz, (e) the operating mode to FT4 and (f) the browser
 // grant revoked. Red on the parent: the QSO has already ended at the Auto off.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -800,7 +809,7 @@ async fn tc_081_005_band_mode_and_grant_end_a_finishing_qso_at_once() {
     ended_at_once(&t).await;
 }
 
-// Proves: CL-081-01; TC-081-005 (g). A safety edit after the run's end: Enable Tx off with cause
+// A safety edit after the run's end: Enable Tx off with cause
 // authority_changed in the transmit owner, and the finishing guard cancels the contact (the edit
 // makes the run's grant no longer current); nothing keyed after it and nothing logged. Red on the
 // parent: the QSO has already ended at the Auto off; red without the guard's grant check: the contact
@@ -851,7 +860,8 @@ async fn tc_081_005_g_a_safety_edit_ends_a_finishing_qso_at_once() {
     );
 }
 
-// Proves: CL-081-01; TC-081-005 (h), a regression guard (green on the parent). With Auto on and the run
+// a regression guard (green on the parent). With Auto on and the run
+// Proves: TC-081-005
 // still on, the run's own leaving ends a started QSO at once: K1ABC silent after his report for 4
 // repetitions (no spot) is left {K1ABC, repetitions} at the 4th, disarmed and cancelled, the run
 // waiting.

@@ -6,7 +6,7 @@ use ring::{
 };
 use tower::ServiceExt;
 
-// Proves: FR-021, FR-022; CL-005-03; TC-022-004. Independent cookie/header vectors.
+// Independent cookie/header vectors.
 #[test]
 fn profile_credentials_require_one_selected_cookie_across_all_header_fields() {
     let app = App {
@@ -351,7 +351,7 @@ Sec-WebSocket-Protocol: wstx.v1
     line.trim_end().to_owned()
 }
 
-// Proves: CL-022-02; TC-022-006. A current grant dispatches operating HTTP/WS
+// A current grant dispatches operating HTTP/WS
 // effects under the authority lock; foreign and revoked transports cannot.
 #[tokio::test]
 async fn http_auth_current_grant_dispatches_operating_mutations_revoked_or_foreign_cannot() {
@@ -457,7 +457,7 @@ async fn http_auth_current_grant_dispatches_operating_mutations_revoked_or_forei
     }
 }
 
-// Proves: CL-022-01, CL-007-05; TC-022-006, TC-004-004. A plaintext selected profile has no grant service
+// A plaintext selected profile has no grant service
 // and keeps the runtime-token contract for operating HTTP routes and WS.
 #[tokio::test]
 async fn plaintext_profile_operating_routes_and_ws_require_runtime_token() {
@@ -859,7 +859,7 @@ async fn http_auth_rotation_retains_ws_grant_but_committed_revoke_fences_it() {
     drop(context); // release the extra owned profile lock holder before fixture cleanup.
 }
 
-// Proves: CL-022-01; TC-022-004. The 10/60 setup budget counts session/bootstrap-scope/
+// The 10/60 setup budget counts session/bootstrap-scope/
 // enroll only; grant operations (challenge, status) neither spend nor are refused by it.
 #[tokio::test]
 async fn http_auth_setup_budget_counts_only_setup_calls() {
@@ -1236,7 +1236,7 @@ fn commission_body(g: &BrowserGrant, operation_id: &str) -> Value {
     json!({"version":1,"operation_id":operation_id,"scope":g.scope,"receive_only_confirmed":true})
 }
 
-// Proves: CL-022-02/03; TC-022-006. Literal persisted acknowledgement, not a status-only oracle.
+// Literal persisted acknowledgement, not a status-only oracle.
 #[tokio::test]
 async fn commission_http_commits_exact_disabled_configuration_and_retained_duplicate_is_read_only()
 {
@@ -1325,7 +1325,7 @@ async fn commission_http_commits_exact_disabled_configuration_and_retained_dupli
     );
 }
 
-// Proves: CL-022-02; TC-022-006. Each invalid request has an independent pristine fixture.
+// Each invalid request has an independent pristine fixture.
 #[tokio::test]
 async fn commission_http_strict_negatives_never_change_acknowledgement_or_files() {
     for case in [
@@ -1477,7 +1477,7 @@ async fn commission_http_strict_negatives_never_change_acknowledgement_or_files(
     );
 }
 
-// Proves: CL-022-02; only the original current owner/kind/scope can reconcile a retained ID.
+// only the original current owner/kind/scope can reconcile a retained ID.
 #[tokio::test]
 async fn commission_http_retained_id_cannot_rebind_owner_kind_or_new_safety_scope() {
     let f = HttpFixture::new("https://localhost:8080");
@@ -1626,7 +1626,7 @@ async fn commission_http_retained_id_cannot_rebind_owner_kind_or_new_safety_scop
     );
 }
 
-// Proves: CL-022-02; the real queued handler cannot acknowledge after a competing commit.
+// the real queued handler cannot acknowledge after a competing commit.
 #[tokio::test]
 async fn commission_http_revoke_or_safety_edit_wins_queued_acknowledgement_without_writes() {
     use std::{
@@ -1696,7 +1696,7 @@ async fn commission_http_revoke_or_safety_edit_wins_queued_acknowledgement_witho
     }
 }
 
-// Proves: CL-022-02. Both controls are valid individually; the mismatch is semantic corruption.
+// Both controls are valid individually; the mismatch is semantic corruption.
 #[tokio::test]
 async fn commission_http_corrupt_acknowledgement_watermark_is_rejected_on_save_and_reopen() {
     for field in ["commissioning", "checked_control"] {
@@ -1786,7 +1786,7 @@ impl HttpFixture {
     }
 }
 
-// Proves: CL-022-02; receipt-purpose proof recovers an ACK without reviving revoked control.
+// receipt-purpose proof recovers an ACK without reviving revoked control.
 #[tokio::test]
 async fn commission_http_read_only_receipt_survives_logout_without_mutation_replay() {
     let f = HttpFixture::new("https://localhost:8080");
@@ -1840,7 +1840,7 @@ async fn commission_http_read_only_receipt_survives_logout_without_mutation_repl
     );
 }
 
-// Proves: CL-022-02; the transaction and SAME production completion mapping, not Router admission.
+// the transaction and SAME production completion mapping, not Router admission.
 #[tokio::test]
 async fn commission_http_transaction_faults_never_ack_and_store_reopen_reads_only_committed_outcome()
  {
@@ -2026,7 +2026,7 @@ pub(crate) async fn commission_zero_native_io_case() {
     );
 }
 
-// Proves: CL-022-03, CL-022-04, CL-022-05; TC-022-009. Real grant/commissioning HTTP
+// Real grant/commissioning HTTP
 // flow with the independent scripted peer: automatic read-only CAT runs only under
 // a matching unrevoked grant plus durable commissioning, and is cancelled by
 // commissioning invalidation and last-grant revocation.
@@ -2092,7 +2092,7 @@ mod automatic_cat {
             .await;
         assert_eq!(reply.status, StatusCode::OK);
     }
-    // Proves: CL-044-15; TC-044-020 (b). The actual authorization owner: a commissioned
+    // The actual authorization owner: a commissioned
     // station moved to another radio needs the confirmation again.
     #[tokio::test]
     async fn discovery_moving_to_another_radio_requires_the_confirmation_again() {
@@ -2255,7 +2255,8 @@ mod automatic_cat {
         }
     }
 
-    // Proves: CL-022-02, CL-022-03; TC-022-009 (corrupt/unwritable store). A store
+    // (corrupt/unwritable store). A store
+    // Proves: TC-022-009
     // write that fails while CAT runs quarantines the authority: the lifecycle cancels
     // and releases the owner, and nothing reopens, queries or sets afterwards. Startup
     // with a corrupt or missing expected record refuses the profile before any owner
@@ -2409,7 +2410,7 @@ mod automatic_cat {
     }
 }
 
-// Proves: CL-024-01; TC-024-002 (#24 S1). A saved profile callsign becomes the station's
+// (#24 S1). A saved profile callsign becomes the station's
 // own call for HashResolution.
 #[tokio::test]
 async fn profile_save_sets_my_call_for_the_hash_table() {
@@ -2435,7 +2436,7 @@ async fn profile_save_sets_my_call_for_the_hash_table() {
     );
 }
 
-// Proves: CL-022-05; TC-022-008. The read-only status request is exactly {"version":1}:
+// The read-only status request is exactly {"version":1}:
 // extra, duplicate, missing or wrongly typed fields 400, wrong media 415, 1025 bytes 413
 // (1024 padded bytes accepted), a missing Origin 403, an unknown transport 401. None of them changes the
 // durable record or the current transport.

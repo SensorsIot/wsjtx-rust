@@ -7,7 +7,8 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const origin=process.env.WSTX_LATENCY_ORIGIN;
 
-// Proves: CL-057-01; TC-057-001 (#57) browser-side timeline of the Detailed Band Activity.
+// (#57) browser-side timeline of the Detailed Band Activity.
+// Proves: TC-057-001
 test('TC-057-001 busy live period painted in Band Activity (Detailed) timeline',{timeout:200000},async()=>{
   assert.ok(origin,'run through the Rust live busy-period test');
   const browser=await chromium.launch();

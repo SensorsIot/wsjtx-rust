@@ -11,7 +11,7 @@ fn calls() -> APriori {
     }
 }
 
-// Proves: FR-003, CL-007-03 (#56 slice 5). WSJT-X's naptypes per QSO state, lapcqonly, the
+// (#56 slice 5). WSJT-X's naptypes per QSO state, lapcqonly, the
 // MyCall/DxCall availability rules and the 50 Hz napwid (FT8: Rx or Tx, FT4: Rx only).
 #[test]
 fn a_priori_types_follow_the_wsjtx_state_table() {
@@ -93,7 +93,7 @@ fn a_priori_bits_are_the_packed_message_bits() {
     }
 }
 
-// Proves: CL-007-03 (#56 slice 5). WSJT-X's qual = 1 - (nharderrors + dmin)/60 >= 0.17.
+// (#56 slice 5). WSJT-X's qual = 1 - (nharderrors + dmin)/60 >= 0.17.
 #[test]
 fn low_confidence_boundary() {
     let word = [0u8; 174];

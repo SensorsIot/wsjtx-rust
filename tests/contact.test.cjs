@@ -3,10 +3,9 @@
 // candidate Router, contact engine and #9 transmit owner on a recording hardware double
 // (no audio, PTT or radio). Decoded rows are hand-authored and published through the
 // test-only control peer; expected values below are the independent TC tables.
-// Proves: CL-010-01, CL-010-02, CL-010-03, CL-010-06, CL-010-11, CL-010-14; TC-007-001,
 // TC-007-003, TC-007-004, TC-010-008, TC-010-009; CL-050-01, TC-050-001; CL-050-04, TC-050-004.
-// Proves: CL-055-02; TC-055-004 (DXCC column, approximate distance, QSO header).
-// Proves: CL-039-03; TC-039-002 (the directive warning).
+// (DXCC column, approximate distance, QSO header).
+// (the directive warning).
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
@@ -34,8 +33,9 @@ before(async()=>{
 after(async()=>{await browser?.close();});
 
 const evenNow=()=>Math.floor(Date.now()/30000)*30000;
-// Proves: CL-039-08, CL-050-05; TC-039-009, TC-050-005 (steps inside this test).
-test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',{timeout:90000},async()=>{
+// (steps inside this test).
+// Proves: TC-050-005
+test('TC-007-003 QSO pane candidates selection without transmit',{timeout:90000},async()=>{
   const period=evenNow();
   await publish(period,[
     {text:'CQ K1ABC FN42',hz:1234.6,snr:-12.4},{text:'CQ W1AA FN31',hz:1449.9,snr:-1},{text:'CQ W2BB FN31',hz:1450.0,snr:-2},
@@ -53,7 +53,7 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.doesNotMatch((await dxcc('CQ K1ABC FN42'))[2],/~/,'a message grid gives the exact distance');
   // #37 QsoPane, no contact (operator 2026-11-02): only the stations calling my call, on any
   // frequency; never the CQs near Rx or HB9BL.
-  // Proves: CL-050-05; TC-050-005 (Others).
+  // (Others).
   const others=async()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
   await waitFor(async()=>(await others()).length===1,async()=>`QSO pane ${JSON.stringify(await others())}`);
   const minus=String.fromCharCode(0x2212);
@@ -80,7 +80,7 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   const texts=await page.locator('#contact-messages .ct-text').evaluateAll(inputs=>inputs.map(i=>i.value));
   assert.deepEqual(texts,['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47']);
   assert.equal(await page.locator('input[name=contact-next][value=tx1]').isChecked(),true);
-  // Proves: CL-039-08; TC-039-009: Hold Tx is on with no explicit choice; the selection moves Rx only.
+  // Hold Tx is on with no explicit choice; the selection moves Rx only.
   assert.equal(await page.locator('#contact-hold').isChecked(),true);
   assert.equal(await page.locator('#contact-rx').inputValue(),'1235');assert.equal(await page.locator('#contact-tx').inputValue(),'1500');
   assert.equal(await page.locator('#contact-parity').inputValue(),'odd');
@@ -91,7 +91,7 @@ test('TC-007-003 QSO pane candidates and TC-007-001 selection without transmit',
   assert.deepEqual(page.errors,[]);
 });
 
-test('TC-007-001 double-click starts transmission, partner report advances to Tx3, Esc aborts the QSO (no halt) with a panel open',{timeout:90000},async()=>{
+test('double-click starts transmission, partner report advances to Tx3, Esc aborts the QSO (no halt) with a panel open',{timeout:90000},async()=>{
   // WstxQsoTransmit::StartRule: no Enable Tx control and no Reply button;
   // a double-click on the decoded row selects it again and arms.
   assert.equal(await page.locator('#contact-enable,#qso-reply').count(),0);
@@ -167,8 +167,7 @@ test('TC-007-001 double-click starts transmission, partner report advances to Tx
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: TC-039-002
-test('TC-039-002 a double-click on a CQ not for me warns and only the confirmation selects it',{timeout:60000},async()=>{
+test('a double-click on a CQ not for me warns and only the confirmation selects it',{timeout:60000},async()=>{
   await publish(evenNow(),[{text:'CQ NA W9XYZ EN52',hz:1650,snr:-3}]);
   const row=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ NA W9XYZ EN52'});
   await row.first().waitFor();
@@ -250,8 +249,8 @@ test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout
 });
 
 // #41 DirectLog: Log QSO logs at once on the actual server, without a review form.
-// Proves: CL-010-04; TC-011-001 (the browser Log QSO button).
-test('TC-007-004 manual DX entry and Log QSO log the contact at once without hiding Halt Tx',{timeout:30000},async()=>{
+// (the browser Log QSO button).
+test('manual DX entry and Log QSO log the contact at once without hiding Halt Tx',{timeout:30000},async()=>{
   if(!await page.locator('#qso-more').evaluate(el=>el.open))await page.locator('#qso-more summary').click();
   await page.locator('#dx-call').fill('dl1abc');await page.locator('#dx-grid').fill('JO62');await page.locator('#dx-grid').press('Enter');
   await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'DL1ABC'}).waitFor();
@@ -273,7 +272,7 @@ test('TC-007-004 manual DX entry and Log QSO log the contact at once without hid
 
 // Review finding P2-2: with the contact snapshot unavailable (GET /contact failing),
 // Alt+H still sends the #9 halt; only a station known to be receive-only skips it.
-test('TC-007-004 Alt+H halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
+test('Alt+H halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
   await page.route('**/contact',route=>route.abort('failed'));
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
@@ -291,7 +290,7 @@ test('TC-007-004 Alt+H halts even when the contact snapshot is unavailable',{tim
 });
 
 // Review decision 6 (OpenRegion) / #37 SettingsDrawer: a pointer action outside the drawer closes it.
-test('TC-007-002 a pointer action outside the Settings drawer returns to operation',{timeout:30000},async()=>{
+test('a pointer action outside the Settings drawer returns to operation',{timeout:30000},async()=>{
   if(await page.locator('#region-logbook').isVisible())await page.locator('#region-logbook .return-operate').click();
   await page.locator('#operating-workspace').waitFor({state:'visible'});
   await page.locator('#open-server-settings').click();
@@ -303,7 +302,7 @@ test('TC-007-002 a pointer action outside the Settings drawer returns to operati
 
 // Re-check item 2: the keyboard halt does not wait for contact.js (loaded after the first
 // state reads); one Alt+H sends exactly one halt before and after that load.
-test('TC-007-004 Alt+H halts once before and once after the contact client loads',{timeout:60000},async()=>{
+test('Alt+H halts once before and once after the contact client loads',{timeout:60000},async()=>{
   // Hold /contact.js so the first Esc happens deterministically before it loads.
   let release;const held=new Promise(r=>release=r);
   await page.route('**/contact.js',route=>held.then(()=>route.continue()).catch(()=>{}));
@@ -345,7 +344,7 @@ test('TC-055-004 RR73 sent as a grid square is no grid for the distance, in eith
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-050-04; TC-050-004 (b). #50 (operator 2026-11-02, US5WFL then YO3GNF;
+// #50 (operator 2026-11-02, US5WFL then YO3GNF;
 // TC2TR): as WSJT-X (handleDecodeSelection with quick_call), a double-click on another
 // station mid-QSO or during my CQ switches at once, without a confirmation, keeps Enable Tx
 // on, and the next own period calls the new station; Auto Seq then runs that QSO to its
@@ -376,7 +375,8 @@ async function completes(call,report){
 // contact, the #61 stale_revision path) and from-CQ (then (c) after the completed contact),
 // each on its own station and browser started by contact_browser_operating_flow, so that
 // their real-clock periods elapse concurrently (harness#28); every step and assertion is kept.
-// Proves: CL-010-15; TC-007-005 (#10 pushed transmit state, browser subset). The actual
+// (#10 pushed transmit state, browser subset). The actual
+// Proves: TC-007-005
 // station pushes transmit.state: all fields first, then what changed; the page reads no
 // GET /transmit and receives nothing while the view is unchanged.
 test('TC-007-005 transmit state is pushed: the event carries it, no GET /transmit',{timeout:60000},async()=>{
@@ -402,7 +402,8 @@ test('TC-007-005 transmit state is pushed: the event carries it, no GET /transmi
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-15; TC-007-005 (#10 pushed contact state, browser subset). Another client's change
+// (#10 pushed contact state, browser subset). Another client's change
+// Proves: TC-007-005
 // reaches this page in contact.state: only what changed, shown without a GET /contact.
 test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{timeout:60000},async()=>{
   const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='contact.state')frames.push({at:performance.now(),data:m.data});}catch{}}));
@@ -427,7 +428,8 @@ test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{t
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-15; TC-007-005 (#10 PushedStationState). An own contact command reads no GET /contact:
+// (#10 PushedStationState). An own contact command reads no GET /contact:
+// Proves: TC-007-005
 // the reply shows accepted or the refusal, contact.state carries the result, and two commands in a row
 // both pass (the second waits for the first one's revision). Expected values: the command semantics.
 test('TC-007-005 an own contact command reads no GET /contact; a refusal still shows its code',{timeout:60000},async()=>{
@@ -449,7 +451,8 @@ test('TC-007-005 an own contact command reads no GET /contact; a refusal still s
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-15; TC-007-005 (#10). The next command does not wait for the 1 s contact.state:
+// (#10). The next command does not wait for the 1 s contact.state:
+// Proves: TC-007-005
 // it goes with the receipt's revision as soon as the previous reply is in (a LAN fixture: well under 200 ms).
 test('TC-007-005 a command right after another goes at once with the receipt revision',{timeout:90000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
@@ -466,7 +469,8 @@ test('TC-007-005 a command right after another goes at once with the receipt rev
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-15; TC-007-005 (#10). A stale safety_revision is no contact revision: the client reads the
+// (#10). A stale safety_revision is no contact revision: the client reads the
+// Proves: TC-007-005
 // snapshot at once and the explicit CQ retries with the station's safety revision (expected well under 1 s).
 test('TC-007-005 a stale safety revision is read at once and the CQ retried',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot()&&!document.querySelector('#qso-cq').disabled);await new Promise(r=>setTimeout(r,1500));
@@ -483,7 +487,8 @@ test('TC-007-005 a stale safety revision is read at once and the CQ retried',{ti
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc during a stale-revision retry of a double-click goes at
+// (#10). Esc during a stale-revision retry of a double-click goes at
+// Proves: TC-007-005
 // once, and nothing the double-click queued (its retry, its Enable Tx) follows it.
 test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing follows it',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
@@ -506,7 +511,8 @@ test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing fo
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc while a Calling me reply's select_row is on its way:
+// (#10). Esc while a Calling me reply's select_row is on its way:
+// Proves: TC-007-005
 // the abort goes and no Enable Tx follows it.
 test('TC-007-005 Esc during a Calling me reply sends no Enable Tx after the abort',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
@@ -525,7 +531,8 @@ test('TC-007-005 Esc during a Calling me reply sends no Enable Tx after the abor
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-15; TC-007-005 (#10). CQ pressed while a row's select_row is still unanswered decides on the
+// (#10). CQ pressed while a row's select_row is still unanswered decides on the
+// Proves: TC-007-005
 // state after it: the running contact asks before it is abandoned, nothing is armed toward the row first.
 test('TC-007-005 CQ waits for an unanswered selection before it decides',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot()&&!document.querySelector('#qso-cq').disabled);await new Promise(r=>setTimeout(r,1500));
@@ -548,7 +555,8 @@ test('TC-007-005 CQ waits for an unanswered selection before it decides',{timeou
 
 const idleAgain=async()=>{const s=await snapshot();if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
   await waitFor(async()=>!['replying','calling','report','roger_report','rogers','signoff'].includes((await snapshot()).contact?.state)&&(await snapshot()).transmit.arm_state!=='armed','idle again',10000);};
-// Proves: CL-039-03, CL-010-15; TC-007-005 (#10). A row's selection waits for an unanswered command: after F4
+// (#10). A row's selection waits for an unanswered command: after F4
+// Proves: TC-007-005
 // clears the running contact, a directed CQ asks for confirmation as with no contact.
 test('TC-007-005 a row selection after an unanswered Clear DX decides on the cleared contact',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
@@ -567,7 +575,8 @@ test('TC-007-005 a row selection after an unanswered Clear DX decides on the cle
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-03, CL-010-15; TC-007-005 (#10). Esc during the Change contact of a Calling me line that the
+// (#10). Esc during the Change contact of a Calling me line that the
+// Proves: TC-007-005
 // station refused as contact_active (its selection went before the page showed the new contact): no Enable Tx follows.
 test('TC-007-005 Esc during a Calling me Change contact sends no Enable Tx after the abort',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
@@ -591,7 +600,8 @@ test('TC-007-005 Esc during a Calling me Change contact sends no Enable Tx after
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-15; TC-007-005. A read older than a pushed change does not replace it.
+// A read older than a pushed change does not replace it.
+// Proves: TC-007-005
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
   const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
   let release,fetched;const held=new Promise(r=>{release=r;}),read=new Promise(r=>{fetched=r;});
@@ -606,7 +616,8 @@ test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:6
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-010-15; TC-007-005. contact.js loads after the socket on a thin link: the socket's first
+// contact.js loads after the socket on a thin link: the socket's first
+// Proves: TC-007-005
 // event still gives it the state, with no read succeeding, and the next event follows.
 test('TC-007-005 a contact client loading after the first event has the state without a read',{timeout:60000},async()=>{
   const frame=new Promise(resolve=>{page.on('websocket',ws=>ws.on('framereceived',e=>{try{if(JSON.parse(e.payload).type==='contact.state')resolve();}catch{}}));});
@@ -623,7 +634,8 @@ test('TC-007-005 a contact client loading after the first event has the state wi
   const s=await snapshot();await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:false})});
 });
 
-// Proves: CL-010-15; TC-007-005. A read held across events does not lose a pushed change.
+// A read held across events does not lose a pushed change.
+// Proves: TC-007-005
 test('TC-007-005 a held read keeps the pushed changes around it',{timeout:60000},async()=>{
   const start=await snapshot();
   const send=async(url,body)=>{const r=await fetch(origin+url,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:start.profile_id,boot_id:start.boot_id,command_id:crypto.randomUUID(),...body})});assert.ok([200,202].includes(r.status),await r.text());};
@@ -646,7 +658,8 @@ test('TC-007-005 a held read keeps the pushed changes around it',{timeout:60000}
   }finally{release();await page.unroute('**/contact.js');await page.unroute('**/contact');await send('/transmit/command',{action:'set_watchdogs',tx_calls:6,tune_seconds:90});await hold(false);}
 });
 
-// Proves: CL-010-15; TC-007-005. On the actual socket: a running Tune's countdown alone at most once per
+// On the actual socket: a running Tune's countdown alone at most once per
+// Proves: TC-007-005
 // 5 s on Thin and about once per second on Detailed.
 test('TC-007-005 the Tune countdown is paced by the display profile on the socket',{timeout:60000},async()=>{
   const types=['transmit.state','contact.state'];
@@ -668,10 +681,10 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
   }
 });
 
-// Proves: CL-008-07, CL-010-15; TC-009-005 case7, TC-007-005 (#10 pushed operating selection).
+// case7, TC-007-005 (#10 pushed operating selection).
 // The socket's first event holds the whole snapshot, a later one what changed, and the browser
 // shows a change from outside without any timer read on Detailed or Thin.
-test('TC-009-005 operating selection is pushed: the event carries it, no timer read of GET /receive/selection',{timeout:90000},async()=>{
+test('operating selection is pushed: the event carries it, no timer read of GET /receive/selection',{timeout:90000},async()=>{
   const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='selection.state')frames.push({at:performance.now(),data:m.data,bytes:Buffer.byteLength(e.payload)});}catch{}}));
   const reads=(a,b=Infinity)=>requests.filter(r=>r.method==='GET'&&r.path==='/receive/selection'&&r.at>=a&&r.at<b);
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -700,9 +713,9 @@ test('TC-009-005 operating selection is pushed: the event carries it, no timer r
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-008-07; TC-009-005 case7 (#10). The socket's read getting lost on the link leaves the
+// case7 (#10). The socket's read getting lost on the link leaves the
 // controls on the state its first event gave: there is no timer read to repair them.
-test('TC-009-005 a lost selection read does not disable the controls the socket event holds',{timeout:60000},async()=>{
+test('a lost selection read does not disable the controls the socket event holds',{timeout:60000},async()=>{
   let release,reached;const gate=new Promise(r=>release=r),entered=new Promise(r=>reached=r);
   await page.route('**/receive/selection',async route=>{reached();await gate;await route.abort('failed');},{times:1});
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();await entered;
@@ -712,7 +725,8 @@ test('TC-009-005 a lost selection read does not disable the controls the socket 
   assert.deepEqual(page.errors,[]);
 });
 
-// Proves: CL-085-01; TC-085-005 (a), (c). #85 L1: a QSO with the station logged last is not
+// #85 L1: a QSO with the station logged last is not
+// Proves: TC-085-005
 // logged; the QSO pane says so and why, shows no "Logged" notice, and the log holds the station
 // once. The next logged QSO shows its "Logged" notice. Expected texts: the L1 wording.
 test('TC-085-005 the QSO pane says that a QSO with the station logged last was not logged',{timeout:60000},async()=>{
@@ -745,7 +759,7 @@ test('TC-085-005 the QSO pane says that a QSO with the station logged last was n
   assert.deepEqual(page.errors,[]);
 });
 
-test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
+test('mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);
   await waitFor(async()=>{const s=await snapshot();return s.transmit.arm_state==='armed'&&s.contact?.dx_call==='K1ABC';},'armed with K1ABC',15000);
@@ -766,7 +780,7 @@ test('TC-050-004 mid-QSO: a double-click switches mid-QSO with Tx kept on, the n
   await waitFor(async()=>{const v=await snapshot();return v.transmit.arm_state==='armed'&&v.contact?.state==='calling';},async()=>`calling CQ after DL1ABC: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(commands().slice(-2))} ${JSON.stringify((await snapshot()).transmit)} ${JSON.stringify((await snapshot()).contact?.state)}`,15000);
   assert.deepEqual(page.errors,[]);
 });
-test('TC-050-004 from-CQ: a double-click from my CQ switches with Tx kept on, the new QSO completes, and a double-click after it replies',{timeout:420000},async()=>{
+test('from-CQ: a double-click from my CQ switches with Tx kept on, the new QSO completes, and a double-click after it replies',{timeout:420000},async()=>{
   let mark;
   // From my CQ: CQ (arms, calling), then double-click another station's CQ.
   await page.locator('#qso-cq').click();

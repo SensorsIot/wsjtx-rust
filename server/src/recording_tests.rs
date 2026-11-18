@@ -63,7 +63,8 @@ fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
     (job, decoded)
 }
 
-// Proves: CL-008-03; TC-009-004 live ring2047/2048/2049 and explicit cursors.
+// live ring2047/2048/2049 and explicit cursors.
+// Proves: TC-009-004
 #[test]
 fn live_results_evict_oldest_and_never_restart_sequence() {
     let fixture = Fixture::new();
@@ -102,7 +103,8 @@ fn live_results_evict_oldest_and_never_restart_sequence() {
     );
 }
 
-// Proves: CL-008-03; TC-009-004 seeded byte/safe-counter bounds and invalid/stale publication.
+// seeded byte/safe-counter bounds and invalid/stale publication.
+// Proves: TC-009-004
 #[test]
 fn live_publication_is_atomic_at_byte_counter_and_context_boundaries() {
     let fixture = Fixture::new();
@@ -167,7 +169,7 @@ fn live_publication_is_atomic_at_byte_counter_and_context_boundaries() {
     );
 }
 
-// Proves: CL-008-02; TC-009-004 source clock metadata never invents external accuracy.
+// source clock metadata never invents external accuracy.
 #[test]
 fn live_clock_filetime_mapping_handles_epoch_leap_and_range() {
     assert_eq!(
@@ -182,7 +184,8 @@ fn live_clock_filetime_mapping_handles_epoch_leap_and_range() {
     assert!(utc_from_filetime(u64::MAX).is_none());
 }
 
-// Proves: CL-008-02/03/05; TC-009-004 actual provider epoch and owner identity.
+// actual provider epoch and owner identity.
+// Proves: TC-009-004
 #[test]
 fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() {
     let fixture = Fixture::new();
@@ -277,7 +280,7 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
     assert_eq!(worker.input.status().state, audio::AudioState::Closed);
 }
 
-// Proves: CL-008-02/03; TC-002-003 (#38). Through the real queue, converter and live worker:
+// (#38). Through the real queue, converter and live worker:
 // a WASAPI engine glitch on a continuous device/QPC timeline keeps job, generation and
 // spectrum/decode window; a real unknown loss rotates once and GET /receive names it.
 #[test]
@@ -339,7 +342,7 @@ fn live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs() {
     worker.input.request_stop();
 }
 
-// Proves: CL-008-03; TC-009-004 resource release precedes terminal publication.
+// resource release precedes terminal publication.
 #[test]
 fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
     let fixture = Fixture::new();
@@ -377,7 +380,7 @@ fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
     assert_eq!(r.receive_snapshot()["job"]["state"], "cancelled");
 }
 
-// Proves: CL-008-03; TC-009-004 a refused OS worker cannot strand station admission.
+// a refused OS worker cannot strand station admission.
 #[test]
 fn live_worker_spawn_failure_releases_admission_without_reusing_generation() {
     let fixture = Fixture::new();
@@ -407,7 +410,7 @@ fn live_worker_spawn_failure_releases_admission_without_reusing_generation() {
     assert_eq!(reservation["generation"], 2);
 }
 
-// Proves: CL-008-03; TC-009-004 a failed fresh source identity cannot orphan the old owner.
+// a failed fresh source identity cannot orphan the old owner.
 #[test]
 fn live_second_epoch_source_uuid_failure_releases_original_admission() {
     let fixture = Fixture::new();
@@ -456,7 +459,8 @@ pub(super) fn checkpoint(stage: &'static str) -> Result<()> {
 }
 struct Fixture(PathBuf);
 
-// Proves: CL-008-07; TC-009-005 case6. Deterministically hold the operation in
+// case6. Deterministically hold the operation in
+// Proves: TC-009-005
 // restarting while the real PacketQueue/LiveSource rotates its continuing worker.
 #[test]
 fn selection_cancel_tracks_its_worker_through_unknown_source_epoch() {
@@ -524,7 +528,8 @@ fn selection_cancel_tracks_its_worker_through_unknown_source_epoch() {
     );
 }
 
-// Proves: CL-008-07; TC-009-005 case6. A later real Start owns a distinct
+// case6. A later real Start owns a distinct
+// Proves: TC-009-005
 // cancellation Arc even if old operation metadata remains visible.
 #[test]
 fn selection_old_command_cannot_cancel_unrelated_later_start() {
@@ -671,7 +676,8 @@ fn selection_released(r: &Recording) {
     }
 }
 
-// Proves: CL-008-07; TC-009-005 cases2/5. Domain refusal is earlier than missing
+// cases2/5. Domain refusal is earlier than missing
+// Proves: TC-009-005
 // configured CAT and every counter increments only for a genuinely admitted command.
 #[test]
 fn selection_unknown_band_and_safe_counter_refuse_without_effects() {
@@ -701,7 +707,7 @@ fn selection_unknown_band_and_safe_counter_refuse_without_effects() {
     assert_eq!(r.receive_snapshot()["generation"], 0);
 }
 
-// Proves: CL-008-07 and unchanged TC-009-004 Start revision guard. A loaded saved
+// unchanged TC-009-004 Start revision guard. A loaded saved
 // revision is independent station state; later edits invalidate a captured old input.
 #[test]
 fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
@@ -739,7 +745,7 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     assert_eq!(r.state.lock().unwrap().operating.profile_revision, 9);
 }
 
-// Proves: CL-008-07; TC-009-005 case2. Independent canonical SysML data,
+// case2. Independent canonical SysML data,
 // never generated from the implementation's band/frequency table.
 type CanonicalBandEntry = (String, u64, Option<u64>);
 
@@ -849,7 +855,8 @@ fn selection_preferred_entries_match_complete_canonical_integer_table() {
     );
 }
 
-// Proves: CL-008-07; TC-009-005 cases4/6. Real native-wrapper Drop is deliberately
+// cases4/6. Real native-wrapper Drop is deliberately
+// Proves: TC-009-005
 // held. A failed release never becomes timeout permission to tune or open again.
 #[test]
 fn selection_release_timeout_retains_owner_and_never_commits_target() {
@@ -882,7 +889,8 @@ fn selection_release_timeout_retains_owner_and_never_commits_target() {
     assert_eq!(snapshot["radio"]["connection_generation"], 0);
 }
 
-// Proves: CL-008-07; TC-009-005 case4. The same owner restarts in an immutable new
+// case4. The same owner restarts in an immutable new
+// Proves: TC-009-005
 // mode only after actual release; Stop/profile edit invalidate every late restart.
 #[test]
 fn selection_manual_mode_switch_uses_same_owner_and_profile_change_blocks_restart() {
@@ -1039,7 +1047,8 @@ fn selection_edit_request(
     (headers, Ok(crate::Bytes::from(bytes)))
 }
 
-// Proves: CL-008-07; TC-009-005 case4. A persisted rename is deliberately observed
+// case4. A persisted rename is deliberately observed
+// Proves: TC-009-005
 // while Recording invalidation is held. The SAME Store mutex prevents a new reader
 // from seeing the edit until cancellation has been published, before HTTP success.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1097,7 +1106,7 @@ async fn selection_profile_success_publishes_cancellation_before_new_reader() {
     );
 }
 
-// Proves: CL-008-07 and unchanged CL-005-02; TC-009-005 case4. A real atomic-store
+// unchanged CL-005-02; TC-009-005 case4. A real atomic-store
 // refusal cannot invalidate the old operation. This uses only a disposable fixture,
 // no ACL changes or production fault switch.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1169,7 +1178,8 @@ fn recording_limit(feature: &str) -> usize {
         other => panic!("model value {name}: not a positive integer: {other:?}"),
     }
 }
-// Proves: CL-006-01, CL-006-02; TC-018-001, cost 2 on Windows.
+// cost 2 on Windows.
+// Proves: TC-018-001
 #[test]
 fn original_bytes_samples_blocks_and_restart_identity() {
     let f = Fixture::new();
@@ -1219,7 +1229,8 @@ fn original_bytes_samples_blocks_and_restart_identity() {
         assert_eq!(restarted.snapshot()["recording"]["frames"], count);
     }
 }
-// Proves: CL-006-01, CL-006-04; TC-018-002, cost 2 on Windows.
+// cost 2 on Windows.
+// Proves: TC-018-002
 #[test]
 fn byte_level_riff_limits_and_rejection_table() {
     let f = Fixture::new();
@@ -1297,7 +1308,8 @@ fn byte_level_riff_limits_and_rejection_table() {
         "recording_limit"
     );
 }
-// Proves: CL-006-02, CL-006-04; TC-018-002/003, cost 2 on Windows.
+// cost 2 on Windows.
+// Proves: TC-018-002
 #[test]
 fn import_failures_keep_old_source_and_quarantine_until_real_release() {
     let f = Fixture::new();
@@ -1346,7 +1358,8 @@ fn import_failures_keep_old_source_and_quarantine_until_real_release() {
     assert_eq!(r.snapshot()["storage_error"], Value::Null);
     assert!(!r.state.lock().unwrap().import.as_ref().unwrap().worker);
 }
-// Proves: CL-006-02, CL-006-04; TC-018-003 held worker failure + EOS vector, cost 2 Windows.
+// held worker failure + EOS vector, cost 2 Windows.
+// Proves: TC-018-003
 #[test]
 fn processing_failure_with_eos_cannot_complete_before_or_after_release() {
     let f = Fixture::new();
@@ -1397,7 +1410,8 @@ fn processing_failure_with_eos_cannot_complete_before_or_after_release() {
     assert_eq!(r.snapshot()["job"], current);
 }
 
-// Proves: CL-006-02; TC-018-002, manifest is authoritative even when final HTTP outcome is lost.
+// manifest is authoritative even when final HTTP outcome is lost.
+// Proves: TC-018-002
 #[test]
 fn post_commit_failure_never_reverts_new_original_on_restart() {
     let f = Fixture::new();
@@ -1412,7 +1426,8 @@ fn post_commit_failure_never_reverts_new_original_on_restart() {
     assert_eq!(f.recording().snapshot()["recording"]["id"], committed);
 }
 
-// Proves: CL-006-02/04; TC-018-002, reservation/idle/total timeout and failed real cleanup quarantine.
+// reservation/idle/total timeout and failed real cleanup quarantine.
+// Proves: TC-018-002
 #[test]
 fn deadlines_release_only_after_cleanup_and_startup_reconciles_quarantine() {
     let f = Fixture::new();
@@ -1485,7 +1500,8 @@ fn dft(samples: &[f32], k: usize) -> f64 {
     }
     re.hypot(im) * (if k == 0 { 1.0 } else { 2.0 }) / 1024.0
 }
-// Proves: CL-006-03; TC-010-001, independently computed DFT and analytic tones, cost 2 Windows.
+// independently computed DFT and analytic tones, cost 2 Windows.
+// Proves: TC-010-001
 #[test]
 fn both_fft_paths_agree_with_direct_dft_and_analytic_dbfs() {
     let vectors: Vec<Vec<f32>> = vec![
@@ -1532,7 +1548,8 @@ fn both_fft_paths_agree_with_direct_dft_and_analytic_dbfs() {
     }
 }
 
-// Proves: CL-006-03/04; TC-010-001, actual worker row boundary/right padding against original DFT.
+// actual worker row boundary/right padding against original DFT.
+// Proves: TC-010-001
 #[test]
 fn replay_window_start_and_partial_last_row_follow_source_clock() {
     let f = Fixture::new();
@@ -1582,7 +1599,8 @@ fn replay_window_start_and_partial_last_row_follow_source_clock() {
     }
 }
 
-// Proves: CL-006-01/02; TC-018-002 review regression; readable truncation differs from OS read failure.
+// review regression; readable truncation differs from OS read failure.
+// Proves: TC-018-002
 #[test]
 fn parser_preserves_non_eof_os_read_errors() {
     let f = Fixture::new();
@@ -1604,7 +1622,7 @@ fn parser_preserves_non_eof_os_read_errors() {
     );
 }
 
-// Proves: CL-006-02; TC-018-003 review regression, absent manifest never authorizes guessing which UUID original to delete.
+// review regression, absent manifest never authorizes guessing which UUID original to delete.
 #[test]
 fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
     let f = Fixture::new();
@@ -1639,7 +1657,8 @@ fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
     assert!(!recovered.path(&id, "wav").exists());
 }
 
-// Proves: CL-006-02/04; TC-018-003 review regression; worker preempted across a pacing deadline releases the slot.
+// review regression; worker preempted across a pacing deadline releases the slot.
+// Proves: TC-018-003
 #[test]
 fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
     let f = Fixture::new();
@@ -1660,7 +1679,8 @@ fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
     drop(resources);
     assert!(r.reserve(&r.profile, &r.boot, generation + 1).is_ok());
 }
-// Proves: CL-006-03/04; TC-010-004, independent f64 DFT, native bins and power/EOS rows.
+// independent f64 DFT, native bins and power/EOS rows.
+// Proves: TC-010-004
 #[test]
 fn detailed_native_bins_and_power_rows_follow_independent_dft() {
     use base64::{Engine, engine::general_purpose::STANDARD};
@@ -1786,7 +1806,8 @@ fn relative_clock(r: &Recording, mode: &'static str, anchor: &str, anchor_frame:
     });
 }
 
-// Proves: CL-010-09; TC-007-006. Independent hand-calculated UTC/frame vectors.
+// Independent hand-calculated UTC/frame vectors.
+// Proves: TC-007-006
 #[test]
 fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
     for (mode, starts, period) in [
@@ -1894,7 +1915,8 @@ fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
     );
 }
 
-// Proves: CL-010-09; TC-007-006. Actual numerical silence completes; result inputs are explicit manager fixtures.
+// Actual numerical silence completes; result inputs are explicit manager fixtures.
+// Proves: TC-007-006
 #[test]
 fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_rows() {
     let fixture = Fixture::new();
@@ -2011,7 +2033,8 @@ impl LiveInput for DecodeBoundaryInput {
         }
     }
 }
-// Proves: CL-010-09; TC-007-006. Actual cooperative numerical/manager overrun, not a pre-labelled wire response.
+// Actual cooperative numerical/manager overrun, not a pre-labelled wire response.
+// Proves: TC-007-006
 #[test]
 fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
     let fixture = Fixture::new();
@@ -2074,7 +2097,8 @@ fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
         "2026-10-27T12:00:15.0000000Z"
     );
 }
-// Proves: CL-007-05; TC-004-004. A late window waits for the prompt decode instead of abandoning it.
+// A late window waits for the prompt decode instead of abandoning it.
+// Proves: TC-004-004
 #[test]
 fn late_window_waits_for_the_prompt_decode_without_overrun() {
     let fixture = Fixture::new();
@@ -2129,7 +2153,8 @@ fn late_window_waits_for_the_prompt_decode_without_overrun() {
     assert_eq!(s["job"]["latest_decode"]["id"], 2);
     assert_eq!(s["job"]["latest_decode"]["complete"], true);
 }
-// Proves: CL-040-07; TC-012-007. The actual live worker marks each analysis window's
+// The actual live worker marks each analysis window's
+// Proves: TC-012-007
 // decode (the UDP Status decoding flag) while it runs and clears it when it returns,
 // observed from the capture poll the decode in progress drives, also when a window
 // abandons the decode before it as an overrun.
@@ -2193,7 +2218,8 @@ fn live_worker_marks_decoding_for_each_window_and_clears_it_after() {
         assert_eq!(r.decoder_activity(), (false, 2), "late {late}");
     }
 }
-// Proves: CL-010-09; TC-007-006. Real terminal owner path preserves last view, never an invented completion.
+// Real terminal owner path preserves last view, never an invented completion.
+// Proves: TC-007-006
 #[test]
 fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identity() {
     for cancelled in [false, true] {
@@ -2234,7 +2260,6 @@ fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identi
     }
 }
 
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_old_ready_cannot_overwrite_closed() {
     use wstx_rust::radio_control::State;
@@ -2266,7 +2291,6 @@ fn selection_radio_cache_old_ready_cannot_overwrite_closed() {
         "a delayed Ready capture must not resurrect a closed actor"
     );
 }
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_reordered_capture_cannot_erase_mode_query() {
     use wstx_rust::radio_control::{Operation, Request};
@@ -2316,7 +2340,6 @@ fn selection_radio_cache_reordered_capture_cannot_erase_mode_query() {
     );
     actor.request_close();
 }
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
     let fixture = Fixture::new();
@@ -2331,7 +2354,6 @@ fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
     actor.request_close();
 }
 
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_connect_profile_edit_before_install_releases_own_reservation() {
     let fixture = Fixture::new();
@@ -2364,7 +2386,6 @@ fn review_connect_profile_edit_before_install_releases_own_reservation() {
     assert_eq!(next, generation + 1);
     r.radio_disconnect(next).unwrap();
 }
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_stale_profile_frequency_cannot_infer_unknown_manual_band() {
     let fixture = Fixture::new();
@@ -2410,7 +2431,6 @@ fn review_stale_profile_frequency_cannot_infer_unknown_manual_band() {
     actor.request_close();
 }
 
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_obsolete_connect_cannot_clear_newer_or_disconnected_reservation() {
     for newer in [false, true] {
@@ -2450,7 +2470,6 @@ fn review_obsolete_connect_cannot_clear_newer_or_disconnected_reservation() {
         }
     }
 }
-// Proves: CL-008-07; TC-009-005
 #[test]
 fn review_frequency_inference_requires_profile_boot_and_connection_authority() {
     let fixture = Fixture::new();
@@ -2478,7 +2497,8 @@ fn review_frequency_inference_requires_profile_boot_and_connection_authority() {
     actor.request_close();
 }
 
-// Proves: CL-007-05; TC-004-004. Hand-calculated residues from a correlated UTC anchor.
+// Hand-calculated residues from a correlated UTC anchor.
+// Proves: TC-004-004
 #[test]
 fn live_window_schedule_follows_the_utc_period_grid() {
     let timing = |anchor: Option<&str>, frame: u64| source::SourceTiming {
@@ -2517,7 +2537,7 @@ fn live_window_schedule_follows_the_utc_period_grid() {
     );
 }
 
-// Proves: CL-007-02. Hand-calculated FT8 period starts for the SNR measurement (#52).
+// Hand-calculated FT8 period starts for the SNR measurement (#52).
 #[test]
 fn ft8_snr_period_start_follows_the_utc_period_grid() {
     let timing = |anchor: Option<&str>| source::SourceTiming {
@@ -2686,7 +2706,7 @@ fn drifting_prompt_windows(track: bool, seconds: u64, ppm: f64) -> (Vec<(f64, bo
     (prompts, r.receive_clock())
 }
 
-// Proves: CL-007-05; TC-004-004. Re-anchoring keeps ordinary frames in the prompt window
+// Re-anchoring keeps ordinary frames in the prompt window
 // through more than 1 s of cumulative capture-clock drift and a clock step.
 #[test]
 fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
@@ -2720,7 +2740,7 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
     assert!(last.0 > 1.2, "fixed schedule drifted only {:.3} s", last.0);
 }
 
-// Proves: CL-043-03, CL-007-05; TC-043-002. The clock from the air shifts the UTC reference
+// The clock from the air shifts the UTC reference
 // of live windows, periods and DT on top of the measured capture drift: with the system
 // clock 2 s ahead, prompt windows complete at +13.8 s of corrected UTC through 300 ppm of
 // drift, none is lost or repeated, and the estimator is fed DT against the uncorrected
@@ -2840,7 +2860,7 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
     );
 }
 
-// Proves: CL-057-01 (#57). Both a new period view and the late window's growth
+// (#57). Both a new period view and the late window's growth
 // of that view signal the Detailed WebSocket peers' publication watch.
 #[test]
 fn new_and_grown_views_signal_the_publication_watch() {
@@ -2871,7 +2891,8 @@ fn new_and_grown_views_signal_the_publication_watch() {
     assert!(watch.has_changed().unwrap(), "a grown view signals");
 }
 
-// Proves: CL-007-05; TC-004-004. The FT8 late window (UTC +0.7..+15.7 s) extends its period's
+// The FT8 late window (UTC +0.7..+15.7 s) extends its period's
+// Proves: TC-004-004
 // view under the same id: nothing new publishes nothing, a late starter (DT +1.2 s) only grows
 // next_sequence, so the browser keeps its rows and cursor.
 #[test]
@@ -2994,7 +3015,7 @@ fn ft8_period_audio(frames: usize, period: usize) -> Vec<f32> {
         .collect()
 }
 
-// Proves: CL-007-02; TC-004-002. #52: the live worker with a correlated UTC clock names
+// #52: the live worker with a correlated UTC clock names
 // the period start to the decoder, so the published FT8 SNR equals the file decode of the
 // same period-aligned audio.
 #[test]
@@ -3051,7 +3072,7 @@ fn live_ft8_snr_measures_from_the_utc_period_start() {
     assert_eq!(w["window_offset_ms"], -1200);
 }
 
-// Proves: CL-043-03; TC-043-002 (c). #43 with #52: the live worker names the FT8 period
+// #43 with #52: the live worker names the FT8 period
 // start and the window diagnostics on station UTC (system clock plus the air-clock
 // correction), the same timing the published records use. The system clock here is 2 s
 // slow (anchor 11:59:58 at frame 0) and the correction +2 s puts station UTC 12:00:00 there,
@@ -3114,7 +3135,8 @@ fn live_ft8_period_start_and_window_diagnostics_follow_the_air_clock_correction(
     assert_eq!(w["window_offset_ms"], -1200, "{w}");
 }
 
-// Proves: CL-024-01; TC-024-002 (#24 S1). The live publication fills hashed calls in from
+// (#24 S1). The live publication fills hashed calls in from
+// Proves: TC-024-002
 // the calls heard so far and my call; earlier records keep their text; UDP Decode messages
 // carry the same text; a hashed 'from' still gives no strategy facts.
 #[test]

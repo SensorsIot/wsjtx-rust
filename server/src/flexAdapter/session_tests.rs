@@ -1,6 +1,6 @@
 use super::*;
 
-// Proves: TC-023-002. Slice status frequencies are exact integers in hertz.
+// Slice status frequencies are exact integers in hertz.
 #[test]
 fn megahertz_text_round_trips_exact_hertz() {
     assert_eq!(megahertz("14.074000"), Some(14_074_000));
@@ -24,7 +24,8 @@ fn reordered(counts: &[u8]) -> (Vec<(u8, u64)>, Vec<u8>) {
     (out, dropped)
 }
 
-// Proves: TC-023-001. Swapped packets go on in their count's order and lose nothing, also across
+// Swapped packets go on in their count's order and lose nothing, also across
+// Proves: TC-023-001
 // the wrap of the 4-bit count.
 #[test]
 fn reorder_restores_the_order_and_counts_nothing_lost() {
@@ -34,7 +35,8 @@ fn reorder_restores_the_order_and_counts_nothing_lost() {
     assert!(dropped.is_empty());
 }
 
-// Proves: TC-023-001. A packet waits until 5 packets wait behind it, not longer: 4 places is still
+// A packet waits until 5 packets wait behind it, not longer: 4 places is still
+// Proves: TC-023-001
 // put back, while at 5 its turn is given up, it counts lost once, and its late arrival is dropped.
 #[test]
 fn reorder_gives_up_a_turn_at_its_depth() {
@@ -51,7 +53,8 @@ fn reorder_gives_up_a_turn_at_its_depth() {
     assert_eq!(dropped, vec![1]);
 }
 
-// Proves: TC-023-001. A burst of 7 lost packets counts in full, once the wait is over, and no
+// A burst of 7 lost packets counts in full, once the wait is over, and no
+// Proves: TC-023-001
 // packet after it is mistaken for a late one. At 8 the count cannot tell: those packets read as
 // late, and the stream carries on at the wrap.
 #[test]
@@ -68,7 +71,8 @@ fn reorder_counts_a_burst_of_lost_packets_up_to_half_the_count() {
     assert_eq!(dropped, vec![9, 10, 11, 12, 13, 14, 15, 0]);
 }
 
-// Proves: TC-023-001. A duplicate never reaches the timeline, whether its turn has passed or its
+// A duplicate never reaches the timeline, whether its turn has passed or its
+// Proves: TC-023-001
 // first copy still waits.
 #[test]
 fn reorder_drops_duplicates() {
@@ -79,7 +83,8 @@ fn reorder_drops_duplicates() {
     assert_eq!(dropped, vec![2]);
 }
 
-// Proves: TC-023-001. After a stall the count may have wrapped: what waits goes on first and the
+// After a stall the count may have wrapped: what waits goes on first and the
+// Proves: TC-023-001
 // next packet starts the count over, whatever its value, with no loss derived from it.
 #[test]
 fn reorder_starts_over_after_a_stall() {
@@ -94,7 +99,7 @@ fn reorder_starts_over_after_a_stall() {
     assert_eq!(out.last(), Some(&(15, 0)));
 }
 
-// Proves: TC-023-002. A slice's ownership and liveness follow the latest status;
+// A slice's ownership and liveness follow the latest status;
 // removal and another client's handle are visible to the reconciler.
 #[test]
 fn view_tracks_ownership_and_removal_from_status_lines() {
@@ -122,7 +127,7 @@ fn view_tracks_ownership_and_removal_from_status_lines() {
     assert!(view.streams.len() <= MAX_TRACKED);
 }
 
-// Proves: TC-023-001. The measurement is this host's clock minus the packet's own time, with
+// The measurement is this host's clock minus the packet's own time, with
 // the sub-second part only where the timestamp kind carries real time.
 #[test]
 fn vita_offset_measures_host_clock_minus_packet_time() {
@@ -234,7 +239,8 @@ fn tune_against_scripted_radio(tune_code: u32) -> (Result<u64, Error>, Option<Sl
     (replied, slice)
 }
 
-// Proves: TC-023-001. A confirmed selection is never reported beside the slice's earlier
+// A confirmed selection is never reported beside the slice's earlier
+// Proves: TC-023-001
 // frequency: when the caller hears that the tune succeeded, the shared snapshot already
 // carries the frequency the radio read back.
 #[test]
@@ -244,7 +250,8 @@ fn a_confirmed_tune_is_published_before_the_caller_hears_of_it() {
     assert_eq!(slice.and_then(|s| s.frequency_hz), Some(14_074_000));
 }
 
-// Proves: TC-023-001. A refused tune confirms nothing, and the snapshot at the reply shows the
+// A refused tune confirms nothing, and the snapshot at the reply shows the
+// Proves: TC-023-001
 // slice as the radio reports it.
 #[test]
 fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
@@ -253,7 +260,8 @@ fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
     assert_eq!(slice.and_then(|s| s.frequency_hz), Some(7_000_000));
 }
 
-// Proves: TC-023-001. GET /native-flex reports the packets, the peak, the VITA time and the
+// GET /native-flex reports the packets, the peak, the VITA time and the
+// Proves: TC-023-001
 // arrival jitter of the current session: when the next session becomes ready they start over,
 // and the session number changes.
 #[test]

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-022-03, CL-022-04; TC-022-009. Injected monotonic time drives the policy;
+// Injected monotonic time drives the policy;
 // an independent scripted CI-V peer (not the production codec) counts every native
 // open, raw byte and close.
 use crate::cat_lifecycle::{Action, DELAYS, Gate, Key, Lifecycle, Observed};
@@ -664,7 +664,8 @@ fn status_for_unobserved_key_is_waiting_not_previous_ready() {
     assert_eq!(p.status_for(&eligible(2)), ("waitingForDevice", None, None));
 }
 
-// Proves: CL-022-03, CL-022-05; TC-022-009 (operator finding 2026-11-02). Another program
+// (operator finding 2026-11-02). Another program
+// Proves: TC-022-009
 // holds COM3, then releases it: the status names the held port, the automatic retry
 // reconnects, and the confirmed dial becomes the selection without any band choice by
 // hand, setter byte, receive restart or operating revision advance.
@@ -798,7 +799,8 @@ fn no_ptt(s: &Station) {
     }
 }
 
-// Proves: CL-022-04; TC-022-009 (concurrent observers/RF work). Operator RF work runs
+// (concurrent observers/RF work). Operator RF work runs
+// Proves: TC-022-009
 // on the lifecycle's one native owner: ticking the lifecycle and many status observers
 // while it runs open, close or attempt nothing; the lifecycle itself sends only queries
 // before and after, and no frame ever keys PTT.
@@ -867,7 +869,8 @@ fn station_rf_work_shares_the_one_owner_without_lifecycle_interference() {
     no_ptt(&s);
 }
 
-// Proves: CL-022-02, CL-022-04; TC-022-009. Revocation while RF work holds the owner:
+// Revocation while RF work holds the owner:
+// Proves: TC-022-009
 // the lifecycle's release cancels that work, the owner closes within the 250 ms RF
 // release bound, and nothing reopens or replays it.
 #[test]
@@ -911,7 +914,8 @@ fn station_revocation_during_rf_work_cancels_it_and_releases_without_reopen() {
     no_ptt(&s);
 }
 
-// Proves: CL-022-04; TC-022-009. An attempt refused because RF work or another owner
+// An attempt refused because RF work or another owner
+// Proves: TC-022-009
 // holds the resource is no failure: the same due time is retried, no delay grows.
 #[test]
 fn policy_attempt_deferred_by_rf_work_is_not_a_failure() {

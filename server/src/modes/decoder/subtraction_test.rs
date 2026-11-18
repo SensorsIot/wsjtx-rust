@@ -30,7 +30,6 @@ fn expected_at(original: &[f32], start: usize, wave: &[[f32; 2]], k: usize, mode
     original[start + k] as f64
         - 2. * (wave[k][0] as f64 * envelope.re - wave[k][1] as f64 * envelope.im)
 }
-// Proves: FR-003, FR-004, CL-007-03, CL-007-04.
 #[test]
 fn envelope_cancellation_matches_scalar_convolution_and_edges() {
     for mode in [Mode::Ft8, Mode::Ft4] {
@@ -85,7 +84,7 @@ fn envelope_cancellation_matches_scalar_convolution_and_edges() {
         }
     }
 }
-// Proves: CL-007-04. The existing direct-convolution positive stays intact.
+// The existing direct-convolution positive stays intact.
 #[test]
 #[cfg(not(debug_assertions))]
 fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
@@ -172,7 +171,6 @@ fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
         }
     }
 }
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn cancelled_or_incomplete_subtraction_leaves_input_unchanged() {
     let mut subtractor = Subtractor::new(Mode::Ft4, false).unwrap();

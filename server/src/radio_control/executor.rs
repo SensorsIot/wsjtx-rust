@@ -979,7 +979,8 @@ mod publication_tests {
             Ok(())
         }
     }
-    // Proves: CL-044-09; TC-044-012. The read-first read does not re-confirm the old value
+    // The read-first read does not re-confirm the old value
+    // Proves: TC-044-012
     // while the setter frame is on the wire; the read-back confirms the new one.
     #[test]
     fn setter_fact_stays_unconfirmed_from_the_write_until_its_read_back() {

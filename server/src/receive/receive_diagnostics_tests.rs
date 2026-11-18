@@ -45,7 +45,8 @@ fn wait_for(dir: &Path, count: usize) -> Vec<String> {
     }
 }
 
-// Proves: CL-052-01; TC-052-001. Hand-counted zeros, their longest run and those inside the
+// Hand-counted zeros, their longest run and those inside the
+// Proves: TC-052-001
 // FT8 early buffer [period, period + 141696).
 #[test]
 fn window_zero_counts_follow_the_early_buffer() {
@@ -61,7 +62,8 @@ fn window_zero_counts_follow_the_early_buffer() {
     assert_eq!(zero_counts(&[], 0, Some(0)), (0, 0, Some(0)));
 }
 
-// Proves: CL-052-01; TC-052-001. A 12 kHz mono PCM16 WAV, as jt9 reads it.
+// A 12 kHz mono PCM16 WAV, as jt9 reads it.
+// Proves: TC-052-001
 #[test]
 fn window_dump_is_a_12_khz_pcm16_wav() {
     let bytes = wav_bytes(&[0.0, 0.5, -1.0, 1.0]);
@@ -82,7 +84,8 @@ fn window_dump_is_a_12_khz_pcm16_wav() {
     assert_eq!(samples, vec![0, 16384, -32768, 32767]);
 }
 
-// Proves: CL-052-01; TC-052-001. Off by default and after a foreign or corrupt file; the
+// Off by default and after a foreign or corrupt file; the
+// Proves: TC-052-001
 // operator's choice persists next to profile.json; wrong profile or boot is refused.
 #[test]
 fn window_dump_setting_defaults_off_and_persists() {
@@ -127,7 +130,8 @@ fn window_dump_setting_defaults_off_and_persists() {
     }
 }
 
-// Proves: CL-052-01; TC-052-001. Only an FT8 prompt window with the dump on is written (WAV
+// Only an FT8 prompt window with the dump on is written (WAV
+// Proves: TC-052-001
 // and sidecar); the last 20 windows' counters are kept; the dump keeps the newest 20.
 #[test]
 fn window_dump_writes_prompt_windows_and_rotates() {
@@ -184,7 +188,8 @@ fn window_dump_writes_prompt_windows_and_rotates() {
     assert_eq!(v["dump_error"], Value::Null);
 }
 
-// Proves: CL-052-01; TC-052-001. The size cap removes the oldest windows first.
+// The size cap removes the oldest windows first.
+// Proves: TC-052-001
 #[test]
 fn window_dump_rotation_keeps_the_byte_cap() {
     let dir = Dir::new();
@@ -206,7 +211,8 @@ fn window_dump_rotation_keeps_the_byte_cap() {
     assert_eq!(names, vec!["3.json", "3.wav", "4.json", "4.wav"]);
 }
 
-// Proves: CL-052-01; TC-052-001. GET/POST /receive/diagnostics through the station router,
+// GET/POST /receive/diagnostics through the station router,
+// Proves: TC-052-001
 // with the station's refusal codes and no change on a refused request; GET /receive does
 // not carry the window counters.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

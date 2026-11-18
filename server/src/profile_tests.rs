@@ -101,7 +101,7 @@ fn expected_authorization_corruption_blocks_profile_startup_without_rewriting_fi
     }
 }
 
-// Proves: FR-001, FR-016; CL-005-02, CL-005-05; TC-022-001, TC-022-002.
+// Proves: TC-022-001
 #[test]
 fn exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys() {
     let raw = serde_json::to_string(&independent_document()).unwrap();
@@ -120,7 +120,7 @@ fn exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys() {
     }
 }
 
-// Proves: FR-001, FR-022; CL-005-02, CL-005-05; TC-022-001.
+// Proves: TC-022-001
 #[test]
 fn settings_validation_uses_utf8_bytes_and_independent_audio_control_domains() {
     let mut settings = independent_document().settings();
@@ -156,7 +156,7 @@ fn settings_validation_uses_utf8_bytes_and_independent_audio_control_domains() {
     assert_eq!(settings.validate(), Err("control.ptt"));
 }
 
-// Proves: FR-022; CL-005-02, CL-005-04; TC-022-002, TC-022-003.
+// Proves: TC-022-002, TC-022-003
 #[test]
 fn storage_commit_point_and_os_ownership_survive_reopen() {
     let directory = std::env::temp_dir().join(format!("wstx-profile-unit-{}", new_uuid().unwrap()));
@@ -187,7 +187,7 @@ fn storage_commit_point_and_os_ownership_survive_reopen() {
     fs::remove_dir_all(directory).unwrap();
 }
 
-// Proves: FR-016, FR-022; CL-005-02, CL-005-04; TC-022-002.
+// Proves: TC-022-002
 #[test]
 fn save_failures_and_interruptions_preserve_the_defined_commit_point() {
     for stage in [
@@ -246,7 +246,7 @@ fn native_document() -> serde_json::Value {
     value
 }
 
-// Proves: TC-023-002. The native intent is a separate schema-2 document without a radio
+// The native intent is a separate schema-2 document without a radio
 // identity; standard schema-1 bytes, refusals and the absence of a runtime handle are preserved.
 #[test]
 fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
@@ -348,7 +348,7 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
     assert_eq!(cat.validate_native(), Err("control.ptt"));
 }
 
-// Proves: TC-023-002. Creation persists only the intent and a fresh client identity, and
+// Creation persists only the intent and a fresh client identity, and
 // no writer can give the native profile a device or CAT selection afterwards.
 #[test]
 fn native_profile_creation_persists_intent_without_runtime_handles() {

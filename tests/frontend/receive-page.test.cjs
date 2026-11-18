@@ -11,11 +11,12 @@ const {watchPage,tipChange}=require('../page-watch.cjs');
 const origin=process.env.WSTX_PAGE_ORIGIN,control=process.env.WSTX_PAGE_CONTROL;
 const LIVE_STATION_PORT='18081';
 
-// Proves: CL-057-03; TC-007-002 (#22, live 2026-11-06, "Latest undefined period"): after a real restart with
+// (#22, live 2026-11-06, "Latest undefined period"): after a real restart with
 // no receive job yet the page shows nothing of the previous boot and no undefined or NaN anywhere.
-// Proves: CL-050-08; TC-050-008 (#50, live 2026-11-06, M7OZL UT4PA KO20): a row's tip stays the same when
+// (#50, live 2026-11-06, M7OZL UT4PA KO20): a row's tip stays the same when
+// Proves: TC-050-008
 // the next period moves it to the kept period.
-test('TC-007-002 TC-050-008 a page kept across a restart and periods shows no accident and keeps its row tips',{timeout:300000},async()=>{
+test('TC-050-008 a page kept across a restart and periods shows no accident and keeps its row tips',{timeout:300000},async()=>{
   assert.ok(origin&&control,'run through the Rust live native page test');
   const url=new URL(origin);
   assert.equal(url.hostname,'127.0.0.1','only the suite\'s own loopback server');

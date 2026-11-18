@@ -1,5 +1,4 @@
 #![deny(unsafe_code)]
-// Proves: CL-009-03, CL-009-04; TC-008-003.
 // Virtual-clock transmit owner against a recording hardware double, and the real
 // CI-V actor against an emulated IC-7300 peer. No device, radio or RF.
 use std::{
@@ -387,7 +386,8 @@ fn pending_request_is_replaced_until_audio_start_then_queued_for_the_next_period
     );
 }
 
-// Proves: CL-009-03; TC-008-003. #10: a request for another period while the pending one
+// #10: a request for another period while the pending one
+// Proves: TC-008-003
 // is keyed but its audio has not started is queued as the next request (no busy refusal,
 // no disarm); the keyed one plays in its own period.
 #[test]
@@ -602,7 +602,7 @@ fn restart_never_resumes_an_armed_station_or_its_request() {
     assert!(f.log().is_empty());
 }
 
-// Proves: TC-008-001 (#39 2026-11-04). The owner counts started transmissions; an
+// (#39 2026-11-04). The owner counts started transmissions; an
 // answer resets the count; at the limit the next request is never keyed and nothing
 // is halted.
 #[test]
@@ -937,7 +937,6 @@ fn output_renderer_plays_from_the_planned_sample_on_every_channel_then_silence()
     assert!(!tone.exhausted());
 }
 
-// Proves: CL-009-04, CL-022-03; TC-008-003.
 #[test]
 fn startup_safety_release_is_off_only_once_per_boot_and_only_when_tx_is_observed() {
     // Radio found transmitting before this boot keyed: exactly one release.
@@ -1005,7 +1004,7 @@ fn wait_for(what: &str, limit: Duration, done: impl Fn() -> bool) {
     }
 }
 
-// Proves: CL-009-04; TC-008-003. Review finding 1: the release never depends on the
+// Review finding 1: the release never depends on the
 // device reporting the end.
 #[test]
 fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls() {
@@ -1032,7 +1031,8 @@ fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls
     }
 }
 
-// Proves: CL-009-04; TC-008-003. #49: a device that reports the end 300 or 900 ms late,
+// #49: a device that reports the end 300 or 900 ms late,
+// Proves: TC-008-003
 // still inside the release bound, completes normally; the station stays armed and its
 // next request plays.
 #[test]
@@ -1062,7 +1062,8 @@ fn a_late_completion_report_inside_the_bound_completes_and_stays_armed() {
     }
 }
 
-// Proves: CL-009-04; TC-008-003. #49: the device is asked before the deadline is
+// #49: the device is asked before the deadline is
+// Proves: TC-008-003
 // applied, so a device that consumed every sample completes even when the owner's next
 // step runs only after the deadline (owner thread delayed by load).
 #[test]
@@ -1082,7 +1083,7 @@ fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline(
     assert_eq!(core.view().arm_state, ArmState::Armed);
 }
 
-// Proves: CL-009-04; TC-008-003. #49: a device that stops consuming half way never
+// #49: a device that stops consuming half way never
 // reports the end: PTT is released by the device-independent bound (FT8 audio end
 // + 1 000 ms = P + 14 140 <= P + 14 500, FT4 P + 6 340 <= P + 7 000, also after a late
 // start), the transmission fails audioStalled and the station disarms.
@@ -1142,7 +1143,7 @@ fn a_device_that_stops_consuming_half_way_is_stalled_and_released_by_the_bound()
     }
 }
 
-// Proves: CL-009-04; TC-008-003. Review finding 3: an owner panic fails closed.
+// Review finding 3: an owner panic fails closed.
 #[test]
 fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
     let f = Fake::new();
@@ -1176,7 +1177,7 @@ fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
     driver.join().unwrap();
 }
 
-// Proves: CL-009-04; TC-008-003. Review finding 2: a halt during the output open
+// Review finding 2: a halt during the output open
 // prevents keying.
 #[test]
 fn halt_during_a_slow_output_open_never_keys() {
@@ -1204,7 +1205,7 @@ fn halt_during_a_slow_output_open_never_keys() {
     driver.join().unwrap();
 }
 
-// Proves: CL-009-04; TC-008-003. A halt while the key exchange runs releases within the bound.
+// A halt while the key exchange runs releases within the bound.
 #[test]
 fn halt_during_a_slow_key_releases_within_the_bound() {
     let f = Fake::new();
@@ -1233,7 +1234,7 @@ fn halt_during_a_slow_key_releases_within_the_bound() {
     driver.join().unwrap();
 }
 
-// Proves: CL-039-06 (WstxTransmitControl::TransmitHaltUse). The watchdog stop never touches
+// (WstxTransmitControl::TransmitHaltUse). The watchdog stop never touches
 // PTT: a failing release cannot make it indeterminate, and no halt is recorded.
 #[test]
 fn watchdog_stop_never_touches_ptt() {
@@ -1260,7 +1261,7 @@ fn watchdog_stop_never_touches_ptt() {
     );
 }
 
-// Proves: CL-009-03; TC-008-003. Mutation guards named by the review.
+// Mutation guards named by the review.
 #[test]
 fn arm_is_refused_while_ptt_is_indeterminate_and_submit_checks_the_safety_revision() {
     let f = Fake::new();
@@ -1469,7 +1470,7 @@ impl Hardware for AbortAware {
     }
 }
 
-// Proves: CL-009-04; TC-008-003. Re-check finding: the boxed station hardware receives
+// Re-check finding: the boxed station hardware receives
 // the halt flag, so a halt during the CAT key wait sends no key and is confirmed in bound.
 #[test]
 fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
@@ -1503,7 +1504,8 @@ fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
     driver.join().unwrap();
 }
 
-// Proves: CL-024-01; TC-024-001 (#24 S1). Every request the transmit owner accepts teaches
+// (#24 S1). Every request the transmit owner accepts teaches
+// Proves: TC-024-001
 // the station's call hash table its calls; a refused request teaches nothing.
 #[test]
 fn accepted_requests_teach_the_station_hash_table() {
@@ -1532,7 +1534,7 @@ fn accepted_requests_teach_the_station_hash_table() {
     assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
 }
 
-// Proves: CL-010-03 (#39 Abort QSO): a failed PTT release on abort is reported.
+// (#39 Abort QSO): a failed PTT release on abort is reported.
 #[test]
 fn abort_with_a_failed_release_is_reported_not_silent() {
     let f = Fake::new();
@@ -1548,7 +1550,7 @@ fn abort_with_a_failed_release_is_reported_not_silent() {
     assert_eq!(v.halt_state, HaltState::Idle, "still no halt");
 }
 
-// Proves: CL-010-03 (#39 Abort QSO): abort also stops Tune.
+// (#39 Abort QSO): abort also stops Tune.
 #[test]
 fn abort_stops_tune_without_a_halt() {
     let f = Fake::new();
@@ -1609,7 +1611,8 @@ impl Hardware for Levelled {
     }
 }
 
-// Proves: CL-044-12; TC-044-013. A transmission takes the level at its audio start and
+// A transmission takes the level at its audio start and
+// Proves: TC-044-013
 // keeps it to the end; a running Tune follows at once; the scale is the attenuation.
 #[test]
 fn tx_level_applies_at_audio_start_and_live_only_in_tune() {
@@ -1705,7 +1708,8 @@ impl Hardware for Metered {
     }
 }
 
-// Proves: CL-044-14; TC-044-017. Exactly one meter read per transmission, in the middle of
+// Exactly one meter read per transmission, in the middle of
+// Proves: TC-044-017
 // its audio; none for Tune.
 #[test]
 fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
@@ -1744,7 +1748,8 @@ fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
     assert_eq!(due.lock().unwrap().len(), 2);
 }
 
-// Proves: CL-044-14; TC-044-017 (b). A late start too short to read clear of its release
+// A late start too short to read clear of its release
+// Proves: TC-044-017
 // has no read: audio at about period + 11 200 ms leaves under 2 s of the 13 140 ms.
 #[test]
 fn a_late_start_with_under_two_seconds_of_audio_has_no_meter_read() {

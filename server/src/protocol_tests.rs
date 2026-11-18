@@ -1,7 +1,8 @@
 use super::reply;
 use serde_json::{Value, json};
 
-// Proves: CL-006-03/04; TC-010-002 controlled transport readiness, independent of OS socket buffering.
+// controlled transport readiness, independent of OS socket buffering.
+// Proves: TC-010-002
 #[test]
 fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
     use super::{Message, optional_flush, optional_write};
@@ -90,7 +91,8 @@ fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
     );
 }
 
-// Proves: FR-021; TC-021-005, TC-051-001. Level 2: isolated tests on Windows PC/CI.
+// Level 2: isolated tests on Windows PC/CI.
+// Proves: TC-021-005, TC-051-001
 #[test]
 fn protocol_returns_specified_response_and_errors() {
     let status = reply(r#"{"v":1,"type":"station.get","id":12}"#);
@@ -132,7 +134,8 @@ fn protocol_returns_specified_response_and_errors() {
     }
 }
 
-// Proves: CL-006-03/04; TC-010-005 delayed tick cannot produce an early accepted successor.
+// delayed tick cannot produce an early accepted successor.
+// Proves: TC-010-005
 #[tokio::test(start_paused = true)]
 async fn detailed_late_tick_rearms_from_actual_acceptance() {
     use std::time::Duration;
@@ -155,7 +158,8 @@ async fn detailed_late_tick_rearms_from_actual_acceptance() {
     assert!(tokio::time::Instant::now() - origin >= Duration::from_millis(1199));
 }
 
-// Proves: CL-054-01; TC-054-001 every retained Detailed row is sent once, in order, after a stall.
+// every retained Detailed row is sent once, in order, after a stall.
+// Proves: TC-054-001
 #[tokio::test(start_paused = true)]
 async fn detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up() {
     use std::time::Duration;
@@ -195,7 +199,8 @@ async fn detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up() {
     );
 }
 
-// Proves: CL-054-01; TC-054-001 Thin sends keep a 2 s grid instead of drifting by the tick delay.
+// Thin sends keep a 2 s grid instead of drifting by the tick delay.
+// Proves: TC-054-001
 #[test]
 fn thin_sends_are_anchored_to_the_previous_deadline() {
     use std::time::Duration;
@@ -225,7 +230,8 @@ fn thin_sends_are_anchored_to_the_previous_deadline() {
     assert!(next + period - sent >= Duration::from_secs(1));
 }
 
-// Proves: CL-033-01; TC-033-001 the served page reports the station's own source commit.
+// the served page reports the station's own source commit.
+// Proves: TC-033-001
 #[tokio::test]
 async fn served_page_reports_the_source_commit_of_the_build() {
     use super::{App, Arc, Instant, Mutex, Semaphore, router};
@@ -264,7 +270,8 @@ async fn served_page_reports_the_source_commit_of_the_build() {
     );
 }
 
-// Proves: CL-033-01; TC-033-001 only a 40-digit lower-case hex commit is reported.
+// only a 40-digit lower-case hex commit is reported.
+// Proves: TC-033-001
 #[test]
 fn source_commit_reports_only_a_full_lower_case_commit() {
     use super::source_commit;

@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-063-05; TC-063-009.
-// Proves: CL-063-01, CL-063-03, CL-063-04; TC-063-001, TC-063-002, TC-063-005, TC-063-006. Hand tables from the rule sources listed on #63
+// Hand tables from the rule sources listed on #63
 // (the dates by a calendar, not by the schedule code).
 use super::*;
 use crate::contact::parse_utc;
@@ -707,7 +706,7 @@ fn tc_063_007_a_selection_is_parsed_exactly() {
     );
 }
 
-// Proves: TC-063-009. strategydef: the confirmation goes with Auto on (POST /strategy/auto,
+// strategydef: the confirmation goes with Auto on (POST /strategy/auto,
 // strategy_tests.rs); a selection asks nothing, and colouring and automation_confirmed are
 // refused on PUT with their field.
 #[test]

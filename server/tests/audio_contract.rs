@@ -25,7 +25,8 @@ fn signal(rate: u32, hz: f64, n: usize) -> Vec<f32> {
         .map(|j| (std::f64::consts::TAU * hz * j as f64 / f64::from(rate)).sin() as f32)
         .collect()
 }
-// Proves: CL-008-02; TC-002-003. Independent complex DFT of every phase response.
+// Independent complex DFT of every phase response.
+// Proves: TC-002-003
 #[test]
 fn audio_filter_response() {
     for rate in [44100, 48000] {
@@ -52,7 +53,8 @@ fn audio_filter_response() {
         }
     }
 }
-// Proves: CL-008-02; TC-002-003. Rational count independent of callback partition, no padded edges.
+// Rational count independent of callback partition, no padded edges.
+// Proves: TC-002-003
 #[test]
 fn audio_partition_count_delay() {
     for rate in [44100, 48000] {
@@ -85,7 +87,8 @@ fn audio_partition_count_delay() {
         }
     }
 }
-// Proves: CL-008-02; TC-002-001/003. Channel0, integer extrema, nonfinite and alignment rejection.
+// Channel0, integer extrema, nonfinite and alignment rejection.
+// Proves: TC-002-001, TC-002-003
 #[test]
 fn audio_native_normalization() {
     let f = format(48000);
@@ -137,7 +140,8 @@ fn acknowledge(source: &mut LiveSource, p: EpochProposal, id: &str) {
         .acknowledge_epoch(p.proposal_counter, descriptor, timing)
         .unwrap();
 }
-// Proves: CL-008-02/03; TC-002-001/003. Actual epoch acknowledgement and gaps without invented samples.
+// Actual epoch acknowledgement and gaps without invented samples.
+// Proves: TC-002-001, TC-002-003
 #[test]
 fn audio_epoch_known_unknown_gap_and_cancel() {
     let f = format(48000);
@@ -180,7 +184,8 @@ fn audio_epoch_known_unknown_gap_and_cancel() {
         SourcePoll::Failed(SourceError::Cancelled)
     ));
 }
-// Proves: CL-008-02/03; TC-002-003. Queue duration cap, explicit loss and bounded cancellation.
+// Queue duration cap, explicit loss and bounded cancellation.
+// Proves: TC-002-003
 #[test]
 fn audio_queue_and_clock_bounds() {
     let q = PacketQueue::new(format(48000)).unwrap();
@@ -210,7 +215,8 @@ fn audio_queue_and_clock_bounds() {
     assert_eq!(a.utc_at(120001), Some(1000001));
 }
 
-// Proves: CL-008-02; TC-002-003. Available native FIFO capacity survives consumer bookkeeping.
+// Available native FIFO capacity survives consumer bookkeeping.
+// Proves: TC-002-003
 #[test]
 fn audio_consumer_bookkeeping_cannot_drop_an_admissible_native_packet() {
     let queue = PacketQueue::new(format(48000)).unwrap();
@@ -236,7 +242,8 @@ fn audio_consumer_bookkeeping_cannot_drop_an_admissible_native_packet() {
     assert!(matches!(source.poll(), SourcePoll::EpochChanged(_)));
 }
 
-// Proves: CL-008-02; TC-002-003. Exact bounded packet ownership recycles across ring wraps.
+// Exact bounded packet ownership recycles across ring wraps.
+// Proves: TC-002-003
 #[test]
 fn audio_native_packet_buffers_recycle_without_loss_or_counter_drift() {
     let format = format(48000);
@@ -282,7 +289,8 @@ fn audio_native_packet_buffers_recycle_without_loss_or_counter_drift() {
     assert_eq!(diagnostic.pool_exhausted, 0);
 }
 
-// Proves: CL-008-02; TC-002-003. Impulse center and known-gap phase use an independent rational oracle.
+// Impulse center and known-gap phase use an independent rational oracle.
+// Proves: TC-002-003
 #[test]
 fn audio_impulse_and_large_gap_phase() {
     for rate in [44100, 48000] {
@@ -313,7 +321,8 @@ fn audio_impulse_and_large_gap_phase() {
         assert!(c.reset_at(MAX_COUNTER + 1).is_err());
     }
 }
-// Proves: CL-008-02/03; TC-002-003. Overflow invalidates buffered samples before any old-context publication.
+// Overflow invalidates buffered samples before any old-context publication.
+// Proves: TC-002-003
 #[test]
 fn audio_overflow_and_duplicate_epoch() {
     let f = format(44100);
@@ -351,7 +360,8 @@ fn audio_overflow_and_duplicate_epoch() {
         SourcePoll::Failed(SourceError::UnsupportedFormat)
     ));
 }
-// Proves: CL-008-03/05; TC-002-001; TC-002-003; TC-009-004. Backoff and explicit stop never rely on UTC.
+// Backoff and explicit stop never rely on UTC.
+// Proves: TC-002-001, TC-002-003
 #[test]
 fn audio_lifecycle_retries() {
     let mut lifecycle = Lifecycle::default();
@@ -385,7 +395,8 @@ fn audio_lifecycle_retries() {
         assert!(!lifecycle.due(u64::MAX));
     }
 }
-// Proves: CL-008-03/05; TC-002-001/003. Actual controller isolates two packet drivers and acknowledges stop within250ms.
+// Actual controller isolates two packet drivers and acknowledges stop within250ms.
+// Proves: TC-002-001, TC-002-003
 #[cfg(windows)]
 #[test]
 fn audio_controller_profiles_and_stop() {
@@ -426,7 +437,8 @@ fn audio_controller_profiles_and_stop() {
     }
 }
 
-// Proves: CL-008-02; TC-002-003. Actual converter waveform gain/rejection, not only coefficient response.
+// Actual converter waveform gain/rejection, not only coefficient response.
+// Proves: TC-002-003
 #[test]
 fn audio_waveform_response() {
     for rate in [44100, 48000] {
@@ -449,7 +461,8 @@ fn audio_waveform_response() {
     }
 }
 
-// Proves: CL-008-02/04; TC-002-001/003. Native driver metadata schema is independently encoded.
+// Native driver metadata schema is independently encoded.
+// Proves: TC-002-001, TC-002-003
 #[test]
 fn audio_wave_format_validation() {
     for rate in [44100_u32, 48000] {
@@ -519,7 +532,8 @@ fn audio_wave_format_validation() {
     );
 }
 
-// Proves: CL-008-02; TC-002-003. A failed bracket cannot conceal a later UTC jump.
+// A failed bracket cannot conceal a later UTC jump.
+// Proves: TC-002-003
 #[test]
 fn audio_clock_rejected_bracket_preserves_reference() {
     let a = ClockCorrelation::bracket(100, 1000, 102).unwrap();
@@ -534,7 +548,8 @@ fn audio_clock_rejected_bracket_preserves_reference() {
     assert!(!ClockCorrelation::observe(&mut previous, Some(b)));
 }
 
-// Proves: CL-008-02/04; TC-002-003. Failed Stop dominates read/cancel errors and
+// Failed Stop dominates read/cancel errors and
+// Proves: TC-002-003
 // retains every native owner plus its apartment until Stop acknowledges release.
 #[cfg(windows)]
 #[test]
@@ -624,7 +639,8 @@ fn audio_failed_stop_quarantines_owner_and_apartment_without_reopen() {
     }
 }
 
-// Proves: CL-008-02; TC-002-003. Successful Stop releases normally and preserves the read outcome.
+// Successful Stop releases normally and preserves the read outcome.
+// Proves: TC-002-003
 #[test]
 fn audio_successful_stop_preserves_prior_outcome_without_quarantine() {
     for prior in [
@@ -668,7 +684,8 @@ fn drain(source: &mut LiveSource, blocks: &mut Vec<SampleBlock>) -> Vec<EpochPro
     }
 }
 
-// Proves: CL-008-02/03; TC-002-001/003 (#38). The HB9BLA IC-7300 codec packet sequence: WASAPI
+// (#38). The HB9BLA IC-7300 codec packet sequence: WASAPI
+// Proves: TC-002-001, TC-002-003
 // flags DATA_DISCONTINUITY on packets whose device position and QPC both continue the
 // previous packet (measured QPC step jitter up to 0.56 ms, flagged or not). That is a
 // counted engine glitch on a continuous timeline: one source epoch, gap-free canonical
@@ -721,7 +738,8 @@ fn audio_contiguous_engine_discontinuity_keeps_the_source_epoch() {
     );
 }
 
-// Proves: CL-008-02/03; TC-002-003 (#38). A contiguous-position flag without a consistent QPC,
+// (#38). A contiguous-position flag without a consistent QPC,
+// Proves: TC-002-003
 // and every own-queue loss, is still unknown loss; each epoch names its trigger.
 #[test]
 fn audio_unknown_loss_epochs_name_their_trigger() {
@@ -753,7 +771,8 @@ fn audio_unknown_loss_epochs_name_their_trigger() {
     assert!(blocks.last().unwrap().discontinuity);
 }
 
-// Proves: CL-008-02/03; TC-002-001 (#38). The 2 ms QPC bound for a contiguous flagged packet:
+// (#38). The 2 ms QPC bound for a contiguous flagged packet:
+// Proves: TC-002-001
 // +-0.55 ms (the observed jitter) and exactly 2 ms are kept; 2.1 ms early or late is loss.
 #[test]
 fn audio_contiguous_flag_qpc_tolerance_boundary() {
@@ -787,7 +806,8 @@ fn audio_contiguous_flag_qpc_tolerance_boundary() {
     }
 }
 
-// Proves: CL-008-02/03; TC-002-001 (#38). A real native FIFO overflow names queue_full.
+// (#38). A real native FIFO overflow names queue_full.
+// Proves: TC-002-001
 #[test]
 fn audio_queue_full_epoch_names_its_trigger() {
     let f = format(48000);
@@ -816,7 +836,7 @@ fn audio_queue_full_epoch_names_its_trigger() {
     );
 }
 
-// Proves: CL-052-01; TC-052-001. #52: silent packets (zero-filled by the source) and
+// #52: silent packets (zero-filled by the source) and
 // accepted engine glitches are marked on the canonical timeline, so a window can count
 // them; a new epoch forgets them.
 #[test]
@@ -852,7 +872,7 @@ fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
     assert_eq!(s.marked_frames(0, u64::MAX), (0, 0));
 }
 
-// Proves: CL-052-01; TC-052-001. #52 review: sustained silence over more packets than the
+// #52 review: sustained silence over more packets than the
 // mark limit (600 silent 480-frame packets after one signal packet) stays counted in full.
 #[test]
 fn audio_sustained_silence_is_counted_in_full() {

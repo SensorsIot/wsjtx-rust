@@ -36,7 +36,8 @@ fn slot(hz: u32, power_db: Option<i64>, his_end: HisEnd) -> Slot {
     }
 }
 
-// Proves: TC-039-010. One lowest slot wins; the current Tx tying it is kept; two lowest without
+// One lowest slot wins; the current Tx tying it is kept; two lowest without
+// Proves: TC-039-010
 // the current Tx: the nearer to it, at equal distance the lower.
 #[test]
 fn tc_039_010_the_lowest_power_wins_and_a_tie_keeps_the_current_tx() {
@@ -87,7 +88,8 @@ fn tc_039_010_the_lowest_power_wins_and_a_tie_keeps_the_current_tx() {
     );
 }
 
-// Proves: TC-039-010, TC-039-022. Power compares in whole dB: 40.4 and 40.0 are one dB and tie, so
+// Power compares in whole dB: 40.4 and 40.0 are one dB and tie, so
+// Proves: TC-039-010
 // the current Tx stays (the slot check keeps a tied slot); 40.6 is 41 dB and loses to 40.0. There is
 // no threshold beyond that.
 #[test]
@@ -119,7 +121,8 @@ fn tc_039_010_whole_db_decides_the_tie() {
     );
 }
 
-// Proves: TC-039-010, TC-097-010. The range edges (#97: Auto's candidates FT8 500..2650 and FT4
+// The range edges (#97: Auto's candidates FT8 500..2650 and FT4
+// Proves: TC-039-010
 // 500..2610, 90 Hz wide, my whole signal below 2700 Hz; the open-slot marks keep 300); a quiet slot
 // outside is never taken; a slot reaching above 2400 Hz loses every tie.
 #[test]
@@ -156,7 +159,8 @@ fn tc_039_010_never_outside_the_tx_range() {
     assert_eq!(crate::freeslot::auto_band(Mode::Ft4), (500, 2610));
 }
 
-// Proves: TC-039-010. Never within 50 Hz of the called station's signal: an FT8 station at 1800
+// Never within 50 Hz of the called station's signal: an FT8 station at 1800
+// Proves: TC-039-010
 // forbids 1710..1890 (my 50 Hz signal keeps 50 Hz from its 50 Hz), so the quietest away from it.
 #[test]
 fn tc_039_010_never_within_50_hz_of_the_called_station() {
@@ -186,7 +190,8 @@ fn tc_039_010_never_within_50_hz_of_the_called_station() {
     );
 }
 
-// Proves: TC-039-010. His end: a frequency he decodes (of my Tx parity, chosen by the feed) within
+// His end: a frequency he decodes (of my Tx parity, chosen by the feed) within
+// Proves: TC-039-010
 // 50 Hz excludes the slot, 50 Hz away does not; when every candidate is excluded his end is not
 // used and the status says no; none known: unknown.
 #[test]
@@ -215,7 +220,8 @@ fn tc_039_010_his_end_excludes_and_is_ignored_when_it_leaves_nothing() {
     assert_eq!(ft8(1500, None, None, &power).his_end, HisEnd::Unknown);
 }
 
-// Proves: TC-039-010. No power yet: the current Tx is kept, or when it is too near the called
+// No power yet: the current Tx is kept, or when it is too near the called
+// Proves: TC-039-010
 // station the nearest candidate away from it (the lower on a tie), power_db null.
 #[test]
 fn tc_039_010_no_power_keeps_the_current_tx() {
@@ -282,7 +288,8 @@ fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9
 }
 
-// Proves: TC-039-010; TC-039-050 (f), (g). The received periods: the mean level of each bin over
+// The received periods: the mean level of each bin over
+// Proves: TC-039-010
 // the rows of a period; a period I transmitted in is not kept; a new live job starts empty; the
 // open period counts once it has ended. Of them only my Rx parity's among its last 4 periods on
 // the clock before the period in progress count (FT8 the last 2 minutes, FT4 the last minute): a
@@ -360,7 +367,8 @@ fn tc_039_010_the_counted_periods_are_my_recent_rx_periods() {
     assert_eq!(w.periods(("job", 2), at_ms(EVEN + 10 * 30_000)).len(), 1);
 }
 
-// Proves: TC-039-010; TC-039-050 (b). A slot covers the bins of [f, f + width) and reads their mean
+// A slot covers the bins of [f, f + width) and reads their mean
+// Proves: TC-039-010
 // level above the floor's mean over them: a flat floor of 20 (floor 20.65) with a 60 dB band at
 // 1000..1100 Hz (bins 342..375, at most 34 of a segment's 81): 900 reads level 20, floor 20.65,
 // rise -0.65; 1000 level 60, rise 39.35; 1100 the floor again (the band ends below 1100);
@@ -400,7 +408,8 @@ fn tc_039_010_a_slot_reads_its_bins_above_the_floor() {
     );
 }
 
-// Proves: CL-039-09; TC-039-050 (b), (c), (d). The compared value is a slot's largest rise over the
+// The compared value is a slot's largest rise over the
+// Proves: TC-039-050
 // counted periods (the busiest, of equal rises the latest): on a flat floor of 30 (30.65), a slot
 // on the floor in 3 periods and 6 dB above it in one is 6 - 0.65 = 5.35, one 3 dB above in all 4 is
 // 2.35, so 2 beats 5 (their means, 0.85 and 2.35, would rank them the other way); a floor slot
@@ -438,7 +447,8 @@ fn tc_039_050_the_busiest_counted_period_counts() {
     );
 }
 
-// Proves: CL-039-09; TC-039-050 (i). The WSJT-X passband floor of a period (oracle: a flat floor F
+// The WSJT-X passband floor of a period (oracle: a flat floor F
+// Proves: TC-039-050
 // is the lowest tenth of every segment, so the fourth-order fit is F and the floor F + 0.65): the
 // floor bins are 103..921 (300..2700 Hz); a flat 30 gives 30.65 on every floor bin; a segment
 // (bins 346..426) where only its 8 lowest bins sit at 30 and the rest at 45 still gives 30.65
@@ -487,7 +497,8 @@ fn floor_vectors() -> Vec<Value> {
     vectors
 }
 
-// Proves: CL-039-09; TC-039-050 (a). The sloped floor of the 2026-11-07 FT4 roll-off table (30 dB
+// The sloped floor of the 2026-11-07 FT4 roll-off table (30 dB
+// Proves: TC-039-050
 // flat to 2400 Hz, falling to 15 dB at 2700 Hz, AA3B 12 dB above it at 2621..2711 Hz; once
 // without and once with a station 18 dB above the floor at 1500.5..1590.5 Hz) against the independent
 // numpy fourth-order fit of each run of each reference vector: every floor bin lies within the
@@ -547,7 +558,8 @@ fn open_of(mode: Mode, decoded: &[f64], value: &dyn Fn(u32) -> Option<f64>) -> V
     open
 }
 
-// Proves: CL-039-09, CL-065-01; TC-066-002 (b), (c), (j). The overlap boundary is the width: a
+// The overlap boundary is the width: a
+// Proves: TC-066-002
 // station decoded at 1000.0 Hz leaves out FT8 960 and 1040 (40 Hz) and keeps 950 and 1050 (50 Hz),
 // FT4 920 and 1080 (80 Hz) out and 910 and 1090 (90 Hz) kept; at 1000.4 Hz 1050 (49.6 Hz) is out.
 // Each case makes the tested candidate the only quiet one (20 against 40); with it the only one at
@@ -594,7 +606,8 @@ fn tc_066_002_a_candidate_on_a_decoded_station_is_left_out_while_one_is_free() {
     );
 }
 
-// Proves: CL-039-09, CL-039-22; TC-066-002 (d), (e), (j). Only my Rx parity is judged. My even
+// Only my Rx parity is judged. My even
+// Proves: TC-066-002
 // periods: a flat floor of 30 with 1460..1560 at 40 (on the current Tx 1500), so the nearest floor
 // slot is 1560 (60 Hz; 1410 is 90 Hz away). A station 20 dB up at 1560 decoded only in my odd (Tx)
 // period is neither left out nor raised: 1560 is chosen at -0.65, free (0). A CQ: with its Tx parity
@@ -639,7 +652,8 @@ fn tc_066_002_only_my_rx_parity_is_judged() {
     }
 }
 
-// Proves: CL-039-09; TC-066-002 (f). Only the counted periods' decodes count. A station decoded at
+// Only the counted periods' decodes count. A station decoded at
+// Proves: TC-066-002
 // 1500 (the current Tx, every slot on a flat floor of 30): in my last Rx period it leaves 1500 out
 // (Tx to 1450, 50 Hz, the lower); in a 5th older Rx period, in a period of the window before a band
 // change, and in a period older than the window while the window holds two received ones, it
@@ -683,7 +697,8 @@ fn tc_066_002_decodes_of_periods_that_do_not_count_leave_nothing_out() {
     );
 }
 
-// Proves: CL-039-09, CL-065-01; TC-066-002 (i), (j). His end applies among the candidates the
+// His end applies among the candidates the
+// Proves: TC-066-002
 // decoded stations leave: a station decoded at 1500 leaves out 1460..1540 and his frequency 1450 of
 // my Tx parity 1410..1490, so on a flat table the nearest left is 1550 (his_end yes); his
 // frequencies every 40 Hz leave none, his end is ignored, and of the decode-free ones 1450 and
@@ -720,7 +735,7 @@ fn four(bands: &[(u32, u32, u8)]) -> Vec<Period> {
     (1..=4).rev().map(|b| period(b, false, 30, bands)).collect()
 }
 
-// Proves: CL-065-01; TC-082-001 (a), (b), TC-065-001 (#82: replaced by TC-082-001). (a) Four counted periods flat 30 (floor 30.65, rise -0.65
+// (#82: replaced by TC-082-001). (a) Four counted periods flat 30 (floor 30.65, rise -0.65
 // everywhere, value 0) with an undecoded station band 12 dB up over 1000..1050 Hz (bins 342..358):
 // 950 covers bins 325..341 (to 999.0 Hz), all on the floor: open; 960 covers 328..344, 3 of them
 // raised, (3 x 42 + 14 x 30) / 17 - 30.65 = 1.47, 1: closed; 1040 covers 355..371, 4 raised, 2.17,
@@ -757,7 +772,8 @@ fn tc_082_001_a_station_closes_its_slots_and_the_open_ones_join_into_ranges() {
     );
 }
 
-// Proves: CL-065-01; TC-082-001 (c). The join of half-open signals [f, f + width): FT8 2110 and
+// The join of half-open signals [f, f + width): FT8 2110 and
+// Proves: TC-082-001
 // 2160 touch (2160 = 2110 + 50) and stay two ranges; 2100, 2110 and 2130 overlap into [2100,
 // 2180); the top slot 2650 is [2650, 2700); every 5th grid point 300, 350, ..., 2650 touches the
 // next: 48 ranges (2400 / 50), the worst case. FT4 (90 Hz): 300 is [300, 390); 300 and 390 touch:
@@ -789,7 +805,8 @@ fn tc_082_001_touching_signals_stay_apart_and_overlapping_ones_join() {
     }
 }
 
-// Proves: CL-065-01; TC-082-001 (d), (g), (h). (d) Values compare in whole dB: a slot whose largest
+// (d) Values compare in whole dB: a slot whose largest
+// Proves: TC-082-001
 // rise is 0.4 dB is 0, open; one at 0.6 dB is 1, closed (every other slot 5 dB, closed): exactly
 // 1200 (0.0) and 1500 (0.4) open. (g) Stations decoded every 40 Hz overlap every grid point: open
 // [] (no fallback). (h) No counted period: no value, open [], periods 0.
@@ -820,7 +837,7 @@ fn tc_082_001_whole_db_no_fallback_and_no_counted_period() {
     );
 }
 
-// Proves: CL-065-01; TC-082-001 (e), (f), (i). (e) A station decoded and 20 dB above the floor at
+// (e) A station decoded and 20 dB above the floor at
 // 1560..1610 Hz only in the odd periods (the other parity, my Rx parity even): it closes nothing,
 // open [[300, 2700]]. (f) A station decoded at 1500 in a period that does not count closes nothing:
 // the 5th older even period, a period before a band change, a period older than the last 4 of the
@@ -891,7 +908,7 @@ fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_perio
     );
 }
 
-// Proves: CL-065-01; TC-082-001, TC-065-001 (#82: replaced by TC-082-001). The value of one build has exactly {at_utc_ms, mode, rx_parity,
+// (#82: replaced by TC-082-001). The value of one build has exactly {at_utc_ms, mode, rx_parity,
 // qso, periods, open} with the ranges as [lo_hz, hi_hz] integer pairs (WstxQsoControl::OpenSlots):
 // no run_id, listening, slots or per-slot numbers.
 #[test]
@@ -956,7 +973,8 @@ fn judge_p(
     (starts, j.decoded().to_vec(), open)
 }
 
-// Proves: CL-039-09, CL-065-01; TC-089-001 (a), (b), (c), (g). Every period flat 30 (floor 30.65,
+// Every period flat 30 (floor 30.65,
+// Proves: TC-089-001
 // every slot -0.65, free). (a) At P + 14.1 s (P in progress) with P's complete publication: P is
 // due, so the last 4 due odd periods are P, P - 30, P - 60 and P - 90 s; P - 120 s is the 5th and
 // does not count. A station decoded at 2340 Hz in P closes the candidates f with |f - 2340| below
@@ -1003,7 +1021,8 @@ fn tc_089_001_the_newest_rx_period_counts_once_its_complete_publication_is_there
     assert!(open.contains(&1200), "(g) {open:?}");
 }
 
-// Proves: CL-039-09; TC-089-001 (d). Undecoded, every odd period flat 30 (floor 30.65), except in P
+// Undecoded, every odd period flat 30 (floor 30.65), except in P
+// Proves: TC-089-001
 // the 18 bins 512..529 of slot 1500 ([1500, 1550) Hz: ceil(1500 / 2.9297) = 512, ceil(1550 /
 // 2.9297) - 1 = 529) at 42 in P's rows 3..64 (62 rows) and 30 in its other rows; those 18 bins lie
 // above the 8th lowest level of their floor segment (bins 508..588), so the flat-floor fit stands.
@@ -1053,7 +1072,8 @@ fn tc_089_001_the_newest_period_counts_by_its_rows_so_far() {
     assert_eq!(others, [0, 0]);
 }
 
-// Proves: CL-039-09, CL-065-01; TC-089-001 (e), (f). (e) At P + 15.2 s P has ended without its
+// (e) At P + 15.2 s P has ended without its
+// Proves: TC-089-001
 // publication: it counts by its levels (P - 90 .. P), and with no decode of it 2340 is open; once
 // its complete publication brings the station at 2340, 2300..2380 close (unchanged, #82). (f) FT4
 // (7.5 s periods, my Rx parity Q's): at Q + 6.9 s with Q's complete publication Q is due, the last

@@ -68,7 +68,7 @@ fn windows(mode: Mode, frames: u64, partitions: &[usize]) -> Vec<(u64, Vec<f32>)
     output
 }
 
-// Proves: FR-002, FR-003, CL-008-02; TC-002-001.Integer sample clock fixes window edges.
+// Integer sample clock fixes window edges.
 #[test]
 fn receive_windows_follow_mode_boundaries_independent_of_packet_partition() {
     for (mode, step, span) in [(Mode::Ft8, 180000, 360000), (Mode::Ft4, 90000, 180000)] {
@@ -87,7 +87,7 @@ fn receive_windows_follow_mode_boundaries_independent_of_packet_partition() {
     }
 }
 
-// Proves: FR-002, FR-003, CL-008-02; TC-002-001.A known gap never becomes decoder padding.
+// A known gap never becomes decoder padding.
 #[test]
 fn receive_known_gap_resets_support_preserving_global_positions() {
     let mut buffer = WindowBuffer::new(Mode::Ft4, descriptor()).unwrap();
@@ -115,7 +115,7 @@ fn receive_known_gap_resets_support_preserving_global_positions() {
     assert_eq!(output[0].samples[0], (170000 % 97) as f32 / 128.);
 }
 
-// Proves: FR-002, FR-003, CL-008-02; TC-002-001.Invalid blocks cannot mutate accepted history.
+// Invalid blocks cannot mutate accepted history.
 #[test]
 fn receive_rejects_overlap_unmarked_gap_changed_context_and_bad_samples() {
     let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor()).unwrap();
@@ -157,7 +157,7 @@ fn receive_rejects_overlap_unmarked_gap_changed_context_and_bad_samples() {
     );
 }
 
-// Proves: FR-002, FR-003, CL-008-02; TC-002-001.Counter and block limits fail before wrapping.
+// Counter and block limits fail before wrapping.
 #[test]
 fn receive_input_limits_and_initial_discontinuity_are_explicit() {
     let mut buffer = WindowBuffer::new(Mode::Ft8, descriptor()).unwrap();
@@ -179,7 +179,8 @@ fn receive_input_limits_and_initial_discontinuity_are_explicit() {
     assert!(buffer.push(&reset).unwrap().reset_decoder);
 }
 
-// Proves: FR-003, CL-007-05; TC-004-004. Scheduled residues fix completion and length.
+// Scheduled residues fix completion and length.
+// Proves: TC-004-004
 #[test]
 fn receive_schedule_completes_windows_at_period_residues() {
     // FT8 prompt/late residues for a UTC anchor 7.5 s into a period at frame 1000:
@@ -235,7 +236,8 @@ fn receive_schedule_completes_windows_at_period_residues() {
     assert_eq!(ends, [90000, 180000]);
 }
 
-// Proves: CL-007-05; TC-004-004. A re-anchored schedule moves completions without dropping
+// A re-anchored schedule moves completions without dropping
+// Proves: TC-004-004
 // or repeating a window, for a forward shift and a backward step.
 #[test]
 fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
@@ -280,7 +282,8 @@ fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
     );
 }
 
-// Proves: CL-007-05; TC-004-004. UTC steps of +2 s, -2 s and +8 s taken 0.06 s before a
+// UTC steps of +2 s, -2 s and +8 s taken 0.06 s before a
+// Proves: TC-004-004
 // prompt completion: every period's prompt and late window complete exactly once, in order.
 #[test]
 fn receive_clock_steps_keep_each_period_window_once_and_in_order() {

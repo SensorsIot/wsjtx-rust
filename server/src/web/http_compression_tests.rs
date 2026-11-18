@@ -86,7 +86,7 @@ fn canonical_negotiations(model: &Model) -> Result<Vec<(Vec<String>, &'static st
     Ok(vectors)
 }
 
-// Proves: TC-009-005 case8 (the test-side oracle only, not the product negotiator).
+// case8 (the test-side oracle only, not the product negotiator).
 #[test]
 fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
     let model = Model::load();
@@ -111,7 +111,7 @@ fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
     }
 }
 
-// Proves: CL-003-08, CL-008-07; TC-009-005 case8.
+// case8.
 #[tokio::test]
 async fn product_encoder_matches_all_49_independent_negotiations() {
     let mut count = 0;
@@ -574,7 +574,7 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
     drop(fixture);
 }
 
-// Proves: CL-022-05. Public script/style assets are gzip only when the client
+// Public script/style assets are gzip only when the client
 // selects it; every other negotiation keeps the exact identity bytes, never 406.
 #[tokio::test]
 async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwise() {

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// Proves: CL-009-03, CL-009-04; TC-008-003. The actual station transmit owner with the
+// The actual station transmit owner with the
 // automatic CL-022 lifecycle and an independent scripted CI-V peer; wire strictness of
 // WstxTransmitControl on the actual router.
 use super::*;
@@ -407,7 +407,7 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Proves: CL-009-04, CL-022-03; TC-008-003. Startup safety release: a radio found
+// Startup safety release: a radio found
 // transmitting by the first fresh readback after boot gets exactly one off-only switch.
 #[test]
 fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() {
@@ -459,7 +459,7 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
     let _ = std::fs::remove_dir_all(&directory);
 }
 
-// Proves: CL-009-05; TC-006-003, TC-092-003. GET /transmit reports the station's SNTP
+// GET /transmit reports the station's SNTP
 // measurement (exact keys) and the clock state the transmit owner plans with: the station
 // clock, which SNTP never makes unsynchronized (#92); SNTP beyond 500 ms only warns.
 #[tokio::test]
@@ -503,7 +503,8 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// Proves: CL-044-14; TC-044-017 (g). The transmit step's call reaches the sink through the
+// The transmit step's call reaches the sink through the
+// Proves: TC-044-017
 // boxed hardware the station really runs on.
 #[test]
 fn the_meter_call_of_the_transmit_step_reaches_the_sink() {

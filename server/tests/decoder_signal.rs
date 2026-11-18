@@ -140,7 +140,6 @@ fn wav(path: &Path) -> Vec<f32> {
     assert!(format);
     result.unwrap()
 }
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn independent_waveforms_decode() {
     let root = prepared("frozen");
@@ -209,7 +208,6 @@ fn independent_waveforms_decode() {
         );
     }
 }
-// Proves: FR-003, FR-004, CL-007-02, CL-007-04.
 #[test]
 fn quality_corpus() {
     let root = prepared("quality");
@@ -385,7 +383,6 @@ fn quality_corpus() {
     }
 }
 
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn cooperative_quanta_and_partial_cancellation() {
     use std::{
@@ -435,7 +432,6 @@ fn cooperative_quanta_and_partial_cancellation() {
         eprintln!("{mode:?}: {polls} cooperative polls, maximum {maximum:?}");
     }
 }
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn planned_scalar_and_gain_invariance() {
     let root = prepared("quality");
@@ -470,7 +466,6 @@ fn planned_scalar_and_gain_invariance() {
         }
     }
 }
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn unmodulated_sources_are_not_frames() {
     for mode in [Mode::Ft4, Mode::Ft8] {
@@ -490,7 +485,6 @@ fn unmodulated_sources_are_not_frames() {
         }
     }
 }
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
     let fixture: Value = serde_json::from_str(include_str!(
@@ -585,7 +579,6 @@ fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
     );
     fs::remove_dir_all(resolved).unwrap();
 }
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn fixture_cache_refuses_forged_observations() {
     let tool = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -602,7 +595,6 @@ fn fixture_cache_refuses_forged_observations() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("Ran 3 tests"));
 }
 
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn phase_drift_dynamic_range_and_residual_regressions() {
     let fixtures: Value = serde_json::from_str(include_str!(
@@ -703,7 +695,6 @@ fn phase_drift_dynamic_range_and_residual_regressions() {
     assert_eq!(checked, 14);
 }
 
-// Proves: FR-003, FR-004, CL-007-02, CL-007-04.
 #[test]
 fn official_modern_recording_baselines() {
     let cases: Value = serde_json::from_str(include_str!(
@@ -815,7 +806,7 @@ fn official_modern_recording_baselines() {
     );
 }
 
-// Proves: FR-003, FR-004, CL-007-04 (#56). On the recorded corpus the station finds at least
+// (#56). On the recorded corpus the station finds at least
 // the pinned number of the complete-frame decodes of WSJT-X jt9 -8/-5 -d 3; jt9's output is a
 // lower bound, not exhaustive truth (CL-007-03).
 #[test]
@@ -899,7 +890,6 @@ fn recorded_corpus_reaches_jt9_deep_decodes() {
     );
 }
 
-// Proves: FR-003, FR-004, CL-007-04.
 #[test]
 fn release_runtime_and_overlapping_window_history() {
     resource_runtime_parent();
@@ -2082,7 +2072,7 @@ fn resource_official_comparison(records: &[Decode], oracle: &Value, context: &st
     );
 }
 
-// Proves: CL-007-04. Explicit diagnostic selection is required; no total busy-window SLA is added.
+// Explicit diagnostic selection is required; no total busy-window SLA is added.
 #[test]
 #[ignore = "explicit resource diagnostic: genuine30s public async windows; selected root CPU budget, no new total deadline"]
 fn resource_busy_live_overlap_and_pending_cancel() {
@@ -2269,7 +2259,6 @@ fn resource_busy_live_overlap_and_pending_cancel() {
     );
 }
 
-// Proves: FR-003, FR-004, CL-007-03, CL-007-04.
 #[test]
 fn physical_noise_reproduction_has_no_frame() {
     let root = prepared("quality");
@@ -2281,7 +2270,6 @@ fn physical_noise_reproduction_has_no_frame() {
     );
 }
 
-// Proves: FR-004, CL-007-03, CL-007-04.
 #[test]
 fn same_frequency_preserves_two_temporal_frames() {
     let root = prepared("frozen");
@@ -2319,7 +2307,6 @@ fn same_frequency_preserves_two_temporal_frames() {
     assert_eq!(result.len(), 2);
 }
 
-// Proves: FR-004, CL-007-04.
 #[test]
 fn physical_wrong_mode_reproduction_has_no_frame_or_search_error() {
     let root = prepared("quality");
@@ -2359,7 +2346,7 @@ fn busy_prompt_window() -> Vec<f32> {
     window.extend_from_slice(&recording[..165600]);
     window
 }
-// Proves: CL-007-04, CL-007-05; TC-004-004. A busy recorded period presented as the
+// A busy recorded period presented as the
 // UTC-aligned FT8 prompt window (15 s of audio completing at period start + 13.8 s)
 // publishes every decode within the 1.0 s modem share of the 1.2 s budget to +15.0 s.
 #[test]
@@ -2408,7 +2395,8 @@ fn live_busy_period_publishes_every_decode_promptly() {
     );
 }
 
-// Proves: CL-057-02; TC-057-002 (#57). The busy period decodes to exactly the same records in
+// (#57). The busy period decodes to exactly the same records in
+// Proves: TC-057-002
 // the same order (payload, frame, frequency and SNR bit for bit) on 1, 4 and 12 threads, and
 // the wall time drops with the thread count (reported, best of three).
 #[test]

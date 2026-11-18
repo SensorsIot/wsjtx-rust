@@ -172,7 +172,6 @@ impl recording::LiveInput for Input {
     }
 }
 
-// Proves: CL-008-02/03/05; CL-010-05/07/08; TC-009-004.
 // Cost2: isolated real HTTP server + Chromium on development PC; no hardware.
 // Mandatory release execution is registered as live-station-browser.
 #[cfg(not(debug_assertions))]
@@ -181,7 +180,6 @@ async fn live_native_fixture_reaches_real_manager_http_and_browser_callsign() {
     live_native_browser_mode("ft8").await;
 }
 
-// Proves: CL-008-02/03/05; CL-010-05/07/08; TC-009-004.
 // Same actual native provider, decoder, owner, HTTP and browser path in FT4 mode.
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -507,7 +505,7 @@ impl KeptPageBoot {
     }
 }
 
-// Proves: CL-057-03; TC-007-002 (#22). Proves: CL-050-08; TC-050-008 (#50). One page across a
+// (#22). Proves: CL-050-08; TC-050-008 (#50). One page across a
 // restart and busy periods through the actual live source, modem, HTTP and browser; the driver
 // tests/frontend/receive-page.test.cjs holds the oracle. The process stays, because native capture can
 // only be injected in-process; the listener, all connections, the receive owner and the boot go.
@@ -590,7 +588,8 @@ fn live_native_page_kept_across_restart() {
     println!("{log}");
 }
 
-// Proves: CL-057-01, CL-057-02, CL-007-05; TC-057-001, TC-057-002 (#57, #72). Busy FT8
+// (#57, #72). Busy FT8
+// Proves: TC-057-001
 // periods through the actual live source, window schedule, modem, publication, WebSocket,
 // results API and Detailed browser: each period view is published by its period start
 // + 15.0 s, and every row of it is painted within 0.3 s of its publication. The time from
@@ -903,7 +902,8 @@ impl StationMetrics {
     }
 }
 
-// Proves: CL-007-04; TC-004-003. Station process private-commit delta <=96MiB over idle and
+// Station process private-commit delta <=96MiB over idle and
+// Proves: TC-004-003
 // receive-owner release <=250ms after Stop, on the actual manager, provider and decoder.
 // Exclusive resource window only (station capture paused, no concurrent builds).
 #[cfg(all(windows, not(debug_assertions)))]
@@ -1046,7 +1046,8 @@ fn resource_station_process_delta_and_owner_release() {
     );
 }
 
-// Proves: CL-010-15; TC-007-005 (#10 PushedStationState): receive.state holds exactly what the browser
+// (#10 PushedStationState): receive.state holds exactly what the browser
+// Proves: TC-007-005
 // would otherwise read for its identity, not what frames carry, and the largest one fits the
 // 4096-byte write buffer beside a pending 2048-byte optional write (two 14-byte headers).
 // Every browser-accepted text at its 256-byte maximum, counters at 2^53-1.
@@ -1099,7 +1100,8 @@ fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     assert!(data.get("source").is_none(), "a frame carries next_frame");
 }
 
-// Proves: CL-010-15; TC-007-005 (#10): after a socket's first receive.state only what changed goes,
+// (#10): after a socket's first receive.state only what changed goes,
+// Proves: TC-007-005
 // beside the identity; a new receive identity goes whole. Hand-written before and after values.
 #[test]
 fn receive_state_after_the_first_holds_only_what_changed() {

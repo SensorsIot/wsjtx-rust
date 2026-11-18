@@ -7,7 +7,7 @@ fn bytes(hex: &str) -> Vec<u8> {
         .collect()
 }
 
-// Proves: TC-023-001. The form of a real FLEX-6600's reply (2026-11-06), other values changed.
+// The form of a real FLEX-6600's reply (2026-11-06), other values changed.
 #[test]
 fn info_reply_of_a_real_radio_gives_its_facts() {
     let found = parse_info(
@@ -19,7 +19,8 @@ fn info_reply_of_a_real_radio_gives_its_facts() {
     assert_eq!(parse_info("").serial, "");
 }
 
-// Proves: TC-023-001. One DAX packet exactly as a real FLEX-6600 sent it on 2026-11-06. It
+// One DAX packet exactly as a real FLEX-6600 sent it on 2026-11-06. It
+// Proves: TC-023-001
 // carries no address or serial. Expected values were read from the capture with a separate tool.
 #[test]
 fn dax_packet_of_a_real_radio_decodes() {
@@ -38,7 +39,7 @@ fn dax_packet_of_a_real_radio_decodes() {
     assert_eq!(peak, 0.075_415_015);
 }
 
-// Proves: TC-023-001. Independently authored issue-13 preparation vector
+// Independently authored issue-13 preparation vector
 // (hb9bla-progress/flex-readiness/independent-protocol-vectors.json, SHA256
 // d706e67b6bf78ae46ddc8c7b7a3331d8fdde5c15e2a1446eb0110586fa893f3e), not vendor output.
 #[test]
@@ -68,7 +69,8 @@ fn independent_narrow48_vector_decodes_field_by_field() {
     assert_eq!(dax_samples(&p), Err(WireError::NotDaxAudio));
 }
 
-// Proves: TC-023-001. The vector's negative cases with their expected refusals.
+// The vector's negative cases with their expected refusals.
+// Proves: TC-023-001
 #[test]
 fn independent_negative_vectors_are_refused() {
     let wrong = bytes(
@@ -108,7 +110,7 @@ fn independent_negative_vectors_are_refused() {
     ));
 }
 
-// Proves: TC-023-001. Literal command/reply/status/handle/version lines from the
+// Literal command/reply/status/handle/version lines from the
 // SmartSDR TCP/IP API wiki examples.
 #[test]
 fn documented_control_lines_parse_and_commands_are_bounded() {
@@ -178,7 +180,7 @@ fn documented_control_lines_parse_and_commands_are_bounded() {
     assert!(parse_line("Q1|0|").is_err());
 }
 
-// Proves: TC-023-001. Partial, coalesced and CRLF chunks; the 4096-byte line bound.
+// Partial, coalesced and CRLF chunks; the 4096-byte line bound.
 #[test]
 fn line_buffer_splits_chunks_and_bounds_each_line() {
     let mut buffer = LineBuffer::default();
@@ -204,7 +206,7 @@ fn line_buffer_splits_chunks_and_bounds_each_line() {
     );
 }
 
-// Proves: TC-023-002. Discovery is identified by Flex OUI and class 0xFFFF; the
+// Discovery is identified by Flex OUI and class 0xFFFF; the
 // serial, not the address or nickname, is retained as identity.
 #[test]
 fn discovery_packet_fields_and_refusals() {

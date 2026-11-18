@@ -1,6 +1,5 @@
 use super::super::search::complete;
 use super::*;
-// Proves: FR-004, CL-007-03.
 #[test]
 fn periodic_nuttall_spectrum_matches_direct_dft() {
     let input = (0..N + 576)
@@ -36,7 +35,6 @@ fn periodic_nuttall_spectrum_matches_direct_dft() {
         }
     }
 }
-// Proves: FR-004, CL-007-03.
 #[test]
 fn quartic_baseline_preserves_db_offset_and_positive_power() {
     for degree in [0, 4] {
@@ -65,7 +63,6 @@ fn quartic_baseline_preserves_db_offset_and_positive_power() {
     assert!(baseline(&invalid).is_none());
 }
 
-// Proves: FR-004, CL-007-03.
 #[test]
 fn percentile_half_ties_remainder_and_endpoint_contrast() {
     let mut ranks = (1..=65).rev().map(f64::from).collect::<Vec<_>>();
@@ -85,7 +82,6 @@ fn percentile_half_ties_remainder_and_endpoint_contrast() {
     assert_eq!(endpoint_contrast(&ratio, 3500.), 1.18);
 }
 
-// Proves: FR-004, CL-007-03.
 #[test]
 fn unused_quartic_extrapolation_cannot_erase_the_fit_band() {
     for scale in [-500., 500.] {
@@ -100,7 +96,6 @@ fn unused_quartic_extrapolation_cannot_erase_the_fit_band() {
         }
     }
 }
-// Proves: FR-004, CL-007-03.
 #[test]
 fn fifteen_bin_flat_maximum_retains_its_carrier_coverage() {
     // The exact ratio plateau made by smoothing one elevated bin over15bins.
@@ -118,7 +113,6 @@ fn fifteen_bin_flat_maximum_retains_its_carrier_coverage() {
     }
     assert!(actual.iter().any(|p| (p.0 - 1000.).abs() < 1e-10));
 }
-// Proves: CL-007-02.
 #[test]
 fn ft4_snr_follows_the_candidate_contrast_scale() {
     // ft4_decode (#52): 10*log10(contrast-1)-14.8 dB, floor -21, whole dB. 1000 Hz + 31.25 Hz

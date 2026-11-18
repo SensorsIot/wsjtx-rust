@@ -676,7 +676,8 @@ async fn http2_get(
     (status.as_u16(), client)
 }
 
-// Proves: CL-003-05; TC-080-001 cases (a)-(h). One JSON line per client with traffic at each
+// cases (a)-(h). One JSON line per client with traffic at each
+// Proves: TC-080-001
 // period end with the bytes its peers wrote and read, the types by the log's rule, other and the
 // estimate; refused requests on their connection's client; MCP on its own line; a connection
 // without credentials local, also on TLS; display per socket; FT4, mode change and no-mode
@@ -857,7 +858,8 @@ async fn link_byte_log_counts_each_client_per_period() {
     service.abort();
 }
 
-// Proves: CL-003-05; TC-080-001 case (i). On a plaintext loopback profile t is 0 and the client
+// case (i). On a plaintext loopback profile t is 0 and the client
+// Proves: TC-080-001
 // is local.
 #[tokio::test(start_paused = true)]
 async fn link_byte_log_on_a_plaintext_profile() {
@@ -904,7 +906,8 @@ async fn link_byte_log_on_a_plaintext_profile() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// Proves: CL-003-05; TC-080-001 (review finding on #80): the set of types is bounded. A request
+// (review finding on #80): the set of types is bounded. A request
+// Proves: TC-080-001
 // method outside the standard ones (FOO1, FOO2) on a route and on an unknown path is typed
 // "OTHER /" and "OTHER unrouted"; no client text reaches a key.
 #[tokio::test(start_paused = true)]
