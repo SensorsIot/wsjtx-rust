@@ -205,3 +205,5 @@ migrations; README in #235 or #231; where harness issues live.
    kept, shows the cause, and the operator resumes or cancels it; stated in qso's rules in #235.
 5. #213 (operator 2026-11-18, A): the station holds the menu items of the last completed Apply
    (one record in the station's memory); a changed item is set back and shown; model in #235.
+6. #215 (operator 2026-11-18, A): VOX held off; split held at the station's split setting and set
+   back when changed (M5.6); model in #235.
