@@ -87,7 +87,7 @@
 
 - suite: protocol
   cost: 2
-  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-021-007" tests/communication.test.cjs
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
   paths: &browser-inputs
   - server/
   - client/
@@ -121,7 +121,7 @@
 
 - suite: protocol-thin
   cost: 2
-  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-021-007" tests/communication.test.cjs
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
   paths: *browser-inputs
   timing: true
   timing_inputs:
@@ -179,7 +179,7 @@
 
 - suite: recording-storage
   cost: 2
-  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-018-" --test-skip-pattern="^TC-018-002/003 HTTP admission|^TC-018-003 four stations" tests/recording.test.cjs
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS" --test-skip-pattern="^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
   paths: *browser-inputs
   select:
   - server/src/main.rs
@@ -212,7 +212,7 @@
 
 - suite: recording-display
   cost: 2
-  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-018-|^TC-010-002|^TC-010-005 review real Detailed peer cadence" tests/recording.test.cjs
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS|^four stations retain isolated identities|^TC-010-002|^TC-010-005 review real Detailed peer cadence" tests/recording.test.cjs
   paths: *browser-inputs
   select:
   - server/src/main.rs
@@ -241,7 +241,7 @@
 
 - suite: recording-thin
   cost: 2
-  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-010-002|^TC-010-005 review real Detailed peer cadence|^TC-018-002/003 HTTP admission|^TC-018-003 four stations" tests/recording.test.cjs
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-010-002|^TC-010-005 review real Detailed peer cadence|^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
   paths: *browser-inputs
   timing: true
   # Code that sets the pushed-state and display cadence: router and status websocket, compression,
