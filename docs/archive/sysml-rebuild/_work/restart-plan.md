@@ -259,3 +259,8 @@ Stop and leave a note here when: a question needs the operator; a second "not ye
 Review; the gate red twice; the usage limit.
 
 ### Log
+- #235: the definer answered all eight round-1 reasons (comment 6965638320) and revised the body;
+  M5.10's agent rule is now tool-checked (typed set `AgentRefusal`, item 17, TR-06) instead of
+  left to the reviewer. Definition 6965638762, body written (24,972 characters, `body_problem`
+  none), copied to `cr-235-body.md`; `defined`, then `checking`; Check round 2 started.
+- Decision issue #239 "Decision: agents key the real IC-7300" created for factory decision 1.
