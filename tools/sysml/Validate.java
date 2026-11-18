@@ -17,7 +17,7 @@ public class Validate {
         boolean syntaxErrors = false;
         boolean inventory = args.length > 1 && args[1].equals("--inventory");
         // --export <names-file>: every element of the model files and the resolution of
-        // each name of the file, after the same validation (CL-014-17).
+        // each name of the file, after the same validation (TR-21).
         boolean export = args.length > 2 && args[1].equals("--export");
         var model = new StringBuilder();
         var sources = new ArrayList<String>();
@@ -63,7 +63,7 @@ public class Validate {
             sourceStarts = starts;
             collectScope(interactive);
             // The deployment is the one package-level part usage, whatever its name and package;
-            // with none or several, only the count and the usages are listed (CL-014-06).
+            // with none or several, only the count and the usages are listed (TR-09).
             row("ROOTS", String.valueOf(rootParts.size()));
             for (var entry : rootParts.keySet()) row("ROOTPART", entry);
             for (var entry : viewSemantics) row("VIEWSEMANTIC", entry);
@@ -225,7 +225,7 @@ public class Validate {
         }
     }
 
-    // ---- Inputs of the structure rules (CL-014-18, `tools/sysml.py check`) ----
+    // ---- Inputs of the structure rules (TR-06 to TR-08, TR-11, `tools/sysml.py check`) ----
     // A file is written as its index in the order of the model files on the command line,
     // -1 for none; a line is counted from 1 in that file.
 
@@ -287,10 +287,22 @@ public class Validate {
                 var at = lines(element);
                 var features = element instanceof Definition definition
                     ? String.valueOf(definition.getFeature().stream().filter(feature -> feature.eResource() == modelResource).count()) : "";
+                var documented = element.getDocumentation().isEmpty() ? "0" : "1";
                 row("ELEM", element.getQualifiedName(), element.eClass().getName(), String.valueOf(fileOf(element)),
-                    String.valueOf(at[0]), String.valueOf(at[1]), features);
+                    String.valueOf(at[0]), String.valueOf(at[1]), features, documented);
             }
             if (element instanceof InterfaceDefinition definition) interfaceItems(definition);
+            if (element instanceof ItemUsage item && !(item instanceof MetadataUsage)
+                    && (item.getOwningType() instanceof PortDefinition || item.getOwningType() instanceof InterfaceDefinition)) {
+                var at = lines(item);
+                row("PITEM", String.valueOf(item.getQualifiedName()), String.valueOf(item.isAbstract()), typing(item),
+                    String.join(",", item.getOwnedSubsetting().stream()
+                        .filter(subsetting -> !subsetting.isImplied() && !(subsetting instanceof Redefinition)
+                            && subsetting.getSubsettedFeature() != null)
+                        .map(subsetting -> String.valueOf(subsetting.getSubsettedFeature().getQualifiedName())).toList()),
+                    String.valueOf(item.getOwnedRedefinition().stream().anyMatch(redefinition -> !redefinition.isImplied())),
+                    String.valueOf(fileOf(item)), String.valueOf(at[0]));
+            }
             Usage subject = element instanceof RequirementUsage usage ? usage.getSubjectParameter()
                 : element instanceof RequirementDefinition requirement ? requirement.getSubjectParameter() : null;
             if (element instanceof RequirementUsage || element instanceof RequirementDefinition) {
@@ -324,7 +336,7 @@ public class Validate {
         }
     }
 
-    // ---- Export of every element (CL-014-17, `tools/sysml.py equivalence`) ----
+    // ---- Export of every element (TR-21, `tools/sysml.py equivalence`) ----
     // An entry is an element that has a declared name, as has each of its owners up to a
     // top-level package; it is written with its key (the declared names from the top-level
     // package down). Everything unnamed is written as part of its nearest entry, in
