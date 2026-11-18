@@ -504,8 +504,8 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
 }
 
 // The transmit step's call reaches the sink through the
-// Proves: TC-044-017
 // boxed hardware the station really runs on.
+// Proves: TC-044-017
 #[test]
 fn the_meter_call_of_the_transmit_step_reaches_the_sink() {
     let station =

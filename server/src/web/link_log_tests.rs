@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// TC-080-001 link byte log (WstxListener::LinkTrafficLog): the actual router in the test
+// The link byte log (WstxListener::LinkTrafficLog): the actual router in the test
 // process, served by the station's own listener (TLS on a selected HTTPS profile with one enrolled
 // browser grant and one MCP client; plaintext loopback in case (i)). The log's period clock and
 // mode are driven by the test, and so is the runtime clock (paused): the station's heartbeat and
@@ -676,13 +676,13 @@ async fn http2_get(
     (status.as_u16(), client)
 }
 
-// cases (a)-(h). One JSON line per client with traffic at each
-// Proves: TC-080-001
+// Cases (a)-(h): one JSON line per client with traffic at each
 // period end with the bytes its peers wrote and read, the types by the log's rule, other and the
 // estimate; refused requests on their connection's client; MCP on its own line; a connection
 // without credentials local, also on TLS; display per socket; FT4, mode change and no-mode
 // periods; HTTP/2 by the same rule; rotation; no secret in a line and nothing of the log on a
 // socket or response.
+// Proves: TC-080-001
 #[tokio::test(start_paused = true)]
 async fn link_byte_log_counts_each_client_per_period() {
     rustls::crypto::ring::default_provider()
@@ -858,9 +858,9 @@ async fn link_byte_log_counts_each_client_per_period() {
     service.abort();
 }
 
-// case (i). On a plaintext loopback profile t is 0 and the client
-// Proves: TC-080-001
+// Case (i): on a plaintext loopback profile t is 0 and the client
 // is local.
+// Proves: TC-080-001
 #[tokio::test(start_paused = true)]
 async fn link_byte_log_on_a_plaintext_profile() {
     let (app, dir) = plaintext_station("link-log");
@@ -906,10 +906,10 @@ async fn link_byte_log_on_a_plaintext_profile() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-// (review finding on #80): the set of types is bounded. A request
-// Proves: TC-080-001
+// The set of types is bounded. A request
 // method outside the standard ones (FOO1, FOO2) on a route and on an unknown path is typed
 // "OTHER /" and "OTHER unrouted"; no client text reaches a key.
+// Proves: TC-080-001
 #[tokio::test(start_paused = true)]
 async fn link_byte_log_bounds_the_request_methods() {
     let (app, dir) = plaintext_station("link-methods");

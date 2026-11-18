@@ -253,9 +253,9 @@ fn the_dx_call_rule_prefers_my_call_over_a_colliding_call() {
 }
 
 // unpack77 n3=1, nrx=1: a 0.1 hash equal to the
-// Proves: TC-024-010
 // 10-bit hash of the current DX call shows the DX call, also over a colliding calls10
 // entry; another or a too-short DX call leaves the table entry; my call is not filled in.
+// Proves: TC-024-010
 #[test]
 fn a_dxpedition_hash_of_the_dx_call_shows_the_dx_call() {
     let dx = dxpedition("KH1/KH7Z");

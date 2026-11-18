@@ -237,8 +237,8 @@ fn receive_schedule_completes_windows_at_period_residues() {
 }
 
 // A re-anchored schedule moves completions without dropping
-// Proves: TC-004-004
 // or repeating a window, for a forward shift and a backward step.
+// Proves: TC-004-004
 #[test]
 fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
     let schedule = |shift: i64| {
@@ -283,8 +283,8 @@ fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
 }
 
 // UTC steps of +2 s, -2 s and +8 s taken 0.06 s before a
-// Proves: TC-004-004
 // prompt completion: every period's prompt and late window complete exactly once, in order.
+// Proves: TC-004-004
 #[test]
 fn receive_clock_steps_keep_each_period_window_once_and_in_order() {
     let schedule = [(76600, 180000, false), (99400, 180000, true)];

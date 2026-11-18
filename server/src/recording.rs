@@ -314,7 +314,7 @@ pub struct Recording {
     /// Bumped at each latest_decode publication so Detailed WebSocket peers announce it at
     /// once instead of on the 2 s receive tick (#57 CL-057-01).
     pub(crate) publication: tokio::sync::watch::Sender<u64>,
-    /// The station's call hash table (WstxMessagePayload::HashResolution, CL-024-01), shared
+    /// The station's call hash table (WstxMessagePayload::HashResolution), shared
     /// with the transmit owner; kept for the process lifetime.
     pub(crate) hashes: Arc<Mutex<decoder::HashTable>>,
     /// #45 persisted receive choice and Monitor-off setting (receive-startup.json).

@@ -97,7 +97,7 @@ async fn chunk(
     .await
 }
 
-// every log route requires the HTTPS durable
+// Every log route requires the HTTPS durable
 // grant; a revoked grant is 401 and changes nothing.
 #[tokio::test]
 async fn https_log_routes_require_current_grant_and_revocation_refuses_without_effect() {
@@ -194,7 +194,7 @@ async fn https_log_routes_require_current_grant_and_revocation_refuses_without_e
     assert_eq!(code(&wrong).1, "forbidden_origin");
 }
 
-// a grant revoked after admission cannot publish.
+// A grant revoked after admission cannot publish.
 #[tokio::test]
 async fn revocation_between_admission_and_publication_wins_the_atomic_replace() {
     let f = HttpFixture::new("https://localhost:8091");
@@ -257,7 +257,7 @@ async fn revocation_between_admission_and_publication_wins_the_atomic_replace() 
     );
 }
 
-// plaintext profile keeps the runtime token.
+// A plaintext profile keeps the runtime token.
 #[tokio::test]
 async fn plaintext_profile_log_routes_require_runtime_token() {
     let mut f = HttpFixture::new("http://localhost:8092");
@@ -319,7 +319,7 @@ async fn environment_only_mode_answers_not_found() {
     }
 }
 
-// /TC-011-001 SaveContact refusals, caps and idempotency.
+// SaveContact refusals, caps and idempotency.
 #[tokio::test]
 async fn save_contact_refusals_byte_cap_and_command_receipts() {
     let f = HttpFixture::new("http://localhost:8094");
@@ -510,7 +510,7 @@ async fn save_contact_refusals_byte_cap_and_command_receipts() {
     assert_eq!(post(retry).await.status, StatusCode::CREATED);
 }
 
-// history paging refusals, export headers, no coding.
+// History paging refusals, export headers, no coding.
 #[tokio::test]
 async fn history_and_export_routes_follow_the_wire_contract() {
     let f = HttpFixture::new("http://localhost:8095");
@@ -595,7 +595,7 @@ async fn history_and_export_routes_follow_the_wire_contract() {
     assert_eq!(text.matches(" <eor>\n").count(), 11);
 }
 
-// update reservation, chunks, retry and failure.
+// Update reservation, chunks, retry and failure.
 // Proves: TC-011-002
 #[tokio::test]
 async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
@@ -745,7 +745,7 @@ async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
     );
 }
 
-// an unreadable log answers 503 and stays untouched.
+// An unreadable log answers 503 and stays untouched.
 #[tokio::test]
 async fn unreadable_contacts_file_makes_save_storage_unavailable() {
     let mut f = HttpFixture::new("http://localhost:8098");
@@ -772,7 +772,7 @@ async fn unreadable_contacts_file_makes_save_storage_unavailable() {
     assert_eq!(std::fs::read_dir(&path).unwrap().count(), 0);
 }
 
-// the station's cty.dat: bundled by default, replaced by an
+// The station's cty.dat: bundled by default, replaced by an
 // upload that parses (and kept across a restart), refused uploads change nothing, null
 // returns to the bundled file, an unreadable stored upload falls back without touching it.
 #[tokio::test]

@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
-// TC-007-003, TC-007-004, TC-010-008, TC-010-009. The actual router with the contact
-// engine, the actual #9 transmit owner thread on recording hardware doubles (no audio,
-// PTT or radio) and hand-authored decoded rows packed with the real codec.
+// The actual router with the contact engine, the actual transmit owner thread on recording
+// hardware doubles (no audio, PTT or radio) and hand-authored decoded rows packed with the real
+// codec.
 use super::*;
 use axum::body::Body;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
@@ -327,8 +327,8 @@ fn code(v: &Value) -> (&str, Option<&str>) {
     )
 }
 
+// The snapshot's keys, the longest cause and its 4096 byte bound.
 // Proves: TC-111-007
-// (TC-111-007: the snapshot's keys, the longest cause and its 4096 byte bound.)
 #[tokio::test]
 async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -474,7 +474,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
 }
 const MAX_SAFE_TEST: u64 = 9_007_199_254_740_991;
 
-// (CL-097-06, WstxOperatingChain::BusyPartner "Shown"). The operator selects CQ
+// Oracle: WstxOperatingChain::BusyPartner "Shown". The operator selects CQ
 // KE1J; KE1J's report to W9XYZ (packed with the real codec) is published: GET /contact's watchdog
 // carries busy_with "W9XYZ" and paused_calls 0 (no paused send yet); his RR73 to W9XYZ clears it.
 // Red on the parent: no busy_with key.
@@ -1010,10 +1010,10 @@ async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action
 }
 
 // DirectLog record of an FT4 contact with a confirmed
-// Proves: TC-011-001
 // dial. Hand-computed: P = 2026-11-01T12:34:30Z; TIME_ON one FT4 period (7.5 s) before
 // the first transmitted Tx3 at P+22.5 s = 12:34:45; TIME_OFF P+45 s = 12:35:15; FREQ
 // 14.080000 MHz dial + 1234 Hz = 14.081234 (20m); FT4 is MODE MFSK, SUBMODE FT4.
+// Proves: TC-011-001
 #[test]
 fn direct_log_record_fields_from_the_confirmed_dial() {
     const P: i64 = 1_793_536_470_000;
@@ -1104,10 +1104,10 @@ fn rx_level_is_round_10_log10_mean_square_in_16_bit_units() {
 }
 
 // The
-// Proves: TC-007-005
 // transmit.state revision follows the GET /transmit read view only: unchanged while the
 // view is unchanged (no time-driven step), one step per change, age_ms ignored; the event
 // has exactly its keys within 192 bytes.
+// Proves: TC-007-005
 #[tokio::test]
 async fn transmit_state_revision_follows_the_read_view_only() {
     let f = fixture("http://127.0.0.1:18077", true);
@@ -1669,7 +1669,7 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
         (
             Some("cancelled"),
             Some("disarmed"),
-            // CL-111-03: the wire names the mode change.
+            // The wire names the mode change.
             Some("mode_changed")
         )
     );
@@ -1781,11 +1781,11 @@ async fn the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_con
     );
 }
 
-// live stall (IW9FRA, 2026-11-02 13:44-13:46 UTC):
-// Proves: TC-007-008
+// The live stall with IW9FRA:
 // the published FT4 records of the partner (even 7.5 s periods, Î”f 1838 Hz, the real
 // codec's fields and period_start_utc form) reach the engine through the station step
 // and move the contact Tx1 -> Tx3 -> Tx5 exactly as WSJT-X auto-sequence does.
+// Proves: TC-007-008
 #[tokio::test]
 async fn published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73() {
     let f = fixture("http://127.0.0.1:18016", false);
@@ -1832,11 +1832,11 @@ async fn published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73
 }
 
 // The same IW9FRA replay on a transmit-capable station
-// Proves: TC-007-008
 // through the actual station step, router and #9 owner on a virtual UTC: each partner
 // record is published 7.0 s after its period start (live +6.7..7.3 s), just before my
 // odd period; Hold Tx keeps my Tx at 2439 Hz. Expected: Tx1, R+10, R+10, 73, completed,
 // logged once (contacts.adi) with Enable Tx off.
+// Proves: TC-007-008
 #[tokio::test]
 async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     let f = fixture("http://127.0.0.1:18017", true);
@@ -1914,7 +1914,7 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     assert_eq!(snap["contact"]["saved"], true, "{snap}");
     let log = f.state.logbook.history(&f.id, 0, 10).unwrap();
     assert_eq!(log["records"].as_array().unwrap().len(), 1, "{log}");
-    // the snapshot's QSO dialogue, as exchanged.
+    // The snapshot's QSO dialogue, as exchanged.
     let p = |n: i64| p0 + n * 7_500;
     assert_eq!(
         snap["contact"]["dialogue"],
@@ -1943,9 +1943,9 @@ fn startup_shares_the_hash_table_with_the_transmit_owner() {
 }
 
 // A nonstandard manual entry over POST /contact/command
-// Proves: TC-024-003
 // gets its compound message set, and the station's contact step hands its DX call to the
 // call hash table.
+// Proves: TC-024-003
 #[tokio::test]
 async fn the_contact_step_gives_the_hash_table_the_dx_call() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -1968,8 +1968,8 @@ async fn the_contact_step_gives_the_hash_table_the_dx_call() {
 }
 
 // set_activity over POST /contact/command: the settings
-// Proves: TC-024-005
 // read it back, an unknown activity is refused and UDP Status carries WSJT-X's value.
+// Proves: TC-024-005
 #[tokio::test]
 async fn set_activity_reads_back_and_reaches_udp_status() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -2002,9 +2002,9 @@ async fn set_activity_reads_back_and_reaches_udp_status() {
 }
 
 // set_activity eu_vhf over POST /contact/command: no
-// Proves: TC-099-002
 // exchange, the refusals with their fields from the profile, the settings read back with the
 // serial and UDP Status special operation 2.
+// Proves: TC-099-002
 #[tokio::test]
 async fn eu_vhf_reads_back_refuses_with_its_fields_and_reaches_udp_status() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -2069,8 +2069,8 @@ async fn eu_vhf_reads_back_refuses_with_its_fields_and_reaches_udp_status() {
 }
 
 // set_activity field_day/rtty with the exchange
-// Proves: TC-024-008
 // over POST /contact/command: normalized read-back, the serial, refusals and UDP Status 3/4.
+// Proves: TC-024-008
 #[tokio::test]
 async fn contest_activity_with_its_exchange_reads_back_and_reaches_udp_status() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -2121,9 +2121,9 @@ async fn contest_activity_with_its_exchange_reads_back_and_reaches_udp_status() 
 }
 
 // set_activity hound over POST /contact/command:
-// Proves: TC-024-012
 // read-back with Tx parity odd and Hold Tx, no exchange, UDP Status 7; the row reader keeps a
 // 0.1 DXpedition record as its fields, not as a standard message.
+// Proves: TC-024-012
 #[tokio::test]
 async fn hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -2521,11 +2521,10 @@ async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
     assert_eq!(seq_and_first(&f).await, (json!(true), json!(false)));
 }
 
-// TC-111-002: snapshot reload and repeated command_id. TC-111-003: each start is one
-// ContactCommand with its safety revision. TC-111-007: the causes on the wire. CL-111-03: the
-// station's band reaches the engine. TC-111-010 (b) on the wire. The station: router, contact
-// engine and transmit owner on the recording double. Expected values are the tables of
-// CL-111-02 and CL-111-03.
+// The snapshot reload and a repeated command_id, each start as one ContactCommand with its
+// safety revision, the causes on the wire, the station's band reaching the engine, and
+// TC-111-010 (b) on the wire. The station: router, contact engine and transmit owner on the
+// recording double. Expected values are the tables of CL-111-02 and CL-111-03.
 #[tokio::test]
 async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -2686,7 +2685,7 @@ async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station()
     assert_eq!(snap["contact"]["dx_call"], "DL1XYZ");
     assert_ne!(snap["contact"]["id"], contact);
     assert_eq!(snap["transmit"]["arm_state"], "armed");
-    // CL-111-03: the station band changes (20 m to 40 m): off, band_changed, cancelled.
+    // The station band changes (20 m to 40 m): off, band_changed, cancelled.
     r.fixture_band("40m");
     f.tick();
     let snap = f.snapshot().await;
@@ -2862,12 +2861,11 @@ async fn qso_from_cq_85(air: &mut Air85<'_>, n: i64, call: &str) -> i64 {
     n + 6
 }
 
-// Proves: TC-085-001, TC-085-002
 // On the air with K1ABC: the first QSO is logged (one record, one QSO Logged and
-// Proves: TC-085-005
 // one Logged ADIF); his repeated RR73 answered again, a whole second exchange from his CQ and a
 // QSO after my CQ answered with his grid (Call 1st) complete as usual and add nothing; after a
 // QSO with W1AW, K1ABC is logged again. CL-040-01 (one pair per saved record) is the guard.
+// Proves: TC-085-001, TC-085-002, TC-085-005
 #[tokio::test]
 async fn tc_085_001_the_same_station_in_a_row_is_not_logged() {
     let f = fixture("http://127.0.0.1:18085", true);
@@ -3003,11 +3001,11 @@ fn refused_85(f: &Fixture, call: &str) -> Value {
         "error":"same_station_again"})
 }
 
-// Proves: TC-085-001, TC-085-002, TC-085-003
-// (e). Log QSO of a running second QSO with the station logged last closes it and writes
+// Log QSO of a running second QSO with the station logged last closes it and writes
 // nothing; a cancelled or an invalid (log_invalid_field) first QSO leaves the next one with that
 // station logged; a pending first record is the newest QSO; the stored log is read again after a
 // restart; SaveContact stores what it is given (L5).
+// Proves: TC-085-001, TC-085-002, TC-085-003
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_085_001_log_qso_pending_records_and_restart() {
     let f = fixture("http://127.0.0.1:18086", false);
@@ -3231,9 +3229,9 @@ async fn tc_085_004_the_contest_serial_counts_only_on_accepted() {
 }
 
 // With Auto on, after a QSO made by hand with K1ABC, the
-// Proves: TC-085-001
 // strategy run answers K1ABC calling me and the QSO completes: no record, and Auto goes on. The
 // HTTPS station of the MCP fixture (the run needs the grant) on the virtual UTC.
+// Proves: TC-085-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_085_001_g_auto_answers_the_station_logged_last_and_nothing_is_logged() {
     use crate::automation_tests::{publish, run_state};
@@ -3331,10 +3329,10 @@ fn open_gate_85(
 }
 
 // The newest record of a log prepared by
-// Proves: TC-085-002, TC-085-003
 // hand (another program's K1ABC on 40 m in FT8, the confirmed CAT dial of the radio double being
 // 7.074 MHz) makes the next QSO with K1ABC not logged; an ADIF import appending DL1ABC makes the
 // next one logged (L5). A second profile reads only its own log.
+// Proves: TC-085-002, TC-085-003
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_085_003_the_newest_record_whatever_wrote_it() {
     let origin = "http://127.0.0.1:18087";

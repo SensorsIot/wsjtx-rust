@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
-// (#24 S4b: CL-024-04; TC-024-011, TC-024-014, the classic Hound.)
-// (#99: CL-099-02; TC-099-002, the EU VHF contest message.)
-// (#41 DirectLog: the contacts the engine hands to the log.)
-// The contact engine against the actual #9 transmit owner core (`Core`) on a virtual
+// The contact engine, also for the classic Hound, the EU VHF contest message and the contacts it
+// hands to the log, against the actual transmit owner core (`Core`) on a virtual
 // UTC clock with a recording hardware double (no audio, PTT or radio). Decoded rows are
 // hand-authored; expected states, next slots and texts are the independent table of
 // TC-007-001 written below, not engine output.
@@ -301,8 +299,8 @@ fn period(n: i64) -> i64 {
 }
 
 // A fresh station holds Tx: a selection
-// Proves: TC-039-009
 // moves Rx only, and only an explicit choice switches that off.
+// Proves: TC-039-009
 #[test]
 fn hold_tx_is_on_by_default_and_a_selection_keeps_tx() {
     let mut s = station();
@@ -700,7 +698,7 @@ fn tx1_skip_report_override_and_manual_entry_follow_the_domains() {
     .unwrap();
 }
 
-// as #97 changes it (CL-097-06). A manual contact pauses for a busy
+// A manual contact pauses for a busy
 // partner, so his report to another call at 50 Hz and at 51 Hz from my Tx 1000 (FT8) no longer
 // disarms: Tx moves to the nearest candidate at least 100 Hz from his frequency, 950 (1050 - 100
 // = 950 at 50 Hz; at 51 Hz 1051 - 100 = 951, the grid's 950), Rx stays 1000, Enable Tx stays on
@@ -827,8 +825,6 @@ fn sends(s: &Station) -> Vec<i64> {
     s.sent.iter().map(|(p, _)| *p).collect()
 }
 
-// (CL-097-06, #93 reproduction of 2026-11-09 14:39 UTC).
-// Proves: TC-097-012
 // Oracle: "Keep calling, don't count" and the bound of WstxQsoTransmit::RepetitionLimit
 // (at most N paused calls per message). 10m FT4, Tx watchdog 6. (a) KE1J works W9XYZ for 8 of his
 // periods: our Tx1 is keyed in each of the 8 following periods, the first 6 paused (WD stays 6),
@@ -836,6 +832,7 @@ fn sends(s: &Station) -> Vec<i64> {
 // never keyed: stopped by the Tx watchdog. (c) busy for 10 periods: stopped after the 12th send.
 // (d) the operator's Enable Tx restarts the counts (6 again). (e) limit 2: 2 paused, stopped after
 // the 4th send. Red on the parent: stopped after the 6th send in (a).
+// Proves: TC-097-012
 #[test]
 fn tc_097_012_a_manual_call_to_a_busy_station_keeps_calling_uncounted() {
     let ft4 = Mode::Ft4;
@@ -885,7 +882,7 @@ fn tc_097_012_a_manual_call_to_a_busy_station_keeps_calling_uncounted() {
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
-// (CL-097-06). FT4: KE1J works a station at 1520 Hz while we call from
+// FT4: KE1J works a station at 1520 Hz while we call from
 // 1500: Tx moves to 1380, the nearest candidate at least 140 Hz from 1520 (1520 - 140 = 1380,
 // 1660 is farther), Rx stays 1800, Enable Tx stays on, Hold Tx still on, the next send from 1380.
 // Red on the parent: no move (the WSJT-X rule disarms within 50 Hz).
@@ -903,11 +900,11 @@ fn tc_097_012_b_a_busy_station_near_my_tx_moves_tx_clear_of_him() {
     );
 }
 
-// (CL-097-06, WstxOperatingChain::BusyPartner). Start: KE1J's grid, report and
-// Proves: TC-097-017
+// Oracle: WstxOperatingChain::BusyPartner. Start: KE1J's grid, report and
 // R-report to W9XYZ start busy_with W9XYZ; an unresolved hash "<...>" starts busy_with "<...>";
 // a hash filled with my call is a message to me (no busy). End: RR73, RRR and 73 to W9XYZ, his CQ
 // and his message to my call each clear it.
+// Proves: TC-097-017
 #[test]
 fn tc_097_017_a_busy_starts_and_ends_by_his_own_messages() {
     let busy = |s: &Station| s.engine.contact.as_ref().unwrap().busy_with.clone();
@@ -943,12 +940,12 @@ fn tc_097_017_a_busy_starts_and_ends_by_his_own_messages() {
     );
 }
 
-// (CL-097-06, WstxOperatingChain::BusyPartner, #97 coordinator default). A free
-// Proves: TC-097-017
+// Oracle: WstxOperatingChain::BusyPartner. A free
 // text has no sender: "TNX QSO" ends busy only when decoded in his period (the parity of his last
 // decode) within 10 Hz of his last decode. FT8, his report to W9XYZ at 1200 Hz in period 0: a free
 // text at 1211 Hz (11 Hz) and one at 1200 Hz in my period (period 1) keep busy; one at 1210 Hz
 // (10 Hz) in his period 2 ends it, as does one at 1190 Hz. Red on the parent: no free text ends it.
+// Proves: TC-097-017
 #[test]
 fn tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy() {
     let busy = |s: &Station| s.engine.contact.as_ref().unwrap().busy_with.clone();
@@ -973,11 +970,11 @@ fn tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy() {
     }
 }
 
-// (CL-097-06, WstxQsoControl::TxWatchdog stop point). FT8, limit 6, six
-// Proves: TC-097-017
+// Oracle: the stop point of WstxQsoControl::TxWatchdog. FT8, limit 6, six
 // counted Tx1 sends: the send due in period 13 is at the limit. KE1J's busy start published 1.1 s
 // into that period: the send is planned late, keyed and paused (counted stays 6). Published 1.3 s
 // into it: the Tx watchdog stopped it at 1.2 s (Enable Tx off, txWatchdog), nothing keyed.
+// Proves: TC-097-017
 #[test]
 fn tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for() {
     for (at, keyed) in [(1_100, true), (1_300, false)] {
@@ -1006,15 +1003,15 @@ fn tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for() {
     }
 }
 
-// (CL-097-06, WstxOperatingChain::BusyPartner split table, hand-worked). Clear:
+// Oracle: the split table of WstxOperatingChain::BusyPartner, hand-worked. Clear:
 // |Tx - his| at least FT8 100 Hz, FT4 140 Hz. From Tx 1500: FT8 his at 1500 (0 Hz) -> 1400 (1400
 // and 1600 tie, the lower), 1550 -> 1450, 1551 -> 1450 (951 is off the 10 Hz grid), 1599 -> 1490,
 // 1600 stays; FT4 1639 -> 1490 (1639 - 140 = 1499), 1640 stays. Never below 500: Tx 550 his 600 ->
 // 500; Tx 520 his 560 -> 660 (460 is below 500). A station decoded at 1440 in my Rx period
 // (overlapping 1400..1480) -> 1390; his PSK frequency 1470 of my Tx parity -> 1420 (50 Hz from it).
 // set_frequency refused: the state off with cause partnerWorksOther (CL-111-03), nothing keyed on
-// his signal. The
-// operator's Tx onto his signal stays until his next message to W9XYZ, which moves it again.
+// his signal. The operator's Tx onto his signal stays until his next message to W9XYZ, which
+// moves it again.
 #[test]
 fn tc_097_017_c_the_split_frequency_table() {
     let table = [
@@ -1084,7 +1081,7 @@ fn tc_097_017_c_the_split_frequency_table() {
     assert_eq!(s.engine.settings.tx_hz, 1410, "moved again");
 }
 
-// (CL-097-06). His decode before the audio start of my next send moves the
+// His decode before the audio start of my next send moves the
 // pending request (the send plays from the new offset); one after the audio start lets that send
 // finish at the old offset and the next goes from the new one. FT8 audio starts 0.5 s in.
 #[test]
@@ -1103,9 +1100,8 @@ fn tc_097_017_c_a_move_before_or_after_the_audio_start() {
     );
 }
 
-// (a pounce, an MCP policy run and a run with busy_pause off
-// never pause): the same busy partner with a contact the automation names without the pause
-// counts every send and stops at N.
+// A pounce, an MCP policy run and a run with busy_pause off never pause: the same busy partner
+// with a contact the automation names without the pause counts every send and stops at N.
 #[test]
 fn tc_097_017_a_contact_that_does_not_pause_counts_every_send() {
     let mut s = calling_ke1j(Mode::Ft8, 3);
@@ -1123,8 +1119,8 @@ fn tc_097_017_a_contact_that_does_not_pause_counts_every_send() {
 }
 
 // Abort stops the transmission
-// Proves: TC-007-004
 // now, cancels the contact and is no halt; the station stays ready for the next QSO.
+// Proves: TC-007-004
 #[test]
 fn abort_stops_the_transmission_now_and_cancels_without_a_halt() {
     let mut s = station();
@@ -1240,9 +1236,9 @@ fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
 }
 
 // The live reports: SV1DZB repeated -09
-// Proves: TC-008-001
 // while we repeated R+06 (partner messages), and J88IH sent one report while the operator
 // clicked in the page: 13 R-07 at limit 6 (browser requests).
+// Proves: TC-008-001
 #[test]
 fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browser_does() {
     let mut s = station();
@@ -1376,9 +1372,9 @@ fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
-// a different message starts at 1 again, also when the
-// Proves: TC-008-001
+// A different message starts at 1 again, also when the
 // partner advances just before the send beyond the limit is due.
+// Proves: TC-008-001
 #[test]
 fn tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message() {
     let mut s = station();
@@ -1413,9 +1409,9 @@ fn tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message() {
     );
 }
 
-// selecting a row of the current partner and Enable Tx
-// Proves: TC-008-001
+// Selecting a row of the current partner and Enable Tx
 // while armed are clicks: neither restarts the count.
+// Proves: TC-008-001
 #[test]
 fn tc_008_001_clicks_on_the_partner_and_enable_tx_while_armed_restart_nothing() {
     let mut s = station();
@@ -1452,9 +1448,9 @@ fn tc_008_001_clicks_on_the_partner_and_enable_tx_while_armed_restart_nothing() 
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
-// selecting the partner's row at another SNR keeps the report
-// Proves: TC-008-001
+// Selecting the partner's row at another SNR keeps the report
 // sent, so the message and its count stay.
+// Proves: TC-008-001
 #[test]
 fn tc_008_001_a_partner_row_with_another_snr_restarts_nothing() {
     let mut s = station();
@@ -1487,9 +1483,9 @@ fn tc_008_001_a_partner_row_with_another_snr_restarts_nothing() {
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
-// selecting the partner's row keeps a message already sent as
-// Proves: TC-008-001
+// Selecting the partner's row keeps a message already sent as
 // edited, so its count stays.
+// Proves: TC-008-001
 #[test]
 fn tc_008_001_a_partner_row_keeps_an_edited_message_and_its_count() {
     let mut s = station();
@@ -1525,7 +1521,7 @@ fn tc_008_001_a_partner_row_keeps_an_edited_message_and_its_count() {
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
-// selecting the partner's row keeps the chosen Tx4 form, so a
+// Selecting the partner's row keeps the chosen Tx4 form, so a
 // later report change does not turn RR73 into RRR.
 #[test]
 fn tc_008_001_a_partner_row_keeps_the_tx4_form() {
@@ -1551,7 +1547,7 @@ fn tc_008_001_a_partner_row_keeps_the_tx4_form() {
     );
 }
 
-// a limit lowered under a pending send stops before it keys.
+// A limit lowered under a pending send stops before it keys.
 // Proves: TC-008-001
 #[test]
 fn tc_008_001_a_pending_send_beyond_a_lowered_limit_is_never_keyed() {
@@ -1578,9 +1574,9 @@ fn tc_008_001_a_pending_send_beyond_a_lowered_limit_is_never_keyed() {
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::TxWatchdog);
 }
 
-// when the message at its limit becomes due again, the other
-// Proves: TC-008-001
+// When the message at its limit becomes due again, the other
 // message still pending is not keyed.
+// Proves: TC-008-001
 #[test]
 fn tc_008_001_going_back_to_a_message_at_its_limit_cancels_the_pending_send() {
     let mut s = station();
@@ -1610,8 +1606,8 @@ fn tc_008_001_going_back_to_a_message_at_its_limit_cancels_the_pending_send() {
 }
 
 // N identical CQs stop; a caller answered by Call 1st is a
-// Proves: TC-008-001
 // new contact, which starts at the limit again.
+// Proves: TC-008-001
 #[test]
 fn tc_008_001_identical_cqs_stop_and_an_answered_cq_starts_again() {
     let mut s = station();
@@ -1720,8 +1716,8 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     );
 }
 
+// Tune with the transmit state off, and the guard of TC-111-010 (f): the Tune watchdog.
 // Proves: TC-008-001
-// (TC-007-004: Tune with the transmit state off. TC-111-010 (f), guard: the Tune watchdog.)
 #[test]
 fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
     let mut s = station();
@@ -2120,7 +2116,7 @@ fn choosing_a_slot_on_a_finished_contact_never_changes_its_state() {
 }
 
 // ---------------------------------------------------------------- FT4 (#11 slice B)
-// The same engine and #9 owner core in FT4;
+// The same engine and transmit owner core in FT4;
 // expected periods, texts, samples and times are hand-written from WstxStandardQso
 // FtModeRule/ModeChangeRule, the FT4-NOTE rules and WSJT-X (Modulator.cpp FT4 delay
 // 300 ms; 105 symbols x 576 x 4 = 241920 samples at 48 kHz; m_TRperiod 7.5 s).
@@ -2288,7 +2284,7 @@ fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
     assert_eq!((c.state, c.next), (State::Cancelled, Slot::Tx6));
     assert_eq!(c.dx_call, None);
     assert!(!s.armed());
-    // CL-111-03: the mode change is the cause shown.
+    // The mode change is the cause shown.
     assert_eq!(s.core.view().last_disarm_cause, DisarmCause::ModeChanged);
     assert_eq!(s.core.view().pending_sequence, None);
     assert_eq!(s.engine.settings.tx_hz, 2916, "clamped into the FT4 domain");
@@ -2409,7 +2405,7 @@ fn the_owner_never_keys_a_request_of_another_station_mode_without_a_contact_step
 }
 
 // ---------------------------------------------------------------- #11 live RR73 stall
-// Replay of the 2026-11-02 13:44-13:46 UTC FT4 contact
+// Replay of a live FT4 contact
 // with IW9FRA (partner in the even 7.5 s periods at 1838 Hz, Hold Tx on with my Tx at
 // 2439 Hz): after my R+10 the partner's RR73 must move me to Tx5, send 73 once,
 // complete and log once (WSJT-X auto-sequence). Rows reach the engine `decode_ms`
@@ -2748,10 +2744,9 @@ fn the_last_partner_message_counts_identical_repeats() {
     assert_eq!(heard(&s), None, "a new contact starts without one");
 }
 
-// (operator 2026-11-02, US5WFL then YO3GNF): calling
+// Calling another station (US5WFL, then YO3GNF) while Enable Tx is on keeps it on, and the next
+// own period calls the new station; nothing more goes to the old partner.
 // Proves: TC-050-004
-// another station while Enable Tx is on keeps it on, and the next own period calls the new
-// station; nothing more goes to the old partner.
 #[test]
 fn changing_the_contact_while_armed_keeps_enable_tx_and_the_next_period_calls_the_new_station() {
     let mut s = station();
@@ -2813,9 +2808,9 @@ fn callers(s: &mut Station, first: i64, second: i64) -> (Vec<Row>, Vec<Row>) {
 }
 
 // WSJT-X Call 1st (cbFirst, on by default): my own CQ
-// Proves: TC-010-010
 // answers the first caller of the period in decode order at once, with Enable Tx kept;
 // the later callers change nothing.
+// Proves: TC-010-010
 #[test]
 fn call_first_answers_the_first_caller_of_my_cq_in_the_next_own_period() {
     let mut s = station();
@@ -2855,9 +2850,9 @@ fn call_first_answers_the_first_caller_of_my_cq_in_the_next_own_period() {
 }
 
 // With Call 1st off, Auto Seq off, or only continuing
-// Proves: TC-010-010
 // exchanges to my call (R+report, RRR, RR73, 73: WSJT-X AutoRespondPeriod.cpp
 // continuingExchange), the CQ keeps running; set_call_first changes the setting.
+// Proves: TC-010-010
 #[test]
 fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
     assert!(
@@ -2912,9 +2907,9 @@ fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
 }
 
 // A switch in my own period after PTT is keyed and before
-// Proves: TC-050-004
 // its audio starts (FT8 audio delay 500 ms) replaces that period's request: the new
 // contact's Tx1 goes out in the same period and Enable Tx stays on (review #50 finding 1).
+// Proves: TC-050-004
 #[test]
 fn a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_period() {
     let mut s = station();
@@ -2945,12 +2940,12 @@ fn a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_perio
     assert_eq!(s.sent_in(period(3)).as_deref(), Some("DL1ABC HB9BLA JN47"));
 }
 
-// a switch to a station of my own parity
-// Proves: TC-050-004
+// A switch to a station of my own parity
 // in the keyed window (PTT keyed, audio not started) moves the contact to the other parity.
 // The keyed period's message still goes out, the new contact's Tx1 is queued for its next
 // period and Enable Tx stays on: the core never refuses busy for that timing (review #50
 // observation).
+// Proves: TC-050-004
 #[test]
 fn a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period() {
     let mut s = station();
@@ -3009,9 +3004,9 @@ fn a_late_start_keyed_before_audio_queues_the_next_own_period_without_disarming(
 }
 
 // QSO dialogue: counted partner messages and this
-// Proves: TC-050-006
 // contact's transmissions as sent, oldest first, repeats counted, bounded; a new contact
 // starts empty and a cancel empties it.
+// Proves: TC-050-006
 #[test]
 fn the_contact_dialogue_holds_the_exchanged_messages_in_order() {
     let mut s = station();
@@ -3140,8 +3135,8 @@ fn set(s: &Station) -> Vec<String> {
 }
 
 // A standard station works a nonstandard CQ caller
-// Proves: TC-024-003
 // with WSJT-X's compound message set and sequences it to the log.
+// Proves: TC-024-003
 #[test]
 fn a_standard_call_works_a_nonstandard_partner_to_the_log() {
     let mut s = station();
@@ -3210,8 +3205,8 @@ fn a_standard_call_works_a_nonstandard_partner_to_the_log() {
 }
 
 // A nonstandard own call calls CQ without a grid and
-// Proves: TC-024-003
 // answers a standard caller with its hashed own call.
+// Proves: TC-024-003
 #[test]
 fn a_nonstandard_own_call_answers_a_standard_caller_to_the_log() {
     let mut s = station();
@@ -3291,9 +3286,9 @@ fn a_nonstandard_own_call_answers_a_standard_caller_to_the_log() {
     );
 }
 
-// (c, d). Nonstandard entries, two nonstandard calls,
-// Proves: TC-024-003
+// Nonstandard entries, two nonstandard calls,
 // unresolved hashes and Tx5 free text.
+// Proves: TC-024-003
 #[test]
 fn nonstandard_entries_and_free_text_are_validated() {
     let mut s = station();
@@ -3413,8 +3408,8 @@ fn call_first_skips_hashed_and_nonstandard_callers() {
 }
 
 // A free-text Tx5 on an own CQ is sent once like a 73:
-// Proves: TC-024-003
 // the contact completes and, without a partner, nothing goes to the log.
+// Proves: TC-024-003
 #[test]
 fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
     let mut s = station();
@@ -3433,8 +3428,8 @@ fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
 
 // ---------------------------------------------------------------- #24 S2a
 // WW Digi: CQ WW, a caller's grid answered with R+grid,
-// Proves: TC-024-005
 // RR73 answered with 73 and the contact logged with the grid and no reports.
+// Proves: TC-024-005
 #[test]
 fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
     let mut s = station();
@@ -3504,8 +3499,8 @@ fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
 }
 
 // NA VHF: answering a CQ TEST, the CQer's R+grid
-// Proves: TC-024-005
 // moves to Tx4 and the partner's 73 completes the contact.
+// Proves: TC-024-005
 #[test]
 fn na_vhf_moves_to_rogers_on_r_grid() {
     let mut s = station();
@@ -3551,7 +3546,7 @@ fn na_vhf_moves_to_rogers_on_r_grid() {
     assert_eq!(one_log(&mut s).dx_grid.as_deref(), Some("FN42"));
 }
 
-// (c, d). ARRL Digi with a nonstandard own call, and none.
+// ARRL Digi with a nonstandard own call, and none.
 // Proves: TC-024-005
 #[test]
 fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
@@ -3600,8 +3595,8 @@ fn arrl_digi_with_a_nonstandard_own_call_and_back_to_none() {
 }
 
 // The activity regenerates a running CQ's Tx6 and an
-// Proves: TC-024-005
 // active contact's exchange at once; a report change keeps Tx6.
+// Proves: TC-024-005
 #[test]
 fn set_activity_regenerates_the_running_contact() {
     let mut s = station();
@@ -3688,8 +3683,8 @@ fn adif_of(c: &Contact) -> String {
 }
 
 // Field Day as the CQer: CQ FD, the caller's exchange
-// Proves: TC-024-008
 // answered with R + my exchange, RR73 answered with 73, logged with the ADIF contest fields.
+// Proves: TC-024-008
 #[test]
 fn field_day_cq_answers_the_exchange_and_logs_the_contest_fields() {
     let mut s = station();
@@ -3746,9 +3741,9 @@ fn field_day_cq_answers_the_exchange_and_logs_the_contest_fields() {
 }
 
 // RTTY Roundup with a DX serial: answering CQ RU
-// Proves: TC-024-008
 // starts with Tx2 (Tx1 disabled), "5n9 serial", the TU; R exchange moves to Tx4, the log
 // has the 5n9 RSTs, STX and STATE, and the next contact sends the next serial.
+// Proves: TC-024-008
 #[test]
 fn rtty_roundup_answers_cq_ru_with_tx2_and_logs_rst_stx_and_state() {
     let mut s = station();
@@ -3834,8 +3829,8 @@ fn ft4_next_caller_tx3(after: i64) -> String {
     set(&s)[2].clone()
 }
 // FT4 TU;: the operator's selection right after an
-// Proves: TC-024-008
 // RR73 thanks the previous partner in Tx3; three whole seconds later it does not.
+// Proves: TC-024-008
 #[test]
 fn ft4_rtty_selection_right_after_rr73_prefixes_tu() {
     assert_eq!(ft4_next_caller_tx3(500), "TU; W9XYZ HB9BLA R 559 MA");
@@ -3843,8 +3838,8 @@ fn ft4_rtty_selection_right_after_rr73_prefixes_tu() {
 }
 
 // Exchange validation, a nonstandard DX call, a
-// Proves: TC-024-008
 // Field Day row in RTTY, the UDP values, and the slots accept a contest text.
+// Proves: TC-024-008
 #[test]
 fn contest_exchanges_are_validated_and_rows_of_another_family_are_other() {
     let fd = |x: Option<&str>| contest_exchange(Activity::FieldDay, x);
@@ -3981,10 +3976,10 @@ fn exchanges(s: &Station) -> (Option<String>, Option<String>) {
 }
 
 // EU VHF as the CQer with Call 1st (Tx1 kept, the
-// Proves: TC-099-002
 // caller's grid answered with Tx2), the partner's R exchange moved to Tx4, logged with STX,
 // SRX, the exchanged RS and the 6-character grid; then as the replier to a CQ TEST from Tx1,
 // the exchange answered with Tx3 and the next serial.
+// Proves: TC-099-002
 #[test]
 fn tc_099_002_eu_vhf_run_and_reply_through_the_log() {
     let mut s = station();
@@ -4097,8 +4092,8 @@ fn tc_099_002_eu_vhf_run_and_reply_through_the_log() {
 }
 
 // The same run in FT4: Tx4 is RR73 and its transmission
-// Proves: TC-099-002
 // completes the contact.
+// Proves: TC-099-002
 #[test]
 fn tc_099_002_eu_vhf_in_ft4() {
     let mut s = ft4_station();
@@ -4155,8 +4150,8 @@ fn tc_099_002_eu_vhf_in_ft4() {
 }
 
 // An EU VHF message counts only from the DX call's hash to
-// Proves: TC-099-002
 // my call's hash, and only in eu_vhf.
+// Proves: TC-099-002
 #[test]
 fn tc_099_002_eu_vhf_messages_count_only_by_both_hashes_in_eu_vhf() {
     let mut s = station();
@@ -4203,9 +4198,9 @@ fn tc_099_002_eu_vhf_messages_count_only_by_both_hashes_in_eu_vhf() {
 }
 
 // The refusals: no 6-character locator, a callsign over 11,
-// Proves: TC-099-002
 // an exchange, a DX call over 11, a serial past 2047, a locator cut after the choice, and EU
 // VHF rows that cannot be selected; each changes nothing.
+// Proves: TC-099-002
 #[test]
 fn tc_099_002_eu_vhf_refusals_change_nothing() {
     let choose = |s: &mut Station, exchange: Option<&str>| {
@@ -4323,8 +4318,8 @@ fn tc_099_002_eu_vhf_refusals_change_nothing() {
 }
 
 // An EU VHF row to me starts with Tx3 and sets the received
-// Proves: TC-099-002
 // exchange (D7), one to another station replies with Tx1; an edited Tx2 must pack unaltered.
+// Proves: TC-099-002
 #[test]
 fn tc_099_002_eu_vhf_rows_are_selectable_and_edits_must_pack() {
     let mut s = station();
@@ -4448,9 +4443,9 @@ fn tc_099_002_eu_vhf_udp_directive_and_rs_bounds() {
 }
 
 // The 37-character limit: with HB9BLA a DX call of 10
-// Proves: TC-099-002
 // characters (16 together) is accepted and its Tx3 has 37 characters; one of 11 (17) is refused
 // by enter_dx, by a selection, and by set_activity while such a contact is active.
+// Proves: TC-099-002
 #[test]
 fn tc_099_002_eu_vhf_refuses_a_pair_of_calls_over_16_characters() {
     let mut s = station();
@@ -4506,8 +4501,8 @@ fn tc_099_002_eu_vhf_refuses_a_pair_of_calls_over_16_characters() {
 }
 
 // An 8-character locator: Tx6 and Tx1 send its first four,
-// Proves: TC-099-002
 // Tx2 its first six.
+// Proves: TC-099-002
 #[test]
 fn tc_099_002_eu_vhf_sends_the_first_six_locator_characters() {
     let mut s = station();
@@ -4651,9 +4646,9 @@ impl Station {
 }
 
 // The Hound transmits in the second period, calls
-// Proves: TC-024-011
 // at a random 1000..2998 Hz offset when its offset is below 999 Hz, answers the Fox's
 // report with Tx3 on the Fox's frequency, repeats it on Fox-300 Hz and logs on RR73.
+// Proves: TC-024-011
 #[test]
 fn a_hound_calls_at_a_random_offset_and_answers_the_fox_report_on_its_frequency() {
     let mut s = station();
@@ -4754,9 +4749,9 @@ fn a_hound_calls_at_a_random_offset_and_answers_the_fox_report_on_its_frequency(
 }
 
 // The Fox's report inside a 0.1 multi-message is answered
-// Proves: TC-024-011
 // on its frequency, the repeat goes to Fox+300 Hz (Fox at or below 600 Hz), a repeated Fox
 // report returns to the Fox's frequency, and the 0.1 RR73 to my call completes and logs.
+// Proves: TC-024-011
 #[test]
 fn a_hound_answers_a_0_1_report_moves_300_hz_on_a_repeat_and_logs_the_0_1_rr73() {
     let mut s = hound_station();
@@ -4814,9 +4809,9 @@ fn a_hound_answers_a_0_1_report_moves_300_hz_on_a_repeat_and_logs_the_0_1_rr73()
 }
 
 // A Hound selects only Fox rows of :00/:30 that are not
-// Proves: TC-024-011
 // another Hound's R+report, transmits only Tx1/Tx3 in the second period, never calls CQ and
 // exists only in FT8.
+// Proves: TC-024-011
 #[test]
 fn a_hound_refuses_wrong_period_rows_other_hounds_other_slots_and_ft4() {
     let mut s = hound_station();
@@ -4895,8 +4890,8 @@ fn a_hound_refuses_wrong_period_rows_other_hounds_other_slots_and_ft4() {
 }
 
 // Not the Fox's report or RR73: an RR73 from another
-// Proves: TC-024-011
 // station, a 0.1 RR73 with another hashed call; during Tune only the Fox frequency is noted.
+// Proves: TC-024-011
 #[test]
 fn a_hound_ignores_rr73_of_other_stations_and_replies_nothing_while_tuning() {
     let mut s = hound_station();
@@ -5108,9 +5103,9 @@ fn noise(seed: u64) -> Vec<f32> {
 }
 
 // A Hound QSO with a scripted Fox over an audio loopback with
-// Proves: TC-024-014
 // no RF: the Fox decodes the waveforms the transmit owner played and the Hound decodes the
 // Fox's synthesized frames with the station's decoder, hash table and row reader.
+// Proves: TC-024-014
 #[test]
 fn a_hound_works_a_scripted_fox_over_an_audio_loopback() {
     let mut s = hound_station();
@@ -5356,8 +5351,8 @@ fn sv2clj_ends_with(last: &str) {
 }
 
 // Reproduction of the live SV2CLJ contact: his RR73 after
-// Proves: TC-007-010
 // my RRR leads to one 73, completion and one log (master 7914875d0 repeated the RRR).
+// Proves: TC-007-010
 #[test]
 fn tc_007_010_a_the_partners_rr73_after_my_rrr_sends_73_once_and_logs_once() {
     sv2clj_ends_with("RR73");
@@ -5490,8 +5485,8 @@ fn tc_007_010_c_a_halted_tx4_rr73_then_the_partners_rr73_sends_73_once() {
 }
 
 // A partner who signs off before any report reached me:
-// Proves: TC-007-010
 // RR73 in replying (after my Tx1), RRR in report (after my Tx2 to a CQ caller).
+// Proves: TC-007-010
 #[test]
 fn tc_007_010_d_rogers_in_replying_and_report_send_73_once_and_log_without_rst_rcvd() {
     // replying: I answer K1ABC's CQ (he is even, I am odd).
@@ -5540,9 +5535,9 @@ fn tc_007_010_d_rogers_in_replying_and_report_send_73_once_and_log_without_rst_r
 }
 
 // The partner's RR73 counted while my next Tx4 is pending:
-// Proves: TC-007-010
 // before its audio starts that period carries Tx5; after the start the Tx4 of that period
 // is sent and Tx5 follows in my next own period. One 73 and one log either way.
+// Proves: TC-007-010
 #[test]
 fn tc_007_010_e_rr73_while_my_next_tx4_is_pending_before_and_after_its_audio_start() {
     let before: &[(i64, &str)] = &[(6, "SV2CLJ HB9BLA 73")];
@@ -5572,8 +5567,8 @@ fn tc_007_010_e_rr73_while_my_next_tx4_is_pending_before_and_after_its_audio_sta
 }
 
 // Auto Seq off: the partner's RR73 in rogers, replying and
-// Proves: TC-007-010
 // report changes neither state nor next slot, offers suggested_slot tx5 and logs nothing.
+// Proves: TC-007-010
 #[test]
 fn tc_007_010_f_auto_seq_off_offers_tx5_after_rogers_in_rogers_replying_and_report() {
     let assert_offered = |s: &mut Station, state: (State, Slot)| {
@@ -5610,9 +5605,9 @@ fn tc_007_010_f_auto_seq_off_offers_tx5_after_rogers_in_rogers_replying_and_repo
 }
 
 // Negatives: rows that are not the partner's RR73 to me in
-// Proves: TC-007-010
 // his parity change nothing; a twice-delivered RR73 counts once; a partner 73 in replying or
 // report changes nothing; a partner 73 in rogers completes at once without my 73.
+// Proves: TC-007-010
 #[test]
 fn tc_007_010_g_only_the_partners_counted_rogers_lead_to_one_73() {
     let mut s = sv2clj_to_rogers(Mode::Ft8, Tx4::Rrr);
@@ -5662,8 +5657,8 @@ fn tc_007_010_g_only_the_partners_counted_rogers_lead_to_one_73() {
 }
 
 // WW Digi: my Tx4 RRR after the partner's R grid, then his
-// Proves: TC-007-010
 // RR73: one 73, completed, one log.
+// Proves: TC-007-010
 #[test]
 fn tc_007_010_h_ww_digi_rr73_after_my_rrr_sends_73_once_and_logs_once() {
     let mut s = station();
@@ -5710,8 +5705,8 @@ fn tc_007_010_h_ww_digi_rr73_after_my_rrr_sends_73_once_and_logs_once() {
 }
 
 // My 73 after the partner's RR73 is halted: signoff kept and
-// Proves: TC-007-010
 // nothing logged; Enable Tx again sends the 73 once, then completes and logs once.
+// Proves: TC-007-010
 #[test]
 fn tc_007_010_i_a_halted_73_keeps_signoff_and_enable_tx_sends_it_once() {
     let mut s = sv2clj_to_rogers(Mode::Ft8, Tx4::Rrr);

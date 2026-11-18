@@ -114,8 +114,8 @@ fn reports_counts_up_to_600_s_and_no_longer() {
 }
 
 // A spot counts for its band and mode inside the window, and no
-// Proves: TC-039-020
 // longer.
+// Proves: TC-039-020
 #[test]
 fn hears_us_expires_and_ignores_other_band_and_mode() {
     let mut h = Hearing::default();
@@ -165,8 +165,8 @@ fn hears_us_expires_and_ignores_other_band_and_mode() {
 }
 
 // RF to audio from the dial, newest first, distinct, inside the
-// Proves: TC-039-020
 // range.
+// Proves: TC-039-020
 #[test]
 fn decoded_offsets_come_from_the_dial_of_this_band_and_mode() {
     let mut h = Hearing::default();
@@ -393,9 +393,9 @@ fn next_ping(log: &mpsc::Receiver<(u8, Vec<u8>)>) -> (u8, Vec<u8>) {
 }
 
 // The whole session against a local peer: only the handshake, the
-// Proves: TC-039-020
 // two filters and pings on the wire; a target change replaces its subscription; spots reach the
 // model only by their payload; status from connecting through connected to off.
+// Proves: TC-039-020
 #[test]
 fn session_against_a_local_peer() {
     let dir = Dir::new();
@@ -654,8 +654,8 @@ fn a_refusing_or_broken_peer_is_a_named_error() {
 }
 
 // The default is on; a setting from another profile or a broken
-// Proves: TC-039-020
 // file reads as the default.
+// Proves: TC-039-020
 #[test]
 fn the_setting_defaults_on_and_survives() {
     let dir = Dir::new();
@@ -793,8 +793,8 @@ fn payload(sender: &str, receiver: &str, hz: u64, t_tx: i64, rp: Option<&str>) -
 }
 
 // rp is the receiver's reported SNR: an integer -99..99; absent or anything
-// Proves: TC-039-048
 // else is unknown and the spot still counts.
+// Proves: TC-039-048
 #[test]
 fn tc_039_048_rp_is_read_as_the_reported_snr() {
     for (rp, expected) in [
@@ -829,8 +829,8 @@ fn tc_039_048_rp_is_read_as_the_reported_snr() {
 }
 
 // His decoded offsets are kept once for each parity of the sender's t_tx; an
-// Proves: TC-039-048
 // offset of the other parity excludes nothing of mine.
+// Proves: TC-039-048
 #[test]
 fn tc_039_048_decoded_offsets_are_kept_per_parity() {
     // 1_000_005 s lies in FT8 period 66_667 (odd), 1_000_020 s in 66_668 (even), hand-divided by
@@ -997,8 +997,8 @@ async fn tc_039_048_post_pskr_use_saves_and_refuses() {
 }
 
 // Use off unsubscribes the target and Use on subscribes it again; the hearing
-// Proves: TC-039-048
 // state is heard (time and rp), no (connected and subscribed, no spot) or unknown.
+// Proves: TC-039-048
 #[test]
 fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
     let dir = Dir::new();
@@ -1107,8 +1107,8 @@ fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
 }
 
 // What a run reads of the feed on the station band: the hearing of its target
-// Proves: TC-039-048
 // and his decoded offsets of my Tx parity, both unknown with Use off or without a band or dial.
+// Proves: TC-039-048
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use() {
     let f = crate::mcp_tests::station(false).await;

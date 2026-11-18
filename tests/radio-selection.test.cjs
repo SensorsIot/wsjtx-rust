@@ -30,7 +30,7 @@ async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'})
   return {origin,id,request,cookie,token};
 }
 
-// cases2/5. Parent has no selection route, so this
+// Parent has no selection route, so this
 // fails on actual HTTP404 rather than a build/import error.
 if(!process.env.WSTX_SELECTION_FIXTURE){
 test('network lifetime and correlated Off oracle reject true violations',()=>{
@@ -242,7 +242,7 @@ test('authenticated TLS selection reports unknown nominal and early refusal',{ti
   const radio=await request('/radio');assert.equal(radio.status,200);assert.equal(radio.body.state,'closed');assert.equal(radio.body.observation,null);
 });
 
-// cases5/6. Fixed expectations come from the
+// Fixed expectations come from the
 // canonical CAS/fence contract, independently of the candidate's state machine.
 test('unseen mutation fencing rejects delayed POST without creating operation',{timeout:30000},async t=>{
   const {id,request}=await station(t);const initial=await request('/receive/selection');assert.equal(initial.status,200);
@@ -255,7 +255,7 @@ test('unseen mutation fencing rejects delayed POST without creating operation',{
   const changedRevision=await request('/receive/select','POST',{...cancel,operating_revision:ack.body.operating_revision});assert.equal(changedRevision.status,409);assert.equal(changedRevision.body.error.code,'state_conflict');
 });
 
-// cases2/5/7. These responses come from the actual
+// These responses come from the actual
 // authenticated router; no serial device or positive response is intercepted.
 test('strict TLS unions, early identity barriers and manual preferred defaults',{timeout:30000},async t=>{
   const {id,request}=await station(t);let s=(await request('/receive/selection')).body;
@@ -293,7 +293,7 @@ test('strict TLS unions, early identity barriers and manual preferred defaults',
   const manualClose=await request('/radio/disconnect','POST',{v:1,profile_id:id,boot_id:s.boot_id,connection_generation:0});assert.equal(manualClose.status,409);assert.equal(manualClose.body.error.code,'automatic_lifecycle');
 });
 
-// case6 selection.state during a held POST (another client's
+// selection.state during a held POST (another client's
 // revision, then the command's own) does not take away the barrier of its unknown outcome.
 test('an event during a pending command keeps the unknown outcome barrier',{timeout:60000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');
@@ -325,9 +325,8 @@ test('an event during a pending command keeps the unknown outcome barrier',{time
   assert.ok(reads.length>before,'a reconciling read resolved the unknown outcome');
 });
 
-// cases1/2/6. Interception only
+// Interception only
 // delays a mutation body; all successful replies/state originate in the real server.
-// the step inside this test.
 test('browser preferred selection and Stop fence a genuinely delayed POST',{timeout:45000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
@@ -364,7 +363,7 @@ test('browser preferred selection and Stop fence a genuinely delayed POST',{time
   assert.deepEqual(errors,[]);
 });
 
-// case7. A status of the socket reads no receive snapshot while receive.state
+// A status of the socket reads no receive snapshot while receive.state
 // holds it; the socket's first status, a changed saved profile and a failed read do, one each.
 test('a status on the same socket reads no receive snapshot unless the state is in doubt',{timeout:30000},async t=>{
   const {origin,token}=await station(t),{chromium}=require('playwright');const browser=await chromium.launch();t.after(()=>browser.close());

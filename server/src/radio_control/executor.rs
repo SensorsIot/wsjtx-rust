@@ -980,8 +980,8 @@ mod publication_tests {
         }
     }
     // The read-first read does not re-confirm the old value
-    // Proves: TC-044-012
     // while the setter frame is on the wire; the read-back confirms the new one.
+    // Proves: TC-044-012
     #[test]
     fn setter_fact_stays_unconfirmed_from_the_write_until_its_read_back() {
         let authority = Authority {

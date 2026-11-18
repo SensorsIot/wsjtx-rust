@@ -380,7 +380,8 @@ impl Station {
     pub(crate) fn revision(&self) -> u64 {
         self.revision.load(Ordering::Acquire)
     }
-    /// (contact_revision, current contact, Auto Seq) for the automation (WstxAutoPart::AutoService).
+    /// The contact_revision, current contact and Auto Seq for the automation
+    /// (WstxAutoPart::AutoService).
     pub(crate) fn facts(&self) -> (u64, Option<Facts>, bool) {
         let inner = self.lock();
         let e = &inner.engine;

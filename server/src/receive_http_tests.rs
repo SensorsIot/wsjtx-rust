@@ -614,11 +614,11 @@ fn live_native_page_kept_across_restart() {
 }
 
 // Busy FT8
-// Proves: TC-057-001
 // periods through the actual live source, window schedule, modem, publication, WebSocket,
 // results API and Detailed browser: each period view is published by its period start
 // + 15.0 s, and every row of it is painted within 0.3 s of its publication. The time from
 // the prompt window's completion (+13.8 s) to paint is reported, not asserted.
+// Proves: TC-057-001
 #[cfg(all(windows, not(debug_assertions)))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_busy_period_rows_promptly() {
@@ -849,7 +849,7 @@ async fn live_native_busy_period_rows_promptly() {
             "rows painted {:.0} ms after their publication (budget {budget} ms)",
             painted - published
         );
-        // CL-007-05: the view is published by its period start + ft8PublishedByMs.
+        // The view is published by its period start + ft8PublishedByMs.
         let start = completed - window_schedule_ms("ft8PromptEndMs");
         let bound = window_schedule_ms("ft8PublishedByMs");
         assert!(
@@ -931,9 +931,9 @@ impl StationMetrics {
 }
 
 // Station process private-commit delta <=96MiB over idle and
-// Proves: TC-004-003
 // receive-owner release <=250ms after Stop, on the actual manager, provider and decoder.
 // Exclusive resource window only (station capture paused, no concurrent builds).
+// Proves: TC-004-003
 #[cfg(all(windows, not(debug_assertions)))]
 #[test]
 #[ignore = "exclusive resource window: station process delta and owner release"]
@@ -1075,10 +1075,10 @@ fn resource_station_process_delta_and_owner_release() {
 }
 
 // receive.state holds exactly what the browser
-// Proves: TC-007-005
 // would otherwise read for its identity, not what frames carry, and the largest one fits the
 // 4096-byte write buffer beside a pending 2048-byte optional write (two 14-byte headers).
 // Every browser-accepted text at its 256-byte maximum, counters at 2^53-1.
+// Proves: TC-007-005
 #[test]
 fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     let text = "x".repeat(256);
@@ -1128,9 +1128,9 @@ fn receive_state_of_the_largest_snapshot_fits_the_event_bound() {
     assert!(data.get("source").is_none(), "a frame carries next_frame");
 }
 
-// after a socket's first receive.state only what changed goes,
-// Proves: TC-007-005
+// After a socket's first receive.state only what changed goes,
 // beside the identity; a new receive identity goes whole. Hand-written before and after values.
+// Proves: TC-007-005
 #[test]
 fn receive_state_after_the_first_holds_only_what_changed() {
     let a = json!({"profile_id":"p","boot_id":"b","generation":3,"source_id":"s","job_id":"j","state":"running",

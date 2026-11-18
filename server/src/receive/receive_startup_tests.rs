@@ -149,9 +149,9 @@ fn startup_file_invalid_or_foreign_is_ignored() {
 }
 
 // The stored FT4 20 m choice restarts as the band button would:
-// Proves: TC-045-001
 // FT4 receive on the profile's audio input, nominal dial 14 080 000 Hz (canonical
 // FT4 20 m preferred frequency), with no operator request.
+// Proves: TC-045-001
 #[test]
 fn startup_resume_starts_stored_band_and_mode() {
     let dir = Dir::new();
@@ -172,6 +172,7 @@ fn startup_resume_starts_stored_band_and_mode() {
 
 // Monitor off at startup, a stopped receive (nothing stored) and an
 // operator start that came first each leave the resume without effect.
+// Proves: TC-045-001
 #[test]
 fn startup_resume_off_or_stopped_stays_off() {
     let dir = Dir::new();
@@ -214,9 +215,9 @@ fn startup_resume_off_or_stopped_stays_off() {
 }
 
 // Transient refusals while CAT comes up (radio not yet
-// Proves: TC-045-001
 // ready, the actor's poll holding its lease, a connection change between preflights)
 // are retried within the wait: the resume still selects the stored band.
+// Proves: TC-045-001
 #[test]
 fn startup_resume_retries_transient_selection_refusals() {
     let dir = Dir::new();
@@ -235,8 +236,8 @@ fn startup_resume_retries_transient_selection_refusals() {
 }
 
 // Configured CAT that never becomes ready within the wait still
-// Proves: TC-045-001
 // resumes receive on the stored mode (untuned), and keeps the stored band.
+// Proves: TC-045-001
 #[test]
 fn startup_resume_cat_unavailable_falls_back_to_plain_receive() {
     let dir = Dir::new();
@@ -316,8 +317,8 @@ async fn startup_http_view_and_monitor_off_update() {
 }
 
 // A resume on a transmit-capable station (CAT PTT configured) leaves
-// Proves: TC-045-001
 // the transmit owner disarmed and never exchanges PTT.
+// Proves: TC-045-001
 #[test]
 fn startup_resume_never_arms_or_keys() {
     // The manual band path (a selection) and the configured-CAT fallback path.

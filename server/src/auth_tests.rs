@@ -1477,7 +1477,7 @@ async fn commission_http_strict_negatives_never_change_acknowledgement_or_files(
     );
 }
 
-// only the original current owner/kind/scope can reconcile a retained ID.
+// Only the original current owner/kind/scope can reconcile a retained ID.
 #[tokio::test]
 async fn commission_http_retained_id_cannot_rebind_owner_kind_or_new_safety_scope() {
     let f = HttpFixture::new("https://localhost:8080");
@@ -1626,7 +1626,7 @@ async fn commission_http_retained_id_cannot_rebind_owner_kind_or_new_safety_scop
     );
 }
 
-// the real queued handler cannot acknowledge after a competing commit.
+// The real queued handler cannot acknowledge after a competing commit.
 #[tokio::test]
 async fn commission_http_revoke_or_safety_edit_wins_queued_acknowledgement_without_writes() {
     use std::{
@@ -1786,7 +1786,7 @@ impl HttpFixture {
     }
 }
 
-// receipt-purpose proof recovers an ACK without reviving revoked control.
+// A receipt-purpose proof recovers an ACK without reviving revoked control.
 #[tokio::test]
 async fn commission_http_read_only_receipt_survives_logout_without_mutation_replay() {
     let f = HttpFixture::new("https://localhost:8080");
@@ -1840,7 +1840,8 @@ async fn commission_http_read_only_receipt_survives_logout_without_mutation_repl
     );
 }
 
-// the transaction and SAME production completion mapping, not Router admission.
+// The test drives the transaction and the SAME production completion mapping, not Router
+// admission.
 #[tokio::test]
 async fn commission_http_transaction_faults_never_ack_and_store_reopen_reads_only_committed_outcome()
  {
@@ -2255,12 +2256,11 @@ mod automatic_cat {
         }
     }
 
-    // (corrupt/unwritable store). A store
-    // Proves: TC-022-009
-    // write that fails while CAT runs quarantines the authority: the lifecycle cancels
-    // and releases the owner, and nothing reopens, queries or sets afterwards. Startup
+    // A store write that fails while CAT runs quarantines the authority: the lifecycle
+    // cancels and releases the owner, and nothing reopens, queries or sets afterwards. Startup
     // with a corrupt or missing expected record refuses the profile before any owner
     // exists (profile_tests::expected_authorization_corruption_blocks_...).
+    // Proves: TC-022-009
     #[tokio::test]
     async fn failed_store_write_quarantines_and_releases_cat_with_zero_reopen() {
         for stage in ["write", "flush", "replace"] {

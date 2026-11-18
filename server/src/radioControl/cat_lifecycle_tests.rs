@@ -664,11 +664,11 @@ fn status_for_unobserved_key_is_waiting_not_previous_ready() {
     assert_eq!(p.status_for(&eligible(2)), ("waitingForDevice", None, None));
 }
 
-// (operator finding 2026-11-02). Another program
-// Proves: TC-022-009
+// Another program
 // holds COM3, then releases it: the status names the held port, the automatic retry
 // reconnects, and the confirmed dial becomes the selection without any band choice by
 // hand, setter byte, receive restart or operating revision advance.
+// Proves: TC-022-009
 #[test]
 fn station_port_released_by_other_program_reconnects_and_restores_selection() {
     let s = Station::new(Device::Busy);
@@ -799,11 +799,11 @@ fn no_ptt(s: &Station) {
     }
 }
 
-// (concurrent observers/RF work). Operator RF work runs
-// Proves: TC-022-009
+// Operator RF work runs
 // on the lifecycle's one native owner: ticking the lifecycle and many status observers
 // while it runs open, close or attempt nothing; the lifecycle itself sends only queries
 // before and after, and no frame ever keys PTT.
+// Proves: TC-022-009
 #[test]
 fn station_rf_work_shares_the_one_owner_without_lifecycle_interference() {
     let s = Station::new(Device::Present);
@@ -870,9 +870,9 @@ fn station_rf_work_shares_the_one_owner_without_lifecycle_interference() {
 }
 
 // Revocation while RF work holds the owner:
-// Proves: TC-022-009
 // the lifecycle's release cancels that work, the owner closes within the 250 ms RF
 // release bound, and nothing reopens or replays it.
+// Proves: TC-022-009
 #[test]
 fn station_revocation_during_rf_work_cancels_it_and_releases_without_reopen() {
     let s = Station::new(Device::Present);
@@ -915,8 +915,8 @@ fn station_revocation_during_rf_work_cancels_it_and_releases_without_reopen() {
 }
 
 // An attempt refused because RF work or another owner
-// Proves: TC-022-009
 // holds the resource is no failure: the same due time is retried, no delay grows.
+// Proves: TC-022-009
 #[test]
 fn policy_attempt_deferred_by_rf_work_is_not_a_failure() {
     let mut l = Lifecycle::new();

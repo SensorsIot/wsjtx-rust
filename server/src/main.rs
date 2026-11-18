@@ -431,7 +431,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             });
             // WstxUdp: the station's UDP interface and its step. The name is fixed here,
-            // after radio discovery (CL-112-01).
+            // after radio discovery.
             let disabled = udp::disabled_by_environment();
             let opened = state.clone();
             let instance_locks = env::var_os("LOCALAPPDATA")

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
-// Hand tables from the rule sources listed on #63
-// (the dates by a calendar, not by the schedule code).
+// Hand tables from the contests' rule sources (the dates by a calendar, not by the schedule
+// code).
 use super::*;
 use crate::contact::parse_utc;
 
@@ -487,10 +487,10 @@ fn rows(list: &[(&str, f64)]) -> Vec<Value> {
         .collect()
 }
 
-// Proves: TC-097-008
 // CL-097-03 for a contest strategy (WW Digi built-in, ContestValueOrder): with Calling stations
 // are answered on the non-dupe caller VK2ABC comes first; off, it has rank null, why "calls my
 // call · not answered", and JA1XYZ is first. The dupe caller K1OLD has no rank either way.
+// Proves: TC-097-008
 #[test]
 fn tc_097_008_a_contest_strategy_with_callers_off_ranks_no_caller() {
     let s = ww();

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// TC-092-003. The clock from the air is the reference (#92, operator 2026-11-09): votes of
+// The clock from the air is the reference: votes of
 // hand-written DT distributions, the evidence rule (4 stations, 80 % on one side beyond
 // 0.1 s), the move toward the middle (at most 1000 ms per period), never unknown, Tx refused
 // only beyond 1 s, system clock steps, the SNTP state only warning, and a closed receive
@@ -48,8 +48,8 @@ fn crowd(shift: i64) -> Vec<i64> {
 }
 
 // One vote per station (the median of its raw DT plus the
-// Proves: TC-043-001, TC-092-001
 // correction), the median of all votes without trimming, plus and minus beyond 100 ms.
+// Proves: TC-043-001, TC-092-001
 #[test]
 fn votes_median_and_sides_of_known_dt_distributions() {
     let at = |raw: &[i64], correction: i64| {
@@ -450,8 +450,8 @@ fn heard(clock: &StationClock, base: (i64, i64), k: i64, period_ms: i64, raw: &[
 }
 
 // The 2 s ahead crowd gives the same correction and state with SNTP
-// Proves: TC-043-001
 // +12 ms, -1900 ms and none (never applied); only the warning differs.
+// Proves: TC-043-001
 #[test]
 fn sntp_is_never_applied_and_only_warns() {
     let mut seen = vec![];
@@ -504,10 +504,10 @@ fn closed_loop(offset: i64, periods: i64) -> (Vec<i64>, Vec<ClockState>) {
     (applied, states)
 }
 // Hand-computed: -2 s settles at -2000 (2025, then 1025 -> -1000 each,
-// Proves: TC-043-002
 // then mixed); +1.5 s at +1425 (11 crowd plus the bad clock at -1425 -> +1000, then -425 ->
 // +425, then 4 plus 4 minus); +0.6 s at +550 (12 of 13 minus, 7th vote -550, then mixed); 0
 // keeps 0 (5 of 13 plus); +2 s and +3 s decode at most three stations: 0, synchronized.
+// Proves: TC-043-002
 #[test]
 fn applied_correction_converges_without_oscillation() {
     for (offset, settled_at) in [(-2000, -2000), (1500, 1425), (600, 550)] {
@@ -552,11 +552,11 @@ fn applied_correction_converges_without_oscillation() {
     assert_eq!(history, [-2025, 0, -2025, 0, -2025, 0]);
 }
 
-// The 10 m FT4 refusals of 2026-11-09 replayed: SNTP +525 ms
-// Proves: TC-092-002
+// The live 10 m FT4 refusals replayed: SNTP +525 ms
 // (unsynchronized), four at -339, one at -50 and one at +100 (4 of 6 = 66 %): no change;
 // five at -339 and one at +100 (5 of 6 = 83 %): median -339, +339; then 2 and no stations:
 // +339 kept; synchronized and every start planned in each window, pc_clock_off throughout.
+// Proves: TC-092-002
 #[test]
 fn replay_of_the_ft4_refusals_of_2026_11_09() {
     let ntp = Monitor::new();
@@ -602,9 +602,9 @@ fn aged(offset_ms: i64, now: Instant, system: SystemTime, age: Duration) -> Meas
     }
 }
 // The three situations on the station clock with a fake SNTP monitor:
-// Proves: TC-092-003
 // votes correct on every SNTP state, the warnings by TransmitClock's 500 ms / 600 s / 100 ms,
 // SNTP never applied, steps leave a correction of 0 at 0.
+// Proves: TC-092-003
 #[test]
 fn three_situations_correction_state_and_warnings() {
     // SNTP +12 (synchronized): four at +1500 -> -1000, -1500, stations_off.

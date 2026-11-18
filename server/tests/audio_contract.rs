@@ -580,8 +580,8 @@ fn audio_clock_rejected_bracket_preserves_reference() {
 }
 
 // Failed Stop dominates read/cancel errors and
-// Proves: TC-002-003
 // retains every native owner plus its apartment until Stop acknowledges release.
+// Proves: TC-002-003
 #[cfg(windows)]
 #[test]
 fn audio_failed_stop_quarantines_owner_and_apartment_without_reopen() {
@@ -716,11 +716,11 @@ fn drain(source: &mut LiveSource, blocks: &mut Vec<SampleBlock>) -> Vec<EpochPro
 }
 
 // The HB9BLA IC-7300 codec packet sequence: WASAPI
-// Proves: TC-002-001, TC-002-003
 // flags DATA_DISCONTINUITY on packets whose device position and QPC both continue the
 // previous packet (measured QPC step jitter up to 0.56 ms, flagged or not). That is a
 // counted engine glitch on a continuous timeline: one source epoch, gap-free canonical
 // frames, no reset.
+// Proves: TC-002-001, TC-002-003
 #[test]
 fn audio_contiguous_engine_discontinuity_keeps_the_source_epoch() {
     let f = format(48000);
@@ -770,8 +770,8 @@ fn audio_contiguous_engine_discontinuity_keeps_the_source_epoch() {
 }
 
 // A contiguous-position flag without a consistent QPC,
-// Proves: TC-002-003
 // and every own-queue loss, is still unknown loss; each epoch names its trigger.
+// Proves: TC-002-003
 #[test]
 fn audio_unknown_loss_epochs_name_their_trigger() {
     let f = format(48000);
@@ -803,8 +803,8 @@ fn audio_unknown_loss_epochs_name_their_trigger() {
 }
 
 // The 2 ms QPC bound for a contiguous flagged packet:
-// Proves: TC-002-001
 // +-0.55 ms (the observed jitter) and exactly 2 ms are kept; 2.1 ms early or late is loss.
+// Proves: TC-002-001
 #[test]
 fn audio_contiguous_flag_qpc_tolerance_boundary() {
     let f = format(48000);
@@ -867,7 +867,7 @@ fn audio_queue_full_epoch_names_its_trigger() {
     );
 }
 
-// silent packets (zero-filled by the source) and
+// Silent packets (zero-filled by the source) and
 // accepted engine glitches are marked on the canonical timeline, so a window can count
 // them; a new epoch forgets them.
 #[test]
@@ -903,7 +903,7 @@ fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
     assert_eq!(s.marked_frames(0, u64::MAX), (0, 0));
 }
 
-// review: sustained silence over more packets than the
+// Sustained silence over more packets than the
 // mark limit (600 silent 480-frame packets after one signal packet) stays counted in full.
 #[test]
 fn audio_sustained_silence_is_counted_in_full() {

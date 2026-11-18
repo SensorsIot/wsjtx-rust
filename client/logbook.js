@@ -104,7 +104,7 @@ $('log-export').addEventListener('click',async()=>{
 // #55 CL-055-04: the New call slots come from the record flags; worked_status, which the station
 // sets on each record, feeds only the row's hover text, never a colour.
 // The statuses of the latest and the previous period also mark the QSO pane's callers
-// (CL-010-13, WstxQsoPane::CallingMe).
+// (WstxQsoPane::CallingMe).
 let askedPeriod=null,answered=new Map(),previous=new Map(),answeredOn='';
 window.wstxWorkedOf=call=>{const status=answered.get(call)??previous.get(call);return status?{status,on:answeredOn}:null;};
 function annotate(body,records){

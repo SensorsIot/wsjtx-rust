@@ -87,7 +87,7 @@ pub(crate) const ALC_HIGH_RAW: u16 = 60;
 pub(crate) const SWR_HIGH_RAW: u16 = 80;
 /// CL-044-14 consecutive transmissions before an entry appears in the error field.
 pub(crate) const PERSISTENT_READINGS: u8 = 3;
-/// CL-044-14 the level goes up only while the output power is below this share of the
+/// The level goes up only while the output power is below this share of the
 /// band's output power; below the second share the power is low.
 const STEP_UP_BELOW_PCT: u32 = 80;
 const PO_LOW_PCT: u32 = 50;
@@ -186,7 +186,7 @@ struct Inner {
     /// SWR stopped transmitting; held until a later reading or Set level shows it clear.
     swr_fault: bool,
     revision: u64,
-    /// Test seam only (#87): a fixture's bound of one meter read instead of METER_READ_MAX_MS.
+    /// Test seam only: a fixture's bound of one meter read instead of METER_READ_MAX_MS.
     #[cfg(test)]
     read_bound: Option<Duration>,
 }

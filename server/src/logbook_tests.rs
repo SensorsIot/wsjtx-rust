@@ -121,7 +121,7 @@ fn calls(log: &Logbook) -> Vec<String> {
         .collect()
 }
 
-// exact WSJT-X-compatible ADI writing and reading.
+// Exact WSJT-X-compatible ADI writing and reading.
 #[test]
 fn adi_record_is_written_in_wsjtx_field_order_with_exact_lengths_and_round_trips() {
     let mut record = reviewed(ID1, "K1ABC");
@@ -144,7 +144,7 @@ fn adi_record_is_written_in_wsjtx_field_order_with_exact_lengths_and_round_trips
     assert_eq!(parsed, vec![record]);
 }
 
-// header, case, type indicators and boundaries.
+// Header, case, type indicators and boundaries.
 #[test]
 fn adi_parser_accepts_header_case_variants_and_line_breaks_between_fields() {
     let text = "Exported by another logger\r\n<ADIF_VER:5>3.1.8 <PROGRAMID:5>OTHER\r\n<EOH>\r\n\
@@ -177,7 +177,7 @@ fn adi_parser_accepts_header_case_variants_and_line_breaks_between_fields() {
     );
 }
 
-// malformed, length, character and required-field refusals.
+// Malformed, length, character and required-field refusals.
 #[test]
 fn adi_parser_refuses_malformed_length_character_and_missing_fields_with_context() {
     let ok = "<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <mode:3>FT8 <eor>";
@@ -310,7 +310,7 @@ fn adi_limits_admit_exact_maximum_and_refuse_one_over() {
     );
 }
 
-// exactly 64 MiB import admitted through 16 KiB chunks.
+// An import of exactly 64 MiB is admitted through 16 KiB chunks.
 // Proves: TC-011-002
 #[test]
 fn import_of_exactly_sixty_four_mebibytes_is_admitted_and_published() {
@@ -342,9 +342,9 @@ const LOG4OM_FT4: &str = "<CALL:6>DL1ABC <BAND:3>20m <MODE:4>MFSK <SUBMODE:3>FT4
 const LOG4OM_SSB: &str = "<CALL:5>W1XYZ <BAND:3>40m <MODE:3>SSB <SUBMODE:3>LSB <QSO_DATE:8>20250220 <TIME_ON:4>0815 <DXCC:3>291 <eor>\n\n";
 
 // Update logbook from a Log4OM-shaped export: byte order
-// Proves: TC-011-002
 // mark, banner, UTF-8 personal fields not stored, only the log's fields kept, the source
 // marked, MFSK/FT4 and FT4 one mode, and the added records feed worked-before.
+// Proves: TC-011-002
 #[test]
 fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_source() {
     let dir = Dir::new();
@@ -439,9 +439,9 @@ fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_sourc
     );
 }
 
-// consolidation key call + band + effective mode + start
-// Proves: TC-011-002
+// The consolidation key is call + band + effective mode + start
 // within 120 s; the stored station record wins byte for byte; repeatable and incremental.
+// Proves: TC-011-002
 #[test]
 fn update_consolidates_within_two_minutes_and_existing_records_win_and_repeat_adds_nothing() {
     let dir = Dir::new();
@@ -497,9 +497,9 @@ fn update_consolidates_within_two_minutes_and_existing_records_win_and_repeat_ad
     assert_eq!(log.total().unwrap(), 5);
 }
 
-// invalid records skipped and invalid optional fields dropped
-// Proves: TC-011-002
+// Invalid records are skipped and invalid optional fields dropped
 // with grouped reasons (at most 16 groups); a structural fault publishes nothing.
+// Proves: TC-011-002
 #[test]
 fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file() {
     let dir = Dir::new();
@@ -610,10 +610,10 @@ fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file()
     assert_eq!(log.total().unwrap(), 3);
 }
 
-// workload: a 27,000-QSO export of about 27 MB
-// Proves: TC-011-002
+// Workload: a 27,000-QSO export of about 27 MB
 // (Log4OM-shaped records) is consolidated in one update; worked-before then answers
 // from the index. Timing is printed, not asserted (functional suite).
+// Proves: TC-011-002
 #[test]
 fn update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_the_index() {
     let dir = Dir::new();
@@ -684,7 +684,7 @@ fn update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_t
     assert!(standing.worked && standing.confirmed);
 }
 
-// import retry identity and integrity check.
+// Import retry identity and integrity check.
 // Proves: TC-011-002
 #[test]
 fn import_retry_by_id_and_sha256_has_no_second_effect_and_mismatch_is_refused() {
@@ -751,7 +751,7 @@ fn import_retry_by_id_and_sha256_has_no_second_effect_and_mismatch_is_refused() 
     );
 }
 
-// exactly once, Saved only after the atomic replace.
+// A save writes exactly once, Saved only after the atomic replace.
 // Proves: TC-011-001
 #[test]
 fn save_is_exactly_once_and_injected_failures_leave_no_torn_file() {
@@ -832,7 +832,7 @@ fn save_is_exactly_once_and_injected_failures_leave_no_torn_file() {
     );
 }
 
-// an invalid stored log is unavailable, never overwritten.
+// An invalid stored log is unavailable, never overwritten.
 #[test]
 fn invalid_stored_log_is_unavailable_and_never_rewritten() {
     let dir = Dir::new();
@@ -846,7 +846,7 @@ fn invalid_stored_log_is_unavailable_and_never_rewritten() {
     assert_eq!(dir.file().unwrap(), b"<call:3>K1ABC <eor>");
 }
 
-// stable history indexes and the 16384-byte page bound.
+// Stable history indexes and the 16384-byte page bound.
 // Proves: TC-011-002
 #[test]
 fn history_pages_have_stable_indexes_and_stay_within_the_byte_bound() {
@@ -916,7 +916,7 @@ fn history_pages_have_stable_indexes_and_stay_within_the_byte_bound() {
     assert_eq!(last["records"][0]["submode"], Value::Null);
 }
 
-// worked-before by call and by band plus mode.
+// Worked-before by call and by band plus mode.
 // Proves: TC-011-003
 #[test]
 fn worked_before_matches_call_case_insensitively_and_band_with_mode() {
@@ -953,7 +953,7 @@ fn worked_before_matches_call_case_insensitively_and_band_with_mode() {
     );
 }
 
-// review field domains refused beside the field.
+// Review field domains are refused beside the field.
 // Proves: TC-011-001
 #[test]
 fn review_validation_refuses_each_invalid_field_with_its_key() {
@@ -1021,9 +1021,9 @@ fn review_validation_refuses_each_invalid_field_with_its_key() {
     );
 }
 
-// an unreadable contacts.adi (not NotFound) is never
-// Proves: TC-011-001
+// An unreadable contacts.adi (not NotFound) is never
 // treated as an empty log and is never replaced.
+// Proves: TC-011-001
 #[test]
 fn unreadable_stored_log_is_unavailable_and_left_untouched() {
     let dir = Dir::new();
@@ -1072,10 +1072,10 @@ fn contest_fields_and_rtty_rst_are_validated() {
 }
 
 // Update logbook keeps only contest values that
-// Proves: TC-011-002
 // SaveContact admits (coordinator decision on #10, 2026-11-04): a non-conforming STX, SRX
 // or contest text is dropped and reported, the record is still added, a conforming value
 // (exactly 32 characters, 4 digits) is kept.
+// Proves: TC-011-002
 #[test]
 fn update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones() {
     let dir = Dir::new();
@@ -1136,11 +1136,11 @@ fn update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones(
 }
 
 // ExportAdi streamed a 300-record log is
-// Proves: TC-011-002
 // exported as the header with the first 128 records, then 128 and 44 records, each chunk
 // formatted when taken; the chunks together are exactly the stored log's records after a
 // fresh header; the export is a snapshot that holds no lock, so a save during it succeeds
 // and appears only in the next export.
+// Proves: TC-011-002
 #[test]
 fn export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock() {
     let dir = Dir::new();
@@ -1228,10 +1228,10 @@ fn export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock() {
 /// logger such as Log4OM 2 exports them.
 const CONFIRM_HEADER: &str = "Log4OM 2 test export\n<ADIF_VER:5>3.1.0 <PROGRAMID:7>LOG4OM2 <eoh>\n";
 
-// (2026-11-04) UpdateLogbook keeps LOTW_QSL_RCVD,
-// Proves: TC-011-002
+// UpdateLogbook keeps LOTW_QSL_RCVD,
 // QSL_RCVD, EQSL_QSL_RCVD with their dates and QSL_RCVD_VIA, drops invalid ones, and the
 // export carries them (export then update changes nothing); ContactHistory is unchanged.
+// Proves: TC-011-002
 #[test]
 fn update_keeps_each_confirmation_field_and_the_export_round_trips_them() {
     let dir = Dir::new();
@@ -1293,10 +1293,10 @@ fn update_keeps_each_confirmation_field_and_the_export_round_trips_them() {
     assert_eq!(dir.file().unwrap(), before);
 }
 
-// (2026-11-04) a rerun upgrades the confirmation of
-// Proves: TC-011-002
+// A rerun upgrades the confirmation of
 // records already present (N, R, I or absent to Y/V, with date and via), never removes or
 // downgrades one, leaves every other stored field, and the summary counts the upgrades.
+// Proves: TC-011-002
 #[test]
 fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one() {
     let dir = Dir::new();
@@ -1537,7 +1537,7 @@ fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {
     assert!(worked(&rebuilt, "G1ABC"));
 }
 
-// (2026-11-04) the award query layer: worked vs confirmed
+// The award query layer: worked vs confirmed
 // per DXCC entity, entity x band and entity x band x mode from one lookup of the worked set
 // (needed = not worked or not confirmed), rebuilt when a rerun adds a confirmation.
 #[test]
@@ -1606,8 +1606,8 @@ fn worked_set_reports_worked_and_confirmed_per_entity_band_and_mode() {
     );
 }
 
-// a log written before #10 (the former ImportAdi kept
-// unknown fields verbatim) whose QSL fields are invalid or repeated stays readable: those
+// A log the former ImportAdi wrote (it kept unknown fields verbatim) whose QSL fields are
+// invalid or repeated stays readable: those
 // stay unknown fields; a valid one becomes the record's confirmation.
 /// A QSO as DirectLog writes it (record_of): CALL, MODE (MFSK + SUBMODE FT4 for FT4), BAND and
 /// FREQ from the confirmed dial (absent when it is not confirmed), GRIDSQUARE.
@@ -1632,11 +1632,11 @@ fn qso(call: &str, dial_hz: Option<u64>, ft4: bool, grid: Option<&str>) -> Recor
 }
 
 // The terms of "the same station again"
-// Proves: TC-085-002
 // after the newest QSO: CALL ignoring case (K1ABC/P is another station, L4), the band (BAND,
 // else the band of FREQ; unknown equals only unknown, L2) and the mode (FT8 and FT4 differ);
 // under a contest its dupe rule decides within that (band_grid: a rover from a new grid is no
 // dupe). Expected values are the hand-written table of CL-085-01, never candidate output.
+// Proves: TC-085-002
 #[test]
 fn tc_085_002_terms_of_the_same_station_again() {
     const M20: Option<u64> = Some(14_074_000);

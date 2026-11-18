@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
-// (and for the
-// configuration barrier). Hand-authored candidate tables and contact scenarios; the
+// Hand-authored candidate tables and contact scenarios; the
 // expected selections, states and stop reasons are the WstxTargetChoice::PickRule and
 // WstxAutoMode::AutoStops tables written below, not automation output. Integration cases use
 // the actual station router, contact engine and #9 transmit owner on the recording

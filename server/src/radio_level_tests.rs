@@ -167,7 +167,6 @@ fn stored(f: &Fixture) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-// (a, b)
 #[test]
 fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
     let (f, r) = station(radio(fixed([0x01, 0x20])));
@@ -731,7 +730,7 @@ fn settled_level(mut level: i32, transmissions: u8, alc: impl Fn(i32) -> u16) ->
     level
 }
 
-// the level that reads 0 and the one above it that reads 11 do not alternate.
+// The level that reads 0 and the one above it that reads 11 do not alternate.
 // Proves: TC-044-017
 #[test]
 fn alc_zero_and_above_the_limit_on_neighbouring_levels_settle_on_the_lower() {
@@ -747,7 +746,7 @@ fn alc_zero_and_above_the_limit_on_neighbouring_levels_settle_on_the_lower() {
     assert_eq!(settled_level(-9, 40, alc), -10);
 }
 
-// a lowering alone leaves the level free to follow the drive back up.
+// A lowering alone leaves the level free to follow the drive back up.
 // Proves: TC-044-017
 #[test]
 fn a_lowering_without_a_step_up_before_it_keeps_the_step_up() {
@@ -768,7 +767,7 @@ fn a_lowering_without_a_step_up_before_it_keeps_the_step_up() {
     assert_eq!(step(-12, 0), -11);
 }
 
-// the live reading of 2026-11-06, ALC 31 at -9 dB and about 6 per dB: routine.
+// A live reading, ALC 31 at -9 dB and about 6 per dB, is routine.
 // Proves: TC-044-017
 #[test]
 fn the_live_alc_comes_down_to_the_limit_without_a_warning_and_stays() {
@@ -779,8 +778,8 @@ fn the_live_alc_comes_down_to_the_limit_without_a_warning_and_stays() {
 }
 
 // Set level's stop and the correction agree on one radio (onset reads 7 at
-// Proves: TC-044-017
 // -8 dB). Set level stores -9; low power takes it to the onset, a higher level comes back.
+// Proves: TC-044-017
 #[test]
 fn set_levels_stop_and_the_correction_agree() {
     let alc = |level: i32| {
@@ -804,7 +803,7 @@ fn set_levels_stop_and_the_correction_agree() {
     assert_eq!(settled_level(-7, 40, alc), -8);
 }
 
-// the ceiling holds until a changed profile power or a stored Set level.
+// The ceiling holds until a changed profile power or a stored Set level.
 // Proves: TC-044-017
 #[test]
 fn the_ceiling_ends_with_a_changed_profile_power_and_a_stored_set_level() {
@@ -856,7 +855,6 @@ fn one_transmission(f: &Fixture, r: &Arc<Mutex<Ic7300>>) {
     assert_eq!(meter_frames(r).len(), before + 3, "one burst");
 }
 
-// (c, d)
 // Proves: TC-044-017
 #[test]
 fn one_burst_corrects_for_the_next_transmission_only_and_warns_when_persistent() {
@@ -944,7 +942,7 @@ fn nothing_is_read_for_a_transmission_while_set_level_runs() {
     assert!(r.lock().unwrap().writes.is_empty());
 }
 
-// startup connects the transmit step's call to the burst.
+// Startup connects the transmit step's call to the burst.
 // Proves: TC-044-017
 #[test]
 fn startup_connects_the_meter_call_to_one_burst() {
@@ -961,7 +959,7 @@ fn startup_connects_the_meter_call_to_one_burst() {
     }
 }
 
-// a level that cannot be stored is not applied.
+// A level that cannot be stored is not applied.
 // Proves: TC-044-017
 #[test]
 fn a_correction_that_cannot_be_stored_leaves_the_level() {
@@ -984,7 +982,7 @@ fn a_correction_that_cannot_be_stored_leaves_the_level() {
     service.with(|c| c.set_tune(false, 0).unwrap());
 }
 
-// a reading without SWR does not clear the fault.
+// A reading without SWR does not clear the fault.
 // Proves: TC-044-017
 #[test]
 fn a_reading_without_swr_keeps_the_fault_entry() {
@@ -1034,9 +1032,9 @@ async fn a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted() {
 }
 
 // The wait is bounded; a refusal changes nothing. The refusal
-// Proves: TC-044-023
 // comes at 3 s, never before, and at most 250 ms after (the margin of CL-044-16: 35 runs on
 // HB9BLA, 2026-11-07, waited 3001.9 to 3081.6 ms, the most beside a 2-job cargo build).
+// Proves: TC-044-023
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing() {
     let (f, _) = station(radio(fixed([0, 0])));

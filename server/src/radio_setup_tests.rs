@@ -1040,8 +1040,8 @@ fn discovery_keeps_a_saved_radio_that_answers() {
 }
 
 // Two transceivers on one PC: the second station process
-// Proves: TC-044-020
 // takes the next free one; its audio follows; the confirmation is not carried over.
+// Proves: TC-044-020
 #[test]
 fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held() {
     let f = fixture("http://127.0.0.1:18048", false);
@@ -1133,8 +1133,8 @@ fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() 
 }
 
 // A profile never saved takes the first radio this station
-// Proves: TC-044-020
 // supports; a radio without station CAT and a port without a radio bridge are passed over.
+// Proves: TC-044-020
 #[test]
 fn discovery_sets_up_a_profile_never_saved() {
     let f = fixture("http://127.0.0.1:18051", false);
@@ -1171,8 +1171,8 @@ fn discovery_sets_up_a_profile_never_saved() {
 }
 
 // A radio chosen but not yet confirmed counts as taken:
-// Proves: TC-044-020
 // two stations set up one after the other take one radio each, however long apart.
+// Proves: TC-044-020
 #[test]
 fn a_second_station_passes_over_a_radio_the_first_reserved() {
     let hw = double(
@@ -1206,8 +1206,8 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
 }
 
 // No automatic open without the persisted confirmation,
-// Proves: TC-044-020
 // neither of the saved port nor of another; Detect radio with the tick stores it, once.
+// Proves: TC-044-020
 #[tokio::test]
 async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
     let f = fixture("http://127.0.0.1:18055", false);
@@ -1245,8 +1245,8 @@ async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
 }
 
 // The whole discovery stays inside its budget however
-// Proves: TC-044-020
 // many silent ports there are.
+// Proves: TC-044-020
 #[test]
 fn silent_ports_stay_within_the_budget() {
     let f = fixture("http://127.0.0.1:18056", false);

@@ -1092,7 +1092,7 @@ async fn mcp_clients(f: &Mcp) -> Value {
     r.json
 }
 
-// the MCP client token is a credential of its own,
+// The MCP client token is a credential of its own,
 // shown once and stored hashed; it never opens a browser route or becomes a browser
 // session, a browser credential never opens /mcp, every use is audited and revocation
 // is immediate.
@@ -1351,7 +1351,7 @@ async fn tc_020_004_the_mcp_client_token_is_separate_from_the_browser_credential
     assert_eq!(f.read("profile").await["profile_id"], f.id.as_str());
 }
 
-// the principal comes from the
+// The principal comes from the
 // credential, whatever route carries it: an MCP request never resets the Tx watchdog,
 // also when its MCP-principal transport reaches /contact/command directly.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

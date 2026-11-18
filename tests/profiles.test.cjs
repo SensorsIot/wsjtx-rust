@@ -338,7 +338,7 @@ test('token login retries a slow or failed setup step without another press', {t
 });
 
 // Ordinary cross-tab transport rotation; response-order faults are tested apart.
-// first status: the renewal of a retained credential waits for the page's load event.
+// On the first status the renewal of a retained credential waits for the page's load event.
 test('reopening a page renews its retained credential only after the load event', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
@@ -1199,7 +1199,7 @@ test('missing selected authorization asset fails closed', {timeout: 45000}, asyn
   assert.equal(await page.locator('#login').isHidden(), true, 'a missing component cannot fall back to transient login');
 });
 
-// held profile bodies across a renewal: a GET body is never applied, a save's 200 reply is its outcome.
+// Held profile bodies across a renewal: a GET body is never applied, a save's 200 reply is its outcome.
 for (const action of ['reload', 'save']) test(`held ${action} body cannot cross authorization renewal`, {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
@@ -1261,7 +1261,7 @@ for (const action of ['reload', 'save']) test(`held ${action} body cannot cross 
   if (action === 'save') assert.equal(await page.locator('#settings-save').isEnabled(), true, 'a received save reply needs no reload');
 });
 
-// CL-073-01: a selected HTTPS profile with an enrolled grant, connected.
+// A selected HTTPS profile with an enrolled grant, connected.
 // Every #settings-result text is recorded from page load; in-page counters see each real
 // PUT /profile and each GET /profile started after the test marks a reply's release while saving.
 async function selectedPage(t, {clock = false} = {}) {
@@ -1348,7 +1348,7 @@ async function unknownSave(page, p) {
   assert.equal((await savedFile(p)).revision, 1, 'the save had committed');
 }
 
-// reproduction: a control save drops the session while its 200 reply is on the way.
+// A control save drops the session while its 200 reply is on the way.
 // Proves: TC-073-001
 test('TC-073-001: Apply of a CAT change on a selected HTTPS profile reports the committed save', {timeout: 60000}, async t => {
   const {p, page, sessions, scopes} = await selectedPage(t);
@@ -1515,8 +1515,8 @@ test('simulated reservation upload intent cannot cross authorization renewal', {
   assert.equal(chunks, 0, 'no upload chunk from the old explicit intent may be sent after proof');
 });
 
-// Proves: TC-022-001
 // Actual process persistence only; uses the existing TLS/profile fixture and its retained child handles.
+// Proves: TC-022-001
 test('actual browser and server process restart', {timeout: 90000}, async t => {
   const {profiles, apps, base} = await fixture(t, true), p = profiles[0];
   const profileDir = path.join(base, 'owned-persistent-chromium');
@@ -1946,7 +1946,7 @@ for (const committed of [true, false]) test(`${committed ? 'committed' : 'undeli
   }
 });
 
-// friendly names and endpoints of the other flow are not saved.
+// Friendly names and endpoints of the other flow are not saved.
 // Proves: TC-022-011
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
   const {profiles, apps} = await fixture(t), beforeBytes = await savedBytes(profiles);
@@ -2388,7 +2388,7 @@ test('suite audio endpoint route refuses for a stopped station', {timeout: 30000
   assert.equal(outcome, 'refused');
 });
 
-// test isolation (harness#28 escape). A station a suite starts claims its profile
+// Test isolation: a station a suite starts claims its profile
 // UUID in the run's own account-local data, never in the account's shared one: the same
 // UUID held there by a concurrent run (another checkout's suite or gate, started with the
 // account's environment) does not refuse it with profile_in_use.

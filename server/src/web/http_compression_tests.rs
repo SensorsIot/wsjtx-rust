@@ -31,7 +31,6 @@ fn negotiation_vectors() -> Vec<(Vec<String>, String)> {
     vectors
 }
 
-// case8.
 #[tokio::test]
 async fn product_encoder_matches_all_49_independent_negotiations() {
     let mut count = 0;

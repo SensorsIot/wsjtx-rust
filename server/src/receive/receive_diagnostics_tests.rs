@@ -46,8 +46,8 @@ fn wait_for(dir: &Path, count: usize) -> Vec<String> {
 }
 
 // Hand-counted zeros, their longest run and those inside the
-// Proves: TC-052-001
 // FT8 early buffer [period, period + 141696).
+// Proves: TC-052-001
 #[test]
 fn window_zero_counts_follow_the_early_buffer() {
     let mut x = vec![0.5f32; 20];
@@ -85,8 +85,8 @@ fn window_dump_is_a_12_khz_pcm16_wav() {
 }
 
 // Off by default and after a foreign or corrupt file; the
-// Proves: TC-052-001
 // operator's choice persists next to profile.json; wrong profile or boot is refused.
+// Proves: TC-052-001
 #[test]
 fn window_dump_setting_defaults_off_and_persists() {
     let dir = Dir::new();
@@ -131,8 +131,8 @@ fn window_dump_setting_defaults_off_and_persists() {
 }
 
 // Only an FT8 prompt window with the dump on is written (WAV
-// Proves: TC-052-001
 // and sidecar); the last 20 windows' counters are kept; the dump keeps the newest 20.
+// Proves: TC-052-001
 #[test]
 fn window_dump_writes_prompt_windows_and_rotates() {
     let dir = Dir::new();
@@ -212,9 +212,9 @@ fn window_dump_rotation_keeps_the_byte_cap() {
 }
 
 // GET/POST /receive/diagnostics through the station router,
-// Proves: TC-052-001
 // with the station's refusal codes and no change on a refused request; GET /receive does
 // not carry the window counters.
+// Proves: TC-052-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn diagnostics_http_view_and_dump_update() {
     let f = crate::contact_http_tests::fixture("http://127.0.0.1:18461", false);

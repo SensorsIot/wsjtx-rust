@@ -141,10 +141,10 @@ const VIEW_KEYS: [&str; 10] = [
     "warning",
 ];
 
-// The view of CL-043-01 with and without a #43 clock.json (unchanged),
-// Proves: TC-043-003
+// The view of CL-043-01 with and without a stored clock.json (unchanged),
 // GET /transmit without clock_source, twelve stations at +1555 ms over two periods, POST
 // /clock an unknown route.
+// Proves: TC-043-003
 #[tokio::test]
 async fn clock_view_wire_with_and_without_a_43_file() {
     for file in [false, true] {
@@ -386,11 +386,11 @@ fn transmit_owner_admits_and_times_by_the_air_clock() {
 }
 
 // clock.state over the actual status WebSocket of a receive-only and a
-// Proves: TC-092-009
 // transmit-configured profile, to a Detailed and a Thin peer: one event after subscribing
 // with exactly the keys of CL-043-01 within 512 bytes; none while nothing changes or for an
 // SNTP move within 500 ms; one within 1 s for +525 and for +530; quick changes coalesced to at
 // most one per second; drift_high and back; clock_revision equal to GET /clock's.
+// Proves: TC-092-009
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clock_state_is_pushed_to_every_profile() {
     use crate::strategy::tests::{Peer, serve};

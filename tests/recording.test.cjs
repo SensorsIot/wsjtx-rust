@@ -123,7 +123,7 @@ test('authenticated reconnect accepts only current connected operating snapshots
   });
 });
 
-// level 2 actual server/browser.
+// Cost level 2: actual server and browser.
 // Proves: TC-018-001
 test('TC-018-001/003 import preserves source, jobs change, cancel releases and restart recovers',{timeout:30000},async t=>{
   const f=await fixture(t),bytes=wav(3);let s=await f.upload(bytes);const source=s.recording.id;
@@ -134,7 +134,7 @@ test('TC-018-001/003 import preserves source, jobs change, cancel releases and r
   assert.equal((await f.req('/recording/jobs/'+second.id,'DELETE')).status,404);
   const p=await page(f);assert.equal(await p.locator('#profile-name').textContent(),'Recording <station>');assert.equal(await p.locator('#profile-name station').count(),0);
 });
-// level 2 actual boundary/priority vectors.
+// Cost level 2: actual boundary and priority vectors.
 // Proves: TC-018-002
 test('TC-018-002/003 HTTP admission, malformed chunks, busy and partial cancellation',{timeout:30000},async t=>{
   const f=await fixture(t),s=await f.snapshot(),body=f.body(s),unknown=crypto.randomUUID();
@@ -155,7 +155,7 @@ test('TC-018-002/003 HTTP admission, malformed chunks, busy and partial cancella
   const end=await f.req('/recording/imports/'+replacement.id,'PUT',malformed.subarray(2048),{'Content-Type':'audio/wav','Content-Range':`bytes 2048-${malformed.length-1}/${malformed.length}`});assert.equal(end.status,422);assert.equal(end.value.error.code,'invalid_recording');assert.equal((await f.snapshot()).recording.id,valid.recording.id);
 });
 
-// observed transport loss invalidates a partial HTTP body.
+// An observed transport loss invalidates a partial HTTP body.
 // Proves: TC-018-002
 test('TC-018-002 aborted partial upload cancels its reservation without publishing source',{timeout:10000},async t=>{
   const f=await fixture(t),op=await f.reserve(),u=new URL(f.origin),socket=net.connect({host:u.hostname,port:Number(u.port)});await once(socket,'connect');
@@ -163,7 +163,8 @@ test('TC-018-002 aborted partial upload cancels its reservation without publishi
   for(let n=0;n<50;n++){const r=await f.req('/recording/imports/'+op.id);if(r.value.state==='cancelled')break;await sleep(20);}
   assert.equal((await f.req('/recording/imports/'+op.id)).value.state,'cancelled');assert.equal((await f.snapshot()).recording,null);
 });
-// fresh-browser replacement after each committed-source fault.
+// Fresh-browser replacement after each committed-source fault.
+// Proves: TC-018-003
 test('review: missing original, corrupt metadata and manifest remain recoverable',{timeout:30000},async t=>{
   for(const target of ['original','metadata','manifest','missing_manifest']){
     const f=await fixture(t);const s=await f.upload(wav(.1));
@@ -181,7 +182,7 @@ test('review: missing original, corrupt metadata and manifest remain recoverable
   }
 });
 
-// review regression, cancellation while reservation response is delayed.
+// Cancellation while the reservation response is delayed.
 test('review: cancel pending reservation response deletes returned reservation without PUT',{timeout:12000},async t=>{
   const f=await fixture(t),p=await page(f),errors=[];p.on('pageerror',e=>errors.push(String(e)));
   let release,observed,puts=0,resource;
@@ -199,7 +200,7 @@ test('review: cancel pending reservation response deletes returned reservation w
   await p.waitForFunction(()=>!uploading,null,{timeout:3000});assert.equal(puts,0);assert.deepEqual(errors,[]);assert.equal((await f.snapshot()).import,null);assert.equal((await f.req('/recording/imports/'+resource.id)).value.state,'cancelled');
 });
 
-// review regression, JSON media grammar remains the profile grammar.
+// The JSON media grammar remains the profile grammar.
 test('review: recording JSON media whitespace parity and malformed parameters',{timeout:10000},async t=>{
   const f=await fixture(t);
   for(const type of ['application/json','application/json ;charset=utf-8','application/json;\tcharset=utf-8',' Application/JSON ; CHARSET=UTF-8 ']){
@@ -210,7 +211,7 @@ test('review: recording JSON media whitespace parity and malformed parameters',{
   }
 });
 
-// bootstrap after station-ready preceded the deferred recording asset.
+// Bootstrap after station-ready preceded the deferred recording asset.
 // Proves: TC-010-002, TC-010-003
 test('TC-010-003 late recording asset bootstraps an already connected station once',{timeout:12000},async t=>{
   const f=await fixture(t),p=await f.context.newPage();let release,snapshots=0,subscriptions=0;
@@ -226,7 +227,7 @@ test('TC-010-003 late recording asset bootstraps an already connected station on
   await p.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});
   await p.waitForTimeout(100);assert.equal(snapshots,1);assert.equal(subscriptions,1);
 });
-// real browser canvas data and desktop/narrow accessible layout.
+// Real browser canvas data and desktop/narrow accessible layout.
 // Proves: TC-010-003
 test('TC-010-003 calibrated real spectrum, source rows and accessible splitter',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(2));const p=await page(f);const frames=[];
@@ -254,7 +255,7 @@ test('TC-010-003 calibrated real spectrum, source rows and accessible splitter',
 
 // The 25-file provenance sweep is in tests/profile/recording-fixtures.test.cjs (#70); here one real
 // original of each mode goes through the server's import.
-// one pinned real FT8 and one FT4 recording; level 2 read-only acquired inputs.
+// One pinned real FT8 and one FT4 recording; cost level 2, read-only acquired inputs.
 // Proves: TC-018-001
 test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeout:20000},async t=>{
   const {execFileSync}=require('node:child_process');
@@ -270,7 +271,7 @@ test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeo
   await f.req('/recording/jobs/'+(await f.snapshot()).job.id,'DELETE');await terminal(f);
 });
 
-// four Windows processes with actual maximum-source work.
+// Four Windows processes with actual maximum-source work.
 test('four stations retain isolated identities and release cancellation within 250 ms',{timeout:30000},async t=>{
   const stations=await Promise.all(Array.from({length:4},()=>fixture(t))),maxFrames=recordingLimit('importMaxFrames');
   await Promise.all(stations.map(f=>f.upload(wav(120))));const jobs=await Promise.all(stations.map(f=>f.replay()));
@@ -279,7 +280,7 @@ test('four stations retain isolated identities and release cancellation within 2
   times.forEach(ms=>assert.ok(ms<=250,`cancel + release ${ms} ms`));
 });
 
-// endpoint-wide TLS authentication/Origin priority and WS opt-in.
+// Endpoint-wide TLS authentication/Origin priority and WS opt-in.
 test('every recording endpoint retains TLS cookie and exact Origin boundaries',{timeout:45000},async t=>{
   const f=await fixture(t,{secure:true}),s=await f.snapshot(),id=crypto.randomUUID();
   const absent=await browser.newContext({ignoreHTTPSErrors:true});t.after(()=>absent.close());
@@ -342,11 +343,10 @@ test('TC-010-002 recording state and import progress are pushed on change, witho
   assert.equal(bare.log.length,0,'a peer without a display subscription receives no recording.state');
 });
 
-// browser event boundary under loss/late delivery.
-// Proves: TC-010-002, TC-010-003
+// Browser event boundary under loss/late delivery.
 // The event is sent once per change and no timer reads, so a
-// Proves: TC-010-002
 // failed read after one must not leave the page stale: the socket closes and its reconnect reads.
+// Proves: TC-010-002, TC-010-003
 test('TC-010-002 a failed read after an announcement repairs itself on the reconnect',{timeout:60000},async t=>{
   const f=await fixture(t);await f.upload(wav(1));
   const p=await f.context.newPage();await p.goto(f.origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:30000});await p.waitForFunction(()=>snapshot?.recording);await sleep(1500);
@@ -396,7 +396,7 @@ test('TC-010-005 HTTPS defaults to native Detailed and honors saved Thin or Off'
   assert.equal(await p.inputValue('#display-profile'),'detail','invalid saved choice returns to finest existing default');
 });
 
-// real native detail wire and independent pixel/geometry oracle.
+// Real native detail wire and independent pixel/geometry oracle.
 // Proves: TC-010-005
 test('TC-010-005 detailed native wire, fixed span, projection, palette and top-entry cells',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(4,.25,756.25));const p=await page(f);
@@ -428,7 +428,7 @@ test('TC-010-005 detailed native wire, fixed span, projection, palette and top-e
   await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
 
-// actual licensed FT8 recording, two real DPRs, local controls and screenshots.
+// Actual licensed FT8 recording, two real DPRs, local controls and screenshots.
 // Proves: TC-010-005
 test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level controls',{timeout:35000},async t=>{
   const samples=process.env.WSTX_SAMPLE_DIR;assert.ok(samples,'WSTX_SAMPLE_DIR required for real-recording acceptance');
@@ -462,7 +462,7 @@ test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level
   const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
 
-// pointer native bin and projected column are independent.
+// The pointer's native bin and projected column are independent.
 // Proves: TC-010-005
 test('TC-010-005 review pointer column boundary uses actual projected pixels',{timeout:10000},async t=>{
   const f=await fixture(t);await f.upload(wav(4));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
@@ -474,7 +474,7 @@ test('TC-010-005 review pointer column boundary uses actual projected pixels',{t
   },s);
   assert.match(text,/Native bin 3 /);assert.match(text,/projected bins 4-6: 0 dBFS/);await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
-// a bounded sequence beyond a short source is still invalid.
+// A bounded sequence beyond a short source is still invalid.
 // Proves: TC-010-005
 test('TC-010-005 review short source rejects inverted out-of-source interval',{timeout:10000},async t=>{
   const f=await fixture(t);await f.upload(wav(4));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
@@ -487,7 +487,7 @@ test('TC-010-005 review short source rejects inverted out-of-source interval',{t
     await new Promise(requestAnimationFrame);return rows.length;
   },s);assert.equal(count,1);await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
-// actual Detailed cadence and independent control responsiveness.
+// Actual Detailed cadence and independent control responsiveness.
 // Proves: TC-010-005
 test('TC-010-005 review real Detailed peer cadence and control priority',{timeout:10000},async t=>{
   const f=await fixture(t);await f.upload(wav(3));
@@ -504,7 +504,7 @@ test('TC-010-005 review real Detailed peer cadence and control priority',{timeou
   const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
 
-// independent palette endpoints before any slider-dependent assertion.
+// Independent palette endpoints before any slider-dependent assertion.
 // Proves: TC-010-006
 test('TC-010-006 exact strong red and no-signal navy palette',{timeout:10000},async t=>{
   const f=await fixture(t),p=await page(f);
@@ -512,7 +512,7 @@ test('TC-010-006 exact strong red and no-signal navy palette',{timeout:10000},as
   const actual=await p.evaluate(async()=>{paint();await new Promise(requestAnimationFrame);const bar=document.querySelector('#level-bar'),ctx=bar.getContext('2d');return {first:[...ctx.getImageData(0,0,1,1).data],last:[...ctx.getImageData(bar.width-1,0,1,1).data]};});
   assert.deepEqual(actual.first,[0,0,12,255]);assert.deepEqual(actual.last,[255,0,0,255]);
 });
-// independent source-time movement, clipping and unobserved pixels.
+// Independent source-time movement, clipping and unobserved pixels.
 // Proves: TC-010-007
 test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(120));const p=await page(f,{width:1100,height:1400});await p.selectOption('#display-profile','off');await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();const s=await f.snapshot();
@@ -555,7 +555,7 @@ test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom
   assert.match(result.alias,/Native bin 0 .* -120 dBFS/);assert.match(result.alias,/projected bins 0-0: 0 dBFS/);assert.match(result.alias,/projected source 0.0-0.400 s/);assert.deepEqual(result.gap,[96,96,96,255]);
   await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
-// full canvas geometry with fixed source-time rows.
+// Full canvas geometry with fixed source-time rows.
 // Proves: TC-010-006
 test('TC-010-006 complete canvas, speed projection, gaps and geometry',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
@@ -606,7 +606,7 @@ test('TC-010-006 complete canvas, speed projection, gaps and geometry',{timeout:
   }
   await f.req('/recording/jobs/'+s.job.id,'DELETE');
 });
-// live local sensitivity/speed do not change calibrated data, Auto or job.
+// Live local sensitivity/speed do not change calibrated data, Auto or job.
 // Proves: TC-010-006
 test('TC-010-006 live sensitivity and speed sliders preserve original data and reset semantics',{timeout:15000},async t=>{
   const f=await fixture(t),p=await page(f);

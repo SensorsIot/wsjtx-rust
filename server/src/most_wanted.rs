@@ -89,7 +89,7 @@ fn known_numbers() -> std::collections::HashSet<u16> {
 pub fn adif_number(entity: &str) -> Option<u16> {
     table().get(entity).copied()
 }
-/// #39 Download now, once on the operator's click: the list text of SOURCE_URL
+/// Download now, once on the operator's click: the list text of SOURCE_URL
 /// (most_wanted_query).
 pub fn fetch() -> Result<String, String> {
     fetch_url(most_wanted_query::SOURCE_URL)

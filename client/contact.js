@@ -5,7 +5,8 @@ const KeyRule=Object.freeze({TX_STEP_FT8_HZ:60,TX_STEP_FT4_HZ:90});
 const CallingMe=Object.freeze({CALLING_LINES:8,CROWDING_HZ:50});
 const MessageLines=Object.freeze({LOGGED_SECONDS:8});
 const RxTxStrip=Object.freeze({STEP_HZ:1,SHIFT_STEP_HZ:10});
-// (WstxQsoPane::PaneLayout, RxTxStrip, BandActivityView). The server owns the contact,
+// This script shows the QSO pane (WstxQsoPane::PaneLayout, RxTxStrip, BandActivityView); the
+// server owns the contact.
 (()=>{
 const focus=document.querySelector('#rx-focus');
 if(!focus||document.body.dataset.profile!=='true')return;
@@ -835,7 +836,7 @@ function othersShow(){
   // first, the newest at the bottom.
   const seen=new Set(),lines=newest.filter(({record,context})=>{const from=recordFrom(record.fields),k=from?from.toUpperCase():`${context}/${record.sequence}`;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,OTHER_LINES).reverse();
   $('qso-others-none').hidden=!!lines.length;$('calling-table').hidden=!lines.length;
-  // CL-010-13 (WstxQsoPane::CallingMe): each caller carries the Band Activity
+  // WstxQsoPane::CallingMe: each caller carries the Band Activity
   // marks of its sender: the enabled new_* slot colours of its #55 flags (My call is not used,
   // every line calls me), the reasons and the worked-before status as text; worked before on
   // this band and mode adds no colour.

@@ -90,7 +90,7 @@ test('peer helper: heartbeat interleaving preserves response and total deadline'
   assert.equal(fixture.listenerCount('message'), 0);
 });
 
-// level 2, Windows PC/CI, isolated local server.
+// Cost level 2: Windows PC/CI, isolated local server.
 // Proves: TC-051-001
 test('TC-021-005: actual-server correlation, negative cases and size boundaries', async t => {
   const app = await server(); t.after(() => app.close());
@@ -112,7 +112,7 @@ test('TC-021-005: actual-server correlation, negative cases and size boundaries'
   assert.equal((await binaryClosed)[0], 1003);
 });
 
-// level 2, real Chromium, local candidate server.
+// Cost level 2: real Chromium, local candidate server.
 test('TC-021-006: real browser, two clients, desktop and mobile layout', async t => {
   const app = await server(); t.after(() => app.close());
   const contexts = await Promise.all([contextFor(app.origin), contextFor(app.origin)]);
@@ -131,7 +131,7 @@ test('TC-021-006: real browser, two clients, desktop and mobile layout', async t
   await pages[0].locator('#connection[data-state="stale"]').waitFor();
 });
 
-// level 2, browser and controllable local proxy.
+// Cost level 2: browser and controllable local proxy.
 test('TC-021-007: dropped connection, bounded retries, fresh snapshot', async t => {
   const proxy = await link({host: '127.0.0.1', port: 1}, {rate: 1000000, latency: 0});
   t.after(() => proxy.close());
@@ -191,7 +191,7 @@ async function deferredDownloadHold(t) {
 }
 
 // #70: the 16 s hold runs on the page's driven clock (the watchdog is a page setInterval on Date.now()).
-// case 5 level 2, profile station, real Chromium.
+// Cost level 2: profile station, real Chromium.
 test('a deferred client download that holds station messages 16 s is not a lost link', {timeout: 30000}, async t => {
   const {page, state} = await deferredDownloadHold(t);
   await state.whenHeld;
@@ -209,7 +209,7 @@ test('a deferred client download that holds station messages 16 s is not a lost 
   assert.equal(state.sockets, 1, 'the same socket throughout');
 });
 
-// level 2, disposable local TLS endpoint/credentials.
+// Cost level 2: disposable local TLS endpoint/credentials.
 test('TLS login, unauthorized/origin denial, plaintext refusal', async t => {
   const app = await server(tlsEnv); t.after(() => app.close());
   const context = await contextFor(app.origin); t.after(() => context.close()); const page = await context.newPage();

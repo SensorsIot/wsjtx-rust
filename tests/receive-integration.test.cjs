@@ -8,7 +8,7 @@ const {chromium}=require('playwright');
 const origin=process.env.WSTX_RECEIVE_FIXTURE_ORIGIN;
 const expected=JSON.parse(process.env.WSTX_RECEIVE_FIXTURE_EXPECTED||'null');
 
-// readable decoded-row subset.
+// A readable subset of the decoded rows is checked.
 test('real native audio reaches Rust manager HTTP and literal browser callsign',{timeout:60000},async()=>{
   assert.ok(origin&&expected,'run through the Rust live native manager/browser test');
   const mode=expected.mode;assert.ok(['ft4','ft8'].includes(mode));

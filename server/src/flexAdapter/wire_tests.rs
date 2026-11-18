@@ -7,7 +7,7 @@ fn bytes(hex: &str) -> Vec<u8> {
         .collect()
 }
 
-// The form of a real FLEX-6600's reply (2026-11-06), other values changed.
+// The form of a real FLEX-6600's reply, other values changed.
 #[test]
 fn info_reply_of_a_real_radio_gives_its_facts() {
     let found = parse_info(
@@ -19,9 +19,9 @@ fn info_reply_of_a_real_radio_gives_its_facts() {
     assert_eq!(parse_info("").serial, "");
 }
 
-// One DAX packet exactly as a real FLEX-6600 sent it on 2026-11-06. It
-// Proves: TC-023-001
+// One DAX packet exactly as a real FLEX-6600 sent it. It
 // carries no address or serial. Expected values were read from the capture with a separate tool.
+// Proves: TC-023-001
 #[test]
 fn dax_packet_of_a_real_radio_decodes() {
     let raw = bytes(include_str!("../flex/dax_rx_6600.hex").trim());

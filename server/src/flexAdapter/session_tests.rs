@@ -25,8 +25,8 @@ fn reordered(counts: &[u8]) -> (Vec<(u8, u64)>, Vec<u8>) {
 }
 
 // Swapped packets go on in their count's order and lose nothing, also across
-// Proves: TC-023-001
 // the wrap of the 4-bit count.
+// Proves: TC-023-001
 #[test]
 fn reorder_restores_the_order_and_counts_nothing_lost() {
     let (out, dropped) = reordered(&[14, 15, 1, 0, 2, 4, 5, 3, 6]);
@@ -36,8 +36,8 @@ fn reorder_restores_the_order_and_counts_nothing_lost() {
 }
 
 // A packet waits until 5 packets wait behind it, not longer: 4 places is still
-// Proves: TC-023-001
 // put back, while at 5 its turn is given up, it counts lost once, and its late arrival is dropped.
+// Proves: TC-023-001
 #[test]
 fn reorder_gives_up_a_turn_at_its_depth() {
     let (out, dropped) = reordered(&[0, 2, 3, 4, 5, 1, 6]);
@@ -54,9 +54,9 @@ fn reorder_gives_up_a_turn_at_its_depth() {
 }
 
 // A burst of 7 lost packets counts in full, once the wait is over, and no
-// Proves: TC-023-001
 // packet after it is mistaken for a late one. At 8 the count cannot tell: those packets read as
 // late, and the stream carries on at the wrap.
+// Proves: TC-023-001
 #[test]
 fn reorder_counts_a_burst_of_lost_packets_up_to_half_the_count() {
     let (out, dropped) = reordered(&[0, 8, 9, 10, 11, 12, 13]);
@@ -72,8 +72,8 @@ fn reorder_counts_a_burst_of_lost_packets_up_to_half_the_count() {
 }
 
 // A duplicate never reaches the timeline, whether its turn has passed or its
-// Proves: TC-023-001
 // first copy still waits.
+// Proves: TC-023-001
 #[test]
 fn reorder_drops_duplicates() {
     assert_eq!(reordered(&[0, 1, 1, 2]).1, vec![1]);
@@ -84,8 +84,8 @@ fn reorder_drops_duplicates() {
 }
 
 // After a stall the count may have wrapped: what waits goes on first and the
-// Proves: TC-023-001
 // next packet starts the count over, whatever its value, with no loss derived from it.
+// Proves: TC-023-001
 #[test]
 fn reorder_starts_over_after_a_stall() {
     let (mut order, mut out) = (Reorder::new(), Vec::new());
@@ -240,9 +240,9 @@ fn tune_against_scripted_radio(tune_code: u32) -> (Result<u64, Error>, Option<Sl
 }
 
 // A confirmed selection is never reported beside the slice's earlier
-// Proves: TC-023-001
 // frequency: when the caller hears that the tune succeeded, the shared snapshot already
 // carries the frequency the radio read back.
+// Proves: TC-023-001
 #[test]
 fn a_confirmed_tune_is_published_before_the_caller_hears_of_it() {
     let (result, slice) = tune_against_scripted_radio(0);
@@ -251,8 +251,8 @@ fn a_confirmed_tune_is_published_before_the_caller_hears_of_it() {
 }
 
 // A refused tune confirms nothing, and the snapshot at the reply shows the
-// Proves: TC-023-001
 // slice as the radio reports it.
+// Proves: TC-023-001
 #[test]
 fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
     let (result, slice) = tune_against_scripted_radio(0x5000_002C);
@@ -261,9 +261,9 @@ fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
 }
 
 // GET /native-flex reports the packets, the peak, the VITA time and the
-// Proves: TC-023-001
 // arrival jitter of the current session: when the next session becomes ready they start over,
 // and the session number changes.
+// Proves: TC-023-001
 #[test]
 fn a_ready_session_starts_its_packet_counters_and_measurements_over() {
     let mut s = Snapshot {

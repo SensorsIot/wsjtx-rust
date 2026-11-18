@@ -243,7 +243,7 @@ fn req(operation: Operation) -> Request {
     }
 }
 
-// case3. Independent addressed replies and fixed
+// Independent addressed replies and fixed
 // sequence expectations distinguish each completed query from the legacy cache.
 #[test]
 fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_targets() {
@@ -308,7 +308,7 @@ fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_ta
     );
 }
 
-// cases3/4. One actor lease covers the transition,
+// One actor lease covers the transition,
 // including gaps between typed exchanges, without queueing or polling interference.
 #[test]
 fn transition_lease_excludes_other_operations_and_polling_until_released() {
@@ -820,8 +820,8 @@ fn setters_read_first_and_send_no_write_when_the_value_fits() {
 }
 
 // A setter whose read is refused (FA) sends no write and
-// Proves: TC-044-012
 // keeps the connection.
+// Proves: TC-044-012
 #[test]
 fn setter_with_a_refused_read_sends_no_write() {
     for (operation, read) in [
@@ -862,8 +862,8 @@ fn setter_with_a_refused_read_sends_no_write() {
 }
 
 // A menu (1A 05) write whose item already fits sends
-// Proves: TC-044-012
 // only its read; a differing one is read, RX-checked, written and read back.
+// Proves: TC-044-012
 #[test]
 fn menu_write_reads_first_and_skips_a_fitting_value() {
     let usb_send_off = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1a, 5, 0, 0x78, 0, 0xfd];

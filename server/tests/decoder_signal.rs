@@ -2433,9 +2433,9 @@ fn live_busy_period_publishes_every_decode_promptly() {
 }
 
 // The busy period decodes to exactly the same records in
-// Proves: TC-057-002
 // the same order (payload, frame, frequency and SNR bit for bit) on 1, 4 and 12 threads, and
 // the wall time drops with the thread count (reported, best of three).
+// Proves: TC-057-002
 #[test]
 fn busy_period_decode_is_identical_and_faster_on_more_threads() {
     let window = busy_prompt_window();

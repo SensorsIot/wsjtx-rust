@@ -1390,7 +1390,7 @@ function keepWaterfall(){
   rows.push({sequence:-1,first_frame:-interval,end_frame:0,levels:null,held:false});paint();
 }
 
-// CL-055-04 WstxBandActivityPane::Ordering (1 calling me .. 8 no flag; 2, the strategy
+// WstxBandActivityPane::Ordering (1 calling me .. 8 no flag; 2, the strategy
 // hits, is applied by the value view in contact.js) and BandActivityHover (title and aria-description).
 // #24 S1b: the call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
 // 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1 (#55).

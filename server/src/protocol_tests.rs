@@ -1,7 +1,7 @@
 use super::reply;
 use serde_json::{Value, json};
 
-// controlled transport readiness, independent of OS socket buffering.
+// Controlled transport readiness, independent of OS socket buffering.
 // Proves: TC-010-002
 #[test]
 fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
@@ -134,7 +134,7 @@ fn protocol_returns_specified_response_and_errors() {
     }
 }
 
-// delayed tick cannot produce an early accepted successor.
+// A delayed tick cannot produce an early accepted successor.
 // Proves: TC-010-005
 #[tokio::test(start_paused = true)]
 async fn detailed_late_tick_rearms_from_actual_acceptance() {
@@ -158,7 +158,7 @@ async fn detailed_late_tick_rearms_from_actual_acceptance() {
     assert!(tokio::time::Instant::now() - origin >= Duration::from_millis(1199));
 }
 
-// every retained Detailed row is sent once, in order, after a stall.
+// Every retained Detailed row is sent once, in order, after a stall.
 // Proves: TC-054-001
 #[tokio::test(start_paused = true)]
 async fn detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up() {
@@ -230,7 +230,7 @@ fn thin_sends_are_anchored_to_the_previous_deadline() {
     assert!(next + period - sent >= Duration::from_secs(1));
 }
 
-// the served page reports the station's own source commit.
+// The served page reports the station's own source commit.
 // Proves: TC-033-001
 #[tokio::test]
 async fn served_page_reports_the_source_commit_of_the_build() {
@@ -270,7 +270,7 @@ async fn served_page_reports_the_source_commit_of_the_build() {
     );
 }
 
-// only a 40-digit lower-case hex commit is reported.
+// Only a 40-digit lower-case hex commit is reported.
 // Proves: TC-033-001
 #[test]
 fn source_commit_reports_only_a_full_lower_case_commit() {

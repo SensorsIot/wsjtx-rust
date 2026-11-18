@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-// TC-012-004, TC-012-006, CL-040-07, TC-012-007.
 // The actual router, UDP owner, contact engine and #9 transmit
 // owner on the recording hardware double (no audio, PTT or radio), hand-authored rows
 // packed with the real codec and loopback UDP peers on ephemeral ports (never 2237). The
@@ -447,10 +446,10 @@ async fn tc_012_002_outbound_messages_to_several_targets() {
     assert!(drain(&a).is_empty());
 }
 
-// Send-only (operator 2026-11-06): no inbound message acts on
-// Proves: TC-012-003
+// Send-only: no inbound message acts on
 // the station; the browser and MCP are the only control paths. A target's Heartbeat alone
 // negotiates the header schema.
+// Proves: TC-012-003
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_012_003_no_inbound_message_acts_on_the_station() {
     let f = fixture("http://127.0.0.1:18402", true);
@@ -614,9 +613,9 @@ async fn tc_012_003_no_inbound_message_acts_on_the_station() {
 }
 
 // A udp.json saved before send-only and while the
-// Proves: TC-012-004
 // instance name was a setting keeps working: the retired accept_commands and instance_name
 // keys are dropped on load and gone after the next save.
+// Proves: TC-012-004
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_012_004_a_file_saved_with_accept_commands_keeps_loading() {
     let f = fixture("http://127.0.0.1:18409", true);
@@ -647,9 +646,9 @@ async fn tc_012_004_a_file_saved_with_accept_commands_keeps_loading() {
 }
 
 // WstxUdp::UdpHttp: the order of PUT /udp refusals: envelope keys, then
-// Proves: TC-012-004
 // v (unsupported_version before any field), then the fields; an injected failed write of
 // udp.json is 503 storage_unavailable and changes nothing.
+// Proves: TC-012-004
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_012_004_refusal_order_and_a_failed_write() {
     let f = fixture("http://127.0.0.1:18410", true);
@@ -991,11 +990,11 @@ fn enter(f: &Fixture, call: &str, grid: Option<&str>) {
     );
 }
 // WstxLogbook::DirectLog: the
-// Proves: TC-011-001, TC-012-002
 // completed contact logs itself (no review, no browser) and reaches the UDP target as QSO
 // Logged + Logged ADIF; exactly one record per contact identity. Expected fields are
 // hand-computed from the LogRecord rules: TIME_ON = preparation (nothing transmitted),
 // TIME_OFF = end of the partner's last counted period, MY_GRIDSQUARE the profile locator.
+// Proves: TC-011-001, TC-012-002
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_target() {
     let f = fixture("http://127.0.0.1:18408", true);
@@ -1328,12 +1327,12 @@ async fn tc_012_006_ipv6_multicast_targets() {
 }
 
 // Status cadence as WSJT-X (MainWindow::beginDecode /
-// Proves: TC-012-007
 // endDecode -> updateDecodeControls -> statusUpdate; MessageClient pulse 15 s): one Status
 // for each decoding toggle of the actual live-decoder signal, one for a window begun and
 // ended between two steps, and the unchanged Status resent with each Heartbeat pulse; a
 // target without status receives none of them. Time is deterministic: the pulse is
 // reached by back-dating the stored pulse instant, never by sleeping.
+// Proves: TC-012-007
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_012_007_status_follows_each_decode_window_and_the_pulse() {
     let f = fixture("http://127.0.0.1:18409", true);
@@ -1418,9 +1417,9 @@ async fn tc_012_007_status_follows_each_decode_window_and_the_pulse() {
 }
 
 // Update logbook from ADIF sends nothing anywhere: the
-// Proves: TC-011-002
 // added records reach no UDP target as QSO Logged or Logged ADIF (only DirectLog and
 // SaveContact send logged contacts).
+// Proves: TC-011-002
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_011_002_update_logbook_adds_records_without_any_udp_datagram() {
     let f = fixture("http://127.0.0.1:18409", false);
@@ -1544,10 +1543,10 @@ fn lock_holder_child() {
 }
 
 // The instance name: base forms, numbering on a clash, a
-// Proves: TC-112-001
 // released name taken again (dropped, and a killed process), an unusable lock folder, the name
 // on every datagram and in GET /udp, no change by a radio change while running, WSTX_UDP=off
 // claims nothing.
+// Proves: TC-112-001
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_001_instance_name() {
     let f = fixture("http://127.0.0.1:18411", false);
@@ -1728,8 +1727,8 @@ async fn tc_112_001_instance_name() {
 }
 
 // Status dial frequency (CAT, else the selection, else 0) and
-// Proves: TC-112-002
 // the report as WSJT-X QString::number writes it.
+// Proves: TC-112-002
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_002_status_dial_and_report() {
     let f = fixture("http://127.0.0.1:18417", false);
@@ -1765,8 +1764,8 @@ async fn tc_112_002_status_dial_and_report() {
 }
 
 // Decode delta time rounded to one decimal as Band Activity
-// Proves: TC-112-003
 // shows it; a live record without a period start gives no Decode and is never sent later.
+// Proves: TC-112-003
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_003_decode_delta_time() {
     for (dt, tenths) in [
@@ -1975,8 +1974,8 @@ async fn text_of(f: &Fixture, path: &str) -> String {
 }
 
 // QSO Logged exchanges as WSJT-X, built the same way from the
-// Proves: TC-112-005
 // stored record by DirectLog and SaveContact; the logged record carries its activity.
+// Proves: TC-112-005
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_005_qso_logged_exchanges() {
     use contact::Activity as A;
@@ -2184,8 +2183,8 @@ async fn tc_112_005_qso_logged_exchanges() {
 }
 
 // The exit guard: the transmit release first within its bound,
-// Proves: TC-112-006
 // then one Close under the instance name to each active target that selects close.
+// Proves: TC-112-006
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_006_close_at_shutdown() {
     let f = fixture("http://127.0.0.1:18422", true);

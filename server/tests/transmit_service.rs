@@ -386,10 +386,10 @@ fn pending_request_is_replaced_until_audio_start_then_queued_for_the_next_period
     );
 }
 
-// a request for another period while the pending one
-// Proves: TC-008-003
+// A request for another period while the pending one
 // is keyed but its audio has not started is queued as the next request (no busy refusal,
 // no disarm); the keyed one plays in its own period.
+// Proves: TC-008-003
 #[test]
 fn a_request_for_another_period_while_keyed_before_audio_is_queued_not_refused() {
     let f = Fake::new();
@@ -1031,10 +1031,10 @@ fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls
     }
 }
 
-// a device that reports the end 300 or 900 ms late,
-// Proves: TC-008-003
+// A device that reports the end 300 or 900 ms late,
 // still inside the release bound, completes normally; the station stays armed and its
 // next request plays.
+// Proves: TC-008-003
 #[test]
 fn a_late_completion_report_inside_the_bound_completes_and_stays_armed() {
     let end = P + 500 + 12_640;
@@ -1062,10 +1062,10 @@ fn a_late_completion_report_inside_the_bound_completes_and_stays_armed() {
     }
 }
 
-// the device is asked before the deadline is
-// Proves: TC-008-003
+// The device is asked before the deadline is
 // applied, so a device that consumed every sample completes even when the owner's next
 // step runs only after the deadline (owner thread delayed by load).
+// Proves: TC-008-003
 #[test]
 fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline() {
     let f = Fake::new();
@@ -1083,7 +1083,7 @@ fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline(
     assert_eq!(core.view().arm_state, ArmState::Armed);
 }
 
-// a device that stops consuming half way never
+// A device that stops consuming half way never
 // reports the end: PTT is released by the device-independent bound (FT8 audio end
 // + 1 000 ms = P + 14 140 <= P + 14 500, FT4 P + 6 340 <= P + 7 000, also after a late
 // start), the transmission fails audioStalled and the station disarms.
@@ -1234,7 +1234,7 @@ fn halt_during_a_slow_key_releases_within_the_bound() {
     driver.join().unwrap();
 }
 
-// (WstxTransmitControl::TransmitHaltUse). The watchdog stop never touches
+// WstxTransmitControl::TransmitHaltUse: the watchdog stop never touches
 // PTT: a failing release cannot make it indeterminate, and no halt is recorded.
 #[test]
 fn watchdog_stop_never_touches_ptt() {
@@ -1505,8 +1505,8 @@ fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
 }
 
 // Every request the transmit owner accepts teaches
-// Proves: TC-024-001
 // the station's call hash table its calls; a refused request teaches nothing.
+// Proves: TC-024-001
 #[test]
 fn accepted_requests_teach_the_station_hash_table() {
     use wstx_rust::decoder::{HashTable, unpack};
@@ -1534,7 +1534,7 @@ fn accepted_requests_teach_the_station_hash_table() {
     assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
 }
 
-// a failed PTT release on abort is reported.
+// A failed PTT release on abort is reported.
 #[test]
 fn abort_with_a_failed_release_is_reported_not_silent() {
     let f = Fake::new();
@@ -1550,7 +1550,7 @@ fn abort_with_a_failed_release_is_reported_not_silent() {
     assert_eq!(v.halt_state, HaltState::Idle, "still no halt");
 }
 
-// abort also stops Tune.
+// Abort also stops Tune.
 #[test]
 fn abort_stops_tune_without_a_halt() {
     let f = Fake::new();
@@ -1612,8 +1612,8 @@ impl Hardware for Levelled {
 }
 
 // A transmission takes the level at its audio start and
-// Proves: TC-044-013
 // keeps it to the end; a running Tune follows at once; the scale is the attenuation.
+// Proves: TC-044-013
 #[test]
 fn tx_level_applies_at_audio_start_and_live_only_in_tune() {
     use wstx_rust::audio::{Encoding, NativeFormat};
@@ -1709,8 +1709,8 @@ impl Hardware for Metered {
 }
 
 // Exactly one meter read per transmission, in the middle of
-// Proves: TC-044-017
 // its audio; none for Tune.
+// Proves: TC-044-017
 #[test]
 fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
     let f = Fake::new();
@@ -1749,8 +1749,8 @@ fn the_meter_read_is_due_once_in_the_middle_of_each_transmission() {
 }
 
 // A late start too short to read clear of its release
-// Proves: TC-044-017
 // has no read: audio at about period + 11 200 ms leaves under 2 s of the 13 140 ms.
+// Proves: TC-044-017
 #[test]
 fn a_late_start_with_under_two_seconds_of_audio_has_no_meter_read() {
     let f = Fake::new();

@@ -217,10 +217,10 @@ pub(crate) fn plaintext_station(name: &str) -> (App, std::path::PathBuf) {
 }
 
 // A peer that stops answering is removed with "no pong
-// Proves: TC-021-008
 // for 15 s" at the first heartbeat tick more than 15 s after its last Pong (driven time in
 // (15 s, 20 s], never earlier); another peer's station.get every 5 s is answered within 2 s
 // throughout and after; a peer answering every Ping stays open through 60 s.
+// Proves: TC-021-008
 #[tokio::test(start_paused = true)]
 async fn silent_peer_is_removed_at_the_next_heartbeat_after_15_s() {
     let (app, root) = plaintext_station("liveness");
