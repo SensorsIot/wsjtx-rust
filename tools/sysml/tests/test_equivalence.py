@@ -370,35 +370,35 @@ class SyntheticEquivalenceTests(unittest.TestCase):
                         f"{name}: no {prefix!r} line naming {word}:\n" + "\n".join(lines))
 
     def test_e2_doc_character(self):
-        """TV-046 (TR-21): E2: doc character."""
+        """TV-050 (TR-21): E2: doc character."""
         self.outcome("E2", 1, "changed Station doc Core.sysml -> Core.sysml")
 
     def test_e3_dropped_element(self):
-        """TV-047 (TR-21): E3: dropped element."""
+        """TV-051 (TR-21): E3: dropped element."""
         self.outcome("E3 attribute", 1, "missing Limits::peers Core Core.sysml")
         self.outcome("E3 action", 1, "missing Run Core Core.sysml")
 
     def test_e4_changed_target(self):
-        """TV-048 (TR-21): E4: changed target."""
+        """TV-052 (TR-21): E4: changed target."""
         self.kind("E4 dependency", "changed d1 ", "Dependency")
         self.kind("E4 verify", "changed check1 ", "RequirementVerificationMembership")
         lines = self.outcome("E4 type", 1, "changed Engine::size ")
         self.assertTrue(any("FeatureTyping" in line for line in lines if line.startswith("changed Engine::size ")), lines)
 
     def test_e5_value_multiplicity_rename(self):
-        """TV-049 (TR-21): E5: value multiplicity rename."""
+        """TV-053 (TR-21): E5: value multiplicity rename."""
         self.outcome("E5 value", 1, "changed Engine::rpm ")
         lines = self.outcome("E5 multiplicity", 1, "changed Limits::peers ")
         self.assertTrue(any("MultiplicityRange" in line for line in lines), lines)
         self.outcome("E5 rename", 1, "missing Run Core Core.sysml", "added Execute Core Core.sysml")
 
     def test_e6_reference_resolving_to_another_element(self):
-        """TV-050 (TR-21): E6: reference resolving to another element."""
+        """TV-054 (TR-21): E6: reference resolving to another element."""
         self.outcome("E6", 1, "changed Gauge::limit ")
         self.outcome("E6 qualified", 0, "moved Gauge Extra Extra.sysml -> Core Core.sysml")
 
     def test_e7_move_listed_and_equivalent(self):
-        """TV-051 (TR-21): E7: move listed and equivalent."""
+        """TV-055 (TR-21): E7: move listed and equivalent."""
         lines = self.outcome("E7", 0, "moved Run Core Core.sysml -> Ops sub/Ops.sysml",
                              "moved Ticket Core Core.sysml -> Ops sub/Ops.sysml", "pair Core.sysml -> sub/Ops.sysml: 2")
         self.assertEqual(len([line for line in lines if line.startswith("moved ")]), 2, lines)
@@ -406,7 +406,7 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.outcome("E7 note", 1, 'missing note "Keep the core small." Core.sysml')
 
     def test_e8_citations_outside_the_model(self):
-        """TV-052 (TR-21): E8: citations outside the model."""
+        """TV-056 (TR-21): E8: citations outside the model."""
         self.outcome("E8 a", 1, "stale-by-change server/main.rs:1 Core::Run")
         lines = self.outcome("E8 a updated", 0, "unresolved server/main.rs:2 Core::Nothing")
         self.assertFalse(any(line.startswith("stale-by-change") for line in lines), lines)
@@ -425,19 +425,19 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.assertNotIn("; exempt:", lines[-1])
 
     def test_e15d_fixture_reader_exempts_only_its_declared_package(self):
-        """TV-053 (TR-21): E15 d: a fixture reader's citations of its own package are exempt, of another package not."""
+        """TV-057 (TR-21): E15 d: a fixture reader's citations of its own package are exempt, of another package not."""
         lines = self.outcome("E15 d", 1, f"exempt {FIXTURE_PROBE}:2 Core::Limits (fixture)",
                              f"stale-by-change {FIXTURE_PROBE}:3 Extra::Limits")
         self.assertNotIn(f"stale-by-change {FIXTURE_PROBE}:2 Core::Limits", lines)
         self.assertTrue(lines[-1].endswith(f"; exempt: {FIXTURE_PROBE} 1"), lines)
 
     def test_e15e_other_files_keep_p6(self):
-        """TV-054 (TR-21): E15 e: a file outside tools/sysml/tests/, or one declaring no package, keeps P6."""
+        """TV-058 (TR-21): E15 e: a file outside tools/sysml/tests/, or one declaring no package, keeps P6."""
         self.outcome("E15 e", 1, "stale-by-change tests/probe.cjs:2 Core::Run", f"stale-by-change {PLAIN_PROBE}:1 Core::Run")
         self.assertNoExemption("E15 e")
 
     def test_e9_cannot_compare(self):
-        """TV-055 (TR-21): E9: cannot compare."""
+        """TV-059 (TR-21): E9: cannot compare."""
         code, _out, err = run("equivalence", "no-such-revision", self.base)
         self.assertEqual(code, 2)
         self.assertIn("unknown revision: no-such-revision", err)
@@ -446,7 +446,7 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.assertIn("fails the Pilot validation", err)
 
     def test_e12_each_mutation_is_named(self):
-        """TV-056 (TR-21): E12: each mutation is named."""
+        """TV-060 (TR-21): E12: each mutation is named."""
         expected = {
             "E12 a": ("changed Spare kind",),
             "E12 b": ("changed Engine ",),
@@ -487,36 +487,36 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.outcome("E12 n unchanged", 0)
 
     def test_e12o_values_swapped_between_same_named_owners(self):
-        """TV-057 (TR-21): E12 o: values swapped between same named owners."""
+        """TV-061 (TR-21): E12 o: values swapped between same named owners."""
         lines = self.outcome("E12 o", 1)
         self.assertTrue(any("Limits" in line for line in lines if not line.startswith(("moved", "pair", "equivalent"))), lines)
 
     def test_e12s_same_named_owners_pair_by_their_members(self):
-        """TV-058 (TR-21): E12 s: same named owners pair by their members."""
+        """TV-062 (TR-21): E12 s: same named owners pair by their members."""
         self.outcome("E12 s", 0, "moved Limits Extra Extra.sysml -> Extra A/Extra.sysml")
 
     def test_e12p_member_moved_between_same_named_owners(self):
-        """TV-059 (TR-21): E12 p: member moved between same named owners."""
+        """TV-063 (TR-21): E12 p: member moved between same named owners."""
         self.outcome("E12 p", 1, "changed Limits::peers owner Core.sysml -> Extra.sysml")
 
     def test_e12q_expose_is_compared(self):
-        """TV-060 (TR-21): E12 q: expose is compared."""
+        """TV-064 (TR-21): E12 q: expose is compared."""
         self.kind("E12 q", "changed overview ", "Expose")
         self.kind("E12 q dropped", "changed overview ", "Expose")
 
     def test_e12r_comment_outside_any_package(self):
-        """TV-061 (TR-21): E12 r: comment outside any package."""
+        """TV-065 (TR-21): E12 r: comment outside any package."""
         self.outcome("E12 r", 1, 'missing package-level Comment "Shared metadata header." Meta.sysml',
                      'added package-level Comment "Shared metadata header!" Meta.sysml')
         self.outcome("E12 r dropped", 1, 'missing package-level Comment "Shared metadata header." Meta.sysml')
 
     def test_e13_equal_same_named_elements_pair_in_their_package(self):
-        """TV-062 (TR-21): E13: equal same named elements pair in their package."""
+        """TV-066 (TR-21): E13: equal same named elements pair in their package."""
         lines = self.outcome("E13", 0, "moved Mode A A.sysml -> A Z/A.sysml")
         self.assertFalse(any(line.startswith("moved ") and " B " in line for line in lines), lines)
 
     def test_e14_changed_element_leaves_its_equal_namesake_paired(self):
-        """TV-063 (TR-21): E14: changed element leaves its equal namesake paired."""
+        """TV-067 (TR-21): E14: changed element leaves its equal namesake paired."""
         lines = self.outcome("E14", 1, "missing Mode A A.sysml", "added Mode A Z/A.sysml",
                              "added Mode::ft2 A Z/A.sysml")
         for line in lines:
@@ -527,7 +527,7 @@ class SyntheticEquivalenceTests(unittest.TestCase):
 
 class IdentityTests(unittest.TestCase):
     def test_e10a_one_identity_of_each_status(self):
-        """TV-064 (TR-21): E10 a: one identity of each status."""
+        """TV-068 (TR-21): E10 a: one identity of each status."""
         base = """package R {
     requirement 'FR-001' { doc /* unchanged */ }
     requirement 'CL-001-01' { doc /* moved */ }
@@ -575,15 +575,15 @@ class IdentityTests(unittest.TestCase):
         return out.splitlines()[0]
 
     def test_e15_link_following_a_moved_file(self):
-        """TV-065 (TR-21): E15: link following a moved file."""
+        """TV-069 (TR-21): E15: link following a moved file."""
         self.assertEqual(self.moved_case("../station/Proto.sysml"), "TC-001-001 moved R.sysml -> web/W.sysml")
 
     def test_e15_guard_link_retargeted_to_another_file(self):
-        """TV-066 (TR-21): E15: guard link retargeted to another file."""
+        """TV-070 (TR-21): E15: guard link retargeted to another file."""
         self.assertEqual(self.moved_case("../Other.sysml"), "TC-001-001 changed R.sysml -> web/W.sysml")
 
     def test_e10b_real_revisions_list_the_union(self):
-        """TV-067 (TR-21): E10 b: real revisions list the union."""
+        """TV-071 (TR-21): E10 b: real revisions list the union."""
         code, out, _err = run("identities", "8245ec5f0", "0e4b4c73a")
         self.assertEqual(code, 0, out)
         lines = out.splitlines()
@@ -605,7 +605,7 @@ class RealHistoryTests(unittest.TestCase):
     """E1: the parent of 5da7aab02 against 5da7aab02, which divided Requirements.sysml."""
 
     def test_e1_divided_requirements_are_equivalent(self):
-        """TV-068 (TR-21): E1: divided requirements are equivalent."""
+        """TV-072 (TR-21): E1: divided requirements are equivalent."""
         status = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"], capture_output=True, text=True).stdout
         results, exports = tool.compare_revisions([("5da7aab02^1", "5da7aab02"), ("5da7aab02", "5da7aab02")], CACHE)
         (code, lines), (same, same_lines) = results
@@ -635,7 +635,7 @@ class ReaderRecognitionTests(unittest.TestCase):
     """R-real: the fixture readers of this repository."""
 
     def test_r_real_readers_of_this_repository(self):
-        """TV-069 (TR-21): R-real: the architecture tests' fixture trees are fixture readers of the
+        """TV-073 (TR-21): R-real: the architecture tests' fixture trees are fixture readers of the
         packages they declare; server/src/main.rs reads no model of its own."""
         integrity, oracle = "tools/sysml/tests/test_architecture_integrity.py", "tools/sysml/tests/test_architecture_oracle.py"
         texts = {path: (ROOT / path).read_text(encoding="utf-8") for path in (integrity, oracle, "server/src/main.rs")}
@@ -652,7 +652,7 @@ class ReaderRecognitionTests(unittest.TestCase):
 
 class MarkedCommitTests(unittest.TestCase):
     def test_e11_marked_commits_against_their_first_parent(self):
-        """TV-070 (TR-21): E11: marked commits against their first parent."""
+        """TV-074 (TR-21): E11: marked commits against their first parent."""
         with tempfile.TemporaryDirectory() as folder:
             repository = Repository(Path(folder))
             repository.commit(BASE, "base")

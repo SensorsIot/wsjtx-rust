@@ -34,12 +34,12 @@ class AuthorityTests(unittest.TestCase):
         self.fsd = self.root / "docs/WSTX Rust FSD.md"
 
     def test_marker_and_no_fsd_make_sysml_the_authority(self):
-        """TV-031 (TR-01): the marker on the first line of Requirements.sysml and no FSD make SysML the authority."""
+        """TV-035 (TR-01): the marker on the first line of Requirements.sysml and no FSD make SysML the authority."""
         self.assertEqual(tool.authority(self.models, self.fsd), "sysml")
         self.assertEqual(set(tool.canonical_catalog(self.models, self.root)), {"FR-006"})
 
     def test_each_fault_of_the_authority_is_refused(self):
-        """TV-032 (TR-01): no marker, two markers, and an FSD with or without the marker are each refused."""
+        """TV-036 (TR-01): no marker, two markers, and an FSD with or without the marker are each refused."""
         faults = {
             "no marker": (REQUIREMENTS.replace(MARKER, ""), False,
                           "No declared functional authority: canonical SysML marker required"),
@@ -60,7 +60,7 @@ class AuthorityTests(unittest.TestCase):
                 self.fsd.unlink(missing_ok=True)
 
     def test_model_file_naming_the_fsd_is_refused(self):
-        """TV-033 (TR-01): a model file that names the FSD as a source is refused with its key."""
+        """TV-037 (TR-01): a model file that names the FSD as a source is refused with its key."""
         (self.models / "Shack.sysml").write_text(
             "package WstxShack {\n    doc /* See WSTX Rust FSD chapter 4. */\n}\n", encoding="utf-8")
         with self.assertRaises(ValueError) as refused:

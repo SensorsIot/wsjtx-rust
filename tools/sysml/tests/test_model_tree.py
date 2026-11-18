@@ -107,7 +107,7 @@ class Fixture(unittest.TestCase):
 
 class CatalogTests(Fixture):
     def test_rebuilt_forms_are_read_into_the_catalog(self):
-        """TV-090 (TR-10): the FR, the clause with its derivation and the case of the rebuilt forms are read."""
+        """TV-094 (TR-10): the FR, the clause with its derivation and the case of the rebuilt forms are read."""
         self.assertEqual(self.catalog(), {
             "FR-006": {"kind": "requirement", "state": "implemented", "status": "implemented", "refs": [],
                        "bindings": [], "manual": False, "file": "Requirements.sysml", "line": 3,
@@ -121,12 +121,12 @@ class CatalogTests(Fixture):
         })
 
     def test_duplicate_identity_is_refused(self):
-        """TV-091 (TR-10): an identity declared twice is refused."""
+        """TV-095 (TR-10): an identity declared twice is refused."""
         self.change("Requirements.sysml", "    }\n}\n", "    }\n    requirement 'FR-006' {\n    }\n}\n")
         self.assertRefused("Duplicate canonical identity: FR-006")
 
     def test_wrong_kind_is_refused(self):
-        """TV-092 (TR-10): an FR or a clause declared as a verification is refused."""
+        """TV-096 (TR-10): an FR or a clause declared as a verification is refused."""
         for old, new, identity in (("requirement 'FR-006' {", "verification 'FR-006' {", "FR-006"),
                                    ("requirement 'CL-043-01' {", "verification 'CL-043-01' {", "CL-043-01")):
             with self.subTest(identity):
@@ -136,7 +136,7 @@ class CatalogTests(Fixture):
                 self.restore()
 
     def test_unreadable_form_is_refused(self):
-        """TV-093 (TR-10): a definition, a typed declaration and a short name with an identity are refused."""
+        """TV-097 (TR-10): a definition, a typed declaration and a short name with an identity are refused."""
         forms = {
             "definition": ("requirement 'CL-043-01' {", "requirement def 'CL-043-01' {", "CL-043-01"),
             "typed": ("requirement 'CL-043-01' {", "requirement 'CL-043-01' : ClockRule {", "CL-043-01"),
@@ -150,18 +150,18 @@ class CatalogTests(Fixture):
                 self.restore()
 
     def test_derivation_from_a_missing_fr_is_refused(self):
-        """TV-094 (TR-10): a derivation whose original is no declared FR is refused."""
+        """TV-098 (TR-10): a derivation whose original is no declared FR is refused."""
         self.change(STATION_CLOCK_KEY, "end #original ::> 'FR-006';", "end #original ::> 'FR-099';")
         self.assertRefused("Invalid canonical clause derivation: CL-043-01 -> FR-099")
 
     def test_clause_without_derivation_is_refused(self):
-        """TV-095 (TR-10): a clause that derives from no FR is refused."""
+        """TV-099 (TR-10): a clause that derives from no FR is refused."""
         self.change(STATION_CLOCK_KEY,
                     "    #derivation connection { end #original ::> 'FR-006'; end #derive ::> 'CL-043-01'; }\n", "")
         self.assertRefused("Canonical clause lacks requirement ownership: CL-043-01")
 
     def test_required_package_missing_is_refused(self):
-        """TV-096 (TR-10): each of WstxRequirements, WstxShack and WstxContext declared by no file is refused."""
+        """TV-100 (TR-10): each of WstxRequirements, WstxShack and WstxContext declared by no file is refused."""
         for key, package in (("Requirements.sysml", "WstxRequirements"), ("Shack.sysml", "WstxShack"),
                              ("Context.sysml", "WstxContext")):
             with self.subTest(package):
@@ -170,7 +170,7 @@ class CatalogTests(Fixture):
                 self.restore()
 
     def test_required_package_declared_twice_is_refused(self):
-        """TV-097 (TR-10): each of WstxRequirements, WstxShack and WstxContext declared by two files is refused."""
+        """TV-101 (TR-10): each of WstxRequirements, WstxShack and WstxContext declared by two files is refused."""
         for key, package in (("Requirements.sysml", "WstxRequirements"), ("Shack.sysml", "WstxShack"),
                              ("Context.sysml", "WstxContext")):
             with self.subTest(package):
@@ -182,7 +182,7 @@ class CatalogTests(Fixture):
 
 class StatedTests(Fixture):
     def test_states_and_bindings_are_read_once_each(self):
-        """TV-098 (TR-20): package names, a manual method and a binding of joined literals are read as one value each."""
+        """TV-102 (TR-20): package names, a manual method and a binding of joined literals are read as one value each."""
         self.change(STATION_CLOCK_KEY, "@Status { build = ImplementationState::implemented; }",
                     "@WstxModelBindings::Status { build = WstxModelBindings::ImplementationState::partial; }")
         entries = self.catalog()
@@ -199,7 +199,7 @@ class StatedTests(Fixture):
                          (True, ["server/tests/plain.rs"]))
 
     def test_each_fault_of_a_state_or_binding_is_refused(self):
-        """TV-099 (TR-20): a missing, unknown or repeated state, a repeated binding or method, an unknown method, a
+        """TV-103 (TR-20): a missing, unknown or repeated state, a repeated binding or method, an unknown method, a
         missing or outside file, and a delivered case without a test are each refused."""
         status = "@Status { build = ImplementationState::implemented; }"
         automation = "@Automation { run = AutomationState::implemented; }"

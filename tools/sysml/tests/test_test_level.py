@@ -68,7 +68,7 @@ class Fixture(unittest.TestCase):
 
 class LevelTests(Fixture):
     def test_levels_of_a_case_are_read(self):
-        """TV-119 (TR-19): a case states no level, one, several or each location, with or without package names."""
+        """TV-123 (TR-19): a case states no level, one, several or each location, with or without package names."""
         accepted = {
             "none": ({}, []),
             "without package names": ({"case": DEV}, [(2, "developmentPc")]),
@@ -89,7 +89,7 @@ class LevelTests(Fixture):
                 self.assertEqual(self.levels(**parts), expected)
 
     def test_each_fault_of_a_level_is_refused(self):
-        """TV-120 (TR-19): a cost, location, feature or form outside the rule, and a level on anything but a
+        """TV-124 (TR-19): a cost, location, feature or form outside the rule, and a level on anything but a
         verification, are each refused naming the case or the element and its key."""
         case = "Invalid test level: TC-043-001"
         faults = {
@@ -124,7 +124,7 @@ class LevelTests(Fixture):
 
 class PilotLevelTests(unittest.TestCase):
     def test_pilot_resolves_the_level_and_refuses_a_misspelt_location(self):
-        """TV-121 (TR-19): the pinned Pilot resolves TestLevel of WstxModelBindings and refuses a misspelt feature."""
+        """TV-125 (TR-19): the pinned Pilot resolves TestLevel of WstxModelBindings and refuses a misspelt feature."""
         bindings = (ROOT / "docs/sysml/shared/ModelBindings.sysml").read_text(encoding="utf-8")
         self.assertIn("enum def TestLocation { enum developmentPc; enum station; enum simulator; enum flexRadio; }",
                       bindings)

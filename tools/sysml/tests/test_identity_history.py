@@ -91,11 +91,11 @@ class IdentityHistoryTest(unittest.TestCase):
         return tool.fault_lines(tool.reuse_faults(entries, used, present))
 
     def test_kept_and_new_identities_are_accepted(self):
-        """TV-078 (TR-15): a kept identity with changed text and a new identity are accepted."""
+        """TV-082 (TR-15): a kept identity with changed text and a new identity are accepted."""
         self.assertEqual(self.faults(clock_file(("CL-001-01", KEPT_CHANGED), ("CL-001-03", NEW))), [])
 
     def test_used_identity_declared_again_is_refused(self):
-        """TV-079 (TR-15): an identity of an earlier commit that the merge base does not declare is
+        """TV-083 (TR-15): an identity of an earlier commit that the merge base does not declare is
         refused when declared again, with other text and with its old text."""
         for name, sentence in {"other text": "The clock MUST warn the operator.", "old text": DROPPED}.items():
             with self.subTest(name):
@@ -106,7 +106,7 @@ class IdentityHistoryTest(unittest.TestCase):
 
 class NoMainBranchTest(unittest.TestCase):
     def test_history_without_master_is_unavailable(self):
-        """TV-080 (TR-15): a repository without a `master` branch gives no identity history."""
+        """TV-084 (TR-15): a repository without a `master` branch gives no identity history."""
         with tempfile.TemporaryDirectory() as folder:
             repository = Repository(Path(folder), branch="main")
             repository.commit(clock_file(("CL-001-01", KEPT)), "one clause")

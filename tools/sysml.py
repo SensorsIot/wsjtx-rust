@@ -2662,35 +2662,64 @@ def served_and_ends(deployment: Deployment, model: Model) -> tuple[dict, dict]:
     return served, ends
 
 
+ENTRY_COMMANDS = ("createEntry", "updateEntry", "deleteEntry")
+
+
 def agent_faults(model: Model) -> list[tuple]:
-    """TR-06 for M5.10: `WstxStationCommands::AgentRefusal` names commands of StationOperations;
-    mcp's port toward the supervisor is typed by AgentOperations, StationOperations with
-    exactly those commands redefined to `[0]`."""
+    """TR-06 for M5.10: `WstxStationCommands::AgentRefusal` names commands of
+    StationOperations and collections of `SettingsCollection`; mcp's port toward the
+    supervisor is typed by AgentOperations: StationOperations with exactly the refused
+    commands redefined to `[0]` and its entry commands' `collection` typed by
+    AgentCollection, which admits exactly the collections AgentRefusal does not name."""
     faults = []
     operations = model.definition(STATION_COMMANDS, "StationOperations", {"port def"}) if STATION_COMMANDS in model.trees else None
     if operations is None:
         return [("TR-06", STATION_COMMANDS, 0, "no port def StationOperations")]
     commands = {child.name for child in operations.children if child.kind == "item" and re.search(r":>\s*commands\b", child.head)}
+    collection_def = next((element for key in model.trees for element in model.elements(key)
+                           if element.kind == "enum def" and element.name == "SettingsCollection"), None)
+    collections = {child.name for child in collection_def.children if child.kind == "enum" and child.name} if collection_def else set()
     refusal = next((element for key in model.trees for element in model.elements(key)
                     if element.kind == "enum def" and element.name == "AgentRefusal"), None)
     if refusal is None:
         return [("TR-06", STATION_COMMANDS, 0, "no enum def AgentRefusal")]
     refused = {child.name: child for child in refusal.children if child.kind == "enum" and child.name}
     for name, literal in refused.items():
-        if name not in commands:
-            faults.append(("TR-06", literal.key, literal.line, f"AgentRefusal literal {name} names no command"))
+        if name not in commands and name not in collections:
+            faults.append(("TR-06", literal.key, literal.line, f"AgentRefusal literal {name} names no command or collection"))
     agent = next((element for key in model.trees for element in model.elements(key)
                   if element.kind == "port def" and element.name == "AgentOperations"), None)
     if agent is None or not re.search(r"(?::>|\bspecializes\b)\s*(?:\w+::)*StationOperations\b", agent.head):
         return faults + [("TR-06", STATION_COMMANDS, 0, "no port def AgentOperations :> StationOperations")]
-    removed = {}
+    removed, entries = {}, {}
     for child in agent.children:
         if child.kind == "item" and (found := re.search(r"(?::>>|\bredefines\b)\s*(\w+)\s*\[\s*0\s*\]", child.head)):
             removed[found[1]] = child
+        elif child.kind == "item" and (found := re.search(r"(?::>>|\bredefines\b)\s*(\w+)\s*$", child.head.strip())):
+            entries[found[1]] = child
     for name in sorted((set(refused) & commands) - set(removed)):
         faults.append(("TR-06", agent.key, agent.line, f"mcp offers the refused command {name}"))
     for name in sorted(set(removed) - set(refused)):
         faults.append(("TR-06", agent.key, removed[name].line, f"mcp lacks the command {name}"))
+    for name in ENTRY_COMMANDS:
+        if name not in commands:
+            continue
+        child = entries.get(name)
+        if child is None or not any(grand.kind == "attribute" and re.search(r":>>\s*collection\s*:\s*(?:\w+::)*AgentCollection\b", grand.head)
+                                    for grand in child.children):
+            faults.append(("TR-06", agent.key, (child or agent).line, f"an agent's {name} takes every collection"))
+    admitted = next((element for key in model.trees for element in model.elements(key)
+                     if element.kind == "attribute def" and element.name == "AgentCollection"), None)
+    refused_collections = set(refused) & collections
+    if admitted is None or not re.search(r"(?::>|\bspecializes\b)\s*(?:\w+::)*SettingsCollection\b", admitted.head):
+        faults.append(("TR-06", STATION_COMMANDS, 0, "no attribute def AgentCollection :> SettingsCollection"))
+    else:
+        text = model.codes[admitted.key][admitted.begin:admitted.stop]
+        named = set(re.findall(r"\bSettingsCollection::(\w+)", text))
+        for name in sorted(named & refused_collections):
+            faults.append(("TR-06", admitted.key, admitted.line, f"an agent's entry command on {name}"))
+        for name in sorted(collections - refused_collections - named):
+            faults.append(("TR-06", admitted.key, admitted.line, f"AgentCollection lacks the collection {name}"))
     mcp = model.definition("backend/mcp/Mcp.sysml", "McpAdapter", {"part def"}) if "backend/mcp/Mcp.sysml" in model.trees else None
     if mcp is not None:
         typed = [child.type_name() for child in mcp.children if child.kind == "port"]

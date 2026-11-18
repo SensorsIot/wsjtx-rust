@@ -266,7 +266,7 @@ class PathRewriteTests(unittest.TestCase):
         self.assertEqual(self.hashes(), before)
 
     def test_file_renames_rewrite_every_form_and_nothing_else(self):
-        """TV-100 (TR-20): file renames rewrite @ImplementedIn, @TestedBy, @DetailTests, relative links and
+        """TV-104 (TR-20): file renames rewrite @ImplementedIn, @TestedBy, @DetailTests, relative links and
         whole paths in text, and nothing that is not a whole path; a second run is refused."""
         self.tree({"Requirements.sysml": R1_MODEL, CONTACT_KEY: CONTACT}, R1_FILES)
         architecture = self.hashes()["docs/sysml/Architecture.sysml"]
@@ -282,7 +282,7 @@ class PathRewriteTests(unittest.TestCase):
                          "Path not named by the model: server/tests/vectors.rs")
 
     def test_folder_rename_rewrites_paths_below_it_only(self):
-        """TV-101 (TR-20): a folder rename rewrites the paths below the folder, not the folder named alone
+        """TV-105 (TR-20): a folder rename rewrites the paths below the folder, not the folder named alone
         nor a name that only begins like it."""
         self.tree({RADIO_KEY: R2_MODEL},
                   ("server/src/radio/control/mod.rs", "server/src/radio/control/cat.rs", "server/src/radio_control_tests.rs"))
@@ -290,13 +290,13 @@ class PathRewriteTests(unittest.TestCase):
         self.assertEqual(self.model(RADIO_KEY), R2_EXPECTED)
 
     def test_each_literal_of_a_joined_value_is_rewritten(self):
-        """TV-102 (TR-20): the paths of every literal of a value joined by `+` are rewritten and checked."""
+        """TV-106 (TR-20): the paths of every literal of a value joined by `+` are rewritten and checked."""
         self.tree({LOG_KEY: JOINED_MODEL}, JOINED_FILES)
         self.assertEqual(self.paths(R1_LIST), (0, JOINED_OUTPUT, ""))
         self.assertEqual(self.model(LOG_KEY), JOINED_EXPECTED)
 
     def test_a_joined_value_is_one_path(self):
-        """TV-103 (TR-20): a joined value is one value: a path that ends at `::` in one literal, or that
+        """TV-107 (TR-20): a joined value is one value: a path that ends at `::` in one literal, or that
         is split inside by `+`, is read and rewritten as one path."""
         with self.subTest("a test name in the next literal"):
             self.tree({LOG_KEY: SYMBOL_MODEL}, ("server/tests/qso/vectors.rs",))
@@ -317,7 +317,7 @@ class PathRewriteTests(unittest.TestCase):
             self.assertEqual(joined(written[2]), "server/src/qso/contact.rs")
 
     def test_unchecked_strings_are_rewritten_but_not_checked(self):
-        """TV-104 (TR-20): a binding the catalog does not check is rewritten but refuses nothing."""
+        """TV-108 (TR-20): a binding the catalog does not check is rewritten but refuses nothing."""
         def added(text, index, line):
             lines = text.split("\n")
             return "\n".join(lines[:index] + [line] + lines[index:])
@@ -347,7 +347,7 @@ class PathRewriteTests(unittest.TestCase):
             self.assertEqual(self.model(SMALL_KEY), added(SMALL, 6, UNCHECKED.replace("tools/sysml.py", "tools/model/sysml.py")))
 
     def test_refusals_write_nothing(self):
-        """TV-105 (TR-20): a malformed list, a missing moved file or a path that stays missing is refused
+        """TV-109 (TR-20): a malformed list, a missing moved file or a path that stays missing is refused
         with its faults and nothing is written."""
         self.tree({SMALL_KEY: SMALL}, ("server/src/qso/contact.rs", "server/tests/qso/vectors.rs", "client/app.js"))
         for listing, fault in (
@@ -409,7 +409,7 @@ class PathRewriteTests(unittest.TestCase):
             self.assertEqual(self.hashes(), before)
 
     def test_real_model_rewrites_a_moved_test_file_and_traces_keep_their_verdict(self):
-        """TV-106 (TR-20): on the model of HEAD, every path of a moved test file is rewritten, nothing
+        """TV-110 (TR-20): on the model of HEAD, every path of a moved test file is rewritten, nothing
         outside the model is written, and `traces` gives the verdict it gave before the move;
         the repository is not written."""
         with mock.patch.object(tool, "ROOT", ROOT):

@@ -291,6 +291,8 @@ class DeploymentRuleTests(unittest.TestCase):
 AGENT_PORT = "    port def AgentOperations :> StationOperations {\n"
 SAVE_SHACK_REMOVED = "        out item :>> saveShack[0];\n"
 SAVE_SHACK_LITERAL = "        enum saveShack;\n"
+AGENT_COLLECTION = "    attribute def AgentCollection :> SettingsCollection {\n"
+AGENT_COLLECTIONS = "            self == SettingsCollection::strategies or self == SettingsCollection::wantedList\n"
 MCP_PORT = "        port supervisor : AgentOperations;\n"
 
 
@@ -329,11 +331,40 @@ class AgentCommandTests(unittest.TestCase):
         self.assertEqual(self.faults(edits), [f"mcp lacks the command halt: {STATION_COMMANDS}:{line}"])
 
     def test_refusal_literal_naming_no_command_is_refused(self):
-        """TV-028 (TR-06): an AgentRefusal literal that names no command of StationOperations is refused."""
+        """TV-028 (TR-06): an AgentRefusal literal that names no command and no collection is refused."""
         edits = [(STATION_COMMANDS, SAVE_SHACK_LITERAL, SAVE_SHACK_LITERAL + "        enum saveRig;\n")]
         line = line_of(edits, STATION_COMMANDS, "        enum saveRig;\n")
-        self.assertEqual(self.faults(edits), [f"AgentRefusal literal saveRig names no command: {STATION_COMMANDS}:{line}"])
+        self.assertEqual(self.faults(edits),
+                         [f"AgentRefusal literal saveRig names no command or collection: {STATION_COMMANDS}:{line}"])
 
+    def test_agent_entry_command_on_strategies_passes(self):
+        """TV-029 (TR-06): an agent's entry commands take AgentCollection, which admits strategies."""
+        model_text = texts(())[STATION_COMMANDS]
+        self.assertIn("self == SettingsCollection::strategies", model_text)
+        self.assertIn("out item :>> createEntry { attribute :>> collection : AgentCollection; }", model_text)
+        self.assertEqual(self.faults(), [])
+
+    def test_agent_entry_command_on_udp_targets_is_refused(self):
+        """TV-030 (TR-06): AgentCollection admitting udpTargets, which AgentRefusal names, is refused."""
+        edits = [(STATION_COMMANDS, AGENT_COLLECTIONS,
+                  AGENT_COLLECTIONS.replace("SettingsCollection::wantedList",
+                                            "SettingsCollection::wantedList or self == SettingsCollection::udpTargets"))]
+        line = line_of(edits, STATION_COMMANDS, AGENT_COLLECTION)
+        self.assertEqual(self.faults(edits), [f"an agent's entry command on udpTargets: {STATION_COMMANDS}:{line}"])
+
+    def test_agent_collection_lacking_wanted_list_is_refused(self):
+        """TV-031 (TR-06): AgentCollection lacking wantedList, which AgentRefusal does not name, is refused."""
+        edits = [(STATION_COMMANDS, AGENT_COLLECTIONS,
+                  AGENT_COLLECTIONS.replace(" or self == SettingsCollection::wantedList", ""))]
+        line = line_of(edits, STATION_COMMANDS, AGENT_COLLECTION)
+        self.assertEqual(self.faults(edits), [f"AgentCollection lacks the collection wantedList: {STATION_COMMANDS}:{line}"])
+
+    def test_agent_entry_command_on_every_collection_is_refused(self):
+        """TV-032 (TR-06): an agent's entry command whose collection is not AgentCollection is refused."""
+        entry = "        out item :>> createEntry { attribute :>> collection : AgentCollection; }\n"
+        edits = [(STATION_COMMANDS, entry, "")]
+        line = line_of(edits, STATION_COMMANDS, AGENT_PORT)
+        self.assertEqual(self.faults(edits), [f"an agent's createEntry takes every collection: {STATION_COMMANDS}:{line}"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,7 +14,7 @@ spec.loader.exec_module(tool)
 
 class RealModelStructureTests(unittest.TestCase):
     def test_check_on_this_tree_passes_every_model_rule(self):
-        """TV-109 (TR-06): `check` on this tree, whose Shack.sysml holds WstxShack, prints the
+        """TV-113 (TR-06): `check` on this tree, whose Shack.sysml holds WstxShack, prints the
         architecture line and then the model rules' line for every model file."""
         shack = tool.MODELS / "Shack.sysml"
         self.assertEqual(tool.file_package(tool.blanked(shack.read_text(encoding="utf-8"))), "WstxShack")

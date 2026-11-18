@@ -81,14 +81,14 @@ function accepted(t,eol){
   return count;
 }
 
-// TV-153 (TR-20): the JavaScript reader accepts every value of the fixture list.
+// TV-158 (TR-20): the JavaScript reader accepts every value of the fixture list.
 test('model values: every fixture value is read, in LF and CRLF',t=>{
   const lf=accepted(t,'\n'),crlf=accepted(t,'\r\n');
   assert.ok(lf>0,'the fixture list names no value');
   assert.equal(lf,crlf);
 });
 
-// TV-154 (TR-20): the JavaScript reader refuses every fault of the fixture list.
+// TV-159 (TR-20): the JavaScript reader refuses every fault of the fixture list.
 test('model values: every fixture fault is refused naming the name and the reason',t=>{
   const cases=expected().refused;
   assert.ok(cases.length>0,'the fixture list names no fault');

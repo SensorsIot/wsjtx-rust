@@ -217,14 +217,14 @@ class ValuesTest(unittest.TestCase):
                 self.assertEqual(self.faults(edits), expected)
 
     def test_every_way_of_verifying_is_accepted(self):
-        """TV-140 (TR-16): constants with expressions, `200.`, a rounded Real and `from_millis`;
+        """TV-144 (TR-16): constants with expressions, `200.`, a rounded Real and `from_millis`;
         `A::F`, `B::F` and `a::F`, `b::F` in one module; a module `F`; a JavaScript `D.F`; a
         bound test; a target clause in another file; a marker; a literal, wire name,
         variable and command field found: all accepted."""
         self.assertEqual(self.faults(), [])
 
     def test_unequal_constant_is_refused(self):
-        """TV-141 (TR-16): a constant unequal to its model value is refused."""
+        """TV-145 (TR-16): a constant unequal to its model value is refused."""
         self.check({
             "unequal": ([(AIR, "2 * 60;", "2 * 60 + 1;")],
                         [f"Model and code differ: WstxStationClock::AirClock::windowSeconds: model 120, code 2 * 60 + 1: {KEY}:27"]),
@@ -236,7 +236,7 @@ class ValuesTest(unittest.TestCase):
         })
 
     def test_value_none_verifies_is_refused(self):
-        """TV-142 (TR-16): a value that no constant, marker, target clause or bound test verifies is
+        """TV-146 (TR-16): a value that no constant, marker, target clause or bound test verifies is
         refused."""
         self.check({
             "constant removed": ([(CHECK, "pub const START_CORRECTION_MS: i64 = 0;\n", "")],
@@ -247,7 +247,7 @@ class ValuesTest(unittest.TestCase):
         })
 
     def test_name_absent_is_refused(self):
-        """TV-143 (TR-16): a literal, wire name or variable the code does not hold is refused."""
+        """TV-147 (TR-16): a literal, wire name or variable the code does not hold is refused."""
         self.check({
             "literal": ([(CHECK, '"heartbeat"', '"pulse"')],
                         ["Value not verified: WstxStationLink::Heartbeat::'type': interfaces/internal/StationLink.sysml:9"]),
@@ -258,12 +258,12 @@ class ValuesTest(unittest.TestCase):
         })
 
     def test_marker_where_the_code_matches_is_refused(self):
-        """TV-144 (TR-16): a CodeDiffers on a value the code holds as the model states is refused."""
+        """TV-148 (TR-16): a CodeDiffers on a value the code holds as the model states is refused."""
         self.assertEqual(self.faults([(CHECK, "ALC_LIMIT: f64 = 0.6;", "ALC_LIMIT: f64 = 0.5;")]),
                          [f"Code matches its CodeDiffers: WstxStationClock::Limits::alcLimit: {KEY}:52"])
 
     def test_name_twice_is_refused(self):
-        """TV-145 (TR-16): a value with two candidates, or whose only module `F` stands where another
+        """TV-149 (TR-16): a value with two candidates, or whose only module `F` stands where another
         value of that name has its code, is refused as named twice."""
         self.check({
             "two candidates": ([(AIR, "use std::time::Duration;\n", "use std::time::Duration;\n\npub const START_CORRECTION_MS: i64 = 0;\n")],
@@ -275,7 +275,7 @@ class ValuesTest(unittest.TestCase):
         })
 
     def test_constant_outside_its_binding_is_not_verified(self):
-        """TV-146 (TR-16): `D::F` or `d::F` outside its code, `D::F` on a unit struct `D` and `F` in a
+        """TV-150 (TR-16): `D::F` or `d::F` outside its code, `D::F` on a unit struct `D` and `F` in a
         `mod` named after no owner verify nothing."""
         self.check({
             "D::F outside its code": ([(AIR, AIR_CLOCK, ""), (SHARED, "pub fn unused() {}\n", AIR_CLOCK)],

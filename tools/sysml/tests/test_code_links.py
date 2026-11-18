@@ -84,18 +84,18 @@ class CodeLinkTests(unittest.TestCase):
         return links, tool.fault_lines(faults)
 
     def test_clause_inherits_its_part_link(self):
-        """TV-037 (TR-13): a clause without its own code link inherits its part definition's, joined value as one."""
+        """TV-041 (TR-13): a clause without its own code link inherits its part definition's, joined value as one."""
         self.assertEqual(self.links(), ({"CL-043-01": INHERITED, "CL-043-02": INHERITED}, []))
 
     def test_own_link_wins(self):
-        """TV-038 (TR-13): a clause's own code link wins over its part's."""
+        """TV-042 (TR-13): a clause's own code link wins over its part's."""
         self.assertEqual(self.links([(FUNCTION_KEY, "@Status { build = ImplementationState::implemented; }",
                                       "@Status { build = ImplementationState::implemented; }\n"
                                       '        @ImplementedIn { module = "server/src/transmit/windows_time.rs"; }')]),
                          ({"CL-043-01": ["server/src/transmit/windows_time.rs"], "CL-043-02": INHERITED}, []))
 
     def test_each_fault_of_a_code_link_is_refused(self):
-        """TV-039 (TR-13): a link on an action definition, two inherited candidates and a delivered clause without
+        """TV-043 (TR-13): a link on an action definition, two inherited candidates and a delivered clause without
         a link are each refused with key and line."""
         faults = {
             "on an action definition": (

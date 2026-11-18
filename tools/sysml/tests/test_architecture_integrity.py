@@ -66,6 +66,10 @@ package WstxRequirements {
     item def SaveConfig { attribute profile : String; }
     item def SaveShack { attribute call : String; }
     item def StationAnswer { attribute text : String; }
+    enum def SettingsCollection { enum strategies; enum udpTargets; enum wantedList; }
+    item def CreateEntry { attribute collection : SettingsCollection; }
+    item def UpdateEntry { attribute collection : SettingsCollection; }
+    item def DeleteEntry { attribute collection : SettingsCollection; }
     port def StationOperations {
         out abstract item commands[0..*] {
             doc /* A command for the station. */
@@ -74,14 +78,26 @@ package WstxRequirements {
         out item halt : Halt :> commands;
         out item saveConfig : SaveConfig :> commands;
         out item saveShack : SaveShack :> commands;
+        out item createEntry : CreateEntry :> commands;
+        out item updateEntry : UpdateEntry :> commands;
+        out item deleteEntry : DeleteEntry :> commands;
     }
     enum def AgentRefusal {
         enum saveConfig;
         enum saveShack;
+        enum udpTargets;
+    }
+    attribute def AgentCollection :> SettingsCollection {
+        assert constraint agentCollections {
+            self == SettingsCollection::strategies or self == SettingsCollection::wantedList
+        }
     }
     port def AgentOperations :> StationOperations {
         out item :>> saveConfig[0];
         out item :>> saveShack[0];
+        out item :>> createEntry { attribute :>> collection : AgentCollection; }
+        out item :>> updateEntry { attribute :>> collection : AgentCollection; }
+        out item :>> deleteEntry { attribute :>> collection : AgentCollection; }
     }
     interface def StationCommands {
         end requester : StationOperations;

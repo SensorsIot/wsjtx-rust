@@ -157,12 +157,12 @@ def layer_lines(files: dict[str, str]) -> list[str]:
 
 class LayerTest(unittest.TestCase):
     def test_accepted(self):
-        """TV-081 (TR-04): imports from earlier layers, UseCases naming Context's actors and QsoControl
+        """TV-085 (TR-04): imports from earlier layers, UseCases naming Context's actors and QsoControl
         importing a type of TransmitControl are accepted."""
         self.assertEqual(layer_lines(ACCEPTED), [])
 
     def test_control_interfaces(self):
-        """TV-082 (TR-04): the control interfaces are the packages `WstxStationLink::WireNames` lists."""
+        """TV-086 (TR-04): the control interfaces are the packages `WstxStationLink::WireNames` lists."""
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             for key, text in ACCEPTED.items():
@@ -171,7 +171,7 @@ class LayerTest(unittest.TestCase):
             self.assertEqual(tool.control_packages(tool.Model(folder)), {"WstxQsoControl", "WstxTransmitControl"})
 
     def test_negatives(self):
-        """TV-083 (TR-04): each way to break the layers is refused with its one fault line."""
+        """TV-087 (TR-04): each way to break the layers is refused with its one fault line."""
         for way, key, added, expected in NEGATIVES:
             with self.subTest(way):
                 files = dict(ACCEPTED)
@@ -180,7 +180,7 @@ class LayerTest(unittest.TestCase):
                 self.assertEqual(layer_lines(files), [expected])
 
     def test_real_model_layers(self):
-        """TV-084 (TR-04): the real model `docs/sysml` keeps its layers."""
+        """TV-088 (TR-04): the real model `docs/sysml` keeps its layers."""
         self.assertEqual(tool.fault_lines(tool.layer_faults(tool.Model(ROOT / "docs/sysml"))), [])
 
 

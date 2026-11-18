@@ -45,7 +45,7 @@ def fixture_modes(path: Path, body: str) -> set[str]:
 
 class DecoderModeTraceTests(unittest.TestCase):
     def test_each_mode_case_binds_tests_of_that_mode(self):
-        """TV-045 (TR-10): each mode case binds named tests that select its mode and load a fixture of that mode."""
+        """TV-049 (TR-10): each mode case binds named tests that select its mode and load a fixture of that mode."""
         for identifier, (mode, selector) in CASES.items():
             with self.subTest(case=identifier):
                 bindings = executable(identifier)

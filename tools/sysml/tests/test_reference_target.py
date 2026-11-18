@@ -62,7 +62,7 @@ def references(text):
 
 class ReferenceTargetTests(unittest.TestCase):
     def test_nested_and_absolute_forms_give_equal_reference_rows(self):
-        """TV-110 (TR-09): a reference written from the root and one written from its enclosing usage
+        """TV-114 (TR-09): a reference written from the root and one written from its enclosing usage
         give equal REF rows, rooted at the deployment."""
         absolute, nested = references(ABSOLUTE), references(NESTED)
         self.assertEqual(sorted(absolute), ["context.station.attachments.browser",

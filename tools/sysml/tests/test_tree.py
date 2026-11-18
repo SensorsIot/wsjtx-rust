@@ -94,52 +94,52 @@ def catalog_error(files: dict[str, str]):
 
 class TreeTest(unittest.TestCase):
     def test_tree_is_m21(self):
-        """TV-131 (TR-03): the tool's tree is M2.1's, 116 files, each with its M7.5 package."""
+        """TV-135 (TR-03): the tool's tree is M2.1's, 116 files, each with its M7.5 package."""
         expected = expected_tree()
         self.assertEqual(len(expected), 116)
         self.assertEqual(tool.tree_files(), expected)
 
     def test_accepted_tree(self):
-        """TV-132 (TR-03): the M2.1 tree with a data file in `data/` is accepted."""
+        """TV-136 (TR-03): the M2.1 tree with a data file in `data/` is accepted."""
         self.assertEqual(tree_lines(accepted()), [])
 
     def test_extra_model_file(self):
-        """TV-133 (TR-03): a model file outside the tree is refused."""
+        """TV-137 (TR-03): a model file outside the tree is refused."""
         files = accepted()
         files["backend/clock/Extra.sysml"] = "package WstxExtra {\n}\n"
         self.assertEqual(tree_lines(files), ["model file outside the tree: backend/clock/Extra.sysml:1"])
 
     def test_listed_file_missing(self):
-        """TV-134 (TR-03): a file of the tree that is missing is refused."""
+        """TV-138 (TR-03): a file of the tree that is missing is refused."""
         files = accepted()
         del files["backend/clock/StationClock.sysml"]
         self.assertEqual(tree_lines(files), ["model file of the tree missing: backend/clock/StationClock.sysml:0"])
 
     def test_reference_readme(self):
-        """TV-135 (TR-03): a file beside the model files outside `data/` (`reference/README.md`) is refused."""
+        """TV-139 (TR-03): a file beside the model files outside `data/` (`reference/README.md`) is refused."""
         files = accepted()
         files["reference/README.md"] = "# Reference\n"
         self.assertEqual(tree_lines(files), ["file outside the model files and data/: reference/README.md:0"])
 
     def test_required_packages_accepted(self):
-        """TV-136 (TR-03): the tree, each required package declared once, passes the catalog."""
+        """TV-140 (TR-03): the tree, each required package declared once, passes the catalog."""
         self.assertIsNone(catalog_error(accepted()))
 
     def test_required_package_missing(self):
-        """TV-137 (TR-03): a required package declared by no file is refused."""
+        """TV-141 (TR-03): a required package declared by no file is refused."""
         files = accepted()
         files["Context.sysml"] = "package WstxOutside {\n}\n"
         self.assertEqual(catalog_error(files), "Canonical model packages missing: WstxContext")
 
     def test_required_package_twice(self):
-        """TV-138 (TR-03): a required package declared by two files is refused."""
+        """TV-142 (TR-03): a required package declared by two files is refused."""
         files = accepted()
         files["shared/Units.sysml"] = "package WstxContext {\n}\n"
         self.assertEqual(catalog_error(files),
                          "Duplicate canonical model package: WstxContext: Context.sysml, shared/Units.sysml")
 
     def test_real_model_tree(self):
-        """TV-139 (TR-03): the real model `docs/sysml` is the M2.1 tree with only `data/` beside it."""
+        """TV-143 (TR-03): the real model `docs/sysml` is the M2.1 tree with only `data/` beside it."""
         folder = ROOT / "docs/sysml"
         self.assertEqual(tool.fault_lines(tool.tree_faults(folder, tool.Model(folder))), [])
 
