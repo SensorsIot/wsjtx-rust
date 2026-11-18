@@ -264,3 +264,20 @@ Review; the gate red twice; the usage limit.
   left to the reviewer. Definition 6965638762, body written (24,972 characters, `body_problem`
   none), copied to `cr-235-body.md`; `defined`, then `checking`; Check round 2 started.
 - Decision issue #239 "Decision: agents key the real IC-7300" created for factory decision 1.
+- #235 Check round 2: `Ready: not yet — a77610ff4` (6965763693). Reasons 1–8 of round 1 are
+  resolved; one new blocking reason from the values answer: "Name twice in one code" cannot be
+  met for `directiveConfirmed` (a wire key) and the eight `type` literals of ModeProcessing.
+  Notes: more name pairs (`closeMaxMs`, PskReporter's retry values), `ft4PublishedByMs`
+  either-or, and M3.4 no longer says which interface files may import a control interface
+  (TR-04's negative case and Udp rest on the 2026-11-17 decision). Ask posted (6965788369),
+  proposal A: refuse two constants of one name, and two compared values of one name only when
+  they differ; literals and wire names outside. #235 is at `decided` (`decided → recorded` is not
+  an allowed move); the answer goes through Decide, then one fresh Check round on the changed
+  statements.
+- **STOP** (second "not yet" in Check). Waiting for the operator's answer on #235's Ask.
+- harness#151 done: master 45d29d315 (rollout 2026111804), closed; merged into this branch.
+  Alex's restriction now tied to #239; `alex.first` empty with `only_first` (Alex takes nothing);
+  `flake_issue` null; Andreas and the handover section gone; `limit.json` override cleared;
+  #188's authority folder, test and sections gone (#188 keeps the drill's approval cases for a
+  product CR, `cr` labels dropped); `.github/ISSUE_TEMPLATE/harness.md` gone. Harness deploy
+  tests: 53 passed. Left for the operator: the `paused` and `owner:` labels are unused now.
