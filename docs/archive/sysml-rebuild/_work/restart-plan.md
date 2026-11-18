@@ -317,3 +317,17 @@ Review; the gate red twice; the usage limit.
   repaired all (6986364954, definition 6986365648, 24,990 characters, every cut's source
   verified); round 2 `Ready: PASS — 32b0573c3594` (6986419034). `ready → implementing`; the
   coder finishes on 9d559b52a.
+- Coder: candidate cecffb95d (all items; renamed JS tests listed). SensorsIot/harness#156
+  (0689cfad8, rollout 2026111807): the name-selected suites keep their tests, selections compared
+  on both trees. Review round 1: 3 findings (README, report 14/15/P, split comments); repaired
+  (47f70e8ed), then every way of each implemented preventing clause got its negative test or the
+  clause went partial with `@CodeDiffers` (6bdabd27f; seven product gaps found). Review round 2:
+  3 findings (missing case tags, CL-008-03, two comments): STOP for the operator; operator: repair
+  and a short third check (6990221008); follow-up #240 (untagged test of a case) recorded.
+  Repaired (df6ecf3fb); third review `Review: PASS — df6ecf3fb` (6990474581). Submitted to the
+  merge queue.
+- Gate red on df6ecf3fb (merge 2740550dd9e4): contact-browser's two TC-050-004 runs still
+  filtered on the removed name prefix and hung (no per-suite time limit: SensorsIot/harness#157);
+  native-flex TC-023-002 `discovery_unavailable` once (loopback port collision under load, not
+  reproduced in three runs). Coder repaired the filters (31a6be6c7: 27 + 1 + 1 = 29 tests);
+  `Review: PASS — 31a6be6c7` (6993463043). **#235 landed** 2026-11-18 as master ba7a4721d.
