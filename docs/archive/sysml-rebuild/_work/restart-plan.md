@@ -281,3 +281,39 @@ Review; the gate red twice; the usage limit.
   #188's authority folder, test and sections gone (#188 keeps the drill's approval cases for a
   product CR, `cr` labels dropped); `.github/ISSUE_TEMPLATE/harness.md` gone. Harness deploy
   tests: 53 passed. Left for the operator: the `paused` and `owner:` labels are unused now.
+- Operator's answer on #235 (decision comment 6971098948): Rust practice, constants scoped by
+  their owner (`Owner::FEATURE` associated const, or a module const when the module holds one
+  feature of that name); equal values are not merged; wire keys and `type` values stay literals;
+  no model feature renamed, the wire unchanged.
+- Note 4: operator "we never change a test to a shortcut". harness#154: M3.4 adds "An external
+  interface imports no control interface" (master cb967251b, rollout 2026111805), closed; merged
+  into this branch; main checkout fast-forwarded.
+- Labels `owner: Andreas`, `owner: HB9BLA` and `paused` deleted (operator); #13 keeps `cr:paused`.
+- #235 `decided → defining`; the definer revises Technical choice 2, item 10, note 3
+  (`ft4PublishedByMs`), TR-04's mapping to M3.4 and the Sequence text.
+- Operator decision 6971721629: a constant goes on the owner's type where the code has it
+  (`Document`, `Control`, `Timing` renamed to the model's names), otherwise in a module named
+  after the owner; no type only to carry constants. Operator: the 25,000 limit is met only by
+  pointing restatements to their source, else a proposal to divide. Body 24,993 characters; each
+  of the 26 shortenings verified against its source. Definition 6971893437.
+- `cr_state.py` refused the third round: my overnight put after the second `not yet` was
+  `decided`, not `recorded`, and no move led back. Operator: harness change. SensorsIot/harness#155
+  (harness main cb89b44, wsjtx-rust 32b0573c3, rollout 2026111806): the second `not yet` into
+  `decided` is refused; an issue put there anyway moves to `recorded`. Harness tools 838 tests OK.
+- #235: `defined → recorded` (Ask) `→ deciding → decided` (6971098948, 6971721629) `→ defining →
+  defined → checking`; Check round 1 after the decision started, reading the changed statements.
+- #235 Check: `Ready: PASS — 32b0573c3594` (6976263463); one note (item 17's roles: the parts
+  M2.2 names and M5.5's port), passed to the coder. `ready → implementing`; workspace
+  `harness-issue/235` (parallel.py, base 32b0573c3); the coder started.
+- Coder: candidate 9d559b52a (18 commits; check/traces/status exit 0, tool suites 150 OK, cargo
+  test ~964 OK, fmt and clippy clean; new tests red on 32b0573c3), not complete, ten points open.
+  One for the operator: the gate refuses an agent's entry commands on `udpTargets` only
+  (decision 6985890690, which also records the points answered by rules). #235 `implementing →
+  recorded → deciding → decided → defining`; the definer revises items 10–12, 16, 17.
+  Harness change before Land: suites.yaml's name patterns (protocol, protocol-thin,
+  recording-storage, -display, -thin) select the renamed JS tests; verified on both trees.
+- Check after the decision: round 1 `not yet` (6986214732: item 11 rested on other open issues'
+  comments, a dropped fact in choice 2, LogRecord's form, a missing TR-06 negative); the definer
+  repaired all (6986364954, definition 6986365648, 24,990 characters, every cut's source
+  verified); round 2 `Ready: PASS — 32b0573c3594` (6986419034). `ready → implementing`; the
+  coder finishes on 9d559b52a.
