@@ -176,3 +176,11 @@ migrations; README in #235 or #231; where harness issues live.
 9. Where harness issues live (operator 2026-11-18): the rule stands — every harness issue, also
    about `harness/project/`, lives in SensorsIot/harness (Harness-Changes, Intake). #238 moved
    there as harness#151; `.github/ISSUE_TEMPLATE/harness.md` leaves this repository with it.
+
+## #235 Check round 1: answers
+
+1. Control interfaces (operator 2026-11-18): M3.4 reworded (harness#152): no control interface
+   imports a transport file or OperatingChain; it may import another control interface for a
+   type that function owns; the control interfaces are those WireNames lists. #235 moves the
+   two misplaced types to their owners: RadioPlace to RadioControl, ProcessEnds to
+   StationCommands.
