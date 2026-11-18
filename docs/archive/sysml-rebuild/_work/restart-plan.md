@@ -201,3 +201,5 @@ migrations; README in #235 or #231; where harness issues live.
    settings (call sign, locator, strategies file, UDP and PSK Reporter targets); applying radio
    settings to the rig is operating. Model: the supervisor's gate rule (#235); rule: M5.10 reworded
    (harness change, SensorsIot/harness); #122 rewritten for the code.
+4. #189 (operator 2026-11-18, A, as WSJT-X): a contact whose transmit stops with device_lost is
+   kept, shows the cause, and the operator resumes or cancels it; stated in qso's rules in #235.
