@@ -232,3 +232,5 @@ migrations; README in #235 or #231; where harness issues live.
 6. Mismatches: the display name of a new station is "New station"; the ignore list is one list of
    100 (the merge into one list is #228); Band Activity sorts descending. #235 corrects the model;
    the ignore list's code carries `@CodeDiffers` until #228.
+7. The CSS layout (PaneLayout rows) is verified by the browser test reading the row counts from the
+   model and counting the visible rows (V2); the CSS stays.
