@@ -218,3 +218,6 @@ migrations; README in #235 or #231; where harness issues live.
    the tool, not a test) or V2 (a contract test bound to the clause's case reads it from the model
    by qualified name and compares a measured behaviour with it, M6.8); neither: refused. No test
    compares a program variable with itself.
+2. Not built (V3): a value is covered when a target or partial clause names its element or reaches
+   it through typed features (M6.10), in any file; reached by an implemented clause too, it counts
+   as built and must match the code.
