@@ -13,7 +13,7 @@ Resolve the canonical skill's own references from its source directory, not this
 If the source is missing, stop and report it; do not substitute another checkout.
 
 <!-- canonical-source-sha256=39b9d78ab668404c339a58e9c868a428abbdded675af5a8f7d6031452be9683f -->
-<!-- source harness/project/docs/Finished-Model.md sha256=8c4fcdce10c89376e7113375760af32f48469d447c7dda4babd18017a3c5a92b -->
+<!-- source harness/project/docs/Finished-Model.md sha256=ff1310cf3fc18e930e1a68155b984d856dd3267d49a14992c08fc8eb509c06b4 -->
 
 ## This project
 
@@ -129,7 +129,8 @@ and holds the parts ranking, auto and qso.
   `WstxStationLink::WireNames` lists. A control interface imports no transport file
   (StationLink, Mcp) and not the operating chain's interface file (OperatingChain); it may
   import another control interface for a type that interface's function owns. A type stands
-  in the control interface of the function that owns it. StationCommands is the supervisor's
+  in the control interface of the function that owns it. An external interface imports no
+  control interface. StationCommands is the supervisor's
   control interface: the one set of commands that web and mcp both give, and the
   supervisor's own state and records.
 
@@ -299,4 +300,4 @@ How a statement gets into the model. These rules apply wherever the model is wri
 - **A9 Names.** A name that no longer says what the thing is, is renamed, and what cites it
   is changed in the same change.
 
-<!-- harness-forwarder-v1 sha256=e8672ac78aaa9db424f977c73842b9047dc63fc5c8643c79ac592908b6c44876 -->
+<!-- harness-forwarder-v1 sha256=dc34045175d90f97bd0764f4d43ec6fe407b24b5e65237b44688d4859835148d -->

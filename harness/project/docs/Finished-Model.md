@@ -110,7 +110,8 @@ and holds the parts ranking, auto and qso.
   `WstxStationLink::WireNames` lists. A control interface imports no transport file
   (StationLink, Mcp) and not the operating chain's interface file (OperatingChain); it may
   import another control interface for a type that interface's function owns. A type stands
-  in the control interface of the function that owns it. StationCommands is the supervisor's
+  in the control interface of the function that owns it. An external interface imports no
+  control interface. StationCommands is the supervisor's
   control interface: the one set of commands that web and mcp both give, and the
   supervisor's own state and records.
 
