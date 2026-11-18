@@ -192,3 +192,7 @@ migrations; README in #235 or #231; where harness issues live.
    (every station shown, no ranking order, no filter, no alert, no CQ when idle). Model change
    in #235 (Strategies::BuiltinStrategies, StrategySelection's start and end-of-selection rules,
    `active` always present); #107 rewritten to the Band Activity ordering and filtering.
+2. #216 (operator 2026-11-18): "Default" cannot be changed; every other built-in (the examples and
+   the contest built-ins) is changed in place; Factory reset puts the selected built-in back to its
+   shipped state; a created strategy has none. Model change in #235 (BuiltinOffer, StrategyEditor,
+   Strategies::BuiltinStrategies); #216 rewritten for the code.
