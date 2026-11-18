@@ -184,3 +184,11 @@ migrations; README in #235 or #231; where harness issues live.
    type that function owns; the control interfaces are those WireNames lists. #235 moves the
    two misplaced types to their owners: RadioPlace to RadioControl, ProcessEnds to
    StationCommands.
+
+## Sweep decisions
+
+1. #107 (operator 2026-11-18, B then A): after every start the built-in "Default" is active,
+   nothing restored; "Default" is a new built-in, first, with what no strategy means today
+   (every station shown, no ranking order, no filter, no alert, no CQ when idle). Model change
+   in #235 (Strategies::BuiltinStrategies, StrategySelection's start and end-of-selection rules,
+   `active` always present); #107 rewritten to the Band Activity ordering and filtering.
