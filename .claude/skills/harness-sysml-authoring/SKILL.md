@@ -16,7 +16,7 @@ Resolve the canonical skill's own references from its source directory, not this
 If the source is missing, stop and report it; do not substitute another checkout.
 
 <!-- canonical-source-sha256=499b4f47d898bd4b89c481e544fcd5b9c35ae0698075eebff41c51a23dd44b9d -->
-<!-- source harness/project/docs/Finished-Model.md sha256=daf46f72af26191c6cd098949a09e977aafa33ff882098541073062f3c014b43 -->
+<!-- source harness/project/docs/Finished-Model.md sha256=8c4fcdce10c89376e7113375760af32f48469d447c7dda4babd18017a3c5a92b -->
 
 ## This project
 
@@ -182,8 +182,9 @@ and holds the parts ranking, auto and qso.
 - **M5.9** Receive and transmit do not know which radio type is in use: samples pass
   through audio, control passes through radio control.
 - **M5.10** The operator is the licensed person who operates the shack's stations through
-  their browsers. An agent is a program that operates a station through its MCP, with equal
-  rights. The word "user" does not occur.
+  their browsers. An agent is a program that operates a station through its MCP. It gives
+  every command the browser gives except saving the station config and saving the shack's
+  settings: the station's setup is the operator's. The word "user" does not occur.
 
 ## M6. Requirements, clauses and tests
 
@@ -216,7 +217,11 @@ and holds the parts ranking, auto and qso.
   (`// Proves: TC-022-004`), on the test itself. A tag names test cases only: no FR, no
   clause, no shorthand, no issue number. A detail test carries no tag; its file is named by
   its part's `@DetailTests`.
-- **M6.8** A contract test takes its values from the model.
+- **M6.8** A contract test takes its values from the model. Every value of the model is
+  verified in one of two ways: the code holds it in a constant named after the value's
+  feature, which the model tool compares; or a contract test bound to the clause's case reads
+  it from the model and compares a measured behaviour with it. No test compares a value of
+  the program with itself.
 - **M6.9** Every clause and every test case names its subject.
 - **M6.10** The element that holds a clause's values and rules stands directly after the
   clause, in the same file, and the clause's sentence names it. Where that element uses
@@ -297,4 +302,4 @@ How a statement gets into the model. These rules apply wherever the model is wri
 - **A9 Names.** A name that no longer says what the thing is, is renamed, and what cites it
   is changed in the same change.
 
-<!-- harness-forwarder-v1 sha256=f97a713e7f65bb46be700fccf6680f02c0d8053c093e643800489ea7c777556b -->
+<!-- harness-forwarder-v1 sha256=cb89d96d3f0caea8f2e9fa247ed422498354da7902e60ca158473ee390cc2fbc -->
