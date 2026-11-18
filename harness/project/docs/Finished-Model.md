@@ -160,8 +160,9 @@ and holds the parts ranking, auto and qso.
 - **M5.9** Receive and transmit do not know which radio type is in use: samples pass
   through audio, control passes through radio control.
 - **M5.10** The operator is the licensed person who operates the shack's stations through
-  their browsers. An agent is a program that operates a station through its MCP, with equal
-  rights. The word "user" does not occur.
+  their browsers. An agent is a program that operates a station through its MCP. It gives
+  every command the browser gives except saving the station config and saving the shack's
+  settings: the station's setup is the operator's. The word "user" does not occur.
 
 ## M6. Requirements, clauses and tests
 
@@ -194,7 +195,11 @@ and holds the parts ranking, auto and qso.
   (`// Proves: TC-022-004`), on the test itself. A tag names test cases only: no FR, no
   clause, no shorthand, no issue number. A detail test carries no tag; its file is named by
   its part's `@DetailTests`.
-- **M6.8** A contract test takes its values from the model.
+- **M6.8** A contract test takes its values from the model. Every value of the model is
+  verified in one of two ways: the code holds it in a constant named after the value's
+  feature, which the model tool compares; or a contract test bound to the clause's case reads
+  it from the model and compares a measured behaviour with it. No test compares a value of
+  the program with itself.
 - **M6.9** Every clause and every test case names its subject.
 - **M6.10** The element that holds a clause's values and rules stands directly after the
   clause, in the same file, and the clause's sentence names it. Where that element uses

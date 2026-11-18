@@ -14,7 +14,7 @@ Resolve the canonical skill's own references from its source directory, not this
 If the source is missing, stop and report it; do not substitute another checkout.
 
 <!-- canonical-source-sha256=e5419686fb4d7dbd1b9792fcda1ef6c5518fcd9e19dcd8e307145432936f55c8 -->
-<!-- source harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests sha256=edf8d210358af4d965da3472b8dc1848a8f6507bd875c0e0ea1a228041e261c3 -->
+<!-- source harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests sha256=e50146b2b979540e767db7d86450406f1636d49064ed8b9feb9337a96e5f4e5c -->
 
 ## This project
 
@@ -49,7 +49,11 @@ If the source is missing, stop and report it; do not substitute another checkout
   (`// Proves: TC-022-004`), on the test itself. A tag names test cases only: no FR, no
   clause, no shorthand, no issue number. A detail test carries no tag; its file is named by
   its part's `@DetailTests`.
-- **M6.8** A contract test takes its values from the model.
+- **M6.8** A contract test takes its values from the model. Every value of the model is
+  verified in one of two ways: the code holds it in a constant named after the value's
+  feature, which the model tool compares; or a contract test bound to the clause's case reads
+  it from the model and compares a measured behaviour with it. No test compares a value of
+  the program with itself.
 - **M6.9** Every clause and every test case names its subject.
 - **M6.10** The element that holds a clause's values and rules stands directly after the
   clause, in the same file, and the clause's sentence names it. Where that element uses
@@ -65,4 +69,4 @@ If the source is missing, stop and report it; do not substitute another checkout
   enumeration literal below the clauses, by `@CodeDiffers` on the element, saying what the
   code does today. Where the code matches, there is no `@CodeDiffers`.
 
-<!-- harness-forwarder-v1 sha256=21ef1a5f26e9708f939d192839de9a450e81efe47524e07ec50ac059e0782bef -->
+<!-- harness-forwarder-v1 sha256=9f0ec5a2fbf80dd12551ae91e99cfd69dd2a33138b0ce0ea506780062377c641 -->
