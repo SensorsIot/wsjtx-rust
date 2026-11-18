@@ -590,6 +590,27 @@ fn other_stations_wrong_period_and_previous_partner_rows_change_nothing() {
     assert_eq!(s.state(), (State::Replying, Slot::Tx1));
 }
 
+// ChooseNext without a contact is refused noContact, and for a slot without text
+// invalidMessage; the refusal leaves the contact as it was.
+// Proves: TC-007-001
+#[test]
+fn choose_next_without_a_contact_or_for_a_slot_without_text_is_refused() {
+    let mut s = station();
+    assert_eq!(s.command(Command::ChooseNext(Slot::Tx2)), Err("no_contact"));
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.engine.contact.as_mut().unwrap().messages[4] = None;
+    assert_eq!(
+        s.command(Command::ChooseNext(Slot::Tx5)),
+        Err("invalid_message")
+    );
+    assert_eq!(s.state(), (State::Replying, Slot::Tx1));
+}
+
 #[test]
 fn tx1_skip_report_override_and_manual_entry_follow_the_domains() {
     let mut s = station();
@@ -1178,6 +1199,67 @@ fn abort_stops_the_transmission_now_and_cancels_without_a_halt() {
     );
 }
 
+// A contact cancelled after the partner's roger report is not handed over.
+// Proves: TC-007-004
+#[test]
+fn a_contact_cancelled_after_the_roger_report_is_not_handed_over() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    let roger = s.row(period(2), "HB9BLA K1ABC R-05", 1500.0, None);
+    s.deliver(&[roger]);
+    assert_ne!(s.state().0, State::Replying, "the contact went on");
+    s.command(Command::Cancel).unwrap();
+    s.run(period(6));
+    assert_eq!(s.state().0, State::Cancelled);
+    assert!(s.engine.take_logs().is_empty(), "nothing handed over");
+}
+
+// qso keeps at most one request pending: another message chosen while one waits replaces it,
+// and its period sends only the new message, once.
+// Proves: TC-007-004
+#[test]
+fn a_second_request_replaces_the_pending_one_and_one_message_is_sent() {
+    let mut s = station();
+    let cq = s.row(P0, "CQ K1ABC FN42", 1500.0, None);
+    s.command(Command::SelectRow {
+        row: cq,
+        replace: false,
+    })
+    .unwrap();
+    s.command(Command::EnableTx(true, Some(7))).unwrap();
+    s.step(&[]);
+    let accepted = |s: &Station| -> Vec<u64> {
+        let view = s.core.view();
+        view.outcomes
+            .iter()
+            .filter(|o| o.kind == OutcomeKind::Accepted)
+            .map(|o| o.request_sequence)
+            .collect()
+    };
+    let first = *accepted(&s).last().expect("a pending request");
+    s.command(Command::ChooseNext(Slot::Tx2)).unwrap();
+    s.step(&[]);
+    let second = *accepted(&s).last().unwrap();
+    assert_ne!(second, first);
+    let outcomes = s.core.view().outcomes;
+    assert!(
+        outcomes
+            .iter()
+            .any(|o| o.request_sequence == first && o.kind == OutcomeKind::Replaced),
+        "{outcomes:?}"
+    );
+    s.run(period(2));
+    let text = s.engine.contact.as_ref().unwrap().messages[1]
+        .clone()
+        .unwrap();
+    assert_eq!(s.sent, [(period(1), text)]);
+}
+
 #[test]
 fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
     let mut s = station();
@@ -1651,6 +1733,7 @@ fn tc_008_001_identical_cqs_stop_and_an_answered_cq_starts_again() {
     assert_eq!(s.core.view().tx_remaining_calls, 2, "a new contact");
 }
 
+// Proves: TC-007-001
 #[test]
 fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
     let mut s = station();
@@ -3409,7 +3492,7 @@ fn call_first_skips_hashed_and_nonstandard_callers() {
 
 // A free-text Tx5 on an own CQ is sent once like a 73:
 // the contact completes and, without a partner, nothing goes to the log.
-// Proves: TC-024-003
+// Proves: TC-024-003, TC-007-001
 #[test]
 fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
     let mut s = station();

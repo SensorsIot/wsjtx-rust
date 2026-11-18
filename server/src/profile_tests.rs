@@ -248,6 +248,7 @@ fn native_document() -> serde_json::Value {
 
 // The native intent is a separate schema-2 document without a radio
 // identity; standard schema-1 bytes, refusals and the absence of a runtime handle are preserved.
+// Proves: TC-022-002, TC-023-007
 #[test]
 fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
     let accept = |value: &serde_json::Value| {
@@ -391,4 +392,88 @@ fn native_profile_creation_persists_intent_without_runtime_handles() {
     );
     drop(store);
     fs::remove_dir_all(directory).unwrap();
+}
+
+// A missing folder, a settings value outside its rule in the file and a lock that cannot be
+// taken refuse the open; the open makes and changes no file.
+// Proves: TC-022-002
+#[test]
+fn an_open_it_cannot_carry_out_is_refused_and_changes_no_file() {
+    let missing =
+        std::env::temp_dir().join(format!("wstx-profile-missing-{}", new_uuid().unwrap()));
+    assert!(matches!(Store::open(&missing), Err(e) if e == outcome("resource_unavailable")));
+    assert!(!missing.exists(), "an open makes no folder");
+    let directory =
+        std::env::temp_dir().join(format!("wstx-profile-refused-{}", new_uuid().unwrap()));
+    fs::create_dir(&directory).unwrap();
+    let file = directory.join("profile.json");
+    let mut nameless = serde_json::to_value(independent_document()).unwrap();
+    nameless["display_name"] = "".into();
+    let bytes = serde_json::to_vec(&nameless).unwrap();
+    fs::write(&file, &bytes).unwrap();
+    assert!(matches!(Store::open(&directory), Err(e) if e == outcome("invalid_profile")));
+    assert_eq!(fs::read(&file).unwrap(), bytes);
+    let valid = serde_json::to_vec(&independent_document()).unwrap();
+    fs::write(&file, &valid).unwrap();
+    fs::create_dir(directory.join(".profile.lock")).unwrap();
+    assert!(matches!(Store::open(&directory), Err(e) if e == outcome("resource_unavailable")));
+    assert_eq!(fs::read(&file).unwrap(), valid);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+// A creation whose file cannot be written ends with resourceUnavailable and leaves no
+// profile.json.
+// Proves: TC-022-002
+#[test]
+fn a_creation_whose_file_cannot_be_written_is_resource_unavailable() {
+    for native in [false, true] {
+        let directory =
+            std::env::temp_dir().join(format!("wstx-profile-unwritten-{}", new_uuid().unwrap()));
+        let created = with_fault("write", || {
+            if native {
+                Store::create_native(&directory, "ANT1", None)
+            } else {
+                Store::create(&directory)
+            }
+        });
+        assert_eq!(
+            created,
+            Err(outcome("resource_unavailable")),
+            "native {native}"
+        );
+        assert!(!directory.join("profile.json").exists(), "native {native}");
+        let _ = fs::remove_dir_all(&directory);
+    }
+}
+
+// A save of a native profile is refused with the first device or radio control value it holds.
+// Proves: TC-023-007
+#[test]
+fn a_native_save_names_each_device_and_radio_control_value() {
+    let native = serde_json::from_value::<ProfileDocument>(native_document())
+        .unwrap()
+        .settings();
+    type Change = (&'static str, fn(&mut Settings));
+    let cases: [Change; 5] = [
+        ("audio.input_device", |s: &mut Settings| {
+            s.audio.input_device = Some("X".into())
+        }),
+        ("audio.output_device", |s: &mut Settings| {
+            s.audio.output_device = Some("X".into())
+        }),
+        ("control.mode", |s: &mut Settings| {
+            s.control.mode = "cat".into()
+        }),
+        ("control.endpoint", |s: &mut Settings| {
+            s.control.endpoint = Some("COM3".into())
+        }),
+        ("control.ptt", |s: &mut Settings| {
+            s.control.ptt = "cat".into()
+        }),
+    ];
+    for (field, edit) in cases {
+        let mut settings = native.clone();
+        edit(&mut settings);
+        assert_eq!(settings.validate_native(), Err(field));
+    }
 }

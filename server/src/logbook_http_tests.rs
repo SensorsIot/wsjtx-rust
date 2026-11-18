@@ -511,6 +511,7 @@ async fn save_contact_refusals_byte_cap_and_command_receipts() {
 }
 
 // History paging refusals, export headers, no coding.
+// Proves: TC-011-002
 #[tokio::test]
 async fn history_and_export_routes_follow_the_wire_contract() {
     let f = HttpFixture::new("http://localhost:8095");

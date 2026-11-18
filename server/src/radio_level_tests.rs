@@ -1074,3 +1074,25 @@ fn a_transmit_hold_refuses_the_lease_at_once() {
     ));
     assert!(start.elapsed() < Duration::from_millis(500));
 }
+
+// The hold of a transmission refuses a band change at once, and nothing changes.
+// Proves: TC-044-023
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing() {
+    let (f, _) = station(radio(fixed([0, 0])));
+    hold(&f);
+    let start = Instant::now();
+    let (s, v, before) = select_band(&f, "20m").await;
+    let waited = start.elapsed();
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("busy"))
+    );
+    assert!(waited < Duration::from_millis(1000), "{waited:?}");
+    let (_, after, _, _) = f.call("GET", "/receive/selection", None).await;
+    assert_eq!(after["operating_revision"], before["operating_revision"]);
+    assert_eq!(after["selection"], before["selection"]);
+    actor(&f)
+        .ptt(false, Instant::now() + Duration::from_secs(1))
+        .unwrap();
+}

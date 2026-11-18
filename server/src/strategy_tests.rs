@@ -4573,6 +4573,31 @@ async fn tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation() {
     assert_eq!(contact(&f).await.0, "K1ABC");
 }
 
+// A Reply to a CQ not for the station is refused directive_not_answerable like a selection:
+// nothing is prepared and transmission stays off.
+// Proves: TC-039-053
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_reply_to_a_cq_not_for_the_station_needs_the_confirmation() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(&f, e, &[("CQ NA W1AW FN31", 1000.0, Some(-1.0))]);
+    let na = live_row(&f, "CQ NA W1AW FN31");
+    let safety = f.read("contact").await["transmit"]["safety_revision"].clone();
+    let body = json!({"row":na,"safety_revision":safety});
+    let w = f
+        .browser(
+            "POST",
+            "/contact/command",
+            Some(browser_command(&f, "reply", body).await),
+        )
+        .await;
+    assert_eq!(w.status, StatusCode::CONFLICT, "{}", w.json);
+    assert_eq!(w.json["error"]["code"], "directive_not_answerable");
+    assert_eq!(contact(&f).await.0, Value::Null, "nothing prepared");
+    assert_eq!(f.read("contact").await["transmit"]["arm_state"], "disarmed");
+}
+
 // In eu_vhf a CQ TEST is the activity's own word: the
 // operator's selection needs no directive_confirmed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

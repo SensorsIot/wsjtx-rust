@@ -425,6 +425,15 @@ fn audio_lifecycle_retries() {
         assert!(!lifecycle.due(u64::MAX));
     }
 }
+// Proves: TC-002-003
+#[cfg(windows)]
+#[test]
+fn audio_capture_without_a_named_endpoint_is_refused_unavailable() {
+    assert!(matches!(
+        AudioController::new(String::new()),
+        Err(SourceError::Unavailable)
+    ));
+}
 // Actual controller isolates two packet drivers and acknowledges stop within250ms.
 // Proves: TC-002-001, TC-002-003
 #[cfg(windows)]

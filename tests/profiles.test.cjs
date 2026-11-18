@@ -2188,7 +2188,7 @@ test('same-host four-port TLS cookies, reconnect, negatives and rotation', {time
   for (const page of pages) {assert.deepEqual(await page.evaluate(() => [Object.keys(localStorage), Object.keys(sessionStorage)]), [[], []]); assert.equal(await page.locator('#token').inputValue(), '');}
 });
 
-// Proves: TC-022-001
+// Proves: TC-022-001, TC-073-002
 test('TC-022-001 review regression: Refresh cannot reopen a pending save', {timeout: 30000}, async t => {
   const {profiles} = await fixture(t), {pages} = await browserWindows(t, profiles);
   await Promise.all(pages.map(connected)); const page = pages[0];

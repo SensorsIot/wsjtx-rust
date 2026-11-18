@@ -3130,3 +3130,512 @@ fn live_publication_fills_in_hashed_calls() {
     r.set_my_call(Some("HB9BLB"));
     assert_eq!(publish("<HB9BLB> VP2X/K1JT")["text"], "<HB9BLB> VP2X/K1JT");
 }
+
+/// A RIFF WAVE file of these chunks, each padded to an even length.
+fn riff(chunks: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+    let mut b = Vec::from(*b"RIFF");
+    b.extend([0; 4]);
+    b.extend(b"WAVE");
+    for (name, body) in chunks {
+        b.extend(*name);
+        b.extend((body.len() as u32).to_le_bytes());
+        b.extend(body);
+        if body.len() % 2 == 1 {
+            b.push(0);
+        }
+    }
+    let size = (b.len() - 8) as u32;
+    b[4..8].copy_from_slice(&size.to_le_bytes());
+    b
+}
+
+// Proves: TC-018-002
+#[test]
+fn chunk_order_count_and_fmt_faults_are_refused() {
+    let f = Fixture::new();
+    let fmt = wav(&[])[20..36].to_vec();
+    let data = vec![1, 0, 2, 0];
+    let with = |extra: &[u8]| [fmt.as_slice(), extra].concat();
+    let mut other = fmt.clone();
+    other[0] = 3;
+    for chunks in [
+        vec![(b"fmt ", fmt.clone()), (b"data", data.clone())],
+        vec![(b"fmt ", with(&[0, 0])), (b"data", data.clone())],
+    ] {
+        assert_eq!(validate(&mut f.wave(&riff(&chunks))).unwrap().frames, 2);
+    }
+    for (chunks, expected) in [
+        (
+            vec![
+                (b"fmt ", fmt.clone()),
+                (b"fmt ", fmt.clone()),
+                (b"data", data.clone()),
+            ],
+            "invalid_recording",
+        ),
+        (
+            vec![(b"data", data.clone()), (b"fmt ", fmt.clone())],
+            "invalid_recording",
+        ),
+        (vec![(b"fmt ", fmt.clone())], "invalid_recording"),
+        (
+            vec![
+                (b"fmt ", fmt.clone()),
+                (b"data", data.clone()),
+                (b"data", data.clone()),
+            ],
+            "invalid_recording",
+        ),
+        (
+            vec![(b"fmt ", fmt.clone()), (b"data", vec![1, 0, 2])],
+            "invalid_recording",
+        ),
+        (
+            vec![(b"fmt ", with(&[1, 0])), (b"data", data.clone())],
+            "invalid_recording",
+        ),
+        (
+            vec![(b"fmt ", with(&[0; 4])), (b"data", data.clone())],
+            "unsupported_audio",
+        ),
+        (
+            vec![(b"fmt ", other.clone()), (b"data", data.clone())],
+            "unsupported_audio",
+        ),
+        // Another form and a fault of the build: the fault decides.
+        (vec![(b"fmt ", other.clone())], "invalid_recording"),
+    ] {
+        assert_eq!(
+            validate(&mut f.wave(&riff(&chunks))).unwrap_err(),
+            expected,
+            "{:?}",
+            chunks.iter().map(|(n, b)| (n, b.len())).collect::<Vec<_>>()
+        );
+    }
+}
+
+// Proves: TC-018-002
+#[test]
+fn a_cancelled_import_keeps_the_stored_recording() {
+    let f = Fixture::new();
+    let r = f.recording();
+    let bytes = wav(&[1, 2, 3]);
+    let old = import(&r, &bytes).unwrap();
+    let generation = r.state.lock().unwrap().generation;
+    let reserved = r.reserve(&r.profile, &r.boot, generation).unwrap();
+    let id = reserved["id"].as_str().unwrap().to_owned();
+    r.begin_chunk(&id, 0, 100).unwrap();
+    r.chunk(&id, 0, 100, vec![0, 0]).unwrap();
+    assert_eq!(r.cancel_import(&id).unwrap()["state"], "cancelling");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while r.import_view(&id).unwrap()["state"] != "cancelled" {
+        assert!(Instant::now() < deadline, "the cancel did not end");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(!r.path(&id, "wav").exists());
+    assert_eq!(r.snapshot()["recording"]["id"], old);
+    assert_eq!(fs::read(r.path(&old, "wav")).unwrap(), bytes);
+    assert_eq!(f.recording().snapshot()["recording"]["id"], old);
+}
+
+// Proves: TC-018-002
+#[test]
+fn import_commands_it_does_not_carry_out_are_refused_and_change_nothing() {
+    let f = Fixture::new();
+    let r = f.recording();
+    let unknown = profile::new_uuid().unwrap();
+    assert_eq!(r.import_view(&unknown).unwrap_err(), "not_found");
+    assert_eq!(r.begin_chunk(&unknown, 0, 100).unwrap_err(), "not_found");
+    assert_eq!(r.cancel_import(&unknown).unwrap_err(), "not_found");
+    // ReserveImport while a live job has not given up what it held.
+    r.state.lock().unwrap().live_owner_released = false;
+    assert_eq!(r.reserve(&r.profile, &r.boot, 0).unwrap_err(), "busy");
+    r.state.lock().unwrap().live_owner_released = true;
+    // ReserveImport while a job has not ended.
+    r.state.lock().unwrap().job = Some(Job {
+        id: profile::new_uuid().unwrap(),
+        source_id: Some(profile::new_uuid().unwrap()),
+        generation: 0,
+        kind: "spectrum",
+        state: "running",
+        processed_frames: 0,
+        error: None,
+        cancel: Arc::new(AtomicBool::new(false)),
+    });
+    assert_eq!(r.reserve(&r.profile, &r.boot, 0).unwrap_err(), "busy");
+    r.state.lock().unwrap().job = None;
+    assert_eq!(r.snapshot()["import"], Value::Null);
+    assert_eq!(r.snapshot()["generation"], 0);
+    // ImportChunk with another total than its first part.
+    let reserved = r.reserve(&r.profile, &r.boot, 0).unwrap();
+    let id = reserved["id"].as_str().unwrap().to_owned();
+    r.begin_chunk(&id, 0, 100).unwrap();
+    r.chunk(&id, 0, 100, vec![0, 0]).unwrap();
+    let before = r.import_view(&id).unwrap();
+    assert_eq!(r.begin_chunk(&id, 2, 200).unwrap_err(), "state_conflict");
+    assert_eq!(r.import_view(&id).unwrap(), before);
+    // CancelImport of an import that commits.
+    r.state.lock().unwrap().import.as_mut().unwrap().state = "committing";
+    assert_eq!(r.cancel_import(&id).unwrap_err(), "invalid_state");
+    r.state.lock().unwrap().import.as_mut().unwrap().state = "receiving";
+    r.cancel_import(&id).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while r.import_view(&id).unwrap()["state"] != "cancelled" {
+        assert!(Instant::now() < deadline, "the cancel did not end");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    // ReserveImport while the files of an import that ended are still being removed.
+    r.state.lock().unwrap().import.as_mut().unwrap().worker = true;
+    let generation = r.state.lock().unwrap().generation;
+    assert_eq!(
+        r.reserve(&r.profile, &r.boot, generation).unwrap_err(),
+        "busy"
+    );
+    r.state.lock().unwrap().import.as_mut().unwrap().worker = false;
+    // ImportChunk to an import that has ended.
+    let bytes = wav(&[1, 2]);
+    let done = import(&r, &bytes).unwrap();
+    let total = bytes.len() as u64;
+    let view = r.import_view(&done).unwrap();
+    assert_eq!(view["state"], "completed");
+    assert_eq!(
+        r.begin_chunk(&done, total, total).unwrap_err(),
+        "invalid_state"
+    );
+    assert_eq!(r.import_view(&done).unwrap(), view);
+}
+
+/// A selection of the station that is pending.
+fn pending_selection(command: &str, revision: u64) -> selection::Operation {
+    selection::Operation {
+        command_id: command.into(),
+        base_revision: revision.saturating_sub(1),
+        revision,
+        action: "band",
+        requested: selection::Requested {
+            mode: "ft8",
+            band: "40m",
+            nominal_hz: 7074000,
+        },
+        phase: "releasing",
+        result: "pending",
+        error: None,
+        monitor_before: false,
+        monitor_wanted: true,
+        old_job_id: None,
+        new_job_id: None,
+        new_generation: None,
+        old_generation: 0,
+        new_worker_cancel: None,
+        cancelled: Arc::new(AtomicBool::new(false)),
+    }
+}
+
+// Proves: TC-018-003
+#[test]
+fn a_replay_start_it_does_not_admit_is_refused_and_changes_nothing() {
+    let f = Fixture::new();
+    let r = f.recording();
+    let other = profile::new_uuid().unwrap();
+    assert_eq!(
+        r.replay(&r.profile, &r.boot, 0, &other).unwrap_err(),
+        "no_recording"
+    );
+    let id = import(&r, &wav(&[1, 2, 3])).unwrap();
+    let g = r.state.lock().unwrap().generation;
+    let refused = |expected: &str| {
+        assert_eq!(r.replay(&r.profile, &r.boot, g, &id).unwrap_err(), expected);
+        assert_eq!(r.state.lock().unwrap().generation, g, "{expected}");
+    };
+    assert_eq!(
+        r.replay(&r.profile, &r.boot, g, &other).unwrap_err(),
+        "not_found"
+    );
+    r.state.lock().unwrap().source_error = Some("recording_unavailable");
+    refused("recording_unavailable");
+    r.state.lock().unwrap().source_error = None;
+    r.state.lock().unwrap().live_owner_released = false;
+    refused("busy");
+    r.state.lock().unwrap().live_owner_released = true;
+    r.state.lock().unwrap().operating.operation =
+        Some(pending_selection(&profile::new_uuid().unwrap(), 0));
+    refused("busy");
+    r.state.lock().unwrap().operating.operation = None;
+    r.state.lock().unwrap().storage_error = Some("storage_unavailable");
+    refused("storage_unavailable");
+    r.state.lock().unwrap().storage_error = None;
+    r.state.lock().unwrap().import.as_mut().unwrap().state = "receiving";
+    refused("busy");
+    r.state.lock().unwrap().import.as_mut().unwrap().state = "completed";
+    r.state.lock().unwrap().job = Some(Job {
+        id: profile::new_uuid().unwrap(),
+        source_id: Some(id.clone()),
+        generation: g,
+        kind: "spectrum",
+        state: "running",
+        processed_frames: 0,
+        error: None,
+        cancel: Arc::new(AtomicBool::new(false)),
+    });
+    refused("busy");
+}
+
+// Proves: TC-009-004
+#[test]
+fn a_frame_outside_its_limits_never_becomes_a_record_and_reads_are_refused() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    type Edit = (&'static str, fn(&mut decoder::Decode));
+    let edits: [Edit; 6] = [
+        ("at the sample reached", |d: &mut decoder::Decode| {
+            d.start_frame = 180000
+        }),
+        ("below the band", |d: &mut decoder::Decode| {
+            d.frequency_hz = decoder::DECODE_BAND_LOW_HZ - 1.0
+        }),
+        ("above the band", |d: &mut decoder::Decode| {
+            d.frequency_hz = decoder::DECODE_BAND_HIGH_HZ + 1.0
+        }),
+        ("SNR not a number", |d: &mut decoder::Decode| {
+            d.snr_db = Some(f64::NAN)
+        }),
+        ("SNR above the limit", |d: &mut decoder::Decode| {
+            d.snr_db = Some(SNR_LIMIT_DB + 1.0)
+        }),
+        ("SNR below the limit", |d: &mut decoder::Decode| {
+            d.snr_db = Some(-SNR_LIMIT_DB - 1.0)
+        }),
+    ];
+    for (what, edit) in edits {
+        let (job, valid) = live_ring(&r);
+        let mut bad = valid.clone();
+        edit(&mut bad);
+        assert_eq!(
+            r.publish_decode(&job, &bad),
+            Err(decoder::DecodeError::DecodeLimit),
+            "{what}"
+        );
+        assert_eq!(
+            r.publish_decode(&job, &valid),
+            Err(decoder::DecodeError::DecodeLimit),
+            "{what}: no later frame becomes a record"
+        );
+        let s = r.state.lock().unwrap();
+        let l = s.live.as_ref().unwrap();
+        assert_eq!(
+            (l.next_sequence, l.records.len(), l.publication_error),
+            (0, 0, Some("decode_limit")),
+            "{what}"
+        );
+    }
+    let (job, valid) = live_ring(&r);
+    r.publish_decode(&job, &valid).unwrap();
+    let source = job.source_id.clone().unwrap();
+    let other = profile::new_uuid().unwrap();
+    assert_eq!(
+        r.receive_results(&source, &other, 1, 0, 1),
+        Err("not_found")
+    );
+    assert_eq!(
+        r.receive_results(&other, &job.id, 1, 0, 1),
+        Err("not_found")
+    );
+    assert_eq!(
+        r.receive_results(&source, &job.id, 2, 0, 1),
+        Err("not_found")
+    );
+    r.state.lock().unwrap().live.as_mut().unwrap().mode = "spectrum";
+    assert_eq!(
+        r.receive_results(&source, &job.id, 1, 0, 1),
+        Err("invalid_request")
+    );
+    r.state.lock().unwrap().live = None;
+    assert_eq!(
+        r.receive_results(&source, &job.id, 1, 0, 1),
+        Err("not_found")
+    );
+}
+
+// Proves: TC-009-005
+#[test]
+fn a_selection_refused_by_the_selection_rule_changes_nothing() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let refused = |intent: selection::Intent, cat: bool, expected: &str| {
+        let (revision, generation) = {
+            let s = r.state.lock().unwrap();
+            (s.operating.revision, s.generation)
+        };
+        assert_eq!(r.selection_begin(intent, None, cat).unwrap_err(), expected);
+        let s = r.state.lock().unwrap();
+        assert_eq!(
+            (s.operating.revision, s.generation, s.operating.nominal.band),
+            (revision, generation, None),
+            "{expected}"
+        );
+    };
+    let band = |r: &Recording| selection_intent(r, "band", None, Some("40m"));
+    let mut intent = band(&r);
+    intent.profile_revision += 1;
+    refused(intent, false, "state_conflict");
+    let mut intent = band(&r);
+    intent.revision += 1;
+    refused(intent, false, "state_conflict");
+    r.state.lock().unwrap().operating.operation =
+        Some(pending_selection(&profile::new_uuid().unwrap(), 0));
+    refused(band(&r), false, "busy");
+    r.state.lock().unwrap().operating.operation = None;
+    let reserved = r.reserve(&r.profile, &r.boot, 0).unwrap();
+    refused(band(&r), false, "busy");
+    r.cancel_import(reserved["id"].as_str().unwrap()).unwrap();
+    r.state.lock().unwrap().job = Some(Job {
+        id: profile::new_uuid().unwrap(),
+        source_id: Some(profile::new_uuid().unwrap()),
+        generation: 1,
+        kind: "spectrum",
+        state: "running",
+        processed_frames: 0,
+        error: None,
+        cancel: Arc::new(AtomicBool::new(false)),
+    });
+    refused(band(&r), false, "busy");
+    r.state.lock().unwrap().job = None;
+    refused(
+        selection_intent(&r, "band", Some("ft4"), Some("160m")),
+        false,
+        "selection_unavailable",
+    );
+    refused(band(&r), true, "radio_unavailable");
+    assert!(r.flex.set(wstx_rust::flex::Session::double()).is_ok());
+    refused(band(&r), false, "radio_unavailable");
+}
+
+// Proves: TC-009-005
+#[test]
+fn a_cancel_it_does_not_carry_out_is_refused_and_changes_nothing() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    let uuid = || profile::new_uuid().unwrap();
+    let cancel = |command: &str, target: &str, revision: u64| {
+        r.selection_cancel(&r.profile, &r.boot, command.into(), target.into(), revision)
+    };
+    let target = uuid();
+    {
+        let mut s = r.state.lock().unwrap();
+        s.operating.revision = 1;
+        s.operating.operation = Some(pending_selection(&target, 1));
+    }
+    // Neither the revision the selection was made from nor the one it was admitted at.
+    assert_eq!(
+        cancel(&uuid(), &target, 5).unwrap_err(),
+        "operation_superseded"
+    );
+    // The operating revision has moved since the selection was admitted.
+    r.state.lock().unwrap().operating.revision = 2;
+    assert_eq!(
+        cancel(&uuid(), &target, 1).unwrap_err(),
+        "operation_superseded"
+    );
+    // An unseen command id while a selection is pending.
+    assert_eq!(
+        cancel(&uuid(), &uuid(), 2).unwrap_err(),
+        "operation_superseded"
+    );
+    {
+        let s = r.state.lock().unwrap();
+        assert_eq!(s.operating.revision, 2);
+        assert_eq!(s.operating.operation.as_ref().unwrap().result, "pending");
+        assert!(s.operating.cancellation.is_none());
+    }
+    // An unseen command id from another revision.
+    r.state
+        .lock()
+        .unwrap()
+        .operating
+        .operation
+        .as_mut()
+        .unwrap()
+        .result = "success";
+    assert_eq!(
+        cancel(&uuid(), &uuid(), 1).unwrap_err(),
+        "operation_superseded"
+    );
+    // A fence, then the same cancel with another target or revision.
+    let (command, unseen) = (uuid(), uuid());
+    let (receipt, repeated) = cancel(&command, &unseen, 2).unwrap();
+    assert!(!repeated);
+    assert_eq!(receipt["operating_revision"], 3);
+    assert_eq!(cancel(&command, &uuid(), 2).unwrap_err(), "state_conflict");
+    assert_eq!(cancel(&command, &unseen, 3).unwrap_err(), "state_conflict");
+    assert_eq!(cancel(&command, &unseen, 2).unwrap(), (receipt, true));
+    // The fenced selection, arriving from the revision it was made at.
+    let mut late = selection_intent(&r, "band", None, Some("40m"));
+    late.command_id = unseen;
+    late.revision = 2;
+    assert_eq!(
+        r.selection_begin(late, None, false).unwrap_err(),
+        "state_conflict"
+    );
+    assert_eq!(r.state.lock().unwrap().operating.revision, 3);
+}
+
+// Proves: TC-009-008
+#[test]
+fn the_dial_is_not_taken_while_a_selection_pends_or_on_another_revision() {
+    use crate::cat_lifecycle::{Gate, Key};
+    use crate::cat_lifecycle_tests::{Device, ENDPOINT, attach_peer};
+    let gate = Gate::Eligible {
+        key: Key {
+            radio_id: "00000000-0000-4000-8000-0000000000aa".into(),
+            safety_revision: 1,
+            profile_revision: 0,
+            endpoint: ENDPOINT.into(),
+        },
+        configuration: wstx_rust::radio_control::Configuration::parse(ENDPOINT).unwrap(),
+    };
+    for pending in [true, false] {
+        let fixture = Fixture::new();
+        let r = fixture.recording();
+        attach_peer(&r, Device::Present);
+        let t0 = Instant::now();
+        r.cat_maintain(&gate, t0);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while r.radio_actor().map(|a| a.snapshot().unwrap().state)
+            != Some(wstx_rust::radio_control::State::Ready)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "the connection did not become ready"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        if pending {
+            r.state.lock().unwrap().operating.operation =
+                Some(pending_selection(&profile::new_uuid().unwrap(), 0));
+        } else {
+            r.initialize_profile_revision(5);
+        }
+        r.cat_maintain(&gate, t0 + Duration::from_millis(100));
+        {
+            let s = r.state.lock().unwrap();
+            assert_eq!(
+                (s.operating.nominal.band, s.operating.nominal.origin),
+                (None, "unknown"),
+                "pending {pending}"
+            );
+        }
+        // Without the pending selection, on the connection's revision, the dial is taken.
+        if pending {
+            r.state.lock().unwrap().operating.operation = None;
+        } else {
+            r.initialize_profile_revision(0);
+        }
+        r.cat_maintain(&gate, t0 + Duration::from_millis(200));
+        assert_eq!(
+            r.state.lock().unwrap().operating.nominal.band,
+            Some("40m"),
+            "pending {pending}"
+        );
+        r.radio_actor().unwrap().request_close();
+    }
+}

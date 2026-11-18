@@ -576,3 +576,15 @@ async fn profile_put_keeps_saves_and_refuses_radio_settings() {
         "an unmanaged control keeps no radio settings"
     );
 }
+
+// Without a wanted AGC nothing is read or set.
+// Proves: TC-044-009
+#[test]
+fn without_a_wanted_agc_nothing_is_read_or_set() {
+    let (f, radio) = station(Ic7300::at(2));
+    super::tick(&f.state.recording, None, Instant::now());
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(agc_frames(&radio).is_empty(), "no AGC frame");
+    assert!(f.state.recording.agc.status().is_none());
+    assert_eq!(radio.lock().unwrap().agc, 2);
+}

@@ -86,6 +86,28 @@ fn tc_005_002_ft4sim_bits_codeword_and_tones_match_exactly() {
     assert_eq!(encode_ft4("HELLO WORLD 123"), Err(PackError::TooLong));
 }
 
+// FT4 refuses with the reasons of FT8: a short telemetry word and a contest message with a
+// call that is not standard (notExact), WSPR and DXpedition (unsupportedFamily), and free
+// text that is too long or outside its alphabet.
+// Proves: TC-005-002
+#[test]
+fn tc_005_002_message_refusals_are_those_of_ft8() {
+    for (message, refusal) in [
+        ("A", PackError::NotExact),
+        ("CAFE", PackError::NotExact),
+        ("PJ4/K1ABC W9XYZ 579 MA", PackError::NotExact),
+        ("K1ABC FN42 37", PackError::UnsupportedFamily),
+        (
+            "K1ABC RR73; W9XYZ <KH1/KH7Z> -08",
+            PackError::UnsupportedFamily,
+        ),
+        ("HELLO WORLD 123", PackError::TooLong),
+        ("TNX BOB 73 GL!", PackError::InvalidText),
+    ] {
+        assert_eq!(encode_ft4(message).err(), Some(refusal), "{message}");
+    }
+}
+
 /// In-phase component of the reference: ft4sim writes the real part (cosine) of the
 /// complex genft4 waveform, the native transmitter writes the sine. The analytic signal
 /// (FFT, negative frequencies removed) turns cos(phi) into sin(phi) without using any

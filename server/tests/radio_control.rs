@@ -1012,3 +1012,68 @@ fn polling_has_one_cycle_per_second_and_fragmentation_never_renews_deadline() {
             .all(|deadline| *deadline == frequency_deadline)
     );
 }
+
+// An operation the radio's commands do not hold is refused before a frame is sent.
+// Proves: TC-009-001
+#[test]
+fn an_operation_the_radio_has_not_is_unsupported_and_sends_nothing() {
+    let mut doc: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../../fixtures/radio/ic7300-catalogue.json"))
+            .unwrap();
+    doc["models"][0]["commands"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c != "read_split");
+    let catalogue = Catalogue::parse(&serde_json::to_vec(&doc).unwrap()).unwrap();
+    assert!(!catalogue.supports(&Operation::ReadSplit));
+    let state = Arc::new(Mutex::new(Script {
+        actions: VecDeque::from([Action::Bytes(FREQUENCY.to_vec())]),
+        ..Script::default()
+    }));
+    let executor = Executor::connect(
+        Fake(state.clone()),
+        Configuration::parse("icom7300://COM3?baud=9600&radio=94&controller=E0").unwrap(),
+        authority(),
+        catalogue,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_eq!(
+        executor.execute(req(Operation::ReadSplit)),
+        Err(Error::Unsupported)
+    );
+    assert_eq!(
+        state.lock().unwrap().writes.len(),
+        1,
+        "the connection's read only"
+    );
+    assert_eq!(executor.snapshot().unwrap().state, State::Ready);
+}
+
+// A menu item that differs is not written while the radio reports that it transmits.
+// Proves: TC-044-012
+#[test]
+fn a_menu_write_while_the_radio_transmits_is_busy_and_writes_nothing() {
+    let usb_send_dtr = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1a, 5, 0, 0x78, 1, 0xfd];
+    let transmitting = vec![0xfe, 0xfe, 0xe0, 0x94, 0x1c, 0, 1, 0xfd];
+    let (executor, state) = service(vec![
+        Action::Bytes(usb_send_dtr),
+        Action::Bytes(transmitting),
+    ]);
+    assert_eq!(
+        executor.setup(
+            SetupCommand::Write(setup::Setting::UsbSend, 0),
+            Instant::now() + Duration::from_secs(3),
+            &AtomicBool::new(false),
+        ),
+        Err(Error::Busy)
+    );
+    assert_eq!(
+        state.lock().unwrap().writes[1..],
+        [
+            vec![0xfe, 0xfe, 0x94, 0xe0, 0x1a, 5, 0, 0x78, 0xfd],
+            vec![0xfe, 0xfe, 0x94, 0xe0, 0x1c, 0, 0xfd]
+        ]
+    );
+    assert_eq!(executor.snapshot().unwrap().state, State::Ready);
+}

@@ -346,3 +346,75 @@ fn startup_resume_never_arms_or_keys() {
         let _ = fs::remove_dir_all(&f.dir);
     }
 }
+
+// A selection or an import a command started first stays and the resume is skipped; a
+// resume that cannot start ends in its state and the station goes on.
+// Proves: TC-045-001
+#[test]
+fn startup_resume_skips_what_a_command_started_and_never_ends_the_process() {
+    let dir = Dir::new();
+    dir.write(&stored(false, "ft4", Some("20m")));
+    let r = dir.open();
+    inject(&r);
+    let intent = {
+        let s = r.state.lock().unwrap();
+        selection::Intent {
+            command_id: profile::new_uuid().unwrap(),
+            profile_id: r.profile.clone(),
+            boot_id: r.boot.clone(),
+            profile_revision: s.operating.profile_revision,
+            generation: s.generation,
+            revision: s.operating.revision,
+            action: "band",
+            mode: Some("ft8"),
+            band: Some("40m".into()),
+        }
+    };
+    r.selection_begin(intent, Some("operator-input".into()), false)
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while r.selection_snapshot(false).unwrap()["operation"]["result"] == "pending" {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let job = r.receive_snapshot()["job"]["id"].clone();
+    inject(&r);
+    assert_eq!(
+        resume(&r, false, Duration::ZERO)["resume"]["state"],
+        "skipped"
+    );
+    let selection = r.selection_snapshot(false).unwrap()["selection"].clone();
+    assert_eq!(
+        (&selection["band"], &selection["mode"]),
+        (&json!("40m"), &json!("ft8"))
+    );
+    assert_eq!(r.receive_snapshot()["job"]["id"], job);
+
+    let dir = Dir::new();
+    dir.write(&stored(false, "ft4", Some("20m")));
+    let r = dir.open();
+    inject(&r);
+    let import = r.reserve(&r.profile, &r.boot, 0).unwrap();
+    assert_eq!(
+        resume(&r, false, Duration::ZERO)["resume"]["state"],
+        "skipped"
+    );
+    assert_eq!(r.receive_snapshot()["job"], Value::Null);
+    assert_eq!(
+        r.import_view(import["id"].as_str().unwrap()).unwrap()["state"],
+        "reserved"
+    );
+
+    let dir = Dir::new();
+    dir.write(&stored(false, "ft8", None));
+    let r = dir.open();
+    r.resume_receive(None, false, Duration::ZERO)
+        .unwrap()
+        .join()
+        .expect("the resume ends without a panic");
+    assert_eq!(
+        r.startup_view()["resume"],
+        json!({"state":"failed","error":"audio_unconfigured"})
+    );
+    assert_eq!(r.receive_snapshot()["job"], Value::Null);
+}

@@ -610,6 +610,53 @@ fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file()
     assert_eq!(log.total().unwrap(), 3);
 }
 
+// A broken tag, a header without EOH and a field name over 64 characters each refuse the
+// whole file of an update.
+// Proves: TC-011-002
+#[test]
+fn update_refuses_a_broken_tag_a_header_without_eoh_and_a_long_name_whole() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    let good = "<call:5>N6FFF <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n";
+    for (broken, code) in [
+        (format!("{good}<call:x>K1ABC <eor>"), "malformed"),
+        (format!("Header without its end\n{good}"), "malformed"),
+        (
+            format!("{good}<{}:1>x <eor>", "N".repeat(65)),
+            "field_too_long",
+        ),
+    ] {
+        let (result, view) = import(&log, broken.as_bytes());
+        assert_eq!(
+            (result, view["error"]["code"].clone()),
+            (Err("import_failed"), json!(code)),
+            "{broken}"
+        );
+        assert_eq!(dir.file(), None, "nothing stored");
+    }
+}
+
+// An update whose write fails stores none of its records.
+// Proves: TC-011-002
+#[test]
+fn an_update_whose_write_fails_stores_none_of_its_records() {
+    let dir = Dir::new();
+    let log = Logbook::open(&dir.0);
+    assert_eq!(
+        log.save(reviewed(ID1, "K1ABC"), GATE).unwrap(),
+        SaveOutcome::Saved
+    );
+    let before = dir.file().unwrap();
+    log.inject_fault(Some("write"));
+    let file = "<call:5>N6FFF <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n\
+        <call:5>N7GGG <qso_date:8>20261031 <time_on:4>1301 <mode:3>FT8 <eor>\n";
+    let (result, _) = import(&log, file.as_bytes());
+    assert!(result.is_err(), "{result:?}");
+    log.inject_fault(None);
+    assert_eq!(dir.file().unwrap(), before);
+    assert_eq!(log.total().unwrap(), 1);
+}
+
 // Workload: a 27,000-QSO export of about 27 MB
 // (Log4OM-shaped records) is consolidated in one update; worked-before then answers
 // from the index. Timing is printed, not asserted (functional suite).

@@ -239,6 +239,108 @@ fn tune_against_scripted_radio(tune_code: u32) -> (Result<u64, Error>, Option<Sl
     (replied, slice)
 }
 
+// A scripted radio on localhost for one session setup on a saved address: the greeting gives
+// API 1.4.0.0 and the handle 0x10, every command is answered with success (`slice create` with
+// the slice 0), and `statuses` gives the status lines sent right after a command's reply.
+// Returns the attempt's result and the commands the radio received.
+fn setup_against_scripted_radio(statuses: fn(&str) -> String) -> (Result<(), Error>, Vec<String>) {
+    use std::io::{BufRead, BufReader};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let radio = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut out = stream.try_clone().unwrap();
+        out.write_all(b"V1.4.0.0\nH00000010\n").unwrap();
+        let mut commands = Vec::new();
+        for line in BufReader::new(stream).lines() {
+            let Ok(line) = line else { break };
+            let (sequence, text) = line[1..].split_once('|').unwrap();
+            let index = if text.starts_with("slice create") {
+                "0"
+            } else {
+                ""
+            };
+            let answer = format!("R{sequence}|0|{index}\n{}", statuses(text));
+            commands.push(text.to_owned());
+            if out.write_all(answer.as_bytes()).is_err() {
+                break;
+            }
+        }
+        commands
+    });
+    let session = Session::double();
+    session.shared.allowed.store(true, Ordering::Release);
+    let intent = Intent {
+        client_id: "72e8c7f3-5766-4ade-9286-ebf2f525c77a".into(),
+        rx_antenna: "ANT1".into(),
+        radio_address: Some(address),
+    };
+    let unused = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    let config = Config {
+        discovery: SocketAddr::from(([127, 0, 0, 1], 0)),
+        register_ports: [unused.local_addr().unwrap().port(); 2],
+    };
+    let (_requests, tunes) = sync_channel(1);
+    let result = attempt(&session.shared, &intent, config, &tunes, &mut false);
+    (result, radio.join().unwrap())
+}
+
+// A slice the radio shows under another handle after `slice create` is not taken up, and is
+// left as it is.
+// Proves: TC-023-002
+#[test]
+fn a_slice_created_under_another_handle_is_left_alone_slice_ownership() {
+    let (result, commands) = setup_against_scripted_radio(|command| match command {
+        "slice create rxant=ANT1 mode=DIGU" => {
+            "S20|slice 0 in_use=1 client_handle=0x20 rxant=ANT1\n".into()
+        }
+        _ => String::new(),
+    });
+    assert_eq!(result, Err(Error::SliceOwnership));
+    assert_eq!(
+        commands.last().map(String::as_str),
+        Some("slice create rxant=ANT1 mode=DIGU")
+    );
+}
+
+// A created slice with another antenna is given back.
+// Proves: TC-023-002
+#[test]
+fn a_created_slice_with_another_antenna_is_removed_antenna_unavailable() {
+    let (result, commands) = setup_against_scripted_radio(|command| match command {
+        "slice create rxant=ANT1 mode=DIGU" => {
+            "S10|slice 0 in_use=1 client_handle=0x10 rxant=ANT2\n".into()
+        }
+        _ => String::new(),
+    });
+    assert_eq!(result, Err(Error::AntennaUnavailable));
+    assert_eq!(commands.last().map(String::as_str), Some("slice remove 0"));
+}
+
+// With every DAX channel used by another client's slice, the own slice is given back and no
+// other client's slice or channel is touched.
+// Proves: TC-023-001
+#[test]
+fn no_free_dax_channel_removes_the_own_slice_only_capacity_dax() {
+    let (result, commands) = setup_against_scripted_radio(|command| match command {
+        "sub slice all" => (1..=8)
+            .map(|c| format!("S20|slice {c} in_use=1 client_handle=0x20 rxant=ANT1 dax={c}\n"))
+            .collect(),
+        "slice create rxant=ANT1 mode=DIGU" => {
+            "S10|slice 0 in_use=1 client_handle=0x10 rxant=ANT1\n".into()
+        }
+        _ => String::new(),
+    });
+    assert_eq!(result, Err(Error::CapacityDax));
+    assert_eq!(commands.last().map(String::as_str), Some("slice remove 0"));
+    assert!(
+        commands
+            .iter()
+            .all(|c| !c.starts_with("slice set") && !c.starts_with("stream")),
+        "{commands:?}"
+    );
+}
+
 // A confirmed selection is never reported beside the slice's earlier
 // frequency: when the caller hears that the tune succeeded, the shared snapshot already
 // carries the frequency the radio read back.
@@ -258,6 +360,39 @@ fn a_refused_tune_confirms_nothing_and_keeps_the_reported_slice() {
     let (result, slice) = tune_against_scripted_radio(0x5000_002C);
     assert_eq!(result, Err(Error::RadioRefused));
     assert_eq!(slice.and_then(|s| s.frequency_hz), Some(7_000_000));
+}
+
+// A tune outside the state ready, or withdrawn before it is served, sends the radio nothing
+// and confirms nothing.
+// Proves: TC-023-001
+#[test]
+fn a_tune_outside_ready_or_withdrawn_sends_nothing_and_confirms_nothing() {
+    let deadline = Instant::now() + STEP;
+    let session = Session::double();
+    let go_on = Arc::new(AtomicBool::new(false));
+    assert_eq!(
+        session.tune(14_074_000, deadline, &go_on),
+        Err(Error::NotReady)
+    );
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let tcp = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut radio, _) = listener.accept().unwrap();
+    let mut conn = Conn::new(&session.shared, tcp, listener.local_addr().unwrap().ip());
+    conn.own = Some(0x10);
+    conn.slice = Some(0);
+    let (reply, _answer) = sync_channel(1);
+    let request = TuneRequest {
+        frequency_hz: 14_074_000,
+        deadline,
+        cancelled: Arc::new(AtomicBool::new(true)),
+        reply,
+    };
+    assert_eq!(conn.tune(&request), Err(Error::Cancelled));
+    assert_eq!(session.shared.tuned_hz.load(Ordering::Acquire), 0);
+    drop(conn);
+    let mut sent = Vec::new();
+    radio.read_to_end(&mut sent).unwrap();
+    assert!(sent.is_empty(), "{}", String::from_utf8_lossy(&sent));
 }
 
 // GET /native-flex reports the packets, the peak, the VITA time and the
@@ -320,5 +455,6 @@ fn intent_domains() {
         },
     ] {
         assert!(!bad.valid());
+        assert!(Session::start(bad, Config::default()).is_err());
     }
 }

@@ -985,6 +985,81 @@ async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_in
     );
 }
 
+/// CL-044-07: the answer code of GET /audio/endpoints over `endpoints` (None when listed).
+async fn list_code(endpoints: Vec<AudioEndpoint>) -> Option<String> {
+    let f = fixture("http://127.0.0.1:18049", false);
+    let hw = Arc::new(Listing {
+        ports: vec![],
+        endpoints: Mutex::new(Some(endpoints)),
+    });
+    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+    let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
+    let _ = std::fs::remove_dir_all(&f.dir);
+    match s {
+        StatusCode::OK => None,
+        _ => v["error"]["code"].as_str().map(String::from),
+    }
+}
+fn endpoint(id: &str, name: &str, flow: Flow) -> AudioEndpoint {
+    AudioEndpoint {
+        id: id.into(),
+        name: name.into(),
+        flow,
+        topology: under("USB\\HUB\\OTHER"),
+    }
+}
+fn endpoints(n: usize, flow: Flow) -> Vec<AudioEndpoint> {
+    (0..n)
+        .map(|i| endpoint(&format!("id-{i}"), &format!("Endpoint {i}"), flow))
+        .collect()
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn a_list_longer_than_max_endpoints_is_refused_device_limit() {
+    for flow in [Flow::Capture, Flow::Render] {
+        assert_eq!(list_code(endpoints(64, flow)).await, None);
+        assert_eq!(
+            list_code(endpoints(65, flow)).await.as_deref(),
+            Some("device_limit")
+        );
+    }
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn an_empty_endpoint_id_is_refused_device_limit() {
+    let mut list = endpoints(1, Flow::Capture);
+    list.push(endpoint("", "Microphone", Flow::Capture));
+    assert_eq!(list_code(list).await.as_deref(), Some("device_limit"));
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn an_empty_endpoint_name_is_refused_device_limit() {
+    for name in ["", " \t "] {
+        let mut list = endpoints(1, Flow::Render);
+        list.push(endpoint("id-blank", name, Flow::Render));
+        assert_eq!(list_code(list).await.as_deref(), Some("device_limit"));
+    }
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn an_endpoint_id_longer_than_max_text_bytes_is_refused_device_limit() {
+    let long = |n: usize| vec![endpoint(&"i".repeat(n), "Microphone", Flow::Capture)];
+    assert_eq!(list_code(long(256)).await, None);
+    assert_eq!(list_code(long(257)).await.as_deref(), Some("device_limit"));
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn an_endpoint_name_longer_than_max_text_bytes_is_refused_device_limit() {
+    let long = |n: usize| vec![endpoint("id-long", &"n".repeat(n), Flow::Capture)];
+    assert_eq!(list_code(long(256)).await, None);
+    assert_eq!(list_code(long(257)).await.as_deref(), Some("device_limit"));
+}
+
 /// The saved control of a fixture: IC-7300 CAT on `port`, saved once.
 fn saved_on(f: &Fixture, port: u16) {
     saved_with(f, port, "cat");
@@ -1291,4 +1366,80 @@ fn the_reservation_lock_stays_held_and_is_per_port() {
     held.lock().unwrap().clear();
     assert!(radio_setup::reserve_in(&Mutex::new(Vec::new()), &root, 3));
     std::fs::remove_dir_all(root).unwrap();
+}
+
+// Apply on a station whose radio connection is not ready.
+// Proves: TC-044-003
+#[test]
+fn apply_without_a_ready_connection_is_radio_unavailable() {
+    let f = fixture("http://127.0.0.1:18061", false);
+    assert_eq!(radio_setup::apply(&f.state, 0), Err("radio_unavailable"));
+}
+
+// A native profile, and an endpoint RadioConnection does not take, open no port at start.
+// Proves: TC-044-020
+#[test]
+fn discovery_opens_nothing_on_a_native_profile_or_an_endpoint_radio_control_does_not_take() {
+    let radio = || {
+        double(
+            vec![port(3, "USB\\HUB\\IC7300")],
+            HashMap::from([(3, (0x94, 19200))]),
+            vec![],
+        )
+    };
+    let native = fixture("http://127.0.0.1:18062", false);
+    radio_setup::confirm_keying(&native.state);
+    assert!(
+        native
+            .state
+            .recording
+            .flex
+            .set(wstx_rust::flex::Session::double())
+            .is_ok()
+    );
+    let hw = radio();
+    hardware_of(&native, &hw);
+    assert_eq!(radio_setup::discover_on_start(&native.state), None);
+    assert!(hw.opened.lock().unwrap().is_empty());
+    let foreign = fixture("http://127.0.0.1:18063", false);
+    radio_setup::confirm_keying(&foreign.state);
+    {
+        let mut store = foreign.state.store.lock().unwrap();
+        let mut settings = store.document.settings();
+        settings.control = profile::ControlSelection {
+            mode: "cat".into(),
+            endpoint: Some("fixture-cat-1".into()),
+            ptt: "cat".into(),
+        };
+        store.save(settings).unwrap();
+    }
+    let hw = radio();
+    hardware_of(&foreign, &hw);
+    assert_eq!(radio_setup::discover_on_start(&foreign.state), None);
+    assert!(hw.opened.lock().unwrap().is_empty());
+    assert_eq!(
+        saved_control(&foreign).0.endpoint.as_deref(),
+        Some("fixture-cat-1")
+    );
+}
+
+// Detection without the keying confirmation opens no port and sends nothing.
+// Proves: TC-044-002
+#[tokio::test]
+async fn detect_without_the_keying_confirmation_opens_no_port() {
+    let f = fixture("http://127.0.0.1:18064", false);
+    let hw = double(
+        vec![port(3, "USB\\HUB\\IC7300")],
+        HashMap::from([(3, (0x94, 19200))]),
+        vec![],
+    );
+    hardware_of(&f, &hw);
+    let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":false});
+    let (s, v, _, _) = f.call("POST", "/radio/detect", Some(body)).await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("confirmation_required"))
+    );
+    assert!(hw.opened.lock().unwrap().is_empty());
+    assert!(hw.writes.lock().unwrap().is_empty());
 }
