@@ -1,6 +1,6 @@
 package WstxSoundDevice {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* The sound device of a radio that gives its audio to the PC as a sound card (the
          USB connection). A radio on its native network connection has no sound device. */

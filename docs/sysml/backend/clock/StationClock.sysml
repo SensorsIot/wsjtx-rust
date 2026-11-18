@@ -2,16 +2,16 @@ package WstxStationClock {
     private import ScalarValues::*;
     private import RequirementDerivation::*;
     private import WstxRequirements::'FR-006';
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
     private import WstxClockPart::ClockService;
     private import WstxStationTime::*;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::FollowsSource;
 
     requirement 'CL-043-01' {
         subject clock : ClockService;

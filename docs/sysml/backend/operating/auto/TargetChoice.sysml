@@ -7,13 +7,13 @@ package WstxTargetChoice {
     private import WstxOperatingChain::TargetKind;
     private import WstxTransmitControl::TransmitRefusal;
     private import WstxTransmitControl::DisarmCause;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     doc /* Which station Auto calls, when it waits, and what it does when a start of its own
          cannot go out. */

@@ -13,13 +13,13 @@ package WstxStationAuthority {
     private import WstxReceiveControl::StartLive;
     private import WstxProfileAccess::SaveProfile;
     private import WstxProfileAccess::SaveMemory;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     doc /* The supervisor as the one gate of the station: which commands it passes on
          and which it refuses, and how every function learns what it needs. */

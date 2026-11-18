@@ -1,4 +1,4 @@
-package ModelNotes {
+package WstxModelNotes {
     private import ScalarValues::*;
 
     doc /* Shared metadata for the product model: what the model leaves unsaid, and where a
@@ -25,6 +25,10 @@ package ModelNotes {
     metadata def Debugging {
         doc /* A clause of a debugging function: it serves finding faults, not operating,
              and no use case carries it. */
+    }
+    metadata def CodeDiffers {
+        doc /* What the code does today where it differs from the element this marks. */
+        attribute what : String;
     }
     metadata def DiffersFromSource {
         doc /* A deliberate difference from that reference. */

@@ -4,7 +4,7 @@ package WstxBrowserClientPart {
     private import WstxStationLink::DisplayProfile;
     private import WstxStrategies::AlertSound;
     private import WstxOperatorInteraction::OperatorInteractionPort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def BrowserClient {
         doc /* One browser window of a station: it shows the station's views to the operator

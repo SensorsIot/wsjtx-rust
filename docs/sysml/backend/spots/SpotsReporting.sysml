@@ -7,9 +7,9 @@ package WstxSpotsReporting {
     private import WstxHearing::FeedContext;
     private import WstxDecodes::ResultRecord;
     private import WstxPskReporter::ReceptionReport;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::Status;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelNotes::FollowsSource;
 
     requirement 'CL-039-28' {
         subject spots : SpotsService;

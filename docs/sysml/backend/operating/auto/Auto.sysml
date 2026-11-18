@@ -6,8 +6,8 @@ package WstxAutoPart {
     private import WstxOperatingChain::RankedActivityPort;
     private import WstxOperatingChain::TargetChoicePort;
     private import WstxHearing::TargetHearingPort;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::DetailTests;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
 
     part def AutoService {
         doc /* Level 2 of the operating chain: while Auto is on it calls the most valuable

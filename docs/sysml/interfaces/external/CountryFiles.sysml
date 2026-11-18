@@ -1,6 +1,6 @@
 package WstxCountryFiles {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* The exchange with country-files.com: the station asks for the newest country file
          of AD1C, cty.dat. */

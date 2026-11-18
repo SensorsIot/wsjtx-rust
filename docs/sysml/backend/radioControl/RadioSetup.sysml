@@ -7,13 +7,13 @@ package WstxRadioSetup {
     private import WstxRadioProperties::Setting;
     private import WstxRadioProperties::Agc;
     private import WstxAudioControl::RadioPlace;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     requirement 'CL-044-01' {
         subject radioControl : RadioControlInterface;

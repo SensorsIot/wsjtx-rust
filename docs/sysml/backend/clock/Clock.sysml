@@ -4,7 +4,7 @@ package WstxClockPart {
     private import WstxStationTime::ClockStatusPort;
     private import WstxStationTime::StationsHeardPort;
     private import WstxTimeSource::TimeSourcePort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def ClockService {
         doc /* The station's clock. It holds station time, corrects it from the stations

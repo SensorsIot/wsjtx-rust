@@ -1,6 +1,6 @@
 package WstxCat {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* The serial link between the CAT adapter and a transceiver, and the frames on
          it. */

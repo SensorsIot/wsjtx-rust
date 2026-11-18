@@ -5,7 +5,7 @@ package WstxLogPart {
     private import WstxOperatingChain::LoggedContactPort;
     private import WstxOperatingChain::WorkedBeforePort;
     private import WstxDecodes::DecodesPort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def LogService {
         doc /* The log of the station. It keeps the operator's logbook, stores every

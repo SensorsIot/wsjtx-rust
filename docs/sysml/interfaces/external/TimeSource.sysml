@@ -1,6 +1,6 @@
 package WstxTimeSource {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     item def TimeRequest {
         doc /* One SNTP client request. */

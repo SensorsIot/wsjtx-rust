@@ -5,13 +5,13 @@ package WstxTxSlot {
     private import WstxAutoPart::AutoService;
     private import WstxHearing::HearingState;
     private import WstxOperatingChain::TargetKind;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     doc /* When Auto's Tx moves. Where it goes is qso's (WstxHoldTx::QuietSpace). */
 

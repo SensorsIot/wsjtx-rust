@@ -3,15 +3,15 @@ package WstxUdp {
     private import RequirementDerivation::*;
     private import WstxRequirements::'FR-012';
     private import WstxDecodes::ResultRecord;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::DiffersFromSource;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::DiffersFromSource;
     private import WstxUdpControl::*;
 
     doc /* The messages of the WSJT-X UDP protocol that the station sends to the programs the

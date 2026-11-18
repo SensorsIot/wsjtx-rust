@@ -16,14 +16,14 @@ package WstxReceiveJob {
     private import WstxAudioStreams::CaptureMarks;
     private import WstxRecordingTransfer::RecordingUnreadable;
     private import WstxRecordingTransfer::OpenRecording;
-    private import ModelNotes::Debugging;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelNotes::Debugging;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     requirement 'CL-006-02' {
         subject receive : ReceiveService;

@@ -1,6 +1,6 @@
 package WstxFlexApi {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* The network API of a FlexRadio: the radio's announcements, its control connection
          and its receive stream. A radio on a sound device and a CAT link is not reached

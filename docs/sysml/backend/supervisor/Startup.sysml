@@ -15,15 +15,15 @@ package WstxStartup {
     private import WstxReceiveControl::StopLive;
     private import WstxTransmitControl::ProcessEnds;
     private import WstxTransmitControl::TransmitStatus;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::DiffersFromSource;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     doc /* How the station process starts and ends, and how receive is taken up again at
          the start. */

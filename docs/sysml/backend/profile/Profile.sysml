@@ -4,7 +4,7 @@ package WstxProfilePart {
     private import WstxRecordingTransfer::RecordedSamples;
     private import WstxClubLog::ClubLogPort;
     private import WstxCountryFiles::CountryFilesPort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def PersistedProfile {
         doc /* The profile of one station: its saved document, its hidden store, its

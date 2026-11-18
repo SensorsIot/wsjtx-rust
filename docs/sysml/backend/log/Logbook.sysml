@@ -13,16 +13,16 @@ package WstxLogbook {
     private import WstxOperatingChain::ContestPeriod;
     private import WstxOperatingChain::PeriodQsos;
     private import WstxStrategies::DupeRule;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::DiffersFromSource;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     requirement 'CL-010-04' {
         subject log : LogService;

@@ -1,6 +1,6 @@
 package WstxModeProcessing {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* What crosses between the modes part and the two functions that use it: receive
          gives windows of samples and gets the decoded frames, transmit gives a message

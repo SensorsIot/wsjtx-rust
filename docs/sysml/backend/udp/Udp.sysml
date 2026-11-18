@@ -5,7 +5,7 @@ package WstxUdpPart {
     private import WstxDecodes::DecodesPort;
     private import WstxOperatingChain::LoggedContactPort;
     private import WstxUdp::UdpPort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def UdpService {
         doc /* Tells other programs what the station does, in the messages of the WSJT-X

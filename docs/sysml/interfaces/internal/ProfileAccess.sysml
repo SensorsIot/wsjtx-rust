@@ -18,8 +18,8 @@ package WstxProfileAccess {
     private import WstxQsoControl::TxMacro;
     private import WstxLogControl::Continent;
     private import WstxStationCommands::StartupRecords;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::NotStated;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::NotStated;
 
     doc /* What the profile stores and what crosses between the profile and the
          functions of the station: the settings of the station and of its operator,

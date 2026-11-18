@@ -3,14 +3,14 @@ package WstxQsoTransmit {
     private import RequirementDerivation::*;
     private import WstxRequirements::'FR-007';
     private import WstxQsoPart::QsoService;
-    private import ModelNotes::DiffersFromSource;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     doc /* When a contact transmits: the starts that switch transmission on, the ends, and
          the repetition limit. Transmission is transmit's state; qso switches it over

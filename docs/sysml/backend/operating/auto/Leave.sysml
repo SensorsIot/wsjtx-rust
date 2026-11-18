@@ -8,13 +8,13 @@ package WstxLeave {
     private import WstxAutoControl::RetryPause;
     private import WstxStrategies::LeaveMode;
     private import WstxOperatingChain::TargetKind;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     doc /* How Auto's contact ends: when Auto leaves a station that does not answer, the
          retry pause after it, and that nothing else interrupts the contact. */

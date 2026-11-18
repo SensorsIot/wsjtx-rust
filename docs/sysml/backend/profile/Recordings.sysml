@@ -4,17 +4,17 @@ package WstxRecordings {
     private import WstxRequirements::'FR-018';
     private import WstxProfilePart::PersistedProfile;
     private import WstxRecordingTransfer::*;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::DiffersFromSource;
-    private import ModelNotes::Debugging;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelNotes::Debugging;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     requirement 'CL-006-01' {
         subject profile : PersistedProfile;

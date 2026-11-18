@@ -3,9 +3,9 @@ package WstxContentCoding {
     private import RequirementDerivation::*;
     private import WstxRequirements::'FR-021';
     private import WstxWebPart::WebAdapter;
-    private import ModelNotes::FollowsSource;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::Status;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::Status;
 
     doc /* How web codes the answers of the link to keep them small on a slow link. */
 

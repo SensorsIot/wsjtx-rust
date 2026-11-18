@@ -1,8 +1,8 @@
 package WstxFlexAdapterPart {
     private import ScalarValues::*;
-    private import ModelNotes::NotStated;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::DetailTests;
+    private import WstxModelNotes::NotStated;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxRadioControl::NativeControlPort;
     private import WstxAudioStreams::CaptureSamples;
     private import WstxFlexApi::FlexApiPort;

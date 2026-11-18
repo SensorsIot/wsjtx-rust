@@ -7,8 +7,8 @@ package WstxRadioControlPart {
     private import WstxRadioControl::RadioRecords;
     private import WstxKeying::Keying;
     private import WstxCat::CatPort;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::DetailTests;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
 
     part def RadioControlInterface {
         doc /* The control of the station's radio. It keeps the connection to the radio

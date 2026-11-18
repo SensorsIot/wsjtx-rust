@@ -5,14 +5,14 @@ package WstxListener {
     private import WstxWebPart::WebAdapter;
     private import WstxWebControl::*;
     private import WstxStationLink::*;
-    private import ModelNotes::FollowsSource;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::AutomationState;
-    private import ModelBindings::Status;
-    private import ModelBindings::Automation;
-    private import ModelBindings::TestedBy;
-    private import ModelBindings::TestLevel;
-    private import ModelBindings::TestLocation;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
+    private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     doc /* web's own functions: the listener, the browser client it serves, the sockets and
          requests it holds, and the log of the bytes on the link. */

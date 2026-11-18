@@ -7,7 +7,7 @@ package WstxSpotsPart {
     private import WstxPskReporter::PskReporterPort;
     private import WstxPskReporter::ReportCollectorPort;
     private import WstxDecodes::DecodesPort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def SpotsService {
         doc /* Tells the station who hears it. It reads the spots of the PSK Reporter feed

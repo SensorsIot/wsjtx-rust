@@ -2,7 +2,7 @@ package WstxMcpPart {
     private import ScalarValues::*;
     private import WstxStationCommands::StationOperations;
     private import WstxMcp::McpPort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def McpAdapter {
         doc /* The station's door for agents: it speaks MCP and carries the features of the

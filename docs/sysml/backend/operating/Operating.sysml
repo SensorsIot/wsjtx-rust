@@ -5,8 +5,8 @@ package WstxOperatingPart {
     private import WstxStrategies::AutoSharePort;
     private import WstxStrategies::ActivitySharePort;
     private import WstxStationTime::StationTimePort;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::DetailTests;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
 
     part def OperatingService {
         doc /* Owns what a strategy is and its rules, the built-in strategies, the

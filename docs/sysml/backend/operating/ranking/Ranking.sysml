@@ -6,8 +6,8 @@ package WstxRankingPart {
     private import WstxOperatingChain::RankedActivityPort;
     private import WstxOperatingChain::WorkedBeforePort;
     private import WstxHearing::HeardByPort;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::DetailTests;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
 
     part def RankingService {
         doc /* Orders the decoded stations by the rules of the active strategy and gives

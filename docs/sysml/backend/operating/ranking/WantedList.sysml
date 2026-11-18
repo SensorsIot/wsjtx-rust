@@ -4,8 +4,8 @@ package WstxWantedList {
     private import WstxRequirements::'FR-026';
     private import WstxRankingPart::RankingService;
     private import WstxRankingControl::*;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::Status;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::Status;
 
     doc /* The wanted list: the calls and patterns the operator wants worked before
          every other station. The entries are ranking's data (WantedEntry); the

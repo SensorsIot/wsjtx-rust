@@ -1,6 +1,6 @@
 package WstxClubLog {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* The exchange with the Club Log service: the station asks for the Most Wanted
          list, the ranks of the DXCC entities by how much they are wanted. */

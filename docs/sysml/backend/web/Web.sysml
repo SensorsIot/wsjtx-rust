@@ -6,7 +6,7 @@ package WstxWebPart {
     private import WstxWebControl::WebContext;
     private import WstxDisplayData::DisplayDataPort;
     private import WstxStationTime::StationTimePort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def WebAdapter {
         doc /* The station's door for its browsers: it listens, serves the browser client,

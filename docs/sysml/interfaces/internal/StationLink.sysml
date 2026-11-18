@@ -4,7 +4,7 @@ package WstxStationLink {
     private import WstxDisplayData::SpectrumFrame;
     private import WstxDisplayData::DetailedSpectrumFrame;
     private import WstxStationTime::StationTime;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* How the features of the station boundary (WstxStationCommands::StationOperations)
          travel between a station's browser clients and its web function, by HTTP and on

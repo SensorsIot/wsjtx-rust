@@ -1,6 +1,6 @@
 package WstxRecordingTransfer {
     private import ScalarValues::*;
-    private import ModelNotes::NotStated;
+    private import WstxModelNotes::NotStated;
 
     doc /* How a recording comes into the profile (the import, part by part) and how the
          stored recording goes to the receive function as samples. */

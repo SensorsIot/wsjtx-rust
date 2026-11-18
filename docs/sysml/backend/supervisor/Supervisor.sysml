@@ -18,7 +18,7 @@ package WstxSupervisorPart {
     private import WstxStationTime::ClockStatusPort;
     private import WstxRecordingTransfer::RecordingTransfer;
     private import WstxWebControl::WebControlPort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def Supervisor {
         doc /* The one gate through which the operator's and the agents' commands enter

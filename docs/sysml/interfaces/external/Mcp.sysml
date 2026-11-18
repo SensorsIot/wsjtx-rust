@@ -1,6 +1,6 @@
 package WstxMcp {
     private import ScalarValues::*;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* The exchange between an agent and the MCP function of one station: the endpoint,
          the protocol versions, the tools and their results. */

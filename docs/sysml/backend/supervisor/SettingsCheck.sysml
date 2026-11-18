@@ -18,8 +18,8 @@ package WstxSettingsCheck {
     private import WstxTransmitControl::TxLevelStatus;
     private import WstxLogControl::CountryFileState;
     private import WstxHearing::FeedStatus;
-    private import ModelBindings::ImplementationState;
-    private import ModelBindings::Status;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::Status;
 
     doc /* The settings check: the one walk through the station's settings that tells
          whether the station is ready to operate. */

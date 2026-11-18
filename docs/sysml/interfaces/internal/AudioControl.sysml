@@ -1,7 +1,7 @@
 package WstxAudioControl {
     private import ScalarValues::*;
     private import WstxAudioStreams::SourceError;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* The configuration and the records of the audio function; what the supervisor
          gives audio (its configuration, its records, the request for the

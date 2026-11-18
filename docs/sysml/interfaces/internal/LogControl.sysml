@@ -1,8 +1,8 @@
 package WstxLogControl {
     private import ScalarValues::*;
     private import WstxStrategies::DupeRule;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::DiffersFromSource;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::DiffersFromSource;
 
     doc /* What the supervisor gives the log function (what the profile and the radio
          say, the operator's log commands) and what the log answers and reports. */

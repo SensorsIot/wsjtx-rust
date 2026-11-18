@@ -15,7 +15,7 @@ package WstxOperatingChain {
     private import WstxTransmitControl::CommandAnswer;
     private import WstxTransmitControl::TransmitOutcome;
     private import WstxTransmitControl::TransmitStatus;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
     port def RankedActivityPort {
         doc /* Written from ranking's side; auto uses the conjugate. */
         out item ranked : RankedList;

@@ -1,7 +1,7 @@
 // Canonical authority: SysML
 package WstxRequirements {
     private import ScalarValues::*;
-    private import ModelNotes::Conflict;
+    private import WstxModelNotes::Conflict;
 
     doc /* What the station is required to do. Each functional requirement is about the
          station as a whole; Shack.sysml gives each to the part that carries it, and its

@@ -1,9 +1,9 @@
 package WstxTransmitControl {
     private import ScalarValues::*;
     private import WstxModeProcessing::Mode;
-    private import ModelNotes::FollowsSource;
-    private import ModelNotes::DiffersFromSource;
-    private import ModelNotes::NotStated;
+    private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelNotes::NotStated;
 
     doc /* The configuration of the transmit function, its commands, their answers, and
          what transmit reports: the transmit state with its causes, the outcome of every

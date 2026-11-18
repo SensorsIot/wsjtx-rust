@@ -10,8 +10,8 @@ package WstxQsoPart {
     private import WstxOperatingChain::CompletedContactPort;
     private import WstxHearing::TargetHearingPort;
     private import WstxModeProcessing::PackProcessing;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::DetailTests;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
 
     part def QsoService {
         doc /* Level 3 of the operating chain: the contact, made by hand or started by Auto,

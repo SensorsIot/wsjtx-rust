@@ -7,8 +7,8 @@ package WstxTransmitPart {
     private import WstxAudioStreams::Playback;
     private import WstxStationTime::StationTimePort;
     private import WstxKeying::Keying;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::DetailTests;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
 
     part def TransmitService {
         doc /* The transmit function of the station. It holds the transmit state, takes

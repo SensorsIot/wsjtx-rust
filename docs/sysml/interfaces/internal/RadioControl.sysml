@@ -1,6 +1,6 @@
 package WstxRadioControl {
     private import ScalarValues::*;
-    private import ModelNotes::NotStated;
+    private import WstxModelNotes::NotStated;
     private import WstxRadioProperties::Sideband;
     private import WstxRadioProperties::ModeValue;
     private import WstxRadioProperties::DataValue;

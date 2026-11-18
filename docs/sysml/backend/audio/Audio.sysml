@@ -9,7 +9,7 @@ package WstxAudioPart {
     private import WstxAudioStreams::CaptureSamples;
     private import WstxStationTime::StationTimePort;
     private import WstxSoundDevice::SoundDevicePort;
-    private import ModelBindings::ImplementedIn;
+    private import WstxModelBindings::ImplementedIn;
 
     part def AudioInterface {
         doc /* The audio of the station. It turns the packets of the profile's radio

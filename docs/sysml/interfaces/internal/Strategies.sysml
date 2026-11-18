@@ -3,7 +3,7 @@ package WstxStrategies {
     private import ScalarValues::*;
     private import WstxRankingControl::RankingKeys;
     private import WstxRankingControl::RankingRules;
-    private import ModelNotes::FollowsSource;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* What a strategy and a contest are; what the supervisor commands the
          operating function and what operating answers; and what operating gives

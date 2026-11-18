@@ -9,8 +9,8 @@ package WstxReceivePart {
     private import WstxDisplayData::DisplayDataPort;
     private import WstxStationTime::StationTimePort;
     private import WstxStationTime::StationsHeardPort;
-    private import ModelBindings::ImplementedIn;
-    private import ModelBindings::DetailTests;
+    private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
 
     part def ReceiveService {
         doc /* The receive function of the station. It runs one job at a time. A live job
