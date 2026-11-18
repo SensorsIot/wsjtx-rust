@@ -2304,7 +2304,7 @@ async fn profile_revision(f: &Fixture) -> Value {
     v["revision"].clone()
 }
 
-// -(g). Expected values are CL-110-01 points 1, 2, 3, 5
+// Expected values are points 1, 2, 3, 5
 // and 6 as the issue states them; a station start is a new station owner (new boot id) on
 // the same disposable profile directory.
 #[tokio::test]
@@ -2361,7 +2361,7 @@ async fn tc_110_001_auto_seq_and_call_first_are_saved_across_a_station_start() {
     assert_eq!(f.id, id);
 }
 
-// -(j). Every file is written by hand into the profile
+// Every file is written by hand into the profile
 // directory before the station start; the expected values are the QsoSettingsFile format
 // of the issue (exactly {schema_version: 1, profile_id, auto_seq, call_first}, at most
 // 256 bytes; anything else: both on, and the next accepted change replaces the file).
@@ -2481,7 +2481,7 @@ fn directory_content(dir: &std::path::Path) -> Vec<(String, Option<Vec<u8>>)> {
     entries
 }
 
-// -(c). The fault is the profile store's test seam at the
+// The fault is the profile store's test seam at the
 // replace of the file (profile::tests::with_fault "replace"); the command runs through
 // Station::operate, the browser's validation and execution, on the test's own thread, which
 // is where the seam acts. A refused save leaves the values as they were.
@@ -3132,7 +3132,7 @@ fn log_qso_85(f: &Fixture, at: i64, call: &str, grid: Option<&str>) {
     assert_eq!(f.contact().facts().1.unwrap().state, "completed");
 }
 
-// -(e). Under a contest (the active
+// Under a contest (the active
 // strategy is of class contest) the serial counts only when the log accepts the contact: a
 // second QSO in a row with K1ABC (a dupe under the contest's rule) keeps the serial and the next
 // station is sent the same one; under band_grid a rover from a new grid is logged and counts; a

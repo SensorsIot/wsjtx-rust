@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// (and TC-020-002 for the
+// (and for the
 // configuration barrier). Hand-authored candidate tables and contact scenarios; the
 // expected selections, states and stop reasons are the WstxTargetChoice::PickRule and
 // WstxAutoMode::AutoStops tables written below, not automation output. Integration cases use

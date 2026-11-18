@@ -521,7 +521,7 @@ fn endpoint_id_syntax_and_friendly_name_migration() {
     assert_eq!(migrate(RENDER, &list, Flow::Render), Migration::Unchanged);
 }
 
-// -(c). Hand-written names and an expected table.
+// Hand-written names and an expected table.
 // Proves: TC-044-006
 #[test]
 fn endpoint_choices_show_names_suffixes_radio_and_missing() {

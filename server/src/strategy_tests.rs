@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 // TC-063-007, TC-063-009, TC-063-010, TC-063-011.
-// CL-042-03, CL-042-04; TC-039-001..005, TC-039-010, TC-039-030..032, TC-042-001, TC-042-002,
-// TC-042-004, TC-042-006 (each test names its case below). Hand-authored records, logs and
+// CL-042-04; TC-039-001..005, TC-039-010, TC-039-030..032, TC-042-001, TC-042-002,
+// TC-042-006 (each test names its case below). Hand-authored records, logs and
 // strategies; the expected verdicts, orders, stop reasons and requests are the WstxValueOrder
 // tables written in these tests (entities from the cited cty.dat columns), not evaluator output.
 // Integration cases use the actual station router, contact engine and #9 transmit owner
@@ -8829,7 +8829,7 @@ async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_nu
     );
 }
 
-// in FT4, TC-065-002
+// in FT4
 // Proves: TC-082-003
 // Automation never used (no configuration, no run), Detailed, Thin
 // and Off peers on the served router, flat rows. FT8: a build at each of the 4 period starts e,

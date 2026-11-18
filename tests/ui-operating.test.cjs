@@ -3385,8 +3385,8 @@ test('the PSK Reporter lines in the QSO pane, their age formats, no polling and 
   assert.deepEqual(errors,[]);
 });
 // (#97 WstxSettings::StrategyEditor and StrategySelector; it replaces
-// TC-039-046's editor of Filter, Value and Exit and its S&P/Run prompt, whose warning on Auto on
-// TC-063-012 keeps): the editor grouped Strategy and Contest with Duplicate only, the nine decisions,
+// The editor of Filter, Value and Exit and its S&P/Run prompt, whose warning on Auto on
+// keeps): the editor grouped Strategy and Contest with Duplicate only, the nine decisions,
 // one PUT of the schema 4 object written here, the contest strategy's view, a refusal at its
 // control, the rename shown once, no overflow at 360 px; the selector's groups and the saved contest
 // strategy with no contest, the same contest and another contest in force (FT8 Activity stands for
@@ -5330,7 +5330,7 @@ test('a refused full-screen request changes nothing and reports no error',{timeo
 });
 
 // ---------------------------------------------------------------- #110 saved Auto Seq and Call 1st
-// -(d). The candidate server on a disposable profile directory
+// The candidate server on a disposable profile directory
 // Proves: TC-110-005
 // configured for transmission (CAT PTT and an output device, neither opened: nothing is armed), so
 // that Call 1st is an enabled setting. Oracle: WstxQsoControl::QsoConfig, kept per profile, not the candidate's file.

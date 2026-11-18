@@ -957,7 +957,7 @@ test('authorization owner distinguishes credential lookup and retained failures'
 });
 
 // Real overlapping proof delivery creates no false-ready UI and replays no Save.
-for (const deliveryMode of ['reverse', 'lost']) test(`TC-022-006: two tabs recover after ${deliveryMode} proof delivery`, {timeout: 45000}, async t => {
+for (const deliveryMode of ['reverse', 'lost']) test(`two tabs recover after ${deliveryMode} proof delivery`, {timeout: 45000}, async t => {
   const {profiles, apps} = await fixture(t, true), p = profiles[0], context = await browser.newContext({ignoreHTTPSErrors: true});
   const held = {}, firstSeen = {}, firstHandled = {}, captured = {}, ended = {}, wire = [], inFlightProofs = new Set(), requestInfo = new WeakMap();
   const statusReplies = {A: [], B: []}, pages = {}, truth = [], frames = [], counts = {A: 0, B: 0}, testProbe = {}, protectedReads = [], expectedObserverIds = new Set(), seenObserverIds = new Set();
@@ -1200,7 +1200,7 @@ test('missing selected authorization asset fails closed', {timeout: 45000}, asyn
 });
 
 // held profile bodies across a renewal: a GET body is never applied, a save's 200 reply is its outcome.
-for (const action of ['reload', 'save']) test(`TC-022-006: held ${action} body cannot cross authorization renewal`, {timeout: 45000}, async t => {
+for (const action of ['reload', 'save']) test(`held ${action} body cannot cross authorization renewal`, {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true), p = profiles[0];
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
   const page = await context.newPage(); await page.goto(p.origin);
@@ -1648,7 +1648,7 @@ test('actual browser and server process restart', {timeout: 90000}, async t => {
 
 
 // Browser/store loss, not native CAT or durable-write failure.
-for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committed' : 'undelivered'} enrollment survives actual process restart`, {timeout: 90000}, async t => {
+for (const committed of [true, false]) test(`${committed ? 'committed' : 'undelivered'} enrollment survives actual process restart`, {timeout: 90000}, async t => {
   const assets = [], assetWork = [];
   // Completed stages: 1 initial pending/store/auth, 2 pending UI, 3 cookie, 4 processes, 5 DCL, 6 window, 7 all assertions.
   const observation = {enrollment_observation: committed ? 1 : 2, stage: 0, assertions_passed: false, asset_error: false, assets,

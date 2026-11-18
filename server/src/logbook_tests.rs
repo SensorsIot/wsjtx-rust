@@ -1631,7 +1631,7 @@ fn qso(call: &str, dial_hz: Option<u64>, ft4: bool, grid: Option<&str>) -> Recor
     r
 }
 
-// -(f), TC-085-004 (d). The terms of "the same station again"
+// The terms of "the same station again"
 // Proves: TC-085-002
 // after the newest QSO: CALL ignoring case (K1ABC/P is another station, L4), the band (BAND,
 // else the band of FREQ; unknown equals only unknown, L2) and the mode (FT8 and FT4 differ);

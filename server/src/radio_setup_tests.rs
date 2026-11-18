@@ -868,7 +868,7 @@ impl radio_setup::Hardware for Listing {
     }
 }
 
-// -(e). Hand-written endpoint list; expected labels by hand.
+// Hand-written endpoint list; expected labels by hand.
 // Proves: TC-044-006
 #[tokio::test]
 async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_input() {

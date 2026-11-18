@@ -1997,7 +1997,7 @@ async fn tc_097_011_g_unattended_the_busy_calls_count_and_tx_still_moves() {
     assert_eq!(quiet_run(f), ("stopped".into(), json!("no_client")));
 }
 
-// (CL-097-07 refusals; CL-097-04 the contest strategy's run;
+// (the refusals; CL-097-04 the contest strategy's run;
 // Proves: TC-097-015
 // hand-worked from WstxStrategies::ContestTable, WstxStrategies::BuiltinStrategies
 // and WstxLeave::LeaveRule). WW Digi on 20m, the period in force, W1DUP a dupe in the log, Auto on. The
