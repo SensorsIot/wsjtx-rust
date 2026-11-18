@@ -196,3 +196,8 @@ migrations; README in #235 or #231; where harness issues live.
    the contest built-ins) is changed in place; Factory reset puts the selected built-in back to its
    shipped state; a created strategy has none. Model change in #235 (BuiltinOffer, StrategyEditor,
    Strategies::BuiltinStrategies); #216 rewritten for the code.
+3. #122 (operator 2026-11-18, B): agents give every browser command except saving the station
+   config (profile, rig, CAT/PTT, connection, audio devices, receive settings) and saving the shack
+   settings (call sign, locator, strategies file, UDP and PSK Reporter targets); applying radio
+   settings to the rig is operating. Model: the supervisor's gate rule (#235); rule: M5.10 reworded
+   (harness change, SensorsIot/harness); #122 rewritten for the code.
