@@ -1947,6 +1947,7 @@ for (const committed of [true, false]) test(`TC-022-006: ${committed ? 'committe
 });
 
 // friendly names and endpoints of the other flow are not saved.
+// Proves: TC-022-011
 test('TC-022-001: four real windows, independent edits and HTTP input boundaries', {timeout: 60000}, async t => {
   const {profiles, apps} = await fixture(t), beforeBytes = await savedBytes(profiles);
   const {pages, context} = await browserWindows(t, profiles);

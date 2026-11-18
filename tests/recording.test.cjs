@@ -164,7 +164,7 @@ test('TC-018-002 aborted partial upload cancels its reservation without publishi
   assert.equal((await f.req('/recording/imports/'+op.id)).value.state,'cancelled');assert.equal((await f.snapshot()).recording,null);
 });
 // fresh-browser replacement after each committed-source fault.
-test('TC-018-003 review: missing original, corrupt metadata and manifest remain recoverable',{timeout:30000},async t=>{
+test('review: missing original, corrupt metadata and manifest remain recoverable',{timeout:30000},async t=>{
   for(const target of ['original','metadata','manifest','missing_manifest']){
     const f=await fixture(t);const s=await f.upload(wav(.1));
     const file=path.join(f.dir,'recordings',['manifest','missing_manifest'].includes(target)?'current.json':s.recording.id+(target==='original'?'.wav':'.json'));
@@ -182,7 +182,7 @@ test('TC-018-003 review: missing original, corrupt metadata and manifest remain 
 });
 
 // review regression, cancellation while reservation response is delayed.
-test('TC-018-003 review: cancel pending reservation response deletes returned reservation without PUT',{timeout:12000},async t=>{
+test('review: cancel pending reservation response deletes returned reservation without PUT',{timeout:12000},async t=>{
   const f=await fixture(t),p=await page(f),errors=[];p.on('pageerror',e=>errors.push(String(e)));
   let release,observed,puts=0,resource;
   const held=new Promise(r=>release=r),accepted=new Promise(r=>observed=r);t.after(()=>release());
@@ -200,7 +200,7 @@ test('TC-018-003 review: cancel pending reservation response deletes returned re
 });
 
 // review regression, JSON media grammar remains the profile grammar.
-test('TC-018-003 review: recording JSON media whitespace parity and malformed parameters',{timeout:10000},async t=>{
+test('review: recording JSON media whitespace parity and malformed parameters',{timeout:10000},async t=>{
   const f=await fixture(t);
   for(const type of ['application/json','application/json ;charset=utf-8','application/json;\tcharset=utf-8',' Application/JSON ; CHARSET=UTF-8 ']){
     const s=await f.snapshot();const r=await f.req('/recording/imports','POST',f.body(s),{'Content-Type':type});assert.equal(r.status,201,type);await f.req('/recording/imports/'+r.value.id,'DELETE');
@@ -271,7 +271,7 @@ test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeo
 });
 
 // four Windows processes with actual maximum-source work.
-test('TC-018-003 four stations retain isolated identities and release cancellation within 250 ms',{timeout:30000},async t=>{
+test('four stations retain isolated identities and release cancellation within 250 ms',{timeout:30000},async t=>{
   const stations=await Promise.all(Array.from({length:4},()=>fixture(t))),maxFrames=recordingLimit('importMaxFrames');
   await Promise.all(stations.map(f=>f.upload(wav(120))));const jobs=await Promise.all(stations.map(f=>f.replay()));
   for(let n=0;n<4;n++){const f=stations[n],foreign=jobs[(n+1)%4];assert.equal((await f.req('/recording/jobs/'+foreign.id,'DELETE')).status,404);}
@@ -280,7 +280,7 @@ test('TC-018-003 four stations retain isolated identities and release cancellati
 });
 
 // endpoint-wide TLS authentication/Origin priority and WS opt-in.
-test('TC-018-003 every recording endpoint retains TLS cookie and exact Origin boundaries',{timeout:45000},async t=>{
+test('every recording endpoint retains TLS cookie and exact Origin boundaries',{timeout:45000},async t=>{
   const f=await fixture(t,{secure:true}),s=await f.snapshot(),id=crypto.randomUUID();
   const absent=await browser.newContext({ignoreHTTPSErrors:true});t.after(()=>absent.close());
   for(const [route,method] of [['/recording','GET'],['/recording/imports','POST'],['/recording/imports/'+id,'GET'],['/recording/imports/'+id,'PUT'],['/recording/imports/'+id,'DELETE'],['/recording/replay','POST'],['/recording/jobs/'+id,'DELETE']]){

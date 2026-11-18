@@ -42,7 +42,8 @@ fn standalone_query_authority_preserves_truthful_keying_evidence() {
     );
 }
 
-// TC-009-002 standalone query-only probe. Test authority is checked before any UART open.
+// Standalone query-only probe. Test authority is checked before any UART open.
+// Proves: TC-009-002
 #[test]
 #[ignore = "Coordinator explicitly selects operator-authorized receive-only hardware test"]
 fn authorized_ic7300_frequency_query_evidence() {

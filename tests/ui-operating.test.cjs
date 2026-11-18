@@ -3840,6 +3840,7 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
 // the Most Wanted section: one button beside the date, no upload, a
 // Proves: TC-039-006
 // failure's reason in one line. The update route is routed here: no network.
+// Proves: TC-039-056
 test('TC-039-006 Settings > General Most Wanted: one button beside the date, a failure says why',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
