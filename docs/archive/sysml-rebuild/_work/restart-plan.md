@@ -171,3 +171,5 @@ migrations; README in #235 or #231; where harness issues live.
    for old forms; with none, the migrations (strategy schemas 2 and 3, the authorization hint;
    device names with #229) go in a product CR; otherwise they stay until those files are
    converted once.
+8. README status (operator 2026-11-18, A): #235 rewrites the README's status paragraph to the
+   present, from the model's statuses (to be added to #235's item 19 with the checker's answers).
