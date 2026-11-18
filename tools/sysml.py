@@ -563,8 +563,6 @@ def status_lines(entries: dict[str, dict]) -> list[str]:
         states = Counter(entries[clause]["state"] for clause in entry["clauses"])
         line = (f"{identifier} {entry['status']}: {len(entry['clauses'])} clauses, {states['implemented']} implemented, "
                 f"{states['partial']} partial, {states['target']} target")
-        if entry["stated"] and entry["stated"] != entry["status"]:
-            line += "; stated " + entry["stated"]
         lines.append(line)
         counts[entry["status"]] += 1
     lines.append(f"{len(lines)} FRs: {counts['implemented']} implemented, {counts['partial']} partial, {counts['target']} target")
@@ -2291,7 +2289,8 @@ def clause_faults(model: Model, entries: dict, served=None, ends=None) -> list[t
             elif served is not None and subject is not None:
                 written = subject.type_name()
                 if folder:
-                    if frs[0] not in served.get(written, set()):
+                    part = parts.get(folder)
+                    if frs[0] not in served.get(part.name if part else written, set()):
                         faults.append(("TR-11", key, element.line, f"{identity} derives from {frs[0]}, which its part does not serve"))
                 elif not any(frs[0] in served.get(end, set()) for end in ends.get(written, ())):
                     faults.append(("TR-11", key, element.line, f"{identity} derives from {frs[0]}, which no part at its ends serves"))
@@ -2315,6 +2314,9 @@ def case_form(key: str, element: Element, identity: str, faults: list):
         if child.kind == "objective" and all(grand.kind == "verify" for grand in child.children) and not child.docs:
             continue
         faults.append(("TR-11", key, child.line, f"{identity} holds {child.kind} {child.name or ''}".rstrip()))
+    for name in sorted(CASE_ANNOTATIONS):
+        if not has_annotation(element, name):
+            faults.append(("TR-11", key, element.line, f"{identity} has no @{name}"))
     docs = [text for _offset, text, kind in element.docs if kind == "doc"]
     if len(docs) != 1 or len(element.docs) != 1:
         faults.append(("TR-11", key, element.line, f"{identity} has {len(element.docs)} titles"))
