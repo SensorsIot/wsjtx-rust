@@ -1860,7 +1860,7 @@ fn at_skew(f: &Mcp, seconds: u64) {
     f.tick();
 }
 
-// WstxAutoControl::StrategyRun: with no client for 60 s a
+// WstxAutoMode::AutoStops: with no client for 60 s a
 // strategy selects nothing new, the exchange in progress runs on, then it stops no_client.
 // Proves: TC-039-033
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2207,7 +2207,7 @@ async fn tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it() {
     assert_eq!(f.keys(), 0);
 }
 
-// WstxValueOrder::WorkedWindowRule through the store: a QSO of this UTC date
+// WstxLogbook::WorkedBeforeQuery through the store: a QSO of this UTC date
 // counts in today, not in a window that ended before.
 // Proves: TC-039-030
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
