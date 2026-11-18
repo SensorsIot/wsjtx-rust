@@ -35,6 +35,7 @@ fn secs(base: Instant, s: f64) -> Instant {
     base + Duration::from_secs_f64(s)
 }
 
+// Proves: TC-022-009
 #[test]
 fn policy_startup_is_immediate_then_backoff_1_2_4_8_8_without_catch_up() {
     let mut p = Lifecycle::new();
@@ -172,6 +173,7 @@ fn policy_identity_change_cancels_then_attempts_after_release() {
     assert_eq!(p.step(&eligible(2), Observed::Closed, t0), Action::Attempt);
 }
 
+// Proves: TC-022-009
 #[test]
 fn policy_failed_close_quarantines_without_timed_reopen() {
     let mut p = Lifecycle::new();
@@ -428,6 +430,7 @@ impl Drop for Station {
 const FAILED: fn(Option<cat::State>) -> bool = |s| s == Some(cat::State::Unavailable);
 const READY: fn(Option<cat::State>) -> bool = |s| s == Some(cat::State::Ready);
 
+// Proves: TC-022-009
 #[test]
 fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_only() {
     let s = Station::new(Device::Absent);
@@ -512,6 +515,7 @@ fn station_open_failure_and_timeout_report_reason_and_release() {
     }
 }
 
+// Proves: TC-022-009
 #[test]
 fn station_failed_close_is_quarantined_and_never_reopened() {
     let s = Station::new(Device::Present);
@@ -535,6 +539,7 @@ fn station_failed_close_is_quarantined_and_never_reopened() {
     s.assert_read_only();
 }
 
+// Proves: TC-022-009
 #[test]
 fn station_revocation_or_invalid_commissioning_cancels_and_releases_then_no_io() {
     for gate in [
@@ -574,6 +579,7 @@ fn station_revocation_or_invalid_commissioning_cancels_and_releases_then_no_io()
     }
 }
 
+// Proves: TC-022-009
 #[test]
 fn station_missing_preconditions_cause_zero_native_open() {
     for gate in [

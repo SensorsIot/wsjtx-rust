@@ -145,6 +145,7 @@ fn tc_005_001_families_and_explicit_refusals() {
 
 /// Field Day and RTTY Roundup (#24 S2b): every oracle vector of the two families packs
 /// exactly, and every contest shape WSJT-X alters or rejects is refused.
+// Proves: TC-005-001
 #[test]
 fn tc_024_007_field_day_and_rtty_roundup_pack_exactly() {
     let mut exact = 0;

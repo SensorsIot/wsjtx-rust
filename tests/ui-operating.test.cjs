@@ -4679,7 +4679,7 @@ function assertStack(s,label){
 }
 // Transmit unavailable
 // disables CQ, Tune and Now with the reason beside them, and the pane follows each contact.state push.
-// Proves: TC-007-002
+// Proves: TC-007-002, TC-037-003
 test('TC-007-002 the transmit controls and badge follow the pushed transmit capability',{timeout:40000},async t=>{
   let capability='available',revision=3,tune=false;const contact=partner('report',{suggested_slot:null});
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -4705,6 +4705,7 @@ test('TC-007-002 the transmit controls and badge follow the pushed transmit capa
 });
 // Without an available capability a double-click and a Calling me line select
 // the station and send no enable_tx, the menu's Reply and "Auto Seq on" are not offered; Call 1st stays a setting.
+// Proves: TC-037-003
 test('no arming path sends enable_tx while the transmit capability is unavailable',{timeout:40000},async t=>{
   const period='2026-11-06T10:51:15.0000000Z';
   const standard=(to,from,toKind='call')=>({type:'standard',to:{kind:toKind,text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});

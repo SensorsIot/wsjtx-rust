@@ -310,6 +310,7 @@ fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_ta
 
 // One actor lease covers the transition,
 // including gaps between typed exchanges, without queueing or polling interference.
+// Proves: TC-009-001
 #[test]
 fn transition_lease_excludes_other_operations_and_polling_until_released() {
     let script = Arc::new(Mutex::new(Script {
