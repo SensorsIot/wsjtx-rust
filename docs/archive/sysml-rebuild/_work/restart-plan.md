@@ -145,7 +145,7 @@ migrations; README in #235 or #231; where harness issues live.
    slots of `queued_landed` are free when Alex starts.
 7. #172 and harness#120 closed (operator 2026-11-18, A). Remainders: general harness#146 (usage
    limit), #147 (settings re-read), #148 (stale workspaces), #149 (`queued_landed` count), #150
-   (spending-limit text); this project #238 (factory restart: decisions 1 to 6, Agent-Working-Rules,
+   (spending-limit text); harness#151, moved from #238 (factory restart: decisions 1 to 6, Agent-Working-Rules,
    MEMORY). After #235, as product issues: the deploy command that takes a commit alone (tool
    change), and one issue each for the flaky TC-096-001 and `clock_state_is_pushed_to_every_profile`.
 
@@ -173,3 +173,6 @@ migrations; README in #235 or #231; where harness issues live.
    converted once.
 8. README status (operator 2026-11-18, A): #235 rewrites the README's status paragraph to the
    present, from the model's statuses (to be added to #235's item 19 with the checker's answers).
+9. Where harness issues live (operator 2026-11-18): the rule stands — every harness issue, also
+   about `harness/project/`, lives in SensorsIot/harness (Harness-Changes, Intake). #238 moved
+   there as harness#151; `.github/ISSUE_TEMPLATE/harness.md` leaves this repository with it.
