@@ -234,3 +234,28 @@ migrations; README in #235 or #231; where harness issues live.
    the ignore list's code carries `@CodeDiffers` until #228.
 7. The CSS layout (PaneLayout rows) is verified by the browser test reading the row counts from the
    model and counting the visible rows (V2); the CSS stays.
+
+## Unattended run, night of 2026-11-18 (operator: "yes, go")
+
+State at start: #235 at `cr:defining`; its definer is revising the body with every answer of
+Check round 1 (checker reasons 1–8, values decisions 1–7, sweep decisions 1–6 that change the
+model, README status); master a77610ff4 (harness#152, #153 landed); Alex off (switch stop);
+the merge queue worker idle.
+
+Steps, one at a time:
+1. #235: post the definer's batch answer, write the body (`cr_state.py body --from-definition`),
+   `defined`, then Check round 2 by a fresh checker. PASS: go on. "not yet": stop (second round).
+2. Alongside, harness paths only: harness#151 (Alex settings: the radio rule positive with its new
+   decision issue, `queue.flake_issue` null, Andreas removed, `skip_labels`, `limit.json` override
+   cleared; Agent-Working-Rules and MEMORY current with the comment rule; issue pointers, dates and
+   approval records out of harness texts; #188's authority folder and test and the Project-Specifics
+   sections; `.github/ISSUE_TEMPLATE/harness.md` removed). `alex.first` and `meter: rules_start`
+   wait for #235 landed.
+3. #235: Implement (coder in a `parallel.py` workspace; the coordinator writes the model findings),
+   Review (fresh reviewer, at most two rounds), Land (merge queue, full gate).
+4. Stop at `landed`. Install, acceptance and Alex's first test wait for the operator.
+
+Stop and leave a note here when: a question needs the operator; a second "not yet" in Check or
+Review; the gate red twice; the usage limit.
+
+### Log
