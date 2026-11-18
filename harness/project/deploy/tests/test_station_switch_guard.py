@@ -1,4 +1,4 @@
-"""The role guard and station-switch.ps1 (harness#114): the tester may switch the station to the
+"""The role guard and station-switch.ps1: the tester may switch the station to the
 simulator with exactly `-To simulator`; `-To back` (no agent switches the station to ic7300),
 other arguments and every other role are refused.
 

@@ -1,6 +1,5 @@
-# Radio preflight before any agent Tx (harness retrospective 2026-11-06; wsjtx-rust#44 comment
-# 6683921947: 8 Tx periods and 2 Set level runs went out at another level than the test assumed).
-# The test sets its own power (operator, 2026-11-07), so nothing keys at an assumed level.
+# Radio preflight before any agent Tx: the test sets its own power, read back before anything
+# keys, so nothing keys at an assumed level.
 #   radio-preflight.ps1 -Holder <run name> -PowerBcd <hhll> [-NoWrite] [-Minutes 30]    take the lease, set the power
 #   radio-preflight.ps1 -Restore -Holder <run name>                          put the old power back, end the lease
 #   radio-preflight.ps1 -Status                                              who holds the lease
@@ -64,8 +63,8 @@ function Civ-Exchange($port, [byte[]]$frame, [string]$pattern) {
   }
   $null
 }
-# The CI-V read of 14 0A: the two BCD bytes of FE FE E0 94 14 0A hh ll FD, in the radio's reply
-# as wsjtx-rust#44 captured it (`14 0A 00 26`).
+# The CI-V read of 14 0A: the two BCD bytes of FE FE E0 94 14 0A hh ll FD in the radio's reply
+# (for example `14 0A 00 26`).
 function Read-Power($port, $config) {
   $m = Civ-Exchange $port ([byte[]](0xFE, 0xFE, 0x94, 0xE0, 0x14, 0x0A, 0xFD)) 'FE FE E0 94 14 0A ([0-9]{2}) ([0-9]{2}) FD'
   if (-not $m) { throw "no RF power reply from $($config.port) (read: $($script:Seen -join ' '))" }

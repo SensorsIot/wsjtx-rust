@@ -1,8 +1,7 @@
 """radio-preflight.ps1: sets the level the test names and confirms it, one live writer at a time.
 
-The fake radio is built from the captured reply in wsjtx-rust#44 comment 6683921947
-(`RF power 14 0A -> 14 0A 00 26`, COM3, IC-7300, 2026-11-06); the framing FE FE E0 94 ... FD is
-the same capture script's parser. Everything that reaches the system (serial port, station
+The fake radio is built from a captured IC-7300 reply on COM3 (`RF power 14 0A -> 14 0A 00 26`);
+the framing FE FE E0 94 ... FD is that capture's parser. Everything that reaches the system (serial port, station
 process, scheduled task, station HTTP) is a mock function; no radio or station is touched.
 """
 import json
@@ -349,7 +348,7 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
             self.assertEqual(self.lease(), "lease: free", radio)
 
     def test_without_agent_client_the_checkouts_own_client_is_used(self):
-        # #230 item 14: the default resolves tools/deploy/ from the repository root.
+        # The default resolves tools/deploy/ from the repository root.
         seen = os.path.join(self.tmp.name, "seen.txt")
         rc, out = pwsh.run(TOOL, ["-Status", "-StateDir", self.state, "-Station", self.station],
                            prelude(self.log) + seen_at("With-LeaseLock", ["AgentClient"], seen),

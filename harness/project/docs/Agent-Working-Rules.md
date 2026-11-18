@@ -16,16 +16,17 @@ rules around it. Agent memory only points here.
 - **Heavy runs yield to the gate by priority.** A long build or test run outside the gate
   runs at BelowNormal with 2 build jobs beside the gate, without waiting for `busy`, and
   reruns a timing-sensitive failure once before treating it as real.
-- **Pushing and hand-in** follow the core: only the merge queue pushes CRs, and a CR agent
-  hands in at once after red on the parent and the fast checks
-  ([CR process](../../general/core/docs/CR-Process.md#steps), steps 2-4). This project's
-  cheap contract check among them is `python tools/sysml.py traces`.
+- **Pushing and hand-in** follow the core: only the merge queue pushes CRs, and Review's
+  pass is the hand-in ([Review](../../general/core/docs/CR-Process.md#review)). Implement
+  ends with the new tests red on the parent and the fast checks
+  ([Implement](../../general/core/docs/CR-Process.md#implement)); this project's cheap
+  contract check among them is `python tools/sysml.py traces`.
 - **Per approved issue.** A session changes the main branch or the running installation
   only for an issue the operator has approved for it, each issue on its own; the approval
   is recorded on that issue. Without it the session writes the change text (outcome,
   changes, acceptance, evidence) and the operator implements it.
 - **Another person's checkout** is never touched.
-- **Development placement.** Follow [machines and roles](Project-Specifics.md#machines-and-roles): the two PCs have no roles and either does any work; HB9BLA is needed for what needs the transceiver, and both for a test of client and server across the network. The issue's `owner:` label names the machine building it. Shared model ownership, integration and publication remain serialized across both PCs.
+- **Machine.** All work runs on HB9BLA ([machine](Project-Specifics.md#machine)).
 
 ## Deciding
 
@@ -44,11 +45,12 @@ rules around it. Agent memory only points here.
 
 ## Reviews
 
-- Every repair gets the review step 3 of the CR process sets. After 10 review rounds on
-  one change the session stops and asks the operator whether to continue.
+- Every repair gets the short check of the repaired points
+  ([Review](../../general/core/docs/CR-Process.md#review)). A change gets at most two review
+  rounds; after the second, it stops for the operator.
 - A reviewer reads the candidate (`git show`, or a plain copy made with `git archive <rev> | tar -x`)
   and edits nothing. It may run the tests of what changed and of its surroundings to reproduce a
-  finding ([CR process step 3](../../general/core/docs/CR-Process.md#steps)), never the whole suite
+  finding ([Review](../../general/core/docs/CR-Process.md#review)), never the whole suite
   or a gate.
 
 ## GitHub issues are the memory
@@ -80,11 +82,13 @@ rules around it. Agent memory only points here.
 - Development and builds run on Windows (x86_64-pc-windows-msvc), with the toolchain of
   `rust-toolchain.toml` ([Project specifics](Project-Specifics.md)).
 - Upstream WSJT-X (`upstream` remote) is read for reference only; nothing is pushed there.
+- **Code comments.** A comment states what the code does now: no issue number, date or
+  change story.
 
 ## Agent role additions
 
 This project's layer of the [agent roles](../../general/core/agents/roles.md), the coordinator
-included, installed with `python harness/general/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer`.
+included, installed with `python harness/general/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer --agent issue-coordinator`.
 
 ### Role: definer
 
@@ -115,7 +119,7 @@ The checker posts its verdict as its own issue comment, in the posting form unde
 `Ready: not yet — <sha>`, naming the main commit it read, or
 `Ready: PASS — <tip> (renewed from <sha>)` for a renewal, as
 [Check](../../general/core/docs/CR-Process.md#check) says; the hook refuses any other first
-line (harness#91).
+line.
 
 ### Role: coder
 
@@ -132,8 +136,8 @@ guard:
     - '^(?!(python3?|py)(\.exe)? \S*red_on_parent\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
 ```
 
-- **Builds and tests** use the build and temp folders of the
-  [HB9BLA handover](MEMORY.md#inputs-and-unfinished-work) and run beside the gate
+- **Builds and tests** use the build and temp folders of
+  [Inputs](MEMORY.md#inputs) and run beside the gate
   as [heavy runs yield to the gate](Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
   In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
   TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
@@ -148,7 +152,7 @@ guard:
   from a session inside the worktree or by its absolute path. `WSTX_TEST_EXE` (read by
   `tests/support.cjs`) runs the tests on the role's own build; its `<worktree>` is the one
   every test file of the command lies in.
-- **Oracle generator and node red on the parent** (harness#44): the coder runs the WSJT-X
+- **Oracle generator and node red on the parent:** the coder runs the WSJT-X
   vector generator itself, from the project folder with the worktree path and only reference
   binaries under `C:/WSJT/` (`python .git/harness-parallel/worktrees/<worktree>/fixtures/transmit/generate.py
   --bin … --compare-bin …`, then `--ft4sim …`), and proves a Node test red on the parent through

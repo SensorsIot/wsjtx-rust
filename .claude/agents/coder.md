@@ -28,7 +28,7 @@ hooks:
 <!-- source harness/general/core/agents/roles.md sha256=71189ab61efb38d9a9541d2cfadeb40d491622ad404b7ca1166672c7809f3f0d -->
 <!-- source harness/general/lang/rust/standard.md sha256=6c408f1fb3f626252e9650b9cc35975f982ea1a49112f1317c0924a626b4a25e -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=05ae3519f1194389f9612624baa5437dd2676c700c89cf927f855ced61366164 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9185509d431cf396eb6c1038848ed148dc21ea0d85d5e1a3a92ba0e0930b2978 -->
 <!-- harness-role-policy {"commands": ["git -C (\\S*[/\\\\]|'[^']*[/\\\\]|\"[^\"]*[/\\\\])?\\.git[/\\\\]harness-parallel[/\\\\]worktrees[/\\\\](cr|issue-)[^\\s/\\\\'\"]+[/\\\\]?['\"]? \\S.*", "gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*red_on_parent\\.py .+", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py (submit [0-9]+ [0-9a-f]{7,40}|status( --json)?)", "(python3?|py)(\\.exe)? \\.git/harness-parallel/worktrees/(?P<wt>(cr|issue-)[A-Za-z0-9._-]+)/((?!\\.\\.?/)[A-Za-z0-9._-]+/)*install_skills\\.py --project \\.git/harness-parallel/worktrees/(?P=wt)/?( --(host (claude|codex)|skill [a-z-]+|agent [a-z-]+|check))+", "(python3?|py)(\\.exe)? (\\S*[/\\\\]|'[^']*[/\\\\]|\"[^\"]*[/\\\\])?\\.git[/\\\\]harness-parallel[/\\\\]resources[/\\\\]issue-[0-9]+[/\\\\]scripts[/\\\\][A-Za-z0-9_-]+\\.py['\"]?( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "cargo (build|check|test|clippy|fmt)(?=.* --manifest-path \\S+).*", "node --test( --test-concurrency=1| --test-name-pattern=([\\[\\]A-Za-z0-9_.,:^+=/-]+|'[^']+')){0,2}( \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\\.\\.?(?=[/\\s]|$))[A-Za-z0-9_.@+-]+)+)+", "python (\\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/)?fixtures/transmit/generate\\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+", "python -m unittest discover -s \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml/tests( -t \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?", "python -m unittest discover -s \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/deploy/tests( -t \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?", "python \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\\.py oracle", "python \\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\\.py paths \\S+", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [".git/harness-parallel/worktrees/cr*/**", ".git/harness-parallel/worktrees/issue-*/**", ".git/harness-parallel/resources/issue-*/scripts/*.py"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "^(?!(python3?|py)(\\.exe)? \\S*red_on_parent\\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\\bnode\\s+--test"], "model": {"files": [], "facts": []}} -->
 
 You implement one issue that carries `Ready: PASS`. The method is
@@ -99,8 +99,8 @@ checks. Cargo runs on your worktree by its path (`--manifest-path <worktree>/Car
 
 ## Added by the project (harness/project/docs/Agent-Working-Rules.md)
 
-- **Builds and tests** use the build and temp folders of the
-  [HB9BLA handover](../../harness/project/docs/MEMORY.md#inputs-and-unfinished-work) and run beside the gate
+- **Builds and tests** use the build and temp folders of
+  [Inputs](../../harness/project/docs/MEMORY.md#inputs) and run beside the gate
   as [heavy runs yield to the gate](../../harness/project/docs/Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
   In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
   TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
@@ -115,7 +115,7 @@ checks. Cargo runs on your worktree by its path (`--manifest-path <worktree>/Car
   from a session inside the worktree or by its absolute path. `WSTX_TEST_EXE` (read by
   `tests/support.cjs`) runs the tests on the role's own build; its `<worktree>` is the one
   every test file of the command lies in.
-- **Oracle generator and node red on the parent** (harness#44): the coder runs the WSJT-X
+- **Oracle generator and node red on the parent:** the coder runs the WSJT-X
   vector generator itself, from the project folder with the worktree path and only reference
   binaries under `C:/WSJT/` (`python .git/harness-parallel/worktrees/<worktree>/fixtures/transmit/generate.py
   --bin … --compare-bin …`, then `--ft4sim …`), and proves a Node test red on the parent through
@@ -148,4 +148,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Shell commands always refused, wherever they stand outside quotes: `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`, `^(?!(python3?|py)(\.exe)? \S*red_on_parent\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test`
 - Files you may write, relative to the project unless absolute: `.git/harness-parallel/worktrees/cr*/**`, `.git/harness-parallel/worktrees/issue-*/**`, `.git/harness-parallel/resources/issue-*/scripts/*.py`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=ae4c758843f69e7bd3057e2cfb4f997b7efa9487552ac571ea244a2625d0ac20 -->
+<!-- harness-agent-v1 sha256=41d55244e829581365ebab5a3d130c2ed9a747f0f1f7870a9665a997000ad51b -->
