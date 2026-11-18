@@ -6,116 +6,36 @@ use axum::{
 };
 use tower::ServiceExt;
 
-// Each test module of the station executable includes the test-only reader itself.
-#[allow(dead_code, clippy::duplicate_mod)]
-#[path = "../model_values.rs"]
-mod model_values;
-use model_values::{Model, Number};
-
-// The oracle reads the reviewed SysML oracle declarations through the model-value reader,
-// never the implementation negotiator.
-fn canonical_negotiations(model: &Model) -> Result<Vec<(Vec<String>, &'static str)>, String> {
-    for (name, expected) in [
-        (
-            "negotiationSourceSha256",
-            "329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56",
-        ),
-        (
-            "originalVectorArtifactSha256",
-            "d8da8bdb86485cc8691e2ad4f37afcbbaf84969c5b1a145f3a187a86d114a3c9",
-        ),
-    ] {
-        let actual = model
-            .string(&format!("WstxHttpContentCoding::{name}"))
-            .map_err(|e| e.to_string())?;
-        if actual != expected {
-            return Err("missing, changed or duplicate oracle provenance".into());
-        }
-    }
-    let table = "WstxHttpContentCoding::NegotiationOracleVector";
-    let mut vectors = Vec::new();
-    for usage in model
-        .table("WstxHttpContentCoding", table)
-        .map_err(|e| e.to_string())?
-    {
-        // Each failure names the usage it was read from.
-        let vector = || -> Result<(Vec<String>, &'static str), String> {
-            let name = usage
-                .name
-                .strip_prefix("negotiation")
-                .ok_or("malformed canonical negotiation declaration")?;
-            let ordinal: usize = name.parse().map_err(|_| "invalid negotiation ordinal")?;
-            if name != format!("{ordinal:02}") || ordinal != vectors.len() + 1 {
-                return Err("missing, duplicate or reordered negotiation case".into());
-            }
-            if usage.field_names() != ["caseId", "orderedRawHeaderFieldsJson", "expected"] {
-                return Err("extra or missing negotiation fields".into());
-            }
-            let case_id = match usage.number("caseId").map_err(|e| e.to_string())? {
-                Some(Number::Integer(id)) => usize::try_from(id).ok(),
-                _ => None,
-            }
-            .ok_or("invalid negotiation case ID")?;
-            if case_id != ordinal {
-                return Err("negotiation declaration and case ID differ".into());
-            }
-            let encoded = usage
-                .string("orderedRawHeaderFieldsJson")
-                .map_err(|e| e.to_string())?;
-            let fields: Vec<String> =
-                serde_json::from_str(&encoded).map_err(|_| "invalid ordered raw-header array")?;
-            let expected = match usage.enum_value("expected").map_err(|e| e.to_string())? {
-                (def, member) if def == "HttpCodingSelection" => match member.as_str() {
-                    "gzip" => "gzip",
-                    "identity" => "identity",
-                    "noAcceptable" => "406",
-                    _ => return Err("unknown independently specified outcome".into()),
-                },
-                _ => return Err("unknown independently specified outcome".into()),
-            };
-            Ok((fields, expected))
-        };
-        let vector = vector().map_err(|e| format!("{}: {e}", usage.qualified))?;
-        vectors.push(vector);
-    }
-    if vectors.len() != 49 {
-        return Err(format!(
-            "{table}: all 49 canonical negotiation cases are required"
-        ));
-    }
-    Ok(vectors)
-}
-
-// case8 (the test-side oracle only, not the product negotiator).
-#[test]
-fn canonical_negotiation_oracle_rejects_missing_malformed_and_duplicate_data() {
-    let model = Model::load();
-    assert_eq!(canonical_negotiations(&model).unwrap().len(), 49);
-    let source = model.package_text("WstxHttpContentCoding").unwrap();
-    for damaged in [
-        source.replace("attribute negotiation01 :", "attribute omitted01 :"),
-        source.replace("attribute :>> caseId = 2;", "attribute :>> caseId = 1;"),
-        source.replace(
-            "HttpCodingSelection::noAcceptable;",
-            "HttpCodingSelection::unknown;",
-        ),
-        source.replace(
-            "329bf57ef2a989f3128d96b845c4064dbda01a595b7e2fa1a594de77c18b9e56",
-            "changed",
-        ),
-    ] {
-        let damaged = model
-            .with_package_text("WstxHttpContentCoding", &damaged)
-            .unwrap();
-        assert!(canonical_negotiations(&damaged).is_err());
-    }
+// The independent Accept-Encoding vectors of WstxContentCoding::CodingRule, read from the
+// fixture that names their source, never from the implementation negotiator.
+fn negotiation_vectors() -> Vec<(Vec<String>, String)> {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/http/content-coding-negotiations.json"
+    ))
+    .unwrap();
+    let vectors: Vec<_> = fixture["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|vector| {
+            let fields = vector["accept_encoding"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|field| field.as_str().unwrap().to_owned())
+                .collect();
+            (fields, vector["expected"].as_str().unwrap().to_owned())
+        })
+        .collect();
+    assert_eq!(vectors.len(), 49, "all 49 negotiation vectors are required");
+    vectors
 }
 
 // case8.
 #[tokio::test]
 async fn product_encoder_matches_all_49_independent_negotiations() {
     let mut count = 0;
-    for (fields, expected) in canonical_negotiations(&Model::load()).unwrap() {
+    for (fields, expected) in negotiation_vectors() {
         let mut negotiation = HeaderMap::new();
         for field in fields {
             negotiation.append("accept-encoding", field.parse().unwrap());
@@ -133,7 +53,7 @@ async fn product_encoder_matches_all_49_independent_negotiations() {
             .headers()
             .get("content-encoding")
             .map(|v| v.to_str().unwrap());
-        match expected {
+        match expected.as_str() {
             "gzip" => {
                 assert_eq!(status, StatusCode::OK, "vector{count}");
                 assert_eq!(encoding, Some("gzip"), "vector{count}");

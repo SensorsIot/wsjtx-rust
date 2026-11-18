@@ -721,8 +721,8 @@ test('the busy marker follows WD:n and the leave label',{timeout:40000},async t=
   assert.deepEqual(errors,[]);
 });
 
-// (CL-097-04; oracle WstxStrategy::LeaveCountLabel and
-// WstxQsoControl::ContactSnapshot). In a run's own contact (tx_remaining_calls null) the QSO pane's
+// (CL-097-04; oracle WstxAutoControl::LeaveCount and
+// WstxQsoPane::AutoControls). In a run's own contact (tx_remaining_calls null) the QSO pane's
 // watchdog line is the leave label: "Leave in 4 calls" .. "Leave in 1 calls"; a contest stay "Stay ·
 // most valuable", never "WD:∞"; until_logged "Until logged", then "Until logged · leave if gone 7
 // min". Unattended (an integer count) and in a manual contact it is WD:n, 6 down to 1. Station
@@ -3503,7 +3503,7 @@ test('the editor with the nine decisions and the selector with the saved contest
   assert.equal(await page.inputValue('#strategy-name'),'contest:ft8_activity','the earlier selection');
   assert.deepEqual(errors,[]);
 });
-// (the prompt in Chromium; oracle WstxContest D11 and
+// (the prompt in Chromium; oracle WstxSettings::StrategyEditor and
 // WstxStrategies::BuiltinStrategies): with the contest built-in "WW Digi" and a saved copy "WW Digi
 // fast" the prompt offers "WW Digi" first (chosen) and then "WW Digi fast"; its controls are the
 // contest, the period and the strategy only (no operation choice, repetitions or retry pause);

@@ -1368,7 +1368,7 @@ async fn calls(
     seen
 }
 
-// (CL-097-04, hand-worked from WstxStrategy::LeaveRule calls). A spot of my
+// (CL-097-04, hand-worked from WstxLeave::LeaveRule calls). A spot of my
 // Proves: TC-097-009
 // call at K1ABC 598 s old: heard, so the leaving is at 8 (remaining 8 - k after the first 4 calls);
 // 3 s later the spot is older than 600 s and the 5th call leaves at 4 {K1ABC, repetitions}.
@@ -1649,7 +1649,7 @@ async fn moved_at(
     seen
 }
 
-// (CL-097-05, the run steps, hand-worked from WstxStrategy::TxMoveRule and
+// (CL-097-05, the run steps, hand-worked from WstxTxSlot::MoveRule and
 // Proves: TC-097-010
 // HearingFeed "He reports"). The PSK case of slot_check: K1ABC's report of another sender 120 s and
 // 599 s old is not_heard; none (the only report 601 s old is outside the window) is no_reports;
@@ -1846,7 +1846,7 @@ fn leave_of(remaining: u64, busy: bool, paused: u64) -> Value {
     json!({"mode":"calls","remaining":remaining,"busy":busy,"paused":paused,"staying":false})
 }
 
-// (CL-097-06, hand-worked from WstxStrategy::BusyPause). KE1J's
+// (CL-097-06, hand-worked from WstxStandardQso::BusyPause). KE1J's
 // Proves: TC-097-011
 // report to W9XYZ for two of his periods: leave.busy true, paused 1 and 2, remaining stays 4; his
 // RR73 ends it and the next call counts (remaining 3), his CQ the next (2). (c) three publications

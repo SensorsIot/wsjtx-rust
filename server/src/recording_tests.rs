@@ -745,105 +745,39 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     assert_eq!(r.state.lock().unwrap().operating.profile_revision, 9);
 }
 
-// case2. Independent canonical SysML data,
-// never generated from the implementation's band/frequency table.
-type CanonicalBandEntry = (String, u64, Option<u64>);
-
 // Each test module of the station executable includes the test-only reader itself.
 #[allow(dead_code, clippy::duplicate_mod)]
 #[path = "model_values.rs"]
 mod model_values;
 use model_values::{Model, Number};
 
-fn canonical_preferred_entries(
-    model: &Model,
-) -> std::result::Result<Vec<CanonicalBandEntry>, String> {
-    let pin = model
-        .string("WstxOperatingReceive::preferredTableSourceSha256")
-        .map_err(|e| e.to_string())?;
-    if pin != "e556d7ab30462ee8d8b1480f7781a7575101b71d5213c05fa1300344622cc0d4" {
-        return Err("missing, changed or duplicate preferred-table source pin".into());
-    }
-    // An integer frequency in Hz; null where the table has no cell.
-    let hertz = |value: Option<Number>, invalid: &str| match value {
-        None => Ok(None),
-        Some(Number::Integer(hz)) => u64::try_from(hz).map(Some).map_err(|_| invalid.to_string()),
-        Some(Number::Real(_)) => Err(invalid.to_string()),
-    };
-    let table = "WstxOperatingReceive::PreferredBandEntry";
-    let mut rows = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    for usage in model
-        .table("WstxOperatingReceive", table)
-        .map_err(|e| e.to_string())?
-    {
-        // Each failure names the usage it was read from.
-        let mut row = || -> std::result::Result<CanonicalBandEntry, String> {
-            let label = usage
-                .name
-                .strip_prefix("preferred")
-                .ok_or("malformed canonical preferred-band declaration")?;
-            if usage.field_names() != ["band", "ft8Hz", "ft4Hz"] {
-                return Err("extra, missing or zero-valued preferred-band field".into());
-            }
-            let band = usage.string("band").map_err(|e| e.to_string())?;
-            if band.is_empty() || band != label || !seen.insert(band.clone()) {
-                return Err("missing, duplicate or mismatched band label".into());
-            }
-            let ft8 = hertz(
-                usage.number_with_unit("ft8Hz").map_err(|e| e.to_string())?,
-                "invalid FT8 integer frequency",
-            )?
-            .ok_or("invalid FT8 integer frequency")?;
-            let ft4 = hertz(
-                usage.number_with_unit("ft4Hz").map_err(|e| e.to_string())?,
-                "invalid FT4 integer frequency",
-            )?;
-            if ft8 == 0 || ft4 == Some(0) {
-                return Err("extra, missing or zero-valued preferred-band field".into());
-            }
-            Ok((band, ft8, ft4))
-        };
-        rows.push(row().map_err(|e| format!("{}: {e}", usage.qualified))?);
-    }
-    if rows.len() != 12 || rows.iter().filter(|row| row.2.is_none()).count() != 2 {
-        return Err(format!(
-            "{table}: all 12 band rows and both unsupported FT4 cells are required"
-        ));
-    }
-    Ok(rows)
-}
-
-#[test]
-fn canonical_preferred_table_rejects_missing_malformed_and_duplicate_data() {
-    let model = Model::load();
-    assert_eq!(canonical_preferred_entries(&model).unwrap().len(), 12);
-    let source = model.package_text("WstxOperatingReceive").unwrap();
-    for damaged in [
-        source.replace("attribute preferred160m :", "attribute omitted160m :"),
-        source.replace(
-            "attribute :>> band = \"80m\";",
-            "attribute :>> band = \"160m\";",
-        ),
-        source.replace(
-            "attribute :>> ft8Hz = 1840000;",
-            "attribute :>> ft8Hz = invalid;",
-        ),
-        source.replace("attribute :>> ft4Hz = null;", "attribute :>> ft4Hz = 1;"),
-    ] {
-        let damaged = model
-            .with_package_text("WstxOperatingReceive", &damaged)
-            .unwrap();
-        assert!(canonical_preferred_entries(&damaged).is_err());
-    }
-}
+// case2. The preferred FT8 and FT4 dial frequency of each band in WSJT-X's default
+// list of frequencies (WstxOperatingSelection::BandFrequency), copied by hand from
+// WSJT-X v3.3.0-beta4 (commit 0f7d5928449ec747c3d1f6da1306f8c94404c3a9),
+// models/FrequencyList.cpp (SHA-256
+// e556d7ab30462ee8d8b1480f7781a7575101b71d5213c05fa1300344622cc0d4); never generated
+// from the implementation's band table. None: WSJT-X lists no FT4 frequency on the band.
+const PREFERRED_BAND_ENTRIES: [(&str, u64, Option<u64>); 12] = [
+    ("160m", 1_840_000, None),
+    ("80m", 3_573_000, Some(3_575_000)),
+    ("60m", 5_357_000, Some(5_357_000)),
+    ("40m", 7_074_000, Some(7_047_500)),
+    ("30m", 10_136_000, Some(10_140_000)),
+    ("20m", 14_074_000, Some(14_080_000)),
+    ("17m", 18_100_000, Some(18_104_000)),
+    ("15m", 21_074_000, Some(21_140_000)),
+    ("12m", 24_915_000, Some(24_919_000)),
+    ("10m", 28_074_000, Some(28_180_000)),
+    ("6m", 50_313_000, Some(50_318_000)),
+    ("4m", 70_154_000, None),
+];
 
 #[test]
 fn selection_preferred_entries_match_complete_canonical_integer_table() {
-    let rows = canonical_preferred_entries(&Model::load()).unwrap();
+    let rows = PREFERRED_BAND_ENTRIES;
     assert_eq!(selection::BANDS.len(), rows.len());
     for (index, (band, ft8, ft4)) in rows.iter().enumerate() {
-        assert_eq!(selection::BANDS[index], band);
+        assert_eq!(selection::BANDS[index], *band);
         for (mode, expected) in [("ft8", Some(*ft8)), ("ft4", *ft4)] {
             assert_eq!(selection::frequency(mode, band), expected, "{mode} {band}");
         }

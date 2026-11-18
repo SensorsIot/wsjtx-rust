@@ -2352,7 +2352,7 @@ fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
     assert_eq!((c.mode, c.tx4), (Mode::Ft4, Tx4::Rr73));
 }
 
-// WstxTransmit::StationModeGate: the #9 owner alone (no
+// WstxTransmitState::Admission (staleRequest): the owner alone (no
 // contact step after the switch) never keys a request of another station mode.
 #[test]
 fn the_owner_never_keys_a_request_of_another_station_mode_without_a_contact_step() {
