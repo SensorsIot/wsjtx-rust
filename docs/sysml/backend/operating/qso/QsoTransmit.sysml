@@ -91,7 +91,7 @@ package WstxQsoTransmit {
 
     requirement 'CL-010-03' {
         subject qso : QsoService;
-        doc /* qso MUST end a contact on CancelContact and HaltQso as EndRule says, and give
+        doc /* qso MUST end a contact on CancelContact and Abort as EndRule says, and give
              transmit each message once. */
         @Status { build = ImplementationState::implemented; }
     }
@@ -100,7 +100,7 @@ package WstxQsoTransmit {
     attribute def EndRule {
         doc /* CancelContact switches transmission off (Disarm, cause contactCancelled) and lets a
              transmission on the air finish; the contact is cancelled: partner and Tx1 to
-             Tx5 cleared, Tx6 due, the dialogue empty. HaltQso stops the transmission now
+             Tx5 cleared, Tx6 due, the dialogue empty. Abort stops the transmission now
              (WstxTransmitControl::Abort): PTT released, no halt, the contact cancelled as by
              CancelContact; nothing is
              handed over. The emergency Halt is the supervisor's.
@@ -205,7 +205,7 @@ package WstxQsoTransmit {
     }
 
     verification 'TC-007-004' {
-        doc /* CancelContact, HaltQso and the requests. */
+        doc /* CancelContact, Abort and the requests. */
         subject qso : QsoService;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

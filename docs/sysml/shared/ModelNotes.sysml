@@ -9,15 +9,6 @@ package WstxModelNotes {
              decision. */
         attribute what : String;
     }
-    metadata def Conflict {
-        doc /* Two statements that disagree: in the model, or between the model, the code
-             and a named reference. The text names both. */
-        attribute what : String;
-    }
-    metadata def LeftOpen {
-        doc /* A choice left to the coder on purpose, with the limit it must respect. */
-        attribute what : String;
-    }
     metadata def FollowsSource {
         doc /* The external reference a rule follows, with its version. */
         attribute reference : String;

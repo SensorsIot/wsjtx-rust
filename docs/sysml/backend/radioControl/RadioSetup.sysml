@@ -6,6 +6,7 @@ package WstxRadioSetup {
     private import WstxRadioControl::*;
     private import WstxRadioProperties::Setting;
     private import WstxRadioProperties::Agc;
+    private import WstxKeying::SplitOperation;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -164,7 +165,7 @@ package WstxRadioSetup {
              not set. With nothing to set, nothing is written.
              Every item is set by ReadCompareWriteVerify. The first item that fails
              ends the request; SettingsOutcome names it and the error.
-             The old values are not kept: the station sets nothing back. */
+             The values before the Apply are not kept. */
     }
 
     verification 'TC-044-003' {
@@ -174,6 +175,30 @@ package WstxRadioSetup {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-04'; }
         @TestedBy { test = "server/src/radio_setup_tests.rs"; }
+    }
+
+    requirement 'CL-044-19' {
+        subject radioControl : RadioControlInterface;
+        doc /* Radio control MUST hold the menu items of the last completed Apply, VOX and
+             split on the radio, and set back and show an item changed there
+             (HeldSettings). */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-009'; end #derive ::> 'CL-044-19'; }
+
+    attribute def HeldSettings {
+        doc /* What radio control holds on the radio of a ready connection.
+             The menu items the last completed ApplyRecommended set, with their values,
+             are one record of the station's memory (records); a later completed Apply
+             takes its place.
+             VOX is held off.
+             Split is held on for the split mode rig and off for every other split mode
+             (splitMode).
+             An item found changed on the radio is set back, and the operator is shown
+             that it was changed. */
+        attribute records : RadioRecords;
+        attribute splitMode : WstxKeying::SplitOperation {
+            doc /* The station's split setting. */ }
     }
 
     requirement 'CL-044-10' {
@@ -217,6 +242,7 @@ package WstxRadioSetup {
              became ready, selection for ApplyAgc.
              An attempt that failed keeps the value last reported on the same
              connection and gives the error. */
+        ref item status : AgcStatus;
     }
 
     requirement 'CL-044-18' {
@@ -239,6 +265,7 @@ package WstxRadioSetup {
              power cannot be set, leave the power to the radio. What comes of it is
              reported as PowerStatus, as AgcReport says for the AGC, and does not fail
              the change it belongs to. */
+        ref item status : PowerStatus;
     }
 
     verification 'TC-044-009' {

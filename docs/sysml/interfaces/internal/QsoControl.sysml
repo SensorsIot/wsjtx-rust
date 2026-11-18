@@ -26,11 +26,7 @@ package WstxQsoControl {
                 what = "The code names it cancel (Command::Cancel in server/src/contact.rs).";
             }
         }
-        out item haltQso : HaltQso {
-            @CodeDiffers {
-                what = "The code names it abort (Command::Abort in server/src/contact.rs).";
-            }
-        }
+        out item abort : Abort;
         out item chooseNext : ChooseNext;
         out item editMessage : EditMessage;
         out item setReport : SetReport;
@@ -204,8 +200,8 @@ package WstxQsoControl {
     item def ResetRepetitions {
         doc /* Start the repetition count anew (WstxQsoTransmit::ResetRule). */ }
     item def CancelContact { doc /* End the contact (WstxQsoTransmit::EndRule). */ }
-    item def HaltQso {
-        doc /* End the contact and stop its transmission: Halt QSO
+    item def Abort {
+        doc /* End the contact and stop its transmission: Abort QSO
              (WstxQsoTransmit::EndRule). */ }
     item def ChooseNext {
         doc /* Make this message due (WstxMessageChoice::MessageSet). */

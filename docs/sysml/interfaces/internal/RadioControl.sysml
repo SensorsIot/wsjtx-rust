@@ -407,22 +407,10 @@ package WstxRadioControl {
              it. */
         attribute band : String[0..1] { doc /* The station's band. */ }
         attribute targetPct : Integer[0..1] {
-            doc /* The band's entry of RadioConfig::powers; absent without one. */
-            @CodeDiffers {
-                what = "The code has no power status: radio control sets no output power.";
-            }
-        }
-        attribute connectionNumber : Integer[0..1] {
-            @CodeDiffers {
-                what = "The code has no power status: radio control sets no output power.";
-            }
-        }
+            doc /* The band's entry of RadioConfig::powers; absent without one. */ }
+        attribute connectionNumber : Integer[0..1];
         attribute valuePct : Integer[0..1] {
-            doc /* What the radio reported last. */
-            @CodeDiffers {
-                what = "The code has no power status: radio control sets no output power.";
-            }
-        }
+            doc /* What the radio reported last. */ }
         attribute outcome : SettingOutcome[0..1] {
             doc /* Absent until the radio has been asked. */ }
         attribute error : ControlError[0..1];

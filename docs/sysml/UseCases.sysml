@@ -43,6 +43,7 @@ package WstxUseCases {
             requirement :> WstxRadioSetup::'CL-044-02';
             requirement :> WstxRadioSetup::'CL-044-03';
             requirement :> WstxRadioSetup::'CL-044-04';
+            requirement :> WstxRadioSetup::'CL-044-19';
             requirement :> WstxCatLifecycle::'CL-022-03';
             requirement :> WstxCatControl::'CL-008-04';
             requirement :> WstxCatControl::'CL-008-06';

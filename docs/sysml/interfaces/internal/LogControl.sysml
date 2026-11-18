@@ -10,13 +10,11 @@ package WstxLogControl {
 
     attribute def LogRecord {
         doc /* One QSO of the logbook, as its ADIF fields.
-             The ADIF name of a feature is its name in upper case with an underscore
-             before each inner capital (rstSent is RST_SENT). The exceptions are usState
-             (STATE), contactId (APP_WSTXRUST_CONTACT_ID), source (APP_WSTXRUST_SOURCE) and
-             activity (APP_WSTXRUST_ACTIVITY).
+             Each feature is named as the field the log writes, in lower case.
              An absent feature is a field that is not written.
              Two records of one contact have the same fields when they agree in the
-             features from call to usState; the confirmation fields, source and activity
+             features from call to 'state'; the confirmation fields, 'app_wstxrust_source'
+             and 'app_wstxrust_activity'
              are not compared.
              The sentences on the features say what the log stores for a finished contact
              and for a saved record; a record taken from another program's file keeps
@@ -34,7 +32,8 @@ package WstxLogControl {
                 + "character outside printable ASCII; the log refuses such a value "
                 + "and changes none.";
         }
-        attribute contactId : String { doc /* The identity of the contact: a UUID. */ }
+        attribute 'app_wstxrust_contact_id' : String {
+            doc /* The identity of the contact: a UUID. */ }
         attribute call : String {
             doc /* 3 to 13 characters of A to Z, 0 to 9 and "/", with at least one
                  digit. */ }
@@ -45,14 +44,14 @@ package WstxLogControl {
         attribute submode : String[0..1] {
             doc /* FT4 with the mode MFSK, absent with FT8. The effective mode of a
                  record is its submode when the mode is MFSK, otherwise its mode. */ }
-        attribute rstSent : String[0..1] {
+        attribute 'rst_sent' : String[0..1] {
             doc /* A signed report of two digits from -50 to +49, an RST 5n9 with n from
                  2 to 9, or an RS from 52 to 59. */ }
-        attribute rstRcvd : String[0..1] { doc /* As rstSent. */ }
-        attribute qsoDate : String { doc /* The UTC date of the start, YYYYMMDD. */ }
-        attribute timeOn : String { doc /* The UTC time of the start, HHMMSS. */ }
-        attribute qsoDateOff : String { doc /* The UTC date of the end. */ }
-        attribute timeOff : String {
+        attribute 'rst_rcvd' : String[0..1] { doc /* As 'rst_sent'. */ }
+        attribute 'qso_date' : String { doc /* The UTC date of the start, YYYYMMDD. */ }
+        attribute 'time_on' : String { doc /* The UTC time of the start, HHMMSS. */ }
+        attribute 'qso_date_off' : String { doc /* The UTC date of the end. */ }
+        attribute 'time_off' : String {
             doc /* The UTC time of the end; the end is not before the start. */ }
         attribute band : String[0..1] {
             doc /* A band of the ADIF enumeration, in lower case. The effective band of a
@@ -60,39 +59,39 @@ package WstxLogControl {
                  otherwise unknown. */ }
         attribute freq : String[0..1] {
             doc /* The frequency in MHz with six decimals; it lies in the band. */ }
-        attribute stationCallsign : String { doc /* The profile's callsign. */ }
-        attribute myGridsquare : String[0..1] {
+        attribute 'station_callsign' : String { doc /* The profile's callsign. */ }
+        attribute 'my_gridsquare' : String[0..1] {
             doc /* The profile's locator; absent when the profile has none. */ }
-        attribute txPwr : String[0..1] {
+        attribute 'tx_pwr' : String[0..1] {
             doc /* Watts: a positive decimal of at most 16 characters. */ }
         attribute 'comment' : String[0..1] {
             doc /* One line of 1 to LogLimits::fieldCharactersMax printable ASCII
                  characters without "<" and ">". */ }
         attribute stx : String[0..1] { doc /* The serial sent: 1 to 4 digits. */ }
-        attribute stxString : String[0..1] {
+        attribute 'stx_string' : String[0..1] {
             doc /* This and the other contest texts: 1 to 32 printable ASCII characters
                  without "<" and ">". */ }
         attribute srx : String[0..1] { doc /* The serial received: 1 to 4 digits. */ }
-        attribute contestId : String[0..1];
-        attribute srxString : String[0..1];
+        attribute 'contest_id' : String[0..1];
+        attribute 'srx_string' : String[0..1];
         attribute 'class' : String[0..1];
-        attribute arrlSect : String[0..1];
-        attribute usState : String[0..1];
-        attribute lotwQslRcvd : String[0..1] {
-            doc /* This, qslRcvd and eqslQslRcvd: a value of the ADIF enumeration QSL Rcvd
+        attribute 'arrl_sect' : String[0..1];
+        attribute 'state' : String[0..1];
+        attribute 'lotw_qsl_rcvd' : String[0..1] {
+            doc /* This, 'qsl_rcvd' and 'eqsl_qsl_rcvd': a value of the ADIF enumeration QSL Rcvd
                  (Y, N, R, I, V), in either case. A record is confirmed when one of the
                  three is Y or V. */ }
-        attribute lotwQslrdate : String[0..1] { doc /* A date, as the other two dates. */ }
-        attribute qslRcvd : String[0..1];
+        attribute 'lotw_qslrdate' : String[0..1] { doc /* A date, as the other two dates. */ }
+        attribute 'qsl_rcvd' : String[0..1];
         attribute qslrdate : String[0..1];
-        attribute qslRcvdVia : String[0..1] {
+        attribute 'qsl_rcvd_via' : String[0..1] {
             doc /* A value of the ADIF enumeration QSL Via (B, D, E, M). */ }
-        attribute eqslQslRcvd : String[0..1];
-        attribute eqslQslrdate : String[0..1];
-        attribute source : String[0..1] {
+        attribute 'eqsl_qsl_rcvd' : String[0..1];
+        attribute 'eqsl_qslrdate' : String[0..1];
+        attribute 'app_wstxrust_source' : String[0..1] {
             doc /* The program a record taken from a file came from: 1 to 32 letters,
                  digits and "-". Absent on the station's own records. */ }
-        attribute activity : String[0..1] {
+        attribute 'app_wstxrust_activity' : String[0..1] {
             doc /* The special activity of the contact when it was logged: fieldDay,
                  rtty, euVhf, naVhf, wwDigi, arrlDigi or hound; absent for none. */ }
     }

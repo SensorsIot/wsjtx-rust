@@ -89,7 +89,7 @@ package WstxOperatingScreen {
              so one HALT is always on screen. A confirmation popup carries a HALT of its own,
              because the rest of the screen cannot be used while it is open. Every HALT and
              the key Alt+H give Halt (WstxTransmitControl) at once, without a question.
-             Esc gives HaltQso (WstxQsoControl); a held Esc that repeats gives nothing more,
+             Esc gives Abort (WstxQsoControl); a held Esc that repeats gives nothing more,
              and an open dialog or menu takes Esc first to close. */
     }
 
@@ -105,7 +105,7 @@ package WstxOperatingScreen {
         doc /* Every control is reached and used by keyboard, with visible focus; the divider
              of the signal area moves by keys. A text of the station (a call, a message, a
              name) is shown as text, never read as markup.
-             The keys of WSJT-X where the function exists: Alt+H Halt; Esc HaltQso; F1, F3,
+             The keys of WSJT-X where the function exists: Alt+H Halt; Esc Abort; F1, F3,
              F5 and ? the help; F2 Settings; F4 CancelContact; Alt+1 to Alt+6 ChooseNext of
              Tx1 to Tx6; Alt+T Tune; Alt+Q Log QSO (WstxLogControl::ResendLast); F11 and F12
              the Rx offset down and up by 1 Hz; Shift+F11 and Shift+F12 the Tx offset by

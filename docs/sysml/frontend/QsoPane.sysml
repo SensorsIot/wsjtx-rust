@@ -148,7 +148,7 @@ package WstxQsoPane {
     attribute def PaneButtons {
         doc /* In one row: CQ (CallCq, WstxQsoControl), Auto and PSK (AutoControls), Tune
              (Tune on and off, with the seconds left while on), HALT
-             (WstxOperatingScreen::HaltRule), Abort QSO (Esc) (HaltQso, while a contact is in
+             (WstxOperatingScreen::HaltRule), Abort QSO (Esc) (Abort, while a contact is in
              progress) and Log QSO (Alt+Q): ConfirmLog while a contact waits to be logged,
              else WstxLogControl::ResendLast, which gives the newest record of the logbook
              again. Log QSO closes no contact. Each button shows the state of the views only. */

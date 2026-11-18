@@ -429,11 +429,7 @@ package WstxStationCommands {
                 what = "The code takes it as the command cancel of the POST of /contact/command.";
             }
         }
-        out item haltQso : WstxQsoControl::HaltQso :> commands {
-            @CodeDiffers {
-                what = "The code takes it as the command abort of the POST of /contact/command.";
-            }
-        }
+        out item abort : WstxQsoControl::Abort :> commands;
         out item chooseNext : WstxQsoControl::ChooseNext :> commands;
         out item editMessage : WstxQsoControl::EditMessage :> commands;
         out item setReport : WstxQsoControl::SetReport :> commands;
@@ -830,16 +826,33 @@ package WstxStationCommands {
              saveConfig: the station config, with the profile, the rig, CAT and PTT, the
              connection, the audio devices and the receive settings.
              saveShack: the shack's settings, with the call sign, the locator, the
-             strategies file and the targets of UDP and PSK Reporter. */
+             strategies file and the targets of UDP and PSK Reporter.
+             udpTargets: the collection of the UDP targets, whose CreateEntry,
+             UpdateEntry and DeleteEntry an agent does not give. */
         enum saveConfig;
         enum saveShack;
+        enum udpTargets;
+    }
+    attribute def AgentCollection :> WstxProfileAccess::SettingsCollection {
+        doc /* The collections whose members an agent creates, changes and deletes: those
+             of SettingsCollection that AgentRefusal does not name. */
+        assert constraint agentCollections {
+            self == WstxProfileAccess::SettingsCollection::strategies
+                or self == WstxProfileAccess::SettingsCollection::wantedList
+                or self == WstxProfileAccess::SettingsCollection::txMacros
+                or self == WstxProfileAccess::SettingsCollection::workingFrequencies
+        }
     }
     port def AgentOperations :> StationOperations {
         doc /* The station boundary as an agent has it: StationOperations without the
-             commands AgentRefusal names. Written from the agent's side; the supervisor
-             uses the conjugate. */
+             commands AgentRefusal names, its entry commands on the collections of
+             AgentCollection only. Written from the agent's side; the supervisor uses the
+             conjugate. */
         out item :>> saveConfig[0];
         out item :>> saveShack[0];
+        out item :>> createEntry { attribute :>> collection : AgentCollection; }
+        out item :>> updateEntry { attribute :>> collection : AgentCollection; }
+        out item :>> deleteEntry { attribute :>> collection : AgentCollection; }
     }
     interface def AgentCommands {
         doc /* An agent's commands and reads, given to the supervisor, and the station's

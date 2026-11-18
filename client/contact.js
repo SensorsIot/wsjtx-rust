@@ -165,7 +165,7 @@ addEventListener('keyboard-halt',event=>{
   if(h)resultText.textContent=`Halt: ${h==='stopped'?'stopped (confirmed)':h==='idle'?'nothing was transmitting':'pending · not yet confirmed'}`;
   load();
 });
-// WstxQsoTransmit::EndRule (HaltQso): Esc and the Abort QSO button stop the transmission now
+// WstxQsoTransmit::EndRule (Abort): Esc and the Abort QSO button stop the transmission now
 // and cancel the contact; the station is not halted. The server decides what stops.
 const abortButton=document.createElement('button');abortButton.type='button';abortButton.id='abort-qso';abortButton.className='op-abort';abortButton.textContent='Abort QSO (Esc)';abortButton.title='Abort QSO (Esc): stop the transmission now and cancel the contact, without HALT';abortButton.disabled=true;
 document.querySelector('#halt-tx')?.after(abortButton);

@@ -40,7 +40,7 @@ package WstxLogbook {
              The file is contacts.adi in the shack's folder: a header and one line
              for each record, in the order in which the records were added. Every
              station of the shack logs to it.
-             A record is written as the fields of LogRecord from call to eqslQslrdate in
+             A record is written as the fields of LogRecord from call to 'eqsl_qslrdate' in
              the order of their declaration, then contactId, source and activity, then
              the fields LogRecord does not name, each with its name, type and value as
              it was read.
@@ -81,12 +81,12 @@ package WstxLogbook {
     attribute def DirectLog {
         doc /* What the log does with a FinishedContact. Each one is answered with one
              LogAnswer.
-             The record of the contact takes stationCallsign and myGridsquare from
+             The record of the contact takes 'station_callsign' and 'my_gridsquare' from
              LogContext, band as the band that contains LogContext::dialHz, and freq
              as that dial plus the Tx offset of the contact; without a dial it has
-             neither band nor freq. It has no txPwr, no comment, no source and no
-             confirmation field. Its other fields are the FinishedContact's features of
-             the same name.
+             neither band nor freq. It has no 'tx_pwr', no 'comment', no
+             'app_wstxrust_source' and no confirmation field. Its other fields are the
+             FinishedContact's features, each by its wire name (WstxStationLink::WireNames).
              A contact that is the same station again is refused (SameStationAgain).
              A record outside what LogRecord allows is not stored
              (LogError::logInvalidField); its contact is answered accepted.
@@ -447,7 +447,7 @@ package WstxLogbook {
     attribute def WorkedBeforeQuery {
         doc /* How the log makes a WorkedSet and answers a ContestPeriod.
              A WorkedSet counts the records of its WorkedWindow: every record of the
-             logbook, or those whose qsoDate lies from the first to the last date of
+             logbook, or those whose 'qso_date' lies from the first to the last date of
              the window, both included.
              A record counts for its keys of WorkedCategory ever; on its effective
              band, when it has one; and on that band in its effective mode. Bands
@@ -460,8 +460,8 @@ package WstxLogbook {
              either a set is made anew. Ranking is given the set made last at once,
              and the set that holds the change when that is made.
              An unavailable logbook gives no set.
-             A ContestPeriod is answered with the records whose start, from qsoDate and
-             timeOn, lies in the period, as PeriodQsos. */
+             A ContestPeriod is answered with the records whose start, from 'qso_date' and
+             'time_on', lies in the period, as PeriodQsos. */
         @FollowsSource {
             reference = "WSJT-X at the behaviour baseline: WorkedBefore and LogBook::match "
                 + "with highlighting by mode off, which the scope of a band in any mode "

@@ -81,7 +81,7 @@ package WstxStationAuthority {
              change nothing: Reply, CallCq, CallDx, SendNext, ResetRepetitions, SelectRow,
              EnterDx, ChooseNext, CancelContact, EditMessage, SetReport, SetTx4,
              SetTx1Skip, SetParity, SetFrequency, and Tune on.
-             Halt, HaltQso, SwitchAuto off, Tune off, SetHoldTx, a save of the
+             Halt, Abort, SwitchAuto off, Tune off, SetHoldTx, a save of the
              settings, a selection of band or mode and a selection of the strategy or
              contest pass. Auto's own commands reach qso over the operating chain and
              are not commands of the gate. */
