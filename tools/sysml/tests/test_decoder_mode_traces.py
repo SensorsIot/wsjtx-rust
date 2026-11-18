@@ -1,9 +1,9 @@
-# Guards the binding rule of TC-004-001 and TC-004-002.
-"""TC-004-001 and TC-004-002: each mode case binds only tests that select that mode and load its own fixture.
+"""TR-10 on the real model: TC-004-001 and TC-004-002 each bind only tests that select their
+mode and load its own fixture.
 
 TC-004-001 (FT4) and TC-004-002 (FT8) must bind named Rust tests whose bodies select
 that mode and load an independent fixture containing that mode's cases. An FT8-only
-executable, or a whole-file binding that only names the case in a Proves tag, does not
+executable, or a whole-file binding that only names the case in a test tag, does not
 establish FT4 correctness (and vice versa).
 """
 import importlib.util
@@ -20,7 +20,7 @@ CASES = {"TC-004-001": ("ft4", "Mode::Ft4"), "TC-004-002": ("ft8", "Mode::Ft8")}
 
 
 def executable(identifier: str) -> list[str]:
-    # The effective binding of the case wherever it is declared, in either form.
+    # The test binding of the case wherever it is declared.
     return tool.canonical_catalog(ROOT / "docs/sysml", ROOT)[identifier]["bindings"]
 
 
@@ -45,6 +45,7 @@ def fixture_modes(path: Path, body: str) -> set[str]:
 
 class DecoderModeTraceTests(unittest.TestCase):
     def test_each_mode_case_binds_tests_of_that_mode(self):
+        """TR-10: each mode case binds named tests that select its mode and load a fixture of that mode."""
         for identifier, (mode, selector) in CASES.items():
             with self.subTest(case=identifier):
                 bindings = executable(identifier)

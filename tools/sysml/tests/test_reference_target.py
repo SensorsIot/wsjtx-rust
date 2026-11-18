@@ -1,4 +1,4 @@
-"""CL-014-06: a reference's target in the resolved inventory is the deployment path of the
+"""TR-09: a reference's target in the resolved inventory is the deployment path of the
 subsetted feature, whether the model writes it from the root (the absolute form) or from
 the enclosing usage that holds it (the nested form); a redefinition is no target.
 
@@ -17,7 +17,7 @@ spec.loader.exec_module(tool)
 
 CACHE = Path.home() / ".cache/wsjtx-rust/sysml-tools"
 
-HEAD = '''package WstxFixture {
+HEAD = '''package WstxShack {
     part def Client;
     part def Authority;
     part def Frontend { part browsers[*] : Client; }
@@ -53,7 +53,7 @@ NESTED = HEAD % {
 def references(text):
     """The REF rows of the model `text` in the resolved inventory, by path."""
     with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "Fixture.sysml"
+        path = Path(directory) / "Shack.sysml"
         path.write_text(text, encoding="utf-8")
         result = tool.validate([path], CACHE, inventory=True)
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
@@ -61,8 +61,9 @@ def references(text):
 
 
 class ReferenceTargetTests(unittest.TestCase):
-    # Proves: CL-014-06
     def test_nested_and_absolute_forms_give_equal_reference_rows(self):
+        """TR-09: a reference written from the root and one written from its enclosing usage
+        give equal REF rows, rooted at the deployment."""
         absolute, nested = references(ABSOLUTE), references(NESTED)
         self.assertEqual(sorted(absolute), ["context.station.attachments.browser",
                                             "context.station.backend.stations.authority"])

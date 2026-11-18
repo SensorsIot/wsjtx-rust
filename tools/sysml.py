@@ -626,13 +626,14 @@ def path_character(text: str, index: int) -> bool:
     return 0 <= index < len(text) and PATH_CHARACTER.match(text, index) is not None
 
 
-def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, bool]]]:
+def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, bool, str]]]:
     """The (a) bindings of one model file outside comments: (spans of the insides of their
-    string literals, spans of each path in them without its `::symbol`, with whether the
-    catalog checks it), in file order. The catalog checks a declaration's own binding (its
-    kind's metadata, inside the body of a declaration it reads), every `@ImplementedIn`
-    outside the declaration bodies and every `@DetailTests`. A value joined by `+` is one
-    value, each of its literals read."""
+    string literals, and for each path in them without its `::symbol` its span, whether the
+    catalog checks it and its text), in file order. The catalog checks a declaration's own
+    binding (its kind's metadata, inside the body of a declaration it reads), every
+    `@ImplementedIn` outside the declaration bodies and every `@DetailTests`. A value joined
+    by `+` is one value: its literals are read as one text, so a path or its `::symbol` may
+    cross the end of a literal, and the span of such a path holds the joins."""
     text, code = blanked(source, strings=False), blanked(source)
     bodies = []
     for match in DECLARATION.finditer(text):
@@ -643,7 +644,7 @@ def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, i
         return any(start <= offset < end and (form is None or form in DECLARATION_BINDINGS[kind])
                    for start, end, kind in bodies)
 
-    literals = []
+    values = []
     for name, feature in BINDING_METADATA.items():
         for match in re.finditer(r"@\s*(?:\w+::)*" + name + r"\b(?!::)\s*\{", code):
             if name == "ImplementedIn":
@@ -653,20 +654,20 @@ def binding_paths(source: str) -> tuple[list[tuple[int, int]], list[tuple[int, i
             start = match.end()
             body = declaration_body(text, start - 1)
             for item in re.finditer(r"\b" + feature + r'\s*=\s*"[^"\r\n]*"(?:\s*\+\s*"[^"\r\n]*")*', code[start:start + len(body)]):
-                # A value joined by `+` is one value: each of its literals holds whole paths (TR-18).
-                for literal in re.finditer(r'"([^"\r\n]*)"', item[0]):
-                    literals.append((start + item.start() + literal.start(1), start + item.start() + literal.end(1), checked))
-    literals.sort()
+                values.append(([(start + item.start() + literal.start(1), start + item.start() + literal.end(1))
+                                for literal in re.finditer(r'"([^"\r\n]*)"', item[0])], checked))
+    values.sort()
     paths = []
-    for begin, end, checked in literals:
-        position = begin
-        for part in source[begin:end].split(";"):
+    for spans, checked in values:
+        offsets = [index for begin, end in spans for index in range(begin, end)]
+        value, position = "".join(source[begin:end] for begin, end in spans), 0
+        for part in value.split(";"):
             lead = len(part) - len(part.lstrip())
             path = part.strip().partition("::")[0].rstrip()
             if path:
-                paths.append((position + lead, position + lead + len(path), checked))
+                paths.append((offsets[position + lead], offsets[position + lead + len(path) - 1] + 1, checked, path))
             position += len(part) + 1
-    return [(begin, end) for begin, end, _checked in literals], paths
+    return [span for spans, _checked in values for span in spans], paths
 
 
 def link_targets(source: str, key: str) -> tuple[list[tuple[int, int]], list[tuple[int, int, str]]]:
@@ -701,17 +702,18 @@ def renamed(path: str, entries: list[tuple[str, str, bool]]):
     return None
 
 
-def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -> list[tuple[int, int, str, int]]:
-    """The rewrites of one model file as (start, end, new text, entry index), sorted."""
+def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -> list[tuple[int, int, str, int, str]]:
+    """The rewrites of one model file as (start, end, new text, entry index, old path),
+    sorted. A path of a joined value that crosses a literal's end becomes one literal."""
     _literals, bindings = binding_paths(source)
     excluded, links = link_targets(source, key)
     rewrites = []
-    for begin, end, _checked in bindings:
-        if result := renamed(source[begin:end], entries):
-            rewrites.append((begin, end, *result))
+    for begin, end, _checked, path in bindings:
+        if result := renamed(path, entries):
+            rewrites.append((begin, end, *result, path))
     # (c) reads the rest of each (a) string too, such as the paths in a command line; only
     # the spans (a) rewrote are left to it.
-    excluded += [(begin, end) for begin, end, _new, _index in rewrites]
+    excluded += [(begin, end) for begin, end, _new, _index, _old in rewrites]
     folder = posixpath.join("docs/sysml", posixpath.dirname(key))
     for begin, end, resolved in links:
         if result := renamed(resolved, entries):
@@ -719,7 +721,7 @@ def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -
             written = source[begin:end]
             if urllib.parse.unquote(written) != written:
                 relative = urllib.parse.quote(relative, safe="/")
-            rewrites.append((begin, end, relative, result[1]))
+            rewrites.append((begin, end, relative, result[1], source[begin:end]))
     for index, (old, new, folder_entry) in enumerate(entries):
         for match in re.finditer(re.escape(old), source):
             begin, end = match.span()
@@ -732,7 +734,7 @@ def file_rewrites(source: str, key: str, entries: list[tuple[str, str, bool]]) -
                     end += 1
             elif path_character(source, end):
                 continue
-            rewrites.append((begin, end, new + source[match.end():end], index))
+            rewrites.append((begin, end, new + source[match.end():end], index, source[begin:end]))
     return sorted(rewrites)
 
 
@@ -796,23 +798,23 @@ def rewrite_paths(listing: Path, directory: Path, root: Path) -> tuple[int, list
     for key, source in sources.items():
         rewrites = file_rewrites(source, key, entries)
         parts, position = [], 0
-        for begin, end, new, index in rewrites:
+        for begin, end, new, index, old in rewrites:
             named.add(index)
             line_start = source.rfind("\n", 0, begin) + 1
-            lines.append((key, source.count("\n", 0, begin) + 1, begin - line_start, source[begin:end], new))
+            lines.append((key, source.count("\n", 0, begin) + 1, begin - line_start, old, new))
             parts += [source[position:begin], new]
             position = end
         results[key] = "".join(parts) + source[position:]
     faults = {"Path not named by the model: " + old for index, (old, _new, _folder) in enumerate(entries) if index not in named}
     for key, text in results.items():
         _literals, bindings = binding_paths(text)
-        for begin, end, checked in bindings:
+        for begin, _end, checked, path in bindings:
             if not checked:
                 continue
             try:
-                source_binding("paths", text[begin:end], root, manual=True)
+                source_binding("paths", path, root, manual=True)
             except ValueError:
-                faults.add(f"Path missing after rename: {key}:{text.count(chr(10), 0, begin) + 1} {text[begin:end]}")
+                faults.add(f"Path missing after rename: {key}:{text.count(chr(10), 0, begin) + 1} {path}")
         for begin, end, resolved in link_targets(text, key)[1]:
             if resolved == ".." or resolved.startswith("../") or not (root / resolved).exists():
                 faults.add(f"Path missing after rename: {key}:{text.count(chr(10), 0, begin) + 1} {text[begin:end]}")
@@ -2685,7 +2687,7 @@ def agent_faults(model: Model) -> list[tuple]:
     for child in agent.children:
         if child.kind == "item" and (found := re.search(r"(?::>>|\bredefines\b)\s*(\w+)\s*\[\s*0\s*\]", child.head)):
             removed[found[1]] = child
-    for name in sorted(set(refused) - set(removed)):
+    for name in sorted((set(refused) & commands) - set(removed)):
         faults.append(("TR-06", agent.key, agent.line, f"mcp offers the refused command {name}"))
     for name in sorted(set(removed) - set(refused)):
         faults.append(("TR-06", agent.key, removed[name].line, f"mcp lacks the command {name}"))

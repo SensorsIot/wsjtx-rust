@@ -196,7 +196,7 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   `tests/model-values.cjs`); a missing, duplicate or unreadable value fails. `markers` lists
   `<key>:<line>: <Kind>[ about <targets>]: <text>` per marker of the `WstxModelNotes` kinds,
   then the counts. `paths` rewrites the paths of `@ImplementedIn`, `@TestedBy` and
-  `@DetailTests` (each literal of a joined value), relative links and whole paths in text,
+  `@DetailTests` (a joined value read as one text), relative links and whole paths in text,
   and refuses a malformed list, missing moved files or a path that stays missing.
 - **TR-21 Equivalence and identities.** `equivalence` exports each side with the Pilot and
   compares every named element by meaning; a citation of the model in the tracked files

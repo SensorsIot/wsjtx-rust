@@ -1,4 +1,4 @@
-"""TC-DOC-007: actual registry source selection and evidence invalidation."""
+"""TR-02: the suites of harness/project/suites.yaml select and fingerprint the model checks."""
 import fnmatch
 import importlib.util
 from pathlib import Path
@@ -38,6 +38,7 @@ class TraceSelectionTests(unittest.TestCase):
         cls.rows = registry.parse((ROOT / "harness/project/suites.yaml").read_text(encoding="utf-8"))
 
     def test_code_changes_select_fast_trace_check_without_full_model_suite(self):
+        """TR-02: a code change selects traces, not the full model suite."""
         for source in ("client/app.js", "server/src/profile.rs", "tests/profiles.test.cjs"):
             with self.subTest(source=source):
                 selected = registry.selection(self.rows, [source])
@@ -50,13 +51,14 @@ class TraceSelectionTests(unittest.TestCase):
                 self.assertIn("sysml-documentation", selected)
 
     # A guard of existing behaviour.
-    # Proves: CL-014-10; TC-DOC-008
     def test_model_file_in_a_subfolder_selects_the_model_suites(self):
+        """TR-02: a model file in a subfolder selects the model suites."""
         selected = registry.selection(self.rows, ["docs/sysml/backend/qso/X.sysml"])
         self.assertIn("sysml-documentation", selected)
         self.assertIn("source-model-traces", selected)
 
     def test_source_change_or_deletion_invalidates_both_evidence_fingerprints(self):
+        """TR-02: a source change or deletion invalidates both evidence fingerprints."""
         for source in ("client/app.js", "server/src/profile.rs", "tests/profiles.test.cjs"):
             self.assertFalse(registry.global_input(source, self.rows), "Regression needs a source owned by its runtime suite, not global fallback")
             before = [(source, "100644", "independent-source-before")]
@@ -69,6 +71,7 @@ class TraceSelectionTests(unittest.TestCase):
                     self.assertNotEqual(original, registry.fingerprint(row, [], self.rows))
 
     def test_every_admitted_source_root_is_fingerprinted_and_selects_fast_traces(self):
+        """TR-02: every source root is fingerprinted and selects traces."""
         for root in tool.SOURCE_BINDING_ROOTS:
             prefix = root + "/"
             for name in ("source-model-traces", "sysml-documentation"):
@@ -84,9 +87,9 @@ class TraceSelectionTests(unittest.TestCase):
         for name in not_selected:
             self.assertNotIn(name, chosen, f"{path} must not select {name}")
 
-    # T1 (#202): model edits run the working-model checks, not the Pilot validator tests.
-    # Proves: TC-DOC-007
+    # T1: model edits run the working-model checks, not the Pilot validator tests.
     def test_model_and_model_data_changes_select_the_working_model_suite_not_the_validator(self):
+        """TR-02: a model edit selects the working-model suite, not the validator tests."""
         for path in ("docs/sysml/Station.sysml", "docs/sysml/Context.sysml",
                      "docs/sysml/interfaces/internal/StationLink.sysml",
                      "tools/sysml/architecture-oracle.json", "tools/sysml/pending-structure.json"):
@@ -96,10 +99,10 @@ class TraceSelectionTests(unittest.TestCase):
             self.assert_selection("docs/sysml/backend/qso/X.sysml", ("sysml-documentation",),
                                   (CONTEXT, VALIDATOR))
 
-    # T2 (#202): the tool selects both architecture suites; the validator, its library pin
+    # T2: the tool selects both architecture suites; the validator, its library pin
     # and its test files the validator suite; the working-model module its own suite.
-    # Proves: TC-DOC-007
     def test_tool_changes_select_the_architecture_suites_they_feed(self):
+        """TR-02: a tool change selects the architecture suites it feeds."""
         self.assert_selection("tools/sysml.py", (CONTEXT, VALIDATOR), ())
         pattern, = discover_patterns(self.rows)[VALIDATOR]
         validator_tests = sorted(p.name for p in TESTS.glob("test_*.py") if fnmatch.fnmatch(p.name, pattern))
@@ -114,17 +117,17 @@ class TraceSelectionTests(unittest.TestCase):
         with self.subTest(path="tools/sysml/tests/test_structure_rules.py"):
             self.assert_selection("tools/sysml/tests/test_structure_rules.py", (), (CONTEXT, VALIDATOR))
 
-    # T3 (#202), a guard of existing behaviour: the suite definitions select both suites.
-    # Proves: TC-DOC-007
+    # T3, a guard of existing behaviour: the suite definitions select both suites.
     def test_suite_definitions_select_both_architecture_suites(self):
+        """TR-02: the suite definitions select both architecture suites."""
         architecture = [name for name in self.rows if name.startswith(VALIDATOR)]
         self.assertIn(VALIDATOR, architecture)
         self.assert_selection("harness/project/suites.yaml", architecture, ())
 
-    # T4 (#202): source edits select neither architecture suite; they invalidate the
+    # T4: source edits select neither architecture suite; they invalidate the
     # validator suite's evidence (its pinned checks read them), not the working-model suite's.
-    # Proves: TC-DOC-007
     def test_source_change_selects_neither_architecture_suite_and_invalidates_only_the_validator(self):
+        """TR-02: a source edit selects neither architecture suite and invalidates only the validator's evidence."""
         for source in SOURCES:
             with self.subTest(source=source):
                 self.assert_selection(source, (), (CONTEXT, VALIDATOR))
@@ -137,9 +140,9 @@ class TraceSelectionTests(unittest.TestCase):
                 self.assertEqual(registry.fingerprint(context, before, self.rows),
                                  registry.fingerprint(context, changed, self.rows))
 
-    # T5 (#202), a guard of existing behaviour: every test file runs in exactly one suite.
-    # Proves: TC-DOC-007
+    # T5, a guard of existing behaviour: every test file runs in exactly one suite.
     def test_every_sysml_test_file_runs_in_exactly_one_suite(self):
+        """TR-02: every tool test file runs in exactly one suite."""
         patterns = discover_patterns(self.rows)
         names = sorted(p.name for p in TESTS.glob("test_*.py"))
         self.assertIn(WORKING_MODEL_MODULE, names)

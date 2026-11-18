@@ -1,129 +1,113 @@
-"""TC-DOC-005: the context list WstxContext::OutsideThing and the black boxes of
-StationContext, read from the model text."""
+"""TR-07: the outside things of the real model's ShackContext, checked against an owner table
+of their own, read from the model text without the Pilot."""
 import importlib.util
-import json
 from pathlib import Path
 import re
 import unittest
 
 TOOL = Path(__file__).resolve().parents[2] / "sysml.py"
-spec = importlib.util.spec_from_file_location("context_tool", TOOL)
+spec = importlib.util.spec_from_file_location("architecture_context_tool", TOOL)
 tool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tool)
 
-# The model file of WstxContext, found by its package.
-ARCHITECTURE = next(path for path in tool.model_files(TOOL.parent.parent / "docs/sysml").values()
-                    if tool.file_package(tool.without_comments(path.read_text(encoding="utf-8"))) == "WstxContext")
-ORACLE_FILE = TOOL.parent / "sysml/architecture-oracle.json"
-PENDING_FILE = TOOL.parent / "sysml/pending-structure.json"
-ROOT = "context.station.backend"
+MODELS = TOOL.parent.parent / "docs/sysml"
+CONTEXT = MODELS / "Context.sysml"
+EXTERNAL = MODELS / "interfaces/external"
 
-# The target structure's table of outside things and the function that owns each, written by
-# hand: a connected one is owned by the function its port joins, an unconnected one by the
-# function of its pending entry.
+# Each outside thing of ShackContext with each of its ports and the station function that
+# port joins, written by hand: `browsers` is the frontend's browser client, any other name
+# a part of the station's backend.
 OWNERS = {
-    "catRadio": "catAdapter",
-    "flexRadio": "flexAdapter",
-    "soundDevice": "audioAdapter",
-    "browser": "web",
-    "mcpClient": "mcp",
-    "udpPeer": "udp",
-    "pskReporter": "spots",
-    "clubLog": "ranking",
-    "timeServer": "clock",
-    "windowsTime": "transmit",
-    "profileFiles": "profile",
-    "tlsFiles": "web",
-    "resourceLocks": "radioAuthority",
+    "operator": {"link": "browsers"},
+    "agent": {"link": "mcp"},
+    "catRadio": {"link": "catAdapter"},
+    "flexRadio": {"link": "flexAdapter"},
+    "soundDevice": {"link": "audioAdapter"},
+    "udpPeer": {"link": "udp"},
+    "pskReporter": {"link": "spots", "collector": "spots"},
+    "clubLog": {"link": "profile"},
+    "countryFiles": {"link": "profile"},
+    "timeServer": {"link": "clock"},
 }
-UNCONNECTED = {"browser", "windowsTime", "profileFiles", "tlsFiles", "resourceLocks"}
-STRING = r'"(?:[^"\\]|\\.)*"'
-JOIN = re.compile(r"\binterface\s+\w+\s*:\s*\w+\s+connect\s+([\w.]+)\s+to\s+(\w+)\.link\s*;")
+JOIN = re.compile(r"\binterface\s+(\w+)\s*:\s*(\w+)\s+connect\s+([\w.]+)\s+to\s+([\w.]+)\s*;")
+FUNCTION = re.compile(r"shack\.stations\.(?:backend\.(\w+)|frontend\.(browsers))\.\w+")
 
 
-def body_of(code, pattern):
-    opening = re.search(pattern, code)
-    return tool.declaration_body(code, opening.end() - 1) if opening else None
+def external_packages():
+    """The packages declared by the files of interfaces/external."""
+    return {match for path in EXTERNAL.glob("*.sysml")
+            for match in re.findall(r"^package\s+(\w+)\s*\{", path.read_text(encoding="utf-8"), re.M)}
 
 
-def context_faults(text, parts, pending):
-    """The faults of the context list in model text `text`, against the deployment's part
-    paths `parts` (dot paths) and the pending elements `pending` (name to owner); an empty
-    list when the list is as the table states."""
-    code = tool.without_comments(text)
-    body = body_of(code, r"\benum\s+def\s+OutsideThing\s*\{")
-    boxes = body_of(code, r"\bpart\s+def\s+StationContext\s*\{")
-    if body is None or boxes is None:
-        return ["no enum def OutsideThing or part def StationContext"]
+def owner_faults(text):
+    """The differences of the Context text `text` from OWNERS; [] when it is as the table
+    states."""
+    code = tool.structure_code(text)
+    tree = tool.parse_model("Context.sysml", text)
+    holder = next((element for element in tree.walk() if element.kind == "part def" and element.name == "ShackContext"), None)
+    if holder is None:
+        return ["no part def ShackContext"]
+    things = {child.name: sorted(port.name for port in child.children if port.kind == "port")
+              for child in holder.children if child.kind == "part" and child.name != "shack"}
+    imported = dict((name, package) for package, name in re.findall(r"\bimport\s+(\w+)::(\w+)\s*;", code))
+    external = external_packages()
     faults = []
-    literals = {}
-    for match in re.finditer(r"\benum\s+(\w+)\s*(\{|;)", body):
-        literals[match[1]] = tool.declaration_body(body, match.end() - 1) if match[2] == "{" else ""
-    if sorted(literals) != sorted(OWNERS):
-        faults.append("entries " + str(sorted(set(literals) ^ set(OWNERS))))
-    for name, literal in sorted(literals.items()):
-        sources = re.findall(r"@\s*FollowsSource\s*\{\s*reference\s*=\s*(" + STRING + r"(?:\s*\+\s*" + STRING
-                             + r")*)\s*;\s*\}", literal)
-        if len(sources) != 1 or not "".join(part[1:-1] for part in re.findall(STRING, sources[0])).strip():
-            faults.append("FollowsSource of " + name)
-    declared = set(re.findall(r"^\s*part\s+(\w+)\b", boxes, flags=re.M)) - {"station"}
-    if declared != set(OWNERS) | {"operator"}:
-        faults.append("black boxes " + str(sorted(declared ^ (set(OWNERS) | {"operator"}))))
-    joins = {}
-    for end, box in JOIN.findall(boxes):
-        joins.setdefault(box, []).append(end)
-    for name in sorted(OWNERS):
-        if name in UNCONNECTED:
-            owner = pending.get("WstxContext::StationContext::" + name)
-            if name in joins or owner != OWNERS[name]:
-                faults.append("owner of " + name + ": " + str(owner))
-            found = owner
-        else:
-            ends = joins.get(name, [])
-            match = re.fullmatch(r"station\.backend\.stations\.(\w+)\.\w+", ends[0]) if len(ends) == 1 else None
-            found = match[1] if match else None
-            if found != OWNERS[name]:
-                faults.append("owner of " + name + ": " + str(ends))
-        place = "context.station.backend.radioAuthority" if found == "radioAuthority" \
-            else ROOT + ".stations." + str(found)
-        if found == OWNERS[name] and place not in parts:
-            faults.append("owner outside the deployment: " + name)
-    for name in sorted(set(joins) - set(OWNERS) - {"operator"}):
-        faults.append("link of an unlisted entry: " + name)
-    if joins.get("operator") != ["station.frontend.browsers.operator"]:
-        faults.append("link of operator: " + str(joins.get("operator")))
+    if sorted(things) != sorted(OWNERS):
+        faults.append("outside things " + str(sorted(set(things) ^ set(OWNERS))))
+    joined = {}
+    for name, typed, first, second in JOIN.findall(code[holder.begin:holder.stop]):
+        for end, other in ((first, second), (second, first)):
+            if end.split(".")[0] in things:
+                joined.setdefault(end, []).append((name, typed, other))
+    for thing, ports in sorted(things.items()):
+        if thing in OWNERS and ports != sorted(OWNERS[thing]):
+            faults.append(f"ports of {thing}: {ports}")
+        for port in ports:
+            joins = joined.get(f"{thing}.{port}", [])
+            if len(joins) != 1:
+                faults.append(f"{thing}.{port} joined {len(joins)} times")
+                continue
+            name, typed, other = joins[0]
+            if imported.get(typed) not in external:
+                faults.append(f"{name} typed by {typed}, not an interface of interfaces/external")
+            found = FUNCTION.fullmatch(other)
+            function = (found[1] or found[2]) if found else other
+            if function != OWNERS.get(thing, {}).get(port):
+                faults.append(f"{thing}.{port} joined to {function}")
     return faults
 
 
-class ContextListTests(unittest.TestCase):
-    # Proves: CL-014-03, CL-014-06; TC-DOC-005
-    def test_context_list_names_each_outside_thing_once_with_owner_and_source(self):
-        """R5: the 13 entries, each with one owner in the deployment and one FollowsSource;
-        each fault of the text is refused."""
-        text = ARCHITECTURE.read_text(encoding="utf-8")
-        parts = set(json.loads(ORACLE_FILE.read_text(encoding="utf-8"))["parts"])
-        pending = json.loads(PENDING_FILE.read_text(encoding="utf-8"))["elements"]
-        self.assertEqual(len(OWNERS), 13)
-        self.assertEqual(context_faults(text, parts, pending), [])
+class ShackContextOwnerTests(unittest.TestCase):
+    def test_outside_things_join_their_owners(self):
+        """TR-07: each outside thing of ShackContext has the ports the owner table lists,
+        each joined once, through an interface of interfaces/external, to its function."""
+        self.assertEqual(owner_faults(CONTEXT.read_text(encoding="utf-8")), [])
+
+    def test_each_difference_from_the_table_is_found(self):
+        """TR-07: an outside thing added or removed, a join removed, doubled, moved to another
+        function or typed by an internal interface differs from the table."""
+        text = CONTEXT.read_text(encoding="utf-8")
         mutations = {
-            "entry removed": (r"\benum resourceLocks \{.*?\n        \}\n", "", pending),
-            "join removed": (r"interface clubLogLink : ClubLog\s+connect [\w.]+ to clubLog\.link;", "", pending),
+            "outside thing added": (r"(\n        part timeServer \{)",
+                                    r"\n        part spareService {\n            port link : ~TimeSourcePort;\n        }\1",
+                                    ["outside things ['spareService']", "spareService.link joined 0 times"]),
+            "outside thing removed": (r"\n        part timeServer \{.*?\n        \}\n", "\n",
+                                      ["outside things ['timeServer']"]),
+            "join removed": (r"interface clubLogLink : ClubLog\s+connect [\w.]+ to clubLog\.link;", "",
+                             ["clubLog.link joined 0 times"]),
             "second join": (r"(interface udpLink : Udp connect [\w.]+ to udpPeer\.link;)",
-                            r"\1\n        interface udpLink2 : Udp connect station.backend.stations.web.client to udpPeer.link;",
-                            pending),
-            "join to another function": (r"station\.backend\.stations\.clock\.timeSource",
-                                         "station.backend.stations.web.client", pending),
-            "FollowsSource removed": (r"(\benum windowsTime \{.*?)@FollowsSource \{[^}]*\}", r"\1", pending),
-            "pending entry removed": (None, None, {name: owner for name, owner in pending.items()
-                                                   if name != "WstxContext::StationContext::tlsFiles"}),
+                            r"\1\n        interface udpSpare : Udp connect shack.stations.backend.udp.peers to udpPeer.link;",
+                            ["udpPeer.link joined 2 times"]),
+            "join to another function": (r"shack\.stations\.backend\.clock\.timeSource",
+                                         "shack.stations.backend.web.timeSource", ["timeServer.link joined to web"]),
+            "internal interface": (r"interface timeSourceLink : TimeSource", "interface timeSourceLink : StationTimeLink",
+                                   ["timeSourceLink typed by StationTimeLink, not an interface of interfaces/external"]),
         }
-        for name, (pattern, replacement, listed) in mutations.items():
+        for name, (pattern, replacement, expected) in mutations.items():
             with self.subTest(mutation=name):
-                mutated = text
-                if pattern:
-                    mutated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
-                    self.assertEqual(count, 1, "mutation no longer targets the model")
-                self.assertNotEqual(context_faults(mutated, parts, listed), [])
+                mutated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+                self.assertEqual(count, 1, "mutation does not target the model")
+                self.assertEqual(owner_faults(mutated), expected)
 
 
 if __name__ == "__main__":
