@@ -11,6 +11,7 @@ package WstxReceivePart {
     private import WstxStationTime::StationsHeardPort;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
+    private import WstxModelNotes::CodeDiffers;
 
     part def ReceiveService {
         doc /* The receive function of the station. It runs one job at a time. A live job
@@ -19,8 +20,13 @@ package WstxReceivePart {
              publishes the decoded frames of each period. A replay makes spectrum rows
              of the stored recording. */
         @ImplementedIn {
-            module = "server/src/recording.rs; server/src/receive.rs; "
-                + "server/src/spectrum.rs; server/src/receive/receive_diagnostics.rs";
+            module = "server/src/recording.rs; server/src/receive.rs; server/src/spectrum.rs; "
+                + "server/src/receive/receive_diagnostics.rs; server/src/receive_http.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/receive.rs, server/src/receive_http.rs, "
+                + "server/src/recording.rs, server/src/spectrum.rs, outside server/src/receive/ "
+                + "and client/src/receive/.";
         }
         @DetailTests {
             tests = "server/src/recording_tests.rs; server/tests/receive_integration.rs";

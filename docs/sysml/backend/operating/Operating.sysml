@@ -7,6 +7,7 @@ package WstxOperatingPart {
     private import WstxStationTime::StationTimePort;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
+    private import WstxModelNotes::CodeDiffers;
 
     part def OperatingService {
         doc /* Owns what a strategy is and its rules, the built-in strategies, the
@@ -15,7 +16,13 @@ package WstxOperatingPart {
              manages. It holds the three functions that operate by a strategy and gives
              each its share of the active one: ranking what to prefer, Auto when to
              act, the contact the special activity of the contest. */
-        @ImplementedIn { module = "server/src/strategy.rs; server/src/contest.rs"; }
+        @ImplementedIn {
+            module = "server/src/strategy.rs; server/src/contest.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/contest.rs, server/src/strategy.rs, outside "
+                + "server/src/operating/ and client/src/operating/.";
+        }
         @DetailTests {
             tests = "server/src/strategy_tests.rs; server/src/strategy97_tests.rs; "
                 + "server/src/contest_tests.rs";

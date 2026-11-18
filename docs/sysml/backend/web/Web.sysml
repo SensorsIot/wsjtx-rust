@@ -7,6 +7,7 @@ package WstxWebPart {
     private import WstxDisplayData::DisplayDataPort;
     private import WstxStationTime::StationTimePort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelNotes::CodeDiffers;
 
     part def WebAdapter {
         doc /* The station's door for its browsers: it listens, serves the browser client,
@@ -16,6 +17,10 @@ package WstxWebPart {
         @ImplementedIn {
             module = "server/src/main.rs; server/src/web/link_log.rs; "
                 + "server/src/http_compression.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/http_compression.rs, server/src/main.rs, "
+                + "outside server/src/web/ and client/src/web/.";
         }
         item context : WebContext {
             doc /* Its context, as the supervisor last gave it. */ }

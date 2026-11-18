@@ -8,6 +8,7 @@ package WstxSpotsPart {
     private import WstxPskReporter::ReportCollectorPort;
     private import WstxDecodes::DecodesPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelNotes::CodeDiffers;
 
     part def SpotsService {
         doc /* Tells the station who hears it. It reads the spots of the PSK Reporter feed
@@ -15,7 +16,13 @@ package WstxSpotsPart {
              tells ranking which stations hear us, and auto, qso and the supervisor
              what that station hears. It reports the stations the station decodes to PSK
              Reporter. */
-        @ImplementedIn { module = "server/src/operating/qso/pskr.rs"; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/pskr.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/operating/qso/pskr.rs, outside "
+                + "server/src/spots/ and client/src/spots/.";
+        }
         attribute config : SpotsConfig {
             doc /* Its configuration, as the last SpotsConfiguration gave it. */ }
         port control : ~SpotsControlPort;

@@ -5,6 +5,7 @@ package WstxProfilePart {
     private import WstxClubLog::ClubLogPort;
     private import WstxCountryFiles::CountryFilesPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelNotes::CodeDiffers;
 
     part def PersistedProfile {
         doc /* The profile of one station: its saved document, its hidden store, its
@@ -15,7 +16,16 @@ package WstxProfilePart {
              recording and gives
              it to receive as samples. What a setting or a record means is defined by
              the part that uses it. */
-        @ImplementedIn { module = "server/src/profile.rs"; }
+        @ImplementedIn {
+            module = "server/src/profile.rs; server/src/recording_http.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/main.rs, server/src/most_wanted.rs, "
+                + "server/src/profile.rs, server/src/radio_control/setup.rs, "
+                + "server/src/radio_setup.rs, server/src/recording.rs, "
+                + "server/src/recording_http.rs, outside server/src/profile/ and "
+                + "client/src/profile/.";
+        }
         attribute config : StationConfig {
             doc /* The station config, as the saved document holds it. */ }
         attribute memory : StationMemory {

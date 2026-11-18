@@ -10,6 +10,7 @@ package WstxPskReporter {
     private import WstxModelBindings::TestLevel;
     private import WstxModelBindings::TestLocation;
     private import WstxModelNotes::FollowsSource;
+    private import WstxModelBindings::ImplementedIn;
 
     doc /* PSK Reporter in both directions: the feed of spots, which the station reads as
          a subscriber at a broker, and the reception reports the station sends to a
@@ -81,6 +82,7 @@ package WstxPskReporter {
              spots of its own call and of the target it follows, and wait longer after
              each ended session before it connects again (FeedSession). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn { module = "server/src/operating/qso/pskr.rs"; }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-039-27'; }
 

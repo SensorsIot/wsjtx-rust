@@ -12,6 +12,7 @@ package WstxUdp {
     private import WstxModelBindings::TestLocation;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelBindings::ImplementedIn;
 
     doc /* The messages of the WSJT-X UDP protocol that the station sends to the programs the
          operator names as targets. The layouts, the type numbers and the encodings are
@@ -50,6 +51,9 @@ package WstxUdp {
              protocol that the target selects, each on its occasion (OutboundRules,
              UdpWire). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-01'; }
 
@@ -89,6 +93,9 @@ package WstxUdp {
              with the hop limit and through the interface the target names
              (Ipv6Multicast). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-06'; }
 
@@ -111,6 +118,9 @@ package WstxUdp {
              target's Heartbeat names, and drop every other datagram without an effect
              (InboundRules). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-03'; }
 
@@ -147,6 +157,9 @@ package WstxUdp {
              window of receive and, within one pulse, the state of the station
              (StatusCadence). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-07'; }
 
@@ -172,6 +185,9 @@ package WstxUdp {
         doc /* The station MUST fill the Status message from its own state with the
              meaning WSJT-X gives each field (StatusFields). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-02'; }
 
@@ -207,6 +223,9 @@ package WstxUdp {
         doc /* The station MUST send each message decoded by the live receive job once, in
              the text form WSJT-X gives it (DecodeFields). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-04'; }
 
@@ -238,6 +257,9 @@ package WstxUdp {
         doc /* The station MUST send the delta time of a decode rounded to one decimal, the
              value WSJT-X sends (DeltaTime). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-03'; }
 
@@ -256,6 +278,9 @@ package WstxUdp {
         doc /* The station MUST send Clear when the operating selection changes to another
              band, and only then (ClearRule). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-04'; }
 
@@ -279,6 +304,9 @@ package WstxUdp {
         doc /* The station MUST send a logged contact from its stored record, with the
              exchanges WSJT-X sends for the record's activity (LoggedFields). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-05'; }
 
@@ -323,6 +351,9 @@ package WstxUdp {
         doc /* The station MUST tell a target with Close that it stops sending to it
              (CloseRule). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-06'; }
 

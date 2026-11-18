@@ -8,6 +8,7 @@ package WstxRankingPart {
     private import WstxHearing::HeardByPort;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
+    private import WstxModelNotes::CodeDiffers;
 
     part def RankingService {
         doc /* Orders the decoded stations by the rules of the active strategy and gives
@@ -16,8 +17,11 @@ package WstxRankingPart {
              records an alert for each station worth calling. It starts no contact and
              transmits nothing. */
         @ImplementedIn {
-            module = "server/src/strategy.rs; server/src/contest.rs; "
-                + "server/src/most_wanted.rs";
+            module = "server/src/most_wanted.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/dxcc.rs, server/src/most_wanted.rs, outside "
+                + "server/src/operating/ranking/ and client/src/operating/ranking/.";
         }
         @DetailTests {
             tests = "server/src/strategy_tests.rs; server/src/strategy97_tests.rs; "

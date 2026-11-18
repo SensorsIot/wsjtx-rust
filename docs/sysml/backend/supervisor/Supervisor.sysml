@@ -20,6 +20,7 @@ package WstxSupervisorPart {
     private import WstxRecordingTransfer::RecordingTransfer;
     private import WstxWebControl::WebControlPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelNotes::CodeDiffers;
 
     part def Supervisor {
         doc /* The one gate through which the operator's and the agents' commands enter
@@ -27,9 +28,15 @@ package WstxSupervisorPart {
              the start of the station, and the source from which every function learns
              what the profile says and what the other functions report. */
         @ImplementedIn {
-            module = "server/src/main.rs; server/src/station/selection.rs; "
-                + "server/src/selection_http.rs; server/src/receive/receive_startup.rs; "
-                + "server/src/recording.rs";
+            module = "server/src/station/selection.rs; server/src/selection_http.rs; "
+                + "server/src/receive/receive_startup.rs; server/src/authorization.rs; "
+                + "server/src/authorization_http.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/authorization.rs, "
+                + "server/src/authorization_http.rs, server/src/receive/receive_startup.rs, "
+                + "server/src/selection_http.rs, server/src/station/selection.rs, outside "
+                + "server/src/supervisor/ and client/src/supervisor/.";
         }
         attribute records : StartupRecords {
             doc /* Its records, as the last MemorySnapshot of the profile gave them. */ }

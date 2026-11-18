@@ -5,6 +5,7 @@ package WstxClockPart {
     private import WstxStationTime::StationsHeardPort;
     private import WstxTimeSource::TimeSourcePort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelNotes::CodeDiffers;
 
     part def ClockService {
         doc /* The station's clock. It holds station time, corrects it from the stations
@@ -12,7 +13,12 @@ package WstxClockPart {
              functions that keep time. */
         @ImplementedIn {
             module = "server/src/transmit/air.rs; server/src/transmit/clock.rs; "
-                + "server/src/transmit/windows_time.rs";
+                + "server/src/transmit/windows_time.rs; server/src/transmit/clock_http.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/transmit/air.rs, server/src/transmit/clock.rs, "
+                + "server/src/transmit/clock_http.rs, server/src/transmit/windows_time.rs, "
+                + "outside server/src/clock/ and client/src/clock/.";
         }
         port time : StationTimePort;
         port status : ClockStatusPort;

@@ -9,6 +9,7 @@ package WstxTransmitPart {
     private import WstxKeying::Keying;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
+    private import WstxModelNotes::CodeDiffers;
 
     part def TransmitService {
         doc /* The transmit function of the station. It holds the transmit state, takes
@@ -20,6 +21,10 @@ package WstxTransmitPart {
         @ImplementedIn {
             module = "server/src/transmit/service.rs; server/src/transmit/schedule.rs; "
                 + "server/src/transmit_http.rs; server/src/radio_level.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/radio_level.rs, server/src/transmit_http.rs, "
+                + "outside server/src/transmit/ and client/src/transmit/.";
         }
         @DetailTests {
             tests = "server/src/radio_level_tests.rs";

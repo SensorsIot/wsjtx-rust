@@ -6,6 +6,7 @@ package WstxFlexAdapterPart {
     private import WstxRadioControl::NativeControlPort;
     private import WstxAudioStreams::CaptureSamples;
     private import WstxFlexApi::FlexApiPort;
+    private import WstxModelNotes::CodeDiffers;
 
     part def FlexAdapter {
         doc /* The station's connection to a FlexRadio over the radio's own network API.
@@ -14,7 +15,11 @@ package WstxFlexAdapterPart {
              for radio control, and reports the state of the session. */
         @ImplementedIn {
             module = "server/src/flex/mod.rs; server/src/flexAdapter/session.rs; "
-                + "server/src/flexAdapter/wire.rs";
+                + "server/src/flexAdapter/wire.rs; server/src/flex_http.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/flex/mod.rs, server/src/flex_http.rs, outside "
+                + "server/src/flexAdapter/ and client/src/flexAdapter/.";
         }
         @DetailTests {
             tests = "server/src/flexAdapter/wire_tests.rs; "

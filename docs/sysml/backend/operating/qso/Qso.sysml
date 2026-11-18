@@ -12,6 +12,7 @@ package WstxQsoPart {
     private import WstxModeProcessing::PackProcessing;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
+    private import WstxModelNotes::CodeDiffers;
 
     part def QsoService {
         doc /* Level 3 of the operating chain: the contact, made by hand or started by Auto,
@@ -19,6 +20,10 @@ package WstxQsoPart {
         @ImplementedIn {
             module = "server/src/contact.rs; server/src/contact_http.rs; "
                 + "server/src/operating/qso/freeslot.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/contact.rs, server/src/contact_http.rs, outside "
+                + "server/src/operating/qso/ and client/src/operating/qso/.";
         }
         @DetailTests {
             tests = "server/src/contact_tests.rs; server/src/operating/qso/freeslot_tests.rs";

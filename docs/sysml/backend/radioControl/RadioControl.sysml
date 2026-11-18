@@ -9,6 +9,7 @@ package WstxRadioControlPart {
     private import WstxCat::CatPort;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
+    private import WstxModelNotes::CodeDiffers;
 
     part def RadioControlInterface {
         doc /* The control of the station's radio. It keeps the connection to the radio
@@ -22,11 +23,19 @@ package WstxRadioControlPart {
              the native network connection of a radio through its own adapter. */
         @ImplementedIn {
             module = "server/src/radio_control/mod.rs; server/src/radio_control/actor.rs; "
-                + "server/src/radio_control/executor.rs; "
-                + "server/src/radio_control/catalogue.rs; "
+                + "server/src/radio_control/executor.rs; server/src/radio_control/catalogue.rs; "
                 + "server/src/radio_control/setup.rs; server/src/transmit/codec.rs; "
                 + "server/src/radioControl/cat_lifecycle.rs; "
-                + "server/src/radioControl/radio_agc.rs; server/src/radio_setup.rs";
+                + "server/src/radioControl/radio_agc.rs; server/src/radio_setup.rs; "
+                + "server/src/radio_http.rs; server/src/radioControl/windows.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/radio_control/actor.rs, "
+                + "server/src/radio_control/catalogue.rs, server/src/radio_control/executor.rs, "
+                + "server/src/radio_control/mod.rs, server/src/radio_control/setup.rs, "
+                + "server/src/radio_http.rs, server/src/radio_setup.rs, "
+                + "server/src/transmit/codec.rs, outside server/src/radioControl/ and "
+                + "client/src/radioControl/.";
         }
         @DetailTests {
             tests = "server/tests/radio_control.rs; server/src/radio_control/setup_tests.rs";

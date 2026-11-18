@@ -10,6 +10,7 @@ package WstxAudioPart {
     private import WstxStationTime::StationTimePort;
     private import WstxSoundDevice::SoundDevicePort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelNotes::CodeDiffers;
 
     part def AudioInterface {
         doc /* The audio of the station. It turns the packets of the profile's radio
@@ -21,8 +22,14 @@ package WstxAudioPart {
              the same for both. A sound device is listed, opened and played to only on
              the first. */
         @ImplementedIn {
-            module = "server/src/audio.rs; server/src/transmit/playback.rs; "
-                + "server/src/source.rs";
+            module = "server/src/audio.rs; server/src/transmit/playback.rs; server/src/source.rs; "
+                + "server/src/audio/windows.rs";
+        }
+        @CodeDiffers {
+            what = "Its code stands in server/src/audio.rs, server/src/radio_control/setup.rs, "
+                + "server/src/radio_setup.rs, server/src/source.rs, "
+                + "server/src/transmit/playback.rs, outside server/src/audio/ and "
+                + "client/src/audio/.";
         }
         attribute config : AudioConfig {
             doc /* Its configuration, as the last AudioDevices gave it. */ }

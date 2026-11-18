@@ -5,6 +5,7 @@ package WstxBrowserClientPart {
     private import WstxStrategies::AlertSound;
     private import WstxOperatorInteraction::OperatorInteractionPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelNotes::CodeDiffers;
 
     part def BrowserClient {
         doc /* One browser window of a station: it shows the station's views to the operator
@@ -13,7 +14,14 @@ package WstxBrowserClientPart {
              operator's display choices (FrontendConfig). */
         @ImplementedIn {
             module = "client/index.html; client/app.js; client/contact.js; client/recording.js; "
-                + "client/logbook.js; client/style.css; client/recording.css";
+                + "client/logbook.js; client/style.css; client/recording.css; "
+                + "client/authorization.js";
+        }
+        @CodeDiffers {
+            what = "Its code stands in client/app.js, client/authorization.js, client/contact.js, "
+                + "client/index.html, client/logbook.js, client/recording.css, "
+                + "client/recording.js, client/style.css, outside server/src/frontend/ and "
+                + "client/src/frontend/.";
         }
         attribute config : FrontendConfig;
         port station : BrowserExchange { doc /* The station, through web. */ }
