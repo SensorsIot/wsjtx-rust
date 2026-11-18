@@ -1332,24 +1332,24 @@ fn pushed_state_paces_a_countdown_by_display_profile() {
     }
 }
 
-/// TC-007-001/003/004, TC-010-008/009, TC-050-004 in the real browser: launches
-/// tests/contact.test.cjs against this router with a request-recording peer.
-/// Mandatory release execution is registered as the contact-browser suite.
-/// The two TC-050-004 tests each wait for several real-clock FT8 periods, so each runs
-/// against its own station and browser, concurrently with the other tests (harness#28);
-/// together the three runs cover every test of the file once.
+/// Runs tests/contact.test.cjs in the real browser against this router with a
+/// request-recording peer. Mandatory release execution is registered as the
+/// contact-browser suite. The two double-click switch tests, "mid-QSO: …" and
+/// "from-CQ: …", each wait for several real-clock FT8 periods, so each runs against its
+/// own station and browser, concurrently with the other tests; together the three runs
+/// cover every test of the file once.
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn contact_browser_operating_flow() {
     let (rest, switch_mid_qso, switch_from_cq) = tokio::join!(
-        contact_browser_station(&["--test-skip-pattern=^TC-050-004 "]),
-        contact_browser_station(&["--test-name-pattern=^TC-050-004 mid-QSO: "]),
-        contact_browser_station(&["--test-name-pattern=^TC-050-004 from-CQ: "]),
+        contact_browser_station(&["--test-skip-pattern=^(mid-QSO|from-CQ): "]),
+        contact_browser_station(&["--test-name-pattern=^mid-QSO: "]),
+        contact_browser_station(&["--test-name-pattern=^from-CQ: "]),
     );
     let runs = [
-        ("other tests", rest),
-        ("TC-050-004 mid-QSO", switch_mid_qso),
-        ("TC-050-004 from-CQ", switch_from_cq),
+        ("all tests but the two switch tests", rest),
+        ("mid-QSO switch test", switch_mid_qso),
+        ("from-CQ switch test", switch_from_cq),
     ];
     // Every run's output first, so that one failure does not hide the others.
     for (label, outcome) in &runs {
