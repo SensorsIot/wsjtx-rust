@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 /// SaveContact body cap: a 1024-character comment stays admissible with worst-case
 /// two-byte JSON escaping of every character (#10 decision 2026-10-31).
-pub const SAVE_BODY_MAX: usize = 8192;
+pub const SAVE_BODY_MAX: usize = crate::limits::RECORD_BYTES;
 
 pub fn error(code: &str, field: Option<&str>) -> Response {
     let status = match code {

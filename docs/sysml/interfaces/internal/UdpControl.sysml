@@ -2,6 +2,7 @@ package WstxUdpControl {
     private import ScalarValues::*;
     private import WstxModeProcessing::Mode;
     private import WstxStationCommands::ProcessEnds;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* The configuration of the UDP sender, the state of the station it reports in
          Status, and what it reports back: the control interface between the supervisor
@@ -58,21 +59,53 @@ package WstxUdpControl {
              supervisor gives it at station start and whenever a value changes. Each
              value is the fact of the part named, as the supervisor holds it. */
         attribute stationName : String {
-            doc /* The station's name, WstxProfileAccess::ProfileConfig::displayName. */ }
+            doc /* The station's name, WstxProfileAccess::ProfileConfig::displayName. */
+            @CodeDiffers {
+                what = "The code puts the profile's display_name into configuration_name "
+                    + "(status_of in server/src/operating/qso/udp.rs).";
+            }
+        }
         attribute callsign : String[0..1] { doc /* The profile's call; absent without one. */ }
         attribute locator : String[0..1] { doc /* The profile's locator; absent without one. */ }
         attribute mode : Mode[0..1] { doc /* The station's operating mode. */ }
         attribute dialHz : Integer[0..1] {
             doc /* The dial frequency radio control confirms; absent without one. */ }
         attribute selectionBand : String[0..1] {
-            doc /* The band of the operating selection; absent while it names none. */ }
+            doc /* The band of the operating selection; absent while it names none. */
+            @CodeDiffers {
+                what = "The code reads it by operating_band of the recording "
+                    + "(server/src/operating/qso/udp.rs).";
+            }
+        }
         attribute selectionHz : Integer[0..1] {
-            doc /* The nominal frequency of the operating selection. */ }
+            doc /* The nominal frequency of the operating selection. */
+            @CodeDiffers {
+                what = "The code reads it by operating_nominal_hz of the recording (status_of in "
+                    + "server/src/operating/qso/udp.rs).";
+            }
+        }
         attribute dxCall : String[0..1] { doc /* The contact's partner call. */ }
         attribute dxGrid : String[0..1] { doc /* The contact's partner grid. */ }
-        attribute contactReport : Integer[0..1] { doc /* The report of the contact. */ }
-        attribute stationReport : Integer { doc /* The report set for the station. */ }
-        attribute rxOffsetHz : Integer { doc /* The receive offset of the contact settings. */ }
+        attribute contactReport : Integer[0..1] {
+            doc /* The report of the contact. */
+            @CodeDiffers {
+                what = "The code gives one report: the contact's, else the one set for the "
+                    + "station (StatusFacts::report in server/src/contact_http.rs).";
+            }
+        }
+        attribute stationReport : Integer {
+            doc /* The report set for the station. */
+            @CodeDiffers {
+                what = "The code gives one report: the contact's, else the one set for the "
+                    + "station (StatusFacts::report in server/src/contact_http.rs).";
+            }
+        }
+        attribute rxOffsetHz : Integer {
+            doc /* The receive offset of the contact settings. */
+            @CodeDiffers {
+                what = "The code names it rx_hz (StatusFacts in server/src/contact_http.rs).";
+            }
+        }
         attribute txOffsetHz : Integer { doc /* The transmit offset of the contact settings. */ }
         attribute activity : String[0..1] {
             doc /* The activity of the contact settings, by its name; absent for none. */ }
@@ -80,7 +113,12 @@ package WstxUdpControl {
         attribute txEnabled : Boolean { doc /* The transmit state is on. */ }
         attribute transmitting : Boolean { doc /* The station transmits. */ }
         attribute txWatchdogExpired : Boolean {
-            doc /* The contact's Tx watchdog has stopped it, until the next start. */ }
+            doc /* The contact's Tx watchdog has stopped it, until the next start. */
+            @CodeDiffers {
+                what = "The code names it tx_expired (status_of in "
+                    + "server/src/operating/qso/udp.rs).";
+            }
+        }
         attribute decoding : Boolean { doc /* Receive decodes a window now. */ }
         attribute decodeWindows : Integer {
             doc /* How many decode windows receive has begun since station start. */ }
@@ -102,7 +140,11 @@ package WstxUdpControl {
         attribute schema : Integer { doc /* The header schema of the datagrams to it. */ }
         attribute lastSendMs : Integer[0..1] {
             doc /* The time of the last datagram sent, in milliseconds of UTC since 1970.
-                 Absent until one is sent. */ }
+                 Absent until one is sent. */
+            @CodeDiffers {
+                what = "The code names it last_send_utc_ms (server/src/operating/qso/udp.rs).";
+            }
+        }
         attribute error : TargetError[0..1] { doc /* Absent while none holds. */ }
     }
     item def UdpSnapshot {
@@ -120,7 +162,12 @@ package WstxUdpControl {
              WstxUdp::CloseRule. */
         out item configuration : UdpConfigured;
         out item 'state' : UdpStationState;
-        out item processEnds : ProcessEnds;
+        out item processEnds : ProcessEnds {
+            @CodeDiffers {
+                what = "The code sends Close from its exit guard (exit in "
+                    + "server/src/operating/qso/udp.rs).";
+            }
+        }
         in item report : UdpSnapshot;
     }
     interface def UdpControl {

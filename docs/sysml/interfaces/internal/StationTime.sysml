@@ -1,5 +1,6 @@
 package WstxStationTime {
     private import ScalarValues::*;
+    private import WstxModelNotes::CodeDiffers;
 
     enum def StationTimeState {
         doc /* Whether station time agrees with the stations heard. */
@@ -17,7 +18,12 @@ package WstxStationTime {
         doc /* Station time at the moment it is read. */
         attribute utcMs : Integer {
             doc /* Milliseconds of UTC: the PC clock plus the clock's correction. */ }
-        attribute timeState : StationTimeState;
+        attribute timeState : StationTimeState {
+            @CodeDiffers {
+                what = "The code names it clock: Hardware::clock in "
+                    + "server/src/transmit/service.rs gives a ClockState.";
+            }
+        }
     }
     port def StationTimePort { out item time : StationTime; }
     interface def StationTimeLink {
@@ -81,18 +87,41 @@ package WstxStationTime {
     }
     item def ClockQuality {
         doc /* How well station time is known, and why, at the moment it is read. */
-        attribute timeState : StationTimeState { doc /* As StationTime::timeState. */ }
+        attribute timeState : StationTimeState {
+            doc /* As StationTime::timeState. */
+            @CodeDiffers {
+                what = "The code names it state (View in server/src/transmit/air.rs and the "
+                    + "clock.state event of server/src/transmit/clock_http.rs).";
+            }
+        }
         attribute correctionMs : Integer {
             doc /* What the clock adds to the PC clock. */ }
         attribute warning : ClockWarning[0..1] { doc /* Absent while none holds. */ }
         attribute timeServerState : ClockState {
-            doc /* The PC clock against the time server; unknown without a reading. */ }
+            doc /* The PC clock against the time server; unknown without a reading. */
+            @CodeDiffers {
+                what = "The code names it ntp_state in View of server/src/transmit/air.rs, "
+                    + "and state of ntp in the clock.state event.";
+            }
+        }
         attribute timeServer : TimeServerReading[0..1] {
-            doc /* Absent before the first valid answer. */ }
+            doc /* Absent before the first valid answer. */
+            @CodeDiffers {
+                what = "The code names it ntp in View of server/src/transmit/air.rs, and "
+                    + "measurement of ntp in the clock.state event.";
+            }
+        }
         attribute windowsTime : WindowsTimeState;
         attribute air : AirEstimate[0..1] { doc /* Absent before the first estimate. */ }
     }
-    port def ClockStatusPort { out item quality : ClockQuality; }
+    port def ClockStatusPort {
+        out item quality : ClockQuality {
+            @CodeDiffers {
+                what = "The code names it clock in the clock.state event "
+                    + "(server/src/transmit/clock_http.rs).";
+            }
+        }
+    }
     interface def ClockStatus {
         doc /* Written from the clock's side: the clock gives its quality to the supervisor. */
         end clock : ClockStatusPort;

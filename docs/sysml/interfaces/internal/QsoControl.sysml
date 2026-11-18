@@ -5,6 +5,7 @@ package WstxQsoControl {
     private import WstxTransmitControl::TransmitFailure;
     private import WstxModeProcessing::Mode;
     private import WstxModeProcessing::PeriodParity;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* What the supervisor gives the qso function (its context with its
          configuration, the commands of the operator and of agents) and what qso answers
@@ -20,8 +21,16 @@ package WstxQsoControl {
         out item callDx : CallDx;
         out item sendNext : SendNext;
         out item resetRepetitions : ResetRepetitions;
-        out item cancelContact : CancelContact;
-        out item haltQso : HaltQso;
+        out item cancelContact : CancelContact {
+            @CodeDiffers {
+                what = "The code names it cancel (Command::Cancel in server/src/contact.rs).";
+            }
+        }
+        out item haltQso : HaltQso {
+            @CodeDiffers {
+                what = "The code names it abort (Command::Abort in server/src/contact.rs).";
+            }
+        }
         out item chooseNext : ChooseNext;
         out item editMessage : EditMessage;
         out item setReport : SetReport;
@@ -31,8 +40,16 @@ package WstxQsoControl {
         out item setHoldTx : SetHoldTx;
         out item setParity : SetParity;
         out item tune : Tune;
-        out item confirmLog : ConfirmLog;
-        out item discardLog : DiscardLog;
+        out item confirmLog : ConfirmLog {
+            @CodeDiffers {
+                what = "The code has no such command: every completed contact is logged.";
+            }
+        }
+        out item discardLog : DiscardLog {
+            @CodeDiffers {
+                what = "The code has no such command: every completed contact is logged.";
+            }
+        }
         in item answer : QsoAnswer;
         in item 'state' : QsoState;
         in item openSlots : OpenSlots;
@@ -53,7 +70,12 @@ package WstxQsoControl {
             doc /* Call 1st (WstxStandardQso::CallFirstRule). */ }
         attribute repetitionLimit : Integer = 6 {
             doc /* How often one message is sent (WstxQsoTransmit::RepetitionLimit). From 1
-                 to 99. */ }
+                 to 99. */
+            @CodeDiffers {
+                what = "The limit is tx_calls of server/src/transmit/service.rs, 6 at station "
+                    + "start and not saved.";
+            }
+        }
         attribute activity : Activity = Activity::none {
             doc /* The operator's special activity (WstxSpecialActivities::ActivityRule). */ }
         attribute exchange : String[0..1] {
@@ -74,10 +96,18 @@ package WstxQsoControl {
     attribute def QsoShared {
         doc /* qso's part of the shack's settings (WstxProfileAccess::ShackSettings). */
         attribute macros : TxMacro[0..*] ordered {
-            doc /* The free texts Tx5 offers; at first one, TNX 73 GL. */ }
+            doc /* The free texts Tx5 offers; at first one, TNX 73 GL. */
+            @CodeDiffers {
+                what = "The code has no Tx macros.";
+            }
+        }
         attribute logAutomatically : Boolean = true {
             doc /* A contact by hand is logged at its completion; off, it waits for the
-                 operator (WstxStandardQso::LogConfirmRule). */ }
+                 operator (WstxStandardQso::LogConfirmRule). */
+            @CodeDiffers {
+                what = "The code has no such setting: every completed contact is logged.";
+            }
+        }
     }
 
     item def QsoContext {
@@ -188,7 +218,12 @@ package WstxQsoControl {
     }
     item def SetReport {
         doc /* The report sent to the partner (WstxMessageChoice::MessageSet). */
-        attribute reportDb : Integer;
+        attribute reportDb : Integer {
+            @CodeDiffers {
+                what = "The code names it report (the action set_report in "
+                    + "server/src/contact_http.rs).";
+            }
+        }
     }
     item def SetTx1Skip {
         doc /* Skip Tx1 (WstxMessageChoice::MessageSet). */
@@ -253,7 +288,11 @@ package WstxQsoControl {
         enum transmitUnavailable;
         enum busy;
         enum clockNotSynchronized;
-        enum logPending;
+        enum logPending {
+            @CodeDiffers {
+                what = "No command is refused so: every completed contact is logged.";
+            }
+        }
     }
     item def QsoAnswer {
         doc /* The answer to each command of the operator or an agent: accepted, or
@@ -262,7 +301,12 @@ package WstxQsoControl {
         attribute field : String[0..1] { doc /* The value the refusal is about. */ }
         attribute blockedBy : TransmitRefusal[0..1] {
             doc /* An accepted start that cannot transmit: the reason
-                 (WstxQsoTransmit::BlockedStartRule). */ }
+                 (WstxQsoTransmit::BlockedStartRule). */
+            @CodeDiffers {
+                what = "The receipt of an accepted command names no reason; the refusal of the "
+                    + "snapshot's transmit view gives it (server/src/contact_http.rs).";
+            }
+        }
     }
 
     attribute def DialogueEntry {
@@ -300,18 +344,33 @@ package WstxQsoControl {
         attribute holdTx : Boolean;
         attribute tx1Skip : Boolean;
         attribute parity : PeriodParity { doc /* The parity of the own CQ. */ }
-        attribute reportDb : Integer { doc /* The report sent to the next partner. */ }
+        attribute reportDb : Integer {
+            doc /* The report sent to the next partner. */
+            @CodeDiffers {
+                what = "The code names it report (the settings of the snapshot in "
+                    + "server/src/contact_http.rs).";
+            }
+        }
         attribute rxHz : Integer;
         attribute txHz : Integer;
         attribute txSlot : TxChoice[0..1] {
             doc /* qso's last choice of a Tx offset. Absent before the first. */ }
         attribute contact : QsoContact[0..1];
         attribute logPending : QsoContact[0..1] {
-            doc /* A completed contact by hand that waits for ConfirmLog or DiscardLog. */ }
+            doc /* A completed contact by hand that waits for ConfirmLog or DiscardLog. */
+            @CodeDiffers {
+                what = "The code holds no such contact: every completed contact is logged.";
+            }
+        }
         attribute repetitionsLeft : Integer[0..1] {
             doc /* The sends left of the message due while transmission is on, 0 while it
                  is off; absent while the limit does not bound the contact
-                 (WstxQsoTransmit::RepetitionLimit). */ }
+                 (WstxQsoTransmit::RepetitionLimit). */
+            @CodeDiffers {
+                what = "The code names it tx_remaining_calls (the watchdog of the snapshot in "
+                    + "server/src/contact_http.rs).";
+            }
+        }
         attribute expired : Boolean {
             doc /* The repetition limit stopped transmission; until the next start. */ }
         attribute busyWith : String[0..1] {
@@ -359,7 +418,11 @@ package WstxQsoControl {
                  pause not counted. */ }
         attribute txHz : Integer { doc /* The Tx offset of the contact or CQ. */ }
         attribute reportDb : Integer[0..1] {
-            doc /* The report the partner sent in this contact. Absent before it. */ }
+            doc /* The report the partner sent in this contact. Absent before it. */
+            @CodeDiffers {
+                what = "The code names it report_rcvd (Facts in server/src/contact_http.rs).";
+            }
+        }
         attribute busyWith : String[0..1] {
             doc /* The call the partner is in another QSO with. Absent while he is in
                  none. */ }

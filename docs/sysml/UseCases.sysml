@@ -661,6 +661,7 @@ package WstxUseCases {
             requirement :> WstxOperatingScreen::'CL-051-02';
             requirement :> WstxOperatingScreen::'CL-051-03';
             requirement :> WstxStationAuthority::'CL-006-07';
+            requirement :> WstxStationLink::'CL-003-10';
         }
     }
 

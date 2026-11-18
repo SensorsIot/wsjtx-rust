@@ -226,7 +226,7 @@ pub(crate) fn parse_config(v: &Value) -> Result<Config, String> {
 }
 
 /// CL-112-01 the base form of the instance name of a CAT or no-radio profile.
-pub(crate) fn base_name(document: &profile::Document) -> String {
+pub(crate) fn base_name(document: &profile::ProfileDocument) -> String {
     let c = &document.control;
     let cat = c.mode == "cat"
         && c.endpoint
@@ -380,6 +380,11 @@ struct Inner {
     name: Option<String>,
     /// The last operating selection band seen (CL-112-04: a change sends Clear).
     band: Option<&'static str>,
+}
+/// WSTX_UDP=off: the station opens no socket and claims no instance name (isolated tests of
+/// the executable never reach port 2237).
+pub(crate) fn disabled_by_environment() -> bool {
+    std::env::var("WSTX_UDP").is_ok_and(|v| v == "off")
 }
 /// The UDP interface of one station.
 pub(crate) struct Owner {
@@ -1018,7 +1023,7 @@ fn negotiate(inner: &mut Inner) {
         let Some(socket) = &rt.socket else {
             continue;
         };
-        let mut buffer = [0u8; nm::INBOUND_BYTES_MAX + 1];
+        let mut buffer = [0u8; nm::INBOUND_MAX_BYTES + 1];
         for _ in 0..DATAGRAMS_PER_STEP {
             match socket.recv_from(&mut buffer) {
                 Ok((n, from)) => {

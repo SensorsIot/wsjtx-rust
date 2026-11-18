@@ -1,6 +1,7 @@
 package WstxKeying {
     private import ScalarValues::*;
     private import WstxRadioProperties::MeterReadings;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* Transmit switches the radio's transmitter on and off through radio control,
          learns whether the radio can be keyed, and reads the radio's meters while it
@@ -32,17 +33,32 @@ package WstxKeying {
              fakeIt: the dial moved by the shift while the radio is keyed. */
         enum none;
         enum rig;
-        enum fakeIt;
+        enum fakeIt {
+            @CodeDiffers {
+                what = "The code has no split operation: radio control keys the radio on "
+                    + "its dial.";
+            }
+        }
     }
     item def KeyRequest {
         doc /* Switch the transmitter on. */
         attribute withinMs : Integer {
             doc /* The time radio control has for it, its wait for a running exchange
                  included. */ }
-        attribute split : SplitOperation = SplitOperation::none;
+        attribute split : SplitOperation = SplitOperation::none {
+            @CodeDiffers {
+                what = "The code has no split operation: a key request carries its time "
+                    + "only.";
+            }
+        }
         attribute shiftHz : Integer = 0 {
             doc /* The shift of the transmit frequency from the dial, a multiple of 500;
-                 0 with none. */ }
+                 0 with none. */
+            @CodeDiffers {
+                what = "The code has no split operation: a key request carries its time "
+                    + "only.";
+            }
+        }
     }
     item def WithdrawKey {
         doc /* Withdraw the KeyRequest that waits. A request whose command has not gone

@@ -82,9 +82,9 @@ package WstxLogbook {
         doc /* What the log does with a FinishedContact. Each one is answered with one
              LogAnswer.
              The record of the contact takes stationCallsign and myGridsquare from
-             LogContext, band as the band that contains LogContext::dialHz, and freqMHz
+             LogContext, band as the band that contains LogContext::dialHz, and freq
              as that dial plus the Tx offset of the contact; without a dial it has
-             neither band nor freqMHz. It has no txPwr, no commentText, no source and no
+             neither band nor freq. It has no txPwr, no comment, no source and no
              confirmation field. Its other fields are the FinishedContact's features of
              the same name.
              A contact that is the same station again is refused (SameStationAgain).
@@ -364,8 +364,8 @@ package WstxLogbook {
 
     requirement 'CL-010-21' {
         subject log : LogService;
-        doc /* The log MUST give the records of a contest's period as a Cabrillo file as
-             CabrilloExport says. */
+        doc /* The log MUST answer WstxLogControl::ExportCabrillo with the records of a
+             contest's period as a Cabrillo file as CabrilloExport says. */
         @Status { build = ImplementationState::target; }
     }
     #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-010-21'; }
@@ -385,6 +385,7 @@ package WstxLogbook {
             reference = "WSJT-X at the behaviour baseline: ExportCabrillo, "
                 + "CabrilloLog::export_qsos";
         }
+        attribute header : CabrilloHeader { doc /* LogShared::cabrillo. */ }
     }
 
     attribute def ContactHistory {

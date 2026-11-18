@@ -8,13 +8,8 @@ package WstxModeProcessing {
          read: the mode, its period and the band in which frames are decoded. */
 
     enum def Mode {
-        doc /* The modes the station decodes and sends. */
-        enum ft4;
-        enum ft8;
-    }
-
-    attribute def Period {
-        doc /* The period of each mode.
+        doc /* The modes the station decodes and sends, each with the period, the nominal
+             start and the frame length of the source.
              A period starts where UTC is a whole multiple of the period length.
              A period is even when its start divided by the period length is even, and
              odd otherwise (PeriodParity).
@@ -24,15 +19,8 @@ package WstxModeProcessing {
             reference = "WSJT-X at the behaviour baseline: mainwindow.cpp, m_TRperiod and "
                 + "the Tx period choice";
         }
-        attribute ft8PeriodMs : Integer = 15000;
-        attribute ft4PeriodMs : Integer = 7500;
-        attribute ft8NominalStartMs : Integer = 500;
-        attribute ft4NominalStartMs : Integer = 452 {
-            doc /* Counted to the ramp symbol that leads an FT4 frame. */ }
-        attribute ft8FrameMs : Integer = 12640 {
-            doc /* The length of an FT8 frame. */ }
-        attribute ft4FrameMs : Integer = 5040 {
-            doc /* The length of an FT4 frame with its two ramp symbols. */ }
+        enum ft4;
+        enum ft8;
     }
     enum def PeriodParity {
         enum even;
@@ -280,8 +268,7 @@ package WstxModeProcessing {
             doc /* The a-priori type, 1 to 6, of a frame that was decoded with the help
                  of the context. Absent for a frame decoded without it. */ }
         assert constraint bounded {
-            i3 >= 0 and i3 <= 7 and
-            startFrame >= 0 and startFrame <= (900719925 * 10000000 + 4740991)
+            i3 >= 0 and i3 <= 7 and startFrame >= 0
         }
     }
 

@@ -12,6 +12,7 @@ package WstxCapture {
     private import WstxModelBindings::TestedBy;
     private import WstxModelBindings::TestLevel;
     private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::CodeDiffers;
 
     requirement 'CL-008-02' {
         subject audio : AudioInterface;
@@ -97,15 +98,35 @@ package WstxCapture {
                  the epoch (CaptureEvent::clockStep). */ }
         attribute reanchorMs : Integer = 50 {
             doc /* The tie is moved to the averaged distance when that has moved by more
-                 than this since the tie was last set. */ }
+                 than this since the tie was last set. */
+            @CodeDiffers {
+                what = "Receive moves the tie, not audio: ClockTracker in "
+                    + "server/src/recording.rs moves it beyond RESCHEDULE_TICKS, 50 ms.";
+            }
+        }
         attribute stepMs : Integer = 200 {
             doc /* A distance beyond this from the average starts the average and the
-                 measurement of the rate anew. */ }
+                 measurement of the rate anew. */
+            @CodeDiffers {
+                what = "Receive starts the average anew, not audio: ClockTracker in "
+                    + "server/src/recording.rs does so beyond STEP_TICKS, 200 ms.";
+            }
+        }
         attribute rateKnownSeconds : Integer = 60 {
-            doc /* The rate of the drift is known after this much of the stream. */ }
+            doc /* The rate of the drift is known after this much of the stream. */
+            @CodeDiffers {
+                what = "Receive measures the rate, not audio: ClockTracker in "
+                    + "server/src/recording.rs gives it after 60 s of the stream.";
+            }
+        }
         attribute driftWarnPpm : Integer = 1000 {
             doc /* CaptureWarning::driftHigh holds while the known rate is beyond this,
-                 either way. */ }
+                 either way. */
+            @CodeDiffers {
+                what = "Receive raises driftHigh, not audio: server/src/recording.rs "
+                    + "warns beyond CAPTURE_DRIFT_WARN_PPM, 1000 ppm.";
+            }
+        }
     }
 
     verification 'TC-007-011' {

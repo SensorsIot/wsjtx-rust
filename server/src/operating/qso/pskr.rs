@@ -39,16 +39,13 @@ const HEARD_MAX: usize = 256;
 const DECODED_MAX: usize = 128;
 /// The preferred frequencies handed to the slot choice, newest first.
 const PREFERRED_MAX: usize = 32;
-/// An MQTT packet larger than any spot is a protocol error; this bounds the read buffer.
-const PACKET_MAX: usize = 4096;
-/// A longer field in a spot is not a spot.
-const FIELD_MAX: usize = 16;
 /// Settings need the age in minutes; a feed of spots stays inside the Thin link budget.
 const SPOT_EVENT_S: i64 = 30;
 
-/// The waits of a session. A test shortens them; the station uses `BROKER`.
+/// WstxPskReporter::FeedSession: the waits of a session. A test shortens them; the station
+/// uses `BROKER`.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Timing {
+pub(crate) struct FeedSession {
     /// How long a read waits before the thread looks at the settings again.
     pub poll: Duration,
     /// Connect, TLS handshake and CONNACK, each.
@@ -64,16 +61,25 @@ pub(crate) struct Timing {
     /// A session this long was healthy: the next failure starts the backoff over.
     pub stable: Duration,
 }
-impl Timing {
-    pub(crate) const BROKER: Timing = Timing {
+impl FeedSession {
+    /// MQTT keep-alive announced in CONNECT.
+    pub(crate) const KEEP_ALIVE_SECONDS: u16 = 60;
+    pub(crate) const FIRST_RETRY_SECONDS: u64 = 5;
+    pub(crate) const MAX_RETRY_SECONDS: u64 = 300;
+    pub(crate) const STABLE_SESSION_SECONDS: u64 = 60;
+    /// An MQTT packet larger than any spot is a protocol error; this bounds the read buffer.
+    pub(crate) const MAX_PACKET_BYTES: usize = 4096;
+    /// A longer field in a spot is not a spot.
+    pub(crate) const MAX_FIELD_LENGTH: usize = 16;
+    pub(crate) const BROKER: FeedSession = FeedSession {
         poll: Duration::from_millis(250),
         handshake: Duration::from_secs(10),
         ping: Duration::from_secs(45),
-        keep_alive_s: 60,
+        keep_alive_s: Self::KEEP_ALIVE_SECONDS,
         silence: Duration::from_secs(90),
-        backoff_first: Duration::from_secs(5),
-        backoff_max: Duration::from_secs(300),
-        stable: Duration::from_secs(60),
+        backoff_first: Duration::from_secs(Self::FIRST_RETRY_SECONDS),
+        backoff_max: Duration::from_secs(Self::MAX_RETRY_SECONDS),
+        stable: Duration::from_secs(Self::STABLE_SESSION_SECONDS),
     };
 }
 
@@ -86,7 +92,7 @@ pub(crate) struct Backoff {
     max: Duration,
 }
 impl Backoff {
-    pub(crate) fn new(timing: &Timing) -> Self {
+    pub(crate) fn new(timing: &FeedSession) -> Self {
         Self {
             next: timing.backoff_first,
             first: timing.backoff_first,
@@ -108,7 +114,7 @@ impl Backoff {
 /// for it (the broker documents no form for such a call in a topic).
 fn segment(call: &str) -> Option<&str> {
     (!call.is_empty()
-        && call.len() <= FIELD_MAX
+        && call.len() <= FeedSession::MAX_FIELD_LENGTH
         && call
             .bytes()
             .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit()))
@@ -170,7 +176,9 @@ fn reported_snr(rp: Option<&Value>) -> Option<i32> {
 }
 pub(crate) fn parse_spot(payload: &[u8]) -> Option<Spot> {
     let wire: WireSpot = serde_json::from_slice(payload).ok()?;
-    let field = |s: &str| (!s.is_empty() && s.len() <= FIELD_MAX).then(|| s.to_ascii_uppercase());
+    let field = |s: &str| {
+        (!s.is_empty() && s.len() <= FeedSession::MAX_FIELD_LENGTH).then(|| s.to_ascii_uppercase())
+    };
     let mode = field(&wire.md)?;
     let utc_s = wire.t_tx.unwrap_or(wire.t);
     let parity = match mode.as_str() {
@@ -435,7 +443,7 @@ pub(crate) fn next_packet(buffer: &mut Vec<u8>) -> Result<Option<Packet>, &'stat
             return Err("protocol_error");
         }
     }
-    if length > PACKET_MAX {
+    if length > FeedSession::MAX_PACKET_BYTES {
         return Err("protocol_error");
     }
     if buffer.len() < header + length {
@@ -461,12 +469,13 @@ pub(crate) fn next_packet(buffer: &mut Vec<u8>) -> Result<Option<Packet>, &'stat
 }
 
 /// What a session reads and writes: the TLS stream, or plain TCP to a local test peer.
-/// Its read returns WouldBlock or TimedOut after `Timing::poll`.
+/// Its read returns WouldBlock or TimedOut after `FeedSession::poll`.
 pub(crate) trait Transport: Read + Write + Send {}
 impl<T: Read + Write + Send> Transport for T {}
-pub(crate) type Connector = Box<dyn Fn(&Timing) -> Result<Box<dyn Transport>, &'static str> + Send>;
+pub(crate) type Connector =
+    Box<dyn Fn(&FeedSession) -> Result<Box<dyn Transport>, &'static str> + Send>;
 
-fn tcp(host: &str, port: u16, timing: &Timing) -> Result<TcpStream, &'static str> {
+fn tcp(host: &str, port: u16, timing: &FeedSession) -> Result<TcpStream, &'static str> {
     let addresses = (host, port)
         .to_socket_addrs()
         .map_err(|_| "resolve_failed")?;
@@ -500,7 +509,7 @@ pub(crate) fn tls_connect(
     host: &'static str,
     port: u16,
     roots: &[u8],
-    timing: &Timing,
+    timing: &FeedSession,
 ) -> Result<Box<dyn Transport>, &'static str> {
     let mut stream = tcp(host, port, timing)?;
     let config = rustls::ClientConfig::builder_with_provider(Arc::new(
@@ -531,13 +540,13 @@ pub(crate) fn tls_connect(
 /// plain MQTT to a local test peer, and nothing else can replace the broker.
 pub(crate) fn station_connector(setting: Option<&str>) -> Option<Connector> {
     match setting {
-        None => Some(Box::new(|timing: &Timing| {
+        None => Some(Box::new(|timing: &FeedSession| {
             tls_connect(HOST, TLS_PORT, ISRG_ROOTS, timing)
         })),
         Some(value) => {
             let address: SocketAddr = value.strip_prefix("tcp:")?.parse().ok()?;
             address.ip().is_loopback().then(|| -> Connector {
-                Box::new(move |timing: &Timing| {
+                Box::new(move |timing: &FeedSession| {
                     let host = address.ip().to_string();
                     let stream = tcp(&host, address.port(), timing)?;
                     Ok(Box::new(stream) as Box<dyn Transport>)
@@ -620,6 +629,11 @@ struct RecordV1 {
     profile_id: String,
     enabled: bool,
 }
+/// WstxHearing::SpotsConfig: the two switches while no file is saved or it cannot be read.
+mod spots_config {
+    pub const ENABLED: bool = true;
+    pub const USE: bool = true;
+}
 /// The saved (enabled, use) of this profile; None: foreign or broken.
 fn read_record(path: &Path, profile: &str) -> Option<(bool, bool)> {
     let v: Value = recording::bounded_json(path, FILE_LIMIT).ok()?;
@@ -659,15 +673,16 @@ impl Feed {
         profile: &str,
         boot: &str,
         connector: Option<Connector>,
-        timing: Timing,
+        timing: FeedSession,
     ) -> Arc<Self> {
         let path = directory.join(FILE);
+        let unsaved = (spots_config::ENABLED, spots_config::USE);
         let ((enabled, use_), storage_error) = match fs::metadata(&path) {
-            Err(e) if e.kind() == ErrorKind::NotFound => ((true, true), None),
-            Err(_) => ((true, true), Some("storage_unavailable")),
+            Err(e) if e.kind() == ErrorKind::NotFound => (unsaved, None),
+            Err(_) => (unsaved, Some("storage_unavailable")),
             Ok(_) => match read_record(&path, profile) {
                 Some(saved) => (saved, None),
-                None => ((true, true), Some("invalid_pskr")),
+                None => (unsaved, Some("invalid_pskr")),
             },
         };
         let shared = Arc::new(Shared {
@@ -909,7 +924,7 @@ impl Feed {
 }
 
 /// Waits for the setting and the backoff, runs one session, and takes the next delay.
-fn worker(shared: &Shared, connector: &Connector, timing: Timing, boot: &str) {
+fn worker(shared: &Shared, connector: &Connector, timing: FeedSession, boot: &str) {
     let mut backoff = Backoff::new(&timing);
     let mut not_before = Instant::now();
     loop {
@@ -994,7 +1009,7 @@ fn session(
     stream: &mut dyn Transport,
     client: &str,
     my_call: &str,
-    timing: &Timing,
+    timing: &FeedSession,
 ) -> Result<(), &'static str> {
     let mut buffer = Vec::new();
     send(stream, &connect_packet(client, timing.keep_alive_s))?;

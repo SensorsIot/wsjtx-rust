@@ -33,7 +33,21 @@ fn checkpoint(stage: &'static str) -> Result<()> {
     Ok(())
 }
 
-pub const FILE_LIMIT: u64 = 3_145_728;
+/// WstxRecordingTransfer::RecordingLimits: the one sample rate of a recording, the largest
+/// recording file, its most samples and chunks, and the times of an import.
+pub const RATE_HZ: u32 = 12000;
+pub const FILE_BYTES: u64 = 3_145_728;
+const IMPORT_MAX_FRAMES: u64 = 1_440_000;
+const IMPORT_MAX_RIFF_CHUNKS: u32 = 64;
+const RESERVATION_MS: u64 = 30_000;
+const UPLOAD_IDLE_MS: u64 = 15_000;
+const UPLOAD_TOTAL_MS: u64 = 1_800_000;
+/// WstxReceiveJob::LiveResults: the records kept and their bytes, the largest record and
+/// the SNR limit of a record.
+const KEPT_RECORDS: usize = 2048;
+const KEPT_MI_B: usize = 2;
+const RECORD_MAX_BYTES: usize = 2048;
+const SNR_LIMIT_DB: f64 = 60.0;
 pub type Result<T> = std::result::Result<T, &'static str>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -69,7 +83,7 @@ fn read<const N: usize>(file: &mut File) -> Result<[u8; N]> {
 }
 pub fn validate(file: &mut File) -> Result<Wave> {
     let bytes = file.metadata().map_err(|_| "storage_unavailable")?.len();
-    if bytes > FILE_LIMIT {
+    if bytes > FILE_BYTES {
         return Err("recording_limit");
     }
     file.rewind().map_err(|_| "storage_unavailable")?;
@@ -95,7 +109,7 @@ pub fn validate(file: &mut File) -> Result<Wave> {
         }
         let chunk = read::<8>(file)?;
         chunks += 1;
-        if chunks > 64 {
+        if chunks > IMPORT_MAX_RIFF_CHUNKS {
             return Err("recording_limit");
         }
         let size = u64::from(u32::from_le_bytes(
@@ -119,8 +133,8 @@ pub fn validate(file: &mut File) -> Result<Wave> {
                 let f = read::<16>(file)?;
                 let word = |n| u16::from_le_bytes([f[n], f[n + 1]]);
                 let dword = |n| u32::from_le_bytes([f[n], f[n + 1], f[n + 2], f[n + 3]]);
-                unsupported = word(0) != 1 || word(2) != 1 || dword(4) != 12000 || word(14) != 16;
-                if !unsupported && (word(12) != 2 || dword(8) != 24000) {
+                unsupported = word(0) != 1 || word(2) != 1 || dword(4) != RATE_HZ || word(14) != 16;
+                if !unsupported && (word(12) != 2 || dword(8) != RATE_HZ * 2) {
                     return Err("invalid_recording");
                 }
                 if size == 18 && read::<2>(file)? != [0, 0] {
@@ -143,7 +157,7 @@ pub fn validate(file: &mut File) -> Result<Wave> {
     if unsupported {
         return Err("unsupported_audio");
     }
-    if frames > 1_440_000 {
+    if frames > IMPORT_MAX_FRAMES {
         return Err("recording_limit");
     }
     Ok(Wave {
@@ -163,7 +177,7 @@ impl SourceFile {
         let mut file = File::open(path).map_err(|_| "recording_unavailable")?;
         let wave = validate(&mut file).map_err(|_| "recording_unavailable")?;
         if source.schema_version != 1
-            || source.rate_hz != 12000
+            || source.rate_hz != RATE_HZ
             || source.channel != "mono_real"
             || source.total_frames != Some(wave.frames)
             || source.utc_anchor.is_some()
@@ -247,7 +261,7 @@ pub struct State {
     pub job: Option<Job>,
     pub frame: Option<Value>,
     pub detail_frame: Option<Value>,
-    /// #54: the most recent Detailed rows (at most DETAIL_RECENT, oldest first), so each
+    /// The most recent Detailed rows (at most DETAIL_RECENT_ROWS, oldest first), so each
     /// subscriber receives every row in order after a processing stall.
     pub detail_recent: VecDeque<Value>,
     live: Option<LiveState>,
@@ -353,9 +367,10 @@ struct LatestDecode {
 }
 
 /// #61 Tx periods (CL-061-04): the T/R period starts (station UTC ms) in which this
-/// station was on the air (PTT keyed, a transmission or Tune), the latest 16,
+/// station was on the air (PTT keyed, a transmission or Tune), the latest KEPT_PERIODS,
 /// and whether it is on the air now. The receive path neither decodes nor measures the Rx
 /// level in them; capture keeps running.
+const KEPT_PERIODS: usize = 16;
 #[derive(Default)]
 pub(crate) struct TxPeriods {
     keyed: bool,
@@ -367,15 +382,15 @@ impl TxPeriods {
         &mut self,
         now_ms: i64,
         keyed: bool,
-        last_period_ms: Option<i64>,
+        last_period_start_ms: Option<i64>,
         period_ms: i64,
     ) {
         self.keyed = keyed;
         let current = keyed.then(|| now_ms.div_euclid(period_ms) * period_ms);
-        for start in [last_period_ms, current].into_iter().flatten() {
+        for start in [last_period_start_ms, current].into_iter().flatten() {
             if !self.starts.contains(&start) {
                 self.starts.push_back(start);
-                if self.starts.len() > 16 {
+                if self.starts.len() > KEPT_PERIODS {
                     self.starts.pop_front();
                 }
             }
@@ -414,14 +429,16 @@ struct LiveState {
     loss_epochs: u64,
     last_loss: Option<&'static str>,
 }
-/// rxLevelDb = round(10 log10(mean(s^2))) with s scaled to 32768, clamped to 0..90.
+/// WstxLiveReceive::RxLevel: the highest receive level.
+const MAX_DB: f64 = 90.0;
+/// rxLevelDb = round(10 log10(mean(s^2))) with s scaled to 32768, clamped to 0..MAX_DB.
 pub(crate) fn rx_level_db(sum_squares: f64, count: u64) -> i32 {
     if count == 0 || sum_squares <= 0.0 {
         return 0;
     }
     (10.0 * (sum_squares / count as f64).log10())
         .round()
-        .clamp(0.0, 90.0) as i32
+        .clamp(0.0, MAX_DB) as i32
 }
 impl LiveState {
     fn accumulate_level(&mut self, samples: &[f32], now: Instant) {
@@ -1539,10 +1556,11 @@ impl Recording {
         }
         if decode.start_frame >= l.next_frame
             || !decode.frequency_hz.is_finite()
-            || !(200.0..=3500.0).contains(&decode.frequency_hz)
+            || !(decoder::DECODE_BAND_LOW_HZ..=decoder::DECODE_BAND_HIGH_HZ)
+                .contains(&decode.frequency_hz)
             || decode
                 .snr_db
-                .is_some_and(|v| !v.is_finite() || !(-60.0..=60.0).contains(&v))
+                .is_some_and(|v| !v.is_finite() || !(-SNR_LIMIT_DB..=SNR_LIMIT_DB).contains(&v))
         {
             l.publication_error = Some("decode_limit");
             return Err(decoder::DecodeError::DecodeLimit);
@@ -1593,10 +1611,10 @@ impl Recording {
         let size = serde_json::to_vec(&value)
             .map_err(|_| decoder::DecodeError::DecodeLimit)?
             .len();
-        if size > 2048 {
+        if size > RECORD_MAX_BYTES {
             return Err(decoder::DecodeError::DecodeLimit);
         }
-        while l.records.len() >= 2048 || l.record_bytes + size > 2 * 1024 * 1024 {
+        while l.records.len() >= KEPT_RECORDS || l.record_bytes + size > KEPT_MI_B * 1024 * 1024 {
             let (_, bytes) = l
                 .records
                 .pop_front()
@@ -2806,7 +2824,12 @@ impl LiveWorker {
                                 tx_period,
                             );
                     }
-                    let sequence = first / if detailed { 2400 } else { 12000 };
+                    let row_frames = if detailed {
+                        spectrum::ROW_FRAMES
+                    } else {
+                        12000
+                    };
+                    let sequence = first / row_frames;
                     let kind = if detailed {
                         "spectrum.detail.frame"
                     } else {
@@ -3095,13 +3118,25 @@ fn period_parameters(mode: &str) -> Option<(i128, i128, i128)> {
 pub(crate) const LIVE_WINDOWS: [(decoder::Mode, [(i128, i128); 2]); 2] = [
     (
         decoder::Mode::Ft8,
-        [(138_000_000, 150_000_000), (157_000_000, 150_000_000)],
+        [
+            (FT8_PROMPT_END_MS * 10_000, 150_000_000),
+            (FT8_LATE_END_MS * 10_000, 150_000_000),
+        ],
     ),
     (
         decoder::Mode::Ft4,
-        [(65_000_000, 75_000_000), (79_000_000, 75_000_000)],
+        [
+            (FT4_PROMPT_END_MS * 10_000, 75_000_000),
+            (FT4_LATE_END_MS * 10_000, 75_000_000),
+        ],
     ),
 ];
+/// WstxLiveReceive::WindowSchedule: the ends of the prompt and the late window after the
+/// period start.
+const FT8_PROMPT_END_MS: i128 = 13_800;
+const FT8_LATE_END_MS: i128 = 15_700;
+const FT4_PROMPT_END_MS: i128 = 6_500;
+const FT4_LATE_END_MS: i128 = 7_900;
 /// Source-counter residues and lengths (frames) of the UTC-aligned live windows; None
 /// without a correlated UTC anchor.
 fn window_schedule(
@@ -3394,10 +3429,13 @@ fn utc_from_filetime(ticks: u64) -> Option<String> {
     ))
 }
 
-/// #54: 5 s of Detailed rows; a subscriber further behind than this sees a real gap.
-pub const DETAIL_RECENT: usize = 25;
+/// 5 s of Detailed rows; a subscriber further behind than this sees a real gap
+/// (WstxStationLink::DisplayRows).
+pub mod display_rows {
+    pub const DETAIL_RECENT_ROWS: usize = 25;
+}
 fn push_detail(s: &mut State, frame: Value) {
-    if s.detail_recent.len() == DETAIL_RECENT {
+    if s.detail_recent.len() == display_rows::DETAIL_RECENT_ROWS {
         s.detail_recent.pop_front();
     }
     s.detail_recent.push_back(frame.clone());
@@ -3441,7 +3479,7 @@ impl LiveSpectrum {
         self.first = first;
         self.next = first;
         self.thin_start = first.div_ceil(12000) * 12000;
-        self.detail_start = first.div_ceil(2400) * 2400;
+        self.detail_start = first.div_ceil(spectrum::ROW_FRAMES) * spectrum::ROW_FRAMES;
         self.peak.fill(0.);
         self.powers.fill(0.);
         self.count = 0;
@@ -3484,13 +3522,13 @@ impl LiveSpectrum {
                 self.peak.fill(0.);
             }
         }
-        while self.detail_start + 4096 <= self.next {
+        while self.detail_start + spectrum::DETAIL_SIZE as u64 <= self.next {
             let offset = (self.detail_start - self.first) as usize;
             let x: Vec<_> = self
                 .samples
                 .iter()
                 .skip(offset)
-                .take(4096)
+                .take(spectrum::DETAIL_SIZE)
                 .copied()
                 .collect();
             for (power, a) in self
@@ -3501,9 +3539,9 @@ impl LiveSpectrum {
                 *power += a * a;
             }
             self.count += 1;
-            let first = self.detail_start / 2400 * 2400;
-            self.detail_start += 480;
-            if self.detail_start >= first + 2400 {
+            let first = self.detail_start / spectrum::ROW_FRAMES * spectrum::ROW_FRAMES;
+            self.detail_start += spectrum::DETAIL_HOP;
+            if self.detail_start >= first + spectrum::ROW_FRAMES {
                 let levels = self
                     .powers
                     .iter()
@@ -3511,7 +3549,7 @@ impl LiveSpectrum {
                     .collect();
                 frames[1] = Some(SpectrumRow {
                     first,
-                    end: first + 2400,
+                    end: first + spectrum::ROW_FRAMES,
                     levels,
                     detailed: true,
                 });
@@ -3643,7 +3681,7 @@ impl Recording {
                 ))?)?;
                 if meta.schema_version != 1
                     || meta.recording_id != m.recording_id
-                    || meta.rate_hz != 12000
+                    || meta.rate_hz != RATE_HZ
                     || meta.frames != wave.frames
                     || meta.file_bytes != wave.bytes
                 {
@@ -3762,7 +3800,7 @@ impl Recording {
     }
     pub fn snapshot(&self) -> Value {
         let s = self.state.lock().unwrap();
-        let recording = s.recording.as_ref().map(|m| json!({"id":m.recording_id,"rate_hz":12000,"frames":m.frames,"file_bytes":m.file_bytes,"utc_anchor":null}));
+        let recording = s.recording.as_ref().map(|m| json!({"id":m.recording_id,"rate_hz":RATE_HZ,"frames":m.frames,"file_bytes":m.file_bytes,"utc_anchor":null}));
         let import = s.import.as_ref().filter(|i| !terminal(i.state)).map(|i| {
             let mut v = serde_json::to_value(i).unwrap();
             v.as_object_mut().unwrap().remove("recording_id");
@@ -3919,10 +3957,14 @@ impl Recording {
         let expired = {
             let mut s = self.state.lock().unwrap();
             if let Some(i) = s.import.as_mut() {
-                let limit = if i.state == "reserved" { 30 } else { 15 };
+                let limit = if i.state == "reserved" {
+                    RESERVATION_MS
+                } else {
+                    UPLOAD_IDLE_MS
+                };
                 if matches!(i.state, "reserved" | "receiving")
-                    && (i.touched.elapsed() >= Duration::from_secs(limit)
-                        || i.started.elapsed() >= Duration::from_secs(1800))
+                    && (i.touched.elapsed() >= Duration::from_millis(limit)
+                        || i.started.elapsed() >= Duration::from_millis(UPLOAD_TOTAL_MS))
                 {
                     i.state = "cancelling";
                     i.cleanup_started = Some(Instant::now());
@@ -4030,7 +4072,7 @@ impl Recording {
             recording_id: id.to_owned(),
             file_bytes: wave.bytes,
             frames: wave.frames,
-            rate_hz: 12000,
+            rate_hz: RATE_HZ,
         };
         checkpoint("metadata")?;
         write_json(&self.path(id, "json"), &metadata)?;
@@ -4182,7 +4224,7 @@ impl Recording {
             profile_id: self.profile.clone(),
             boot_id: self.boot.clone(),
             source_id: meta.recording_id.clone(),
-            rate_hz: 12000,
+            rate_hz: RATE_HZ,
             channel: "mono_real",
             total_frames: Some(meta.frames),
             utc_anchor: None,
@@ -4205,8 +4247,8 @@ impl Recording {
         let mut thin_peak = [0f32; 128];
         let mut thin_sequence = 0;
         let began = Instant::now();
-        for sequence in 0..meta.frames.div_ceil(2400) {
-            let row_end = ((sequence + 1) * 2400).min(meta.frames);
+        for sequence in 0..meta.frames.div_ceil(spectrum::ROW_FRAMES) {
+            let row_end = ((sequence + 1) * spectrum::ROW_FRAMES).min(meta.frames);
             let mut powers = [0f32; 1024];
             let mut count = 0;
             while thin_start.min(detail_start) < row_end {
@@ -4218,8 +4260,13 @@ impl Recording {
                     history.pop_front();
                     history_first += 1;
                 }
-                let needed =
-                    (start + if start == detail_start { 4096 } else { 2048 }).min(meta.frames);
+                let needed = (start
+                    + if start == detail_start {
+                        spectrum::DETAIL_SIZE as u64
+                    } else {
+                        2048
+                    })
+                .min(meta.frames);
                 while history_first + (history.len() as u64) < needed {
                     let next = input.next()?.ok_or("recording_unavailable")?;
                     #[cfg(test)]
@@ -4241,12 +4288,16 @@ impl Recording {
                     thin_start += spectrum::HOP;
                 }
                 if start == detail_start {
-                    let x: Vec<f32> = history.iter().take(4096).copied().collect();
+                    let x: Vec<f32> = history
+                        .iter()
+                        .take(spectrum::DETAIL_SIZE)
+                        .copied()
+                        .collect();
                     for (power, a) in powers.iter_mut().zip(detail.native_amplitudes(&x)?) {
                         *power += a * a;
                     }
                     count += 1;
-                    detail_start += 480;
+                    detail_start += spectrum::DETAIL_HOP;
                 }
             }
             let due = Duration::from_secs_f64(row_end as f64 / spectrum::RATE as f64);
@@ -4291,7 +4342,7 @@ impl Recording {
                 s.job.as_mut().unwrap().processed_frames = row_end;
                 push_detail(
                     &mut s,
-                    json!({"v":1,"type":"spectrum.detail.frame","data":{"boot_id":self.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,"sequence":sequence,"first_frame":sequence*2400,"end_frame":row_end,"levels_b64":STANDARD.encode(levels)}}),
+                    json!({"v":1,"type":"spectrum.detail.frame","data":{"boot_id":self.boot,"source_id":job.source_id,"job_id":job.id,"generation":job.generation,"sequence":sequence,"first_frame":sequence*spectrum::ROW_FRAMES,"end_frame":row_end,"levels_b64":STANDARD.encode(levels)}}),
                 );
                 if row_end.is_multiple_of(12000) || row_end == meta.frames {
                     let levels: Vec<u8> = thin_peak.into_iter().map(spectrum::quantize).collect();

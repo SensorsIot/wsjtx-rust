@@ -13,16 +13,20 @@ use wstx_rust::transmit::service::{
 use wstx_rust::transmit::{self, ClockState, Family, Parity};
 
 /// WstxMessageChoice::ReportRange.
-pub const REPORT_MIN: i32 = -50;
-pub const REPORT_MAX: i32 = 49;
-pub const REPORT_DEFAULT: i32 = -15;
+pub mod report_range {
+    pub const MINIMUM_DB: i32 = -50;
+    pub const MAXIMUM_DB: i32 = 49;
+    pub const START_DB: i32 = -15;
+}
 /// WstxHoldTx::OffsetRule (FT8; FT4-NOTE 2916).
 pub const RX_MAX_HZ: u32 = 3000;
 pub const TX_MIN_HZ: u32 = 200;
+pub const TX_MAX_FT8_HZ: u32 = 2950;
+pub const TX_MAX_FT4_HZ: u32 = 2916;
 pub fn tx_max_hz(mode: Mode) -> u32 {
     match mode {
-        Mode::Ft8 => 2950,
-        Mode::Ft4 => 2916,
+        Mode::Ft8 => TX_MAX_FT8_HZ,
+        Mode::Ft4 => TX_MAX_FT4_HZ,
     }
 }
 /// FT4-NOTE: Tx4 is always RR73 in FT4 (MW send_rr73_for_tx4); RRR is the FT8 default.
@@ -66,7 +70,7 @@ pub fn render_report(db: i32) -> String {
 }
 /// Round half away from zero, clamped to ReportRange.
 pub fn report_from_snr(snr_db: f64) -> i32 {
-    (snr_db.round() as i32).clamp(REPORT_MIN, REPORT_MAX)
+    (snr_db.round() as i32).clamp(report_range::MINIMUM_DB, report_range::MAXIMUM_DB)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -684,21 +688,30 @@ pub struct Settings {
     /// ContestExchange: the contest serial number, 1 at boot.
     pub serial: u32,
 }
+/// WstxQsoControl::QsoConfig: qso's settings at station start; ACTIVITY is a wire name of
+/// Activity::name.
+pub mod qso_config {
+    pub const AUTO_SEQ: bool = true;
+    pub const CALL_FIRST: bool = true;
+    pub const ACTIVITY: &str = "none";
+    pub const RX_HZ: u32 = 1500;
+    pub const TX_HZ: u32 = 1500;
+}
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            auto_seq: true,
+            auto_seq: qso_config::AUTO_SEQ,
             // #10 (operator 2026-11-02): on by default, operator-changeable.
-            call_first: true,
+            call_first: qso_config::CALL_FIRST,
             tx1_skip: false,
-            rx_hz: 1500,
-            tx_hz: 1500,
+            rx_hz: qso_config::RX_HZ,
+            tx_hz: qso_config::TX_HZ,
             // #39 CL-039-08 (operator 2026-11-04): on by default; a selection never moves Tx.
             hold_tx: true,
             // WSJT-X m_txFirst default false: transmit in the second (odd) period.
             parity: Parity::Odd,
-            report: REPORT_DEFAULT,
-            activity: Activity::None,
+            report: report_range::START_DB,
+            activity: Activity::parse(qso_config::ACTIVITY).unwrap_or_default(),
             exchange: None,
             serial: 1,
         }
@@ -1071,8 +1084,13 @@ pub struct Hound {
     reply_deadline: Option<i64>,
     armed_at: Option<i64>,
 }
-/// MW guiUpdate Hound watchdog (HWD): Tx1 calling ends this long after Enable Tx went on.
-pub const HOUND_WATCHDOG_MS: i64 = 300_000;
+/// WstxSpecialActivities::HoundLimits. CALLING_MS: MW guiUpdate Hound watchdog (HWD), Tx1
+/// calling ends this long after Enable Tx went on. REPLY_PERIODS: the periods Tx3 waits for
+/// the Fox's RR73.
+pub mod hound_limits {
+    pub const CALLING_MS: i64 = 300_000;
+    pub const REPLY_PERIODS: i64 = 11;
+}
 /// A uniform value in lo..hi from a time-seeded xorshift (QRandomGenerator stand-in).
 fn time_random() -> Box<dyn FnMut(u32, u32) -> u32 + Send> {
     let mut x = std::time::SystemTime::now()
@@ -1781,7 +1799,8 @@ impl Engine {
                 }
                 if to_me && let Some(c) = self.contact.as_mut() {
                     if let Exchange::Report(r) = std.exchange {
-                        c.report_rcvd = Some(r.clamp(REPORT_MIN, REPORT_MAX));
+                        c.report_rcvd =
+                            Some(r.clamp(report_range::MINIMUM_DB, report_range::MAXIMUM_DB));
                     }
                     if let Exchange::Contest(_, text) = &std.exchange
                         && matches!(received, Received::SignalReport | Received::RogerReport)
@@ -1894,7 +1913,7 @@ impl Engine {
                 c.messages[slot.index()] = Some(normalized);
             }
             Command::SetReport(report) => {
-                if !(REPORT_MIN..=REPORT_MAX).contains(&report) {
+                if !(report_range::MINIMUM_DB..=report_range::MAXIMUM_DB).contains(&report) {
                     return Err("invalid_report");
                 }
                 self.check_regeneration(ctx, self.settings.activity)?;
@@ -2576,7 +2595,8 @@ impl Engine {
                     let received = classify_in(std, self.settings.activity);
                     let counted = self.counted(core.as_deref_mut(), now, row, received, |c| {
                         if let Exchange::Report(r) = std.exchange {
-                            c.report_rcvd = Some(r.clamp(REPORT_MIN, REPORT_MAX));
+                            c.report_rcvd =
+                                Some(r.clamp(report_range::MINIMUM_DB, report_range::MAXIMUM_DB));
                         }
                         if let Exchange::Contest(_, text) = &std.exchange
                             && matches!(received, Received::SignalReport | Received::RogerReport)
@@ -3053,7 +3073,7 @@ impl Engine {
             return;
         };
         let mode = c.mode;
-        c.report_rcvd = Some(rcvd.clamp(REPORT_MIN, REPORT_MAX));
+        c.report_rcvd = Some(rcvd.clamp(report_range::MINIMUM_DB, report_range::MAXIMUM_DB));
         c.report = report;
         c.next = Slot::Tx3;
         c.state = State::RogerReport;
@@ -3063,7 +3083,8 @@ impl Engine {
             self.settings.tx_hz = fox_hz;
         }
         self.hound.reply = HoundReply::Pending;
-        self.hound.reply_deadline = Some(ctx.now_utc_ms + 11 * period_ms(mode));
+        self.hound.reply_deadline =
+            Some(ctx.now_utc_ms + hound_limits::REPLY_PERIODS * period_ms(mode));
     }
     /// The counted repetitions of the message due next (WstxQsoTransmit::RepetitionLimit): its Rep less
     /// its paused calls (#97).
@@ -3202,7 +3223,7 @@ impl Engine {
             && self
                 .hound
                 .armed_at
-                .is_some_and(|t| now - t >= HOUND_WATCHDOG_MS);
+                .is_some_and(|t| now - t >= hound_limits::CALLING_MS);
         if (reply || watchdog) && core.view().arm_state == ArmState::Armed {
             core.disarm(DisarmCause::TxWatchdog);
             self.pending = None;

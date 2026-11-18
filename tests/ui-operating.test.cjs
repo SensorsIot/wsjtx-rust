@@ -12,6 +12,7 @@ const {once}=require('node:events');
 const crypto=require('node:crypto');
 const {chromium}=require('playwright');
 const {server,browserPort}=require('./support.cjs');
+const {openModel}=require('./model-values.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
@@ -4989,6 +4990,7 @@ test('CQ retries a stale_revision refusal with the reloaded snapshot',{timeout:4
 // Control panel top does not move when a QSO starts, rows or callers are added or the QSO ends;
 // at 360 px Band Activity shows compact rows, at least six on screen.
 test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Calling me section, and Band Activity has compact rows at 360 px',{timeout:90000},async t=>{
+  const layout=openModel(),qsoRows=layout.number('WstxQsoPane::PaneLayout::qsoRows'),narrowQsoRows=layout.number('WstxQsoPane::PaneLayout::narrowQsoRows'),callingRows=layout.number('WstxQsoPane::PaneLayout::callingRows');
   let state,contact=null,transmit={},records=[];const period='2026-10-27T12:00:15.0000000Z';
   const fields=(to,from,grid)=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:grid?{kind:'grid',value:grid}:{kind:'report',value:-5}});
   const record=(sequence,text,hz,snr,dxcc)=>{const [to,from,grid]=text.split(' ');return {sequence,start_frame:6000,frequency_hz:hz,snr_db:snr,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:fields(to,from,/^[A-R]{2}\d{2}$/.test(grid??'')?grid:null),period_start_utc:period,...(dxcc?{dxcc}:{})};};
@@ -5043,9 +5045,9 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.equal(await shown(page,'#qso-none'),false,'no placeholder during a QSO');
   assert.deepEqual((await calling()).map(r=>r[0]),['DL1ABC','EA8BIA ⚠'],'the partner is not calling me; EA8BIA is within 50 Hz of my Rx');
   await note('qso 1 row');
-  // Twelve rows fit without scrolling.
-  await show(qso(12),{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===12);
-  let f=await fit();assert.deepEqual(f,{scrolls:false,inside:12,lastInside:true,onScreen:true},'12 dialogue rows without scrolling at 1366x768');
+  // qsoRows rows fit without scrolling.
+  await show(qso(qsoRows),{arm_state:'armed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,qsoRows);
+  let f=await fit();assert.deepEqual(f,{scrolls:false,inside:qsoRows,lastInside:true,onScreen:true},`${qsoRows} dialogue rows without scrolling at 1366x768`);
   await note('qso 12 rows');
   await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-12rows-1366x768.png'});
   // More rows scroll inside; the newest stays visible.
@@ -5061,15 +5063,15 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   same(steps,'1366x768');
   assert.deepEqual(await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight})),{x:false,y:false},'one fixed screen at 1366x768');
   for(const selector of ['#qso-control','#error-field','#qso-halt'])assert.equal(await page.locator(selector).evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),true,`${selector} on screen at 1366x768`);
-  // Calling me holds its header and five rows without scrolling.
+  // Calling me holds its header and callingRows rows without scrolling.
   const rowH=await page.locator('#qso-others tr').first().evaluate(r=>r.getBoundingClientRect().height);
-  assert.ok(steps[0][1].calling.height>=6*rowH-1,`Calling me ${steps[0][1].calling.height} px holds its header and 5 rows of ${rowH} px`);
-  // 1920x1080: the same, and 12 rows still fit.
+  assert.ok(steps[0][1].calling.height>=(callingRows+1)*rowH-1,`Calling me ${steps[0][1].calling.height} px holds its header and ${callingRows} rows of ${rowH} px`);
+  // 1920x1080: the same, and qsoRows rows still fit.
   await page.setViewportSize({width:1920,height:1080});
   const wide=[];
-  for(const [name,n] of [['12 rows',12],['idle',0],['3 rows',3]]){
+  for(const [name,n] of [[`${qsoRows} rows`,qsoRows],['idle',0],['3 rows',3]]){
     await show(n?qso(n):null,{arm_state:'armed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);wide.push([name,await geometry()]);
-    if(n===12){f=await fit();assert.deepEqual(f,{scrolls:false,inside:12,lastInside:true,onScreen:true},'12 rows at 1920x1080');await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-12rows-1920x1080.png'});}
+    if(n===qsoRows){f=await fit();assert.deepEqual(f,{scrolls:false,inside:qsoRows,lastInside:true,onScreen:true},`${qsoRows} rows at 1920x1080`);await page.screenshot({path:'test-results/ui-operating/qso-pane-fixed-12rows-1920x1080.png'});}
   }
   same(wide,'1920x1080');
   // 360x800: the sections stack with fixed heights; Band Activity rows are compact.
@@ -5085,8 +5087,8 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.ok(visible.count>=6,`at least six Band Activity rows on screen at 360 px ${JSON.stringify(visible)}`);
   assert.ok(visible.height<=48,`a compact Band Activity row, ${visible.height} px`);
   const phone=[];
-  for(const [name,n] of [['idle',0],['6 rows',6],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);
-    if(n===6){f=await fit();assert.deepEqual([f.scrolls,f.inside],[false,6],'six full dialogue rows at 360 px (live 2026-11-06)');}}
+  for(const [name,n] of [['idle',0],[`${narrowQsoRows} rows`,narrowQsoRows],['15 rows',15]]){await show(n?qso(n):null,{arm_state:n?'armed':'disarmed'});await page.waitForFunction(n=>document.querySelectorAll('#qso-dialogue tr').length===n,n);phone.push([name,await geometry()]);
+    if(n===narrowQsoRows){f=await fit();assert.deepEqual([f.scrolls,f.inside],[false,narrowQsoRows],`${narrowQsoRows} full dialogue rows at 360 px`);}}
   same(phone,'360x800');
   f=await fit();assert.equal(f.lastInside,true,'the newest row is visible at 360 px');
   await page.locator('#rx-focus').scrollIntoViewIfNeeded();

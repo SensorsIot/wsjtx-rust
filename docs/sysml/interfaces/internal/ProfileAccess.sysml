@@ -20,6 +20,7 @@ package WstxProfileAccess {
     private import WstxStationCommands::StartupRecords;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::NotStated;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* What the profile stores and what crosses between the profile and the
          functions of the station: the settings of the station and of its operator,
@@ -74,7 +75,7 @@ package WstxProfileAccess {
     attribute def ProfileConfig {
         doc /* The profile's own configuration: what is set of this station itself. No
              value is altered on the way in: a value outside its rule is refused. */
-        attribute displayName : String = "No radio" {
+        attribute displayName : String = "New station" {
             doc /* The station's name, shown wherever the station is named: in the
                  browser, as the UDP instance name and to an agent. The operator chooses
                  it when the radio is defined, as WSJT-X's rig name: the station offers
@@ -124,6 +125,10 @@ package WstxProfileAccess {
                  are also words the station may put after CQ in its own CQ; how a CQ to
                  send is chosen is the contact's and Auto's. */
             @NotStated { what = "how many words the list holds"; }
+            @CodeDiffers {
+                what = "The code keeps no CQ words: a CQ is for the station when it is plain, to "
+                    + "its continent, or DX from another continent.";
+            }
         }
     }
     attribute def NativeIntent {
@@ -166,7 +171,12 @@ package WstxProfileAccess {
         doc /* The settings the shack's stations share, as the collection of the
              configurations of their parts. The profile keeps them in the shack's
              folder and defines none of the values of another part. */
-        attribute shack : ShackConfig;
+        attribute shack : ShackConfig {
+            @CodeDiffers {
+                what = "The code has no shack's settings; the call sign and the locator stand in "
+                    + "profile.json.";
+            }
+        }
         attribute spots : SpotsConfig;
         attribute udp : UdpConfiguration;
         attribute auto : AutoConfig;
@@ -184,9 +194,17 @@ package WstxProfileAccess {
              continent is left out when absent. A key that is absent, given twice or not
              named, a value of another type and a value outside its rule make the file
              unusable. */
-        attribute schemaVersion : Integer = 1;
+        @CodeDiffers {
+            what = "The code has no shack document: the call sign and the locator stand in "
+                + "profile.json.";
+        }
+        attribute schemaVersion : Integer = 1 {
+            @CodeDiffers { what = "The code has no shack document."; }
+        }
         attribute revision : Integer = 0 {
-            doc /* The count of the saves of the file. */ }
+            doc /* The count of the saves of the file. */
+            @CodeDiffers { what = "The code has no shack document."; }
+        }
         attribute settings : ShackSettings;
     }
     attribute def StationMemory {
@@ -237,7 +255,9 @@ package WstxProfileAccess {
         attribute folder : String { doc /* The folder as the launch named it. */ }
         attribute shackFolder : String[0..1] {
             doc /* The shack's folder the launch named; absent: the default
-                 (WstxProfileDocument::ShackFolder). */ }
+                 (WstxProfileDocument::ShackFolder). */
+            @CodeDiffers { what = "The code takes no shack's folder."; }
+        }
     }
     item def CreateRequest {
         doc /* Make a profile in this folder (WstxProfileDocument::CreateProfile).
@@ -277,7 +297,9 @@ package WstxProfileAccess {
                  process uses it. */ }
         attribute shackPath : String {
             doc /* The shack's folder (WstxProfileDocument::ShackFolder), which the
-                 shack's stations share. */ }
+                 shack's stations share. */
+            @CodeDiffers { what = "The code has no shack's folder."; }
+        }
     }
     item def ShackSnapshot {
         doc /* The shack's settings as they are saved. The profile gives it at station
@@ -287,7 +309,9 @@ package WstxProfileAccess {
         attribute document : ShackDocument;
         attribute unusable : Boolean {
             doc /* shack.json cannot be used; document holds the settings as their
-                 definitions give them. */ }
+                 definitions give them. */
+            @CodeDiffers { what = "The code has no shack's settings."; }
+        }
     }
     item def SaveShack {
         doc /* Save these shack's settings in the place of the saved ones. It is the
@@ -307,7 +331,12 @@ package WstxProfileAccess {
              in answer to every SaveMemory: the new store when it is durable, the one
              before when it could not be kept. The supervisor gives each part its
              records from it, over that part's control interface. */
-        attribute memory : StationMemory;
+        attribute memory : StationMemory {
+            @CodeDiffers {
+                what = "The code keeps no hidden store: what it keeps of a station across "
+                    + "sessions stands in files of their own, such as receive-startup.json.";
+            }
+        }
         attribute unreadable : Boolean {
             doc /* True when the kept store could not be read at station start; its
                  records are then as their definitions give them. */ }
@@ -337,10 +366,23 @@ package WstxProfileAccess {
              keyed by mode, band and frequency written as FT8 20m 14074000; held to the
              rules of WorkingFrequency and WorkingFrequencies. */
         enum strategies;
-        enum udpTargets;
-        enum wantedList;
-        enum txMacros;
-        enum workingFrequencies;
+        enum udpTargets {
+            @CodeDiffers {
+                what = "The code has no collections of settings: it saves the UDP targets whole "
+                    + "with the PUT of /udp.";
+            }
+        }
+        enum wantedList {
+            @CodeDiffers { what = "The code has no wanted list."; }
+        }
+        enum txMacros {
+            @CodeDiffers { what = "The code has no Tx macros."; }
+        }
+        enum workingFrequencies {
+            @CodeDiffers {
+                what = "The code has no list of working frequencies: it holds one fixed table.";
+            }
+        }
     }
     item def CreateEntry {
         doc /* Add this member to a collection; a copy is a member made from another.
@@ -352,7 +394,10 @@ package WstxProfileAccess {
         attribute target : UdpTarget[0..1] { doc /* For udpTargets. */ }
         attribute wanted : WantedEntry[0..1] {
             doc /* For wantedList; its addedUtcMs is set by the profile. */ }
-        attribute macro : TxMacro[0..1] { doc /* For txMacros. */ }
+        attribute macro : TxMacro[0..1] {
+            doc /* For txMacros. */
+            @CodeDiffers { what = "The code has no Tx macros."; }
+        }
         attribute frequency : WstxStationCommands::WorkingFrequency[0..1] {
             doc /* For workingFrequencies. */ }
     }
@@ -365,7 +410,10 @@ package WstxProfileAccess {
         attribute key : String;
         attribute strategy : Strategy[0..1] { doc /* For strategies. */ }
         attribute target : UdpTarget[0..1] { doc /* For udpTargets. */ }
-        attribute macro : TxMacro[0..1] { doc /* For txMacros. */ }
+        attribute macro : TxMacro[0..1] {
+            doc /* For txMacros. */
+            @CodeDiffers { what = "The code has no Tx macros."; }
+        }
         attribute frequency : WstxStationCommands::WorkingFrequency[0..1] {
             doc /* For workingFrequencies. */ }
     }
@@ -385,14 +433,30 @@ package WstxProfileAccess {
     }
     attribute def RenamedEntry {
         doc /* A member read under another key than its file gives it. */
-        attribute savedName : String { doc /* The key in the file. */ }
-        attribute readName : String { doc /* The key it is held under. */ }
+        attribute savedName : String {
+            doc /* The key in the file. */
+            @CodeDiffers {
+                what = "The code names it from, in configuration_note of the answers of "
+                    + "/strategy.";
+            }
+        }
+        attribute readName : String {
+            doc /* The key it is held under. */
+            @CodeDiffers {
+                what = "The code names it to, in configuration_note of the answers of /strategy.";
+            }
+        }
     }
     item def DefinitionsSnapshot {
         doc /* The definition files as the profile keeps them. The profile gives it at
              station start and after every change of them. The supervisor gives
              each part its definitions from it, over that part's control interface. */
-        attribute definitions : StrategyDefinitions;
+        attribute definitions : StrategyDefinitions {
+            @CodeDiffers {
+                what = "The code names no snapshot of the definition files: strategy.rs reads "
+                    + "strategy.json itself.";
+            }
+        }
         attribute revision : Integer {
             doc /* The count of the changes of the strategies file; 0 without a file that
                  can be used. */ }
@@ -400,18 +464,39 @@ package WstxProfileAccess {
             doc /* The wanted list (WstxProfileDocument::WantedFile). */ }
         attribute wantedRevision : Integer {
             doc /* The count of the changes of the wanted list's file; 0 without a file
-                 that can be used. */ }
+                 that can be used. */
+            @CodeDiffers { what = "The code has no wanted list."; }
+        }
         attribute unusable : Boolean {
-            doc /* The strategies file cannot be used; definitions holds no strategy. */ }
+            doc /* The strategies file cannot be used; definitions holds no strategy. */
+            @CodeDiffers {
+                what = "The code gives an unusable strategy.json as the error "
+                    + "invalid_configuration.";
+            }
+        }
         attribute mostWanted : MostWantedList[0..1] {
             doc /* The Most Wanted list. Absent while the profile holds none. */ }
         attribute mostWantedUnusable : Boolean {
-            doc /* The Most Wanted file cannot be used. */ }
+            doc /* The Most Wanted file cannot be used. */
+            @CodeDiffers {
+                what = "The code names it most_wanted_unreadable, in the answers of /strategy.";
+            }
+        }
         attribute countryFile : String[0..1] {
             doc /* The text of the country file the profile keeps
-                 (WstxProfileDocument::CountryFileStore). Absent while it keeps none. */ }
+                 (WstxProfileDocument::CountryFileStore). Absent while it keeps none. */
+            @CodeDiffers {
+                what = "The code reads the country file from cty.dat in the profile's folder, "
+                    + "else uses the one built in.";
+            }
+        }
         attribute countryFileUnusable : Boolean {
-            doc /* The kept country file cannot be used. */ }
+            doc /* The kept country file cannot be used. */
+            @CodeDiffers {
+                what = "The code names no unusable country file: without an uploaded one it uses "
+                    + "the file built in.";
+            }
+        }
         attribute renamed : RenamedEntry[0..*] ordered {
             doc /* The strategies read under another name, in the order of the file.
                  Empty from the next change of the strategies. */ }
@@ -438,12 +523,22 @@ package WstxProfileAccess {
                  (WstxLogControl::CountryFileState::entityNames). */ }
         attribute builtinNames : String[0..*] {
             doc /* The names of the built-in strategies
-                 (WstxStrategies::StrategiesState::builtins). */ }
+                 (WstxStrategies::StrategiesState::builtins). */
+            @CodeDiffers {
+                what = "The code passes no names: strategy.rs holds the built-in strategies "
+                    + "itself.";
+            }
+        }
     }
     item def SaveMemory {
         doc /* Keep this hidden store in the place of the kept one. The supervisor
              brings it when a part has changed a record. */
-        attribute memory : StationMemory;
+        attribute memory : StationMemory {
+            @CodeDiffers {
+                what = "The code keeps no hidden store: what it keeps of a station across "
+                    + "sessions stands in files of their own, such as receive-startup.json.";
+            }
+        }
     }
     enum def SaveRefusal {
         doc /* Why a save is refused. A refused save changes nothing.
@@ -452,6 +547,7 @@ package WstxProfileAccess {
              direction.
              revisionConflict: a SaveShack or a command for a collection was made
              from another revision than that of its shared file.
+             revisionExhausted: the profile's revision cannot count any further.
              storageUnavailable: the file cannot be written.
              entryExists: a CreateEntry, or an UpdateEntry to another key, names a key
              the collection holds.
@@ -465,12 +561,30 @@ package WstxProfileAccess {
         enum invalidSettings;
         enum audioDeviceNotEndpoint;
         enum revisionConflict;
+        enum revisionExhausted;
         enum storageUnavailable;
-        enum entryExists;
-        enum entryUnknown;
-        enum collectionFull;
+        enum entryExists {
+            @CodeDiffers {
+                what = "The code has no settings collections and gives no such refusal.";
+            }
+        }
+        enum entryUnknown {
+            @CodeDiffers {
+                what = "The code has no settings collections and gives no such refusal.";
+            }
+        }
+        enum collectionFull {
+            @CodeDiffers {
+                what = "The code has no settings collections and gives no such refusal.";
+            }
+        }
         enum downloadFailed;
-        enum invalidCountryFile;
+        enum invalidCountryFile {
+            @CodeDiffers {
+                what = "The code refuses a text that does not read as a country file with the "
+                    + "code invalid_cty, the field text and the line.";
+            }
+        }
     }
     item def SaveRefused {
         doc /* The answer to a SaveProfile, a SaveShack, a CreateEntry, an
@@ -503,21 +617,53 @@ package WstxProfileAccess {
         out item open : OpenRequest;
         out item make : CreateRequest;
         in item created : ProfileCreated;
-        in item openRefused : OpenRefused;
+        in item openRefused : OpenRefused {
+            @CodeDiffers {
+                what = "The code names no refusal: a profile it cannot open ends the start with "
+                    + "the outcome's code.";
+            }
+        }
         in item folder : ProfileFolder;
         in item saved : ProfileSnapshot;
-        in item shackSettings : ShackSnapshot;
-        in item definitions : DefinitionsSnapshot;
-        in item memory : MemorySnapshot;
+        in item shackSettings : ShackSnapshot {
+            @CodeDiffers { what = "The code has no shack's settings."; }
+        }
+        in item definitions : DefinitionsSnapshot {
+            @CodeDiffers {
+                what = "The code names no snapshot of the definition files: strategy.rs reads "
+                    + "strategy.json itself.";
+            }
+        }
+        in item memory : MemorySnapshot {
+            @CodeDiffers {
+                what = "The code keeps no hidden store: what it keeps of a station across "
+                    + "sessions stands in files of their own, such as receive-startup.json.";
+            }
+        }
         out item save : SaveProfile;
-        out item saveShack : SaveShack;
+        out item saveShack : SaveShack {
+            @CodeDiffers {
+                what = "The code has no shack's settings; the call sign and the locator are saved "
+                    + "with the PUT of /profile.";
+            }
+        }
         out item create : CreateEntry;
         out item update : UpdateEntry;
         out item delete : DeleteEntry;
         out item facts : RuleFacts;
         out item keep : SaveMemory;
-        out item updateMostWanted : UpdateMostWanted;
-        out item updateCountryFile : UpdateCountryFile;
+        out item updateMostWanted : UpdateMostWanted {
+            @CodeDiffers {
+                what = "The code takes it as the POST of /strategy/most-wanted/download, which "
+                    + "strategy.rs serves.";
+            }
+        }
+        out item updateCountryFile : UpdateCountryFile {
+            @CodeDiffers {
+                what = "The code downloads no country file: it takes one the operator uploads "
+                    + "with the PUT of /dxcc.";
+            }
+        }
         in item refused : SaveRefused;
     }
     interface def ProfileAccessLink {

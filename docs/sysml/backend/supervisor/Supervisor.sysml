@@ -34,9 +34,10 @@ package WstxSupervisorPart {
         }
         @CodeDiffers {
             what = "Its code stands in server/src/authorization.rs, "
-                + "server/src/authorization_http.rs, server/src/receive/receive_startup.rs, "
-                + "server/src/selection_http.rs, server/src/station/selection.rs, outside "
-                + "server/src/supervisor/ and client/src/supervisor/.";
+                + "server/src/authorization_http.rs, server/src/main.rs, "
+                + "server/src/receive/receive_startup.rs, server/src/selection_http.rs, "
+                + "server/src/station/selection.rs, outside server/src/supervisor/ and "
+                + "client/src/supervisor/.";
         }
         attribute records : StartupRecords {
             doc /* Its records, as the last MemorySnapshot of the profile gave them. */ }

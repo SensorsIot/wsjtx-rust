@@ -6,6 +6,7 @@ package WstxReceiveControl {
     private import WstxDecodes::ResultRecord;
     private import WstxDecodes::PeriodView;
     private import WstxModeProcessing::APrioriContext;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* The configuration of the receive function; what the supervisor gives
          receive (its configuration, its commands, and when the station is on the air)
@@ -267,14 +268,39 @@ package WstxReceiveControl {
              ReadDiagnostics by DiagnosticsView. ReceiveConfiguration, OnAir and
              ContactContext have no answer. */
         out item configuration : ReceiveConfiguration;
-        out item startLive : StartLive;
-        out item stopLive : StopLive;
-        out item startReplay : StartReplay;
+        out item startLive : StartLive {
+            @CodeDiffers {
+                what = "The code names it start: the route POST /receive/start (start in "
+                    + "server/src/receive_http.rs).";
+            }
+        }
+        out item stopLive : StopLive {
+            @CodeDiffers {
+                what = "The code names it stop: the route POST /receive/stop (stop in "
+                    + "server/src/receive_http.rs).";
+            }
+        }
+        out item startReplay : StartReplay {
+            @CodeDiffers {
+                what = "The code names it replay: the route POST /recording/replay (replay "
+                    + "in server/src/recording_http.rs).";
+            }
+        }
         out item cancelJob : CancelJob;
         out item onAir : OnAir;
         out item context : ContactContext;
-        out item readRecords : ReadRecords;
-        out item readDiagnostics : ReadDiagnostics;
+        out item readRecords : ReadRecords {
+            @CodeDiffers {
+                what = "The code names it results: the route GET /receive/results (results "
+                    + "in server/src/receive_http.rs).";
+            }
+        }
+        out item readDiagnostics : ReadDiagnostics {
+            @CodeDiffers {
+                what = "The code names it diagnostics: the route GET /receive/diagnostics "
+                    + "(diagnostics in server/src/receive_http.rs).";
+            }
+        }
         in item accepted : JobAccepted;
         in item refused : Refused;
         in item page : RecordsPage;

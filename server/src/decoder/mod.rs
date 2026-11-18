@@ -48,6 +48,9 @@ pub use search::{Decode, DecodeError, Decoder};
 use serde::{Deserialize, Serialize};
 pub(crate) use waveform::gaussian_pulse;
 pub use waveform::quadratures;
+/// The audio band of the lowest tone of a decoded frame, both ends included.
+pub const DECODE_BAND_LOW_HZ: f64 = 200.;
+pub const DECODE_BAND_HIGH_HZ: f64 = 3500.;
 /// The WSJT-X FT8/FT4 decoder baseline of a linear power spectrum over bins `ia..=ib`: ten equal
 /// segments of (ib - ia + 1) / 10 bins from `ia`, in each its points at or below its lowest tenth,
 /// a fourth-order least-squares fit through them in dB plus 0.65 dB, as linear power (bins outside

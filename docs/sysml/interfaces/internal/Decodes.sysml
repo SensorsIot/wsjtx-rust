@@ -19,7 +19,7 @@ package WstxDecodes {
             doc /* The DT of the frame in station time. Absent while the stream is not
                  tied to station time. */ }
         assert constraint boundedRecord {
-            sequence >= 0 and sequence <= (900719925 * 10000000 + 4740991)
+            sequence >= 0
         }
     }
 

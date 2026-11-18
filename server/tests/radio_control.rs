@@ -15,6 +15,19 @@ use std::{
     },
     time::{Duration, Instant},
 };
+// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+#[allow(dead_code)]
+#[path = "../src/model_values.rs"]
+mod model_values;
+
+/// WstxCatControl::RadioConnection::closeMaxMs, read from the model.
+fn close_max() -> Duration {
+    let name = "WstxCatControl::RadioConnection::closeMaxMs";
+    match model_values::Model::load().number_with_unit(name) {
+        Ok(Some(model_values::Number::Integer(ms))) => Duration::from_millis(ms as u64),
+        other => panic!("model value {name}: {other:?}"),
+    }
+}
 
 const FREQUENCY: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 3, 0, 0x40, 7, 0x14, 0, 0xfd];
 const MODE: &[u8] = &[0xfe, 0xfe, 0xe0, 0x94, 4, 1, 2, 0xfd];
@@ -158,14 +171,15 @@ fn actor_has_one_io_owner_no_pending_operation_and_bounded_close() {
     assert!(entered.load(Ordering::Acquire));
     assert_eq!(actor.execute(req(Operation::ReadMode)), Err(Error::Busy));
     assert_eq!(state.lock().unwrap().writes.len(), 2);
+    let close_max = close_max();
     let before = Instant::now();
     actor.request_close();
     assert_eq!(worker.join().unwrap(), Err(Error::Cancelled));
-    while !actor.close_complete() && before.elapsed() < Duration::from_millis(250) {
+    while !actor.close_complete() && before.elapsed() < close_max {
         std::thread::sleep(Duration::from_millis(1));
     }
     assert!(actor.close_complete());
-    assert!(before.elapsed() < Duration::from_millis(250));
+    assert!(before.elapsed() < close_max);
     assert!(state.lock().unwrap().closed >= 1);
 }
 

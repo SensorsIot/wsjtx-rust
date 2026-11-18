@@ -9,7 +9,7 @@ package WstxLiveReceive {
     private import WstxDecodes::PeriodView;
     private import WstxDisplayData::SpectrumFrame;
     private import WstxDisplayData::DetailedSpectrumFrame;
-    private import WstxModeProcessing::Period;
+    private import WstxModeProcessing::Mode;
     private import WstxModeProcessing::ProcessingRequest;
     private import WstxModeProcessing::CallsUpdate;
     private import WstxModeProcessing::DecodeError;
@@ -44,7 +44,7 @@ package WstxLiveReceive {
              the schedule; it never reaches back over a break in the stream.
              While the epoch is not tied to station time, a window ends at every
              sample whose place is a whole multiple of the period length, and is two
-             periods long (Period).
+             periods long (Mode).
              While the epoch is tied, the windows are those of WindowSchedule.
              A window is given only when it holds at least one whole frame of the
              mode.
@@ -73,7 +73,7 @@ package WstxLiveReceive {
              A frame belongs to the period whose nominal start is nearest to the
              frame's start, and to the later one when two are equally near.
              ResultRecord::dtSeconds is the frame's start against the nominal start
-             of that period (Period); it lies between minus and plus half a period.
+             of that period (Mode); it lies between minus and plus half a period.
              For every record whose message names its sender, receive gives the clock
              a StationHeard: the sender, the SNR, and the DT in milliseconds as it is
              without the clock's correction.
@@ -137,13 +137,13 @@ package WstxLiveReceive {
         doc /* Receive MUST end its decode windows at fixed moments of each period of
              station time, and keep one prompt and one late window for every period when
              the tie of the stream or the clock's correction moves (WindowSchedule). */
-        @Status { build = ImplementationState::implemented; }
+        @Status { build = ImplementationState::partial; }
     }
     #derivation connection { end #original ::> 'FR-006'; end #derive ::> 'CL-007-05'; }
 
     attribute def WindowSchedule {
         doc /* The windows of an epoch that is tied to station time.
-             Each period has two windows, both one period long (Period): the prompt
+             Each period has two windows, both one period long (Mode): the prompt
              window, which ends the prompt time after the period start, and the late
              window, which ends the late time after it and so early in the next
              period.

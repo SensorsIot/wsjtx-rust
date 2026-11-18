@@ -5,7 +5,6 @@ package WstxCatControl {
     private import WstxRadioControlPart::RadioControlInterface;
     private import WstxRadioControl::*;
     private import WstxKeying::*;
-    private import WstxRadioProperties::DialRange;
     private import WstxRadioProperties::ModeValue;
     private import WstxRadioProperties::Meter;
     private import WstxCat::CivFrame;
@@ -93,7 +92,7 @@ package WstxCatControl {
     attribute def ControlExchange {
         doc /* How an OperationRequest is taken and carried out.
              Before anything is sent the request is checked: a frequency outside
-             DialRange, a filter number outside 1 to 3, or a data filter number
+             RigModel::dialRange, a filter number outside 1 to 3, or a data filter number
              that is not 1 to 3 with the data mode on and 0 with it off, is
              invalidRequest; another connection than the current one is
              staleContext; an operation the station has not for this radio is
@@ -108,7 +107,7 @@ package WstxCatControl {
              the command. The echo of the station's own frame, frames of other
              addresses and reports the radio sends unasked are passed over.
              A refusal of the radio is rejected. An answer the source does not allow,
-             and a frequency outside DialRange, is protocol.
+             and a frequency outside RigModel::dialRange, is protocol.
              A mode the station does not set is kept by its code
              (ModeValue::modeCode).
              A frame is sent once: radio control does not repeat an exchange by

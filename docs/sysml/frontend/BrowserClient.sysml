@@ -38,8 +38,8 @@ package WstxBrowserClientPart {
         doc /* manual: the chosen theme stays. byTime: day and night at two local times.
              bySun: day and night at sunrise and sunset at the station's locator. */
         enum manual;
-        enum byTime;
-        enum bySun;
+        enum byTime { @CodeDiffers { what = "The code names it time."; } }
+        enum bySun { @CodeDiffers { what = "The code names it sun."; } }
     }
     enum def HighlightSlot {
         doc /* The highlight slots of Band Activity, in their priority, highest first. */
@@ -93,11 +93,15 @@ package WstxBrowserClientPart {
                  newGridBand. */ }
         attribute sortField : SortField = SortField::'value' {
             doc /* The order of Band Activity (WstxBandActivityPane::Ordering). */ }
-        attribute sortDescending : Boolean = false;
+        attribute sortDescending : Boolean = true;
         attribute distanceInMiles : Boolean = false {
-            doc /* Distances in miles instead of km. */ }
+            doc /* Distances in miles instead of km. */
+            @CodeDiffers { what = "The code has no choice of miles: it shows distances in km."; }
+        }
         attribute callSound : AlertSound[0..1] = AlertSound::oldPhone {
-            doc /* The sound of a station calling (WstxSettings::CallAlert); absent: Off. */ }
+            doc /* The sound of a station calling (WstxSettings::CallAlert); absent: Off. */
+            @CodeDiffers { what = "The code plays no sound for a station calling."; }
+        }
         attribute alertSound : Boolean = false {
             doc /* A tone for each new alert (WstxSettings::AlertDisplay). */ }
         attribute alertNotify : Boolean = false {

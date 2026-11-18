@@ -18,8 +18,25 @@ pub use windows::{
     AudioController, CaptureHandle, InputDevice, enumerate_inputs, enumerate_outputs, system_clock,
 };
 
-pub const MAX_NATIVE_PACKET: usize = 8192;
+pub const MAX_NATIVE_PACKET_FRAMES: usize = 8192;
 pub const FILTER_TAPS: usize = 257;
+/// The packets audio holds that receive has not taken.
+pub const QUEUE_PACKETS: usize = 64;
+/// The audio (ms) audio holds that receive has not taken.
+pub const QUEUE_MS: usize = 500;
+/// The PC clock is read within this (ms) around a reading of the monotonic clock.
+pub const BRACKET_MAX_MS: u64 = 2;
+/// A jump (ms) of the PC clock against the monotonic clock beyond this ends the epoch.
+pub const CLOCK_JUMP_MS: i128 = 20;
+/// The waits of the capture's device (WstxAudioDevice::DeviceLifecycle), in ms.
+pub mod device_lifecycle {
+    /// The wait before the first attempt to open again.
+    pub const FIRST_RETRY_MS: u64 = 1000;
+    /// The longest wait before an attempt to open again.
+    pub const MAX_RETRY_MS: u64 = 8000;
+    /// A stop ends with the device closed within this, or with failedClose.
+    pub const CLOSE_MAX_MS: u64 = 250;
+}
 pub const FILTER_DELAY: usize = (FILTER_TAPS - 1) / 2;
 
 /// Retain the complete native owner until Stop acknowledges release. A failure is terminal
@@ -85,7 +102,8 @@ impl CaptureEvent {
 }
 /// A flagged packet whose device position and QPC both continue the previous packet
 /// within this bound is an engine glitch on a continuous timeline, not unknown loss.
-pub const CONTIGUOUS_QPC_TOLERANCE_100NS: u64 = 20_000;
+pub const GLITCH_TOLERANCE_MS: u64 = 2;
+pub const CONTIGUOUS_QPC_TOLERANCE_100NS: u64 = GLITCH_TOLERANCE_MS * 10_000;
 const NO_LOSS_EVENT: u8 = u8::MAX;
 
 /// Diagnostic event counts only; they do not allocate identities or alter epoch policy.
@@ -188,7 +206,7 @@ impl NativeFormat {
         silent: bool,
     ) -> Result<Vec<f32>, SourceError> {
         self.validate()?;
-        if frames > MAX_NATIVE_PACKET
+        if frames > MAX_NATIVE_PACKET_FRAMES
             || (!silent
                 && bytes.len()
                     != frames
@@ -276,11 +294,13 @@ pub struct PacketQueue {
 impl PacketQueue {
     pub fn new(format: NativeFormat) -> Result<Arc<Self>, SourceError> {
         format.validate()?;
-        let (filled, packets) = sync_channel(64);
-        let (returned, free) = sync_channel(64);
-        for _ in 0..64 {
+        let (filled, packets) = sync_channel(QUEUE_PACKETS);
+        let (returned, free) = sync_channel(QUEUE_PACKETS);
+        for _ in 0..QUEUE_PACKETS {
             returned
-                .try_send(Vec::with_capacity(MAX_NATIVE_PACKET * format.frame_bytes()))
+                .try_send(Vec::with_capacity(
+                    MAX_NATIVE_PACKET_FRAMES * format.frame_bytes(),
+                ))
                 .map_err(|_| SourceError::Unavailable)?;
         }
         Ok(Arc::new(Self {
@@ -294,7 +314,7 @@ impl PacketQueue {
             frames: AtomicUsize::new(0),
             packet_count: AtomicUsize::new(0),
             failed: AtomicBool::new(false),
-            capacity: format.rate as usize / 2,
+            capacity: format.rate as usize * QUEUE_MS / 1000,
             loss: std::sync::atomic::AtomicU8::new(NO_LOSS_EVENT),
             cancelled: AtomicBool::new(false),
             events: std::array::from_fn(|_| AtomicU64::new(0)),
@@ -361,7 +381,7 @@ impl PacketQueue {
         if self.cancelled.load(Ordering::Acquire) || self.failed.load(Ordering::Acquire) {
             return false;
         }
-        if frames == 0 || frames > MAX_NATIVE_PACKET {
+        if frames == 0 || frames > MAX_NATIVE_PACKET_FRAMES {
             self.mark_loss(CaptureEvent::InvalidPacket);
             return false;
         }
@@ -511,7 +531,7 @@ impl Converter {
         Ok(Self {
             rate,
             coefficients,
-            history: VecDeque::with_capacity(MAX_NATIVE_PACKET + FILTER_TAPS),
+            history: VecDeque::with_capacity(MAX_NATIVE_PACKET_FRAMES + FILTER_TAPS),
             history_start: 0,
             end: 0,
             next: 0,
@@ -536,7 +556,7 @@ impl Converter {
     /// Canonical n represents native position origin + 128 + n * native_rate / 12000.
     /// SourceTiming.native_anchor_frame already includes 128; delay metadata is not added twice.
     pub fn convert(&mut self, samples: &[f32]) -> Result<(u64, Vec<f32>), SourceError> {
-        if samples.len() > MAX_NATIVE_PACKET || !samples.iter().all(|x| x.is_finite()) {
+        if samples.len() > MAX_NATIVE_PACKET_FRAMES || !samples.iter().all(|x| x.is_finite()) {
             return Err(SourceError::InvalidBlock);
         }
         self.end = self
@@ -618,7 +638,7 @@ impl ClockCorrelation {
     pub fn bracket(before: u64, utc: u64, after: u64) -> Option<Self> {
         let span = after.checked_sub(before)?;
         let uncertainty_ns = span.checked_mul(50)?;
-        (uncertainty_ns <= 2_000_000).then_some(Self {
+        (uncertainty_ns <= BRACKET_MAX_MS * 1_000_000).then_some(Self {
             qpc_100ns: before + span / 2,
             utc_filetime_100ns: utc,
             uncertainty_ns,
@@ -637,7 +657,7 @@ impl ClockCorrelation {
         i128::from(self.utc_filetime_100ns) - i128::from(self.qpc_100ns)
     }
     pub fn jumped(self, other: Self) -> bool {
-        (self.offset_100ns() - other.offset_100ns()).abs() > 200_000
+        (self.offset_100ns() - other.offset_100ns()).abs() > CLOCK_JUMP_MS * 10_000
     }
     pub fn utc_at(self, qpc: u64) -> Option<u64> {
         u64::try_from(self.offset_100ns() + i128::from(qpc)).ok()
@@ -997,7 +1017,8 @@ impl Lifecycle {
         self.state = AudioState::Unavailable;
         self.error = Some(error);
         self.retry_at = if self.wanted && error == SourceError::Unavailable {
-            let delay = 1000_u64 << self.attempt.min(3);
+            let delay = (device_lifecycle::FIRST_RETRY_MS << self.attempt.min(3))
+                .min(device_lifecycle::MAX_RETRY_MS);
             self.attempt = self.attempt.saturating_add(1);
             Some(now_ms.saturating_add(delay))
         } else {

@@ -55,7 +55,7 @@ pub(super) fn checkpoint(stage: &'static str) -> std::io::Result<()> {
     Ok(())
 }
 
-fn independent_document() -> Document {
+fn independent_document() -> ProfileDocument {
     serde_json::from_str(r#"{"schema_version":1,"profile_id":"00000000-0000-4000-8000-000000000001","revision":0,"display_name":"Station 1","callsign":"TEST1","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":"fixture-input-1","output_device":"fixture-output-1"},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}}"#).unwrap()
 }
 
@@ -116,7 +116,7 @@ fn exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys() {
             "\"unexpected\":null",
         ),
     ] {
-        assert!(serde_json::from_str::<Document>(&bad).is_err());
+        assert!(serde_json::from_str::<ProfileDocument>(&bad).is_err());
     }
 }
 
@@ -251,7 +251,7 @@ fn native_document() -> serde_json::Value {
 #[test]
 fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
     let accept = |value: &serde_json::Value| {
-        serde_json::from_value::<Document>(value.clone())
+        serde_json::from_value::<ProfileDocument>(value.clone())
             .map_err(|_| outcome("invalid_profile"))
             .and_then(|d| d.validate().map(|_| d))
     };

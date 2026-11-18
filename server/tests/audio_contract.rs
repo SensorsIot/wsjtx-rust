@@ -7,6 +7,35 @@ pub mod source;
 use audio::*;
 use source::*;
 use std::sync::Arc;
+// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+#[allow(dead_code)]
+#[path = "../src/model_values.rs"]
+mod model_values;
+
+/// A number of WstxCapture::CaptureStream, read from the model.
+fn stream_value(feature: &str) -> f64 {
+    let model = model_values::Model::load();
+    let name = format!("WstxCapture::CaptureStream::{feature}");
+    let read = model
+        .number_with_unit(&name)
+        .or_else(|_| model.number(&name))
+        .unwrap_or_else(|e| panic!("model value {e}"));
+    match read.unwrap_or_else(|| panic!("model value {name}: null")) {
+        model_values::Number::Integer(n) => n as f64,
+        model_values::Number::Real(x) => x,
+    }
+}
+/// The conversion's limits: the top of the passband (Hz), its ripple (dB), the bottom of
+/// the stopband (Hz) and the largest gain there, from passbandHighHz, passbandRippleDb,
+/// stopbandLowHz and stopbandDb.
+fn filter_limits() -> (f64, f64, f64, f64) {
+    (
+        stream_value("passbandHighHz"),
+        stream_value("passbandRippleDb"),
+        stream_value("stopbandLowHz"),
+        10f64.powf(-stream_value("stopbandDb") / 20.0),
+    )
+}
 fn format(rate: u32) -> NativeFormat {
     NativeFormat {
         rate,
@@ -29,12 +58,13 @@ fn signal(rate: u32, hz: f64, n: usize) -> Vec<f32> {
 // Proves: TC-002-003
 #[test]
 fn audio_filter_response() {
+    let (passband, ripple, stopband, rejected) = filter_limits();
     for rate in [44100, 48000] {
         let c = Converter::new(rate).unwrap();
         for taps in c.response_taps() {
-            for hz in (0..=3500)
+            for hz in (0..=passband as usize)
                 .step_by(25)
-                .chain((5500..=rate as usize / 2).step_by(25))
+                .chain((stopband as usize..=rate as usize / 2).step_by(25))
             {
                 let mut re = 0.0;
                 let mut im = 0.0;
@@ -44,10 +74,10 @@ fn audio_filter_response() {
                     im -= t * p.sin();
                 }
                 let gain = (re * re + im * im).sqrt();
-                if hz <= 3500 {
-                    assert!((20.0 * gain.log10()).abs() <= 0.1, "{rate} {hz} {gain}");
+                if hz as f64 <= passband {
+                    assert!((20.0 * gain.log10()).abs() <= ripple, "{rate} {hz} {gain}");
                 } else {
-                    assert!(gain <= 0.001, "{rate} {hz} {gain}");
+                    assert!(gain <= rejected, "{rate} {hz} {gain}");
                 }
             }
         }
@@ -441,8 +471,9 @@ fn audio_controller_profiles_and_stop() {
 // Proves: TC-002-003
 #[test]
 fn audio_waveform_response() {
+    let (passband, ripple, stopband, rejected) = filter_limits();
     for rate in [44100, 48000] {
-        for hz in [100.0, 1000.0, 3000.0, 3500.0, 5500.0, 6000.0, 9000.0] {
+        for hz in [100.0, 1000.0, 3000.0, passband, stopband, 6000.0, 9000.0] {
             let x = signal(rate, hz, rate as usize / 2);
             let mut converter = Converter::new(rate).unwrap();
             let mut out = Vec::new();
@@ -451,11 +482,11 @@ fn audio_waveform_response() {
             }
             let rms =
                 (out.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>() / out.len() as f64).sqrt();
-            if hz <= 3500.0 {
+            if hz <= passband {
                 let gain = 20.0 * (rms * 2.0_f64.sqrt()).log10();
-                assert!(gain.abs() < 0.1, "{rate} {hz}: {gain}");
+                assert!(gain.abs() < ripple, "{rate} {hz}: {gain}");
             } else {
-                assert!(rms * 2.0_f64.sqrt() <= 0.001, "{rate} {hz}: {rms}");
+                assert!(rms * 2.0_f64.sqrt() <= rejected, "{rate} {hz}: {rms}");
             }
         }
     }

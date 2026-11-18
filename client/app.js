@@ -1,4 +1,6 @@
 'use strict';
+// The timing of the link (WstxOperatingScreen::LinkRule).
+const LinkRule = Object.freeze({SILENCE_MS: 12000, RETRY_MS: 1000, RETRY_MAX_MS: 4000, CONNECT_MS: 5000});
 const connection = document.querySelector('#connection');
 const version = document.querySelector('#version');
 const radio = document.querySelector('#radio');
@@ -22,7 +24,7 @@ let automationAnnounced = null;
 // #82 FreeTxSlotMarks: the socket's latest free_tx_slots.state value, for an operating client that
 // loads after it.
 let freeTxSlotsHeld = null;
-let retry = 1000, lastMessage = 0, nextId = 1;
+let retry = LinkRule.RETRY_MS, lastMessage = 0, nextId = 1;
 // #102: every call names the path that made the page stale (station-stale detail.path), as evidence.
 function stale(path) { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(Object.assign(new Event('station-stale'), {detail: {path}})); }
 function requestStatus() {
@@ -36,7 +38,7 @@ function disconnect(current, path) {
   current.close();
   const retained = selectedHttps && authorization && ['ready', 'recovering'].includes(authorization.snapshot().state);
   login.hidden = location.protocol !== 'https:' || retained;
-  clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, 4000);
+  clearTimeout(timer); timer = setTimeout(connect, retry); retry = Math.min(retry * 2, LinkRule.RETRY_MAX_MS);
 }
 let loginRetry = null;
 const loginRetryText = () => `Slow link · Retrying authorization (attempt ${loginRetry.attempt} of ${loginRetry.attempts})…`;
@@ -66,7 +68,7 @@ async function connect() {
     catch (error) {
       if (attempt !== connecting) return;
       showAuthorizationUnavailable(error, 'authorization-unavailable');
-      clearTimeout(timer); timer = setTimeout(connect, 4000); return;
+      clearTimeout(timer); timer = setTimeout(connect, LinkRule.RETRY_MAX_MS); return;
     }
     if (attempt !== connecting || !authorized()) return;
   }
@@ -89,7 +91,7 @@ async function connect() {
       .catch(() => {})
       .finally(() => {if (handshakeProbe === probe) handshakeProbe = null;});
   };
-  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) loseSocket('opening-timeout');}, 5000);
+  const openingTimer = setTimeout(() => {if (current.readyState === WebSocket.CONNECTING) loseSocket('opening-timeout');}, LinkRule.CONNECT_MS);
   current.onopen = () => {
     opened = true; clearTimeout(openingTimer);
     if (lost || current !== socket || !authorized()) return;
@@ -120,7 +122,7 @@ async function connect() {
         connection.textContent = 'Connected'; connection.dataset.state = 'connected';
         document.querySelector('#updated').textContent = new Date().toLocaleTimeString([], {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
         refresh.disabled = false;
-        retry = 1000; login.hidden = true;
+        retry = LinkRule.RETRY_MS; login.hidden = true;
         if (profileMode) window.dispatchEvent(new CustomEvent('station-ready', {detail: current}));
       }
     } catch { disconnect(current, 'message-rejected'); }
@@ -151,7 +153,7 @@ function deferredDownload(promise) {
   deferredDownloads++;
   return promise.finally(() => {deferredDownloads--; lastMessage = Date.now();});
 }
-setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > (deferredDownloads ? 30000 : 12000)) disconnect(socket, 'watchdog'); }, 1000);
+setInterval(() => { if (socket?.readyState === WebSocket.OPEN && Date.now() - lastMessage > (deferredDownloads ? 30000 : LinkRule.SILENCE_MS)) disconnect(socket, 'watchdog'); }, 1000);
 refresh.addEventListener('click', requestStatus);
 login.addEventListener('submit', async event => {
   event.preventDefault(); const input = document.querySelector('#token');
@@ -168,7 +170,7 @@ login.addEventListener('submit', async event => {
     else {const response = await fetch('/session', {method: 'POST', body: secret}); secret = null; if (!response.ok) throw new Error('Access denied');}
     document.querySelector('#login-error').textContent = ''; clearTimeout(timer);
     if (socket && socket.readyState < WebSocket.CLOSING) { socket.onclose = null; socket.close(); }
-    retry = 1000; connect();
+    retry = LinkRule.RETRY_MS; connect();
   } catch (error) {
     if (authorization && (submittedEpoch === null || authorization.snapshot().epoch !== submittedEpoch || authorization.snapshot().ready)) return;
     if (error?.authorizationCondition) {
@@ -193,7 +195,7 @@ addEventListener('station-authorization', event => {
   if (event.detail.authorizationCondition) showAuthorizationUnavailable(event.detail, 'authorization-not-ready');
   else {stale('authorization-not-ready'); connection.textContent = 'Authorization unavailable · station data stale';}
   if (socket && socket.readyState < WebSocket.CLOSING) {socket.onclose = null; socket.close();}
-  clearTimeout(timer); timer = setTimeout(connect, 4000);
+  clearTimeout(timer); timer = setTimeout(connect, LinkRule.RETRY_MAX_MS);
 });
 for (const [button, action] of [[logoutButton, 'logout'], [forgetButton, 'forget']]) {
   button.addEventListener('click', async () => {

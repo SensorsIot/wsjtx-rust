@@ -1,10 +1,15 @@
 package WstxStationLink {
     private import ScalarValues::*;
+    private import RequirementDerivation::*;
+    private import WstxRequirements::'FR-021';
     private import WstxStationCommands::StationOperations;
     private import WstxDisplayData::SpectrumFrame;
     private import WstxDisplayData::DetailedSpectrumFrame;
     private import WstxStationTime::StationTime;
     private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::CodeDiffers;
+    private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::Status;
 
     doc /* How the features of the station boundary (WstxStationCommands::StationOperations)
          travel between a station's browser clients and its web function, by HTTP and on
@@ -14,7 +19,9 @@ package WstxStationLink {
     port def BrowserExchange :> StationOperations {
         doc /* Written from the browser's side; web uses the conjugate. */
         in item spectrum : SpectrumFrame;
-        in item detailedSpectrum : DetailedSpectrumFrame;
+        in item detailedSpectrum : DetailedSpectrumFrame {
+            @CodeDiffers { what = "The code names it only by its event, spectrum.detail.frame."; }
+        }
         in item time : StationTime;
     }
     interface def StationLink {
@@ -45,16 +52,16 @@ package WstxStationLink {
     }
 
     attribute def JsonValues {
-        doc /* A value travels as JSON: an Integer as a JSON integer from 0 up to
-             safeIntegerMax, or a negative one where the attribute allows it; a Real as a
-             JSON number; a Boolean as true or false; a String as a JSON string; an
-             enumeration literal as its name (WireNames); an attribute or item typed by a definition
-             as an object of its attributes; a multiplicity above one as an array, in the
-             order of the attribute when it is ordered; an absent optional value as null.
+        doc /* A value travels as JSON: an Integer as a JSON integer from 0 up to the
+             largest integer JSON exchanges exactly, or a negative one where the attribute
+             allows it; a Real as a JSON number; a Boolean as true or false; a String as a
+             JSON string; an enumeration literal as its name (WireNames); an attribute or
+             item typed by a definition as an object of its attributes; a multiplicity
+             above one as an array, in the order of the attribute when it is ordered; an
+             absent optional value as null.
              An object has exactly its keys: a key that is missing, unknown or given twice
              makes the request invalidRequest with that key as field. */
-        @FollowsSource { reference = "RFC 8259 (JSON); UTF-8 (RFC 3629)"; }
-        attribute safeIntegerMax : Integer = 900719925 * 10000000 + 4740991;
+        @FollowsSource { reference = "RFC 8259 (JSON) section 6; UTF-8 (RFC 3629)"; }
     }
 
     attribute def WireRule {
@@ -129,17 +136,16 @@ package WstxStationLink {
     }
 
     attribute def Limits {
-        doc /* The largest body web takes, in bytes of UTF-8. Every request not named
-             below: controlBytes. */
+        doc /* The largest body web takes, in bytes. Every request not named below:
+             controlBytes. A part of a logbook file: at most
+             WstxLogControl::LogLimits::importChunkBytesMax; a part of a recording's file:
+             at most WstxRecordingTransfer::RecordingLimits::rawChunkBytes. */
         attribute controlBytes : Integer = 1024;
         attribute recordBytes : Integer = 8192 {
             doc /* saveRecord: a comment of 1024 characters fits with every character
                  escaped. */ }
         attribute settingsBytes : Integer = 32768 {
             doc /* saveConfig, saveShack, createEntry and updateEntry. */ }
-        attribute logChunkBytes : Integer = 16384 { doc /* A part of a logbook file. */ }
-        attribute recordingChunkBytes : Integer = 2048 {
-            doc /* A part of a recording's file. */ }
     }
 
     attribute def Transfers {
@@ -212,6 +218,13 @@ package WstxStationLink {
         @FollowsSource { reference = "RFC 4648 section 4 (base64)"; }
         attribute detailRecentRows : Integer = 25;
     }
+
+    requirement 'CL-003-10' {
+        subject link : StationLink;
+        doc /* The link to a browser MUST stay within ThinLinkBudget. */
+        @Status { build = ImplementationState::target; }
+    }
+    #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-003-10'; }
 
     attribute def ThinLinkBudget {
         doc /* The link the station is built to work on: two browsers share one link of

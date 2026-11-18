@@ -3,6 +3,7 @@ package WstxAudioControl {
     private import WstxAudioStreams::SourceError;
     private import WstxRadioControl::RadioPlace;
     private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* The configuration and the records of the audio function; what the supervisor
          gives audio (its configuration, its records, the request for the
@@ -63,7 +64,12 @@ package WstxAudioControl {
         attribute lastNames : NamedEndpoint[0..2] {
             doc /* The last known name of each endpoint of AudioConfig, so that the
                  endpoint list can name an endpoint that is not present. Absent for an
-                 endpoint whose name was never read. */ }
+                 endpoint whose name was never read. */
+            @CodeDiffers {
+                what = "The record is NamesRecord::names, a map from the endpoint's id to "
+                    + "its name, in server/src/radio_setup.rs.";
+            }
+        }
     }
     item def AudioDevices {
         doc /* The configuration of audio, given at station start and whenever the

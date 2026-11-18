@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 pub(crate) mod tests;
 
 pub const FILE_NAME: &str = "strategy.json";
-pub const BODY_MAX: usize = 32_768;
+pub const BODY_MAX: usize = crate::limits::SETTINGS_BYTES;
 pub const STRATEGIES_MAX: usize = 16;
 pub const EVALUATE_MAX: u64 = 2048;
 /// WstxRankingControl::RankingLimits: the ignore list bounds.
@@ -29,7 +29,8 @@ pub const SESSION_IGNORE_MAX: usize = 64;
 pub const SESSION_IGNORE_MINUTES: u64 = 30;
 /// #42 WstxRankingControl::Alert bounds: the history length and the dedupe window.
 pub const ALERT_HISTORY_MAX: usize = 100;
-pub const ALERT_DEDUPE_MS: i64 = 10 * 60_000;
+pub const ALERT_DEDUPE_MINUTES: i64 = 10;
+pub const ALERT_DEDUPE_MS: i64 = ALERT_DEDUPE_MINUTES * 60_000;
 const FILE_BYTES_MAX: u64 = 262_144;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 use crate::contact::Activity;

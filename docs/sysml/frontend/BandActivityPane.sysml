@@ -8,6 +8,7 @@ package WstxBandActivityPane {
     private import WstxBrowserClientPart::SortField;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelNotes::CodeDiffers;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -185,9 +186,18 @@ package WstxBandActivityPane {
              newSenderOnly: any other message whose sender has such a slot.
              plain: everything else. */
         enum partner;
-        enum callsMe;
-        enum newWholeRow;
-        enum newSenderOnly;
+        enum callsMe {
+            @CodeDiffers { what = "The code marks such a row with the class ba-tome."; }
+        }
+        enum newWholeRow {
+            @CodeDiffers {
+                what = "The code marks such a row by its slots in data-hl, without the class "
+                    + "ba-sender.";
+            }
+        }
+        enum newSenderOnly {
+            @CodeDiffers { what = "The code marks such a row with the class ba-sender."; }
+        }
         enum plain;
     }
     attribute def RowMarks {

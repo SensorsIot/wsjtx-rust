@@ -15,6 +15,12 @@ use wstx_rust::transmit::service::{
     PttError, Service, View,
 };
 
+/// WstxTransmitState::Failures: how long transmit waits for radio control to confirm a key or
+/// a release.
+const KEY_EXCHANGE_MAX_MS: u64 = 1000;
+/// WstxTransmitState::SafetyReleases: the wait for the release at the end of the process.
+const EXIT_RELEASE_MAX_MS: u64 = 500;
+
 /// Station facts published by the CL-022 tick (store -> authorization -> recording).
 #[derive(Default)]
 pub(crate) struct Inputs {
@@ -120,9 +126,13 @@ impl Hardware for StationHardware {
             .clone()
             .ok_or(PttError::Unavailable)?;
         if on {
-            tx::actor_ptt_abortable(&actor, Duration::from_secs(1), &self.abort)
+            tx::actor_ptt_abortable(
+                &actor,
+                Duration::from_millis(KEY_EXCHANGE_MAX_MS),
+                &self.abort,
+            )
         } else {
-            tx::actor_ptt(&actor, false, Duration::from_secs(1))
+            tx::actor_ptt(&actor, false, Duration::from_millis(KEY_EXCHANGE_MAX_MS))
         }
     }
     #[cfg(windows)]
@@ -276,13 +286,16 @@ impl Station {
         if let Some(actor) = actor
             && actor.ptt_indeterminate()
         {
-            let _ = actor.ptt(false, Instant::now() + Duration::from_millis(500));
+            let _ = actor.ptt(
+                false,
+                Instant::now() + Duration::from_millis(EXIT_RELEASE_MAX_MS),
+            );
         }
     }
     /// Called by the CL-022 tick with the current profile, gate and actor.
     pub(crate) fn update(
         &self,
-        document: &profile::Document,
+        document: &profile::ProfileDocument,
         gate: &crate::cat_lifecycle::Gate,
         actor: Option<Arc<Actor>>,
     ) {

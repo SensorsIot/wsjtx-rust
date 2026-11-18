@@ -101,7 +101,7 @@ fn station(ic7300: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
     let f = fixture("http://127.0.0.1:18046", true);
     {
         let mut store = f.state.store.lock().unwrap();
-        store.document.control = profile::Control {
+        store.document.control = profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("COM3".into()),
             ptt: "cat".into(),

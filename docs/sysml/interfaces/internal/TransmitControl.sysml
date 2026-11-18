@@ -5,6 +5,7 @@ package WstxTransmitControl {
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;
     private import WstxModelNotes::NotStated;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* The configuration of the transmit function, its commands, their answers, and
          what transmit reports: the transmit state with its causes, the outcome of every
@@ -18,14 +19,26 @@ package WstxTransmitControl {
         doc /* The configuration of the transmit function: what the operator sets of
              transmitting. */
         attribute levelMode : LevelMode = LevelMode::automatic {
-            doc /* How the audio drive is set. */ }
+            doc /* How the audio drive is set. */
+            @CodeDiffers {
+                what = "The code has no level mode: it corrects the level whenever the "
+                    + "profile names a radio the station manages and the radio reports its "
+                    + "ALC, and offers a manual level only without an ALC reading "
+                    + "(server/src/radio_level.rs).";
+            }
+        }
         attribute levels : BandLevel[0..*] {
             doc /* The audio drive of each band, at most one entry for a band. A band has
                  none until the operator has set one or transmit has found one. */ }
         attribute tuneSeconds : Integer = 90 {
             doc /* The Tune limit: how long a Tune tone may last. From 1 to 300. */ }
         attribute split : WstxKeying::SplitOperation = WstxKeying::SplitOperation::none {
-            doc /* Split operation (WstxTransmitState::SplitRule). */ }
+            doc /* Split operation (WstxTransmitState::SplitRule). */
+            @CodeDiffers {
+                what = "The code has no split operation: transmit keys the radio on its "
+                    + "dial and plays at the Tx offset.";
+            }
+        }
     }
     enum def LevelMode {
         doc /* How the audio drive is set.
@@ -268,10 +281,20 @@ package WstxTransmitControl {
                  device. On a profile of a radio's native network connection it is
                  false. */ }
         attribute levelManaged : Boolean {
-            doc /* True when the radio of the profile is one the station manages. */ }
+            doc /* True when the radio of the profile is one the station manages. */
+            @CodeDiffers {
+                what = "The code calls it managed: true when the profile names a radio the "
+                    + "station manages (server/src/radio_level.rs).";
+            }
+        }
         attribute powerPct : Integer[0..1] {
             doc /* The output power of the station's band
-                 (WstxRadioControl::RadioConfig::powers); absent without one. */ }
+                 (WstxRadioControl::RadioConfig::powers); absent without one. */
+            @CodeDiffers {
+                what = "The code takes power_limit_pct of the profile's radio and keeps it "
+                    + "as power_limit (server/src/radio_level.rs).";
+            }
+        }
     }
     item def LevelFound {
         doc /* Transmit has found an audio drive, with the Tune tone or by the supervision
@@ -304,7 +327,13 @@ package WstxTransmitControl {
         attribute lastText : String[0..1] {
             doc /* The message last put on the air, as a receiver shows it. */ }
         attribute lastTxOffsetHz : Integer[0..1] {
-            doc /* The Tx offset of lastText. */ }
+            doc /* The Tx offset of lastText. */
+            @CodeDiffers {
+                what = "The code keeps no Tx offset of the last message: the transmit view "
+                    + "(View in server/src/transmit/service.rs) holds last_text and "
+                    + "last_period_utc_ms.";
+            }
+        }
         attribute lastPeriodUtcMs : Integer[0..1] {
             doc /* The start, in station time, of the period of the transmission whose
                  audio started last. Absent before the first one. */ }
@@ -387,7 +416,13 @@ package WstxTransmitControl {
         }
         attribute meters : WstxRadioProperties::MeterReadings[0..1] {
             doc /* The meters as last read; absent before the first reading. */ }
-        attribute powerPct : Integer[0..1] { doc /* TransmitProfile::powerPct. */ }
+        attribute powerPct : Integer[0..1] {
+            doc /* TransmitProfile::powerPct. */
+            @CodeDiffers {
+                what = "The code names it power_limit_pct in the radio.tx_level event "
+                    + "(server/src/radio_level.rs).";
+            }
+        }
         attribute warnings : LevelWarning[0..*];
     }
 
@@ -400,12 +435,24 @@ package WstxTransmitControl {
         out item stationMode : StationMode;
         out item stationBand : StationBand;
         out item profile : TransmitProfile;
-        out item processEnds : ProcessEnds;
+        out item processEnds : ProcessEnds {
+            @CodeDiffers {
+                what = "The code gives transmit no ProcessEnds: the exit path of "
+                    + "server/src/main.rs calls emergency_release in "
+                    + "server/src/transmit_http.rs.";
+            }
+        }
         in item receipt : HaltReceipt;
         in item outcome : TransmitOutcome;
         in item status : TransmitStatus;
         in item level : TxLevelStatus;
-        in item levelFound : LevelFound;
+        in item levelFound : LevelFound {
+            @CodeDiffers {
+                what = "The code has no LevelFound: the level code of transmit writes the "
+                    + "level it finds to tx-level.json itself (store_level in "
+                    + "server/src/radio_level.rs).";
+            }
+        }
     }
     interface def TransmitControl {
         doc /* The supervisor commands the transmit function; transmit reports its

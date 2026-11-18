@@ -523,8 +523,9 @@ impl PartialEq for Selection {
         self.profile.id == o.profile.id && (self.start_ms, self.end_ms) == (o.start_ms, o.end_ms)
     }
 }
-/// The longest period a selection accepts.
-const PERIOD_MAX_MS: i64 = 31 * DAY_MS;
+/// WstxStrategies::ContestSelection::periodDaysMax: the longest period a selection accepts.
+const PERIOD_DAYS_MAX: i64 = 31;
+const PERIOD_MAX_MS: i64 = PERIOD_DAYS_MAX * DAY_MS;
 /// A real instant "YYYY-MM-DDTHH:MMZ".
 fn minute(v: &Value) -> Option<i64> {
     let text = v.as_str().filter(|t| t.len() == 17 && t.is_ascii())?;

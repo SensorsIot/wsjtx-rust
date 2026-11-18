@@ -12,6 +12,7 @@ package WstxFlexSession {
     private import WstxModelBindings::Status;
     private import WstxModelBindings::Automation;
     private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::TestLevel;
     private import WstxModelBindings::TestLocation;
 
@@ -213,6 +214,10 @@ package WstxFlexSession {
              and take up a radio, a client identity and a slice only when the radio shows
              them free or the adapter's own (RadioChoice, SessionSetup). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/flexAdapter/session.rs; server/src/flexAdapter/wire.rs; "
+                + "server/src/main.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-023'; end #derive ::> 'CL-013-03'; }
 

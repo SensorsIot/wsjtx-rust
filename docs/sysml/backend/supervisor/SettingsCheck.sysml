@@ -26,8 +26,9 @@ package WstxSettingsCheck {
 
     requirement 'CL-001-01' {
         subject supervisor : Supervisor;
-        doc /* The supervisor MUST check the station's settings on CheckSettings as
-             CheckRule says. */
+        doc /* The supervisor MUST check the station's settings on
+             WstxStationCommands::CheckSettings and report them in
+             WstxStationCommands::SettingsCheckReport as CheckRule says. */
         @Status { build = ImplementationState::target; }
     }
     #derivation connection { end #original ::> 'FR-001'; end #derive ::> 'CL-001-01'; }

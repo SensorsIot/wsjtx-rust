@@ -1,4 +1,10 @@
 'use strict';
+// The values of the operating screen this script holds (WstxOperatingScreen::KeyRule,
+// WstxQsoPane::CallingMe, WstxQsoPane::MessageLines, WstxSignalArea::RxTxStrip).
+const KeyRule=Object.freeze({TX_STEP_FT8_HZ:60,TX_STEP_FT4_HZ:90});
+const CallingMe=Object.freeze({CALLING_LINES:8,CROWDING_HZ:50});
+const MessageLines=Object.freeze({LOGGED_SECONDS:8});
+const RxTxStrip=Object.freeze({STEP_HZ:1,SHIFT_STEP_HZ:10});
 // (WstxQsoPane::PaneLayout, RxTxStrip, BandActivityView). The server owns the contact,
 (()=>{
 const focus=document.querySelector('#rx-focus');
@@ -316,7 +322,7 @@ $('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:tr
 // WstxLogbook::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
 // pane shows the latest outcome, and an open Logbook page lists a newly saved record.
 const logReasons={storage_unavailable:'storage unavailable · retrying',log_queue_full:'too many unsaved QSOs · the oldest was not logged',log_invalid_field:'the station profile is incomplete',same_station_again:'same station as the last log entry'};
-const LOGGED_NOTICE_MS=8000;
+const LOGGED_NOTICE_MS=MessageLines.LOGGED_SECONDS*1000;
 function logShow(){
   const l=snap?.log,node=$('contact-logged');
   const key=l&&`${l.contact_id}/${l.outcome}`,fresh=!!key&&key!==lastLog&&lastLog!==null;
@@ -711,7 +717,7 @@ addEventListener('keydown',event=>{
   if(event.key==='F4'){event.preventDefault();if(snap?.contact&&!['idle','cancelled'].includes(snap.contact.state))send('cancel',{},'Clear DX');return;}
   if(event.key==='F11'||event.key==='F12'){
     event.preventDefault();const sign=event.key==='F11'?-1:1,ft4=tick?.period===7500;
-    if(event.shiftKey)nudge(null,sign*(ft4?90:60),'Tx frequency');else if(event.ctrlKey)nudge(sign,sign,'Rx and Tx frequency');else nudge(sign,null,'Rx frequency');
+    if(event.shiftKey)nudge(null,sign*(ft4?KeyRule.TX_STEP_FT4_HZ:KeyRule.TX_STEP_FT8_HZ),'Tx frequency');else if(event.ctrlKey)nudge(sign,sign,'Rx and Tx frequency');else nudge(sign,null,'Rx frequency');
     return;
   }
   if(!event.altKey||event.ctrlKey||event.metaKey)return;
@@ -805,7 +811,7 @@ function recentRows(){
   if(previous&&previous.context===context&&Number.isFinite(latest)&&latest-Date.parse(previous.period??'')<=len)rows.push(...previous.rows.map(record=>({record,context})));
   return rows;
 }
-const OTHER_LINES=8;
+const OTHER_LINES=CallingMe.CALLING_LINES;
 // The caller as decoded: the word of the two calls that is not mine (a hashed call as "<...>").
 function callerText(record){
   const my=myCall(),w=(record.text??'').trim().split(/\s+/),mine=x=>x===my||x===`<${my}>`;
@@ -818,7 +824,7 @@ function callerTip(record,w){
 }
 function othersShow(){
   const rx=snap?.settings?.rx_hz,tx=snap?.settings?.tx_hz,c=snap?.contact,qso=running(c),dx=qso?c.dx_call:lastPartner,my=myCall();
-  const near=f=>[rx,tx].some(o=>typeof o==='number'&&f>=o-50&&f<=o+50);
+  const near=f=>[rx,tx].some(o=>typeof o==='number'&&f>=o-CallingMe.CROWDING_HZ&&f<=o+CallingMe.CROWDING_HZ);
   const newest=(snap&&my?recentRows():[]).filter(({record})=>{
     if(record.status!=='decoded')return false;
     // #24: addressed to me as in Band Activity (recordTo: also <MYCALL> and nonstandard i3=4).
@@ -873,13 +879,13 @@ const confirmed=key=>snap?.settings?.[key==='rx'?'rx_hz':'tx_hz'];
 for(const key of ['rx','tx']){
   const input=$('contact-'+key),label=key==='rx'?'Rx frequency':'Tx frequency';
   input.addEventListener('change',()=>setFrequency(key,Number(input.value),label));
-  input.addEventListener('keydown',event=>{if(!['ArrowUp','ArrowDown'].includes(event.key)||typeof confirmed(key)!=='number')return;event.preventDefault();setFrequency(key,confirmed(key)+(event.key==='ArrowUp'?1:-1)*(event.shiftKey?10:1),label);});
-  input.addEventListener('wheel',event=>{if(typeof confirmed(key)!=='number'||input.disabled)return;event.preventDefault();setFrequency(key,confirmed(key)+(event.deltaY<0?1:-1)*(event.shiftKey?10:1),label);},{passive:false});
+  input.addEventListener('keydown',event=>{if(!['ArrowUp','ArrowDown'].includes(event.key)||typeof confirmed(key)!=='number')return;event.preventDefault();setFrequency(key,confirmed(key)+(event.key==='ArrowUp'?1:-1)*(event.shiftKey?RxTxStrip.SHIFT_STEP_HZ:RxTxStrip.STEP_HZ),label);});
+  input.addEventListener('wheel',event=>{if(typeof confirmed(key)!=='number'||input.disabled)return;event.preventDefault();setFrequency(key,confirmed(key)+(event.deltaY<0?1:-1)*(event.shiftKey?RxTxStrip.SHIFT_STEP_HZ:RxTxStrip.STEP_HZ),label);},{passive:false});
 }
 document.querySelector('#rxtx-strip').addEventListener('click',event=>{
   const button=event.target.closest('[data-strip-step]');if(!button)return;
   const [key,step]=button.dataset.stripStep.split(':'),base=confirmed(key);if(typeof base!=='number')return;
-  setFrequency(key,base+Number(step)*(event.shiftKey?10:1),key==='rx'?'Rx frequency':'Tx frequency');
+  setFrequency(key,base+Number(step)*(event.shiftKey?RxTxStrip.SHIFT_STEP_HZ:RxTxStrip.STEP_HZ),key==='rx'?'Rx frequency':'Tx frequency');
 });
 $('contact-hold').addEventListener('change',event=>send('set_hold_tx',{enabled:event.target.checked},'Hold Tx'));
 $('strip-tx-from-rx').addEventListener('click',()=>{const s=snap?.settings;if(s)send('set_frequency',{rx_hz:null,tx_hz:s.rx_hz},'Tx=Rx');});
@@ -1117,7 +1123,7 @@ window.wstxChipsShow();if(typeof renderResults==='function')renderResults();
 document.querySelector('#help-keys').insertAdjacentHTML('beforeend','<div><dt>CQ / double-click a decode</dt><dd>Start the QSO: transmission starts with the next period and ends after RR73/73 or HALT</dd></div><div><dt>F2</dt><dd>Settings</dd></div><div><dt>F4</dt><dd>Clear the DX call (cancel the contact)</dd></div><div><dt>Alt+1 &hellip; Alt+6</dt><dd>Next message Tx1&hellip;Tx6</dd></div><div><dt>Alt+M</dt><dd>Start or stop receive</dd></div><div><dt>Alt+T / Alt+Q</dt><dd>Tune / Log QSO</dd></div><div><dt>F11 / F12</dt><dd>Rx &minus;/+ 1 Hz</dd></div><div><dt>Shift+F11 / Shift+F12</dt><dd>Tx &minus;/+ 60 Hz (FT4 90 Hz)</dd></div><div><dt>Ctrl+F11 / Ctrl+F12</dt><dd>Rx and Tx &minus;/+ 1 Hz</dd></div><div><dt>Waterfall click / double-click</dt><dd>Set Tx / Rx and Tx; drag the green Rx or red Tx line</dd></div><div><dt>Rx/Tx fields: wheel, arrows, &minus;/+</dt><dd>1 Hz; with Shift 10 Hz</dd></div><div><dt>Band Activity: click / double-click / right-click</dt><dd>Select / Reply / menu</dd></div><div><dt>Separator arrows / Home / End</dt><dd>Resize the spectrum and waterfall</dd></div>');
 // WstxSettings::DisplaySection: Day / Dark / Night for this browser only, manually, by
 const themeKey='wstx.theme.v1';
-function themeSettings(){let saved=null;try{saved=JSON.parse(localStorage.getItem(themeKey));}catch{}return {theme:['day','dark','night'].includes(saved?.theme)?saved.theme:'dark',mode:['manual','time','sun'].includes(saved?.mode)?saved.mode:'manual',day:/^\d\d:\d\d$/.test(saved?.day)?saved.day:'07:00',night:/^\d\d:\d\d$/.test(saved?.night)?saved.night:'20:00'};}
+function themeSettings(){let saved=null;try{saved=JSON.parse(localStorage.getItem(themeKey));}catch{}return {theme:['day','dark','night'].includes(saved?.theme)?saved.theme:FrontendConfig.THEME,mode:['manual','time','sun'].includes(saved?.mode)?saved.mode:FrontendConfig.THEME_SWITCH,day:/^\d\d:\d\d$/.test(saved?.day)?saved.day:'07:00',night:/^\d\d:\d\d$/.test(saved?.night)?saved.night:'20:00'};}
 function sunTimes(locator,date=new Date()){
   const position=maidenhead(locator);if(!position)return null;const [lat,lon]=position,r=Math.PI/180;
   const day=Math.floor((Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate())-Date.UTC(date.getUTCFullYear(),0,0))/864e5);
@@ -1468,7 +1474,7 @@ ignoreList?.closest('.op-ignore-session')?.insertAdjacentHTML('afterend','<div c
 const alertSound=$('alert-sound'),alertNotify=$('alert-notify'),alertList=$('alert-history'),alertNote=$('alert-note');
 let alertView=null,alertSeen=null,alertSocket=null,alertSeq=0,audio=null;
 const alertKey=()=>`wstx.alerts.v1:${alertView?.profile_id??view?.profile_id??''}`;
-function alertPrefs(){try{const p=JSON.parse(localStorage.getItem(alertKey())??'null');return {sound:p?.sound===true,notify:p?.notify===true};}catch{return {sound:false,notify:false};}}
+function alertPrefs(){try{const p=JSON.parse(localStorage.getItem(alertKey())??'null');return {sound:typeof p?.sound==='boolean'?p.sound:FrontendConfig.ALERT_SOUND,notify:typeof p?.notify==='boolean'?p.notify:FrontendConfig.ALERT_NOTIFY};}catch{return {sound:FrontendConfig.ALERT_SOUND,notify:FrontendConfig.ALERT_NOTIFY};}}
 function saveAlertPrefs(p){try{localStorage.setItem(alertKey(),JSON.stringify({sound:p.sound,notify:p.notify}));}catch{}}
 const notifyGranted=()=>typeof Notification!=='undefined'&&Notification.permission==='granted';
 function showAlertPrefs(){if(!alertSound)return;const p=alertPrefs();alertSound.checked=p.sound;alertNotify.checked=p.notify&&notifyGranted();alertNotify.disabled=typeof Notification==='undefined';if(alertNotify.disabled)alertNote.textContent='This browser offers no notifications here';}

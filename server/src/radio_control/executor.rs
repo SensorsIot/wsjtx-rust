@@ -568,7 +568,7 @@ impl<T: Transport> Executor<T> {
         let now = Instant::now();
         if inner
             .last_poll
-            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(1))
+            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(super::POLL_SECONDS))
         {
             return Err(Error::Busy);
         }

@@ -33,13 +33,6 @@ package WstxRadioProperties {
         attribute filterNumber : Integer {
             doc /* 1, 2 or 3 with the data mode on; 0 with it off. */ }
     }
-    attribute def DialRange {
-        doc /* The frequencies the station reads from a radio and sets on it. A frequency
-             outside the range is refused before anything is sent, and an answer outside
-             it is not a frequency. */
-        attribute lowestHz : Integer = 30000;
-        attribute highestHz : Integer = 74800000;
-    }
 
     enum def Agc {
         doc /* The time constant of the receiver's automatic gain control. */

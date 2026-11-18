@@ -1,4 +1,10 @@
 'use strict';
+// This browser's display choices and their defaults (WstxBrowserClientPart::FrontendConfig),
+// the waterfall's levels (WstxSignalArea::DisplayLevels) and the SWR's colour
+// (WstxSignalArea::SwrValue).
+const FrontendConfig=Object.freeze({THEME:'dark',THEME_SWITCH:'manual',DISPLAY:'detail',SENSITIVITY_DB:0,RANGE_DB:50,SPEED:1.0,FLATTEN:false,SPECTRUM_LINE:false,SORT_FIELD:'value',SORT_DESCENDING:true,ALERT_SOUND:false,ALERT_NOTIFY:false});
+const DisplayLevels=Object.freeze({REFERENCE_DBFS:-85,SPEED_STEP:0.5});
+const SwrValue=Object.freeze({RED_ABOVE_SWR:2.0});
 const main = document.querySelector('main'), controls = document.createElement('div');
 controls.id = 'controls';
 while (main.firstChild) controls.append(main.firstChild);
@@ -133,7 +139,7 @@ bandColoursApply();
 secondary('recorded-input','Recordings and replay',panel,expertSection).open=true;
 expertSection.insertAdjacentHTML('afterbegin','<p class="op-muted">Diagnostics that are not needed while operating.</p>');
 const sliders=document.createElement('div');sliders.id='presentation-sliders';sliders.className='op-display-controls';
-sliders.innerHTML='<label title="WSJT-X Zero: moves the whole colour scale; the noise floor sits lower or higher">Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="0" aria-label="Waterfall sensitivity (zero)"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="WSJT-X Gain: the dB span from dark blue to red">Range <input id="display-range" type="range" min="10" max="80" step="1" value="50" aria-label="Waterfall range (gain)"><output id="range-value">50 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="0.5" value="1" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">10 px/s</output></label>';
+sliders.innerHTML='<label title="WSJT-X Zero: moves the whole colour scale; the noise floor sits lower or higher">Sensitivity <input id="display-sensitivity" type="range" min="-30" max="30" step="1" value="'+FrontendConfig.SENSITIVITY_DB+'" aria-label="Waterfall sensitivity (zero)"><output id="sensitivity-value">+0 dB</output></label>'+'<label title="WSJT-X Gain: the dB span from dark blue to red">Range <input id="display-range" type="range" min="10" max="80" step="1" value="'+FrontendConfig.RANGE_DB+'" aria-label="Waterfall range (gain)"><output id="range-value">50 dB</output></label>'+'<label title="Scroll speed in CSS pixels per source second. Replay and received rows per second do not change.">Speed <input id="display-speed" type="range" min="0.5" max="8" step="'+DisplayLevels.SPEED_STEP+'" value="'+FrontendConfig.SPEED+'" aria-label="Waterfall speed, Slow to Fast"><output id="speed-value">10 px/s</output></label>';
 signal.querySelector('.op-signal-heading').append(sliders);
 for(const child of [...controls.children]){if(child.matches('h1,.intro,footer'))child.remove();}
 const loginView=document.createElement('section');loginView.id='login-view';loginView.className='op-login';loginView.setAttribute('aria-label','Station authorization');loginView.hidden=true;
@@ -175,7 +181,7 @@ addEventListener('keydown',event=>{
   if(event.altKey&&!event.ctrlKey&&!event.metaKey&&event.key.toLowerCase()==='m'){event.preventDefault();receiveToggle();}
 });
 const profileSelect=document.querySelector('#display-profile');
-const defaultDisplayProfile=()=>'detail';
+const defaultDisplayProfile=()=>FrontendConfig.DISPLAY;
 const displayPreferenceKey=id=>`wstx.display-profile.v1:${id}`;
 let restoredDisplayProfile;
 function displayPreferenceId(){const id=profileData?.profile_id;return typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)?id:null;}
@@ -187,7 +193,7 @@ function restoreDisplayPreference(){
 restoreDisplayPreference();
 // #54 WstxSignalArea::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal
 // over time. displayBlack is the fixed -85 dBFS reference; nothing in this page changes it.
-let displayBlack=-85, displayRange=50, flatten=false, spectrumLine=false, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=0, speed=1, fallbackText='', detailRequest;
+let displayBlack=DisplayLevels.REFERENCE_DBFS, displayRange=FrontendConfig.RANGE_DB, flatten=FrontendConfig.FLATTEN, spectrumLine=FrontendConfig.SPECTRUM_LINE, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=FrontendConfig.SENSITIVITY_DB, speed=FrontendConfig.SPEED, fallbackText='', detailRequest;
 try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
 try{const zero=localStorage.getItem('wstx.waterfall-zero.v1'),range=localStorage.getItem('wstx.waterfall-range.v1'),z=Number(zero),r=Number(range);if(zero!==null&&Number.isInteger(z)&&z>=-30&&z<=30)sensitivity=z;if(range!==null&&Number.isInteger(r)&&r>=10&&r<=80)displayRange=r;flatten=localStorage.getItem('wstx.waterfall-flatten.v1')==='on';spectrumLine=localStorage.getItem('wstx.spectrum-line.v1')==='on';}catch{}
 const palette=[[0,[0,0,12]],[.15,[0,0,80]],[.35,[0,80,220]],[.50,[0,220,240]],[.65,[30,230,80]],[.80,[255,235,0]],[.95,[255,40,0]],[1,[255,0,0]]];
@@ -535,7 +541,7 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 // Mutations supersede earlier reads; accepted snapshots supersede pending pages.
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null,liveEventAt=-Infinity;
 let lastReceiveReady=null;
-let activitySortProfile=null,activitySortField='value',activitySortDirection='desc';
+let activitySortProfile=null,activitySortField=FrontendConfig.SORT_FIELD,activitySortDirection=FrontendConfig.SORT_DESCENDING?'desc':'asc';
 const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||liveFailed||resultsAnnounced!==null||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
@@ -629,7 +635,7 @@ async function receiveSync(current=socket){
 }
 function activityOrdering(records=resultRows){
   const id=displayPreferenceId();
-  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField='value';activitySortDirection='desc';}
+  if(id&&id!==activitySortProfile){activitySortProfile=id;activitySortField=FrontendConfig.SORT_FIELD;activitySortDirection=FrontendConfig.SORT_DESCENDING?'desc':'asc';}
   for(const th of document.querySelectorAll('#band-activity th[data-sort]'))th.setAttribute('aria-sort',th.dataset.sort===activitySortField?(activitySortDirection==='asc'?'ascending':'descending'):'none');
   const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
   const missing=v=>v===null||v===undefined||v==='';
@@ -1205,7 +1211,7 @@ function validTxLevelEvent(d){
     typeof d.assistant==='boolean'&&(d.result===null||typeof d.result==='string')&&(d.power_limit_pct===null||Number.isSafeInteger(d.power_limit_pct))&&(m===null||operatingShape(m,'alc,po_pct,swr_x10')&&meter(m.alc)&&meter(m.po_pct)&&meter(m.swr_x10));
 }
 // #68 CL-068-01: the last pushed SWR at the end of the Rx/Tx strip, red above 2.0; display only.
-const SWR_RED_ABOVE_X10=20;
+const SWR_RED_ABOVE_X10=SwrValue.RED_ABOVE_SWR*10;
 function stripSwrShow(){
   const out=document.getElementById('strip-swr');if(!out)return;
   const v=txLevelState,swr=v?.managed?v.meters?.swr_x10??null:null;
@@ -1330,7 +1336,7 @@ addEventListener('keydown',event=>{
   transmitPost('/transmit/halt',{}).then(r=>{result.textContent=`Halt: ${r.halt_state}`;done(r);},error=>{result.textContent=`Halt not confirmed · ${error.message}`;done(null);});
 },true);
 new ResizeObserver(()=>main.style.setProperty('--op-topbar',`${stationBar.offsetHeight}px`)).observe(stationBar);
-document.documentElement.dataset.theme='dark';try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
+document.documentElement.dataset.theme=FrontendConfig.THEME;try{const saved=JSON.parse(localStorage.getItem('wstx.theme.v1'));if(saved?.mode==='manual'&&['day','dark','night'].includes(saved.theme))document.documentElement.dataset.theme=saved.theme;}catch{}
 // The log client (WstxStandardQso::LogConfirmRule) and then the contact client load after this
 // browser's first recording and receive snapshots (or 20 s after the station is ready), so
 // their bytes never compete with the cold page, authorization or the first state reads on a

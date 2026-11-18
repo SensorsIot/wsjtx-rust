@@ -178,7 +178,7 @@ fn window_dump_writes_prompt_windows_and_rotates() {
     assert!(names[0].starts_with("000000000000010-"), "{names:?}");
     let v = r.diagnostics_view();
     let windows = v["windows"].as_array().unwrap();
-    assert_eq!(windows.len(), WINDOWS);
+    assert_eq!(windows.len(), KEPT_WINDOWS);
     assert_eq!(windows[0]["origin"], 10);
     assert_eq!(
         windows[0]["dump"],

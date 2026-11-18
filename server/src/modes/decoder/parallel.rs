@@ -7,10 +7,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Logical CPUs minus one, leaving headroom for capture, display and transmit threads.
+/// The logical CPUs a decode leaves to capture, display and transmit threads.
+const SPARED_PROCESSORS: usize = 1;
+/// Logical CPUs minus SPARED_PROCESSORS, and at least one.
 pub(super) fn default_threads() -> usize {
     std::thread::available_parallelism()
-        .map_or(1, |n| n.get().saturating_sub(1))
+        .map_or(1, |n| n.get().saturating_sub(SPARED_PROCESSORS))
         .max(1)
 }
 

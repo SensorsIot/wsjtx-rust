@@ -7,6 +7,8 @@ package WstxRadioControl {
     private import WstxRadioProperties::Agc;
     private import WstxRadioProperties::Setting;
     private import WstxCat::CivFrame;
+    private import WstxModelNotes::CodeDiffers;
+    private import WstxModelNotes::FollowsSource;
 
     doc /* The configuration and the records of radio control; what the supervisor
         gives radio control and what radio control reports; the access of radio control
@@ -60,15 +62,49 @@ package WstxRadioControl {
             doc /* Hamlib's number of the rig: 3073 for the IC-7300. */ }
         attribute abilities : RadioAbility[0..*] {
             doc /* What the rig can do over CAT, as its catalogue entry gives it from
-                 Hamlib's capabilities of the rig. */ }
+                 Hamlib's capabilities of the rig. */
+            @CodeDiffers {
+                what = "The catalogue of server/src/radio_control/catalogue.rs states no abilities "
+                    + "of a rig.";
+            }
+        }
         attribute txRanges : FrequencyRange[1..*] {
             doc /* The frequencies the rig transmits on, as its catalogue entry gives them
-                 from Hamlib's transmit ranges of the rig. */ }
+                 from Hamlib's transmit ranges of the rig. */
+            @CodeDiffers {
+                what = "The catalogue of server/src/radio_control/catalogue.rs states no transmit "
+                    + "ranges of a rig.";
+            }
+        }
+        attribute dialRange : FrequencyRange {
+            doc /* The frequencies the station reads from the rig and sets on it, as its
+                 catalogue entry gives them from Hamlib's receive ranges of the rig. A
+                 frequency outside them is refused before anything is sent, and an answer
+                 outside them is not a frequency. */
+            @FollowsSource { reference = "Hamlib: the receive ranges of the rig's capabilities"; }
+            @CodeDiffers {
+                what = "The code holds 30000 to 74800000 Hz for every rig: Operation::validate in "
+                    + "server/src/radio_control/mod.rs, the frequency codec of "
+                    + "server/src/transmit/codec.rs and Session::tune of "
+                    + "server/src/flexAdapter/session.rs; the catalogue's frequency commands must "
+                    + "state that range.";
+            }
+        }
     }
     attribute def FrequencyRange {
         doc /* The frequencies from lowHz to highHz, both included. */
-        attribute lowHz : Integer;
-        attribute highHz : Integer;
+        attribute lowHz : Integer {
+            @CodeDiffers {
+                what = "The code has no frequency range: a command of the catalogue gives its "
+                    + "minimum, and the code holds 30000 Hz itself.";
+            }
+        }
+        attribute highHz : Integer {
+            @CodeDiffers {
+                what = "The code has no frequency range: a command of the catalogue gives its "
+                    + "maximum, and the code holds 74800000 Hz itself.";
+            }
+        }
     }
     enum def RadioAbility {
         doc /* A function of the radio that not every rig has over CAT.
@@ -76,14 +112,49 @@ package WstxRadioControl {
              split: use a second VFO for transmit. setAgc: set the AGC.
              dataMode: switch the data mode. readAlc, readPower, readSwr: read the ALC,
              the output power and the SWR meter. */
-        enum keyOverCat;
-        enum setPower;
+        enum keyOverCat {
+            @CodeDiffers {
+                what = "The code names no ability of a rig: the catalogue of "
+                    + "server/src/radio_control/catalogue.rs states none.";
+            }
+        }
+        enum setPower {
+            @CodeDiffers {
+                what = "The code names no ability of a rig: the catalogue of "
+                    + "server/src/radio_control/catalogue.rs states none.";
+            }
+        }
         enum split;
-        enum setAgc;
-        enum dataMode;
-        enum readAlc;
-        enum readPower;
-        enum readSwr;
+        enum setAgc {
+            @CodeDiffers {
+                what = "The code names no ability of a rig: the catalogue of "
+                    + "server/src/radio_control/catalogue.rs states none.";
+            }
+        }
+        enum dataMode {
+            @CodeDiffers {
+                what = "The code names no ability of a rig: the catalogue of "
+                    + "server/src/radio_control/catalogue.rs states none.";
+            }
+        }
+        enum readAlc {
+            @CodeDiffers {
+                what = "The code names no ability of a rig: the catalogue of "
+                    + "server/src/radio_control/catalogue.rs states none.";
+            }
+        }
+        enum readPower {
+            @CodeDiffers {
+                what = "The code names no ability of a rig: the catalogue of "
+                    + "server/src/radio_control/catalogue.rs states none.";
+            }
+        }
+        enum readSwr {
+            @CodeDiffers {
+                what = "The code names no ability of a rig: the catalogue of "
+                    + "server/src/radio_control/catalogue.rs states none.";
+            }
+        }
     }
     attribute def RadioConfig {
         doc /* The configuration of radio control: what the operator sets of the radio
@@ -104,7 +175,12 @@ package WstxRadioControl {
         doc /* The output power of one band. */
         attribute band : String { doc /* An ADIF band name in lower case. */ }
         attribute powerPct : Integer {
-            doc /* In percent of the radio's full power, from 1 to 100. */ }
+            doc /* In percent of the radio's full power, from 1 to 100. */
+            @CodeDiffers {
+                what = "The code keeps no power of a band: Radio::power_limit_pct of "
+                    + "server/src/profile.rs is one limit of the Tx level for every band.";
+            }
+        }
     }
     attribute def RadioRecords {
         doc /* What radio control wants kept across the sessions of the station. No
@@ -249,7 +325,12 @@ package WstxRadioControl {
         doc /* The radio connection at the moment it is read. */
         attribute connectionNumber : Integer {
             doc /* Counts the attempts to connect since station start; 0 before the
-                 first. A request names the connection it is meant for. */ }
+                 first. A request names the connection it is meant for. */
+            @CodeDiffers {
+                what = "The status gives it as connection_generation (Recording::radio_view in "
+                    + "server/src/recording.rs).";
+            }
+        }
         attribute 'state' : CatState;
         attribute error : ControlError[0..1];
         attribute deviceId : String[0..1] {
@@ -261,10 +342,20 @@ package WstxRadioControl {
                  none by CAT. */ }
         attribute abilities : RadioAbility[0..*] {
             doc /* RigModel::abilities of the rig; empty while the profile controls none
-                 by CAT. */ }
+                 by CAT. */
+            @CodeDiffers {
+                what = "The status gives no abilities of the rig (Recording::radio_view in "
+                    + "server/src/recording.rs).";
+            }
+        }
         attribute txRanges : FrequencyRange[0..*] {
             doc /* RigModel::txRanges of the rig; empty while the profile controls none
-                 by CAT. */ }
+                 by CAT. */
+            @CodeDiffers {
+                what = "The status gives no transmit ranges of the rig (Recording::radio_view in "
+                    + "server/src/recording.rs).";
+            }
+        }
         attribute facts : RadioFacts;
         attribute automatic : AutomaticCatStatus;
         attribute place : RadioPlace[0..1] {
@@ -281,7 +372,12 @@ package WstxRadioControl {
              notApplied: it could not be read or set; the status's error says why. */
         enum unchanged;
         enum written;
-        enum notApplied;
+        enum notApplied {
+            @CodeDiffers {
+                what = "The AGC status gives the radio's error code in place of notApplied "
+                    + "(Owner::record in server/src/radioControl/radio_agc.rs).";
+            }
+        }
     }
     enum def SettingTrigger {
         doc /* connect: a connection became ready. selection: ApplyAgc or ApplyPower.
@@ -294,7 +390,12 @@ package WstxRadioControl {
         doc /* The AGC the station wants on the radio and what came of setting it. */
         attribute target : Agc[0..1] {
             doc /* RadioConfig::agc; absent while the configuration has none. */ }
-        attribute connectionNumber : Integer[0..1];
+        attribute connectionNumber : Integer[0..1] {
+            @CodeDiffers {
+                what = "The status gives it as connection_generation (event in "
+                    + "server/src/radioControl/radio_agc.rs).";
+            }
+        }
         attribute value : Agc[0..1] { doc /* What the radio reported last. */ }
         attribute outcome : SettingOutcome[0..1] {
             doc /* Absent until the radio has been asked. */ }
@@ -306,9 +407,22 @@ package WstxRadioControl {
              it. */
         attribute band : String[0..1] { doc /* The station's band. */ }
         attribute targetPct : Integer[0..1] {
-            doc /* The band's entry of RadioConfig::powers; absent without one. */ }
-        attribute connectionNumber : Integer[0..1];
-        attribute valuePct : Integer[0..1] { doc /* What the radio reported last. */ }
+            doc /* The band's entry of RadioConfig::powers; absent without one. */
+            @CodeDiffers {
+                what = "The code has no power status: radio control sets no output power.";
+            }
+        }
+        attribute connectionNumber : Integer[0..1] {
+            @CodeDiffers {
+                what = "The code has no power status: radio control sets no output power.";
+            }
+        }
+        attribute valuePct : Integer[0..1] {
+            doc /* What the radio reported last. */
+            @CodeDiffers {
+                what = "The code has no power status: radio control sets no output power.";
+            }
+        }
         attribute outcome : SettingOutcome[0..1] {
             doc /* Absent until the radio has been asked. */ }
         attribute error : ControlError[0..1];
@@ -335,21 +449,46 @@ package WstxRadioControl {
              only requests of this reservation are carried out, and the radio is not
              read in between. */
         attribute waitMs : Integer {
-            doc /* How long to wait for a running exchange to end. */ }
+            doc /* How long to wait for a running exchange to end. */
+            @CodeDiffers {
+                what = "The reservation takes a deadline, an Instant, in place of a wait "
+                    + "(Actor::reserve_transition in server/src/radio_control/actor.rs).";
+            }
+        }
     }
     item def RadioReserved { doc /* Radio control is kept for the change. */ }
     item def ReleaseReservation { doc /* The change is over. */ }
     item def OperationRequest {
         doc /* One operation. The values an operation does not use are absent. */
         attribute operation : ControlOperation;
-        attribute connectionNumber : Integer;
+        attribute connectionNumber : Integer {
+            @CodeDiffers {
+                what = "The request names it as Authority::connection_generation (Request in "
+                    + "server/src/radio_control/mod.rs).";
+            }
+        }
         attribute withinMs : Integer {
-            doc /* The time the supervisor gives the operation. */ }
+            doc /* The time the supervisor gives the operation. */
+            @CodeDiffers {
+                what = "The request carries a deadline, an Instant (Request::deadline in "
+                    + "server/src/radio_control/mod.rs).";
+            }
+        }
         attribute frequencyHz : Integer[0..1];
         attribute sideband : Sideband[0..1];
-        attribute filterNumber : Integer[0..1];
+        attribute filterNumber : Integer[0..1] {
+            @CodeDiffers {
+                what = "The operation names it filter (Operation in "
+                    + "server/src/radio_control/mod.rs).";
+            }
+        }
         attribute data : Boolean[0..1];
-        attribute dataFilterNumber : Integer[0..1];
+        attribute dataFilterNumber : Integer[0..1] {
+            @CodeDiffers {
+                what = "The operation names it data_filter (Operation::ReceiveSetup in "
+                    + "server/src/radio_control/mod.rs).";
+            }
+        }
     }
     item def WithdrawRequest {
         doc /* Give up the OperationRequest in work; it ends with cancelled. */
@@ -400,10 +539,24 @@ package WstxRadioControl {
             doc /* The station can control this model. */ }
     }
     attribute def PortReport {
-        attribute comPort : Integer { doc /* The number of the COM port. */ }
+        attribute comPort : Integer {
+            doc /* The number of the COM port. */
+            @CodeDiffers {
+                what = "The report gives the port as port, the text COMn (detect in "
+                    + "server/src/radio_setup.rs).";
+            }
+        }
         attribute friendlyName : String[0..1];
-        attribute vendorId : String[0..1];
-        attribute productId : String[0..1];
+        attribute vendorId : String[0..1] {
+            @CodeDiffers {
+                what = "The report gives it as vid (detect in server/src/radio_setup.rs).";
+            }
+        }
+        attribute productId : String[0..1] {
+            @CodeDiffers {
+                what = "The report gives it as pid (detect in server/src/radio_setup.rs).";
+            }
+        }
         attribute instanceId : String;
         attribute 'state' : PortState;
         attribute radios : IdentifiedRadio[0..*];
@@ -428,7 +581,12 @@ package WstxRadioControl {
     }
     attribute def RadioProposal {
         doc /* The control the station proposes for the one radio it can control. */
-        attribute comPort : Integer;
+        attribute comPort : Integer {
+            @CodeDiffers {
+                what = "The proposal gives the port as port, the text COMn (detect in "
+                    + "server/src/radio_setup.rs).";
+            }
+        }
         attribute model : String;
         attribute control : ControlSelection;
         attribute agc : Agc;
@@ -444,7 +602,12 @@ package WstxRadioControl {
         attribute proposal : RadioProposal[0..1] {
             doc /* Present when exactly one radio was found that the station can
                  control. */ }
-        attribute settingsPort : Integer[0..1];
+        attribute settingsPort : Integer[0..1] {
+            @CodeDiffers {
+                what = "The report gives it as port inside settings (detect in "
+                    + "server/src/radio_setup.rs).";
+            }
+        }
         attribute settings : SettingFinding[0..*] {
             doc /* The menu items of the first IC-7300 found. */ }
     }
@@ -462,7 +625,12 @@ package WstxRadioControl {
 
     item def ApplyRecommended {
         doc /* Set the menu items of the radio to the values the station recommends. */
-        attribute connectionNumber : Integer;
+        attribute connectionNumber : Integer {
+            @CodeDiffers {
+                what = "The request names it connection_generation (apply_route in "
+                    + "server/src/radio_setup.rs).";
+            }
+        }
     }
     attribute def WrittenItem {
         attribute setting : Setting;
@@ -513,27 +681,68 @@ package WstxRadioControl {
              SettingsRefused; DiscoverRadio by RadioDiscovered or RadioKept; a
              RadioMemory of radio control by a RadioMemory of the supervisor.
              RadioStatus, AgcStatus and PowerStatus are given at every change. */
-        out item assignment : ControlAssignment;
+        out item assignment : ControlAssignment {
+            @CodeDiffers {
+                what = "The supervisor gives no assignment: cat_tick in "
+                    + "server/src/authorization_http.rs reads the saved profile at every tick "
+                    + "and hands its gate to Recording::cat_maintain.";
+            }
+        }
         out item kept : RadioMemory;
         out item transmitter : TransmitterActivity;
         out item reserve : ReserveRadio;
         out item release : ReleaseReservation;
         out item request : OperationRequest;
-        out item withdraw : WithdrawRequest;
-        out item applyAgc : ApplyAgc;
-        out item applyPower : ApplyPower;
+        out item withdraw : WithdrawRequest {
+            @CodeDiffers {
+                what = "The supervisor withdraws a request by setting its flag Request::cancelled "
+                    + "(server/src/radio_control/mod.rs).";
+            }
+        }
+        out item applyAgc : ApplyAgc {
+            @CodeDiffers {
+                what = "The supervisor calls on_selection of "
+                    + "server/src/radioControl/radio_agc.rs inside its reservation.";
+            }
+        }
+        out item applyPower : ApplyPower {
+            @CodeDiffers {
+                what = "The code has no such request: radio control sets no output power.";
+            }
+        }
         out item detect : DetectRadios;
-        out item applyRecommended : ApplyRecommended;
+        out item applyRecommended : ApplyRecommended {
+            @CodeDiffers {
+                what = "The supervisor calls apply of server/src/radio_setup.rs.";
+            }
+        }
         out item discover : DiscoverRadio;
         in item reserved : RadioReserved;
         in item done : OperationDone;
         in item refused : ControlRefused;
         in item detection : DetectionReport;
-        in item detectRefused : DetectRefused;
-        in item settingsOutcome : SettingsOutcome;
-        in item settingsRefused : SettingsRefused;
+        in item detectRefused : DetectRefused {
+            @CodeDiffers {
+                what = "A refusal is the Err text of detect in server/src/radio_setup.rs.";
+            }
+        }
+        in item settingsOutcome : SettingsOutcome {
+            @CodeDiffers {
+                what = "The outcome is the Ok value of apply in server/src/radio_setup.rs.";
+            }
+        }
+        in item settingsRefused : SettingsRefused {
+            @CodeDiffers {
+                what = "A refusal is the Err text of apply in server/src/radio_setup.rs.";
+            }
+        }
         in item discovered : RadioDiscovered;
-        in item radioKept : RadioKept;
+        in item radioKept : RadioKept {
+            @CodeDiffers {
+                what = "Discovery answers None when the profile's control stays "
+                    + "(discover_within in server/src/radio_setup.rs).";
+            }
+        }
         in item status : RadioStatus;
         in item agc : AgcStatus;
         in item power : PowerStatus;
@@ -548,7 +757,13 @@ package WstxRadioControl {
 
     item def OpenRadio {
         doc /* Open the serial port for this station alone. */
-        attribute comPort : Integer { doc /* The number of the COM port, 1 to 256. */ }
+        attribute comPort : Integer {
+            doc /* The number of the COM port, 1 to 256. */
+            @CodeDiffers {
+                what = "The CAT adapter takes the number as port (Hardware::open in "
+                    + "server/src/radio_setup.rs).";
+            }
+        }
     }
     item def RadioOpened {
         attribute deviceId : String {
@@ -558,7 +773,12 @@ package WstxRadioControl {
     item def ReserveDevice {
         doc /* Keep the radio on this port for this station until the station process
              ends, also while its port is closed. */
-        attribute comPort : Integer;
+        attribute comPort : Integer {
+            @CodeDiffers {
+                what = "The CAT adapter takes the number as port (Hardware::reserve in "
+                    + "server/src/radio_setup.rs).";
+            }
+        }
     }
     item def DeviceReserved { doc /* The radio is kept for this station. */ }
     item def AccessRefused {
@@ -593,7 +813,12 @@ package WstxRadioControl {
         in item refused : AccessRefused;
         in item received : ReceivedBytes;
         in item closed : RadioClosed;
-        in item closeFailed : CloseFailed;
+        in item closeFailed : CloseFailed {
+            @CodeDiffers {
+                what = "A close that fails answers Err(Error::FailedClose) (Transport::close in "
+                    + "server/src/radio_control/executor.rs).";
+            }
+        }
     }
     interface def RadioAccessLink {
         doc /* Between radio control and the CAT adapter of its station. */
@@ -604,7 +829,12 @@ package WstxRadioControl {
     item def TuneRadio {
         doc /* Bring the radio's receiver to this frequency. */
         attribute frequencyHz : Integer;
-        attribute withinMs : Integer;
+        attribute withinMs : Integer {
+            @CodeDiffers {
+                what = "The tune takes a deadline, an Instant (Session::tune in "
+                    + "server/src/flexAdapter/session.rs).";
+            }
+        }
     }
     item def WithdrawTune { doc /* Give up the TuneRadio that is in work. */ }
     item def RadioTuned {
@@ -620,7 +850,12 @@ package WstxRadioControl {
                 + "their data stand in the adapter's function file";
         }
         out item tune : TuneRadio;
-        out item withdraw : WithdrawTune;
+        out item withdraw : WithdrawTune {
+            @CodeDiffers {
+                what = "Radio control withdraws a tune by setting the cancelled flag it gave "
+                    + "Session::tune (server/src/flexAdapter/session.rs).";
+            }
+        }
         in item tuned : RadioTuned;
         in item refused : TuneRefused;
     }

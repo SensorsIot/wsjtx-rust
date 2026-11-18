@@ -1,6 +1,7 @@
 package WstxFlexApi {
     private import ScalarValues::*;
     private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* The network API of a FlexRadio: the radio's announcements, its control connection
          and its receive stream. A radio on a sound device and a CAT link is not reached
@@ -47,17 +48,79 @@ package WstxFlexApi {
              to the hertz.
              sliceRemove: "slice remove", with the number of a slice. */
         enum info;
-        enum subClientAll;
-        enum clientStartPersistenceOff;
-        enum clientGui;
-        enum subSliceAll;
-        enum subDaxAll;
-        enum clientUdpport;
-        enum sliceCreate;
-        enum sliceSet;
-        enum streamCreate;
-        enum sliceTune;
-        enum sliceRemove;
+        enum subClientAll {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt in "
+                    + "server/src/flexAdapter/session.rs sends the text 'sub client all'.";
+            }
+        }
+        enum clientStartPersistenceOff {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt in "
+                    + "server/src/flexAdapter/session.rs sends the text "
+                    + "'client start_persistence off'.";
+            }
+        }
+        enum clientGui {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt in "
+                    + "server/src/flexAdapter/session.rs sends the text "
+                    + "'client gui' with the client identity.";
+            }
+        }
+        enum subSliceAll {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt and apply_frequency in "
+                    + "server/src/flexAdapter/session.rs send the text 'sub slice all'.";
+            }
+        }
+        enum subDaxAll {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt in "
+                    + "server/src/flexAdapter/session.rs sends the text 'sub dax all'.";
+            }
+        }
+        enum clientUdpport {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt in "
+                    + "server/src/flexAdapter/session.rs sends the text "
+                    + "'client udpport' with the port.";
+            }
+        }
+        enum sliceCreate {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt in "
+                    + "server/src/flexAdapter/session.rs sends the text "
+                    + "'slice create' with rxant and mode.";
+            }
+        }
+        enum sliceSet {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt and apply_frequency in "
+                    + "server/src/flexAdapter/session.rs send the text "
+                    + "'slice set' with dax or mode.";
+            }
+        }
+        enum streamCreate {
+            @CodeDiffers {
+                what = "The code has no name for the command: attempt in "
+                    + "server/src/flexAdapter/session.rs sends the text "
+                    + "'stream create type=dax_rx'.";
+            }
+        }
+        enum sliceTune {
+            @CodeDiffers {
+                what = "The code has no name for the command: apply_frequency in "
+                    + "server/src/flexAdapter/session.rs sends the text "
+                    + "'slice tune' with the frequency.";
+            }
+        }
+        enum sliceRemove {
+            @CodeDiffers {
+                what = "The code has no name for the command: release_own_slice in "
+                    + "server/src/flexAdapter/session.rs sends the text 'slice remove'.";
+            }
+        }
     }
     item def CommandLine {
         doc /* One command to the radio. The station waits for its Reply before it sends

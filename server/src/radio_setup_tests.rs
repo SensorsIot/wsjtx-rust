@@ -95,7 +95,7 @@ fn hb9bla_menu() -> HashMap<[u8; 2], Vec<u8>> {
 /// The fixture station with its CAT owner Ready on COM3 against the scripted radio.
 fn station(radio: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
     let f = fixture("http://127.0.0.1:18044", true);
-    f.state.store.lock().unwrap().document.control = profile::Control {
+    f.state.store.lock().unwrap().document.control = profile::ControlSelection {
         mode: "cat".into(),
         endpoint: Some("COM3".into()),
         ptt: "cat".into(),
@@ -875,7 +875,7 @@ async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_in
     let f = fixture("http://127.0.0.1:18049", false);
     {
         let mut store = f.state.store.lock().unwrap();
-        store.document.control = profile::Control {
+        store.document.control = profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("COM3".into()),
             ptt: "cat".into(),
@@ -992,7 +992,7 @@ fn saved_on(f: &Fixture, port: u16) {
 fn saved_with(f: &Fixture, port: u16, ptt: &str) {
     let mut store = f.state.store.lock().unwrap();
     let mut settings = store.document.settings();
-    settings.control = profile::Control {
+    settings.control = profile::ControlSelection {
         mode: "cat".into(),
         endpoint: Some(format!("COM{port}")),
         ptt: ptt.into(),
@@ -1006,7 +1006,7 @@ fn saved_with(f: &Fixture, port: u16, ptt: &str) {
 fn hardware_of(f: &Fixture, hw: &Arc<Double>) {
     *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
 }
-fn saved_control(f: &Fixture) -> (profile::Control, u64) {
+fn saved_control(f: &Fixture) -> (profile::ControlSelection, u64) {
     let store = f.state.store.lock().unwrap();
     (store.document.control.clone(), store.document.revision)
 }
@@ -1071,7 +1071,7 @@ fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held
     assert_eq!(after, revision + 1);
     assert_eq!(
         control,
-        profile::Control {
+        profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("icom7300://COM6?baud=19200&radio=94&controller=e0".into()),
             ptt: "disabled".into(),

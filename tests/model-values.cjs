@@ -266,7 +266,8 @@ class Model{
       if(member.doc)continue;
       const h=member.head;
       const short=h.length===1?nameOf(h[0]):h.length===2&&isW(h[0],'enum')?nameOf(h[1]):null;
-      const docOnly=!member.body||statements(toks,...member.body).every(m=>m.doc);
+      // A member's body holds docs and annotations (@CodeDiffers {...}) only.
+      const docOnly=!member.body||statements(toks,...member.body).every(m=>m.doc||isP(m.head[0],'@'));
       if(short===null||!docOnly)fail(name,'not an enumeration member in the read form');
       members.push(short);
     }

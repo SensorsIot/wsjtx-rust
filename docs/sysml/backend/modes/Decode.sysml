@@ -212,8 +212,6 @@ package WstxDecode {
         attribute processDeltaMaxMiB : Integer = 96 {
             doc /* The station process grows by at most this much over idle while it
                  decodes. */ }
-        attribute checkpointMaxMs : Integer = 50 {
-            doc /* The decoder looks for a Cancel at least this often. */ }
         attribute releaseMaxMs : Integer = 250 {
             doc /* A cancelled request ends at most this long after its Cancel. */ }
         attribute candidateCap : Integer = 256 {

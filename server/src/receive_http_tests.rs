@@ -23,6 +23,30 @@ fn decode_budget(feature: &str) -> u64 {
         other => panic!("model value {name}: not a nonnegative integer: {other:?}"),
     }
 }
+/// A value of WstxLiveReceive::WindowSchedule in milliseconds, read from the model.
+#[cfg(all(windows, not(debug_assertions)))]
+fn window_schedule_ms(feature: &str) -> f64 {
+    let name = format!("WstxLiveReceive::WindowSchedule::{feature}");
+    match model_values::Model::load()
+        .number_with_unit(&name)
+        .unwrap_or_else(|e| panic!("model value {e}"))
+    {
+        Some(model_values::Number::Integer(value)) => value as f64,
+        other => panic!("model value {name}: not an integer: {other:?}"),
+    }
+}
+/// The time within which a published row is painted, read from the model.
+#[cfg(all(windows, not(debug_assertions)))]
+fn paint_ms() -> f64 {
+    let name = "WstxBandActivityPane::Promptness::paintMs";
+    match model_values::Model::load()
+        .number_with_unit(name)
+        .unwrap_or_else(|e| panic!("model value {e}"))
+    {
+        Some(model_values::Number::Integer(value)) => value as f64,
+        other => panic!("model value {name}: not an integer: {other:?}"),
+    }
+}
 use source::{SampleSource, SourceDescriptor, SourceError, SourcePoll, SourceTiming};
 
 /// Injects only independently verified native packets. Conversion, epoch ACK,
@@ -819,17 +843,20 @@ async fn live_native_busy_period_rows_promptly() {
             at(painted),
             painted - published
         );
+        let budget = paint_ms();
         assert!(
-            painted - published <= 300.0,
-            "rows painted {:.0} ms after their publication (budget 300 ms)",
+            painted - published <= budget,
+            "rows painted {:.0} ms after their publication (budget {budget} ms)",
             painted - published
         );
-        // CL-007-05: the view is published by its period start + 15.0 s.
-        let start = completed - 13_800.0;
+        // CL-007-05: the view is published by its period start + ft8PublishedByMs.
+        let start = completed - window_schedule_ms("ft8PromptEndMs");
+        let bound = window_schedule_ms("ft8PublishedByMs");
         assert!(
-            *published <= start + 15_000.0,
-            "view published at period start {:+.3}s (bound +15.0 s)",
-            (published - start) / 1000.0
+            *published <= start + bound,
+            "view published at period start {:+.3}s (bound {:+.3} s)",
+            (published - start) / 1000.0,
+            bound / 1000.0
         );
         completion_latencies.push(painted - completed);
     }

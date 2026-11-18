@@ -239,7 +239,7 @@ impl CaptureHandle {
             if let Some(result) = self.poll_close() {
                 return result;
             }
-            if start.elapsed() >= Duration::from_millis(250) {
+            if start.elapsed() >= Duration::from_millis(device_lifecycle::CLOSE_MAX_MS) {
                 return Err(SourceError::FailedClose);
             }
             thread::sleep(Duration::from_millis(1));
@@ -557,7 +557,8 @@ fn capture(
                         break;
                     }
                     // SAFETY: buffer valid until ReleaseBuffer; SILENT permits a null pointer and is never dereferenced.
-                    if frames as usize > MAX_NATIVE_PACKET || (ptr.is_null() && flags & SILENT == 0)
+                    if frames as usize > MAX_NATIVE_PACKET_FRAMES
+                        || (ptr.is_null() && flags & SILENT == 0)
                     {
                         queue.mark_loss(CaptureEvent::InvalidPacket);
                     } else {

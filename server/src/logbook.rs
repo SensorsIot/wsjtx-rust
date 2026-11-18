@@ -53,7 +53,10 @@ const CONSOLIDATION_SECONDS: i64 = 120;
 /// #10 at most this many skip/drop reason groups are listed in the update summary.
 const REASON_GROUPS: usize = 16;
 const RECEIPTS: usize = 16;
-const IMPORT_IDLE: Duration = Duration::from_secs(60);
+/// WstxLogbook::UpdateLogbook::idleSeconds: a receiving import untouched this long gives
+/// way to a new one.
+const IDLE_SECONDS: u64 = 60;
+const IMPORT_IDLE: Duration = Duration::from_secs(IDLE_SECONDS);
 
 /// Supported LogRecord fields in WSJT-X to_adif order (contact id follows them).
 pub const FIELDS: [&str; 31] = [

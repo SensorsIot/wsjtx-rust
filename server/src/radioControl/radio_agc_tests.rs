@@ -115,7 +115,7 @@ fn station(radio: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
     let f = fixture("http://127.0.0.1:18045", true);
     {
         let mut store = f.state.store.lock().unwrap();
-        store.document.control = profile::Control {
+        store.document.control = profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("COM3".into()),
             ptt: "cat".into(),
@@ -438,13 +438,13 @@ fn ft8_and_ft4_selections_apply_the_agc_inside_the_selection() {
 // Proves: TC-044-009
 #[test]
 fn profile_radio_settings_default_migrate_and_validate() {
-    use profile::{Control, Radio};
-    let cat = Control {
+    use profile::{ControlSelection, Radio};
+    let cat = ControlSelection {
         mode: "cat".into(),
         endpoint: Some("icom7300://COM3?baud=19200&radio=94&controller=e0".into()),
         ptt: "cat".into(),
     };
-    let off = Control {
+    let off = ControlSelection {
         mode: "disabled".into(),
         endpoint: None,
         ptt: "disabled".into(),

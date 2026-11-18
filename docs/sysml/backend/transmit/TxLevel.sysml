@@ -13,6 +13,7 @@ package WstxTxLevel {
     private import WstxModelBindings::TestedBy;
     private import WstxModelBindings::TestLevel;
     private import WstxModelBindings::TestLocation;
+    private import WstxModelNotes::CodeDiffers;
 
     requirement 'CL-044-12' {
         subject transmit : TransmitService;
@@ -83,7 +84,13 @@ package WstxTxLevel {
              the radio no setting. */
         attribute startDb : Integer = -30;
         attribute settleMs : Integer = 400;
-        attribute swrFaultX10 : Integer = 30;
+        attribute swrFaultX10 : Integer = 30 {
+            @CodeDiffers {
+                what = "The code compares the raw SWR meter count of the IC-7300 with 120 "
+                    + "(SWR_FAULT_RAW in server/src/radio_level.rs), which swr_x10 reads "
+                    + "as 30.";
+            }
+        }
     }
 
     verification 'TC-044-013' {
@@ -166,11 +173,27 @@ package WstxTxLevel {
         attribute meterMinRemainingMs : Integer = 2000;
         attribute alcLimit : Integer = 8 {
             doc /* In percent of the radio's ALC zone
-                 (WstxRadioProperties::MeterReadings::alc), as alcHigh. */ }
-        attribute alcHigh : Integer = 50;
+                 (WstxRadioProperties::MeterReadings::alc), as alcHigh. */
+            @CodeDiffers {
+                what = "The code compares the raw ALC meter count of the IC-7300, whose "
+                    + "zone ends at 120, with 10 (ALC_LIMIT_RAW in server/src/radio_level.rs).";
+            }
+        }
+        attribute alcHigh : Integer = 50 {
+            @CodeDiffers {
+                what = "The code compares the raw ALC meter count of the IC-7300, whose "
+                    + "zone ends at 120, with 60 (ALC_HIGH_RAW in server/src/radio_level.rs).";
+            }
+        }
         attribute stepUpBelowPct : Integer = 80;
         attribute poLowPct : Integer = 50;
-        attribute swrHighX10 : Integer = 20;
+        attribute swrHighX10 : Integer = 20 {
+            @CodeDiffers {
+                what = "The code compares the raw SWR meter count of the IC-7300 with 80 "
+                    + "(SWR_HIGH_RAW in server/src/radio_level.rs), which swr_x10 reads "
+                    + "as 20.";
+            }
+        }
         attribute persistentReadings : Integer = 3;
     }
 

@@ -837,7 +837,7 @@ async fn tc_081_005_g_a_safety_edit_ends_a_finishing_qso_at_once() {
     {
         let mut store = f.state.store.lock().unwrap();
         let mut settings = store.document.settings();
-        settings.control = profile::Control {
+        settings.control = profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("icom7300://COM251".into()),
             ptt: "cat".into(),

@@ -1,5 +1,7 @@
 use super::search::CpuBudget;
-use super::{DecodeError, Mode, baseband::PassBand, physical_sync};
+use super::{
+    DECODE_BAND_HIGH_HZ, DECODE_BAND_LOW_HZ, DecodeError, Mode, baseband::PassBand, physical_sync,
+};
 use rustfft::{
     FftPlanner, FftPlannerScalar,
     num_complex::{Complex32, Complex64},
@@ -134,14 +136,16 @@ impl Spectrum {
             return Err(DecodeError::DecodeLimit);
         }
         let rows = (samples.len() - n) / hop + 1;
-        let regular = ((3500. - 200.) / (mode.spacing() / 2.)).floor() as usize + 1;
+        let regular = ((DECODE_BAND_HIGH_HZ - DECODE_BAND_LOW_HZ) / (mode.spacing() / 2.)).floor()
+            as usize
+            + 1;
         let width = regular + 15 + mode.tone_count();
         let mut frequencies = (0..regular)
-            .map(|j| 200. + j as f64 * mode.spacing() / 2.)
+            .map(|j| DECODE_BAND_LOW_HZ + j as f64 * mode.spacing() / 2.)
             .collect::<Vec<_>>();
-        let endpoint = (frequencies.last().copied().unwrap() - 3500.).abs() > 1e-7;
+        let endpoint = (frequencies.last().copied().unwrap() - DECODE_BAND_HIGH_HZ).abs() > 1e-7;
         if endpoint {
-            frequencies.push(3500.);
+            frequencies.push(DECODE_BAND_HIGH_HZ);
         }
         let mut values = vec![Complex32::new(0., 0.); rows * width];
         let fft = if scalar {
@@ -210,7 +214,8 @@ impl Spectrum {
                 }
                 if endpoint {
                     for tone in 0..mode.tone_count() {
-                        let angle = -2. * PI * (3500. + tone as f64 * mode.spacing()) / 12000.;
+                        let angle = -2. * PI * (DECODE_BAND_HIGH_HZ + tone as f64 * mode.spacing())
+                            / 12000.;
                         let rotation = Complex64::from_polar(1., angle);
                         let mut oscillator = Complex64::new(1., 0.);
                         let mut z = Complex64::new(0., 0.);

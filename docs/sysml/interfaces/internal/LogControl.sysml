@@ -3,6 +3,7 @@ package WstxLogControl {
     private import WstxStrategies::DupeRule;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* What the supervisor gives the log function (what the profile and the radio
          say, the operator's log commands) and what the log answers and reports. */
@@ -10,10 +11,9 @@ package WstxLogControl {
     attribute def LogRecord {
         doc /* One QSO of the logbook, as its ADIF fields.
              The ADIF name of a feature is its name in upper case with an underscore
-             before each inner capital (rstSent is RST_SENT). The exceptions are freqMHz
-             (FREQ), commentText (COMMENT), contestClass (CLASS), usState (STATE),
-             contactId (APP_WSTXRUST_CONTACT_ID), source (APP_WSTXRUST_SOURCE) and activity
-             (APP_WSTXRUST_ACTIVITY).
+             before each inner capital (rstSent is RST_SENT). The exceptions are usState
+             (STATE), contactId (APP_WSTXRUST_CONTACT_ID), source (APP_WSTXRUST_SOURCE) and
+             activity (APP_WSTXRUST_ACTIVITY).
              An absent feature is a field that is not written.
              Two records of one contact have the same fields when they agree in the
              features from call to usState; the confirmation fields, source and activity
@@ -56,16 +56,16 @@ package WstxLogControl {
             doc /* The UTC time of the end; the end is not before the start. */ }
         attribute band : String[0..1] {
             doc /* A band of the ADIF enumeration, in lower case. The effective band of a
-                 record is its band, without one the band that contains freqMHz, and
+                 record is its band, without one the band that contains freq, and
                  otherwise unknown. */ }
-        attribute freqMHz : String[0..1] {
+        attribute freq : String[0..1] {
             doc /* The frequency in MHz with six decimals; it lies in the band. */ }
         attribute stationCallsign : String { doc /* The profile's callsign. */ }
         attribute myGridsquare : String[0..1] {
             doc /* The profile's locator; absent when the profile has none. */ }
         attribute txPwr : String[0..1] {
             doc /* Watts: a positive decimal of at most 16 characters. */ }
-        attribute commentText : String[0..1] {
+        attribute 'comment' : String[0..1] {
             doc /* One line of 1 to LogLimits::fieldCharactersMax printable ASCII
                  characters without "<" and ">". */ }
         attribute stx : String[0..1] { doc /* The serial sent: 1 to 4 digits. */ }
@@ -75,7 +75,7 @@ package WstxLogControl {
         attribute srx : String[0..1] { doc /* The serial received: 1 to 4 digits. */ }
         attribute contestId : String[0..1];
         attribute srxString : String[0..1];
-        attribute contestClass : String[0..1];
+        attribute 'class' : String[0..1];
         attribute arrlSect : String[0..1];
         attribute usState : String[0..1];
         attribute lotwQslRcvd : String[0..1] {
@@ -137,7 +137,11 @@ package WstxLogControl {
                  country file, shared by the shack's stations. */ }
         attribute stationFolder : String {
             doc /* The profile's folder (WstxProfileAccess::ProfileFolder::path), in
-                 which the log keeps the station's heard files (HeardFile). */ }
+                 which the log keeps the station's heard files (HeardFile). */
+            @CodeDiffers {
+                what = "The code keeps no heard files and is given no station folder.";
+            }
+        }
         attribute shared : LogShared { doc /* The log's part of the shack's settings. */ }
     }
     attribute def CabrilloHeader {
@@ -192,7 +196,13 @@ package WstxLogControl {
     item def ImportChunk {
         doc /* The next part of the file. Answered by ImportView or LogRefused. */
         attribute importId : String;
-        attribute startByte : Integer { doc /* Where the part begins in the file. */ }
+        attribute startByte : Integer {
+            doc /* Where the part begins in the file. */
+            @CodeDiffers {
+                what = "The code takes the place from the Content-Range header of the part "
+                    + "(import in server/src/logbook_http.rs).";
+            }
+        }
         attribute totalBytes : Integer;
         attribute bytes : String {
             doc /* 1 to LogLimits::importChunkBytesMax bytes of the file. */ }
@@ -291,7 +301,11 @@ package WstxLogControl {
         enum busy;
         enum notFound;
         enum invalidRequest;
-        enum tooLarge;
+        enum tooLarge {
+            @CodeDiffers {
+                what = "The code names it request_too_large (server/src/logbook_http.rs).";
+            }
+        }
         enum importFailed;
         enum outOfRange;
     }
@@ -334,7 +348,11 @@ package WstxLogControl {
         attribute code : AdiError;
         attribute recordIndex : Integer[0..1] {
             doc /* The record at which it was found, counted from 0; absent when it
-                 concerns the whole file. */ }
+                 concerns the whole file. */
+            @CodeDiffers {
+                what = "The code names it record (server/src/logbook.rs).";
+            }
+        }
         attribute field : String[0..1] {
             doc /* The name of the field in lower case; absent when none is meant. */ }
     }
@@ -343,7 +361,11 @@ package WstxLogControl {
         attribute code : AdiError;
         attribute field : String;
         attribute count : Integer;
-        attribute firstRecordIndex : Integer;
+        attribute firstRecordIndex : Integer {
+            @CodeDiffers {
+                what = "The code names it record (server/src/logbook.rs).";
+            }
+        }
     }
     item def ImportView {
         doc /* One update of the logbook, while it is received and after it ended. */
@@ -460,21 +482,64 @@ package WstxLogControl {
         out item save : SaveRecord;
         out item reserve : ReserveImport;
         out item chunk : ImportChunk;
-        out item readImport : ReadImport;
+        out item readImport : ReadImport {
+            @CodeDiffers {
+                what = "The code reads an update by GET on its id (import in "
+                    + "server/src/logbook_http.rs).";
+            }
+        }
         out item export : ExportLog;
-        out item exportCabrillo : ExportCabrillo;
+        out item exportCabrillo : ExportCabrillo {
+            @CodeDiffers {
+                what = "The code has no Cabrillo export.";
+            }
+        }
         out item sent : SentMessage;
-        out item readHistory : ReadHistory;
-        out item readCountryFile : ReadCountryFile;
-        out item replaceCountryFile : ReplaceCountryFile;
-        out item lookUp : EntityRequest;
-        out item resend : ResendLast;
-        in item saveAnswer : SaveAnswer;
-        in item resent : Resent;
+        out item readHistory : ReadHistory {
+            @CodeDiffers {
+                what = "The code names it history (server/src/logbook_http.rs).";
+            }
+        }
+        out item readCountryFile : ReadCountryFile {
+            @CodeDiffers {
+                what = "The code reads it by GET /dxcc (dxcc in server/src/logbook_http.rs).";
+            }
+        }
+        out item replaceCountryFile : ReplaceCountryFile {
+            @CodeDiffers {
+                what = "The code takes a file the operator uploads by PUT /dxcc (dxcc_put in "
+                    + "server/src/logbook_http.rs).";
+            }
+        }
+        out item lookUp : EntityRequest {
+            @CodeDiffers {
+                what = "The code names it lookup (Table::lookup in server/src/dxcc.rs).";
+            }
+        }
+        out item resend : ResendLast {
+            @CodeDiffers {
+                what = "The code has no such command; Log QSO logs the current contact (open_log "
+                    + "in server/src/contact_http.rs).";
+            }
+        }
+        in item saveAnswer : SaveAnswer {
+            @CodeDiffers {
+                what = "The code answers by the response of save (server/src/logbook_http.rs).";
+            }
+        }
+        in item resent : Resent {
+            @CodeDiffers {
+                what = "The code has no such answer: it resends no record.";
+            }
+        }
         in item importView : ImportView;
         in item exported : ExportChunk;
         in item history : HistoryPage;
-        in item countryFile : CountryFileState;
+        in item countryFile : CountryFileState {
+            @CodeDiffers {
+                what = "The code gives it by dxcc_view (server/src/logbook_http.rs).";
+            }
+        }
         in item entity : EntityAnswer;
         in item refused : LogRefused;
         in item attempt : LogAttempt;

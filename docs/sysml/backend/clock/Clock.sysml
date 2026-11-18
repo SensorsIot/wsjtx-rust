@@ -16,9 +16,10 @@ package WstxClockPart {
                 + "server/src/transmit/windows_time.rs; server/src/transmit/clock_http.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/transmit/air.rs, server/src/transmit/clock.rs, "
-                + "server/src/transmit/clock_http.rs, server/src/transmit/windows_time.rs, "
-                + "outside server/src/clock/ and client/src/clock/.";
+            what = "Its code stands in server/src/main.rs, server/src/transmit/air.rs, "
+                + "server/src/transmit/clock.rs, server/src/transmit/clock_http.rs, "
+                + "server/src/transmit/windows_time.rs, outside server/src/clock/ and "
+                + "client/src/clock/.";
         }
         port time : StationTimePort;
         port status : ClockStatusPort;

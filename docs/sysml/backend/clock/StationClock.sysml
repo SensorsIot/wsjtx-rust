@@ -9,6 +9,7 @@ package WstxStationClock {
     private import WstxModelBindings::Status;
     private import WstxModelBindings::Automation;
     private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::TestLevel;
     private import WstxModelBindings::TestLocation;
     private import WstxModelNotes::FollowsSource;
@@ -102,6 +103,10 @@ package WstxStationClock {
              correction is large although the PC clock is right (TimeServerCheck,
              WarningRule). */
         @Status { build = ImplementationState::implemented; }
+        @ImplementedIn {
+            module = "server/src/transmit/clock.rs; server/src/transmit/air.rs; "
+                + "server/src/main.rs";
+        }
     }
     #derivation connection { end #original ::> 'FR-006'; end #derive ::> 'CL-009-05'; }
 

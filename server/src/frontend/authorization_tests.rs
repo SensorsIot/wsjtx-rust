@@ -689,7 +689,7 @@ fn repair_semantically_corrupt_commissioning_fails_closed_without_rewrite() {
         record.commissioning = Some(Commissioning {
             scope: selected.clone(),
             receive_only_confirmed: true,
-            control: profile::Control {
+            control: profile::ControlSelection {
                 mode: "cat".into(),
                 endpoint: Some("fixture-cat".into()),
                 ptt: "disabled".into(),
@@ -779,7 +779,7 @@ fn safety_watermark_reconciles_public_private_commit_gap_once_after_failed_priva
     a.enroll(store, grant.clone()).unwrap();
     let old = a.record.clone();
     let mut settings = store.document.settings();
-    settings.control = profile::Control {
+    settings.control = profile::ControlSelection {
         mode: "cat".into(),
         endpoint: Some("fixture-cat".into()),
         ptt: "disabled".into(),

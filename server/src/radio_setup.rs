@@ -17,6 +17,8 @@ const UNDO_MAX: u64 = 4096;
 const DETECT_BUDGET: Duration = Duration::from_secs(40);
 const PORT_BUDGET: Duration = Duration::from_secs(6);
 const STEP: Duration = Duration::from_secs(4);
+/// Detection and discovery look at no more serial ports than this.
+const MAX_PORTS: usize = 64;
 
 /// The physical world detection reads: ports, audio endpoints, and opening a port
 /// under the CAT ownership claim with line-safe settings.
@@ -251,7 +253,7 @@ pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
     let mut reports = Vec::new();
     let mut supported = Vec::new();
     let mut settings = Value::Null;
-    for port in ports.iter().take(64) {
+    for port in ports.iter().take(MAX_PORTS) {
         let held = station.as_ref().filter(|s| {
             s.configuration
                 .as_ref()
@@ -377,6 +379,8 @@ pub(crate) fn detect(state: &ProfileState) -> Result<Value, &'static str> {
 
 /// CL-044-15 the operator's keying confirmation of Detect radio, kept for automatic opens.
 pub(crate) const KEYING_FILE: &str = "radio-keying-confirmed.json";
+/// The confirmation without a record.
+const KEYING_CONFIRMED: bool = false;
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct KeyingRecord {
@@ -390,7 +394,9 @@ pub(crate) fn keying_confirmed(state: &ProfileState) -> bool {
         .ok()
         .and_then(|s| s.read_document_file(KEYING_FILE, 256).ok().flatten())
         .and_then(|b| serde_json::from_slice::<KeyingRecord>(&b).ok())
-        .is_some_and(|r| r.schema_version == 1 && r.keying_inhibit_confirmed)
+        .map_or(KEYING_CONFIRMED, |r| {
+            r.schema_version == 1 && r.keying_inhibit_confirmed
+        })
 }
 /// Stores the confirmation once. A failed write leaves discovery off and is shown as such.
 pub(crate) fn confirm_keying(state: &ProfileState) {
@@ -466,7 +472,7 @@ pub(crate) fn discover_within(state: &ProfileState, budget: Duration) -> Option<
     }
     let found = ports
         .iter()
-        .take(64)
+        .take(MAX_PORTS)
         .filter(|p| radio_bridge(p) && saved.as_ref().is_none_or(|s| s.port != p.port))
         .take_while(|_| Instant::now() < until)
         .find_map(|p| {
@@ -481,7 +487,7 @@ pub(crate) fn discover_within(state: &ProfileState, budget: Duration) -> Option<
     };
     let mut store = state.store.lock().ok()?;
     let mut settings = store.document.settings();
-    settings.control = profile::Control {
+    settings.control = profile::ControlSelection {
         mode: "cat".into(),
         endpoint: Some(format!(
             "icom7300://COM{}?baud={}&radio={:02x}&controller=e0",
@@ -711,6 +717,8 @@ pub(crate) fn undo(state: &ProfileState, generation: u64) -> Result<Value, &'sta
 pub(crate) const NAMES_FILE: &str = "audio-endpoint-names.json";
 const NAMES_MAX: u64 = 4096;
 const MAX_ENDPOINTS: usize = 64;
+/// An endpoint id or name longer than this (bytes) refuses the list.
+const MAX_TEXT_BYTES: usize = 256;
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct NamesRecord {
@@ -791,7 +799,10 @@ pub(crate) fn endpoints_view(state: &ProfileState) -> Result<Value, &'static str
     }
     if endpoints.iter().any(|e| {
         let name = setup::display_name(&e.name);
-        e.id.is_empty() || e.id.len() > 256 || name.is_empty() || name.len() > 256
+        e.id.is_empty()
+            || e.id.len() > MAX_TEXT_BYTES
+            || name.is_empty()
+            || name.len() > MAX_TEXT_BYTES
     }) {
         return Err("device_limit");
     }
@@ -906,7 +917,7 @@ pub(crate) fn migrate_devices(
     log
 }
 /// True when a device entry needs the migration enumeration at all.
-pub(crate) fn needs_migration(document: &profile::Document) -> bool {
+pub(crate) fn needs_migration(document: &profile::ProfileDocument) -> bool {
     document.audio.validate_endpoints().is_err()
 }
 

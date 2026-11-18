@@ -11,7 +11,6 @@ package WstxTransmitState {
     private import WstxModeProcessing::EncodeRefusal;
     private import WstxModeProcessing::EncodeRefusalReason;
     private import WstxModeProcessing::AcceptedMessage;
-    private import WstxModeProcessing::Period;
     private import WstxAudioStreams::OpenOutput;
     private import WstxAudioStreams::PlayProgram;
     private import WstxAudioStreams::StopOutput;
@@ -184,7 +183,6 @@ package WstxTransmitState {
         attribute releaseBoundFt8Ms : Integer = 14500;
         attribute releaseBoundFt4Ms : Integer = 7000;
         attribute keptOutcomes : Integer = 32;
-        attribute period : Period;
     }
 
     verification 'TC-008-003' {

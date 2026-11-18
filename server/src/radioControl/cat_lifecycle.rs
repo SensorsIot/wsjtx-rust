@@ -49,7 +49,19 @@ pub(crate) enum Action {
     /// Cancel the current attempt/connection through the existing release rules.
     Close,
 }
-pub(crate) const DELAYS: [u64; 4] = [1, 2, 4, 8];
+/// The waits (s) between attempts to connect (WstxCatLifecycle::RetryCadence).
+pub(crate) mod retry_cadence {
+    /// The wait after the first failed attempt.
+    pub(crate) const FIRST_RETRY_SECONDS: u64 = 1;
+    /// The longest wait.
+    pub(crate) const MAX_RETRY_SECONDS: u64 = 8;
+}
+pub(crate) const DELAYS: [u64; 4] = [
+    retry_cadence::FIRST_RETRY_SECONDS,
+    2 * retry_cadence::FIRST_RETRY_SECONDS,
+    4 * retry_cadence::FIRST_RETRY_SECONDS,
+    retry_cadence::MAX_RETRY_SECONDS,
+];
 
 /// The status reason of a released failed attempt: a port held by another
 /// program (access denied / sharing violation, or another station's ownership lock)

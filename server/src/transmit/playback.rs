@@ -125,9 +125,19 @@ pub fn write_sample(encoding: Encoding, value: f32, out: &mut [u8]) {
 /// program keeps up to this much queued, so a render thread delayed by CPU load does
 /// not underrun the device and stretch the transmission (#49).
 pub const RENDER_BUFFER_MS: u32 = 100;
-/// Silence kept queued while no program plays (silencePrefillMs, 20 ms at 48 kHz): the
-/// first program sample is never queued behind a full buffer of silence.
-pub const SILENCE_FRAMES: u32 = 960;
+/// The rate of the program and of the device.
+pub const SAMPLE_RATE_HZ: u32 = 48_000;
+/// A device that has not opened within this is unavailable.
+pub const OPEN_MAX_MS: u64 = 1000;
+/// Silence kept queued while no program plays: the first program sample is never queued
+/// behind a full buffer of silence.
+pub const SILENCE_PREFILL_MS: u32 = 20;
+pub const SILENCE_FRAMES: u32 = SAMPLE_RATE_HZ / 1000 * SILENCE_PREFILL_MS;
+/// The close of the device (WstxPlayback::ProgramPlayback).
+pub mod program_playback {
+    /// The wait (ms) for the device to close after a stop.
+    pub const CLOSE_MAX_MS: u64 = 250;
+}
 /// What the render loop does with the device buffer (WstxPlayback::ProgramPlayback drain
 /// rule): silence is topped up to SILENCE_FRAMES, a program fills the whole buffer;
 /// after the program is exhausted nothing more is written, so the device padding

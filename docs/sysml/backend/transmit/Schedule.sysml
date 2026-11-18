@@ -5,7 +5,7 @@ package WstxSchedule {
     private import WstxTransmitPart::TransmitService;
     private import WstxTransmitControl::StartWindow;
     private import WstxTransmitControl::TransmitRefusal;
-    private import WstxModeProcessing::Period;
+    private import WstxModeProcessing::Mode;
     private import WstxModeProcessing::PeriodParity;
     private import WstxStationTime::StationTime;
     private import WstxStationTime::StationTimeState;
@@ -35,7 +35,7 @@ package WstxSchedule {
              While StationTime::timeState is not synchronized the start is refused with
              TransmitRefusal::clockNotSynchronized.
              A period start that is not a whole multiple of the period length of the
-             mode (Period) is refused with misalignedPeriod.
+             mode (Mode) is refused with misalignedPeriod.
              Up to the audio delay after the period start the audio starts at the audio
              delay, with the first sample of the waveform.
              After it, while the window is open (StartWindow), the audio starts at once
@@ -45,7 +45,7 @@ package WstxSchedule {
              From the moment the window closes the start is refused with stalePeriod; a
              request stays with its period and is not moved to a later one. */
         attribute window : StartWindow;
-        attribute period : Period;
+        attribute mode : Mode;
     }
 
     verification 'TC-006-001' {

@@ -43,14 +43,23 @@ pub fn level_scale(level_db: i32) -> f32 {
 pub const RELEASE_MARGIN_MS: i64 = 1000;
 /// WstxTransmitState::Transmission releaseBoundFt8Ms / releaseBoundFt4Ms: the latest
 /// device-independent release deadline, from the period start.
+pub const RELEASE_BOUND_FT8_MS: i64 = 14_500;
+pub const RELEASE_BOUND_FT4_MS: i64 = 7_000;
+/// The release bound of `mode`.
 pub const fn release_bound_ms(mode: Mode) -> i64 {
     match mode {
-        Mode::Ft8 => 14_500,
-        Mode::Ft4 => 7_000,
+        Mode::Ft8 => RELEASE_BOUND_FT8_MS,
+        Mode::Ft4 => RELEASE_BOUND_FT4_MS,
     }
 }
 pub const MAX_SAFE: u64 = 9_007_199_254_740_991;
-const OUTCOMES: usize = 32;
+/// WstxTransmitState::Transmission keptOutcomes: the outcomes the view holds.
+const KEPT_OUTCOMES: usize = 32;
+/// WstxTransmitControl::TransmitConfig tuneSeconds: the Tune limit at station start.
+const TUNE_SECONDS: u32 = 90;
+/// WstxTransmitState::TuneTone: the range of the Tune offset.
+const OFFSET_MIN_HZ: u32 = 200;
+const OFFSET_MAX_HZ: u32 = 2950;
 const HALT_RECEIPTS: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -398,8 +407,8 @@ fn ptt_failure(error: PttError) -> TransmitFailure {
 }
 fn audio_delay_ms(mode: Mode) -> i64 {
     match mode {
-        Mode::Ft8 => 500,
-        Mode::Ft4 => 300,
+        Mode::Ft8 => super::schedule::FT8_AUDIO_DELAY_MS,
+        Mode::Ft4 => super::schedule::FT4_AUDIO_DELAY_MS,
     }
 }
 /// Packs, encodes and renders the 48 kHz waveform of a request.
@@ -455,7 +464,7 @@ impl<H: Hardware> Core<H> {
             outcomes: VecDeque::new(),
             outcome_sequence: 0,
             tx_calls: 6,
-            tune_seconds: 90,
+            tune_seconds: TUNE_SECONDS,
             tx_repetitions: 0,
             tx_unbounded: false,
             operator_seen: false,
@@ -549,7 +558,7 @@ impl<H: Hardware> Core<H> {
             failure,
             audio_start_utc_ms,
         };
-        if self.outcomes.len() == OUTCOMES {
+        if self.outcomes.len() == KEPT_OUTCOMES {
             self.outcomes.pop_front();
         }
         self.outcomes.push_back(outcome.clone());
@@ -926,7 +935,7 @@ impl<H: Hardware> Core<H> {
             Some(TransmitRefusal::NotAuthorized)
         } else if self.current.is_some() || self.next.is_some() || self.tune.is_some() {
             Some(TransmitRefusal::Busy)
-        } else if !(200..=2950).contains(&hz) {
+        } else if !(OFFSET_MIN_HZ..=OFFSET_MAX_HZ).contains(&hz) {
             Some(TransmitRefusal::FrequencyOutOfRange)
         } else {
             None

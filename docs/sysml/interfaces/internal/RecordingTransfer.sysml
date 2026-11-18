@@ -1,6 +1,7 @@
 package WstxRecordingTransfer {
     private import ScalarValues::*;
     private import WstxModelNotes::NotStated;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* How a recording comes into the profile (the import, part by part) and how the
          stored recording goes to the receive function as samples. */
@@ -174,8 +175,19 @@ package WstxRecordingTransfer {
         attribute notReleased : Boolean {
             doc /* A live job that has ended has not yet given up everything it held,
                  or a band or mode selection runs. */
+            @CodeDiffers {
+                what = "The import reads live_owner_released and the running band or mode "
+                    + "selection of the state it shares with receive (admit_for in "
+                    + "server/src/recording.rs).";
+            }
         }
-        attribute jobRunning : Boolean { doc /* A job of receive has not ended. */ }
+        attribute jobRunning : Boolean {
+            doc /* A job of receive has not ended. */
+            @CodeDiffers {
+                what = "The import reads the job of the state it shares with receive "
+                    + "(admit_for in server/src/recording.rs).";
+            }
+        }
     }
 
     port def RecordingTransfer {
@@ -188,7 +200,13 @@ package WstxRecordingTransfer {
         out item chunk : ImportChunk;
         out item cancel : CancelImport;
         out item read : ReadImport;
-        out item receiveBusy : ReceiveBusy;
+        out item receiveBusy : ReceiveBusy {
+            @CodeDiffers {
+                what = "The code gives no ReceiveBusy: the import and receive share one "
+                    + "state in server/src/recording.rs, which the import reads when it is "
+                    + "reserved.";
+            }
+        }
         in item reserved : ImportReserved;
         in item importView : ImportView;
         in item refused : ImportRefused;

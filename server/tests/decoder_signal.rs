@@ -61,6 +61,13 @@ fn frequency_tolerance(mode: Mode) -> f64 {
 fn budget(feature: &str) -> f64 {
     model_value(&format!("WstxDecode::DecodeBudgets::{feature}"))
 }
+/// A value of WstxDecode::Repeatability.
+fn repeatability(feature: &str) -> f64 {
+    model_value(&format!("WstxDecode::Repeatability::{feature}"))
+}
+/// The longest cooperative quantum of a decode: the decoder looks for a cancellation at
+/// least this often.
+const CHECKPOINT_MAX_MS: u128 = 50;
 fn prepared(kind: &str) -> PathBuf {
     static QUALITY: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     static FROZEN: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -237,6 +244,32 @@ fn quality_corpus() {
         let now = Instant::now();
         let result = decoder.decode(&input, mode, &|| false);
         let group = case["group"].as_str().unwrap();
+        // WstxDecode::DecodeQuality: the SNR of each level, and how much weaker the second
+        // frame of a pair one tone spacing apart is.
+        let snr_level = match (mode, group) {
+            (Mode::Ft8, "strong") => Some("ft8StrongSnrDb"),
+            (Mode::Ft8, "weak") => Some("ft8WeakSnrDb"),
+            (Mode::Ft4, "strong") => Some("ft4StrongSnrDb"),
+            (Mode::Ft4, "weak") => Some("ft4WeakSnrDb"),
+            _ => None,
+        };
+        if let Some(snr_level) = snr_level {
+            for x in case["expected"].as_array().unwrap() {
+                assert_eq!(
+                    x["snr2500_db"].as_f64(),
+                    Some(quality(snr_level)),
+                    "level {id}"
+                );
+            }
+        }
+        if group == "one-spacing-6db" {
+            let amplitude = |index: usize| case["signals"][index]["amplitude"].as_f64().unwrap();
+            let difference = 20. * (amplitude(0) / amplitude(1)).log10();
+            assert!(
+                (difference - quality("oneSpacingDifferenceDb")).abs() < 0.01,
+                "pair difference {id}: {difference} dB"
+            );
+        }
         let key = format!("{:?}/{group}", mode);
         let total = totals.entry(key).or_default();
         total.0 += 1;
@@ -426,7 +459,7 @@ fn cooperative_quanta_and_partial_cancellation() {
         assert_eq!(published.len(), 1);
         assert!(polls > 1, "future never yielded");
         assert!(
-            maximum.as_millis() <= budget("checkpointMaxMs") as u128,
+            maximum.as_millis() <= CHECKPOINT_MAX_MS,
             "largest quantum {maximum:?}"
         );
         eprintln!("{mode:?}: {polls} cooperative polls, maximum {maximum:?}");
@@ -446,13 +479,17 @@ fn planned_scalar_and_gain_invariance() {
             .unwrap();
         assert!(!planned.is_empty());
         assert_eq!(planned.len(), scalar.len());
+        // WstxDecode::Repeatability: the tolerances of two runs of one request.
+        let start = repeatability("startToleranceFrames") as u64;
+        let frequency = repeatability(if mode == Mode::Ft8 {
+            "ft8RepeatToleranceHz"
+        } else {
+            "ft4RepeatToleranceHz"
+        });
         for (a, b) in planned.iter().zip(scalar) {
             assert_eq!(a.payload, b.payload);
-            assert!(a.start_frame.abs_diff(b.start_frame) <= 1);
-            assert!(
-                (a.frequency_hz - b.frequency_hz).abs()
-                    <= if mode == Mode::Ft8 { 0.2 } else { 0.5 }
-            );
+            assert!(a.start_frame.abs_diff(b.start_frame) <= start);
+            assert!((a.frequency_hz - b.frequency_hz).abs() <= frequency);
         }
         for gain in [0.0001, 16.] {
             let scaled = samples.iter().map(|&x| x * gain).collect::<Vec<_>>();
@@ -460,7 +497,7 @@ fn planned_scalar_and_gain_invariance() {
             assert_eq!(planned.len(), actual.len(), "gain {gain}");
             for (a, b) in planned.iter().zip(actual) {
                 assert_eq!(a.payload, b.payload, "gain {gain}");
-                assert!(a.start_frame.abs_diff(b.start_frame) <= 1);
+                assert!(a.start_frame.abs_diff(b.start_frame) <= start);
                 assert!((a.frequency_hz - b.frequency_hz).abs() < 0.1);
             }
         }
@@ -1431,9 +1468,9 @@ fn resource_concurrency_qualification_rejects_serial_work_and_clock_faults() {
     assert!(std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2], &valid[..3])).is_err());
 }
 /// Wall-time sufficient criterion for the cooperative CPU quantum (#36):
-/// DecodeBudgets::checkpointMaxMs, in seconds.
+/// CHECKPOINT_MAX_MS, in seconds.
 fn resource_cpu_quantum_wall_seconds() -> f64 {
-    budget("checkpointMaxMs") / 1000.
+    CHECKPOINT_MAX_MS as f64 / 1000.
 }
 /// Bounded re-qualification of one matrix configuration (#36); mirrored by the guardian.
 const RESOURCE_QUALIFICATION_ATTEMPTS: u64 = 3;

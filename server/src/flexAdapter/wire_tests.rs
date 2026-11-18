@@ -153,7 +153,12 @@ fn documented_control_lines_parse_and_commands_are_bounded() {
     assert_eq!(parse_line("H6F4EC23D").unwrap(), Line::Handle(0x6F4E_C23D));
     assert_eq!(
         parse_line("V1.4.0.0").unwrap(),
-        Line::Version(SUPPORTED_PROTOCOL)
+        Line::Version(ProtocolVersion {
+            major: 1,
+            minor: 4,
+            a: 0,
+            b: 0
+        })
     );
     assert!(parse_line("V1.4.0").is_err());
     let Line::Status { handle, status } = parse_line(

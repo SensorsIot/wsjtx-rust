@@ -955,7 +955,7 @@ async fn http_auth_safety_edit_preserves_key_identity_but_advances_scope_and_cle
         authorization_http::operating_access(&f.headers(Some(&g.cookie)), f.app()).is_ok(),
         "non-safety edit must preserve current transport"
     );
-    settings.control = profile::Control {
+    settings.control = profile::ControlSelection {
         mode: "cat".into(),
         endpoint: Some("fixture-cat-endpoint".into()),
         ptt: "disabled".into(),
@@ -1584,7 +1584,7 @@ async fn commission_http_retained_id_cannot_rebind_owner_kind_or_new_safety_scop
     {
         let mut store = state.store.lock().unwrap();
         let mut settings = store.document.settings();
-        settings.control = profile::Control {
+        settings.control = profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some("fixture-cat".into()),
             ptt: "disabled".into(),
@@ -1661,7 +1661,7 @@ async fn commission_http_revoke_or_safety_edit_wins_queued_acknowledgement_witho
                     .unwrap();
             } else {
                 let mut settings = store.document.settings();
-                settings.control = profile::Control {
+                settings.control = profile::ControlSelection {
                     mode: "cat".into(),
                     endpoint: Some("fixture-cat".into()),
                     ptt: "disabled".into(),
@@ -2056,7 +2056,7 @@ mod automatic_cat {
                 store.document.settings(),
             )
         };
-        settings.control = profile::Control {
+        settings.control = profile::ControlSelection {
             mode: "cat".into(),
             endpoint: Some(endpoint.into()),
             ptt: "disabled".into(),

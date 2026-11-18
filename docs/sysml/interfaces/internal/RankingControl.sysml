@@ -7,6 +7,7 @@ package WstxRankingControl {
     private import WstxLogControl::WorkedStatus;
     private import WstxProfileAccess::MostWantedList;
     private import WstxStrategies::AlertSound;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* What the supervisor gives the ranking function (what the profile and the
          radio say, and the operator's commands); the rules operating gives it of the
@@ -85,9 +86,17 @@ package WstxRankingControl {
         doc /* The QSOs that count as worked for a strategy. */
         attribute kind : WindowKind;
         attribute firstDate : String[0..1] {
-            doc /* With fromTo: a day of the calendar from 1930 to 2099, as YYYYMMDD. */ }
+            doc /* With fromTo: a day of the calendar from 1930 to 2099, as YYYYMMDD. */
+            @CodeDiffers {
+                what = "The code names it from (worked_since in server/src/strategy.rs).";
+            }
+        }
         attribute lastDate : String[0..1] {
-            doc /* With fromTo: as firstDate, and not before it. */ }
+            doc /* With fromTo: as firstDate, and not before it. */
+            @CodeDiffers {
+                what = "The code names it to (worked_since in server/src/strategy.rs).";
+            }
+        }
     }
     attribute def StrategyBands {
         doc /* The bands a strategy works on: band names of the ADIF enumeration in lower
@@ -111,14 +120,30 @@ package WstxRankingControl {
     attribute def CountryList {
         doc /* The prefixes and countries a strategy takes and leaves out, at most
              RankingLimits::countriesMax in each list. An entry may stand twice. */
-        attribute included : CountryEntry[0..*];
-        attribute excluded : CountryEntry[0..*];
+        attribute included : CountryEntry[0..*] {
+            @CodeDiffers {
+                what = "The code names it include (lists_of in server/src/strategy.rs).";
+            }
+        }
+        attribute excluded : CountryEntry[0..*] {
+            @CodeDiffers {
+                what = "The code names it exclude (lists_of in server/src/strategy.rs).";
+            }
+        }
     }
     attribute def UsStateFilter {
         doc /* The US states a strategy takes and leaves out: the two-letter codes of the
              50 states and DC, each once in a list. */
-        attribute included : String[0..51];
-        attribute excluded : String[0..51];
+        attribute included : String[0..51] {
+            @CodeDiffers {
+                what = "The code names it include (lists_of in server/src/strategy.rs).";
+            }
+        }
+        attribute excluded : String[0..51] {
+            @CodeDiffers {
+                what = "The code names it exclude (lists_of in server/src/strategy.rs).";
+            }
+        }
     }
     attribute def CqTargetList {
         doc /* The CQ directives a strategy takes and leaves out: words of 1 to 8
@@ -129,8 +154,16 @@ package WstxRankingControl {
              (WstxValueOrder::DirectedCqRule). They are also words the station may put
              after CQ in its own CQ under the strategy; how a CQ to send is chosen is
              the contact's and Auto's. */
-        attribute included : String[0..*];
-        attribute excluded : String[0..*];
+        attribute included : String[0..*] {
+            @CodeDiffers {
+                what = "The code names it include (lists_of in server/src/strategy.rs).";
+            }
+        }
+        attribute excluded : String[0..*] {
+            @CodeDiffers {
+                what = "The code names it exclude (lists_of in server/src/strategy.rs).";
+            }
+        }
     }
     attribute def RankingKeys {
         doc /* The ranking rules of one strategy. A strategy of class contest gives
@@ -143,7 +176,11 @@ package WstxRankingControl {
         attribute newMeans : Needed[0..1];
         attribute region : RegionKind[0..1];
         attribute regionContinents : Continent[0..7] {
-            doc /* With selected: one at least, each once. */ }
+            doc /* With selected: one at least, each once. */
+            @CodeDiffers {
+                what = "The code names it continents, inside region (server/src/strategy.rs).";
+            }
+        }
         attribute minSnrDb : Integer[0..1] {
             doc /* -50 to 49. Absent: no minimum. */ }
         attribute workedSince : WorkedSince[0..1];
@@ -177,8 +214,20 @@ package WstxRankingControl {
         attribute bandsMax : Integer = 32 { doc /* Bands in a StrategyBands. */ }
         attribute countriesMax : Integer = 64 { doc /* Entries in each country list. */ }
         attribute cqTargetsMax : Integer = 32 { doc /* Words in each CQ target list. */ }
-        attribute ignoreListMax : Integer = 20 { doc /* Entries in the ignore list. */ }
-        attribute wantedListMax : Integer = 100 { doc /* Entries in the wanted list. */ }
+        attribute ignoreListMax : Integer = 100 {
+            doc /* Entries in the ignore list. */
+            @CodeDiffers {
+                what = "The code keeps two lists in server/src/strategy.rs: a saved list of at "
+                    + "most IGNORE_CALLS_MAX 100 calls (parse_config) and a session list of "
+                    + "SESSION_IGNORE_MAX 64, whose 65th entry drops the oldest (Session::add).";
+            }
+        }
+        attribute wantedListMax : Integer = 100 {
+            doc /* Entries in the wanted list. */
+            @CodeDiffers {
+                what = "The code has no wanted list.";
+            }
+        }
         attribute evaluateMax : Integer = 2048 {
             doc /* Records one EvaluateRequest may span. */ }
         attribute alertHistoryMax : Integer = 100 { doc /* Alerts the history keeps. */ }
@@ -194,7 +243,11 @@ package WstxRankingControl {
             doc /* A call or a pattern, of the form of IgnoreCommand::call. */ }
         attribute addedUtcMs : Integer {
             doc /* When the entry was added, in milliseconds of UTC since 1970; set by
-                 the settings function when it adds the entry. */ }
+                 the settings function when it adds the entry. */
+            @CodeDiffers {
+                what = "The code has no wanted list.";
+            }
+        }
     }
     item def RankingContext {
         doc /* What ranking needs to know of the station. The supervisor gives it
@@ -211,7 +264,12 @@ package WstxRankingControl {
                  it. */ }
         attribute cqWords : String[0..*] {
             doc /* The CQ words for this station,
-                 WstxProfileAccess::ShackConfig::cqWords. */ }
+                 WstxProfileAccess::ShackConfig::cqWords. */
+            @CodeDiffers {
+                what = "The code has no CQ words of the station; the included CQ targets of the "
+                    + "active strategy are its CQ words (server/src/strategy.rs).";
+            }
+        }
         attribute wanted : WantedEntry[0..*] ordered {
             doc /* The wanted list, as the settings function keeps it
                  (WstxProfileAccess::DefinitionsSnapshot::wanted). */ }
@@ -289,7 +347,12 @@ package WstxRankingControl {
              records without a rank. */
         item periodView : PeriodView {
             doc /* The period view whose records were evaluated; it names the job and
-                 says whether the period is complete. */ }
+                 says whether the period is complete. */
+            @CodeDiffers {
+                what = "The reply names no period view; the request names the job by source_id "
+                    + "and job_id (server/src/strategy.rs).";
+            }
+        }
         attribute verdicts : Verdict[0..*] ordered;
         attribute offBand : Boolean {
             doc /* The station's band is none of the bands of the active strategy, or of
@@ -407,7 +470,12 @@ package WstxRankingControl {
              and the entry is not among them. */
         enum notConfigured;
         enum staleRequest;
-        enum ignoreListFull;
+        enum ignoreListFull {
+            @CodeDiffers {
+                what = "The code refuses no entry: a full session list drops its oldest entry "
+                    + "(Session::add in server/src/strategy.rs).";
+            }
+        }
     }
     item def RankingRefused {
         doc /* The answer to an EvaluateRequest or an IgnoreCommand that is refused. A
@@ -429,9 +497,24 @@ package WstxRankingControl {
         out item context : RankingContext;
         out item evaluate : EvaluateRequest;
         out item ignore : IgnoreCommand;
-        out item clearIgnore : ClearIgnoreList;
-        out item readState : ReadRankingState;
-        out item readAlerts : ReadAlerts;
+        out item clearIgnore : ClearIgnoreList {
+            @CodeDiffers {
+                what = "The code has no such command; a change of the station band empties the "
+                    + "session list (Session::observe_band in server/src/strategy.rs).";
+            }
+        }
+        out item readState : ReadRankingState {
+            @CodeDiffers {
+                what = "The code reads the lists by GET /strategy (snapshot in "
+                    + "server/src/strategy.rs).";
+            }
+        }
+        out item readAlerts : ReadAlerts {
+            @CodeDiffers {
+                what = "The code reads them by GET /strategy/alerts (alerts_route in "
+                    + "server/src/strategy.rs).";
+            }
+        }
         out item clearAlerts : ClearAlerts;
         in item ranked : RankedList;
         in item reply : EvaluateReply;
@@ -439,7 +522,11 @@ package WstxRankingControl {
         in item alerts : Alert;
         in item facts : DecodedFacts;
         in item refused : RankingRefused;
-        in item wantedWorked : WantedWorked;
+        in item wantedWorked : WantedWorked {
+            @CodeDiffers {
+                what = "The code has no wanted list.";
+            }
+        }
     }
     interface def RankingControl {
         doc /* The supervisor commands the ranking function; ranking reports the

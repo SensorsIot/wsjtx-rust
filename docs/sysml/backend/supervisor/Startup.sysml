@@ -17,6 +17,7 @@ package WstxStartup {
     private import WstxTransmitControl::TransmitStatus;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelNotes::DiffersFromSource;
+    private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -33,6 +34,7 @@ package WstxStartup {
         doc /* The supervisor MUST start and end the station process as LaunchRule
              says, and end a start it cannot carry out with its StartupOutcome. */
         @Status { build = ImplementationState::partial; }
+        @ImplementedIn { module = "server/src/main.rs"; }
     }
     #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-005-09'; }
 

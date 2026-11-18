@@ -18,8 +18,9 @@ package WstxFlexAdapterPart {
                 + "server/src/flexAdapter/wire.rs; server/src/flex_http.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/flex/mod.rs, server/src/flex_http.rs, outside "
-                + "server/src/flexAdapter/ and client/src/flexAdapter/.";
+            what = "Its code stands in server/src/flex/mod.rs, server/src/flex_http.rs, "
+                + "server/src/main.rs, outside server/src/flexAdapter/ and "
+                + "client/src/flexAdapter/.";
         }
         @DetailTests {
             tests = "server/src/flexAdapter/wire_tests.rs; "

@@ -3,6 +3,7 @@ package WstxStationCommands {
     private import WstxModeProcessing::Mode;
     private import WstxReceiveControl::ReceiveMode;
     private import WstxRadioControl::DetectionReport;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* The supervisor's control interface: the commands the operator (through web)
          and an agent (through mcp) give the station, the same for both but those
@@ -23,7 +24,12 @@ package WstxStationCommands {
         attribute commandId : String {
             doc /* Names the command: a UUID of version 4 in lower case, chosen by the
                  requester (WstxStationAuthority::ReceiptRule). */ }
-        attribute requester : Requester;
+        attribute requester : Requester {
+            @CodeDiffers {
+                what = "The code carries no requester: an agent's command reaches the "
+                    + "station's routes under the MCP client's token.";
+            }
+        }
     }
     item def StationOutcome {
         doc /* The answer to one StationRequest: the answer of the function the command was
@@ -99,8 +105,8 @@ package WstxStationCommands {
         doc /* An IARU region; 'all' stands for every region. */
         enum 'all';
         enum r1;
-        enum r2;
-        enum r3;
+        enum r2 { @CodeDiffers { what = "The code has no IARU region."; } }
+        enum r3 { @CodeDiffers { what = "The code has no IARU region."; } }
     }
     enum def NominalOrigin {
         doc /* Where the dial frequency of the selection comes from.
@@ -154,7 +160,12 @@ package WstxStationCommands {
                  (WstxOperatingSelection::BandFrequency). */ }
         attribute region : IaruRegion = IaruRegion::'all' {
             doc /* The station's IARU region, as the operator sets it: the station uses the
-                 entries of this region and of the region 'all'; with 'all', every entry. */ }
+                 entries of this region and of the region 'all'; with 'all', every entry. */
+            @CodeDiffers {
+                what = "The code has no region: one fixed table of one frequency per mode "
+                    + "and band serves every station.";
+            }
+        }
     }
     item def CancelSelection :> StationRequest {
         doc /* End a selection, or keep one from being carried out
@@ -384,12 +395,28 @@ package WstxStationCommands {
         in abstract item answers[0..*] { doc /* The answer to one command or read. */ }
         in abstract item views[0..*] {
             doc /* A view of the station's state, given at station start and whenever a
-                 value changes. */ }
+                 value changes. */
+            @CodeDiffers {
+                what = "The code names no views: each is an event of the socket and the "
+                    + "answer to the GET of its route.";
+            }
+        }
 
-        out item selectMode : SelectMode :> commands;
-        out item selectBand : SelectBand :> commands;
-        out item cancelSelection : CancelSelection :> commands;
-        out item checkSettings : CheckSettings :> commands;
+        out item selectMode : SelectMode :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /receive/select with a mode."; }
+        }
+        out item selectBand : SelectBand :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /receive/select with a band."; }
+        }
+        out item cancelSelection : CancelSelection :> commands {
+            @CodeDiffers {
+                what = "The code takes it as the POST of /receive/select with a "
+                    + "target_command_id.";
+            }
+        }
+        out item checkSettings : CheckSettings :> commands {
+            @CodeDiffers { what = "The code has no settings check."; }
+        }
         out item selectRow : WstxQsoControl::SelectRow :> commands;
         out item enterDx : WstxQsoControl::EnterDx :> commands;
         out item reply : WstxQsoControl::Reply :> commands;
@@ -397,8 +424,16 @@ package WstxStationCommands {
         out item callDx : WstxQsoControl::CallDx :> commands;
         out item sendNext : WstxQsoControl::SendNext :> commands;
         out item resetRepetitions : WstxQsoControl::ResetRepetitions :> commands;
-        out item cancelContact : WstxQsoControl::CancelContact :> commands;
-        out item haltQso : WstxQsoControl::HaltQso :> commands;
+        out item cancelContact : WstxQsoControl::CancelContact :> commands {
+            @CodeDiffers {
+                what = "The code takes it as the command cancel of the POST of /contact/command.";
+            }
+        }
+        out item haltQso : WstxQsoControl::HaltQso :> commands {
+            @CodeDiffers {
+                what = "The code takes it as the command abort of the POST of /contact/command.";
+            }
+        }
         out item chooseNext : WstxQsoControl::ChooseNext :> commands;
         out item editMessage : WstxQsoControl::EditMessage :> commands;
         out item setReport : WstxQsoControl::SetReport :> commands;
@@ -408,100 +443,362 @@ package WstxStationCommands {
         out item setHoldTx : WstxQsoControl::SetHoldTx :> commands;
         out item setParity : WstxQsoControl::SetParity :> commands;
         out item tune : WstxQsoControl::Tune :> commands;
-        out item confirmLog : WstxQsoControl::ConfirmLog :> commands;
-        out item discardLog : WstxQsoControl::DiscardLog :> commands;
+        out item confirmLog : WstxQsoControl::ConfirmLog :> commands {
+            @CodeDiffers {
+                what = "The code has no logging to confirm: a completed contact is logged at "
+                    + "once.";
+            }
+        }
+        out item discardLog : WstxQsoControl::DiscardLog :> commands {
+            @CodeDiffers {
+                what = "The code has no logging to confirm: a completed contact is logged at "
+                    + "once.";
+            }
+        }
         out item switchAuto : WstxAutoControl::SwitchAuto :> commands;
         out item evaluate : WstxRankingControl::EvaluateRequest :> commands;
         out item ignore : WstxRankingControl::IgnoreCommand :> commands;
-        out item clearIgnore : WstxRankingControl::ClearIgnoreList :> commands;
+        out item clearIgnore : WstxRankingControl::ClearIgnoreList :> commands {
+            @CodeDiffers {
+                what = "The code has no clearing of the list: the POST of /strategy/ignore takes "
+                    + "one call at a time.";
+            }
+        }
         out item clearAlerts : WstxRankingControl::ClearAlerts :> commands;
-        out item selectStrategy : WstxStrategies::SelectStrategy :> commands;
-        out item startLive : WstxReceiveControl::StartLive :> commands;
-        out item stopLive : WstxReceiveControl::StopLive :> commands;
-        out item startReplay : WstxReceiveControl::StartReplay :> commands;
+        out item selectStrategy : WstxStrategies::SelectStrategy :> commands {
+            @CodeDiffers {
+                what = "The code takes the active strategy and the contest with the PUT of "
+                    + "/strategy.";
+            }
+        }
+        out item startLive : WstxReceiveControl::StartLive :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /receive/start."; }
+        }
+        out item stopLive : WstxReceiveControl::StopLive :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /receive/stop."; }
+        }
+        out item startReplay : WstxReceiveControl::StartReplay :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /recording/replay."; }
+        }
         out item cancelJob : WstxReceiveControl::CancelJob :> commands;
         out item halt : WstxTransmitControl::Halt :> commands;
-        out item saveRecord : WstxLogControl::SaveRecord :> commands;
-        out item reserveImport : WstxLogControl::ReserveImport :> commands;
-        out item importChunk : WstxLogControl::ImportChunk :> commands;
-        out item resendLast : WstxLogControl::ResendLast :> commands;
-        out item exportCabrillo : WstxLogControl::ExportCabrillo :> commands;
-        out item detectRadios : WstxRadioControl::DetectRadios :> commands;
-        out item applyRecommended : WstxRadioControl::ApplyRecommended :> commands;
-        out item saveConfig : WstxProfileAccess::SaveProfile :> commands;
-        out item saveShack : WstxProfileAccess::SaveShack :> commands;
-        out item createEntry : WstxProfileAccess::CreateEntry :> commands;
-        out item updateEntry : WstxProfileAccess::UpdateEntry :> commands;
-        out item deleteEntry : WstxProfileAccess::DeleteEntry :> commands;
-        out item resetFrequencies : WstxProfileAccess::ResetFrequencies :> commands;
-        out item updateMostWanted : WstxProfileAccess::UpdateMostWanted :> commands;
-        out item updateCountryFile : WstxProfileAccess::UpdateCountryFile :> commands;
-        out item reserveRecording : WstxRecordingTransfer::ReserveImport :> commands;
-        out item recordingChunk : WstxRecordingTransfer::ImportChunk :> commands;
-        out item cancelRecording : WstxRecordingTransfer::CancelImport :> commands;
+        out item saveRecord : WstxLogControl::SaveRecord :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /contacts."; }
+        }
+        out item reserveImport : WstxLogControl::ReserveImport :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /contacts/imports."; }
+        }
+        out item importChunk : WstxLogControl::ImportChunk :> commands {
+            @CodeDiffers {
+                what = "The code takes it as the PUT of /contacts/imports/ and the import's id.";
+            }
+        }
+        out item resendLast : WstxLogControl::ResendLast :> commands {
+            @CodeDiffers { what = "The code has no command that gives the newest record again."; }
+        }
+        out item exportCabrillo : WstxLogControl::ExportCabrillo :> commands {
+            @CodeDiffers { what = "The code has no Cabrillo export."; }
+        }
+        out item detectRadios : WstxRadioControl::DetectRadios :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /radio/detect."; }
+        }
+        out item applyRecommended : WstxRadioControl::ApplyRecommended :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /radio/settings/apply."; }
+        }
+        out item saveConfig : WstxProfileAccess::SaveProfile :> commands {
+            @CodeDiffers { what = "The code takes it as the PUT of /profile."; }
+        }
+        out item saveShack : WstxProfileAccess::SaveShack :> commands {
+            @CodeDiffers {
+                what = "The code has no shack's settings; the call sign and the locator are saved "
+                    + "with the PUT of /profile.";
+            }
+        }
+        out item createEntry : WstxProfileAccess::CreateEntry :> commands {
+            @CodeDiffers {
+                what = "The code has no collections of settings: the strategies are saved whole "
+                    + "with the PUT of /strategy, the UDP targets with the PUT of /udp.";
+            }
+        }
+        out item updateEntry : WstxProfileAccess::UpdateEntry :> commands {
+            @CodeDiffers {
+                what = "The code has no collections of settings: the strategies are saved whole "
+                    + "with the PUT of /strategy, the UDP targets with the PUT of /udp.";
+            }
+        }
+        out item deleteEntry : WstxProfileAccess::DeleteEntry :> commands {
+            @CodeDiffers {
+                what = "The code has no collections of settings: the strategies are saved whole "
+                    + "with the PUT of /strategy, the UDP targets with the PUT of /udp.";
+            }
+        }
+        out item resetFrequencies : WstxProfileAccess::ResetFrequencies :> commands {
+            @CodeDiffers {
+                what = "The code has no list of working frequencies to reset: it holds one fixed "
+                    + "table.";
+            }
+        }
+        out item updateMostWanted : WstxProfileAccess::UpdateMostWanted :> commands {
+            @CodeDiffers {
+                what = "The code takes it as the POST of /strategy/most-wanted/download.";
+            }
+        }
+        out item updateCountryFile : WstxProfileAccess::UpdateCountryFile :> commands {
+            @CodeDiffers {
+                what = "The code downloads no country file: it takes one the operator uploads "
+                    + "with the PUT of /dxcc.";
+            }
+        }
+        out item reserveRecording : WstxRecordingTransfer::ReserveImport :> commands {
+            @CodeDiffers { what = "The code takes it as the POST of /recording/imports."; }
+        }
+        out item recordingChunk : WstxRecordingTransfer::ImportChunk :> commands {
+            @CodeDiffers {
+                what = "The code takes it as the PUT of /recording/imports/ and the import's id.";
+            }
+        }
+        out item cancelRecording : WstxRecordingTransfer::CancelImport :> commands {
+            @CodeDiffers {
+                what = "The code takes it as the DELETE of /recording/imports/ and the import's "
+                    + "id.";
+            }
+        }
 
         out item records : WstxReceiveControl::ReadRecords :> reads;
         out item diagnostics : WstxReceiveControl::ReadDiagnostics :> reads;
         out item history : WstxLogControl::ReadHistory :> reads;
-        out item logImport : WstxLogControl::ReadImport :> reads;
+        out item logImport : WstxLogControl::ReadImport :> reads {
+            @CodeDiffers {
+                what = "The code takes it as the GET of /contacts/imports/ and the import's id.";
+            }
+        }
         out item export : WstxLogControl::ExportLog :> reads;
-        out item countryFile : WstxLogControl::ReadCountryFile :> reads;
+        out item countryFile : WstxLogControl::ReadCountryFile :> reads {
+            @CodeDiffers { what = "The code takes it as the GET of /dxcc."; }
+        }
         out item ranking : WstxRankingControl::ReadRankingState :> reads;
         out item operating : WstxStrategies::ReadStrategies :> reads;
         out item contests : WstxStrategies::ReadContests :> reads;
         out item endpoints : WstxAudioControl::ListEndpoints :> reads;
-        out item recordingImport : WstxRecordingTransfer::ReadImport :> reads;
+        out item recordingImport : WstxRecordingTransfer::ReadImport :> reads {
+            @CodeDiffers {
+                what = "The code takes it as the GET of /recording/imports/ and the import's id.";
+            }
+        }
 
-        in item stationRefused : StationRefused :> answers;
-        in item selectionAdmitted : SelectionAdmitted :> answers;
-        in item selectionRefused : SelectionRefused :> answers;
-        in item checkRefused : CheckRefused :> answers;
-        in item radioDetection : RadioDetection :> answers;
-        in item qsoAnswer : WstxQsoControl::QsoAnswer :> answers;
-        in item autoRefused : WstxAutoControl::AutoRefused :> answers;
-        in item evaluateReply : WstxRankingControl::EvaluateReply :> answers;
-        in item rankingState : WstxRankingControl::RankingState :> answers;
-        in item rankingRefused : WstxRankingControl::RankingRefused :> answers;
-        in item strategiesState : WstxStrategies::StrategiesState :> answers;
-        in item contestList : WstxStrategies::ContestList :> answers;
-        in item strategiesRefused : WstxStrategies::StrategiesRefused :> answers;
-        in item jobAccepted : WstxReceiveControl::JobAccepted :> answers;
-        in item receiveRefused : WstxReceiveControl::Refused :> answers;
-        in item recordsPage : WstxReceiveControl::RecordsPage :> answers;
+        in item stationRefused : StationRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item selectionAdmitted : SelectionAdmitted :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /receive/select.";
+            }
+        }
+        in item selectionRefused : SelectionRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of the answer to the "
+                    + "POST of /receive/select.";
+            }
+        }
+        in item checkRefused : CheckRefused :> answers {
+            @CodeDiffers { what = "The code has no settings check."; }
+        }
+        in item radioDetection : RadioDetection :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /radio/detect.";
+            }
+        }
+        in item qsoAnswer : WstxQsoControl::QsoAnswer :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /contact/command.";
+            }
+        }
+        in item autoRefused : WstxAutoControl::AutoRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item evaluateReply : WstxRankingControl::EvaluateReply :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /strategy/evaluate.";
+            }
+        }
+        in item rankingState : WstxRankingControl::RankingState :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of an HTTP answer of "
+                    + "/strategy.";
+            }
+        }
+        in item rankingRefused : WstxRankingControl::RankingRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item strategiesState : WstxStrategies::StrategiesState :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "GET and the PUT of /strategy.";
+            }
+        }
+        in item contestList : WstxStrategies::ContestList :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "GET of /strategy/contests.";
+            }
+        }
+        in item strategiesRefused : WstxStrategies::StrategiesRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item jobAccepted : WstxReceiveControl::JobAccepted :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /receive/start and /recording/replay.";
+            }
+        }
+        in item receiveRefused : WstxReceiveControl::Refused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item recordsPage : WstxReceiveControl::RecordsPage :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "GET of /receive/results.";
+            }
+        }
         in item cursorExpired : WstxReceiveControl::CursorExpired :> answers;
         in item diagnosticsView : WstxReceiveControl::DiagnosticsView :> answers;
-        in item haltReceipt : WstxTransmitControl::HaltReceipt :> answers;
-        in item saveAnswer : WstxLogControl::SaveAnswer :> answers;
-        in item resent : WstxLogControl::Resent :> answers;
-        in item logImportView : WstxLogControl::ImportView :> answers;
-        in item exportChunk : WstxLogControl::ExportChunk :> answers;
-        in item historyPage : WstxLogControl::HistoryPage :> answers;
-        in item countryFileState : WstxLogControl::CountryFileState :> answers;
-        in item logRefused : WstxLogControl::LogRefused :> answers;
-        in item settingsOutcome : WstxRadioControl::SettingsOutcome :> answers;
-        in item settingsRefused : WstxRadioControl::SettingsRefused :> answers;
-        in item detectRefused : WstxRadioControl::DetectRefused :> answers;
-        in item endpointList : WstxAudioControl::EndpointList :> answers;
-        in item listRefused : WstxAudioControl::ListRefused :> answers;
-        in item saveRefused : WstxProfileAccess::SaveRefused :> answers;
-        in item recordingReserved : WstxRecordingTransfer::ImportReserved :> answers;
-        in item recordingImportView : WstxRecordingTransfer::ImportView :> answers;
-        in item recordingRefused : WstxRecordingTransfer::ImportRefused :> answers;
+        in item haltReceipt : WstxTransmitControl::HaltReceipt :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /transmit/halt.";
+            }
+        }
+        in item saveAnswer : WstxLogControl::SaveAnswer :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /contacts.";
+            }
+        }
+        in item resent : WstxLogControl::Resent :> answers {
+            @CodeDiffers { what = "The code has no command that gives the newest record again."; }
+        }
+        in item logImportView : WstxLogControl::ImportView :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer of "
+                    + "/contacts/imports.";
+            }
+        }
+        in item exportChunk : WstxLogControl::ExportChunk :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is a part of the body of the GET of "
+                    + "/contacts/export.adi.";
+            }
+        }
+        in item historyPage : WstxLogControl::HistoryPage :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "GET of /contacts.";
+            }
+        }
+        in item countryFileState : WstxLogControl::CountryFileState :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer of "
+                    + "/dxcc.";
+            }
+        }
+        in item logRefused : WstxLogControl::LogRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item settingsOutcome : WstxRadioControl::SettingsOutcome :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /radio/settings/apply.";
+            }
+        }
+        in item settingsRefused : WstxRadioControl::SettingsRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item detectRefused : WstxRadioControl::DetectRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item endpointList : WstxAudioControl::EndpointList :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "GET of /audio/endpoints.";
+            }
+        }
+        in item listRefused : WstxAudioControl::ListRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item saveRefused : WstxProfileAccess::SaveRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
+        in item recordingReserved : WstxRecordingTransfer::ImportReserved :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer to the "
+                    + "POST of /recording/imports.";
+            }
+        }
+        in item recordingImportView : WstxRecordingTransfer::ImportView :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the JSON body of the answer of "
+                    + "/recording/imports.";
+            }
+        }
+        in item recordingRefused : WstxRecordingTransfer::ImportRefused :> answers {
+            @CodeDiffers {
+                what = "The code names no such answer: it is the error body of an HTTP answer.";
+            }
+        }
 
         in item selection : SelectionState :> views;
         in item startup : StartupState :> views;
-        in item settingsCheck : SettingsCheckReport :> views;
+        in item settingsCheck : SettingsCheckReport :> views {
+            @CodeDiffers { what = "The code has no settings check."; }
+        }
         in item qso : WstxQsoControl::QsoState :> views;
         in item openSlots : WstxQsoControl::OpenSlots :> views;
         in item auto : WstxAutoControl::AutoActivity :> views;
         in item ranked : WstxRankingControl::RankedList :> views;
-        in item decodedFacts : WstxRankingControl::DecodedFacts :> views;
+        in item decodedFacts : WstxRankingControl::DecodedFacts :> views {
+            @CodeDiffers {
+                what = "The code has no view of its own for what ranking adds to a record.";
+            }
+        }
         in item alerts : WstxRankingControl::Alert :> views;
         in item receive : WstxReceiveControl::ReceiveStatus :> views;
         in item transmit : WstxTransmitControl::TransmitStatus :> views;
         in item txLevel : WstxTransmitControl::TxLevelStatus :> views;
-        in item transmitOutcome : WstxTransmitControl::TransmitOutcome :> views;
-        in item logAttempt : WstxLogControl::LogAttempt :> views;
+        in item transmitOutcome : WstxTransmitControl::TransmitOutcome :> views {
+            @CodeDiffers {
+                what = "The code names no such view: transmit's outcomes travel in transmit.state "
+                    + "as outcomes.";
+            }
+        }
+        in item logAttempt : WstxLogControl::LogAttempt :> views {
+            @CodeDiffers {
+                what = "The code names no such view: a completed contact is logged at once.";
+            }
+        }
         in item radio : WstxRadioControl::RadioStatus :> views;
         in item agc : WstxRadioControl::AgcStatus :> views;
         in item power : WstxRadioControl::PowerStatus :> views;
@@ -511,8 +808,14 @@ package WstxStationCommands {
         in item udp : WstxUdpControl::UdpSnapshot :> views;
         in item clock : WstxStationTime::ClockQuality :> views;
         in item config : WstxProfileAccess::ProfileSnapshot :> views;
-        in item shack : WstxProfileAccess::ShackSnapshot :> views;
-        in item definitions : WstxProfileAccess::DefinitionsSnapshot :> views;
+        in item shack : WstxProfileAccess::ShackSnapshot :> views {
+            @CodeDiffers { what = "The code has no shack's settings."; }
+        }
+        in item definitions : WstxProfileAccess::DefinitionsSnapshot :> views {
+            @CodeDiffers {
+                what = "The code names no such view: the strategies travel in strategy.state.";
+            }
+        }
         in item recording : WstxRecordingTransfer::RecordingStatus :> views;
     }
     interface def StationCommands {

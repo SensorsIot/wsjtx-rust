@@ -14,9 +14,17 @@ use axum::extract::RawQuery;
 use axum::http::Method;
 use tower::ServiceExt;
 
-pub const BODY_MAX: usize = 8192;
-pub const MODERN: &str = "2026-07-28";
-pub const LEGACY: [&str; 2] = ["2025-11-25", "2025-06-18"];
+/// WstxMcp::McpEndpoint.
+pub mod mcp_endpoint {
+    pub const BODY_BYTES_MAX: usize = 8192;
+}
+/// WstxMcp::ProtocolVersions: modern, then legacy.
+pub mod protocol_versions {
+    pub const MODERN: &str = "2026-07-28";
+    pub const LEGACY: &[&str] = &["2025-11-25", "2025-06-18"];
+}
+use protocol_versions::{LEGACY, MODERN};
+pub const BODY_MAX: usize = mcp_endpoint::BODY_BYTES_MAX;
 /// Station responses carried in one tool result (the largest is a results page).
 const STATION_BYTES_MAX: usize = 65536;
 

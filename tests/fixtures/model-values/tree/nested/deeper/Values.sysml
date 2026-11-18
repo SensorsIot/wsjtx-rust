@@ -22,6 +22,7 @@ package FixtureValues {
         enum first;
         second;
         enum third { doc /* a member with a doc body */ }
+        enum fifth { doc /* a member with an annotation */ @Marked { what = "a note"; } }
     }
 
     attribute def Entry {

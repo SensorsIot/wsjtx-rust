@@ -4,6 +4,7 @@ package WstxStrategies {
     private import WstxRankingControl::RankingKeys;
     private import WstxRankingControl::RankingRules;
     private import WstxModelNotes::FollowsSource;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* What a strategy and a contest are; what the supervisor commands the
          operating function and what operating answers; and what operating gives
@@ -32,12 +33,24 @@ package WstxStrategies {
     attribute def AutoKeys {
         doc /* The rules of one strategy that Auto executes. Every strategy of either
              class has every one of them. */
-        attribute leaveMode : LeaveMode;
+        attribute leaveMode : LeaveMode {
+            @CodeDiffers {
+                what = "The code names it mode, inside leave (server/src/strategy.rs).";
+            }
+        }
         attribute leaveCalls : Integer[0..1] {
-            doc /* With calls: the calls without an answer, 1 to 20. */ }
+            doc /* With calls: the calls without an answer, 1 to 20. */
+            @CodeDiffers {
+                what = "The code names it calls, inside leave (server/src/strategy.rs).";
+            }
+        }
         attribute leaveCallsHeard : Integer[0..1] {
             doc /* With calls: the calls while the station is heard there, from
-                 leaveCalls to 40. */ }
+                 leaveCalls to 40. */
+            @CodeDiffers {
+                what = "The code names it calls_heard, inside leave (server/src/strategy.rs).";
+            }
+        }
         attribute goneMinutes : Integer[0..1] {
             doc /* With untilLogged: 1 to 60. */ }
         attribute txChanges : Integer[0..1] {
@@ -45,11 +58,25 @@ package WstxStrategies {
         attribute moveEveryHeard : Integer {
             doc /* How often the transmit frequency moves while the called station hears
                  the station: 0 never, 1 at every call, n at every n-th call, up to
-                 20. */ }
+                 20. */
+            @CodeDiffers {
+                what = "The code names it heard, inside tx_move_every (server/src/strategy.rs).";
+            }
+        }
         attribute moveEveryNotHeard : Integer {
-            doc /* The same while it reports and does not hear the station. */ }
+            doc /* The same while it reports and does not hear the station. */
+            @CodeDiffers {
+                what = "The code names it not_heard, inside tx_move_every "
+                    + "(server/src/strategy.rs).";
+            }
+        }
         attribute moveEveryNoReports : Integer {
-            doc /* The same while it does not report, or that is unknown. */ }
+            doc /* The same while it does not report, or that is unknown. */
+            @CodeDiffers {
+                what = "The code names it no_reports, inside tx_move_every "
+                    + "(server/src/strategy.rs).";
+            }
+        }
         attribute cqWhenIdle : Boolean {
             doc /* CQ is called when nothing can be called. */ }
         attribute cqWaitPeriods : Integer {
@@ -60,7 +87,12 @@ package WstxStrategies {
                  120. */ }
         attribute cqQuietPeriods : Integer {
             doc /* The periods without a CQ after a CQ that nobody answered: 0 to 40.
-                 It is held also while cqWhenIdle is off. */ }
+                 It is held also while cqWhenIdle is off. */
+            @CodeDiffers {
+                what = "The code has no CQ pause and no such key (STRATEGY_KEYS in "
+                    + "server/src/strategy.rs).";
+            }
+        }
     }
     attribute def Strategy {
         doc /* One strategy. Every strategy has every setting; the class says where its
@@ -69,7 +101,11 @@ package WstxStrategies {
             doc /* 1 to 32 printable ASCII characters, without a space at either end.
                  Among the saved strategies a name stands once, without regard to letter
                  case, and is not the name of a built-in one. */ }
-        attribute strategyClass : StrategyClass;
+        attribute strategyClass : StrategyClass {
+            @CodeDiffers {
+                what = "The code names it class (STRATEGY_KEYS in server/src/strategy.rs).";
+            }
+        }
         attribute ranking : RankingKeys;
         attribute contest : String[0..1] {
             doc /* For class contest: the id of its contest in ContestTable. Absent for
@@ -81,10 +117,26 @@ package WstxStrategies {
     }
     enum def AlertSound {
         doc /* The sounds of the station's alerts, distinct from one another. */
-        enum oldPhone;
-        enum bell;
-        enum chime;
-        enum beep;
+        enum oldPhone {
+            @CodeDiffers {
+                what = "The code's alerts have one tone (tone in client/contact.js).";
+            }
+        }
+        enum bell {
+            @CodeDiffers {
+                what = "The code's alerts have one tone (tone in client/contact.js).";
+            }
+        }
+        enum chime {
+            @CodeDiffers {
+                what = "The code's alerts have one tone (tone in client/contact.js).";
+            }
+        }
+        enum beep {
+            @CodeDiffers {
+                what = "The code's alerts have one tone (tone in client/contact.js).";
+            }
+        }
     }
     attribute def BuiltinStrategies {
         doc /* The strategies the station offers beside the saved ones, in this order, with
@@ -305,7 +357,12 @@ package WstxStrategies {
                  station while the contest is in force and station time lies in its
                  period (WstxContestRanking::ContestDirective). They are also the words the
                  station may put after CQ in its own CQ in the contest; how a CQ to send
-                 is chosen is the contact's and Auto's. */ }
+                 is chosen is the contact's and Auto's. */
+            @CodeDiffers {
+                what = "The code holds no CQ words of a contest; the CQ word of the contest's "
+                    + "activity counts (Activity::cq in server/src/contact.rs).";
+            }
+        }
         attribute bands : String[1..*] { doc /* ADIF band names in lower case. */ }
         attribute dupes : DupeRule;
         attribute points : PointsRule;
@@ -432,7 +489,13 @@ package WstxStrategies {
         doc /* The special activity that goes with the contest in force. Operating gives it
              at station start and whenever it changes; the contact uses it as
              WstxSpecialActivities::ActivityRule says. */
-        attribute inForce : Boolean { doc /* A contest is in force. */ }
+        attribute inForce : Boolean {
+            doc /* A contest is in force. */
+            @CodeDiffers {
+                what = "The code gives the contact no contest activity; Auto waits while the "
+                    + "contact's activity is not the contest's (server/src/automation.rs).";
+            }
+        }
         attribute activity : Activity[0..1] {
             doc /* ContestProfile::activity of the contest in force. Absent while no
                  contest is in force, and for a contest without an activity. */ }
@@ -444,8 +507,18 @@ package WstxStrategies {
              belongs to. */
         out item saved : SavedStrategies;
         out item selection : SelectStrategy;
-        out item readStrategies : ReadStrategies;
-        out item readContests : ReadContests;
+        out item readStrategies : ReadStrategies {
+            @CodeDiffers {
+                what = "The code reads the state by GET /strategy (snapshot in "
+                    + "server/src/strategy.rs).";
+            }
+        }
+        out item readContests : ReadContests {
+            @CodeDiffers {
+                what = "The code reads them by GET /strategy/contests (contests_route in "
+                    + "server/src/strategy.rs).";
+            }
+        }
         in item strategies : StrategiesState;
         in item contests : ContestList;
         in item refused : StrategiesRefused;

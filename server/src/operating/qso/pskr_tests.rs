@@ -303,7 +303,7 @@ fn next_packet_parses_and_bounds() {
     assert_eq!(next_packet(&mut buffer), Ok(Some(Packet::UnsubAck)));
     for hostile in [
         vec![0x30, 0xff, 0xff, 0xff, 0xff, 0x7f], // a length of too many bytes
-        vec![0x30, 0x81, 0x80, 0x04],             // past PACKET_MAX
+        vec![0x30, 0x81, 0x80, 0x04],             // past MAX_PACKET_BYTES
         vec![0x32, 2, 0, 0],                      // QoS 1
         vec![0x30, 3, 0, 9, 1],                   // a topic past the packet
         vec![0x10, 0],                            // a server never sends CONNECT
@@ -322,14 +322,14 @@ fn next_packet_parses_and_bounds() {
 // after a healthy session.
 #[test]
 fn backoff_doubles_to_the_bound() {
-    let mut b = Backoff::new(&Timing::BROKER);
+    let mut b = Backoff::new(&FeedSession::BROKER);
     let delays: Vec<u64> = (0..9).map(|_| b.step().as_secs()).collect();
     assert_eq!(delays, [5, 10, 20, 40, 80, 160, 300, 300, 300]);
     b.reset();
     assert_eq!(b.step().as_secs(), 5);
 }
 
-const FAST: Timing = Timing {
+const FAST: FeedSession = FeedSession {
     poll: Duration::from_millis(10),
     handshake: Duration::from_secs(5),
     ping: Duration::from_millis(100),
@@ -599,7 +599,7 @@ fn the_status_follows_the_switch() {
             }
         }
     });
-    let slow = Timing {
+    let slow = FeedSession {
         poll: Duration::from_millis(100),
         backoff_first: Duration::from_millis(600),
         backoff_max: Duration::from_millis(600),

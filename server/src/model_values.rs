@@ -745,9 +745,12 @@ impl Model {
                 [k, t] if k.is_word("enum") => t.name(),
                 _ => None,
             };
-            let doc_only = member
-                .body
-                .is_none_or(|(s, e)| statements(toks, s, e).iter().all(|m| m.doc));
+            // A member's body holds docs and annotations (`@CodeDiffers { ... }`) only.
+            let doc_only = member.body.is_none_or(|(s, e)| {
+                statements(toks, s, e)
+                    .iter()
+                    .all(|m| m.doc || m.head.first().is_some_and(|t| t.is_punct("@")))
+            });
             match short {
                 Some(member_name) if doc_only => members.push(member_name.to_string()),
                 _ => return Err(error(name, "not an enumeration member in the read form")),

@@ -1,7 +1,9 @@
 // Adapted from WSJT-X getcandidates4, ft4_baseline, baseline, nuttal_window and pctile.
 // Copyright the WSJT-X contributors. GPL-3.0-only; see the project LICENSE.
 // Reference: WSJTX/wsjtx 0f7d5928449ec747c3d1f6da1306f8c94404c3a9.
-use super::{DecodeError, baseband::fft_plan, search::CpuBudget};
+use super::{
+    DECODE_BAND_HIGH_HZ, DECODE_BAND_LOW_HZ, DecodeError, baseband::fft_plan, search::CpuBudget,
+};
 use rustfft::num_complex::Complex64;
 use std::f64::consts::PI;
 const N: usize = 2304;
@@ -180,11 +182,11 @@ fn peaks(ratio: &[f64]) -> Vec<(f64, f64)> {
         let delta = if d == 0. { 0. } else { 0.5 * (l - r) / d };
         let carrier = (i as f64 + delta) * DF - 31.25;
         let contrast = c - 0.25 * (l - r) * delta;
-        if (200. ..=3500.).contains(&carrier) && contrast.is_finite() {
+        if (DECODE_BAND_LOW_HZ..=DECODE_BAND_HIGH_HZ).contains(&carrier) && contrast.is_finite() {
             out.push((carrier, contrast));
         }
     }
-    for endpoint in [200., 3500.] {
+    for endpoint in [DECODE_BAND_LOW_HZ, DECODE_BAND_HIGH_HZ] {
         let contrast = endpoint_contrast(ratio, endpoint);
         if contrast >= 1.18 {
             out.push((endpoint, contrast));

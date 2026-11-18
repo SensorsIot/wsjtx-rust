@@ -10,7 +10,7 @@ use tower::ServiceExt;
 use wstx_rust::radio_control as cat;
 use wstx_rust::transmit::service::{ArmState, Capability, OutcomeKind};
 
-fn document(id: &str, ptt: &str, output: Option<&str>) -> profile::Document {
+fn document(id: &str, ptt: &str, output: Option<&str>) -> profile::ProfileDocument {
     serde_json::from_value(json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Transmit fixture",
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard",
         "audio":{"input_device":null,"output_device":output},"control":{"mode":"cat","endpoint":ENDPOINT,"ptt":ptt}}))
@@ -62,7 +62,7 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
     );
     let g = gate(3);
     let start = Instant::now();
-    let tick = |doc: &profile::Document| {
+    let tick = |doc: &profile::ProfileDocument| {
         recording.cat_maintain(&g, Instant::now());
         station.update(doc, &g, recording.radio_actor());
         std::thread::sleep(Duration::from_millis(50));

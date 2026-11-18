@@ -12,13 +12,34 @@ use std::{
 pub(crate) mod tests;
 
 pub const MAX_REVISION: u64 = 9_007_199_254_740_991;
-pub const MAX_FILE: u64 = 16_384;
-const MAX_RESPONSE: usize = 8192;
+pub const MAX_FILE: u64 = profile_limits::PROFILE_FILE_MAX_BYTES;
+const MAX_RESPONSE: usize = profile_limits::PROFILE_HTTP_MAX_BYTES;
+
+/// The bounds of a saved profile (WstxProfileAccess::ProfileLimits).
+pub mod profile_limits {
+    pub const PROFILE_FILE_MAX_BYTES: u64 = 16_384;
+    pub const PROFILE_HTTP_MAX_BYTES: usize = 8192;
+    pub const DISPLAY_NAME_MAX_BYTES: usize = 64;
+}
+/// A new profile's own configuration (WstxProfileAccess::ProfileConfig).
+mod profile_config {
+    pub const DISPLAY_NAME: &str = "New station";
+    pub const CONNECTION_TYPE: &str = "standard";
+}
+/// A new profile's call sign and locator (WstxProfileAccess::ShackConfig).
+mod shack_config {
+    pub const CALLSIGN: &str = "";
+    pub const LOCATOR: &str = "";
+}
 
 fn nullable<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     Option::<String>::deserialize(d)
 }
 
+/// The input device of a new profile: none.
+const INPUT_DEVICE: Option<String> = None;
+/// The output device of a new profile: none.
+const OUTPUT_DEVICE: Option<String> = None;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Audio {
@@ -53,7 +74,7 @@ impl Audio {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct Control {
+pub struct ControlSelection {
     pub mode: String,
     #[serde(deserialize_with = "nullable")]
     pub endpoint: Option<String>,
@@ -81,7 +102,7 @@ impl Radio {
 /// True when the control is CAT on a radio whose CI-V AGC command is known: every
 /// station CAT endpoint is an IC-7300 CI-V configuration (CL-022, catalogue).
 /// The live receive input of a profile: its native session stream or its audio device.
-pub fn receive_device(document: &Document) -> Option<String> {
+pub fn receive_device(document: &ProfileDocument) -> Option<String> {
     if document.native.is_some() {
         Some(NATIVE_DEVICE.to_owned())
     } else {
@@ -89,7 +110,7 @@ pub fn receive_device(document: &Document) -> Option<String> {
     }
 }
 pub const NATIVE_DEVICE: &str = "native_flex";
-pub fn manages_radio(control: &Control) -> bool {
+pub fn manages_radio(control: &ControlSelection) -> bool {
     control.mode == "cat"
         && control
             .endpoint
@@ -103,7 +124,7 @@ pub struct Settings {
     pub callsign: String,
     pub locator: String,
     pub audio: Audio,
-    pub control: Control,
+    pub control: ControlSelection,
     /// Omitted in an edit: the saved value is kept (or the default for a newly managed
     /// radio); omitted in a representation when the radio has no managed settings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,6 +136,10 @@ pub struct Endpoint {
     pub bind: String,
     #[serde(deserialize_with = "nullable")]
     pub origin: Option<String>,
+}
+impl Endpoint {
+    const BIND: &str = "127.0.0.1:8080";
+    const ORIGIN: Option<&str> = None;
 }
 /// FR-023 persisted native intent (schema 2 only). A radio identity, slice indices,
 /// stream IDs and client handles are never stored (#22, NativeProfileDocument).
@@ -158,7 +183,7 @@ fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Native>, D::
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct Document {
+pub struct ProfileDocument {
     pub schema_version: i64,
     pub profile_id: String,
     pub revision: u64,
@@ -168,7 +193,7 @@ pub struct Document {
     pub endpoint: Endpoint,
     pub connection_type: String,
     pub audio: Audio,
-    pub control: Control,
+    pub control: ControlSelection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radio: Option<Radio>,
     #[serde(
@@ -191,7 +216,9 @@ impl Settings {
         let text = |s: &str, maximum| {
             !s.is_empty() && s.len() <= maximum && !s.chars().any(char::is_control)
         };
-        if !text(&self.display_name, 64) || self.display_name.trim() != self.display_name {
+        if !text(&self.display_name, profile_limits::DISPLAY_NAME_MAX_BYTES)
+            || self.display_name.trim() != self.display_name
+        {
             return Err("display_name");
         }
         let c = self.callsign.as_bytes();
@@ -268,7 +295,9 @@ impl Settings {
         Ok(())
     }
 }
-impl Control {
+impl ControlSelection {
+    const MODE: &str = "disabled";
+    const PTT: &str = "disabled";
     pub fn validate(&self) -> Result<(), &'static str> {
         let text = |s: &str, maximum| {
             !s.is_empty() && s.len() <= maximum && !s.chars().any(char::is_control)
@@ -321,28 +350,29 @@ pub fn new_uuid() -> std::io::Result<String> {
         &hex[20..]
     ))
 }
-impl Document {
+impl ProfileDocument {
+    pub const SCHEMA_VERSION: i64 = 1;
     fn defaults() -> std::io::Result<Self> {
         Ok(Self {
-            schema_version: 1,
+            schema_version: Self::SCHEMA_VERSION,
             profile_id: new_uuid()?,
             revision: 0,
-            display_name: "New station".into(),
-            callsign: String::new(),
-            locator: String::new(),
+            display_name: profile_config::DISPLAY_NAME.into(),
+            callsign: shack_config::CALLSIGN.into(),
+            locator: shack_config::LOCATOR.into(),
             endpoint: Endpoint {
-                bind: "127.0.0.1:8080".into(),
-                origin: None,
+                bind: Endpoint::BIND.into(),
+                origin: Endpoint::ORIGIN.map(Into::into),
             },
-            connection_type: "standard".into(),
+            connection_type: profile_config::CONNECTION_TYPE.into(),
             audio: Audio {
-                input_device: None,
-                output_device: None,
+                input_device: INPUT_DEVICE,
+                output_device: OUTPUT_DEVICE,
             },
-            control: Control {
-                mode: "disabled".into(),
+            control: ControlSelection {
+                mode: ControlSelection::MODE.into(),
                 endpoint: None,
-                ptt: "disabled".into(),
+                ptt: ControlSelection::PTT.into(),
             },
             radio: None,
             native: None,
@@ -372,14 +402,14 @@ impl Document {
         // Quotes/backslashes cost two JSON bytes per permitted UTF-8 byte. Reserve
         // every editable maximum plus the longest valid control/PTT combination.
         maximum.set_settings(Settings {
-            display_name: "\\".repeat(64),
+            display_name: "\\".repeat(profile_limits::DISPLAY_NAME_MAX_BYTES),
             callsign: "A12345678901".into(),
             locator: "RR99XX99".into(),
             audio: Audio {
                 input_device: Some("\\".repeat(256)),
                 output_device: Some("\\".repeat(256)),
             },
-            control: Control {
+            control: ControlSelection {
                 mode: "cat".into(),
                 endpoint: Some("\\".repeat(256)),
                 ptt: "disabled".into(),
@@ -438,7 +468,7 @@ impl Document {
         Ok(addr)
     }
 }
-pub fn representation(doc: &Document, boot: &str, origin: &str) -> serde_json::Value {
+pub fn representation(doc: &ProfileDocument, boot: &str, origin: &str) -> serde_json::Value {
     serde_json::json!({"profile_id":doc.profile_id,"boot_id":boot,"revision":doc.revision,"endpoint":origin,"connection_type":doc.connection_type,"settings":doc.settings()})
 }
 pub fn parse_origin(origin: &str) -> Option<axum::http::Uri> {
@@ -456,7 +486,7 @@ pub fn parse_origin(origin: &str) -> Option<axum::http::Uri> {
 }
 
 pub struct Store {
-    pub document: Document,
+    pub document: ProfileDocument,
     directory: PathBuf,
     // Retained handles are the OS ownership claims. Never delete lock files: unlinking
     // them would let another process lock a different inode for the same profile.
@@ -520,7 +550,7 @@ impl Store {
     }
     pub fn create(directory: &Path) -> Result<(), &'static str> {
         fs::create_dir(directory).map_err(|_| "resource_unavailable")?;
-        let document = Document::defaults().map_err(|_| "resource_unavailable")?;
+        let document = ProfileDocument::defaults().map_err(|_| "resource_unavailable")?;
         atomic_write(directory, &document).map_err(|_| "resource_unavailable")
     }
     /// FR-023: the connection type is chosen once, when the profile is created.
@@ -529,7 +559,7 @@ impl Store {
         rx_antenna: &str,
         radio_address: Option<&str>,
     ) -> Result<(), &'static str> {
-        let mut document = Document::defaults().map_err(|_| "resource_unavailable")?;
+        let mut document = ProfileDocument::defaults().map_err(|_| "resource_unavailable")?;
         document.schema_version = 2;
         document.connection_type = "native_flex".into();
         document.native = Some(Native {
@@ -687,7 +717,7 @@ fn read_authorization(
         .map_err(|_| std::io::Error::other("invalid authorization record"))?;
     Ok(Some(saved))
 }
-fn read_document(directory: &Path) -> Result<(Document, SocketAddr), &'static str> {
+fn read_document(directory: &Path) -> Result<(ProfileDocument, SocketAddr), &'static str> {
     let file = File::open(directory.join("profile.json")).map_err(|_| "resource_unavailable")?;
     let mut bytes = Vec::new();
     file.take(MAX_FILE + 1)
@@ -696,7 +726,8 @@ fn read_document(directory: &Path) -> Result<(Document, SocketAddr), &'static st
     if bytes.len() > usize::try_from(MAX_FILE).map_err(|_| "resource_unavailable")? {
         return Err("invalid_profile");
     }
-    let mut document: Document = serde_json::from_slice(&bytes).map_err(|_| "invalid_profile")?;
+    let mut document: ProfileDocument =
+        serde_json::from_slice(&bytes).map_err(|_| "invalid_profile")?;
     // CL-044-10 migration: a profile saved before the radio settings existed gets the
     // default for a managed radio (IC-7300 CAT) in memory; the file changes on next save.
     if document.radio.is_none() && manages_radio(&document.control) {
@@ -715,7 +746,7 @@ fn write_document(path: &Path, document: &impl Serialize) -> std::io::Result<()>
     tests::checkpoint("flush")?;
     file.sync_all()
 }
-fn atomic_write(directory: &Path, document: &Document) -> std::io::Result<()> {
+fn atomic_write(directory: &Path, document: &ProfileDocument) -> std::io::Result<()> {
     atomic_json(directory, "profile.json", document)
 }
 pub(crate) fn atomic_json(

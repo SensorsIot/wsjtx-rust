@@ -6,7 +6,13 @@
 //! waveform's audio would already have ended, so no empty transmission is admitted.
 use crate::decoder::Mode;
 
-/// Period length, audio delay and latest admitted start offset (75 % of the period) of `mode`.
+/// WstxTransmitControl::StartWindow: the audio delay of each mode, and the latest share
+/// of the period at which a transmission may start.
+pub(crate) const FT8_AUDIO_DELAY_MS: i64 = 500;
+pub(crate) const FT4_AUDIO_DELAY_MS: i64 = 300;
+const LATEST_START_PCT: i64 = 75;
+/// Period length, audio delay and latest admitted start offset (LATEST_START_PCT of the
+/// period) of `mode`.
 struct Timing {
     period_ms: i64,
     audio_delay_ms: i64,
@@ -14,13 +20,13 @@ struct Timing {
 }
 fn timing(mode: Mode) -> Timing {
     let (period_ms, audio_delay_ms) = match mode {
-        Mode::Ft8 => (15_000, 500),
-        Mode::Ft4 => (7_500, 300),
+        Mode::Ft8 => (15_000, FT8_AUDIO_DELAY_MS),
+        Mode::Ft4 => (7_500, FT4_AUDIO_DELAY_MS),
     };
     Timing {
         period_ms,
         audio_delay_ms,
-        latest_start_ms: period_ms * 3 / 4,
+        latest_start_ms: period_ms * LATEST_START_PCT / 100,
     }
 }
 /// Samples of the whole `mode` waveform at `rate_hz` (FT4 105, FT8 79 symbols).

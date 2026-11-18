@@ -3,6 +3,7 @@ package WstxHearing {
     private import WstxModeProcessing::PeriodParity;
     private import WstxModeProcessing::Mode;
     private import WstxPskReporter::FeedError;
+    private import WstxModelNotes::CodeDiffers;
 
     doc /* What spots tells ranking, auto, qso and the supervisor: which stations hear us
          (HeardByReport), and what the station of the contact in progress hears
@@ -24,14 +25,24 @@ package WstxHearing {
     attribute def DecodedOffset {
         doc /* One frequency the target decodes. */
         attribute offsetHz : Integer {
-            doc /* The audio offset: the frequency of the spot less the confirmed dial. */ }
+            doc /* The audio offset: the frequency of the spot less the confirmed dial. */
+            @CodeDiffers {
+                what = "The code holds the offset as the first of a pair of offset and parity "
+                    + "(Hearing::decoded in server/src/operating/qso/pskr.rs).";
+            }
+        }
         attribute parity : PeriodParity {
             doc /* The period in which the sender of the spot transmitted. */ }
     }
     attribute def DecodedOffsets {
         doc /* The frequencies the target decodes, the newest first, each pair of offset
              and parity once. An empty list means that the target has no such spot. */
-        attribute offsets : DecodedOffset[0..32] ordered;
+        attribute offsets : DecodedOffset[0..32] ordered {
+            @CodeDiffers {
+                what = "The code gives the list by Feed::decoded_offsets and "
+                    + "Feed::decoded_of_parity in server/src/operating/qso/pskr.rs.";
+            }
+        }
     }
     attribute def TargetHearing {
         doc /* What the feed says about the target. */
@@ -39,7 +50,12 @@ package WstxHearing {
         attribute 'state' : HearingState;
         attribute spotSeconds : Integer[0..1] {
             doc /* The time of the newest spot of the profile's call at the target, in
-                 seconds of UTC since 1970. Present in the state heard. */ }
+                 seconds of UTC since 1970. Present in the state heard. */
+            @CodeDiffers {
+                what = "The code names it spot_utc_s (HearingState::json in "
+                    + "server/src/operating/qso/pskr.rs).";
+            }
+        }
         attribute snrDb : Integer[0..1] {
             doc /* The signal-to-noise ratio the target reported in that spot. Absent when
                  the spot names none, and outside the state heard. */ }
@@ -118,13 +134,26 @@ package WstxHearing {
             doc /* Where the feed is read: mqtts://host:port, over TLS, or
                  mqtt://host:port, without it. The host is a name or an address, the
                  port 1 to 65535; a login name, a path, a query or a fragment is not
-                 admitted. */ }
+                 admitted. */
+            @CodeDiffers {
+                what = "The broker is fixed: HOST mqtt.pskreporter.info and TLS_PORT 1884 "
+                    + "in server/src/operating/qso/pskr.rs; no setting names it.";
+            }
+        }
         attribute report : Boolean = false {
             doc /* The station reports the stations it decodes to PSK Reporter
-                 (WstxSpotsReporting::ReceptionReports). */ }
+                 (WstxSpotsReporting::ReceptionReports). */
+            @CodeDiffers {
+                what = "The station sends no reception reports and has no such setting.";
+            }
+        }
         attribute reportCollector : String = "udp://report.pskreporter.info:4739" {
             doc /* Where the reports go: udp://host:port or tcp://host:port, with the
-                 host and the port as for feedBroker. */ }
+                 host and the port as for feedBroker. */
+            @CodeDiffers {
+                what = "The station sends no reception reports and names no collector.";
+            }
+        }
     }
     attribute def FeedStatus {
         doc /* The switches and the state of the feed at the moment they are read. */
@@ -134,7 +163,12 @@ package WstxHearing {
         attribute error : FeedError[0..1] { doc /* Present in the state error. */ }
         attribute lastSpotSeconds : Integer[0..1] {
             doc /* The time of the newest Spot used, in seconds of UTC since 1970.
-                 Absent until one arrives after the feed was switched on. */ }
+                 Absent until one arrives after the feed was switched on. */
+            @CodeDiffers {
+                what = "The code names it last_spot_utc_s (the state of Feed in "
+                    + "server/src/operating/qso/pskr.rs).";
+            }
+        }
     }
     item def SpotsConfiguration {
         doc /* The configuration of spots, one of the shack's settings. The supervisor

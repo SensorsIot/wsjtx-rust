@@ -14,11 +14,16 @@ pub enum WaveformError {
     FrequencyOutOfRange,
     InvalidTone,
 }
-pub const MIN_TONE0_HZ: f64 = 200.;
-pub const MAX_TONE0_HZ: f64 = 2950.;
+/// FT8 tone 0 limits.
+pub mod ft8_waveform_contract {
+    pub const MIN_TONE0_HZ: f64 = 200.;
+    pub const MAX_TONE0_HZ: f64 = 2950.;
+}
 /// FT4 tone 0 limits: the four 20.833 Hz tones stay within 200..3000 Hz.
-pub const FT4_MIN_TONE0_HZ: f64 = 200.;
-pub const FT4_MAX_TONE0_HZ: f64 = 3000. - 4. * 12000. / 576.;
+pub mod ft4_waveform_contract {
+    pub const MIN_TONE0_HZ: f64 = 200.;
+    pub const MAX_TONE0_HZ: f64 = 3000. - 4. * 12000. / 576.;
+}
 
 /// Checks the request and returns the samples per symbol at `rate`.
 fn prepare(
@@ -73,7 +78,10 @@ pub fn waveform(
         Mode::Ft8,
         tones,
         tone0_hz,
-        (MIN_TONE0_HZ, MAX_TONE0_HZ),
+        (
+            ft8_waveform_contract::MIN_TONE0_HZ,
+            ft8_waveform_contract::MAX_TONE0_HZ,
+        ),
         rate,
     )?;
     let len = tones.len() * nsps;
@@ -114,7 +122,10 @@ pub fn waveform_ft4(
         Mode::Ft4,
         tones,
         tone0_hz,
-        (FT4_MIN_TONE0_HZ, FT4_MAX_TONE0_HZ),
+        (
+            ft4_waveform_contract::MIN_TONE0_HZ,
+            ft4_waveform_contract::MAX_TONE0_HZ,
+        ),
         rate,
     )?;
     let (dphi, _) = smoothed_increments(Mode::Ft4, tones, nsps);
