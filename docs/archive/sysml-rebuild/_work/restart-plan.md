@@ -208,3 +208,5 @@ migrations; README in #235 or #231; where harness issues live.
 6. #215 (operator 2026-11-18, A): VOX held off; split held at the station's split setting and set
    back when changed (M5.6); model in #235.
 7. #13 (operator 2026-11-18): FlexRadio stays phase 2; #13 stays open and paused as its place.
+8. Timing classes (operator 2026-11-18, A): labels on the tests only; #108 and #130 closed as
+   overtaken; #207 shrinks to labelling the timed tests; #126 rewritten.
