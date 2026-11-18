@@ -207,3 +207,4 @@ migrations; README in #235 or #231; where harness issues live.
    (one record in the station's memory); a changed item is set back and shown; model in #235.
 6. #215 (operator 2026-11-18, A): VOX held off; split held at the station's split setting and set
    back when changed (M5.6); model in #235.
+7. #13 (operator 2026-11-18): FlexRadio stays phase 2; #13 stays open and paused as its place.
