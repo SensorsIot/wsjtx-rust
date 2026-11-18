@@ -2203,12 +2203,12 @@ def content_faults(model: Model) -> list[tuple]:
                 if element.kind == "import" or element.kind == "attribute def" and element.name == "BehaviorBaseline" \
                         or element.kind == "requirement" and identity and identity.startswith("FR-"):
                     continue
-                faults.append(("TR-05", key, element.line, f"Requirements holds {element.kind} {element.name or ''}".rstrip()))
+                faults.append(("TR-05", REQUIREMENTS_FILE, element.line, f"Requirements holds {element.kind} {element.name or ''}".rstrip()))
             elif identity_of(parent) and identity_of(parent).startswith("FR-"):
-                faults.append(("TR-05", key, element.line, f"{identity_of(parent)} holds {element.kind} {element.name or ''}".rstrip()))
+                faults.append(("TR-05", REQUIREMENTS_FILE, element.line, f"{identity_of(parent)} holds {element.kind} {element.name or ''}".rstrip()))
         for element in tree.walk():
             if (identity := identity_of(element)) and identity.startswith("FR-") and re.search(r"#\d+", element.doc):
-                faults.append(("TR-05", key, element.line, f"{identity} names an issue"))
+                faults.append(("TR-05", REQUIREMENTS_FILE, element.line, f"{identity} names an issue"))
     if tree := model.trees.get(SHACK_FILE):
         for element in list(tree.walk())[1:]:
             if element.kind not in SHACK_KINDS:
@@ -2389,7 +2389,9 @@ def writing_faults(model: Model) -> list[tuple]:
         package = model.packages.get(key)
         wanted = expected.get(key, "Wstx" + Path(key).stem)
         if package != wanted:
-            faults.append(("TR-18", key, 1, f"package {package} is not {wanted}"))
+            declared = re.search(r"\bpackage\s+\w+\s*\{", blanked(source))
+            at = source.count("\n", 0, declared.start()) + 1 if declared else 1
+            faults.append(("TR-18", key, at, f"package {package} is not {wanted}"))
         for number, line in enumerate(source.split("\n"), 1):
             line = line.rstrip("\r")
             if len(line) > LINE_LIMIT:
@@ -2408,9 +2410,10 @@ def writing_faults(model: Model) -> list[tuple]:
                 faults.append(("TR-18", key, line, "comment /* */ outside a doc"))
         for match in re.finditer(r'(' + STRING + r')\s*\+\s*(?=(' + STRING + r'))', source):
             left, right = match[1][1:-1], match[2][1:-1]
-            if not (left.endswith((" ", ";")) or right.startswith((" ", ";"))):
+            # A binding `<path>::<test name>` may join right after `::`: neither is split.
+            if not (left.endswith((" ", ";", "::")) or right.startswith((" ", ";"))):
                 faults.append(("TR-18", key, source.count("\n", 0, match.start()) + 1, "joined value split inside a word"))
-        names = set(DEFINED_NAME.findall(source))
+        names = set(DEFINED_NAME.findall(model.codes[key]))
         for element in model.elements(key):
             if element.name and not element.name.startswith("'"):
                 if "_" in element.name:
@@ -2741,13 +2744,13 @@ def reuse_faults(entries: dict, used: set[str], present: set[str]) -> list[tuple
 
 # ---- The code structure (TR-17, M2.3) ----
 
-CODE_PATH = re.compile(r"(?:server|client)/[\w./-]+\.(?:rs|js)\b")
+CODE_PATH = re.compile(r"(?:server|client)/[\w./-]+\.(?:rs|js|html|css)\b")
 RUST_MOD = re.compile(r"((?:#\[[^\]]*\]\s*)*)(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;")
 
 
 def rust_modules(root: Path) -> list[str]:
     """The Rust code modules: every `*.rs` below `server/src/` but `*_tests.rs`, `tests.rs`
-    and a module that every declaration declares under `#[cfg(test)]`."""
+    and a module that every declaration declares under `#[cfg(test)]` or from a test file."""
     source_root = root / "server/src"
     files = sorted(path for path in source_root.rglob("*.rs") if path.is_file())
     declared = {}
@@ -2764,7 +2767,9 @@ def rust_modules(root: Path) -> list[str]:
                 target = (folder / (match[2] + ".rs")).resolve()
                 if not target.is_file():
                     target = (folder / match[2] / "mod.rs").resolve()
-            declared.setdefault(target, []).append("cfg(test)" in attributes.replace(" ", ""))
+            # A declaration in a test file is one under `#[cfg(test)]`.
+            test_file = path.name == "tests.rs" or path.name.endswith("_tests.rs")
+            declared.setdefault(target, []).append(test_file or "cfg(test)" in attributes.replace(" ", ""))
     modules = []
     for path in files:
         if path.name == "tests.rs" or path.name.endswith("_tests.rs"):
