@@ -101,10 +101,17 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   their types and no second part of an adapter's type; no view adds a part; the browser
   client has one port toward the station, typed by a port definition of StationLink and
   joined to `web`, and its other port is the operator's, joined to `context.operator`; a
-  connection from the frontend ends at one of those two. `WstxStationCommands::AgentRefusal`
-  names commands of `StationOperations`; mcp's port toward the supervisor is typed
-  `AgentOperations`, `StationOperations` with exactly the refused commands redefined to
-  `[0]`.
+  connection from the frontend ends at one of those two. Each literal of
+  `WstxStationCommands::AgentRefusal` names a command of `StationOperations` or a collection of
+  `SettingsCollection` (`AgentRefusal literal <x> names no command or collection`). mcp's port
+  toward the supervisor is typed `AgentOperations` and not `StationOperations`;
+  `AgentOperations` specializes `StationOperations`, redefines exactly the refused commands to
+  `[0]` (`mcp offers the refused command <x>`, `mcp lacks the command <x>`) and redefines the
+  `collection` of each of `createEntry`, `updateEntry` and `deleteEntry` to `AgentCollection`
+  (`an agent's <command> takes every collection`). `AgentCollection` is an `attribute def`
+  that specializes `SettingsCollection`; the `SettingsCollection` literals it names are exactly
+  those AgentRefusal does not name (`an agent's entry command on <x>`, `AgentCollection lacks
+  the collection <x>`).
 - **TR-07 Context (M4.1).** Each outside thing of the deployment (a part directly in
   `context` other than `shack`) has ports, attributes and metadata only; each port is
   joined exactly once, through an interface of `interfaces/external`, to a station
@@ -171,8 +178,15 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   name), its name is found as an identifier or a word of a string literal in the model's,
   the snake_case or the UpperCamelCase form (a command field by its key), its variable is a
   string literal; V2, a test bound to a case of a clause reaching it holds its qualified
-  name. Otherwise: `Model and code differ: <element>: <what>`, `Name twice in one code:
-  <name>` or `Value not verified: <element>`, each with its key and line.
+  name, or its definition's qualified name and the feature's name. A feature of an `item
+  def` in the files named above is a command field: its value is verified when its name is
+  found. The forms of V1 are tried in that order; at the first form that has a candidate, two
+  candidates, or a module `F` that another compared value of that name also has in its code,
+  are `Name twice in one code: <name>`. A constant found unequal is `Model and code differ:
+  <element>: model <value>, code <value>`, whatever V2 says; an element none of V1 to V4
+  covers is `Value not verified: <element>`; each with its key and line. Constant arithmetic
+  takes `_` separators, Rust type suffixes and `as` casts, `Duration::from_secs` and
+  `from_millis`, and other constants of the same module.
 - **TR-17 Code structure (M2.3).** The code modules are every `*.rs` below `server/src/`
   but `*_tests.rs`, `tests.rs` and a module declared only under `#[cfg(test)]` or from a
   test file, and every `*.js` below `client/`. Each module is named by exactly one part
@@ -183,11 +197,12 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   marker names no module inside the folder.
 - **TR-18 Writing rules (M5.10, M6.4, M6.10, M7.3 to M7.6).** No word "user"; a clause is
   one sentence with MUST, SHOULD or MAY that names an element defined in its file; no text
-  holds its own identity, a date, an issue number or a history word; no name holds an
-  underscore and a definition is in UpperCamelCase; a package is `Wstx` and its file's
-  name, a part's own file adding `Part`; no `//` comment but the authority marker, no
-  `/* */` outside a `doc`; no line over 100 characters; a joined value meets at a space or
-  `;`, never inside a word or a path.
+  holds its own identity, a date, an issue number or a history word; an underscore stands only
+  in a quoted name (`'rst_sent'`), and a definition is in UpperCamelCase; a package is `Wstx`
+  and its file's name, a part's own file adding `Part`; no `//` comment but the authority
+  marker, no `/* */` outside a `doc`; no line over 100 characters; a joined value meets where
+  one literal ends in a space or `;`, or right after the `::` of a `<path>::<test name>`
+  binding, or where the next begins with a space or `;`, never inside a word or a path.
 - **TR-19 Test level.** A case states `@TestLevel { cost = <1..5>; location =
   TestLocation::<developmentPc|station|simulator|flexRadio>; }`, each pair once; anything
   else, or `@TestLevel` on another element, is `Invalid test level: <identity>`.
