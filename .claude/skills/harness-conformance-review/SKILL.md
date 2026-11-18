@@ -13,7 +13,7 @@ Resolve the canonical skill's own references from its source directory, not this
 If the source is missing, stop and report it; do not substitute another checkout.
 
 <!-- canonical-source-sha256=39b9d78ab668404c339a58e9c868a428abbdded675af5a8f7d6031452be9683f -->
-<!-- source harness/project/docs/Finished-Model.md sha256=8822b7eda3a8d788fe5f587dcf3bfbbae73827f8ee2829364daf248cb0759356 -->
+<!-- source harness/project/docs/Finished-Model.md sha256=daf46f72af26191c6cd098949a09e977aafa33ff882098541073062f3c014b43 -->
 
 ## This project
 
@@ -125,12 +125,13 @@ and holds the parts ranking, auto and qso.
 - **M3.2** A file imports only from layers before it, and from Requirements. UseCases takes
   its actors from Context.
 - **M3.3** A part never imports another part. What two parts share stands in their interface.
-- **M3.4** Within `interfaces/`, a control interface is imported only by a transport file
-  (StationLink, Mcp), the operating chain's interface file (OperatingChain), StationCommands,
-  Strategies (operating's interface) and ProfileAccess (which stores each function's
-  settings). A control interface imports no transport file. StationCommands is the
-  supervisor's control interface: the one set of commands that web and mcp both give, and
-  the supervisor's own state and records.
+- **M3.4** The control interfaces are the interfaces of the functions that
+  `WstxStationLink::WireNames` lists. A control interface imports no transport file
+  (StationLink, Mcp) and not the operating chain's interface file (OperatingChain); it may
+  import another control interface for a type that interface's function owns. A type stands
+  in the control interface of the function that owns it. StationCommands is the supervisor's
+  control interface: the one set of commands that web and mcp both give, and the
+  supervisor's own state and records.
 
 ## M4. What each kind of file holds
 
@@ -293,4 +294,4 @@ How a statement gets into the model. These rules apply wherever the model is wri
 - **A9 Names.** A name that no longer says what the thing is, is renamed, and what cites it
   is changed in the same change.
 
-<!-- harness-forwarder-v1 sha256=c4f372d55f0e76d401275d76cfcbf238944375570a4074a50da961d9ce5c9111 -->
+<!-- harness-forwarder-v1 sha256=d9c5c801ba0f1538f9effe0a817dbfeb1aad01aac722e4c0da32eaedf329119b -->
