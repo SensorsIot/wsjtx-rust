@@ -227,7 +227,7 @@ async fn live_native_selection_tls_thin_and_off() {
         .expect("port announcement deadline")
         .unwrap();
     let origin = format!("https://localhost:{port}");
-    let document = json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Actual native selection fixture","callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":format!("127.0.0.1:{port}"),"origin":origin},"connection_type":"standard","audio":{"input_device":"independently-verified-native-input","output_device":null},"control":{"mode":"cat","endpoint":"COM3","ptt":"disabled"}});
+    let document = json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Actual native selection fixture","callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":format!("127.0.0.1:{port}"),"origin":origin},"connection_type":"standard","audio":{"input_device":"independently-verified-native-input","output_device":null},"control":{"mode":"cat","endpoint":"COM3","ptt":"disabled"},"radio":{"agc":"SLOW"}});
     std::fs::write(
         dir.join("profile.json"),
         serde_json::to_vec(&document).unwrap(),

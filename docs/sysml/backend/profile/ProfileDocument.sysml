@@ -106,8 +106,6 @@ package WstxProfileDocument {
              the two devices and of the control endpoint takes two bytes.
              A device entry of AudioConfig that is no endpoint id ends no start
              (EndpointIds).
-             A document of a managed radio without radio is read with RadioConfig::agc
-             slow; the file changes with the next save.
              Only profile.json is read: a temporary file left beside it is not used. */
     }
 
@@ -354,9 +352,7 @@ package WstxProfileDocument {
              WstxStrategies::StrategyReading, and gives the strategies as
              DefinitionsSnapshot. Without a file there is no saved strategy.
              A file is used when it has this form; one that also holds profileId is
-             read without it. A file
-             of an older schema version is written in the present form with the next
-             change of the strategies.
+             read without it.
              Every other file cannot be used: there is no saved strategy,
              DefinitionsSnapshot::unusable is true, and the file is left as it is until
              the next change of the strategies is written in its place. */
@@ -476,18 +472,19 @@ package WstxProfileDocument {
     }
 
     verification 'TC-097-002' {
-        doc /* The strategies files of the older versions. */
+        doc /* A strategies file of another schema version, a strategy without its CQ
+             wait, and saved names of built-ins. */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-01'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
-                + "tc_097_002_a_schema_3_file_upgrades_key_by_key_and_renames_built_in_names; "
+            test = "server/src/strategy_tests.rs::"
+                + "tc_097_002_a_file_of_schema_1_2_or_3_cannot_be_used_and_is_left_as_it_is; "
                 + "server/src/strategy97_tests.rs::"
-                + "tc_097_002_schema_2_and_4_files_and_the_cq_wait_default; "
-                + "server/src/strategy_tests.rs::"
-                + "tc_039_030_an_old_file_upgrades_and_active_never_survives_a_restart; "
+                + "tc_097_002_a_strategy_without_its_cq_wait_cannot_be_used; "
+                + "server/src/strategy97_tests.rs::"
+                + "tc_097_002_built_in_names_read_renamed_and_active_never_survives_a_restart; "
                 + "server/src/strategy_tests.rs::"
                 + "tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored";
         }

@@ -394,8 +394,9 @@ fn native_profile_creation_persists_intent_without_runtime_handles() {
     fs::remove_dir_all(directory).unwrap();
 }
 
-// A missing folder, a settings value outside its rule in the file and a lock that cannot be
-// taken refuse the open; the open makes and changes no file.
+// A missing folder, a settings value outside its rule in the file, a managed radio without its
+// radio settings and a lock that cannot be taken refuse the open; the open makes and changes no
+// file.
 // Proves: TC-022-002
 #[test]
 fn an_open_it_cannot_carry_out_is_refused_and_changes_no_file() {
@@ -413,12 +414,31 @@ fn an_open_it_cannot_carry_out_is_refused_and_changes_no_file() {
     fs::write(&file, &bytes).unwrap();
     assert!(matches!(Store::open(&directory), Err(e) if e == outcome("invalid_profile")));
     assert_eq!(fs::read(&file).unwrap(), bytes);
+    let mut managed = serde_json::to_value(independent_document()).unwrap();
+    managed["control"] = serde_json::json!({"mode":"cat","endpoint":"COM3","ptt":"cat"});
+    let bytes = serde_json::to_vec(&managed).unwrap();
+    fs::write(&file, &bytes).unwrap();
+    assert!(
+        matches!(Store::open(&directory), Err(e) if e == outcome("invalid_profile")),
+        "a managed radio without radio"
+    );
+    assert_eq!(fs::read(&file).unwrap(), bytes);
     let valid = serde_json::to_vec(&independent_document()).unwrap();
     fs::write(&file, &valid).unwrap();
     fs::create_dir(directory.join(".profile.lock")).unwrap();
     assert!(matches!(Store::open(&directory), Err(e) if e == outcome("resource_unavailable")));
     assert_eq!(fs::read(&file).unwrap(), valid);
     fs::remove_dir_all(directory).unwrap();
+    // The same document with control disabled opens without radio.
+    let unmanaged =
+        std::env::temp_dir().join(format!("wstx-profile-unmanaged-{}", new_uuid().unwrap()));
+    fs::create_dir(&unmanaged).unwrap();
+    fs::write(unmanaged.join("profile.json"), &valid).unwrap();
+    let (store, _) = Store::open(&unmanaged).unwrap();
+    assert!(store.document.radio.is_none());
+    drop(store);
+    assert_eq!(fs::read(unmanaged.join("profile.json")).unwrap(), valid);
+    fs::remove_dir_all(unmanaged).unwrap();
 }
 
 // A creation whose file cannot be written ends with resourceUnavailable and leaves no

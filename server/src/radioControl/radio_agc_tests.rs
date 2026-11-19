@@ -451,25 +451,23 @@ fn profile_radio_settings_default_migrate_and_validate() {
     };
     assert!(profile::manages_radio(&cat));
     assert!(!profile::manages_radio(&off));
-    // Profile files written before the field existed.
-    for (control, expected) in [(&cat, Some(json!({"agc":"SLOW"}))), (&off, None)] {
-        let dir = std::env::temp_dir().join(format!("wstx-agc-{}", profile::new_uuid().unwrap()));
-        std::fs::create_dir(&dir).unwrap();
-        let doc = json!({"schema_version":1,"profile_id":profile::new_uuid().unwrap(),"revision":4,"display_name":"AGC",
-            "callsign":"HB9BLA","locator":"JN37VL","endpoint":{"bind":"127.0.0.1:18046","origin":null},"connection_type":"standard",
-            "audio":{"input_device":null,"output_device":null},"control":control});
-        let bytes = serde_json::to_vec(&doc).unwrap();
-        std::fs::write(dir.join("profile.json"), &bytes).unwrap();
-        let (store, _) = profile::Store::open(&dir).unwrap();
-        let settings = serde_json::to_value(store.document.settings()).unwrap();
-        assert_eq!(settings.get("radio").cloned(), expected, "{settings}");
-        assert_eq!(store.document.revision, 4);
-        assert_eq!(
-            std::fs::read(dir.join("profile.json")).unwrap(),
-            bytes,
-            "file unchanged"
-        );
-    }
+    // A profile file of an unmanaged radio without the field.
+    let dir = std::env::temp_dir().join(format!("wstx-agc-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let doc = json!({"schema_version":1,"profile_id":profile::new_uuid().unwrap(),"revision":4,"display_name":"AGC",
+        "callsign":"HB9BLA","locator":"JN37VL","endpoint":{"bind":"127.0.0.1:18046","origin":null},"connection_type":"standard",
+        "audio":{"input_device":null,"output_device":null},"control":&off});
+    let bytes = serde_json::to_vec(&doc).unwrap();
+    std::fs::write(dir.join("profile.json"), &bytes).unwrap();
+    let (store, _) = profile::Store::open(&dir).unwrap();
+    let settings = serde_json::to_value(store.document.settings()).unwrap();
+    assert_eq!(settings.get("radio"), None, "{settings}");
+    assert_eq!(store.document.revision, 4);
+    assert_eq!(
+        std::fs::read(dir.join("profile.json")).unwrap(),
+        bytes,
+        "file unchanged"
+    );
     // Edits: omitted keeps the saved value; a managed radio defaults to SLOW.
     let mut s = profile::Settings {
         display_name: "AGC".into(),
