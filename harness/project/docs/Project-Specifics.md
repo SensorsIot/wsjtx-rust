@@ -337,21 +337,24 @@ The live page check's checker `tests/live-page-check.cjs` is product, gated by C
 not pinned: the deploy runs it from the repository root it passes (`-Repo`, the main
 checkout `D:\Github\wsjtx-rust`) with that checkout's `node_modules`, not from the package.
 
-A deploy starts with one line in Git Bash on HB9BLA, which runs `make_package.py` as
-extracted from the commit it installs, so no working folder is read:
+A deploy is one line in Git Bash on HB9BLA, given only the commit, which runs
+`make_package.py` as extracted from the commit it installs, so no working folder is read:
 
 ```bash
-git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> <push-gate log>
+set -o pipefail; git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> [--dry-run]
 ```
 
-It builds a package of a commit on GitHub master whose push gate passed (the push-gate log
-is a merge-queue log under `.git\harness-parallel\queue\logs\` that shows the push) in
+It refuses (exit 1, before any step) any other argument list, a commit not on GitHub master,
+and a commit for which not exactly one merge-queue log under `.git\harness-parallel\queue\logs\`
+shows a green gate and the push of that commit to master (the commit the queue pushed when
+it landed a batch). It builds the package in
 `.git\harness-parallel\resources\station-update\packages\<ver>\`, never in a working tree,
-copies the mechanism files from the commit's `git archive` export into the package's
-`deploy\` folder and lists their SHA-256 in the manifest. It prints the next command: the
+or reuses one there whose manifest names the commit (a folder holding anything else is
+refused); it copies the mechanism files from the commit's `git archive` export into the
+package's `deploy\` folder and lists their SHA-256 in the manifest. It then runs the
 package's own copy,
 `<package>\deploy\tools\deploy\station-update\station-update.ps1 -Manifest <package>\manifest.json [-DryRun]`,
-which refuses to run from anywhere else. It verifies the package, checks the pins, waits for
+which refuses to run from anywhere else, and exits with its exit. It verifies the package, checks the pins, waits for
 an idle station, stops it gracefully, switches `active.json`, starts the task, switches
 back on failure, runs the probe and the live page check from the package, returns to the
 previous version when either fails and posts the install record. Exit 0: installed (or the

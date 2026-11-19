@@ -79,10 +79,9 @@ recommendation; a helper report or an isolated passing test is not issue complet
 - Station log: `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, imported from the
   operator's Log4OM export. A rerun of Update logbook with the same export adds nothing.
 - Install under the standing deploy policy ([deployment authority](Project-Specifics.md#deployment-authority)):
-  in Git Bash, `git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> <green gate log>`
-  (a merge-queue log under `.git\harness-parallel\queue\logs\` that shows the push), then the
-  package's own `deploy\tools\deploy\station-update\station-update.ps1 -Manifest …` that it
-  prints. That one run waits for an idle station and an answering radio (at most 300 s, else
+  in Git Bash, `set -o pipefail; git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> [--dry-run]`,
+  given the commit the merge queue pushed. Alex runs the same line (`alex.install`). That one
+  run waits for an idle station and an answering radio (at most 300 s, else
   exit 3 for a busy station or exit 6 for a radio that did not answer, nothing changed),
   installs, runs the probe and the live page check, returns to the previous version
   when either fails, moves the CRs to installed and posts the install record. Exit 6: the
