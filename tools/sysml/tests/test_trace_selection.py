@@ -89,15 +89,15 @@ class TraceSelectionTests(unittest.TestCase):
 
     # T1: model edits run the working-model checks, not the Pilot validator tests.
     def test_model_and_model_data_changes_select_the_working_model_suite_not_the_validator(self):
-        """TV-130 (TR-02): a model edit selects the working-model suite, not the validator tests."""
-        for path in ("docs/sysml/Station.sysml", "docs/sysml/Context.sysml",
-                     "docs/sysml/interfaces/internal/StationLink.sysml",
-                     "tools/sysml/architecture-oracle.json", "tools/sysml/pending-structure.json"):
+        """TV-130 (TR-02): the inputs of the working-model suite select it, not the validator tests; another model file selects neither."""
+        for path in ("docs/sysml/Context.sysml", "docs/sysml/interfaces/external/Udp.sysml"):
             with self.subTest(path=path):
                 self.assert_selection(path, (CONTEXT, "sysml-documentation"), (VALIDATOR,))
-        with self.subTest(path="docs/sysml/backend/qso/X.sysml"):
-            self.assert_selection("docs/sysml/backend/qso/X.sysml", ("sysml-documentation",),
-                                  (CONTEXT, VALIDATOR))
+        with self.subTest(path="tools/sysml/architecture-oracle.json"):
+            self.assert_selection("tools/sysml/architecture-oracle.json", ("sysml-documentation",), (VALIDATOR,))
+        for path in ("docs/sysml/Shack.sysml", "docs/sysml/backend/qso/X.sysml"):
+            with self.subTest(path=path):
+                self.assert_selection(path, ("sysml-documentation",), (CONTEXT, VALIDATOR))
 
     # T2: the tool selects both architecture suites; the validator, its library pin
     # and its test files the validator suite; the working-model module its own suite.
