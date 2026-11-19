@@ -150,7 +150,7 @@ impl AirClock {
     /// An estimate counts up to this age (s).
     pub const MAX_AGE_SECONDS: i64 = 60;
     /// Forgets everything observed when the system clock stepped by more than 100 ms
-    /// since the last observation (the raw DT before and after no longer describe the
+    /// since the last observation (the raw DT before and after do not describe the
     /// same clock) and subtracts the step from a nonzero correction, so station UTC stays
     /// continuous (a step that corrected the system clock leaves 0); a correction of 0
     /// stays 0 (the accepted time is the system clock). A correction beyond

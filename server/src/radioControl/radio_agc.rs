@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! #44 CL-044-10/11 the station-managed radio AGC. The profile's AGC is applied through
+//! CL-044-10/11 the station-managed radio AGC. The profile's AGC is applied through
 //! the station's CAT owner when a connection becomes ready and on each FT8/FT4 mode
 //! selection, by one `EnsureAgc` exchange: read 16 12, write only when it differs, read
 //! back (CL-044-09). Nothing is sent while the transmitter is armed or keyed; the

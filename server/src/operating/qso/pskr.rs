@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! WstxHearingFeed::HearingFeed (#39): the read-only PSK Reporter MQTT subscriber and the
+//! WstxHearingFeed::HearingFeed: the read-only PSK Reporter MQTT subscriber and the
 //! bounded "heard by target" / "frequencies the target decodes" model. Its own thread does
 //! all network waiting; the station only reads a short-held mutex, and no connection means
 //! unknown, never an error for the operator. It sends the MQTT handshake, the two
@@ -23,7 +23,7 @@ mod tests;
 const FILE: &str = "pskr.json";
 const FILE_LIMIT: u64 = 1024;
 const HOST: &str = "mqtt.pskreporter.info";
-/// The broker's TLS listener; its chain validates against ISRG_ROOTS (checked 2026-11-06).
+/// The broker's TLS listener; its chain validates against ISRG_ROOTS.
 const TLS_PORT: u16 = 1884;
 /// Trust anchors of the broker's Let's Encrypt chain: the self-signed ISRG Root X1 and X2.
 /// Compiled in, because webpki-roots is outside deny.toml and the Windows store only holds
@@ -31,7 +31,7 @@ const TLS_PORT: u16 = 1884;
 const ISRG_ROOTS: &[u8] = include_bytes!("../../pskr_isrg_roots.pem");
 /// How long a spot still counts, for "hears us" and for the frequencies the target decodes.
 /// Reporters upload in batches up to about 5 minutes late, so a spot can only be expected
-/// within that delay plus one more upload; an older one no longer describes this path.
+/// within that delay plus one more upload; an older one does not describe this path.
 pub(crate) const HEARD_WINDOW_S: i64 = 600;
 /// One entry per (receiver, band, mode) that heard my call.
 const HEARD_MAX: usize = 256;
@@ -297,7 +297,7 @@ impl Hearing {
             .max_by_key(|h| h.utc_s)
             .map(|h| (h.utc_s, h.snr_db))
     }
-    /// #97 HearingFeed "He reports": a spot received by `target` from any sender (my call
+    /// HearingFeed "He reports": a spot received by `target` from any sender (my call
     /// included) on this mode and band within the window, whatever its offset.
     pub(crate) fn reports(&self, target: &str, mode: &str, band: &str, now_s: i64) -> bool {
         self.heard_by(target, mode, band, now_s).is_some()
@@ -308,7 +308,7 @@ impl Hearing {
                     && now_s.saturating_sub(s.utc_s) <= HEARD_WINDOW_S
             })
     }
-    /// #97 the receivers that heard my call on this mode and band within the window.
+    /// The receivers that heard my call on this mode and band within the window.
     pub(crate) fn heard_calls(&self, mode: &str, band: &str, now_s: i64) -> Vec<String> {
         self.heard
             .iter()
@@ -654,7 +654,7 @@ impl Drop for Feed {
     }
 }
 impl Feed {
-    /// The saved setting, on by default (operator decision 2026-11-04, #39). Without a
+    /// The saved setting, on by default. Without a
     /// connector no thread starts: the setting still works, the link stays off.
     pub(crate) fn start(
         directory: &Path,
@@ -770,12 +770,12 @@ impl Feed {
             HearingState::Unknown
         }
     }
-    /// #97 TxMoveRule: `target` reports (HearingFeed "He reports"); false with Use off.
+    /// TxMoveRule: `target` reports (HearingFeed "He reports"); false with Use off.
     pub(crate) fn reports(&self, target: &str, mode: &str, band: &str) -> bool {
         let i = self.shared.lock();
         i.enabled && i.use_ && i.hearing.reports(target, mode, band, utc_s())
     }
-    /// #97 ValueOrder hears_us: the receivers with a spot of my call on this mode and band at
+    /// ValueOrder hears_us: the receivers with a spot of my call on this mode and band at
     /// most 600 s old; None with Use off (the criterion ties).
     pub(crate) fn heard_calls(&self, mode: &str, band: &str) -> Option<Vec<String>> {
         let i = self.shared.lock();
@@ -1117,7 +1117,7 @@ pub(crate) fn target_hearing(
         _ => HearingState::Unknown,
     }
 }
-/// #97 TxMoveRule: whether `target` reports on the station band and `mode` (false without the
+/// TxMoveRule: whether `target` reports on the station band and `mode` (false without the
 /// feed, a band or with Use off).
 pub(crate) fn target_reports(
     r: &recording::Recording,
@@ -1129,7 +1129,7 @@ pub(crate) fn target_reports(
         _ => false,
     }
 }
-/// #97 ValueOrder hears_us on the station band and operating mode: None (ties) without the
+/// ValueOrder hears_us on the station band and operating mode: None (ties) without the
 /// feed, a band, or with Use off.
 pub(crate) fn heard_calls(r: &recording::Recording) -> Option<Vec<String>> {
     let mode = if r.operating_mode() == "ft4" {
@@ -1182,7 +1182,7 @@ struct UseEdit {
     use_: bool,
 }
 /// POST /pskr/use {v 1, profile_id, boot_id, use}: WstxHearingFeed::FeedSwitches, with the refusals
-/// of POST /pskr (an MCP principal is refused at the boundary, #58).
+/// of POST /pskr (an MCP principal is refused at the boundary).
 pub async fn update_use(
     State(app): State<App>,
     headers: HeaderMap,

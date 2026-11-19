@@ -300,7 +300,7 @@ pub fn resolve_endpoint(port: u16) -> Result<SerialEndpoint> {
     }
     selected.ok_or(Error::Unavailable)
 }
-/// #44 CL-044-01: every present COM port with its friendly name and USB topology.
+/// CL-044-01: every present COM port with its friendly name and USB topology.
 /// A port whose name cannot be read unambiguously is left out. Opens nothing.
 pub fn enumerate_ports() -> Result<Vec<super::setup::PortInfo>> {
     let mut ports = Vec::new();
@@ -367,7 +367,7 @@ fn node_property(
     buffer.truncate(size as usize);
     Some(buffer)
 }
-/// #44 CL-044-02: friendly name, container ID and nearest USB device with its parent
+/// CL-044-02: friendly name, container ID and nearest USB device with its parent
 /// hub of a device instance (a COM port or an `SWD\MMDEVAPI\<endpoint id>` node).
 /// Read-only Configuration Manager queries; opens no device.
 pub fn device_topology(instance_id: &str) -> Result<(Option<String>, super::setup::Topology)> {
@@ -640,7 +640,7 @@ impl Transport for SerialTransport {
             SetCommTimeouts(handle, &timeouts).map_err(map)?;
             GetCommState(handle, &mut actual).map_err(map)?;
             GetCommTimeouts(handle, &mut actual_timeouts).map_err(map)?;
-            // #44: the DCB already disables both lines; clearing them again leaves no
+            // The DCB already disables both lines; clearing them again leaves no
             // driver default asserted before the first byte of a probe or CAT exchange.
             EscapeCommFunction(handle, CLRDTR).map_err(map)?;
             EscapeCommFunction(handle, CLRRTS).map_err(map)?;

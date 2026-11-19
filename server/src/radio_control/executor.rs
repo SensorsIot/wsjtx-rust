@@ -363,7 +363,7 @@ impl<T: Transport> Executor<T> {
         }
         Ok(())
     }
-    /// #44 CL-044-01/03/04 menu exchanges through this single I/O owner. Like `set_ptt`
+    /// CL-044-01/03/04 menu exchanges through this single I/O owner. Like `set_ptt`
     /// it is not an `Operation`: neither the catalogue nor /radio/operation reaches it.
     /// A write requires the radio to report RX first, an ACK, and an equal readback.
     pub fn setup(
@@ -513,7 +513,7 @@ impl<T: Transport> Executor<T> {
         }
         result
     }
-    /// #44 CL-044-12 one meter burst under the transmit hold. It changes no radio setting
+    /// CL-044-12 one meter burst under the transmit hold. It changes no radio setting
     /// and no connection state: a timeout or a cancel (a PTT exchange waits for nothing)
     /// never closes the connection a keyed transmission still needs. A refused read (FA)
     /// is a missing meter; a late reply is skipped by the next exchange's parse.

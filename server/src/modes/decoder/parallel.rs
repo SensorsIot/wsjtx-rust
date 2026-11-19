@@ -1,4 +1,4 @@
-//! Order-preserving parallel map of independent decode work (#57 CL-057-02).
+//! Order-preserving parallel map of independent decode work (CL-057-02).
 //! Results keep the input order and each item is computed exactly as on one thread, so
 //! the caller's in-order folds give the single-threaded decode set and order.
 use super::{DecodeError, search::CpuBudget};

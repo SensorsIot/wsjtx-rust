@@ -129,7 +129,7 @@ impl Output {
             .map_err(|_| OutputError::Unavailable)? = OutputState::Playing;
         Ok(())
     }
-    /// #44 the scale of the running program from its next sample (Tune level steps).
+    /// The scale of the running program from its next sample (Tune level steps).
     pub fn set_scale(&self, scale: f32) {
         if let Ok(mut program) = self.shared.program.lock()
             && let Some(renderer) = program.as_mut()
@@ -307,7 +307,7 @@ unsafe extern "system" fn console_exit(_: u32) -> ::windows::core::BOOL {
     if let Some(guard) = EXIT_GUARD.get() {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(guard));
     }
-    // Not handled: the default handler then ends the process as before.
+    // Not handled: the default handler then ends the process.
     ::windows::core::BOOL(0)
 }
 /// WstxTransmitState::SafetyReleases: runs `guard` (stop audio, one bounded off-only PTT release)
@@ -323,7 +323,7 @@ pub fn install_exit_guard(guard: Box<dyn Fn() + Send + Sync>) -> bool {
 }
 
 /// Keeps this real-time audio thread ahead of the parallel decode workers, which use all
-/// but one logical CPU at normal priority (#57 CL-057-02; #49 render stalls under load).
+/// but one logical CPU at normal priority (CL-057-02), so rendering does not stall under load.
 fn raise_thread_priority() {
     // SAFETY: GetCurrentThread returns this thread's pseudo-handle, which needs no close;
     // SetThreadPriority changes only this thread's scheduling. A failure keeps the default.

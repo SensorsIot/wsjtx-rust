@@ -17,7 +17,7 @@ pub const MAX_DATAGRAM: usize = 16_384;
 pub const FLEX_OUI: u32 = 0x00_1C2D;
 pub const FLEX_INFORMATION_CLASS: u16 = 0x534C;
 /// IEEE float stereo DAX audio at 24 kHz, the one admitted format: what a FLEX-6600 on
-/// SmartSDR 4.3.16 sent on 2026-11-06 (type 3, 128 frames per packet, equal channels).
+/// SmartSDR 4.3.16 sends (type 3, 128 frames per packet, equal channels).
 pub const DAX_FLOAT_24K: u16 = 0x03E3;
 pub const DISCOVERY_CLASS: u16 = 0xFFFF;
 

@@ -71,7 +71,7 @@ fn enumerator() -> Result<IMMDeviceEnumerator, SourceError> {
 pub fn enumerate_inputs() -> Result<Vec<InputDevice>, SourceError> {
     enumerate(eCapture)
 }
-/// #44: active render endpoints (ID and friendly name), as enumerate_inputs for capture.
+/// Active render endpoints (ID and friendly name), as enumerate_inputs for capture.
 pub fn enumerate_outputs() -> Result<Vec<InputDevice>, SourceError> {
     enumerate(eRender)
 }
@@ -270,7 +270,7 @@ impl AudioController {
         let (frame, qpc) = self.live.as_ref()?.clock_sample()?;
         Some((frame, system_clock()?.utc_at(qpc)?))
     }
-    /// Zero-filled and glitch-flagged canonical frames inside `[from, to)` (#52).
+    /// Zero-filled and glitch-flagged canonical frames inside `[from, to)`.
     pub fn marked_frames(&self, from: u64, to: u64) -> Option<(u64, u64)> {
         Some(self.live.as_ref()?.marked_frames(from, to))
     }
@@ -677,7 +677,7 @@ impl AudioController {
 }
 
 /// Keeps this real-time audio thread ahead of the parallel decode workers, which use all
-/// but one logical CPU at normal priority (#57 CL-057-02; #49 render stalls under load).
+/// but one logical CPU at normal priority (CL-057-02), so rendering does not stall under load.
 fn raise_thread_priority() {
     // SAFETY: GetCurrentThread returns this thread's pseudo-handle, which needs no close;
     // SetThreadPriority changes only this thread's scheduling. A failure keeps the default.

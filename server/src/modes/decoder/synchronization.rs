@@ -99,7 +99,7 @@ impl PeakCapacityReserve {
         std::hint::black_box((&self.heap, &self.old_generation));
     }
 }
-/// Coarse Costas ratio admitting a raw FT8 peak (#56: 2.0, was 2.7).
+/// Coarse Costas ratio admitting a raw FT8 peak (2.0).
 const COSTAS_THRESHOLD: f64 = 2.0;
 pub(super) struct Spectrum {
     values: Vec<Complex32>,
@@ -177,7 +177,7 @@ impl Spectrum {
             })
             .collect::<Vec<_>>();
         // The rows are independent, so they are transformed in parallel, each into its own
-        // row of the table and exactly as on one thread (#57 CL-057-02).
+        // row of the table and exactly as on one thread (CL-057-02).
         let slots = values
             .chunks_mut(width)
             .enumerate()
@@ -267,7 +267,7 @@ impl Spectrum {
         let sync = &self.sync;
         // Each frequency's tone powers are computed once for all its rows; the sums below
         // add exactly the same values in the same order as one power call per term. The
-        // frequencies are independent, so they are scored in parallel (#57 CL-057-02).
+        // frequencies are independent, so they are scored in parallel (CL-057-02).
         let rows = starts + 4 * (self.mode.symbol_count() - 1);
         let frequencies = (0..nf).collect::<Vec<_>>();
         let columns = super::parallel::map(
@@ -341,7 +341,7 @@ impl Spectrum {
         }
         let mut blocked = vec![false; starts * nf];
         // Blocking depends only on the peak order, never on qualification, so the peaks are
-        // qualified in parallel and kept in that order (#57 CL-057-02).
+        // qualified in parallel and kept in that order (CL-057-02).
         let mut raws = vec![];
         while let Some(peak) = heap.pop() {
             budget.checkpoint().await?;

@@ -143,13 +143,13 @@ impl Configuration {
     }
 }
 
-/// #44 menu exchanges of the station's CAT owner (`Actor::setup`), never wire operations.
+/// Menu exchanges of the station's CAT owner (`Actor::setup`), never wire operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetupCommand {
     ReadId,
     Read(setup::Setting),
     Write(setup::Setting, u16),
-    /// #44 CL-044-09/10 read the AGC, set it only when it differs, read it back.
+    /// CL-044-09/10 read the AGC, set it only when it differs, read it back.
     EnsureAgc(setup::Agc),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -366,7 +366,7 @@ pub struct Observation {
     pub observed_at: Option<Instant>,
 }
 /// Provenance belongs to the particular addressed query that consumed its reply.
-/// The legacy aggregate Observation timestamp deliberately retains its old meaning.
+/// The aggregate Observation timestamp is the time of its latest update by any query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Fact<T> {
     pub value: Option<T>,

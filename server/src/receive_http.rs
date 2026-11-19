@@ -59,7 +59,7 @@ pub(crate) fn receive_state_data(s: &Value) -> Value {
             "available_count":j["available_count"],"last_overrun":j["last_overrun"],"latest_decode":j["latest_decode"]}})
 }
 
-/// The receive.state this peer gets after `sent` (#10): the first one of a socket and one of a new
+/// The receive.state this peer gets after `sent`: the first one of a socket and one of a new
 /// receive identity hold every field; a later one the identity and only the audio, clock and job
 /// fields that changed (job by its keys).
 pub(crate) fn receive_state_delta(sent: &Value, now: &Value) -> Value {
@@ -114,7 +114,7 @@ pub async fn snapshot(
     }
     Json(r.receive_snapshot()).into_response()
 }
-/// #47 CL-007-05: the measured capture-clock drift, on demand (same rules as GET /receive).
+/// CL-007-05: the measured capture-clock drift, on demand (same rules as GET /receive).
 pub async fn clock(
     State(app): State<App>,
     headers: HeaderMap,
@@ -133,7 +133,7 @@ pub async fn clock(
     }
     Json(r.receive_clock()).into_response()
 }
-/// #45 CL-045-01: the persisted startup choice, Monitor-off setting and resume outcome.
+/// CL-045-01: the persisted startup choice, Monitor-off setting and resume outcome.
 pub async fn startup(
     State(app): State<App>,
     headers: HeaderMap,
@@ -152,7 +152,7 @@ pub async fn startup(
     }
     Json(r.startup_view()).into_response()
 }
-/// #45 CL-045-01: sets "Monitor off at startup"; it takes effect at the next start.
+/// CL-045-01: sets "Monitor off at startup"; it takes effect at the next start.
 pub async fn startup_update(
     State(app): State<App>,
     headers: HeaderMap,
@@ -183,7 +183,7 @@ pub async fn startup_update(
         Err(_) => error("storage_unavailable"),
     }
 }
-/// #52 CL-052-01: the latest windows' sample and capture counters and the dump setting.
+/// CL-052-01: the latest windows' sample and capture counters and the dump setting.
 pub async fn diagnostics(
     State(app): State<App>,
     headers: HeaderMap,
@@ -202,7 +202,7 @@ pub async fn diagnostics(
     }
     Json(r.diagnostics_view()).into_response()
 }
-/// #52 CL-052-01: turns the FT8 prompt-window dump on or off; it acts from the next window.
+/// CL-052-01: turns the FT8 prompt-window dump on or off; it acts from the next window.
 pub async fn diagnostics_update(
     State(app): State<App>,
     headers: HeaderMap,
@@ -356,7 +356,7 @@ pub async fn stop(
     if !profile::valid_uuid(&b.job_id) {
         return error("invalid_request");
     }
-    // Stop also clears the persisted startup choice (#45): file I/O off the runtime.
+    // Stop also clears the persisted startup choice: file I/O off the runtime.
     let stopped = tokio::task::spawn_blocking(move || {
         r.receive_stop(&b.profile_id, &b.boot_id, b.generation, &b.job_id)
     })
@@ -432,7 +432,7 @@ pub async fn results(
             (StatusCode::GONE, Json(v)).into_response()
         }
         Ok(mut v) => {
-            // #55 DecodedEntity: the entity and new-* flags of each decoded sender.
+            // DecodedEntity: the entity and new-* flags of each decoded sender.
             if let Some(state) = app.profile.clone() {
                 let annotated = tokio::task::spawn_blocking(move || {
                     if let Some(records) = v["records"].as_array_mut() {

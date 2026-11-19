@@ -4,7 +4,7 @@
 //! ownership is the arbitration authority between stations. This session only ever
 //! changes the one slice and stream it created and confirmed under its own current
 //! client handle; transient indices, handles and stream IDs are never persisted, and
-//! neither is a radio identity: discovery finds whichever radio is available (#22).
+//! neither is a radio identity: discovery finds whichever radio is available.
 use super::wire::{self, Line, Status};
 use crate::audio::{
     AudioState, AudioStatus, CaptureDiagnostics, DATA_DISCONTINUITY, Encoding, LiveSource,
@@ -74,8 +74,8 @@ const DISCOVERY_WAIT: Duration = Duration::from_secs(LISTEN_SECONDS);
 const FIRST_RETRY_MS: u64 = 1000;
 const MAX_RETRY_MS: u64 = 4000;
 const MAX_TRACKED: usize = 64;
-/// A real path reorders about one packet in 300 by one or two places and truly loses far fewer
-/// (2026-11-06); 5 packets (27 ms) of waiting tells the two apart.
+/// A real path reorders about one packet in 300 by one or two places and truly loses far fewer;
+/// 5 packets (27 ms) of waiting tells the two apart.
 const REORDER_PACKETS: u8 = 5;
 /// The registration of a saved address (WstxFlexSession::RadioChoice).
 mod radio_choice {
@@ -171,7 +171,7 @@ impl Error {
             Self::Stopped => "stopped",
         }
     }
-    /// The closed error set of a failed band selection (OperatingReceive S2).
+    /// The closed error set of a failed band selection (OperatingReceive).
     pub fn selection_code(self) -> &'static str {
         match self {
             Self::Timeout => "radio_timeout",
@@ -193,7 +193,7 @@ impl Error {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RadioFacts {
-    /// Shown, never saved or compared: the profile holds no radio identity (#22).
+    /// Shown, never saved or compared: the profile holds no radio identity.
     pub serial: String,
     pub model: Option<String>,
     pub firmware: Option<String>,
@@ -635,7 +635,7 @@ fn bind_audio() -> std::io::Result<UdpSocket> {
     Ok(socket.into())
 }
 
-/// The first announced radio with a free GUI client: the next available one (#22).
+/// The first announced radio with a free GUI client: the next available one.
 fn discover(shared: &Shared, config: Config) -> Result<(wire::Discovery, IpAddr), Error> {
     let socket = bind_shared(config.discovery).map_err(|_| Error::DiscoveryUnavailable)?;
     socket
@@ -1452,7 +1452,7 @@ impl<'a> Conn<'a> {
     }
     /// Read first: each setting is written only when the slice's status differs, and
     /// success needs the radio's own status for this slice, not only the reply. A FLEX-6600
-    /// replies to a tune and reports nothing (2026-11-06, firmware 4.3.16), so after a write the
+    /// replies to a tune and reports nothing (firmware 4.3.16), so after a write the
     /// read-back is asked for: subscribing again returns the slice's full status.
     fn apply_frequency(
         &mut self,

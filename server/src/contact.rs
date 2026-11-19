@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 //! WstxQsoPart::QsoService: the server-owned standard FT8/FT4 contact engine. It owns contact
 //! identity, the AutoSequence state, the next-message choice, completion and which
-//! contacts are due for the log (WstxLogbook::DirectLog, #41); it never keys PTT, opens audio or touches a radio. Every transmission
-//! is a WstxOperatingChain::TransmitRequest submitted in-process to the #9 slice B transmit
+//! contacts are due for the log (WstxLogbook::DirectLog); it never keys PTT, opens audio or touches a radio. Every transmission
+//! is a WstxOperatingChain::TransmitRequest submitted in-process to the transmit
 //! owner (`transmit::service::Core`), whose arming, halt, watchdogs and outcomes it
 //! consumes. The browser renders the snapshot and sends commands (contact_http).
 use std::collections::{HashSet, VecDeque};
@@ -42,7 +42,7 @@ pub const STOP_TOLERANCE_HZ: f64 = 50.0;
 /// long from now, so it never turns stale between admission and keying.
 pub const LEAD_MS: i64 = 1000;
 /// WstxQsoTransmit::RepetitionLimit: the stop waits this long into the due period, past the latest
-/// live decode measured (#47: up to 1.1 s after the FT8 period start), so a partner
+/// live decode measured (up to 1.1 s after the FT8 period start), so a partner
 /// message that changes the next message still counts. Nothing is planned meanwhile.
 const WATCHDOG_STOP_AFTER_DUE_MS: i64 = 1200;
 const COUNTED_KEYS: usize = 4096;
@@ -53,7 +53,7 @@ pub fn period_ms(mode: Mode) -> i64 {
         Mode::Ft4 => 7_500,
     }
 }
-/// #97 BusyPartner: a decoded free text counts as the partner's when it lies in his period
+/// BusyPartner: a decoded free text counts as the partner's when it lies in his period
 /// (the parity of his last decode) within BUSY_FREE_TEXT_HZ of his last decode's frequency.
 fn free_text_of_his(mode: Mode, his_last: Option<(i64, f64)>, row: &Row) -> bool {
     let (Some((his_period, his_hz)), Some(period)) = (his_last, row.period_start_ms) else {
@@ -222,7 +222,7 @@ impl Call {
 pub enum Exchange {
     Grid(String),
     Report(i32),
-    /// A Field Day or RTTY Roundup exchange, its last two words (#24 S2b, ContestExchange).
+    /// A Field Day or RTTY Roundup exchange, its last two words (ContestExchange).
     Contest(ContestKind, String),
     Rrr,
     Rr73,
@@ -246,10 +246,10 @@ pub struct Row {
     pub snr_db: Option<f64>,
     pub text: String,
     pub standard: Option<Standard>,
-    /// A 0.1 DXpedition message "RR73_TO RR73; REPORT_TO <FOX> REPORT" (#24 S4b,
-    /// HoundOperation); such a row is never a standard message.
+    /// A 0.1 DXpedition message "RR73_TO RR73; REPORT_TO <FOX> REPORT"
+    /// (HoundOperation); such a row is never a standard message.
     pub dxpedition: Option<Box<Dxpedition>>,
-    /// An i3=5 EU VHF message (#99, EuVhfExchange); such a row is never a standard message.
+    /// An i3=5 EU VHF message (EuVhfExchange); such a row is never a standard message.
     pub vhf: Option<Box<Vhf>>,
 }
 /// The fields of an EU VHF message: both calls hashed, with their received hashes.
@@ -312,13 +312,13 @@ pub enum Activity {
     #[default]
     None,
     NaVhf,
-    /// EuVhfExchange (#99): the EU VHF contest message, i3=5.
+    /// EuVhfExchange: the EU VHF contest message, i3=5.
     EuVhf,
     WwDigi,
     ArrlDigi,
     FieldDay,
     Rtty,
-    /// HoundOperation (#24 S4b): the classic Hound, FT8 only.
+    /// HoundOperation: the classic Hound, FT8 only.
     Hound,
 }
 impl Activity {
@@ -423,7 +423,7 @@ pub fn contest_exchange(activity: Activity, text: Option<&str>) -> Option<Option
 }
 /// The sent exchange of Tx2 (Tx3 adds R): the report, my grid in a grid-exchange
 /// contest, the Field Day exchange, "5n9 X" in RTTY Roundup (MW genStdMsgs ~9741), or
-/// "5nSSSS GRID6" in EU VHF (MW ~9774-9779, #99).
+/// "5nSSSS GRID6" in EU VHF (MW ~9774-9779).
 fn sent_exchange(
     activity: Activity,
     locator: &str,
@@ -446,11 +446,11 @@ fn sent_exchange(
     }
 }
 /// ContestReceivedKind: in a grid-exchange contest a grid is the report and R+grid the
-/// roger report (DecodedMessageReaction.cpp ~533-547, #24 S2a); not in eu_vhf, where a
-/// grid stays a grid (DMR ~534, #99).
+/// roger report (DecodedMessageReaction.cpp ~533-547); not in eu_vhf, where a
+/// grid stays a grid (DMR ~534).
 pub fn classify_in(standard: &Standard, activity: Activity) -> Received {
     match (&standard.exchange, activity) {
-        // ContestExchange: an exchange of the activity's own family (#24 S2b).
+        // ContestExchange: an exchange of the activity's own family.
         (Exchange::Contest(kind, _), a) if a.contest() == Some(*kind) => {
             if standard.ack {
                 Received::RogerReport
@@ -487,10 +487,10 @@ pub fn transition(state: State, received: Received) -> Option<State> {
         (S::Replying | S::Report, R::SignalReport) => S::RogerReport,
         (S::Replying | S::Report | S::RogerReport, R::RogerReport) => S::Rogers,
         // A partner who skips RR73 and signs off with 73 after my R+report is
-        // answered with my 73 once, like an RR73 (#11).
+        // answered with my 73 once, like an RR73.
         (S::RogerReport, R::Rogers | R::SeventyThree) => S::Signoff,
         // rogerAck (DMR ~585-600): a partner's RRR or RR73 before my 73 is answered with
-        // my 73 once, also after my RRR and before any report reached me (#69).
+        // my 73 once, also after my RRR and before any report reached me.
         (S::Replying | S::Report | S::Rogers | S::Signoff, R::Rogers) => S::Signoff,
         (S::Rogers, R::SignalReport) => S::RogerReport,
         (S::Rogers, R::SeventyThree) => S::Completed,
@@ -527,7 +527,7 @@ fn generated_text(text: &str) -> Option<String> {
     .then_some(packed.text)
 }
 /// An operator-edited slot text (StandardMessageSet): standard, nonstandard, a Field Day,
-/// RTTY Roundup (#24 S2b) or EU VHF (#99) exchange or free text of at most 13 characters,
+/// RTTY Roundup or EU VHF exchange or free text of at most 13 characters,
 /// packed unaltered and normalized.
 pub fn slot_text(text: &str) -> Option<String> {
     let packed = transmit::pack(text).ok()?;
@@ -601,7 +601,7 @@ pub fn generate_with(
     generate_contest(my_call, grid4, dx, report, tx4, activity, None, 1)
 }
 /// StandardMessageSet with the activity's exchange (ContestExchange): Field Day and RTTY
-/// Roundup need their configured exchange and both calls standard; EU VHF (#99) sends
+/// Roundup need their configured exchange and both calls standard; EU VHF sends
 /// both calls hashed in Tx2/Tx3 with the first six characters of `locator`.
 #[allow(clippy::too_many_arguments)]
 pub fn generate_contest(
@@ -625,7 +625,7 @@ pub fn generate_contest(
         _ => (sent.clone(), format!("R {sent}")),
     };
     let mut set: [Option<String>; 6] = Default::default();
-    // MW genStdMsgs/genCQMsg, 77-bit: brackets mark the hashed nonstandard side (#24 S1b).
+    // MW genStdMsgs/genCQMsg, 77-bit: brackets mark the hashed nonstandard side.
     let my_standard = is_standard_call(my_call);
     set[5] = Some(if my_standard {
         match activity.cq() {
@@ -673,7 +673,7 @@ pub fn generate_contest(
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub auto_seq: bool,
-    /// WSJT-X Call 1st (cbFirst, #10): an own CQ answers its first caller.
+    /// WSJT-X Call 1st (cbFirst): an own CQ answers its first caller.
     pub call_first: bool,
     pub tx1_skip: bool,
     pub rx_hz: u32,
@@ -681,9 +681,9 @@ pub struct Settings {
     pub hold_tx: bool,
     pub parity: Parity,
     pub report: i32,
-    /// GridExchangeContest (#24 S2a): this boot's special activity, none by default.
+    /// GridExchangeContest: this boot's special activity, none by default.
     pub activity: Activity,
-    /// ContestExchange (#24 S2b): the configured Field Day / RTTY Roundup exchange.
+    /// ContestExchange: the configured Field Day / RTTY Roundup exchange.
     pub exchange: Option<String>,
     /// ContestExchange: the contest serial number, 1 at boot.
     pub serial: u32,
@@ -701,12 +701,12 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             auto_seq: qso_config::AUTO_SEQ,
-            // #10 (operator 2026-11-02): on by default, operator-changeable.
+            // On by default, operator-changeable.
             call_first: qso_config::CALL_FIRST,
             tx1_skip: false,
             rx_hz: qso_config::RX_HZ,
             tx_hz: qso_config::TX_HZ,
-            // #39 CL-039-08 (operator 2026-11-04): on by default; a selection never moves Tx.
+            // CL-039-08: on by default; a selection never moves Tx.
             hold_tx: true,
             // WSJT-X m_txFirst default false: transmit in the second (odd) period.
             parity: Parity::Odd,
@@ -729,13 +729,13 @@ pub struct Contact {
     pub report_rcvd: Option<i32>,
     /// RST_SENT: the report of the last transmitted Tx2/Tx3.
     pub report_sent: Option<i32>,
-    /// ContestExchange (#24 S2b): the last two words of Tx2 once Tx2/Tx3 is sent, and
+    /// ContestExchange: the last two words of Tx2 once Tx2/Tx3 is sent, and
     /// the last two words of the partner's counted contest exchange.
     pub exchange_sent: Option<String>,
     pub exchange_rcvd: Option<String>,
     /// The activity the contact was prepared in (its log fields follow it).
     pub activity: Activity,
-    /// #111 CL-111-03: the station band the contact was prepared on (None: unknown then; the
+    /// CL-111-03: the station band the contact was prepared on (None: unknown then; the
     /// first band seen is taken).
     pub band: Option<&'static str>,
     pub state: State,
@@ -751,18 +751,18 @@ pub struct Contact {
     /// Set at completion when the contact was handed to the log (once per contact).
     pub logged_on_completion: bool,
     /// With Auto Seq off: the message Auto Seq would send next after the latest counted
-    /// partner message (e.g. Tx5 after their RR73), offered to the operator (#11).
+    /// partner message (e.g. Tx5 after their RR73), offered to the operator.
     pub suggested: Option<Slot>,
-    /// The latest partner message to my call (#37 QSO pane), with its repeat count.
+    /// The latest partner message to my call (QSO pane), with its repeat count.
     pub last_rcvd: Option<Heard>,
-    /// The QSO dialogue (#37, ContactSnapshot dialogue): counted partner messages and
+    /// The QSO dialogue (ContactSnapshot dialogue): counted partner messages and
     /// this contact's started transmissions, oldest first, at most DIALOGUE_MAX.
     pub dialogue: VecDeque<Exchanged>,
-    /// #97 WstxOperatingChain::BusyPartner: the other call the partner is working (as decoded,
+    /// WstxOperatingChain::BusyPartner: the other call the partner is working (as decoded,
     /// "<...>" for an unresolved hash), from his message to it with a grid, report or R-report
     /// until he ends that QSO.
     pub busy_with: Option<String>,
-    /// #97 BusyPartner: the period start (Unix ms) and audio frequency of the partner's last
+    /// BusyPartner: the period start (Unix ms) and audio frequency of the partner's last
     /// decoded message, so a free text (which has no sender) can be judged his.
     pub his_last: Option<(i64, f64)>,
 }
@@ -788,7 +788,7 @@ pub struct Exchanged {
     /// partner busy at their stop point), at most the Tx watchdog limit.
     pub paused: u32,
 }
-/// A partner message to my call as the QSO pane shows it (#37).
+/// A partner message to my call as the QSO pane shows it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Heard {
     pub text: String,
@@ -811,7 +811,7 @@ impl Contact {
             && !last.closed
         {
             last.count = last.count.saturating_add(1);
-            // #60: the QSO pane shows the latest decode's SNR of a repeated message.
+            // The QSO pane shows the latest decode's SNR of a repeated message.
             if snr.is_some() {
                 last.snr = snr;
             }
@@ -844,11 +844,11 @@ impl Contact {
     fn repetitions(&self, text: &str) -> u32 {
         self.tx_entry(text).map_or(0, |e| e.count)
     }
-    /// #97 the paused sends of `text` (BusyPartner), 0 when the next send opens a new entry.
+    /// The paused sends of `text` (BusyPartner), 0 when the next send opens a new entry.
     fn paused(&self, text: &str) -> u32 {
         self.tx_entry(text).map_or(0, |e| e.paused)
     }
-    /// #97 the counted repetitions of `text`: its Rep less its paused sends.
+    /// The counted repetitions of `text`: its Rep less its paused sends.
     fn counted(&self, text: &str) -> u32 {
         self.repetitions(text).saturating_sub(self.paused(text))
     }
@@ -881,7 +881,7 @@ pub enum LogKind {
     /// The operator's Log QSO.
     LogQso,
 }
-/// The log's answer to a completed contact handed to it (#85 WstxOperatingChain::LogAnswer).
+/// The log's answer to a completed contact handed to it (WstxOperatingChain::LogAnswer).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogAnswer {
     Accepted,
@@ -900,13 +900,13 @@ pub struct Ctx {
     /// The command comes from station automation (WstxAutoPart::AutoService),
     /// not from an operator: it never resets the Tx watchdog.
     pub automatic: bool,
-    /// #111 CL-111-03: the station band (the radio's dial band, else the band of the
+    /// CL-111-03: the station band (the radio's dial band, else the band of the
     /// operating selection); None while unknown.
     pub band: Option<&'static str>,
 }
 impl Ctx {
     /// The whole profile locator (at least 4 characters), upper case: the messages send its
-    /// first four, Tx2/Tx3 of eu_vhf its first six (EuVhfExchange, #99).
+    /// first four, Tx2/Tx3 of eu_vhf its first six (EuVhfExchange).
     fn grid(&self) -> Option<String> {
         self.locator
             .as_deref()
@@ -931,7 +931,7 @@ pub enum Command {
         replace: bool,
     },
     Cancel,
-    /// #39 Abort QSO (Esc): Cancel, and the current transmission stops now.
+    /// Abort QSO (Esc): Cancel, and the current transmission stops now.
     Abort,
     ChooseNext(Slot),
     EditMessage(Slot, String),
@@ -957,31 +957,31 @@ pub enum Command {
     },
     /// Enable Tx on/off; Some(revision) is the CL-022 safety revision the operator saw.
     EnableTx(bool, Option<u64>),
-    /// #111 CL-111-02 Reply: SelectDecodedRow with replace true, and the start. Every start
+    /// CL-111-02 Reply: SelectDecodedRow with replace true, and the start. Every start
     /// carries the CL-022 safety revision shown to its sender.
     Reply {
         row: Row,
         safety_revision: Option<u64>,
     },
-    /// #111 CL-111-02 CQ: the only start that calls CQ (CL-111-05).
+    /// CL-111-02 CQ: the only start that calls CQ (CL-111-05).
     CallCq(Option<u64>),
-    /// #111 CL-111-02 Call: EnterDxStation and the start.
+    /// CL-111-02 Call: EnterDxStation and the start.
     CallDx {
         call: String,
         grid: Option<String>,
         replace: bool,
         safety_revision: Option<u64>,
     },
-    /// #111 CL-111-02 Send next: chooses the slot of the current QSO and starts.
+    /// CL-111-02 Send next: chooses the slot of the current QSO and starts.
     SendNext(Slot, Option<u64>),
-    /// #111 CL-111-08 Reset: a new repetition count; after a repetition-limit stop it starts.
+    /// CL-111-08 Reset: a new repetition count; after a repetition-limit stop it starts.
     ResetRepetitions(Option<u64>),
-    /// #111 CL-111-06: Tune on carries the safety revision shown to its sender.
+    /// CL-111-06: Tune on carries the safety revision shown to its sender.
     Tune(bool, Option<u64>),
     Redecode,
     OpenLog,
 }
-/// #97 WstxOperatingChain::BusyPartner for the contact the station's automation owns: `split` the split
+/// WstxOperatingChain::BusyPartner for the contact the station's automation owns: `split` the split
 /// move instead of partnerWorksOther's stop (a run whose strategy has busy_pause on), `pause` its
 /// sends to a busy partner are paused calls (that run, attended). A pounce and an MCP policy run
 /// have neither.
@@ -1009,16 +1009,16 @@ pub struct Engine {
     /// WstxLeave::LeaveRule: the strategy run's own contact, which sends past the
     /// Tx watchdog limit (no WD shown for it). Set by the station before every step.
     pub repeat_exempt: Option<String>,
-    /// #97 WstxOperatingChain::BusyPartner: the contact the station's automation owns, with whether it
+    /// WstxOperatingChain::BusyPartner: the contact the station's automation owns, with whether it
     /// takes the split move and whether its sends pause now. Every other contact is manual and
     /// does both. Set by the station before every step.
     pub automated: Option<Automated>,
-    /// #97 BusyPartner split move: the audio offsets his PSK Reporter spots show him decoding
+    /// BusyPartner split move: the audio offsets his PSK Reporter spots show him decoding
     /// in my Tx parity (empty: none known). Set by the station before every step.
     pub his_psk: Vec<u32>,
     /// The stations decoded in the latest period of my Rx parity: (its start, their offsets).
     rx_decodes: Option<(i64, Vec<f64>)>,
-    /// #97 BusyPartner: the latest own send whose stop point has passed, and whether it was a
+    /// BusyPartner: the latest own send whose stop point has passed, and whether it was a
     /// paused call.
     decided: Option<(i64, bool)>,
     /// The period and contact of the latest started transmission (the send the busy pause
@@ -1055,12 +1055,12 @@ pub struct Engine {
     /// time the last partner RR73 was counted.
     last_tx_start_ms: Option<i64>,
     last_rr73_ms: Option<i64>,
-    /// HoundOperation (#24 S4b): the HoundTransmissionPolicy state and its timers.
+    /// HoundOperation: the HoundTransmissionPolicy state and its timers.
     pub hound: Hound,
     /// The random calling offset of ClassicTxStart: a value in lo..hi.
     pub random_hz: Box<dyn FnMut(u32, u32) -> u32 + Send>,
     /// The field of the last refused command, when its refusal names one (EuVhfExchange:
-    /// locator, callsign, dx_call, serial; #99).
+    /// locator, callsign, dx_call, serial).
     pub refusal_field: Option<&'static str>,
 }
 /// A refusal code with its field.
@@ -1120,7 +1120,7 @@ fn refusal_code(r: TransmitRefusal) -> &'static str {
         _ => "state_conflict",
     }
 }
-/// #111 CL-111-07: the refusal of a start that cannot transmit and prepares nothing.
+/// CL-111-07: the refusal of a start that cannot transmit and prepares nothing.
 fn obstacle_code(r: TransmitRefusal) -> &'static str {
     match r {
         TransmitRefusal::ClockNotSynchronized => "clock_not_synchronized",
@@ -1171,7 +1171,7 @@ impl Engine {
         self.refusal_field = field;
         Err(code)
     }
-    /// EuVhfExchange (#99): why `activity`'s Tx2/Tx3 to `dx` cannot be generated (the
+    /// EuVhfExchange: why `activity`'s Tx2/Tx3 to `dx` cannot be generated (the
     /// 37-character limit bounds the two hashed calls to 16 characters together); the
     /// pair refusal names `pair_field`. None outside eu_vhf or when it can be generated.
     fn eu_vhf_refusal(
@@ -1221,7 +1221,7 @@ impl Engine {
         });
         taken
     }
-    /// #85 WstxOperatingChain::CompletedContact: hands each contact due for the log to
+    /// WstxOperatingChain::CompletedContact: hands each contact due for the log to
     /// `log`, once, oldest first. The contest serial counts for a first hand-over only when
     /// the log answers accepted (CL-085-02, CL-085-03); a refusal changes nothing else.
     pub fn hand_over(&mut self, mut log: impl FnMut(LogKind, &Contact) -> LogAnswer) {
@@ -1289,7 +1289,7 @@ impl Engine {
         }
         c.next = Slot::Tx6;
     }
-    /// #111 CL-111-03 band change: the station band differs from the band the contact was
+    /// CL-111-03 band change: the station band differs from the band the contact was
     /// prepared on. A calling or active contact is cancelled as by a mode change and the
     /// state goes off (cause bandChanged); a transmission on the air finishes. A contact
     /// that does not transmit keeps its fields. An unknown station band is no band change.
@@ -1315,7 +1315,7 @@ impl Engine {
             self.pending = None;
         }
     }
-    /// #111 CL-111-02: what every start passes before anything is prepared. A stop applied
+    /// CL-111-02: what every start passes before anything is prepared. A stop applied
     /// since the engine's last step wins (CL-111-03); the safety revision is the station's;
     /// an automatic start needs an operator seen this boot and no repetition-limit stop.
     fn admit_start<H: Hardware>(
@@ -1340,7 +1340,7 @@ impl Engine {
         }
         Ok(())
     }
-    /// #111 CL-111-07: why transmission is not possible now (None: it is). The arm
+    /// CL-111-07: why transmission is not possible now (None: it is). The arm
     /// conditions are the transmit owner's one query (`Core::arm_refusal`).
     fn obstacle<H: Hardware>(core: Option<&Core<H>>, ctx: &Ctx) -> Option<TransmitRefusal> {
         let Some(core) = core else {
@@ -1458,7 +1458,7 @@ impl Engine {
         let (Some(call), Some(locator)) = (ctx.call.clone(), ctx.grid()) else {
             return Err("profile_incomplete");
         };
-        // EuVhfExchange: no contact starts whose Tx2/Tx3 cannot be packed (#99).
+        // EuVhfExchange: no contact starts whose Tx2/Tx3 cannot be packed.
         if let Some(refused) =
             self.eu_vhf_refusal(ctx, self.settings.activity, Some(dx.as_str()), None)
         {
@@ -1509,7 +1509,7 @@ impl Engine {
             }
         }
         // Re-selecting a decoded row of the same partner without a grid (e.g. their
-        // report) keeps the grid already known, as WSJT-X keeps its DX Grid (#11); a
+        // report) keeps the grid already known, as WSJT-X keeps its DX Grid; a
         // manual entry sets exactly the grid entered.
         let grid = grid.or_else(|| {
             self.contact
@@ -1530,7 +1530,7 @@ impl Engine {
                 (self.new_id)().ok_or("storage_unavailable")?
             }
         };
-        // ChangeContact (#50): the old contact is replaced and Enable Tx keeps its state;
+        // ChangeContact: the old contact is replaced and Enable Tx keeps its state;
         // submit() replaces the old contact's pending request with the new one.
         let _ = core;
         let tx1_skip = self.tx1_disabled();
@@ -1610,7 +1610,7 @@ impl Engine {
         )
     }
     /// WSJT-X disables Tx1 in every contest activity (MW ~8190) as Skip Tx1 does, except
-    /// in eu_vhf (MW ~8203, #99). A Hound never skips Tx1 (MW elide_tx1_not_allowed).
+    /// in eu_vhf (MW ~8203). A Hound never skips Tx1 (MW elide_tx1_not_allowed).
     fn tx1_disabled(&self) -> bool {
         let a = self.settings.activity;
         !self.is_hound() && (self.settings.tx1_skip || (a.contest_like() && a != Activity::EuVhf))
@@ -1621,7 +1621,7 @@ impl Engine {
             self.settings.serial = self.settings.serial.saturating_add(1);
         }
     }
-    /// EuVhfExchange (#99): a command that regenerates the active contact's messages is
+    /// EuVhfExchange: a command that regenerates the active contact's messages is
     /// refused, changing nothing, while its Tx2/Tx3 cannot be generated.
     fn check_regeneration(&mut self, ctx: &Ctx, activity: Activity) -> Result<(), &'static str> {
         let dx = self.active_dx();
@@ -1664,10 +1664,10 @@ impl Engine {
             self.count(row.key.clone(), (p, row.text.clone()));
         }
     }
-    /// SelectDecodedRow of an EU VHF row (EuVhfExchange, #99): while eu_vhf is set and its
+    /// SelectDecodedRow of an EU VHF row (EuVhfExchange): while eu_vhf is set and its
     /// 'from' is filled in, the DX call is that call and the grid its locator; addressed to
     /// me (by the 12-bit hash of my call) it starts with Tx3 (Tx4 after R) and sets
-    /// exchange_rcvd (D7), otherwise it replies with Tx1.
+    /// exchange_rcvd, otherwise it replies with Tx1.
     fn select_vhf<H: Hardware>(
         &mut self,
         core: Option<&mut Core<H>>,
@@ -1727,7 +1727,7 @@ impl Engine {
         let abort = matches!(command, Command::Abort);
         self.refusal_field = None;
         match command {
-            // EuVhfExchange (#99): an EU VHF row, selectable only while eu_vhf is set.
+            // EuVhfExchange: an EU VHF row, selectable only while eu_vhf is set.
             Command::SelectRow { row, replace } if row.standard.is_none() && row.vhf.is_some() => {
                 self.select_vhf(core.as_deref_mut(), ctx, row, replace)?;
             }
@@ -1977,7 +1977,7 @@ impl Engine {
                 if activity == Activity::Hound && ctx.mode() != Mode::Ft8 {
                     return Err("state_conflict");
                 }
-                // EuVhfExchange (#99): a 6-character locator, a callsign of at most 11
+                // EuVhfExchange: a 6-character locator, a callsign of at most 11
                 // characters, and an active contact whose Tx2/Tx3 can be packed.
                 let dx = self.active_dx();
                 if let Some(refused) =
@@ -2022,7 +2022,7 @@ impl Engine {
                 tx_calls,
                 tune_seconds,
             } => {
-                // #39: only the operator in the browser may change the watchdogs; an MCP
+                // Only the operator in the browser may change the watchdogs; an MCP
                 // or automation source could otherwise lengthen a spent watchdog.
                 if ctx.automatic {
                     return Err("operator_required");
@@ -2054,7 +2054,7 @@ impl Engine {
                 if core.hardware().context().safety_revision.is_none() {
                     return Err("transmit_unavailable");
                 }
-                // #9 arms only with the revision the operator saw; it refuses a changed
+                // The transmit owner arms only with the revision the operator saw; it refuses a changed
                 // one itself (NotAuthorized), so there is no check-then-arm race.
                 let revision = shown.ok_or("stale_revision")?;
                 let needs_cq = self.contact.as_ref().is_none_or(|c| !c.state.transmits());
@@ -2070,7 +2070,7 @@ impl Engine {
                 } else {
                     None
                 };
-                // #39: automation arms only after an operator action this boot and never
+                // Automation arms only after an operator action this boot and never
                 // after a watchdog stop.
                 if ctx.automatic && core.watchdog_spent() {
                     return Err("tx_watchdog");
@@ -2328,13 +2328,13 @@ impl Engine {
             Command::Redecode => return Err("redecode_unavailable"),
             Command::OpenLog => {
                 // Log QSO: log this contact now, in any state (DirectLog). An unfinished
-                // contact is closed by it (#37): completed, Enable Tx off, nothing queued,
+                // contact is closed by it: completed, Enable Tx off, nothing queued,
                 // and this Log QSO is its only record.
                 let c = self.contact.as_mut().ok_or("no_contact")?;
                 if c.dx_call.is_none() {
                     return Err("no_contact");
                 }
-                // Its first hand-over counts the serial once the log accepts it (#85).
+                // Its first hand-over counts the serial once the log accepts it.
                 let counts = c.state.active() || !c.logged_on_completion;
                 if c.state.active() {
                     c.logged_on_completion = true;
@@ -2364,7 +2364,7 @@ impl Engine {
             if c.last_counted_end.is_none() {
                 c.last_counted_end = Some(now);
             }
-            // A contact without a partner (an own CQ ended by a free-text Tx5, #24 S1b)
+            // A contact without a partner (an own CQ ended by a free-text Tx5)
             // has nothing to log.
             if !c.logged_on_completion && c.dx_call.is_some() {
                 c.logged_on_completion = true;
@@ -2381,7 +2381,7 @@ impl Engine {
         rows: &[Row],
     ) -> bool {
         let now = ctx.now_utc_ms;
-        // CL-111-03: the stops applied before this step no longer refuse a start, and the
+        // CL-111-03: the stops applied before this step do not refuse a start, and the
         // shown cause of this step's stops is chosen among them only.
         if let Some(core) = core.as_deref_mut() {
             core.begin_step();
@@ -2427,7 +2427,7 @@ impl Engine {
                             if submitted.slot == Slot::Tx3 {
                                 c.first_tx3_period.get_or_insert(submitted.period);
                             }
-                            // A contest Tx2/Tx3 carries my grid, not a report (#24 S2a).
+                            // A contest Tx2/Tx3 carries my grid, not a report.
                             if matches!(submitted.slot, Slot::Tx2 | Slot::Tx3)
                                 && matches!(
                                     self.settings.activity,
@@ -2437,7 +2437,7 @@ impl Engine {
                                 c.report_sent = Some(submitted.report);
                             }
                             // ContestExchange: xSent is the last two words of Tx2 (MW ~8012),
-                            // also in EU VHF (#99, MW ~8008).
+                            // also in EU VHF (MW ~8008).
                             if matches!(submitted.slot, Slot::Tx2 | Slot::Tx3)
                                 && (c.activity.contest().is_some() || c.activity == Activity::EuVhf)
                                 && let Some(tx2) = &c.messages[1]
@@ -2507,7 +2507,7 @@ impl Engine {
                 }
             }
         }
-        // #97 BusyPartner: the send whose stop point has passed is judged before this step's
+        // BusyPartner: the send whose stop point has passed is judged before this step's
         // rows, so a publication after the stop point counts for the next send.
         if let Some(core) = core.as_deref() {
             self.judge_stop_point(core, now);
@@ -2533,7 +2533,7 @@ impl Engine {
             let Some(my) = ctx.call.clone() else {
                 continue;
             };
-            // EuVhfExchange (#99): an EU VHF message counts only in eu_vhf, by the hash of
+            // EuVhfExchange: an EU VHF message counts only in eu_vhf, by the hash of
             // my call and of the DX call, never by the call the table filled in.
             if row.standard.is_none() && row.vhf.is_none() && row.dxpedition.is_none() {
                 // BusyPartner: a free text has no sender; it counts as his (and ends his other
@@ -2833,7 +2833,7 @@ impl Engine {
             ..ctx.clone()
         };
         // A refusal (e.g. an incomplete profile, or in eu_vhf a pair of calls too long
-        // for Tx3, #99) leaves the CQ running and goes on to the next caller.
+        // for Tx3) leaves the CQ running and goes on to the next caller.
         for row in callers {
             let selected = self.command(
                 Command::SelectRow {
@@ -2897,7 +2897,7 @@ impl Engine {
         // WstxQsoTransmit::RepetitionLimit: nothing is planned for a send beyond the limit; a
         // partner message may still change the next message until 1.2 s into its period.
         // A request still pending would key, so it stops at once; after the Nth send none is.
-        // #97 BusyPartner: the counted repetitions (Rep less the paused calls); a send while
+        // BusyPartner: the counted repetitions (Rep less the paused calls); a send while
         // the partner is busy is a paused call (at most N per message) and is planned.
         let limit = core.tx_limit();
         let pause = self.busy_kind().1;
@@ -2963,7 +2963,7 @@ impl Engine {
         } else {
             self.pending = None;
             self.transmit_problem = outcome.refusal.map(|r| snake(&format!("{r:?}")));
-            // Never resubmit a refused target as is; a refusal #9 does not disarm for
+            // Never resubmit a refused target as is; a refusal the transmit owner does not disarm for
             // (duplicateSequence: this boot's sequences are exhausted) disarms here, so
             // the refusal is visible and the 20 Hz step does not repeat it.
             self.refused_target = Some((period, submitted.text.clone(), tx_hz));
@@ -3087,7 +3087,7 @@ impl Engine {
             Some(ctx.now_utc_ms + hound_limits::REPLY_PERIODS * period_ms(mode));
     }
     /// The counted repetitions of the message due next (WstxQsoTransmit::RepetitionLimit): its Rep less
-    /// its paused calls (#97).
+    /// its paused calls.
     pub fn repetitions_due(&self) -> u32 {
         self.contact.as_ref().map_or(0, |c| {
             c.messages[c.next.index()]
@@ -3095,7 +3095,7 @@ impl Engine {
                 .map_or(0, |text| c.counted(text))
         })
     }
-    /// #97 the paused calls of the message due next (ContactSnapshot watchdog.paused_calls).
+    /// The paused calls of the message due next (ContactSnapshot watchdog.paused_calls).
     pub fn paused_due(&self) -> u32 {
         self.contact.as_ref().map_or(0, |c| {
             c.messages[c.next.index()]
@@ -3103,7 +3103,7 @@ impl Engine {
                 .map_or(0, |text| c.paused(text))
         })
     }
-    /// #97 WstxOperatingChain::BusyPartner for the current contact: (split move, paused calls now). A
+    /// WstxOperatingChain::BusyPartner for the current contact: (split move, paused calls now). A
     /// contact the station's automation does not name is manual: both.
     pub fn busy_kind(&self) -> (bool, bool) {
         let Some(c) = self.contact.as_ref() else {
@@ -3117,14 +3117,14 @@ impl Engine {
             None => (true, true),
         }
     }
-    /// #97 ContactSnapshot watchdog.busy_with: the other call while the partner is busy and the
+    /// ContactSnapshot watchdog.busy_with: the other call while the partner is busy and the
     /// contact's sends pause.
     pub fn busy_with(&self) -> Option<&str> {
         let c = self.contact.as_ref()?;
         let (_, pause) = self.busy_kind();
         c.busy_with.as_deref().filter(|_| pause && c.state.active())
     }
-    /// #97 the latest own send whose stop point has passed: (its period, a paused call).
+    /// The latest own send whose stop point has passed: (its period, a paused call).
     #[cfg(test)]
     pub fn decided(&self) -> Option<(i64, bool)> {
         self.decided
@@ -3151,7 +3151,7 @@ impl Engine {
             }
         }
     }
-    /// #97 BusyPartner split move: the nearest candidate clear of his signal (None: the move is
+    /// BusyPartner split move: the nearest candidate clear of his signal (None: the move is
     /// refused, the stop follows).
     fn split_move(&self, mode: Mode, tx: u32, his: u32) -> Option<u32> {
         #[cfg(test)]
@@ -3345,7 +3345,7 @@ pub fn contest_fields(
 ) -> Vec<(&'static str, String)> {
     let serial = |w: &str| w.parse::<u32>().is_ok_and(|n| n > 0);
     let mut out = Vec::new();
-    // EU VHF (#99, AdifQso mid(2)): STX and SRX are the four serial digits of "5nSSSS".
+    // EU VHF (AdifQso mid(2)): STX and SRX are the four serial digits of "5nSSSS".
     if activity == Activity::EuVhf {
         for (name, x) in [("stx", sent), ("srx", rcvd)] {
             if let Some((_, digits)) = x.and_then(eu_vhf_exchange) {
@@ -3389,7 +3389,7 @@ impl Contact {
             grid: c.dx_grid.clone(),
             mode: c.mode,
             // RTTY Roundup logs the 5n9 of each exchange as the RST (logqso.cpp ~396).
-            // EU VHF logs the RS actually exchanged, "55" (#99, operator 2026-11-09).
+            // EU VHF logs the RS actually exchanged, "55".
             rst_sent: match (c.activity, &c.exchange_sent) {
                 (Activity::Rtty, Some(x)) => x.split(' ').next().map(str::to_owned),
                 (Activity::EuVhf, Some(x)) => eu_vhf_exchange(x).map(|(rs, _)| rs.to_owned()),

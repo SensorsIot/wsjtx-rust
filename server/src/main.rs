@@ -335,9 +335,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 wstx_rust::transmit::clock::INTERVAL,
             )
             .map_err(|_| error("resource_unavailable", ""))?;
-            // #43/#92: the station clock of receive and transmit: the system clock plus
+            // The station clock of receive and transmit: the system clock plus
             // the correction from the air; SNTP only measures for warnings (no source
-            // setting; a clock.json left by #43 is ignored and left in place).
+            // setting; a clock.json in the station folder is ignored and left in place).
             let clock = clock_http::Clock::new(clock);
             let _ = recording.clock.set(clock.clone());
             let transmit = transmit_http::Station::start(clock.station.clone())
@@ -481,7 +481,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .await;
                 }
             });
-            // #45 CL-045-02: resume the last started receive unless Monitor off at
+            // CL-045-02: resume the last started receive unless Monitor off at
             // startup; a band resume waits (bounded) for the CAT lifecycle above.
             let (device, cat) = {
                 let store = state.store.lock().unwrap();
@@ -566,7 +566,7 @@ fn router(state: App) -> Router {
         .route("/receive/stop", post(receive_http::stop).layer(axum::extract::DefaultBodyLimit::max(limits::CONTROL_BYTES)))
         .route("/receive/results", get(receive_http::results))
         .route("/receive/clock", get(receive_http::clock))
-        // #92: POST /clock no longer exists; any other method gets the unknown-route answer.
+        // There is no POST /clock; any other method gets the unknown-route answer.
         .route("/clock", get(clock_http::snapshot).fallback(|| async { StatusCode::NOT_FOUND }).layer(axum::extract::DefaultBodyLimit::max(limits::CONTROL_BYTES)))
         .route("/receive/startup", get(receive_http::startup).post(receive_http::startup_update).layer(axum::extract::DefaultBodyLimit::max(limits::CONTROL_BYTES)))
         .route("/receive/diagnostics", get(receive_http::diagnostics).post(receive_http::diagnostics_update).layer(axum::extract::DefaultBodyLimit::max(limits::CONTROL_BYTES)))
@@ -621,7 +621,7 @@ fn router(state: App) -> Router {
             response
         }))
         .layer(axum::middleware::from_fn(http_compression::encode))
-        // #80: outermost, so a response is counted as it leaves the router (after content coding).
+        // Outermost, so a response is counted as it leaves the router (after content coding).
         .layer(axum::middleware::from_fn(link_log::http))
         .with_state(state)
 }
@@ -634,7 +634,7 @@ fn startup_error(code: &str, path: &std::path::Path) -> String {
         .collect();
     format!("{code}: selected profile {path}")
 }
-// #33: the running station reports the commit its release build was made from, so a
+// The running station reports the commit its release build was made from, so a
 // post-install probe can ask the service itself instead of trusting the install receipt.
 fn source_commit(raw: Option<&'static str>) -> &'static str {
     match raw {
@@ -1105,12 +1105,12 @@ fn arm_detail(
     accepted: tokio::time::Instant,
     behind: bool,
 ) -> tokio::time::Instant {
-    // #54: a subscriber behind the station catches up at 170 ms per row (under 10 KiB/s).
+    // A subscriber behind the station catches up at 170 ms per row (under 10 KiB/s).
     let next = accepted + Duration::from_millis(if behind { 170 } else { 200 });
     tick.reset_at(next);
     next
 }
-/// #54: the next live Thin pacing anchor is the previous one plus the period, so 100 ms ticks do
+/// The next live Thin pacing anchor is the previous one plus the period, so 100 ms ticks do
 /// not drift against the 1 row/s source. A send more than half a period late restarts the grid
 /// at the send, so two sends are always at least half a period (1 s live) apart.
 fn next_thin_anchor(
@@ -1125,7 +1125,7 @@ fn next_thin_anchor(
         next
     }
 }
-/// #54: the oldest retained Detailed row after the one this socket sent last (rows of
+/// The oldest retained Detailed row after the one this socket sent last (rows of
 /// another job all count as new), and whether more rows wait behind it.
 fn detail_after(
     recent: &std::collections::VecDeque<Value>,
@@ -1207,7 +1207,7 @@ async fn connection(
     receive_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut receive_seen = Value::Null;
     let mut receive_sent = Value::Null;
-    // #57 CL-057-01: a Detailed peer is told of each new or grown decode view at once; Thin
+    // CL-057-01: a Detailed peer is told of each new or grown decode view at once; Thin
     // and Off keep the 2 s receive tick that their link budget is measured with.
     let mut publication = recording.as_ref().map(|r| r.publication.subscribe());
     // WstxQsoControl::QsoState / StationTickEvent pacing (optional writes).
@@ -1225,7 +1225,7 @@ async fn connection(
     let mut transmit_sent_at = Instant::now();
     // WstxAutoControl::AutoActivity: only after a change since boot (no event while unused).
     let mut automation_seen: Option<(u64, u64)> = Some((0, 0));
-    // #82 free_tx_slots.state: the build this Detailed or Thin peer holds (None: none, also
+    // free_tx_slots.state: the build this Detailed or Thin peer holds (None: none, also
     // while Off, so that a peer coming from Off gets the current value once).
     let mut free_tx_slots_seen: Option<u64> = None;
     // WstxStrategies::StrategiesState strategy.state: only after a change since this peer
@@ -1233,10 +1233,10 @@ async fn connection(
     let mut strategy_seen: Option<u64> = None;
     // WstxRankingControl::Alert alert.state: only after a change since this peer subscribed.
     let mut alert_seen: Option<u64> = None;
-    // #44 CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
+    // CL-044-11 radio.agc: the managed AGC and its last read-back, once known, then
     // after each change (the first event is this peer's snapshot).
     let mut agc_seen: u64 = 0;
-    // #39 WstxHearingFeed::HearingFeed pskr.state: after a change since this peer subscribed
+    // WstxHearingFeed::HearingFeed pskr.state: after a change since this peer subscribed
     // (the first event follows its GET /pskr snapshot).
     let mut pskr_seen: u64 = 0;
     // WstxTransmitControl::TxLevelStatus radio.tx_level: after each change of the level,
@@ -1249,7 +1249,7 @@ async fn connection(
     recording_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut recording_seen: Option<(Value, Value, Instant)> = None;
     let mut profile_seen: Option<u64> = None;
-    // #92 CL-043-01 clock.state: every profile, once after subscribing, then at each change of
+    // CL-043-01 clock.state: every profile, once after subscribing, then at each change of
     // clock_revision, at most one per second per peer and within 1 s (250 ms ticks).
     let mut clock_tick = interval(Duration::from_millis(250));
     clock_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1348,7 +1348,7 @@ async fn connection(
                     }
                 }
                 if display_profile!="off" && let Some((build,text,null))=r.contact.get().and_then(|c|c.automation.free_tx_slots_event(r,free_tx_slots_seen)) {
-                    // #82: a null goes only to a peer that holds a value (once when it becomes null).
+                    // A null goes only to a peer that holds a value (once when it becomes null).
                     if null && free_tx_slots_seen.is_none() { free_tx_slots_seen=Some(build); }
                     else { match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
@@ -1538,7 +1538,7 @@ async fn connection(
     let _ = reason;
 }
 /// Why and when each socket of this test process ended (TC-021-008 reads the close reason; the
-/// two-browser selection workload prints the records as failure evidence, #102).
+/// two-browser selection workload prints the records as failure evidence).
 #[cfg(test)]
 pub(crate) static SOCKET_CLOSES: Mutex<Vec<Value>> = Mutex::new(Vec::new());
 /// Each clock.state write of this test process: the socket's number, the instant on the

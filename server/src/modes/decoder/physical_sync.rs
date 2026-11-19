@@ -25,7 +25,7 @@ fn better(candidate: Candidate, best: Option<Candidate>) -> bool {
         })
 }
 /// Costas reference phasors for one carrier offset. They depend only on the offset, so one
-/// table serves every time lag of that offset; values are computed exactly as before.
+/// table serves every time lag of that offset; its values equal those computed per lag.
 struct SyncTable {
     delta: f64,
     sync: Vec<(usize, u8)>,
@@ -131,7 +131,7 @@ async fn ft8(
     }
     Ok(best)
 }
-/// The data point retry (#56 slice 4): baseband steps (5 ms) either side of the fine start and
+/// The data point retry: baseband steps (5 ms) either side of the fine start and
 /// carrier tweaks around the fine carrier.
 const DATA_POINT_STEPS: isize = 2;
 const DATA_POINT_TWEAKS_HZ: [f64; 3] = [-0.5, 0., 0.5];

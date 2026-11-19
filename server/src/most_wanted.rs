@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
-//! WstxMostWanted::MostWantedListRule (#39): the Club Log Most Wanted list (rank -> ADIF DXCC
+//! WstxMostWanted::MostWantedListRule: the Club Log Most Wanted list (rank -> ADIF DXCC
 //! number), its validation and the table from cty.dat entity names to ADIF numbers.
-//! No automatic refresh and no bundled copy (operator decision, D12).
+//! No automatic refresh and no bundled copy.
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::OnceLock;

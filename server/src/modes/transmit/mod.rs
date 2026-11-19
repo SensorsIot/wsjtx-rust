@@ -1,8 +1,8 @@
 #![deny(unsafe_code)]
 //! Pure FT8/FT4 transmit preparation: message packing, channel symbols, waveform and
-//! period scheduling; `service` is the slice B transmit owner (arming, PTT, audio, halt),
+//! period scheduling; `service` is the transmit owner (arming, PTT, audio, halt),
 //! `clock` the station's SNTP clock measurement (TransmitClock) and `air` the clock from
-//! the air, the reference of the station clock (#43, #92).
+//! the air, the reference of the station clock.
 #[path = "../../transmit/air.rs"]
 pub mod air;
 #[path = "../../transmit/clock.rs"]
@@ -14,7 +14,7 @@ mod schedule;
 #[path = "../../transmit/service.rs"]
 pub mod service;
 mod waveform;
-// #92: the one Windows Time service query (Win32 FFI), read-only.
+// The one Windows Time service query (Win32 FFI), read-only.
 #[cfg(windows)]
 #[allow(unsafe_code)]
 #[path = "../../transmit/windows_time.rs"]

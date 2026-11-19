@@ -113,7 +113,7 @@ impl Ft8Snr {
 }
 /// A frame's decoded-tone symbol power in the early period buffer (xsig) and the baseline
 /// bin of its lowest tone. It depends only on the residual and the frame, so the
-/// verifications measure it in parallel (#57 CL-057-02).
+/// verifications measure it in parallel (CL-057-02).
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Signal {
     period: isize,

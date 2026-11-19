@@ -1,4 +1,4 @@
-//! #44 automatic radio detection and IC-7300 setup (CL-044-01..05): the station side.
+//! Automatic radio detection and IC-7300 setup (CL-044-01..05): the station side.
 //! Detection is read-only; "Apply recommended radio settings" and its undo are separate
 //! operator actions through the station's single CAT owner.
 use crate::*;

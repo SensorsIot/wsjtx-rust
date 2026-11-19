@@ -63,7 +63,7 @@ pub(crate) struct Target {
     pub messages: u8,
 }
 /// multicast_interface: an IPv4 address for an IPv4 target, an interface index for an
-/// IPv6 target (WstxUdp D6).
+/// IPv6 target (WstxUdp).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Interface {
     V4(Ipv4Addr),
@@ -168,7 +168,7 @@ fn target(v: &Value, i: usize) -> Result<Target, String> {
         .filter(|t| (1..=255).contains(t))
         .ok_or_else(|| f("multicast_ttl"))? as u32;
     // An IPv6 group names an interface index; every other address keeps the IPv4 form
-    // (a unicast target ignores it), so a saved udp.json of #40 still loads.
+    // (a unicast target ignores it), so a saved udp.json in that form loads.
     let interface = match (&v["multicast_interface"], address.ip()) {
         (Value::Null, _) => None,
         (Value::String(s), IpAddr::V6(ip)) if ip.is_multicast() => Some(Interface::Index(
@@ -405,7 +405,7 @@ fn wall_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
 }
-/// The station's UTC (the #9 owner's clock when present).
+/// The station's UTC (the transmit owner's clock when present).
 fn now_ms(r: &recording::Recording) -> i64 {
     r.transmit
         .get()
@@ -473,7 +473,7 @@ fn send(rt: &mut Runtime, to: SocketAddr, bytes: &[u8], now: i64) {
     }
 }
 
-/// Decoder text in the WSJT-X form (WstxUdp D4): "R -09" becomes "R-09".
+/// Decoder text in the WSJT-X form (WstxUdp): "R -09" becomes "R-09".
 pub(crate) fn wsjtx_text(record: &Value) -> Option<String> {
     let text = record["text"].as_str()?;
     let f = &record["fields"];
@@ -683,8 +683,8 @@ impl Owner {
                 let loaded = serde_json::from_slice::<Value>(&bytes)
                     .ok()
                     .and_then(|mut v| {
-                        // A file saved while the name was a setting names instance_name: it
-                        // keeps loading, and the next save drops the key.
+                        // A file that names instance_name loads, and the next save drops the
+                        // key.
                         if let Some(o) = v.as_object_mut() {
                             o.remove("instance_name");
                         }
@@ -692,8 +692,8 @@ impl Owner {
                             && v["schema_version"] == 1
                             && v["profile_id"] == state.recording.profile.as_str()
                             && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
-                        // A file saved before send-only names accept_commands on each target: it
-                        // keeps loading, and the next save drops the key.
+                        // A file that names accept_commands on its targets loads, and the next save
+                        // drops the key.
                         let mut targets = v["targets"].clone();
                         for t in targets.as_array_mut().into_iter().flatten() {
                             if let Some(t) = t.as_object_mut() {
@@ -882,7 +882,7 @@ impl Owner {
         let id = named.as_deref().unwrap_or("");
         let version = env!("CARGO_PKG_VERSION");
         // The pulse (MessageClient heartbeat_timer_, NetworkMessage::pulse 15 s): Heartbeat,
-        // and the Status resent unchanged so a tool started later learns the state (#40).
+        // and the Status resent unchanged so a tool started later learns the state.
         for (t, rt) in config.targets.iter().zip(inner.runtimes.iter_mut()) {
             if rt.socket.is_some() && rt.pulse_at.is_none_or(|at| at.elapsed() >= HEARTBEAT) {
                 rt.pulse_at = Some(Instant::now());

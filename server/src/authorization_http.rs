@@ -17,9 +17,9 @@ pub(crate) struct Service {
     pub(crate) authority: Authority,
     bootstraps: Vec<Bootstrap>,
     attempts: AttemptBudget,
-    /// Refused MCP client tokens (#58): 10 per 60 s, then 429; valid tokens never wait.
+    /// Refused MCP client tokens: 10 per 60 s, then 429; valid tokens never wait.
     mcp_failures: AttemptBudget,
-    /// The most recent MCP token uses (#58 audit), newest last; the file keeps them all.
+    /// The most recent MCP token uses (the audit), newest last; the file keeps them all.
     mcp_audit: std::collections::VecDeque<Value>,
 }
 /// Recent MCP token uses shown in Settings.
@@ -149,7 +149,7 @@ pub(crate) fn cat_tick(state: &ProfileState, now: Instant) {
                 .is_some()
         }));
     }
-    // #44 CL-044-10 the saved AGC, applied once per ready connection.
+    // CL-044-10 the saved AGC, applied once per ready connection.
     let agc = store.document.radio.map(|r| r.agc);
     crate::radio_agc::tick(&state.recording, agc, now);
     crate::radio_level::tick(&state.recording, store.document.radio, now);
@@ -179,7 +179,7 @@ fn cookie(headers: &HeaderMap, name: &str) -> Result<String, Error> {
     found.ok_or(Error::Unauthorized)
 }
 /// The grant transport handle of a selected HTTPS profile request (cookie), for an owner
-/// that must outlive the request no longer than that transport (WstxMcp D7).
+/// that may outlive the request only as long as that transport (WstxMcp).
 pub(crate) fn transport_token(headers: &HeaderMap, app: &App) -> Option<String> {
     cookie(headers, &cookie_name(app)).ok()
 }
@@ -225,11 +225,11 @@ pub(crate) fn configuration_access(
         Err(Error::Unauthorized)
     }
 }
-/// Why POST /mcp refused a bearer (#58).
+/// Why POST /mcp refused a bearer.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum McpRefusal {
-    /// Not an MCP client token (the station access token or a browser grant transport,
-    /// as configured before #58): refused with the hint to create an MCP client token.
+    /// Not an MCP client token (the station access token or a browser grant transport):
+    /// refused with the hint to create an MCP client token.
     NotMcpToken,
     /// An unknown or revoked MCP client token.
     Unknown,
@@ -553,7 +553,7 @@ handler!(mcp_create, McpCreate);
 handler!(mcp_revoke, McpRevoke);
 
 /// The caller's current browser grant access. An MCP-principal transport is never one:
-/// the auth-v1 operations and MCP client management belong to the browser (#58).
+/// the auth-v1 operations and MCP client management belong to the browser.
 fn browser_access(
     service: &Service,
     headers: &HeaderMap,

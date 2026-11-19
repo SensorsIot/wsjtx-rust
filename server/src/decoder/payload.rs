@@ -272,7 +272,7 @@ fn decode(b: &Bits<'_>, i3: u8, n3: u8, table: Option<&HashTable>) -> Option<(St
             let first = c28(g(0, 28), table)?;
             let second = c28(g(28, 28), table)?;
             let h10 = g(56, 10);
-            // unpack77 n3=1 nrx=1 (hashdx10, #24 S4a): the current DX call's 10-bit hash
+            // unpack77 n3=1 nrx=1 (hashdx10): the current DX call's 10-bit hash
             // shows the DX call before the calls10 entry of that hash.
             let dx = table
                 .and_then(|t| t.dx_call())

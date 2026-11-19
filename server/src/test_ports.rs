@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Ports the Rust tests hand to the node tests they start (#8): never one that Chromium
+//! Ports the Rust tests hand to the node tests they start: never one that Chromium
 //! refuses (ERR_UNSAFE_PORT) or Node's fetch refuses ("bad port"). The one list is
 //! tests/blocked-ports.json, which tests/support.cjs reads as well.
 use std::sync::OnceLock;

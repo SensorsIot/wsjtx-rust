@@ -98,7 +98,7 @@ fn vary_tokens(headers: &HeaderMap, token: &[u8]) -> bool {
 }
 
 fn snapshot_failure(original: &Response) -> Response {
-    // Existing bounded 503 mapping, not a new error code or stream-buffering policy.
+    // The bounded 503 mapping, with no error code or stream-buffering policy of its own.
     let mut failure = crate::selection_http::error("snapshot_limit");
     for (name, value) in original.headers() {
         if name != header::CONTENT_LENGTH && name != header::CONTENT_TYPE && name != header::ETAG {

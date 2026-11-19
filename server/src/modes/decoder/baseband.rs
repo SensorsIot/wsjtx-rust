@@ -109,7 +109,7 @@ pub(super) struct BandWindow {
 }
 pub(super) struct PassBand<'a> {
     pub plan: &'a BandPlan,
-    /// Immutable after the forward transform; forks of this pass share it (#57).
+    /// Immutable after the forward transform; forks of this pass share it.
     spectrum: Arc<Vec<Complex64>>,
     scratch: Vec<Complex64>,
     pub frames: usize,
