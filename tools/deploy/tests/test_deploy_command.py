@@ -5,7 +5,8 @@ station-update.ps1, whose exit it returns.
 Each case runs in a temporary git repository with a local bare origin, its own logs and
 packages folders, a stub station-update.ps1 committed there (it records its path, its
 arguments and the SHA-256 of its own bytes and exits with STUB_EXIT) and a fake cargo and
-rustc first on PATH. The command is the repository's make_package.py, committed in the
+rustc first on PATH (the fake cargo writes FAKE_CARGO_LINES numbered lines to stderr and
+exits with FAKE_CARGO_EXIT, both 0 unless a test sets them). The command is the repository's make_package.py, committed in the
 temporary repository with REPO and BUILD_ROOT pointing inside the temporary folder.
 """
 import hashlib
@@ -46,6 +47,9 @@ release = os.path.join(os.environ["CARGO_TARGET_DIR"], "release")
 os.makedirs(release, exist_ok=True)
 with open(os.path.join(release, "wstx-rust.exe"), "wb") as f:
     f.write(b"fake station executable")
+for n in range(1, int(os.environ.get("FAKE_CARGO_LINES", "0")) + 1):
+    print(f"cargo-{n:02d}", file=sys.stderr)
+sys.exit(int(os.environ.get("FAKE_CARGO_EXIT", "0")))
 """
 FAKE_RUSTC = 'print("rustc 0.0.0 (fake)")\n'
 
@@ -178,18 +182,59 @@ class DeployCommandTests(unittest.TestCase):
         commit = commit or self.commit
         return self.log(f"20261119T080000Z-{commit[:12]}.log", green_log(commit[:9]))
 
-    def plant_package(self, source_commit=None, manifest=True):
+    def plant_package(self, source_commit=None, manifest=True, out=None):
         """A package folder: the committed stub as its station-update.ps1 and a manifest."""
-        station_drill.write(os.path.join(self.out, "deploy", *SCRIPT.split("/")), self.blob(SCRIPT))
+        out = out or self.out
+        station_drill.write(os.path.join(out, "deploy", *SCRIPT.split("/")), self.blob(SCRIPT))
         if manifest:
-            station_drill.write_json(os.path.join(self.out, "manifest.json"),
+            station_drill.write_json(os.path.join(out, "manifest.json"),
                                      {"source_commit": source_commit or self.commit})
+
+    def plant_neighbours(self):
+        """A complete package of the parent commit and a build folder of its version; returns
+        their snapshots."""
+        pver = self.parent[:9]
+        self.neighbours = [os.path.join(self.packages, pver), os.path.join(self.build_root, pver)]
+        self.plant_package(self.parent, out=self.neighbours[0])
+        station_drill.write(os.path.join(self.neighbours[1], "src", "kept.txt"), "neighbour\n")
+        return [snapshot(p) for p in self.neighbours]
+
+    def assert_neighbours(self, before):
+        self.assertEqual([snapshot(p) for p in self.neighbours], before)
+
+    def reset(self):
+        """No package folder of the commit, no stub record, no cargo record."""
+        shutil.rmtree(self.out, ignore_errors=True)
+        for path in (self.record, self.cargo_record):
+            if os.path.exists(path):
+                os.remove(path)
+
+    def build_dir(self, ver=None):
+        return os.path.join(self.build_root, ver or self.ver)
 
     def run_command(self, *args, env=None):
         """The command as the one line runs it: the commit's make_package.py on python's stdin."""
         proc = subprocess.run([sys.executable, "-", *args], input=self.source, capture_output=True,
                               cwd=self.tmp.name, env=dict(self.env, **(env or {})), timeout=300)
         return proc.returncode, (proc.stdout + proc.stderr).decode("utf-8", "replace")
+
+    def run_merged(self, *args, env=None):
+        """The command as Alex's run_bound runs it: stdout and stderr into one file, read as one stream."""
+        with tempfile.TemporaryFile() as f:
+            proc = subprocess.run([sys.executable, "-", *args], input=self.source, stdout=f, stderr=subprocess.STDOUT,
+                                  cwd=self.tmp.name, env=dict(self.env, **(env or {})), timeout=300)
+            f.seek(0)
+            return proc.returncode, f.read().decode("utf-8", "replace")
+
+    def assert_built(self, rc, out):
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"package {self.ver}: built", out)
+        with open(self.manifest_path(), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["source_commit"], self.commit)
+        self.assertIsNotNone(self.stub_record(), out)
+
+    def assert_removed(self, out, path):
+        self.assertIn(f"removed the leftover {os.path.normpath(path)}".lower(), out.lower())
 
     def run_line(self, commit, *args):
         """The one line in Git Bash, with set -o pipefail."""
@@ -389,20 +434,167 @@ class DeployCommandTests(unittest.TestCase):
         self.assertIsNone(self.stub_record(), out)
 
     # Proves: TC-245-12
-    def test_a_folder_without_the_commits_package_is_refused_unchanged(self):
+    def test_a_package_of_another_commit_is_refused_unchanged(self):
         self.qualifying_log()
-        for name, manifest in (("no manifest", False), ("another commit's manifest", True)):
+        neighbours = self.plant_neighbours()
+        self.plant_package(source_commit=self.parent)
+        station_drill.write(os.path.join(self.out, "build.log"), "an earlier build\n")
+        station_drill.write(os.path.join(self.build_dir(), "src", "main.rs"), "stopped\n")
+        before = snapshot(self.out)
+        rc, out = self.run_command(self.commit, "--dry-run")
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"refused: {os.path.normpath(self.out)} exists and holds no package of {self.commit}"
+                      .lower(), out.lower())
+        self.assertEqual(snapshot(self.out), before)
+        self.assert_removed(out, self.build_dir())
+        self.assertFalse(os.path.exists(self.build_dir()), out)
+        self.assertFalse(os.path.exists(self.cargo_record), out)
+        self.assertIsNone(self.stub_record(), out)
+        self.assert_neighbours(neighbours)
+
+    # Proves: TC-246-01
+    def test_a_package_folder_holding_only_a_build_log_is_removed_and_built(self):
+        self.qualifying_log()
+        neighbours = self.plant_neighbours()
+        station_drill.write(os.path.join(self.out, "build.log"), "an earlier failed build\n")
+        rc, out = self.run_command(self.commit, "--dry-run")
+        self.assert_removed(out, self.out)
+        self.assert_built(rc, out)
+        with open(os.path.join(self.out, "build.log"), encoding="utf-8") as f:
+            self.assertNotIn("an earlier failed build", f.read())
+        self.assert_neighbours(neighbours)
+
+    # Proves: TC-246-02
+    def test_a_partial_package_folder_without_a_manifest_is_removed_and_built(self):
+        self.qualifying_log()
+        neighbours = self.plant_neighbours()
+        for name, extra in (("build.log, package and deploy", False), ("with gates.json and the gate receipt", True)):
             with self.subTest(name):
-                shutil.rmtree(self.out, ignore_errors=True)
-                self.plant_package(source_commit=self.parent, manifest=manifest)
+                self.reset()
+                self.plant_package(manifest=False)
                 station_drill.write(os.path.join(self.out, "build.log"), "an earlier build\n")
-                before = snapshot(self.out)
+                station_drill.write(os.path.join(self.out, "package", "wstx-rust.exe"), b"partial image")
+                if extra:
+                    station_drill.write_json(os.path.join(self.out, "gates.json"), {"source_commit": self.commit})
+                    station_drill.write(os.path.join(self.out, f"gate-receipt-{self.ver}.log"), "receipt\n")
                 rc, out = self.run_command(self.commit, "--dry-run")
+                self.assert_removed(out, self.out)
+                self.assert_built(rc, out)
+                self.assert_neighbours(neighbours)
+
+    # Proves: TC-246-03
+    def test_a_manifest_that_names_no_commit_is_removed_and_built(self):
+        self.qualifying_log()
+        neighbours = self.plant_neighbours()
+        rc, out = self.run_command(self.commit, "--dry-run")
+        self.assertEqual(rc, 0, out)
+        with open(self.manifest_path(), encoding="utf-8") as f:
+            real = f.read()
+        for name, text in (("a manifest cut mid-write", real[:len(real) // 2]), ("{}", "{}"), ("[]", "[]"),
+                           ("a null source_commit", '{"source_commit": null}')):
+            with self.subTest(name):
+                self.reset()
+                self.plant_package(manifest=False)
+                station_drill.write(os.path.join(self.out, "manifest.json"), text)
+                rc, out = self.run_command(self.commit, "--dry-run")
+                self.assert_removed(out, self.out)
+                self.assert_built(rc, out)
+                self.assert_neighbours(neighbours)
+
+    # Proves: TC-246-04
+    def test_a_leftover_build_folder_is_removed_before_the_build(self):
+        self.qualifying_log()
+        neighbours = self.plant_neighbours()
+        station_drill.write(os.path.join(self.build_dir(), "src", "Cargo.toml"), "[workspace]\n")
+        station_drill.write(os.path.join(self.build_dir(), "src.tar"), b"half an archive")
+        os.makedirs(os.path.join(self.build_dir(), "target", "release"))
+        rc, out = self.run_command(self.commit, "--dry-run")
+        self.assert_removed(out, self.build_dir())
+        self.assert_built(rc, out)
+        self.assertFalse(os.path.exists(self.build_dir()), out)
+        self.assertNotIn("Traceback", out)
+        self.assert_neighbours(neighbours)
+
+    # Proves: TC-246-05
+    def test_a_leftover_build_folder_beside_the_commits_package_is_removed_and_the_package_reused(self):
+        self.qualifying_log()
+        neighbours = self.plant_neighbours()
+        self.plant_package()
+        station_drill.write(os.path.join(self.build_dir(), "target", "release", "wstx-rust.exe"), b"built image")
+        before = snapshot(self.out)
+        rc, out = self.run_command(self.commit, "--dry-run")
+        self.assertEqual(rc, 0, out)
+        self.assertIn(f"package {self.ver}: reused", out)
+        self.assertFalse(os.path.exists(self.cargo_record), out)
+        self.assertFalse(os.path.exists(self.build_dir()), out)
+        self.assertEqual(snapshot(self.out), before)
+        self.assert_neighbours(neighbours)
+
+    # Proves: TC-246-06
+    def test_a_failed_build_prints_its_last_lines_and_leaves_nothing_behind(self):
+        self.qualifying_log()
+        neighbours = self.plant_neighbours()
+        failure = "release build failed (cargo exit 101)"
+        for lines, expected in ((11, [f"cargo-{n:02d}" for n in range(2, 12)]), (3, ["cargo-01", "cargo-02", "cargo-03"])):
+            with self.subTest(lines=lines):
+                self.reset()
+                rc, out = self.run_merged(self.commit, "--dry-run",
+                                          env={"FAKE_CARGO_EXIT": "101", "FAKE_CARGO_LINES": str(lines)})
                 self.assertEqual(rc, 1, out)
-                self.assertIn(f"refused: {os.path.normpath(self.out)} exists and holds no package of {self.commit}"
-                              .lower(), out.lower())
-                self.assertEqual(snapshot(self.out), before)
+                self.assertEqual(out.strip().splitlines()[-len(expected) - 1:], expected + [failure], out)
+                if lines == 11:
+                    self.assertNotIn("cargo-01", out)
+                self.assertFalse(os.path.exists(self.out), out)
+                self.assertFalse(os.path.exists(self.build_dir()), out)
                 self.assertIsNone(self.stub_record(), out)
+                self.assert_neighbours(neighbours)
+        self.reset()
+        rc, out = self.run_merged(self.commit, "--dry-run")
+        self.assert_built(rc, out)
+        self.assert_neighbours(neighbours)
+
+    # Proves: TC-246-07
+    def test_a_failure_after_the_copy_started_leaves_nothing_behind(self):
+        neighbours = self.plant_neighbours()
+        for path, message in (("server/third-party", "server/third-party is missing or empty in the commit"),
+                              ("tools/deploy/station-probe.ps1",
+                               "the commit has no tools/deploy/station-probe.ps1")):
+            with self.subTest(path):
+                self.git("checkout", "-q", self.commit)
+                self.git("rm", "-q", "-r", path)
+                self.git("commit", "-q", "-m", f"without {path}")
+                commit = self.git("rev-parse", "HEAD")
+                self.git("push", "-q", "-f", "origin", "HEAD:master")
+                self.qualifying_log(commit)
+                ver = commit[:9]
+                rc, out = self.run_command(commit, "--dry-run")
+                self.assertEqual(rc, 1, out)
+                self.assertIn(message, out)
+                self.assertFalse(os.path.exists(os.path.join(self.packages, ver)), out)
+                self.assertFalse(os.path.exists(self.build_dir(ver)), out)
+                self.assertIsNone(self.stub_record(), out)
+                self.assert_neighbours(neighbours)
+
+    # Proves: TC-246-08
+    def test_a_leftover_that_cannot_be_removed_is_refused_before_any_build(self):
+        self.qualifying_log()
+        neighbours = self.plant_neighbours()
+        for name, folder, held in (("in the package folder", self.out, "build.log"),
+                                   ("in the build folder", self.build_dir(), os.path.join("src", "held.txt"))):
+            with self.subTest(name):
+                self.reset()
+                shutil.rmtree(self.build_dir(), ignore_errors=True)
+                station_drill.write(os.path.join(folder, held), "held open\n")
+                with open(os.path.join(folder, held), "rb"):
+                    rc, out = self.run_command(self.commit, "--dry-run")
+                self.assertEqual(rc, 1, out)
+                self.assertIn(f"refused: the leftover {os.path.normpath(folder)} cannot be removed: ".lower(),
+                              out.lower())
+                self.assertNotIn("Traceback", out)
+                self.assertFalse(os.path.exists(self.cargo_record), out)
+                self.assertIsNone(self.stub_record(), out)
+                self.assert_neighbours(neighbours)
+                shutil.rmtree(folder)
 
     # Proves: TC-245-14
     def test_an_unreachable_origin_is_refused(self):

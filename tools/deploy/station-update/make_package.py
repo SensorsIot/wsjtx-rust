@@ -7,10 +7,13 @@ The commit must be on GitHub master, and exactly one merge-queue log under
 <git common dir>/harness-parallel/queue/logs/ must show its green push gate; that log is the
 package's push-gate log. The package lives in
 <git common dir>/harness-parallel/resources/station-update/packages/<ver>/{package/, deploy/,
-manifest.json, gates.json, gate-receipt-<ver>.log}, never in a working tree. When that folder
-holds the commit's package it is reused; when it is absent, the commit is exported with
-`git archive` into a clean directory on C: and built there with
-`cargo build --release --locked -p wstx-rust`. COPYING and every file under
+manifest.json, gates.json, gate-receipt-<ver>.log}, never in a working tree. A leftover
+build folder <BUILD_ROOT>/<ver> of a stopped run is removed first. When the package folder
+holds the commit's package it is reused; when its manifest names another commit it is
+refused; when it holds no package of any commit (a failed or stopped attempt) it is removed.
+When it is absent, the commit is exported with `git archive` into a clean directory on C: and
+built there with `cargo build --release --locked -p wstx-rust`; a build that fails removes
+both folders and prints the last lines of cargo's output. COPYING and every file under
 server/third-party are copied from the exported commit into package/. The deploy mechanism
 files (every file under tools/deploy/station-update/ and MECHANISM_FILES) are copied from the
 export into deploy/<their path>; the manifest lists their SHA-256. Then the package's own
@@ -105,13 +108,25 @@ def copy_mechanism(src, out):
     return files
 
 
-def holds_package(out, commit):
-    """Whether the folder holds a package of the commit: a manifest that names it."""
+def manifest_commit(out):
+    """The commit the folder's manifest names, or None when the folder holds no package of any
+    commit: no manifest.json, or one that is not a JSON object with a string source_commit."""
     try:
         with open(os.path.join(out, "manifest.json"), encoding="utf-8") as f:
-            return json.load(f).get("source_commit") == commit
-    except (OSError, ValueError, AttributeError):
-        return False
+            manifest = json.load(f)
+    except (OSError, ValueError):
+        return None
+    named = manifest.get("source_commit") if isinstance(manifest, dict) else None
+    return named if isinstance(named, str) else None
+
+
+def remove_leftover(path):
+    """Remove what a failed or stopped run left at path, or refuse when it cannot be removed."""
+    try:
+        shutil.rmtree(path)
+    except OSError as e:
+        sys.exit(f"refused: the leftover {path} cannot be removed: {e}")
+    print(f"removed the leftover {path}", flush=True)
 
 
 def build(commit, ver, out, gate_log):
@@ -122,12 +137,19 @@ def build(commit, ver, out, gate_log):
     # The station reports this commit itself (x-wstx-source-commit on GET /, #33).
     env = dict(os.environ, CARGO_TARGET_DIR=target, CARGO_BUILD_JOBS="2", WSTX_SOURCE_COMMIT=commit)
     result = subprocess.run(["cargo", "build", "--release", "--locked", "-p", "wstx-rust"], cwd=src, env=env,
-                            capture_output=True, text=True)
+                            capture_output=True, encoding="utf-8", errors="replace")
+    log = result.stdout + result.stderr
+    if result.returncode != 0:
+        # The run's own output is the failure's evidence: the last 10 lines of cargo, then the
+        # failure line last, all on stdout (#246 F3).
+        sys.stdout.reconfigure(errors="replace")
+        for line in log.splitlines()[-10:]:
+            print(line)
+        print(f"release build failed (cargo exit {result.returncode})", flush=True)
+        sys.exit(1)
     os.makedirs(out)
     with open(os.path.join(out, "build.log"), "w", encoding="utf-8") as f:
-        f.write(result.stdout + result.stderr)
-    if result.returncode != 0:
-        sys.exit(f"release build failed, see {out}\\build.log")
+        f.write(log)
     exe = os.path.join(target, "release", "wstx-rust.exe")
 
     package = os.path.join(out, "package")
@@ -198,10 +220,21 @@ def main(argv):
     print(f"push-gate log: {logs[0]}", flush=True)
 
     out = os.path.normpath(os.path.join(packages_root(REPO), ver))
+    build_dir = os.path.join(BUILD_ROOT, ver)
+    if os.path.exists(build_dir):
+        remove_leftover(build_dir)
+    if os.path.exists(out) and manifest_commit(out) is None:
+        remove_leftover(out)
     if not os.path.exists(out):
-        build(commit, ver, out, logs[0])
+        try:
+            build(commit, ver, out, logs[0])
+        except BaseException:
+            # A build that ends without its manifest leaves neither folder behind (#246 F3).
+            shutil.rmtree(out, ignore_errors=True)
+            shutil.rmtree(build_dir, ignore_errors=True)
+            raise
         print(f"package {ver}: built {out}", flush=True)
-    elif holds_package(out, commit):
+    elif manifest_commit(out) == commit:
         print(f"package {ver}: reused {out}", flush=True)
     else:
         sys.exit(f"refused: {out} exists and holds no package of {commit}")
