@@ -120,8 +120,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 
 @container (max-width:75em){#controls .operating-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#band-activity{grid-column:1/-1}}
 @container (max-width:48em){#controls .operating-grid{grid-template-columns:minmax(0,1fr)}#band-activity{grid-column:auto}}
-/* #37 (live finding 2026-11-04: ~325 px cards, one decode on screen at 360 px): a narrow Band
-   Activity shows compact rows without field labels: UTC, dB, DT, Freq and the distance on the
+/* A narrow Band Activity shows compact rows without field labels: UTC, dB, DT, Freq and the distance on the
    first line, the message and the country after it, wrapping at whole fields (the text keeps
    its readable size and is never cut off). */
 @container (max-width:44em){
@@ -160,7 +159,7 @@ body[data-profile=true] main.op-app{width:100%;max-width:none;margin:0;padding:0
 .ct-marker{position:absolute;top:0;bottom:0;width:0;margin-left:-1.5px;border-left:3px solid;pointer-events:none;z-index:1;box-shadow:0 0 0 1px rgba(0,0,0,.55)}
 .ct-rx{border-color:#30d050;color:#30d050}
 .ct-txm{border-color:#ff4040;color:#ff6060}
-/* #65/#76/#82 FreeTxSlotMarks: the station's open slots in the frequency ruler (contact.js), 8 px pale
+/* FreeTxSlotMarks: the station's open slots in the frequency ruler (contact.js), 8 px pale
    green bars without text, set apart from the Rx green, the Tx red and the ruler in every theme
    (Day and Night remap them with the page); no pointer input; inside the ruler, the waterfall stays. */
 #free-tx-slots{position:absolute;inset:0;overflow:hidden;pointer-events:none}
@@ -202,7 +201,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #strip-swr{margin-left:10px;font-family:var(--op-mono);white-space:nowrap}
 #strip-swr.op-swr-high{color:var(--op-error)}
 .ct-marker{pointer-events:auto;cursor:ew-resize;touch-action:none}
-/* #50 CL-050-07: WSJT-X bracket from the line (lowest tone) over the occupied width; contact.js sets its width. */
+/* CL-050-07: WSJT-X bracket from the line (lowest tone) over the occupied width; contact.js sets its width. */
 .ct-goal{position:absolute;top:0;left:-1.5px;height:8px;box-sizing:border-box;border:2px solid;border-color:inherit;border-bottom:0;pointer-events:none}
 .ct-marker.ct-dragging{opacity:.75}
 #operating-workspace{min-height:0;height:100%;container-type:inline-size}
@@ -229,9 +228,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 .op-qso-head h3{margin:0;font-size:var(--op-font-secondary);color:#7e9bad;letter-spacing:.08em;text-transform:uppercase}
 #rx-focus .op-contact-identity strong{display:block;font:600 1.25rem/1.3 var(--op-mono);color:#e7f3f8;overflow-wrap:anywhere}
 #rx-focus .op-contact-identity div>span{font-size:var(--op-font-secondary);color:#8ba4b6;overflow-wrap:anywhere}
-/* #37 compact QSO pane: its content is about half the earlier pane. Side by side the card
-   fills its column (item 8 default: no empty band under it); stacked it is content high. */
-/* #37 item 8 revised (#60, operator 2026-11-03): the pane is content high at the top of its
+/* Compact QSO pane: the pane is content high at the top of its
    column; the height below it stays free for future panels. */
 #rx-focus{align-self:start;max-height:100%}
 #rx-focus .op-contact-body{display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px;min-height:0;flex:0 1 auto;overflow:auto}
@@ -244,7 +241,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 #rx-focus .ct-qso-table td:is(:first-child,:nth-child(2)){white-space:nowrap}
 #rx-focus .ct-qso-table :is(th,td):nth-child(n+4){text-align:right;white-space:nowrap}
 #rx-focus .ct-others:empty{display:none}
-@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary);vertical-align:top}/* on the baseline of the font-size 0 strut it made the header 20 px */#rx-focus .ct-qso-table :is(th,td){padding:0 2px}#rx-focus .ct-qso-table td:nth-child(2){white-space:normal}}/* #60 Rep column: at phone width the two calls may wrap at their spaces */
+@media (max-width:30em){#rx-focus .ct-qso-table th[data-short]{font-size:0}#rx-focus .ct-qso-table th[data-short]::after{content:attr(data-short);font-size:var(--op-font-secondary);vertical-align:top}/* on the baseline of the font-size 0 strut it would make the header 20 px */#rx-focus .ct-qso-table :is(th,td){padding:0 2px}#rx-focus .ct-qso-table td:nth-child(2){white-space:normal}}/* Rep column: at phone width the two calls may wrap at their spaces */
 #rx-focus .ct-dialogue:not([hidden])+.ct-others tr:first-child td{border-top:1px solid #355065}
 #rx-focus .ct-others tr{cursor:pointer}
 #rx-focus .ct-others tr[data-kind=warn]{color:#f2c14e;background:rgba(242,193,78,.1)}
@@ -261,7 +258,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 .op-qso-buttons{display:flex;flex-wrap:wrap;gap:6px}
 .op-qso-buttons button{flex:1 1 4.2rem;padding:8px 6px;font-weight:600}
 .op-app .op-qso-buttons #qso-cq{background:#1d4a3c;border-color:#3f8a6e;color:#c9f2df}
-/* #39 AutoToggle, PskrUse: green while the station says on, grey while off. */
+/* AutoToggle, PskrUse: green while the station says on, grey while off. */
 .op-app .op-qso-buttons :is(#qso-auto,#qso-pskr){background:#26323a;border-color:#4a5a64;color:#aab8c0}
 .op-app .op-qso-buttons :is(#qso-auto,#qso-pskr)[aria-pressed=true]{background:#1f7a4d;border-color:#3fbf7f;color:#eafff3}
 .op-app .op-qso-buttons button:disabled{opacity:.45}
@@ -314,7 +311,7 @@ body[data-profile=true] main.op-app{height:100dvh;overflow:hidden}
 /* Themes (WstxBrowserClientPart::Theme): Dark is the base; Day and Night re-map it for this browser only. */
 html[data-theme=day] body{background:#f3f6f8}
 html[data-theme=day] main.op-app{filter:invert(.92) hue-rotate(180deg)}
-/* #61 CL-061-05: needs the id, or #signal canvas{filter:none} wins and the waterfall (black, Tx rows) turns pale under the page's inversion. */
+/* CL-061-05: needs the id, or #signal canvas{filter:none} wins and the waterfall (black, Tx rows) turns pale under the page's inversion. */
 html[data-theme=day] main.op-app #signal canvas{filter:invert(1) hue-rotate(180deg)}
 html[data-theme=night] body{background:#000}
 html[data-theme=night] main.op-app{filter:grayscale(1) sepia(1) saturate(6) hue-rotate(-50deg) brightness(.62)}
@@ -349,7 +346,7 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 #band-activity tr.ba-strategy td:first-child{box-shadow:inset 3px 0 var(--op-accent,#99e1c3)}#band-activity tr.ba-strategy td[data-col=message]{color:#c9f2df;font-weight:600}
 #band-activity td[data-ap]::after{content:' ' attr(data-ap);font-size:.75em;opacity:.7}
 #band-activity tr.ba-hidden{display:none}#band-activity tr.ba-contest-mult td[data-col=message]{color:#ffe08a}#band-activity tr.ba-dupe td{opacity:.45}#band-activity tr.ba-grey td{opacity:.45}#band-activity tr.ba-grey td[data-col=message]{text-decoration:line-through;text-decoration-thickness:1px}
-/* #50 CL-050-08 BandActivityScheme: the QSO partner's rows (on top, red stripe below), the sender-only
+/* CL-050-08 BandActivityScheme: the QSO partner's rows (on top, red stripe below), the sender-only
    mark of a station in QSO with another, and the compact one-line reason tip. */
 #band-activity tr.ba-partner td:first-child{box-shadow:inset 4px 0 #ff4040}
 #band-activity tr.ba-partner td[data-col=message]{font-weight:700}
@@ -365,12 +362,12 @@ body[data-profile=true] main:not(.op-app) #login{display:none!important}
 .se-options{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:end}.se-options input[type=number]{width:6rem}.se-preview-wrap{max-height:14rem;overflow:auto;border:1px solid #223848;border-radius:8px}.se-preview table{width:100%;border-collapse:collapse;font:var(--op-font-secondary)/1.4 var(--op-mono)}.se-preview td{padding:3px 8px;border-bottom:1px solid #203342;overflow-wrap:anywhere}.se-preview tr.ba-strategy td{background:rgba(153,225,195,.14)}.se-preview tr.ba-grey td{opacity:.5}
 @media(min-width:900px){.op-strategy-editor form{display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,22rem);align-items:start;column-gap:16px}.op-strategy-editor form>*{grid-column:1/-1}.op-strategy-editor #se-body{grid-column:1;grid-row:3}.op-strategy-editor .se-preview{grid-column:2;grid-row:3;position:sticky;top:0}.op-strategy-editor .se-preview-wrap{max-height:28rem}}
 .se-preview td:first-child{white-space:nowrap}
-/* #54: the spectrum line is a Settings option (off by default); its height goes to the waterfall. */
+/* The spectrum line is a Settings option (off by default); its height goes to the waterfall. */
 #signal #spectrum[hidden]{display:none}
 /* WstxBandActivityPane::Highlight: WSJT-X 3.3 DecodeHighlightingModel default colours as row
    backgrounds, tinted for the dark screen (Day inverts and Night tints the whole page). A row takes the
    highest-priority enabled slot it matches: the rules run lowest priority first, so a later one wins.
-   There is no CQ slot: only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X). */
+   There is no CQ slot: only interesting stations are coloured (unlike WSJT-X). */
 main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);--hl-new_call:rgba(0,255,255,.24);--hl-new_grid_band:rgba(255,204,153,.22);--hl-new_grid:rgba(255,128,0,.26);--hl-new_dxcc_band:rgba(255,170,255,.22);--hl-new_dxcc:rgba(255,0,255,.26);--hl-new_itu_zone_band:rgba(221,255,153,.22);--hl-new_itu_zone:rgba(166,255,0,.24);--hl-new_cq_zone_band:rgba(255,228,153,.22);--hl-new_cq_zone:rgba(255,191,0,.26);--hl-new_continent_band:rgba(255,153,194,.22);--hl-new_continent:rgba(255,0,99,.28);--hl-mycall:rgba(255,102,102,.32)}
 #band-activity[data-hl-on~=lotw] tr[data-hl~=lotw]:not(.ba-sender) td,#band-activity[data-hl-on~=lotw] tr.ba-sender[data-hl~=lotw] .ba-from{background:var(--hl-lotw)}
 #band-activity[data-hl-on~=new_call_band] tr[data-hl~=new_call_band]:not(.ba-sender) td,#band-activity[data-hl-on~=new_call_band] tr.ba-sender[data-hl~=new_call_band] .ba-from{background:var(--hl-new_call_band)}
@@ -401,7 +398,7 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
 #rx-focus[data-hl-on~=new_continent_band] .ct-others tr[data-hl~=new_continent_band] td{background:var(--hl-new_continent_band)}
 #rx-focus[data-hl-on~=new_continent] .ct-others tr[data-hl~=new_continent] td{background:var(--hl-new_continent)}
 .op-swatch{display:inline-block;width:1.4em;height:.9em;margin:0 .4em;border:1px solid #567;vertical-align:middle}.op-swatch[data-hl-swatch=lotw]{background:var(--hl-lotw)}.op-swatch[data-hl-swatch=new_call_band]{background:var(--hl-new_call_band)}.op-swatch[data-hl-swatch=new_call]{background:var(--hl-new_call)}.op-swatch[data-hl-swatch=new_grid_band]{background:var(--hl-new_grid_band)}.op-swatch[data-hl-swatch=new_grid]{background:var(--hl-new_grid)}.op-swatch[data-hl-swatch=new_dxcc_band]{background:var(--hl-new_dxcc_band)}.op-swatch[data-hl-swatch=new_dxcc]{background:var(--hl-new_dxcc)}.op-swatch[data-hl-swatch=new_itu_zone_band]{background:var(--hl-new_itu_zone_band)}.op-swatch[data-hl-swatch=new_itu_zone]{background:var(--hl-new_itu_zone)}.op-swatch[data-hl-swatch=new_cq_zone_band]{background:var(--hl-new_cq_zone_band)}.op-swatch[data-hl-swatch=new_cq_zone]{background:var(--hl-new_cq_zone)}.op-swatch[data-hl-swatch=new_continent_band]{background:var(--hl-new_continent_band)}.op-swatch[data-hl-swatch=new_continent]{background:var(--hl-new_continent)}.op-swatch[data-hl-swatch=mycall]{background:var(--hl-mycall)}
-/* #37 compact QSO pane: one header line, tight lines, one row of buttons. */
+/* Compact QSO pane: one header line, tight lines, one row of buttons. */
 #rx-focus .op-contact-identity>div{display:flex;flex-direction:row;flex-wrap:wrap;align-items:baseline;gap:0 10px}
 #rx-focus .op-contact-identity strong{display:inline}
 #rx-focus .op-contact-body{gap:3px;padding:6px 12px 8px}
@@ -409,9 +406,9 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
 #rx-focus .op-qso-buttons{gap:4px}
 #rx-focus .op-qso-buttons button{flex:1 1 auto;padding:4px 6px;white-space:nowrap}
 #controls #rx-focus>header.op-qso-head{min-height:0;padding:4px 12px}#rx-focus #qso-more{margin:0}#rx-focus #qso-more>summary{padding:2px 8px}#rx-focus #contact-result:empty{display:none}
-/* #42: the drawer's Station fieldset never grows wider than the drawer (a fieldset is min-content wide by default); the session ignore list. */
+/* The drawer's Station fieldset never grows wider than the drawer (a fieldset is min-content wide by default); the session ignore list. */
 .op-drawer .op-server-fieldset{min-width:0}.op-ignore-session{min-width:0}#ignore-session{margin:4px 0 0;padding-left:1.2em}
-/* #37 LowerPanel (operator 2026-11-03): one vertical column on the right at every width, the QSO
+/* LowerPanel: one vertical column on the right at every width, the QSO
    pane, the Control panel and the error field, each with the QSO card's left and right edges.
    The QSO pane gives up height first (its QSO area scrolls inside). */
 #qso-column{display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0;grid-row:1}
@@ -435,23 +432,21 @@ main.op-app{--hl-lotw:rgba(153,0,0,.35);--hl-new_call_band:rgba(153,255,255,.2);
 #error-field .op-error-none{margin:0;font-size:var(--op-font-secondary)}
 #error-field:has(.op-error-entry,#station-notice:not([hidden])) .op-error-none{display:none}
 @container (max-width:75em){#qso-column{grid-row:2}#rx-focus{grid-row:auto}}
-/* #37 (operator 2026-11-03): one HALT at a time. In the operating view the QSO pane HALT is it;
+/* One HALT at a time. In the operating view the QSO pane HALT is it;
    the top-bar HALT shows whenever the QSO pane HALT is not fully on screen (contact.js). */
 body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #halt-tx,body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #station-bar #abort-qso{display:none}
 #contact-messages .ct-now{padding:1px 8px;min-height:0}
 .se-goals{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0;border:1px solid #223848;border-radius:4px;padding:6px 10px}.se-goals legend{font-size:var(--op-font-secondary);color:#8ba4b6}
-/* #97 StrategyEditor: list entries, the leave modes and Tx moves wrap inside the popup at 360 px. */
+/* StrategyEditor: list entries, the leave modes and Tx moves wrap inside the popup at 360 px. */
 .se-list{display:flex;flex-direction:column;gap:4px;margin:6px 0;border:1px solid #223848;border-radius:4px;padding:6px 10px;min-width:0}.se-list legend{font-size:var(--op-font-secondary);color:#8ba4b6}
 .se-entry{display:flex;flex-wrap:wrap;gap:4px;align-items:center}.se-entry input{min-width:0;width:9rem;max-width:100%}
 .se-leave{display:flex;flex-direction:column;gap:4px}.op-strategy-editor .se-leave label.op-check{flex-wrap:wrap;gap:4px}.se-leave input[type=number],.se-move input[type=number],#se-retry{width:4.5rem}
 .se-refused{color:#ff8a80;font-size:var(--op-font-secondary)}.op-strategy-editor [role=status]{overflow-wrap:anywhere}.se-class{margin:0}.op-strategy-editor .se-value select{max-width:100%}
-/* #96 FullScreenToggle: icon only, the size and style of "?"; the SVG follows the text colour. */
+/* FullScreenToggle: icon only, the size and style of "?"; the SVG follows the text colour. */
 .op-app .op-header-actions button.op-fullscreen{display:inline-flex;align-items:center;justify-content:center;line-height:1}
 .op-app .op-header-actions button.op-fullscreen svg{width:16px;height:16px;display:block}
 .op-app .op-header-actions button.op-abort{background:#2e2a1c;border-color:#7a6a3a;color:#f0d79a;padding:8px 12px;font-weight:600}
-/* #37 QsoPane item 8 (operator 2026-11-04, "fixed in size that the things below it do not move
-   all the time up and down"; "make this section big enough to accommodate also longer QSOs"):
-   the pane height depends on the screen width and the text size only, never on its content.
+/* QsoPane: the pane height depends on the screen width and the text size only, never on its content.
    The header (partner line and badge; the partner's last message, the direct buttons and the
    Tx1-Tx6 fold-out) and the message lines (NEXT first) are fixed high and scroll inside; the QSO
    section holds the table header and 12 dialogue rows (6 at most 48em wide), Calling me its
@@ -460,7 +455,7 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
    split leaves room for it at 1366x768 (recording.js), helped by the tighter spacing of the
    strip, the workspace and the Control panel. Text wraps rather than being cut off. */
 #rx-focus{--ct-row:.9375rem;--ct-line:1.125rem;--ct-head:calc(var(--ct-line) + 1.9375rem);--ct-lines:calc(var(--ct-line) + .25rem);--ct-pskr:0px;position:relative;flex:none;gap:0}
-/* #39 PskrUse: while the two PSK Reporter lines are shown they take their room from the QSO section,
+/* PskrUse: while the two PSK Reporter lines are shown they take their room from the QSO section,
    so the pane keeps its height and the lines are never clipped. */
 #rx-focus:has(#qso-pskr-lines:not([hidden])){--ct-pskr:calc(2 * var(--ct-line))}
 #rx-focus .ct-pskr-lines{display:flex;flex-direction:column}
@@ -476,7 +471,7 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
 #rx-focus .op-qso-head #qso-heard{grid-area:heard;min-width:0;margin:0;font-size:var(--op-font-secondary);line-height:var(--ct-line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}/* the full message is the newest received dialogue row */
 #rx-focus .ct-head-tools{grid-area:tools;display:flex;align-items:center;gap:3px;justify-self:end}
 #rx-focus .ct-head-tools .op-qso-buttons{flex-wrap:nowrap;gap:3px}
-/* #39 strategydef: Auto and PSK joined the row; the buttons are tighter so that it still fits the pane at
+/* Auto and PSK are in the row; the buttons are tight so that it fits the pane at
    1366x768 with room for the partner's message (the text stays at its readable size). */
 #rx-focus .ct-head-tools .op-qso-buttons button,#rx-focus #qso-more>summary{padding:1px 2px;line-height:1.25}
 #rx-focus #qso-more{margin:0;position:static}
@@ -517,15 +512,15 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
 #error-field{padding:2px 12px}
 #error-field .op-error-none,#error-field .op-lower-head{line-height:1.125rem;padding-top:0}
 /* One fixed screen: the Control panel never moves, so a long problem scrolls inside what is left
-   of the column instead of running past the screen (#37, live 2026-11-06). */
+   of the column instead of running past the screen. */
 @container (min-width:75em){#qso-column>#error-field{flex:0 1 auto;flex-wrap:nowrap;min-height:0}#error-field .op-error-body{align-self:stretch;min-height:0}}
 @container (max-width:48em){
- #rx-focus{--ct-head:calc(3 * var(--ct-line) + 4rem);/* two rows of direct buttons since #39 strategydef */--ct-lines:calc(2 * var(--ct-line) + .375rem)}
+ #rx-focus{--ct-head:calc(3 * var(--ct-line) + 4rem);/* two rows of direct buttons */--ct-lines:calc(2 * var(--ct-line) + .375rem)}
  #rx-focus .op-contact-identity>div{flex-direction:column;gap:0}
  #rx-focus .op-qso-head .op-contact-identity{max-height:calc(2 * var(--ct-line))}
  #rx-focus .ct-head-tools{justify-self:stretch}
  #rx-focus .ct-head-tools .op-qso-buttons{flex:1}
- /* #39 strategydef: the badge beside the partner line, so the direct buttons have the full width. */
+ /* The badge beside the partner line, so the direct buttons have the full width. */
  #controls #rx-focus>header.op-qso-head{grid-template-areas:"id badge" "heard heard" "tools tools";grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto auto}
  #rx-focus .ct-head-tools,#rx-focus .ct-head-tools .op-qso-buttons{flex-wrap:wrap}
  #rx-focus .ct-qso-area{height:calc(7 * var(--ct-row) + 2px - var(--ct-pskr))}
@@ -535,6 +530,6 @@ body[data-qso-halt-shown=true] .op-app:not(:has(.op-secondary:not([hidden]))) #s
  #band-activity{height:29rem;min-height:0}
 }
 /* The visually hidden Control heading and the narrow Band Activity header row are positioned
-   inside their cards; positioned against the page they made it scroll past the screen at 360 px,
-   leaving a blank viewport (live finding 2026-11-04). */
+   inside their cards; positioned against the page they would make it scroll past the screen at 360 px,
+   leaving a blank viewport. */
 #qso-control,#band-activity{position:relative}

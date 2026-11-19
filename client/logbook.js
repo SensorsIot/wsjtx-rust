@@ -1,7 +1,7 @@
 'use strict';
-// CR #10 contact log (WstxLogbook::ContactHistory, UpdateLogbook, ExportAdi, WorkedBeforeQuery).
+// Contact log (WstxLogbook::ContactHistory, UpdateLogbook, ExportAdi, WorkedBeforeQuery).
 // The server owns the log, its identities, times and worked-before status, and logs each
-// completed QSO itself (DirectLog, #41: no review form); this browser renders confirmed
+// completed QSO itself (DirectLog: no review form); this browser renders confirmed
 // responses and sends requests.
 (()=>{
 const region=document.querySelector('#region-logbook .op-secondary-body');
@@ -50,7 +50,7 @@ document.addEventListener('click',event=>{if(event.target.closest?.('button[data
 document.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target.closest?.('button[data-region="logbook"]'))loadHistory(null);});
 
 // ---------------------------------------------------------------- update logbook / export
-// #10 WstxLogbook::UpdateLogbook in Settings > Logging & Reporting: another logger's ADIF
+// WstxLogbook::UpdateLogbook in Settings > Logging & Reporting: another logger's ADIF
 // export (for example Log4OM) is consolidated into this log. The station decides what is
 // added, already present or skipped; this browser uploads the file and shows the summary.
 async function sha256(bytes){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');}
@@ -101,7 +101,7 @@ $('log-export').addEventListener('click',async()=>{
 });
 
 // ---------------------------------------------------------------- Band Activity worked-before
-// #55 CL-055-04: the New call slots come from the record flags; worked_status, which the station
+// CL-055-04: the New call slots come from the record flags; worked_status, which the station
 // sets on each record, feeds only the row's hover text, never a colour.
 // The statuses of the latest and the previous period also mark the QSO pane's callers
 // (WstxQsoPane::CallingMe).
@@ -111,7 +111,7 @@ function annotate(body,records){
   const band=operatingState?.selection?.band,mode=live?.job?.mode;
   const period=resultView?`${liveIdentity(live)}/${resultView.first_sequence}/${resultView.period_start_utc}`:null;
   const from=r=>r.status==='decoded'&&r.fields?.type==='standard'&&r.fields.from?.kind==='call'&&typeof r.fields.from.text==='string'?r.fields.from.text.toUpperCase():null;
-  // The answer stays on its record: the record moves to the kept period and is drawn again there (#50 BandActivityHover).
+  // The answer stays on its record: the record moves to the kept period and is drawn again there (BandActivityHover).
   const decorate=()=>{for(const row of body.querySelectorAll('tr[data-period=latest][data-sequence]')){const record=records.find(r=>String(r.sequence)===row.dataset.sequence),c=record&&from(record),status=c&&answered.get(c);if(!status||row.dataset.worked)continue;record.worked={status,on:`${band} ${mode.toUpperCase()}`};row.dataset.worked=status;row.dataset.workedOn=record.worked.on;window.wstxActivityWhy?.(row);}};
   if(!period||!band||!['ft8','ft4'].includes(mode))return;
   if(period!==askedPeriod){const on=`${band} ${mode.toUpperCase()}`;previous=on===answeredOn?answered:new Map();askedPeriod=period;answered=new Map();answeredOn=on;}
@@ -123,7 +123,7 @@ const activity=document.querySelector('#band-activity tbody');
 if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(activity,{childList:true});
 window.wstxLogbook=Object.freeze({annotate,loadHistory});
 
-// ---------------------------------------------------------------- country file (#55)
+// ---------------------------------------------------------------- country file
 // WstxLogControl::CountryFile in Settings: the cty.dat in use, an upload replaces it
 // (the station validates it), "Use bundled file" removes the upload. No automatic download.
 const general=document.querySelector('#settings-general');

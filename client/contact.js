@@ -11,15 +11,15 @@ const RxTxStrip=Object.freeze({STEP_HZ:1,SHIFT_STEP_HZ:10});
 const focus=document.querySelector('#rx-focus');
 if(!focus||document.body.dataset.profile!=='true')return;
 const $=id=>document.getElementById(id);
-// #45 CL-045-01: a plain setting, saved on change; it acts at the next station start.
+// CL-045-01: a plain setting, saved on change; it acts at the next station start.
 block('settings-startup','Receive at startup',document.querySelector('#settings-general'),'<label class="op-check"><input type="checkbox" id="monitor-off-startup" disabled>Monitor off at startup</label><p id="startup-result" class="op-muted" role="status"></p><p class="op-muted">Saved at once; it takes effect at the next station start and does not restart receive.</p>');
 block('settings-startup-resume','Startup resume',document.querySelector('#settings-expert'),'<p id="startup-resume" class="op-muted" role="status">Startup resume unknown</p>');
-// #52 CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
+// CL-052-01: off by default; read when Settings opens (at most every 30 s) or on Refresh, never polled.
 block('settings-window-diagnostics','Decode window diagnostics',document.querySelector('#settings-expert'),'<label class="op-check"><input type="checkbox" id="window-dump" disabled>Save FT8 decode windows</label><p id="window-diagnostics" class="op-muted" role="status">Window counters unknown</p><button type="button" id="window-diagnostics-refresh">Refresh</button><p class="op-muted">Keeps the last 20 FT8 prompt windows (12 kHz WAV and JSON) in the profile folder diagnostic-windows. Saved at once; it acts from the next window.</p>');
 block('settings-automation','MCP and automation',document.querySelector('#settings-general'),'<p class="op-muted">Automation runs on the station: a strategy or contest selected in the strategy element transmits only while Auto (beside CQ) is on, or an MCP client runs it. Its state shows beside the strategy element; HALT ends it and turns Auto off; Esc aborts the current QSO. A strategy keeps running through a page reload; with no browser or MCP client connected for 60 s, or 8 hours after Auto went on also with a browser open, it starts nothing new, finishes the QSO in progress and stops with Auto off (switch Auto on again to restart). The Tx watchdog stops transmitting when one message would be sent more often than its limit. A different message or a new contact starts the count again; after a stop only Enable Tx, a strategy selection or Auto on in this browser transmits again, automation never does.</p>');
 block('settings-transmit','Transmit',document.querySelector('#settings-radio'),'<label>Tx watchdog (repetitions of one message)<input id="watchdog-tx" type="number" min="1" max="99" step="1" disabled></label><label>Tune watchdog (seconds)<input id="watchdog-tune" type="number" min="1" max="300" step="1" disabled></label><p id="watchdog-result" class="op-muted" role="status"></p><p class="op-muted">Watchdogs apply at once, as in WSJT-X. Tx power is set on the transceiver; this station sends no power command. PTT is chosen under CAT.</p>');
 block('settings-log','Log',document.querySelector('#settings-logging'),'<p>Each completed QSO is logged at once, as in WSJT-X: saved in this station profile’s contacts.adi (ADIF) and sent to the UDP targets that select QSO Logged / Logged ADIF. There is no review step; Log QSO logs the current contact now.</p><button type="button" data-region="logbook">&#9776; Open Logbook</button>');
-// #10 logbook.js (loaded first) made Update logbook from ADIF; it belongs below the Log block.
+// logbook.js (loaded first) makes Update logbook from ADIF; it belongs below the Log block.
 {const update=document.querySelector('#settings-update-log');if(update)document.querySelector('#settings-log')?.after(update);}
 block('settings-udp','WSJT-X UDP interface',document.querySelector('#settings-logging'),'<p id="udp-note" class="op-muted">Send-only: programs listen; the station takes no command over UDP.</p><p>Instance name <output id="udp-instance"></output></p><h4 id="udp-targets-title">UDP targets</h4><div id="udp-targets" role="list" aria-labelledby="udp-targets-title"></div><p class="op-actions"><button type="button" id="udp-add" disabled>Add target</button><button type="button" id="udp-reload">Reload</button><button type="button" id="udp-save" class="op-primary" disabled>Save UDP settings</button></p><p id="udp-result" class="op-muted" role="status">Read when Settings opens</p><p class="op-muted">Applies on Save; it does not restart receive.</p>');
 block('settings-pskreporter','PSK Reporter',document.querySelector('#settings-logging'),'<label class="op-check"><input type="checkbox" id="pskr-enabled" disabled>Listen to PSK Reporter spots</label><p id="pskr-status" class="op-muted" role="status">PSK Reporter status unknown</p><p id="pskr-result" class="op-muted" role="status"></p><p class="op-muted">Read-only, from mqtt.pskreporter.info: spots of my call and of the current strategy target. The station sends only its call in the client id and these two subscriptions. A strategy run uses them to choose between keeping and changing its Tx slot; everything works without them.</p>');
@@ -34,7 +34,7 @@ document.querySelector('#contact-state').insertAdjacentHTML('afterend',`<p id="q
 `);
 // WstxQsoPane::PaneLayout: the pane has a fixed height so
 // the Control panel below it never moves. Its two sections have fixed heights and scroll inside:
-// QSO (the #60 dialogue table, kept at its newest row) and Calling me (every station calling my
+// QSO (the dialogue table, kept at its newest row) and Calling me (every station calling my
 // call except the partner). The lines above them take the rest of the pane and scroll inside.
 focus.querySelector('.op-contact-body').insertAdjacentHTML('afterend',`<section id="qso-section" class="ct-section" aria-label="QSO dialogue"><div id="qso-area" class="ct-qso-area"><table id="qso-table" class="ct-qso-table" hidden><thead><tr><th scope="col">UTC</th><th scope="col" data-short="Dir">Direction</th><th scope="col" data-short="Exch">Exchange</th><th scope="col" title="How often the identical message repeated">Rep</th><th scope="col" title="Our measured SNR of the partner's latest decode at or before this line" data-short="Rx">Rx SNR</th><th scope="col" title="The partner's latest report on us at or before this line" data-short="Tx">Tx SNR</th></tr></thead><tbody id="qso-dialogue" class="ct-dialogue" aria-label="QSO dialogue"></tbody></table><p id="qso-none" class="op-muted ct-placeholder">No QSO</p></div></section>
 <section id="qso-calling" class="ct-section" aria-labelledby="calling-heading"><div id="calling-area" class="ct-calling-area"><table id="calling-table" class="ct-qso-table ct-calling-table"><thead><tr><th scope="col" id="calling-heading" title="Double-click a station to answer it (during a QSO: switch the contact to it)">Calling me</th><th scope="col">SNR</th><th scope="col">Grid</th><th scope="col">Country</th></tr></thead><tbody id="qso-others" class="ct-others" aria-label="Stations calling me (double-click or Enter answers)"></tbody></table><p id="qso-others-none" class="op-muted ct-placeholder">Nobody is calling</p></div></section>
@@ -51,7 +51,7 @@ document.querySelector('#band-activity').insertAdjacentHTML('afterbegin','<div i
 const slotsMarkup=['tx1','tx2','tx3','tx4','tx5','tx6'];
 focus.querySelector('.op-contact-body').insertAdjacentHTML('beforeend',`<details id="qso-more"><summary title="Messages Tx1&ndash;Tx6 and activity" aria-label="Messages Tx1&ndash;Tx6 and activity">Tx1&ndash;Tx6</summary><div class="ct-more-body"><div class="ct-dx"><label>Activity<select id="contact-activity" disabled><option value="none">None</option><option value="na_vhf">NA VHF</option><option value="eu_vhf">EU VHF</option><option value="ww_digi">WW Digi</option><option value="arrl_digi">ARRL Digi</option><option value="field_day">Field Day</option><option value="rtty">RTTY Roundup</option><option value="hound">Hound</option></select></label><label title="Field Day: class and section, e.g. 1A EMA. RTTY Roundup: state or province, or DX or # for a serial number">Exchange<input id="contact-exchange" maxlength="8" autocomplete="off" spellcheck="false" disabled></label><span id="contact-serial" class="op-muted"></span></div><ol id="contact-messages" class="ct-messages" aria-label="Standard messages Tx1 to Tx6">${slotsMarkup.map((s,i)=>`<li data-slot="${s}"><label class="ct-next"><input type="radio" name="contact-next" value="${s}" aria-label="Next message Tx${i+1}" disabled>Tx${i+1}</label><button type="button" class="ct-now" data-slot="${s}" aria-label="Send Tx${i+1} now" title="Send Tx${i+1} from the next own period (turns Enable Tx on)" disabled>Now</button><input class="ct-text" data-slot="${s}" maxlength="37" aria-label="Tx${i+1} message" autocomplete="off" spellcheck="false" disabled>${s==='tx1'?'<label class="op-check"><input type="checkbox" id="contact-tx1-skip" disabled>Skip Tx1</label>':''}${s==='tx4'?'<label class="op-check"><input type="checkbox" id="contact-rr73" disabled>RR73</label>':''}</li>`).join('')}</ol>
 <div class="op-frequency-fields ct-fields"><button type="button" id="contact-cancel" disabled>Cancel contact</button><span id="contact-watchdog" class="op-muted"></span></div></div></details>`);
-// QsoPane item 8 (#37, 2026-11-04): the header holds the partner line and the badge, then the
+// QsoPane: the header holds the partner line and the badge, then the
 // partner's last message, the direct buttons and the Tx1-Tx6 fold-out, which opens over the pane
 // (it moves nothing). NEXT leads the message lines below it.
 {const head=focus.querySelector('.op-qso-head'),tools=document.createElement('div');tools.className='ct-head-tools';
@@ -72,11 +72,11 @@ const body=focus.querySelector('.op-contact-body'),identity=focus.querySelector(
 const slots=['tx1','tx2','tx3','tx4','tx5','tx6'];
 const resultText=$('contact-result');
 let dxLookup={call:null,entity:null},snap=null,sending=false,tick=null,changeTarget=null,lastLog=null,loggedTimer=null,wasRunning=false,lastPartner=null,bandPartner=null;
-// #50 CL-050-08: the QSO partner of Band Activity, from the contact snapshot this page already holds.
+// CL-050-08: the QSO partner of Band Activity, from the contact snapshot this page already holds.
 window.wstxPartner=()=>bandPartner;
 const valid=s=>s&&s.v===1&&Object.keys(s).sort().join(',')==='boot_id,contact,contact_revision,log,monotonic_ms,profile_id,settings,snapshot_sequence,transmit,utc_ms,v,watchdog'&&Number.isSafeInteger(s.contact_revision);
 const transmitCapable=()=>snap&&snap.transmit.capability!=='unsupported';
-// What the station can key now: unavailable is #9's radio/authorization not ready (CL-010-07).
+// What the station can key now: unavailable is the radio or authorization not ready (CL-010-07).
 const transmitReady=()=>snap?.transmit.capability==='available';
 // One GET /contact at a time; a caller during a pending GET waits for a fresh one.
 // contactMissing: this station has no contact engine (404); routine refreshes then skip /contact.
@@ -90,7 +90,7 @@ function load(){
 // transmitter keys on), never the browser's wall clock. Each station observation gives an
 // offset over this browser's monotonic clock; a late delivery only lowers it, so the largest
 // offset of the last 20 s is the estimate. An offset more than 500 ms below the estimate is a
-// backward step of the station clock (#43 correction), which restarts the estimate at once.
+// backward step of the station clock, which restarts the estimate at once.
 let clockSamples=[];
 const CLOCK_STEP_MS=500;
 function stationSample(utc){
@@ -106,8 +106,8 @@ async function fetchSnapshot(){
   try{
     const response=await stationFetch('/contact',{cache:'no-store',signal:AbortSignal.timeout(10000)});
     contactMissing=response.status===404;
-    // #51: a contact snapshot this page cannot validate shows the reload chip.
-    // #74 PushedStationState: a reply of another boot than the browser's is discarded.
+    // A contact snapshot this page cannot validate shows the reload chip.
+    // PushedStationState: a reply of another boot than the browser's is discarded.
     if(response.ok){const value=await response.json();window.wstxStationData?.('contact',valid(value));if(valid(value))stationSample(value.utc_ms);if(valid(value)&&value.boot_id===profileData?.boot_id&&(!snap||snap.boot_id!==value.boot_id||value.snapshot_sequence>=snap.snapshot_sequence)){snap=value;render();}heldWake();}
   }catch{}
 }
@@ -122,7 +122,7 @@ function stateShow(){
 // WstxOperatingScreen::BootRule: a new boot drops the contact state at once;
 // the QSO pane shows its freshly loaded form until the new boot's read or first event.
 addEventListener('station-boot',()=>{snap=null;render();});
-// #10 PushedStationState: an accepted command's result comes in contact.state; the next command
+// PushedStationState: an accepted command's result comes in contact.state; the next command
 // waits for the revision of its receipt there. Only a receipt that does not come in time reads GET /contact.
 let heldWaiters=[];
 function heldWake(){heldWaiters=heldWaiters.filter(w=>{if(snap&&snap.boot_id===w.boot&&snap.contact_revision>=w.revision){w.resolve(true);return false;}return true;});}
@@ -177,7 +177,7 @@ function abortQso(){aborts++;if(abortable()||sending||heldWaiters.length)send('a
 abortButton.addEventListener('click',abortQso);
 // ---------------------------------------------------------------- render
 const transmitting=c=>!!c&&!['idle','completed','cancelled'].includes(c.state);
-// #37 QsoPane: a running QSO is a contact with a partner in replying..signoff; a completed,
+// QsoPane: a running QSO is a contact with a partner in replying..signoff; a completed,
 // logged or cancelled contact is gone from the pane.
 const running=c=>!!c?.dx_call&&['replying','report','roger_report','rogers','signoff'].includes(c.state);
 const snrText=snr=>typeof snr==='number'?`${snr>0?'+':snr<0?'\u2212':''}${Math.abs(Math.round(snr))} dB`:'';
@@ -189,7 +189,7 @@ function render(){
   // Nothing of a finished contact stays: an accepted command's result goes with it.
   if(wasRunning&&!qso&&/: accepted$/.test(resultText.textContent))resultText.textContent='';
   wasRunning=qso;
-  // #50 CL-050-08: from the preparation (replying) until logged (completed) or cancelled; a change redraws Band Activity.
+  // CL-050-08: from the preparation (replying) until logged (completed) or cancelled; a change redraws Band Activity.
   const partner=qso?String(c.dx_call).toUpperCase():null;if(partner!==bandPartner){bandPartner=partner;if(typeof renderResults==='function')renderResults();}
   // The partner of the last running QSO stays out of the Others until another contact runs.
   if(qso||(c?.state==='completed'&&c.dx_call))lastPartner=c.dx_call;
@@ -217,9 +217,9 @@ function render(){
   $('contact-call-first').disabled=!transmitCapable();
   const auto=$('contact-auto');auto.disabled=!ready;auto.setAttribute('aria-label',ready?'Auto sequence':'Auto sequence unavailable');
   // WstxQsoTransmit::StartRule: no Enable Tx control; CQ or a double-click starts a QSO
-  // (no Reply button since the #50 double-click fix).
+  // (no Reply button).
   $('qso-cq').disabled=!ready||(armed&&c?.state==='calling');
-  // #37: no RR73/73 buttons; a fold-out Now is the manual override. Not on a finished contact:
+  // No RR73/73 buttons; a fold-out Now is the manual override. Not on a finished contact:
   // there Enable Tx would start a new CQ.
   const finished=['completed','cancelled'].includes(c?.state);
   for(const button of focus.querySelectorAll('.ct-now'))button.disabled=!ready||finished||!c?.messages?.[slots.indexOf(button.dataset.slot)];
@@ -252,15 +252,15 @@ function render(){
   // The Auto toggle (strategy client) is disabled without transmit capability.
   dispatchEvent(new CustomEvent('wstx-contact-render'));
 }
-// #37 QsoPane item 7: the server-owned dialogue of the running QSO, oldest first, kept at
+// QsoPane: the server-owned dialogue of the running QSO, oldest first, kept at
 // its newest line; it scrolls inside its fixed-height section (#qso-area) and goes with the QSO.
 const hhmmss=ms=>Number.isFinite(ms)?new Date(ms).toISOString().slice(11,19):'--:--:--';
-// #60 QsoPane QSO table: UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR. Direction is the two
+// QsoPane QSO table: UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR. Direction is the two
 // calls as on the air, recipient first, with "◂" pointing to the recipient (a hashed call
 // as decoded, "<...>" too); a CQ is "CQ [DX] <call>" with its grid as the exchange; another
 // message is all exchange. Rep is ×N for a repeated message. On every dialogue row Rx SNR
 // (ours) and Tx SNR (the partner's report on us, R-02 → −2) are the latest received values at
-// or before it (operator 2026-11-03); an Others row shows its own.
+// or before it; an Others row shows its own.
 const signedDb=n=>typeof n==='number'?(n=Math.round(n),n>0?`+${n}`:n<0?`−${-n}`:'0'):'';
 const isCall=w=>/^<[^>]+>$/.test(w)||/^(?=.*[A-Z])(?=.*\d)[A-Z0-9/]+$/.test(w);
 function qsoParts(text){
@@ -300,7 +300,7 @@ function dxEntity(call){
   }
   const e=dxLookup.entity;return e?`${e.name} (${e.cont}) · `:'';
 }
-// #11: Auto Seq off is shown on the QSO pane while a contact or CQ runs, and the step Auto
+// Auto Seq off is shown on the QSO pane while a contact or CQ runs, and the step Auto
 // Seq would take after the partner's latest message (suggested_slot, e.g. 73 after their
 // RR73) is offered as one button instead of repeating the previous message silently.
 function autoSeqShow(c,s){
@@ -320,7 +320,7 @@ $('qso-suggest').addEventListener('click',async()=>{
   if(snap?.transmit.arm_state!=='armed'&&transmitReady())arm('Reply');
 });
 $('qso-autoseq-on').addEventListener('click',()=>send('set_auto_seq',{enabled:true},'Auto sequence'));
-// WstxLogbook::DirectLog (#41): the server logs each completed QSO and every Log QSO; the
+// WstxLogbook::DirectLog: the server logs each completed QSO and every Log QSO; the
 // pane shows the latest outcome, and an open Logbook page lists a newly saved record.
 const logReasons={storage_unavailable:'storage unavailable · retrying',log_queue_full:'too many unsaved QSOs · the oldest was not logged',log_invalid_field:'the station profile is incomplete',same_station_again:'same station as the last log entry'};
 const LOGGED_NOTICE_MS=MessageLines.LOGGED_SECONDS*1000;
@@ -337,8 +337,8 @@ function logShow(){
 const stationTxNode=document.createElement('span');stationTxNode.id='station-tx';stationTxNode.className='ct-station-tx';stationTxNode.setAttribute('role','status');stationTxNode.hidden=true;
 document.querySelector('#halt-tx')?.before(stationTxNode);
 // WstxQsoPane::AutoControls: the run state sits in the strategy element (its line is drawn by
-// the strategy client from both snapshots, #74 D1); HALT ends it. GET /automation is read only
-// after an automation.state event (#74): null is the never-used state, held without a request.
+// the strategy client from both snapshots); HALT ends it. GET /automation is read only
+// after an automation.state event: null is the never-used state, held without a request.
 let automationLoading=null,automationView=null;
 function loadAutomation(){
   if(automationLoading)return automationLoading;
@@ -357,7 +357,7 @@ function leaveLabel(){
   const n=l.remaining;
   return l.mode==='calls'?`Leave in ${n} calls`:l.mode==='until_logged'?(n==null?'Until logged':`Until logged · leave if gone ${n} min`):l.staying?'Stay · most valuable':`Leave in ${n} Tx changes`;
 }
-// #97 WstxOperatingChain::BusyPartner: while the partner is busy " · <call> busy with <other>, not
+// WstxOperatingChain::BusyPartner: while the partner is busy " · <call> busy with <other>, not
 // counted (<k>/<N>)" follows WD:n (k the paused calls of the message due) or, in a run's own
 // contact, the leave label (k the run's paused calls).
 function busySuffix(wd,k){
@@ -410,9 +410,9 @@ $('qso-cq').addEventListener('click',async()=>{
 });
 $('qso-halt').addEventListener('click',()=>halt.click());$('qso-halt').disabled=halt.disabled;
 $('qso-abort').addEventListener('click',abortQso);
-// #37 one HALT: the top-bar HALT hides only while the QSO pane HALT is fully on screen.
+// One HALT: the top-bar HALT hides only while the QSO pane HALT is fully on screen.
 new IntersectionObserver(([entry])=>{document.body.dataset.qsoHaltShown=String(entry.isIntersecting&&entry.intersectionRatio>=0.99);},{threshold:[0,0.99,1]}).observe($('qso-halt'));
-// #37 fold-out Now (operator 2026-11-03, WSJT-X Next/Now): choose the line next and turn Enable
+// Fold-out Now (WSJT-X Next/Now): choose the line next and turn Enable
 // Tx on, so it goes from the next own period (never into a waveform already on the air).
 async function nowMessage(slot){
   const c=snap?.contact;if(['completed','cancelled'].includes(c?.state)||!transmitReady())return;
@@ -429,7 +429,7 @@ $('contact-rr73').addEventListener('change',event=>send('set_tx4',{form:event.ta
 $('contact-report').addEventListener('change',event=>{const n=Number(event.target.value);if(Number.isInteger(n))send('set_report',{report:n},'Report');else resultText.textContent='Report must be a whole number of dB';});
 $('contact-parity').addEventListener('change',event=>send('set_parity',{parity:event.target.value},'Tx period'));
 let shownExchange;
-// A refused choice (e.g. EU VHF without a 6-character locator, #99) returns to the station's setting.
+// A refused choice (e.g. EU VHF without a 6-character locator) returns to the station's setting.
 const sendActivity=()=>{const activity=$('contact-activity').value,contest=activity==='field_day'||activity==='rtty';send('set_activity',contest?{activity,exchange:$('contact-exchange').value}:{activity},'Activity').then(r=>{if(r?.refused)$('contact-activity').value=snap?.settings?.activity??'none';});};
 $('contact-activity').addEventListener('change',sendActivity);
 $('contact-exchange').addEventListener('change',()=>{if(['field_day','rtty'].includes($('contact-activity').value))sendActivity();});
@@ -444,12 +444,12 @@ for(const id of ['watchdog-tx','watchdog-tune'])$(id).addEventListener('change',
   if(!Number.isInteger(tx)||!Number.isInteger(tune)){$('watchdog-result').textContent='Watchdogs must be whole numbers';return;}
   await send('set_watchdogs',{tx_calls:tx,tune_seconds:tune},'Watchdogs');$('watchdog-result').textContent=resultText.textContent;
 });
-// #40 WstxUdp settings (CL-040-02): read when the drawer opens (at most every 30 s), on the
+// WstxUdp settings (CL-040-02): read when the drawer opens (at most every 30 s), on the
 // Logging tab or Reload; Save sends one PUT /udp. A setting: it restarts nothing.
 const UDP_MESSAGES=[['heartbeat','Heartbeat'],['status','Status'],['decode','Decode'],['clear','Clear'],['qso_logged','QSO Logged'],['close','Close'],['logged_adif','Logged ADIF']];
 const UDP_DEFAULT={targets:[{address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:UDP_MESSAGES.map(m=>m[0])}]};
 let udpView=null,udpDirty=false,udpRead=-Infinity,udpLoading=null;
-// An IPv6 group [ffXY::...]: Y is its scope (WstxUdp D6); scope 1 and 2 need an interface index.
+// An IPv6 group [ffXY::...]: Y is its scope (WstxUdp); scope 1 and 2 need an interface index.
 const udpIpv6Group=address=>{const m=/^\[\s*ff[0-9a-f]([0-9a-f])(:|\])/i.exec(address.trim());return m?{scope:parseInt(m[1],16)}:null;};
 const utcTime=ms=>new Date(ms).toISOString().slice(11,19)+' UTC';
 function udpStatusText(s){
@@ -508,7 +508,7 @@ $('udp-save').addEventListener('click',async()=>{
 });
 new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden){loadUdp();loadDiagnostics();}}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
 document.querySelector('#tab-logging')?.addEventListener('click',()=>loadUdp(true));
-// #58 MCP clients (Settings > General > Access & grants): an MCP client uses a token of
+// MCP clients (Settings > General > Access & grants): an MCP client uses a token of
 // its own, never this browser's credential; the token is shown once, the station keeps
 // only its hash. Loaded when the drawer opens, never on the operating path.
 $('settings-browsers').insertAdjacentHTML('beforeend','<h4 id="mcp-clients-title">MCP clients</h4><p class="op-muted">An MCP client (an AI agent or script) uses its own token, never this browser\'s authorization. Its requests never count as your action for the Tx watchdog.</p><ul id="mcp-clients" aria-labelledby="mcp-clients-title"></ul><label>Client name<input id="mcp-name" maxlength="32" autocomplete="off" placeholder="e.g. Claude Code"></label><button type="button" id="mcp-create">Create token</button><div id="mcp-token" hidden><p class="op-warning">Copy this token now: it is shown only once. Configure it in the MCP client as Authorization: Bearer &lt;token&gt;.</p><code id="mcp-token-value"></code> <button type="button" id="mcp-token-copy">Copy</button> <button type="button" id="mcp-token-done">Done</button></div><p id="mcp-result" class="op-muted" role="status"></p><details id="mcp-recent-box"><summary>Recent MCP use</summary><ol id="mcp-recent"></ol></details>');
@@ -556,7 +556,7 @@ $('mcp-create').addEventListener('click',async()=>{
 $('mcp-token-copy').addEventListener('click',()=>navigator.clipboard?.writeText($('mcp-token-value').textContent).then(()=>{$('mcp-result').textContent='Token copied';},()=>{$('mcp-result').textContent='Copy failed: select the token and copy it';}));
 $('mcp-token-done').addEventListener('click',()=>{$('mcp-token-value').textContent='';$('mcp-token').hidden=true;});
 new MutationObserver(()=>{if(!document.querySelector('#settings-drawer').hidden)loadMcp();else $('mcp-token-done').click();}).observe(document.querySelector('#settings-drawer'),{attributes:true,attributeFilter:['hidden']});
-// #43/#92 CL-043-01/03: Settings > General > Clock, a status line only (no source setting). The
+// CL-043-01/03: Settings > General > Clock, a status line only (no source setting). The
 // clock view is read on demand when the drawer opens (at most every 10 s) or on the General tab,
 // never polled on the thin link.
 $('settings-clock').insertAdjacentHTML('beforeend','<p id="clock-air" class="op-muted" role="status"></p>');
@@ -597,7 +597,7 @@ function startupShow(){
   const last=v.last_receive,choice=last?` · last ${[last.band,last.mode.toUpperCase()].filter(Boolean).join(' ')}`:'';
   $('startup-resume').textContent=`${resumeText[v.resume.state]??v.resume.state}${v.resume.error?` · ${v.resume.error}`:''}${choice}${v.storage_error?` · ${v.storage_error}`:''}`;
 }
-// #39 WstxHearingFeed::HearingFeed: one snapshot per connection, then pskr.state events; the
+// WstxHearingFeed::HearingFeed: one snapshot per connection, then pskr.state events; the
 // age counts on with the station tick. Nothing is polled and no state here is an error chip.
 let pskrView=null,pskrUtcMs=null;
 function pskrShow(){
@@ -616,7 +616,7 @@ function pskrToggleShow(){
   button.disabled=!pskrView||!pskrView.enabled||pskrPosting;
   button.title=!pskrView?'Use PSK Reporter · status unknown':!pskrView.enabled?'PSK Reporter is off in Settings':'Use PSK Reporter';
 }
-// The freshly loaded form is the same as after a new boot (#74): drawn by the one rule above.
+// The freshly loaded form is the same as after a new boot: drawn by the one rule above.
 pskrToggleShow();
 $('qso-pskr').addEventListener('click',async()=>{
   const v=pskrView;if(!v?.enabled||pskrPosting)return;pskrPosting=true;pskrToggleShow();
@@ -737,7 +737,7 @@ function rowIdentity(row){
 }
 async function selectRow(tr){
   const row=rowIdentity(tr);if(!row)return null;await sendChain;await settled();
-  // #37: during a contact only a row that can start a contact for me offers the change; a foreign
+  // During a contact only a row that can start a contact for me offers the change; a foreign
   // QSO's row or a CQ directed elsewhere (the station's refusal, DirectedCqRule) offers nothing.
   const qso=running(snap?.contact);
   const reply=qso?await send('select_row',{row,replace:false},'Select station'):await selectConfirmed(row,false,'Select station');
@@ -753,7 +753,7 @@ async function selectConfirmed(row,replace,label,from=aborts){
   if(!await window.wstxConfirm(`${reply.reason}. Answer anyway?`,'Answer anyway'))return {refused:'declined'};
   return sendExplicit(()=>send('select_row',{row,replace,directive_confirmed:true},label),from);
 }
-// A double-click (or the Reply menu) is the explicit ChangeContact (#50, WSJT-X
+// A double-click (or the Reply menu) is the explicit ChangeContact (WSJT-X
 // handleDecodeSelection with quick_call): replace true, no confirmation, then Enable Tx on;
 // the replacement itself keeps Enable Tx as it is.
 // The contact revision moves with every transmit step: a stale_revision refusal of this
@@ -769,7 +769,7 @@ async function sendExplicit(run,from=aborts){
 }
 async function replyRow(tr){
   const row=rowIdentity(tr);if(!row)return;
-  // #37: a deliberate double-click on a foreign QSO's row calls its sender, and says so.
+  // A deliberate double-click on a foreign QSO's row calls its sender, and says so.
   const label=tr.dataset.foreign?`Call ${tr.dataset.sender}`:'Reply';
   const from=aborts,reply=await selectConfirmed(row,true,label,from);
   if(reply&&!reply.refused&&from===aborts&&transmitReady())await sendExplicit(()=>arm(label),from);
@@ -777,7 +777,7 @@ async function replyRow(tr){
 let clickTimer=null;
 // The double-click is the row's second press (click count 2), not the dblclick event: the
 // rows are redrawn with every result page, and the browser drops a click, and its dblclick,
-// whose pressed row was redrawn before the release (#50, 2026-11-03: G8KHF only selected).
+// whose pressed row was redrawn before the release.
 // A click of a double-click never starts the single-click selection.
 const secondPress=(event,selector)=>event.button===0&&event.detail===2?event.target.closest(selector):null;
 activity?.addEventListener('click',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr||event.detail>1)return;clearTimeout(clickTimer);clickTimer=setTimeout(()=>selectRow(tr),250);});
@@ -786,7 +786,7 @@ activity?.addEventListener('keydown',event=>{const tr=event.target.closest('tr[d
 const menu=document.createElement('div');menu.id='ba-menu';menu.className='op-menu';menu.setAttribute('role','menu');menu.hidden=true;
 menu.innerHTML='<button type="button" role="menuitem" data-menu="reply">Reply</button><button type="button" role="menuitem" data-menu="select">Select</button><button type="button" role="menuitem" data-menu="rx">Set Rx here</button>';
 document.querySelector('main').append(menu);let menuRow=null;
-// The row's own items (#42 Pounce, Ignore) are set first, so the menu is placed at its real size.
+// The row's own items (Pounce, Ignore) are set first, so the menu is placed at its real size.
 function openMenu(tr,x,y){menuRow=tr;menu.hidden=false;menu.querySelector('[data-menu=reply]').disabled=!transmitReady();dispatchEvent(new CustomEvent('wstx-row-menu',{detail:tr}));menu.style.left=`${Math.max(0,Math.min(x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(0,Math.min(y,innerHeight-menu.offsetHeight-8))}px`;menu.querySelector('button:not(:disabled):not([hidden])').focus();}
 function closeMenu(){menu.hidden=true;menuRow=null;}
 activity?.addEventListener('contextmenu',event=>{const tr=event.target.closest('tr[data-sequence]');if(!tr)return;event.preventDefault();openMenu(tr,event.clientX,event.clientY);});
@@ -818,7 +818,7 @@ function callerText(record){
   const my=myCall(),w=(record.text??'').trim().split(/\s+/),mine=x=>x===my||x===`<${my}>`;
   return w.length>=2&&mine(w[0])&&isCall(w[1])?w[1]:w.length>=2&&mine(w[1])&&isCall(w[0])?w[0]:recordFrom(record.fields)??'';
 }
-// The compact caller tip: the #50 BandActivityHover rule of Band Activity; the line shows the country.
+// The compact caller tip: the BandActivityHover rule of Band Activity; the line shows the country.
 function callerTip(record,w){
   const worked=w?.status==='worked_this_band_and_mode'?`on ${w.on}`:w?.status==='worked_other_band_or_mode'?'on another band or mode':'';
   return hoverReasons(activityHover(record),worked).join(' · ');
@@ -828,7 +828,7 @@ function othersShow(){
   const near=f=>[rx,tx].some(o=>typeof o==='number'&&f>=o-CallingMe.CROWDING_HZ&&f<=o+CallingMe.CROWDING_HZ);
   const newest=(snap&&my?recentRows():[]).filter(({record})=>{
     if(record.status!=='decoded')return false;
-    // #24: addressed to me as in Band Activity (recordTo: also <MYCALL> and nonstandard i3=4).
+    // Addressed to me as in Band Activity (recordTo: also <MYCALL> and nonstandard i3=4).
     const from=recordFrom(record.fields),to=recordTo(record.fields);
     return to===my&&!(dx&&from===dx);
   }).sort((a,b)=>(b.record.period_start_utc??'').localeCompare(a.record.period_start_utc??'')||b.record.sequence-a.record.sequence);
@@ -837,7 +837,7 @@ function othersShow(){
   const seen=new Set(),lines=newest.filter(({record,context})=>{const from=recordFrom(record.fields),k=from?from.toUpperCase():`${context}/${record.sequence}`;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,OTHER_LINES).reverse();
   $('qso-others-none').hidden=!!lines.length;$('calling-table').hidden=!lines.length;
   // WstxQsoPane::CallingMe: each caller carries the Band Activity
-  // marks of its sender: the enabled new_* slot colours of its #55 flags (My call is not used,
+  // marks of its sender: the enabled new_* slot colours of its record flags (My call is not used,
   // every line calls me), the reasons and the worked-before status as text; worked before on
   // this band and mode adds no colour.
   const workedOf=record=>{const from=recordFrom(record.fields);return from?window.wstxWorkedOf?.(from.toUpperCase())??null:null;};
@@ -851,7 +851,7 @@ function othersShow(){
     tr.dataset.row=JSON.stringify(rowOf(context,record.sequence));tr.dataset.text=record.text;tr.dataset.call=callerText(record);
     const hl=bandFlags.filter(k=>record.flags?.[k]===true),w=workedOf(record);if(hl.length)tr.dataset.hl=hl.join(' ');
     if(w)tr.dataset.worked=w.status;
-    // #50 BandActivityHover rule (operator 2026-11-04, "too much information"): only the colour
+    // BandActivityHover rule: only the colour
     // reasons the line does not show, the strongest enabled one per kind, on one line.
     const tip=callerTip(record,w);
     if(tip){tr.title=tip;tr.setAttribute('aria-description',tip);}
@@ -898,7 +898,7 @@ rxMarker.className='ct-marker ct-rx';txMarker.className='ct-marker ct-txm';rxMar
 for(const m of [rxMarker,txMarker]){m.setAttribute('role','slider');m.setAttribute('aria-valuemin','0');m.setAttribute('aria-valuemax','3000');m.setAttribute('aria-label',m===rxMarker?'Rx marker, drag to set the Rx frequency':'Tx marker, drag to set the Tx frequency');}
 for(const m of [rxMarker,txMarker]){const goal=document.createElement('span');goal.className='ct-goal';m.append(goal);}
 wrap?.append(rxMarker,txMarker);
-// #50: 3 px green Rx and red Tx lines without text; the Rx/Tx strip below shows the values.
+// 3 px green Rx and red Tx lines without text; the Rx/Tx strip below shows the values.
 // CL-050-07: the lines, their brackets and the pointer use the waterfall's one frequency
 // mapping (recording.js wstxWaterfallAxis, the canvas box), as the frequency axis does. Each
 // line is the lowest tone; its WSJT-X bracket spans the occupied width of the station's mode.
@@ -932,7 +932,7 @@ waterfall?.addEventListener('dblclick',event=>{clearTimeout(pointerTimer);const 
 // [lo, hi) of the latest held free_tx_slots is a bar over lo..hi in the frequency ruler, on the
 // waterfall's one mapping (CL-050-07), with or without a run (no run_id match). The held value:
 // each free_tx_slots.state replaces it in socket order; a GET /automation reply (read only after
-// automation.state, #74) only with a later at_utc_ms; a new boot drops it. No other request.
+// automation.state) only with a later at_utc_ms; a new boot drops it. No other request.
 let freeTxSlots=null;
 const freeTxLayer=document.createElement('div');freeTxLayer.id='free-tx-slots';freeTxLayer.setAttribute('aria-hidden','true');freeTxLayer.hidden=true;
 const freeTxValue=v=>v===null||!!v&&typeof v==='object'&&Number.isSafeInteger(v.at_utc_ms)&&Array.isArray(v.open)&&['ft8','ft4'].includes(v.mode);
@@ -942,7 +942,7 @@ function freeTxSlotsRead(a){
   if(v&&freeTxValue(v)&&!(freeTxSlots&&v.at_utc_ms<=freeTxSlots.at_utc_ms)){freeTxSlots=v;freeTxSlotMarks();}
 }
 function freeTxSlotsPushed(v){if(freeTxValue(v)){freeTxSlots=v;freeTxSlotMarks();}}
-// #76 look: no text on the marks; each bar is shortened by 2 px at each end, so touching ranges
+// No text on the marks; each bar is shortened by 2 px at each end, so touching ranges
 // show a 4 px gap. A range narrower than both insets (a phone) draws no bar.
 const freeTxInsetPx=2;
 function freeTxSlotMarks(){
@@ -969,7 +969,7 @@ function displays(){
   if(!tick){label.textContent='UTC unavailable';meter.querySelector('strong').textContent='Unknown';return;}
   const stale=connection.dataset.state!=='connected',utc=stationNow()??tick.utc;
   label.textContent=`UTC ${new Date(utc).toISOString().slice(11,19)}${stale?' (stale)':''}`;
-  // #61 CL-061-04: the station measures no level in its Tx period (rx_level_db null); a level
+  // CL-061-04: the station measures no level in its Tx period (rx_level_db null); a level
   // and its low/high entry refer to receive periods only.
   const level=tick.level,strong=meter.querySelector('strong');
   strong.textContent=level===null?(tick.transmitting?'Tx \u00b7 not measured':'Unavailable'):`${level} dB${level>85?' high':level<15?' low':''}`;
@@ -977,7 +977,7 @@ function displays(){
   meter.querySelector('div').style.setProperty('--ct-level',`${level===null?0:Math.min(100,level/0.9)}%`);
   countdown();
 }
-// QsoPane NEXT (#37/#50): "TX now" while the station reports transmitting, else "next";
+// QsoPane NEXT: "TX now" while the station reports transmitting, else "next";
 // the period bar on the station clock, red in my Tx periods (Enable Tx on) and while
 // transmitting, green otherwise.
 function countdown(){
@@ -1011,7 +1011,7 @@ setInterval(displays,250);setInterval(countdown,100);
 // same socket does not (contact.state announces every change).
 let readySocket=null;
 // The PSK Reporter and startup states are read once per socket and after a new boot; the
-// automation state only after automation.state (#74: never on connect).
+// automation state only after automation.state (never on connect).
 addEventListener('station-ready',event=>{const fresh=event.detail!==readySocket;if(!fresh&&!bootReads&&(contactMissing||snap&&snap.boot_id===profileData?.boot_id))return;readySocket=event.detail;load();if(fresh||bootReads){bootReads=false;loadStartup();loadPskr();}});
 addEventListener('station-stale',()=>{displays();});
 addEventListener('station-message',event=>{
@@ -1019,7 +1019,7 @@ addEventListener('station-message',event=>{
   const d=message.data;
   if(message.type==='contact.state'&&d?.changed)stateShow();
   else if(message.type==='automation.state'&&d)loadAutomation();
-  // #82 free_tx_slots.state carries its state: no read after it.
+  // free_tx_slots.state carries its state: no read after it.
   else if(message.type==='free_tx_slots.state'&&d)freeTxSlotsPushed(d.free_tx_slots);
   else if(message.type==='station.tick'&&d&&Number.isSafeInteger(d.utc_ms)&&[15000,7500].includes(d.period_ms)){
     const changed=tick?.transmitting!==d.transmitting;stationSample(d.utc_ms);
@@ -1030,7 +1030,7 @@ addEventListener('station-message',event=>{
 render();
 // This client loads after the first snapshots: an automation.state the socket already carried is read now.
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){readySocket=socket;load();loadStartup();loadPskr();if(automationAnnounced===socket)loadAutomation();}
-// #82: a free_tx_slots.state the socket carried before this client loaded is drawn now.
+// A free_tx_slots.state the socket carried before this client loaded is drawn now.
 if(freeTxSlotsHeld&&freeTxSlotsHeld.current===socket)freeTxSlotsPushed(freeTxSlotsHeld.value);
 // WstxTransmitControl::TransmitControl: explicit requests only; the server plans, keys and halts.
 document.querySelector('#transmit-status').insertAdjacentHTML('afterend','<label>Message<input id="tx-message" maxlength="37" value="CQ"></label><label>Mode<select id="tx-mode" disabled title="Follows the station operating mode"><option value="ft8">FT8</option><option value="ft4">FT4</option></select></label><label>Tx offset Hz<input id="tx-offset" type="number" min="200" max="2950" value="1500"></label><label>Period<select id="tx-parity"><option value="even">Even / 1st</option><option value="odd">Odd / 2nd</option></select></label><p><button type="button" id="tx-arm">Arm (Enable Tx)</button> <button type="button" id="tx-disarm">Disarm</button> <button type="button" id="tx-send">Send next period</button> <button type="button" id="tx-tune">Tune</button></p>');
@@ -1097,7 +1097,7 @@ window.wstxChipsShow=function(){
     const level=document.querySelector('#settings-audio .op-input-meter')?.dataset.level;
     if(active&&level==='low')list.push(chip('level','warn','Audio level low',open('settings-audio')));
     if(active&&level==='high')list.push(chip('level','warn','Audio overdriven',open('settings-audio')));
-    // #92 CL-043-03: the clock entries come from clock.state; Clock off only while transmit is
+    // CL-043-03: the clock entries come from clock.state; Clock off only while transmit is
     // configured, the yellow warnings on every profile.
     const clock=clockState?.clock;
     if(transmitConfigured()&&clock?.state==='unsynchronized')list.push(chip('clock','error','Clock off \u00b7 Tx blocked',open('settings-clock')));
@@ -1323,7 +1323,7 @@ function decorate(){
     tr.classList.toggle('ba-contest-mult',!!v?.new_multiplier);tr.classList.toggle('ba-dupe',!!v?.dupe);
     tr.classList.toggle('ba-hidden',on&&!!selection()&&!showAll&&!ranked&&!tr.classList.contains('ba-tome')&&!tr.classList.contains('ba-partner'));
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
-    // #55 BandActivityHover: the verdict joins the row's other reasons.
+    // BandActivityHover: the verdict joins the row's other reasons.
     if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v?.dupe)tr.dataset.whyStrategy='Dupe in the contest period';else if(selection()&&v&&v.rank!==null)tr.dataset.whyStrategy=[`Contest ${selectedProfile()?.name??selection().profile}: #${v.rank+1}`,v.new_multiplier?'new multiplier':'',v.points!==null&&v.points!==undefined?`${v.points} points`:''].filter(Boolean).join(' · ');else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: #${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
   // WstxBandActivityPane::Ordering: in the value sort the ranked rows go up in the station's order; a
@@ -1335,7 +1335,7 @@ function decorate(){
     const ranked=block.filter(tr=>tr.classList.contains('ba-strategy')).sort((a,b)=>verdicts.get(a.dataset.resultId).rank-verdicts.get(b.dataset.resultId).rank);
     if(!ranked.length)return;
     const anchor=block.at(-1).nextSibling;
-    // #55 BandActivityValue: rows calling me stay above the candidates (value 1), also when ignored.
+    // BandActivityValue: rows calling me stay above the candidates (value 1), also when ignored.
     const first=block.filter(r=>r.classList.contains('ba-tome')),order=[...ranked.filter(r=>first.includes(r)),...first.filter(r=>!ranked.includes(r)),...ranked.filter(r=>!first.includes(r))];
     for(const tr of [...order,...block.filter(r=>!order.includes(r))])tbody.insertBefore(tr,anchor);
   };
@@ -1374,7 +1374,7 @@ const observer=new MutationObserver(()=>{if(reordering)return;decorate();evaluat
 if(tbody)observer.observe(tbody,{childList:true});
 nameSelect.addEventListener('change',()=>{
   const c=config();if(!c||nameSelect.value.startsWith('contest:'))return;
-  // #97 StrategySelector: a saved contest strategy with its contest in force keeps the contest key;
+  // StrategySelector: a saved contest strategy with its contest in force keeps the contest key;
   // with no contest or another one in force it sends nothing and opens the contest prompt.
   const chosen=(c.strategies??[]).find(s=>s.name===nameSelect.value);
   if(chosen?.class==='contest'){
@@ -1406,7 +1406,7 @@ function showContinent(){
   $('continent-derived').textContent=`From callsign: ${view?.derived_continent??'unknown'}${c?.continent?` · using ${c.continent}`:''}`;
 }
 continentSelect?.addEventListener('change',()=>{const c=config();if(c)saveConfiguration({...c,continent:continentSelect.value||null},'Continent');});
-// ---------------------------------------------------------------- #42 ignore lists
+// ---------------------------------------------------------------- ignore lists
 // WstxIgnoreLists::IgnoreListsRule: the station keeps both lists and applies them; this client
 // only edits them (PUT /strategy for the permanent list, POST /strategy/ignore for the
 // session list) and shows the session list the station returns.
@@ -1429,7 +1429,7 @@ async function ignore(call,on){
     const response=await stationFetch('/strategy/ignore',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,call,ignore:on}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(!response.ok||data?.v!==1){const e=data?.error;statusNode.textContent=`Ignore not saved · ${e?.code??response.status}${e?.field?` (${e.field})`:''}`;return;}
-    // The shown rows are evaluated again with the station's new list (#74: of this boot only).
+    // The shown rows are evaluated again with the station's new list (of this boot only).
     if(data.boot_id!==profileData?.boot_id)return;
     view=data;verdicts=new Map();evaluatedKey='';show();evaluateShown();
   }catch(error){statusNode.textContent=`Ignore not saved · ${error.message}`;}
@@ -1459,7 +1459,7 @@ function rowSender(tr){
 addEventListener('wstx-row-menu',event=>{
   const call=view?rowSender(event.detail):null;ignoreItem.hidden=!call;ignoreItem.dataset.call=call??'';
   if(call)ignoreItem.textContent=sessionIgnored(call)?`Stop ignoring ${call}`:`Ignore ${call}`;
-  // #42 Pounce: offered for any resolved sender; stopping only the running pounce on it.
+  // Pounce: offered for any resolved sender; stopping only the running pounce on it.
   const on=!!call&&pouncing(call);pounceItem.hidden=!call;pounceItem.dataset.call=call??'';
   if(call){pounceItem.textContent=on?`Stop pouncing ${call}`:`Pounce ${call}`;
     const capable=window.wstxContact?.snapshot()?.transmit?.capability==='available',mode=typeof live!=='undefined'?live?.job?.mode:null;
@@ -1467,7 +1467,7 @@ addEventListener('wstx-row-menu',event=>{
     pounceItem.title=on?'Stop waiting for this station':runActive()?'Another automation run is active':!capable?'Transmission unavailable':!['ft8','ft4'].includes(mode)?'Pounce needs FT8/FT4 receive':`Answer ${call} when it calls CQ or ends a QSO with 73 (transmits)`;}
 });
 ignoreItem.addEventListener('click',()=>{const call=ignoreItem.dataset.call;if(call)ignore(call,!sessionIgnored(call));});
-// ---------------------------------------------------------------- #42 Alert
+// ---------------------------------------------------------------- Alert
 // WstxAlert::AlertRule: the station records an alert for each new candidate of the active strategy; this client
 // lists the history and announces new alerts as the operator chose (both off by default):
 // a short tone while the page is visible, a browser notification also while it is hidden.
@@ -1538,7 +1538,7 @@ addEventListener('station-ready',event=>{if(event.detail===alertSocket)return;al
 addEventListener('station-boot',()=>{alertSeq++;alertView=null;alertSeen=null;showAlerts();});
 if(settingsDrawer)new MutationObserver(()=>{if(!settingsDrawer.hidden)loadAlerts(false);}).observe(settingsDrawer,{attributes:true,attributeFilter:['hidden']});
 if(socket?.readyState===WebSocket.OPEN&&connection.dataset.state==='connected'){alertSocket=socket;loadAlerts(true);}
-// ---------------------------------------------------------------- #42 Pounce
+// ---------------------------------------------------------------- Pounce
 // Pounce: the station runs it as an automation run with pounce <call>; this
 // client only starts and stops it and shows it (QSO pane line, strategy element status).
 const pouncing=call=>runActive()&&run.pounce?.call===call;
@@ -1567,7 +1567,7 @@ async function startPounce(call){
   finally{show();}
 }
 pounceItem.addEventListener('click',()=>{const call=pounceItem.dataset.call;if(!call)return;if(pouncing(call))stopPounce();else startPounce(call);});
-// ---------------------------------------------------------------- #39 Most Wanted list
+// ---------------------------------------------------------------- Most Wanted list
 // WstxSettings::MostWantedDisplay in Settings > General: status with the source attribution, an upload
 // the station validates, and Download now, one fetch on the operator's click. No automatic refresh.
 if(typeof block==='function'&&document.querySelector('#settings-general'))block('settings-most-wanted','Most Wanted list',document.querySelector('#settings-general'),'<p class="op-actions"><span id="mw-status" class="op-muted" role="status">No list</span> <button type="button" id="mw-update" title="Fetches the list from clublog.org once, now">Update Most Wanted</button></p><p id="mw-result" class="op-muted" role="status"></p><p id="mw-attribution" class="op-muted"></p><p class="op-muted">A strategy calls the stations on this list first, by their rank, then the strongest; without a list the strongest first. It only changes when you click: Club Log states no terms for it.</p>');
@@ -1590,7 +1590,7 @@ $('mw-update')?.addEventListener('click',async()=>{
 });
 // ---------------------------------------------------------------- editor popup
 const CONTINENTS=[['AF','Africa'],['AN','Antarctica'],['AS','Asia'],['EU','Europe'],['NA','North America'],['OC','Oceania'],['SA','South America']];
-// #97 WstxSettings::StrategyEditor: the answers of the nine decisions, with the model's labels.
+// WstxSettings::StrategyEditor: the answers of the nine decisions, with the model's labels.
 const NEW_WHAT=[['dxcc','DXCC entity'],['call','Call'],['grid','Grid'],['cq_zone','CQ zone (WAZ)'],['itu_zone','ITU zone'],['continent','Continent (WAC)'],['prefix','Prefix (WPX)']];
 const NEW_PER=[['ever','Ever'],['band','Band'],['band_mode','Band and mode']];
 const NEW_MEANS=[['not_worked','Not worked'],['not_confirmed','Not confirmed (QSL/LoTW)']];
@@ -1625,8 +1625,8 @@ function contestFill(keep){
   $('cp-notes').replaceChildren(...[p.automation_text,...p.notes].map(n=>{const li=document.createElement('li');li.textContent=n;return li;}));
   $('cp-result').textContent='';
 }
-// Opens the prompt on a profile (the selection in force by default), with a strategy chosen (#97
-// StrategySelector: a saved contest strategy whose contest is not in force).
+// Opens the prompt on a profile (the selection in force by default), with a strategy chosen
+// (StrategySelector: a saved contest strategy whose contest is not in force).
 async function openContestPrompt(profile,strategy,keep){
   await loadContests();if(!contests.length){statusNode.textContent='Contest strategies unavailable';show();return;}
   $('cp-profile').replaceChildren(...contests.map(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name;return o;}));
@@ -1650,7 +1650,7 @@ $('cp-go').addEventListener('click',async()=>{
   const ok=await saveConfiguration({...c,active,contest},'Contest');
   if(ok)contestPrompt.close('ok');else $('cp-result').textContent=statusNode.textContent;
 });
-// #97 WstxSettings::StrategyEditor: a strategy is new only as a duplicate ("<name> copy", then
+// WstxSettings::StrategyEditor: a strategy is new only as a duplicate ("<name> copy", then
 // "<name> copy 2" ..., at most 32 characters), keeping its class and contest; there is no Add.
 function copyName(name){
   const taken=n=>drafts.some(d=>d.name.toLowerCase()===n.toLowerCase());
