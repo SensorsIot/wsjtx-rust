@@ -534,3 +534,62 @@ async fn clock_state_is_pushed_to_every_profile() {
         server.abort();
     }
 }
+
+// GET /clock's view and the clock.state event read on four threads while SNTP records 501,
+// 502, …: a higher clock_revision never carries a lower offset, and each offset has at most
+// one revision.
+// Proves: TC-092-009
+#[test]
+fn a_revision_never_carries_older_clock_values() {
+    use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+    let ntp = Monitor::new();
+    ntp.record(Some(measured(501)));
+    let s = station(directory(), ntp.clone());
+    let (r, c) = (&*s.recording, s.recording.clock.get().unwrap());
+    let done = AtomicBool::new(false);
+    let mut seen: Vec<(u64, i64)> = std::thread::scope(|scope| {
+        let readers: Vec<_> = (0..4)
+            .map(|i| {
+                let done = &done;
+                scope.spawn(move || {
+                    let mut seen = vec![];
+                    while !done.load(SeqCst) {
+                        seen.push(if i % 2 == 0 {
+                            let v = view(r, c);
+                            assert_eq!(v["warning"], "pc_clock_off");
+                            let offset = &v["ntp"]["measurement"]["offset_ms"];
+                            (
+                                v["clock_revision"].as_u64().unwrap(),
+                                offset.as_i64().unwrap(),
+                            )
+                        } else {
+                            let (revision, text) = state_event(r).unwrap();
+                            let e: Value = serde_json::from_str(&text).unwrap();
+                            let offset = &e["data"]["clock"]["ntp_offset_ms"];
+                            (revision, offset.as_i64().unwrap())
+                        });
+                    }
+                    seen
+                })
+            })
+            .collect();
+        for offset in 502..20_000 {
+            ntp.record(Some(measured(offset)));
+            std::thread::yield_now();
+        }
+        done.store(true, SeqCst);
+        readers
+            .into_iter()
+            .flat_map(|h| h.join().unwrap())
+            .collect()
+    });
+    seen.sort_unstable();
+    seen.dedup();
+    assert!(seen.len() > 1, "{seen:?}");
+    for w in seen.windows(2) {
+        assert!(
+            w[0].0 < w[1].0 && w[0].1 < w[1].1,
+            "revision and offset out of step: {w:?}"
+        );
+    }
+}
