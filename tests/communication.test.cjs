@@ -43,13 +43,13 @@ async function contextFor() {
 }
 
 // Test-tool oracle: a protocol fixture proves heartbeat interleaving and a fixed deadline.
-// #35: Chromium refuses its kRestrictedPorts with ERR_UNSAFE_PORT; Windows here hands out
+// Chromium refuses its kRestrictedPorts with ERR_UNSAFE_PORT; Windows here hands out
 // dynamic ports from 1024, so a browser-facing listen(0) can land on one.
 test('port helper: browser- and fetch-facing ports are never Chromium restricted or fetch bad ports', async () => {
   // Spot values of Chromium net/base/port_util.cc kRestrictedPorts, including the ones seen on HB9BLA.
   for (const port of [1, 25, 1719, 1720, 1723, 2049, 5060, 5061, 6000, 6665, 6666, 6667, 6668, 6669, 6697, 10080]) assert.ok(restrictedPorts.has(port), String(port));
   for (const port of [80, 443, 1024, 8080, 18001]) assert.equal(restrictedPorts.has(port), false, String(port));
-  // #8: Node's fetch (undici) refuses the Fetch standard's bad ports with "bad port"; 4190 and
+  // Node's fetch (undici) refuses the Fetch standard's bad ports with "bad port"; 4190 and
   // 6679 are not on Chromium's list. Each one is restricted, and this Node refuses each.
   for (const port of [1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]) {
     assert.ok(restrictedPorts.has(port), String(port));
@@ -95,7 +95,7 @@ test('peer helper: heartbeat interleaving preserves response and total deadline'
 test('TC-021-005: actual-server correlation, negative cases and size boundaries', async t => {
   const app = await server(); t.after(() => app.close());
   const a = await peer(app.origin), b = await peer(app.origin); t.after(() => {a.terminate(); b.terminate();});
-  // #51 ClientBuild oracle: SHA-256 over the client files in route order, first 16 hex digits.
+  // ClientBuild oracle: SHA-256 over the client files in route order, first 16 hex digits.
   const build = require('node:crypto').createHash('sha256').update(Buffer.concat(await Promise.all(['index.html', 'authorization.js', 'app.js', 'recording.js', 'recording.css', 'contact.js', 'logbook.js', 'style.css'].map(f => fs.readFile(path.join(__dirname, '../client', f)))))).digest('hex').slice(0, 16);
   const expected = id => ({v: 1, type: 'station.status', id, data: {version: '0.1.0', radio: 'unconfigured', build}});
   assert.match(await (await fetch(app.origin + '/')).text(), new RegExp(`<body data-profile="false" data-build="${build}">`), 'the page carries the build it was served with');
@@ -156,11 +156,11 @@ test('TC-021-007: dropped connection, bounded retries, fresh snapshot', async t 
   assert.ok(Date.now() - silentRestore < 10000); assert.equal(requests, 3, 'snapshot after silent failure');
 });
 
-// #8: on the shared 32 kbit/s bottleneck the page's own deferred contact client download holds
+// On the shared 32 kbit/s bottleneck the page's own deferred contact client download holds
 // the station's WebSocket messages behind it for more than 12 s. Deterministic model: hold
 // (delay, never drop) every station-to-page message while /contact.js is pending, then deliver.
 // The hold ends only by state.release(); the page clock is installed before the page loads, so
-// the test can drive it (#70).
+// the test can drive it.
 async function deferredDownloadHold(t) {
   const dir = await fs.mkdtemp(path.join(temporary, 'deferred-')), port = await browserPort();
   const document = {schema_version: 1, profile_id: require('node:crypto').randomUUID(), revision: 0, display_name: 'Deferred', callsign: 'HB9BLA', locator: 'JN37VL',
@@ -190,7 +190,7 @@ async function deferredDownloadHold(t) {
   return {page, state};
 }
 
-// #70: the 16 s hold runs on the page's driven clock (the watchdog is a page setInterval on Date.now()).
+// The 16 s hold runs on the page's driven clock (the watchdog is a page setInterval on Date.now()).
 // Cost level 2: profile station, real Chromium.
 test('a deferred client download that holds station messages 16 s is not a lost link', {timeout: 30000}, async t => {
   const {page, state} = await deferredDownloadHold(t);
@@ -249,8 +249,8 @@ test('TLS login, unauthorized/origin denial, plaintext refusal', async t => {
   }
 });
 
-// #102 evidence (no promise): each path that makes the page stale names itself as the
-// station-stale event's detail.path. The labels, from the path list of issue #102.
+// Evidence (no promise): each path that makes the page stale names itself as the
+// station-stale event's detail.path. The labels of the stale paths.
 const stalePaths = ['watchdog', 'message-rejected', 'profile-refresh-failed', 'recording-sync-failed', 'socket-closed', 'opening-timeout',
   'authorization-unavailable', 'authorization-not-ready', 'authorization-retry', 'component-missing', 'login-failed'];
 // The argument that carries the label, by the called function.
@@ -309,7 +309,7 @@ function assertStalePaths(sources) {
   return sites;
 }
 
-// Evidence of #102 item 2, source scan of the served client.
+// Evidence, source scan of the served client.
 test('Stale path labels: every stale call of the served client names its path', async t => {
   const app = await server(); t.after(() => app.close());
   const served = {};
@@ -331,7 +331,7 @@ test('Stale path labels: every stale call of the served client names its path', 
   assert.throws(() => assertStalePaths({'empty.js': 'const x = 1;'}), /no call site/);
 });
 
-// Evidence of #102 item 2, real Chromium against the station: the station side closes the page's
+// Evidence, real Chromium against the station: the station side closes the page's
 // socket, every station message is held while the page clock runs 13000 ms, and a message of
 // another version arrives. Each makes the page stale once, naming its path.
 test('Stale path labels: socket closed, silence watchdog and rejected message in real Chromium', {timeout: 60000}, async t => {

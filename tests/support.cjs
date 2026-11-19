@@ -10,9 +10,9 @@ const {performance} = require('node:perf_hooks');
 // Ports no test may hand to a browser or to Node's fetch: Chromium net/base/port_util.cc
 // kRestrictedPorts (main branch, read 2026-10-31; a page on one fails with ERR_UNSAFE_PORT)
 // united with the Fetch standard's bad ports that Node's fetch (undici) refuses with
-// "bad port" (Node v26.13.0, read 2026-11-04; adds 4190 and 6679, #8), plus 0. Windows may
+// "bad port" (Node v26.13.0; adds 4190 and 6679), plus 0. Windows may
 // hand out dynamic ports from 1024, so every port a browser or fetch uses comes from
-// listenBrowser/browserPort (#35). The Rust tests that start node read the same file.
+// listenBrowser/browserPort. The Rust tests that start node read the same file.
 const restrictedPorts = new Set(require('./blocked-ports.json'));
 // Listens `listener` on an OS-chosen port of `host` that Chromium and fetch accept, closing
 // and retrying while the port is restricted. Resolves the port.
@@ -45,7 +45,7 @@ async function server(env = {}, args = []) {
 // The account-local station data of this test process: the profile UUID ownership claims
 // and radio-ownership claims a station keeps under LOCALAPPDATA. Every station a test starts
 // uses this per-run directory, so suites running at the same time in other checkouts (a push
-// gate beside an agent) and the live station never share a claim (harness#28). Removed
+// gate beside an agent) and the live station never share a claim. Removed
 // when the process exits.
 let stationData;
 function stationDataRoot() {

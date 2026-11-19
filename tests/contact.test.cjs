@@ -1,6 +1,6 @@
 'use strict';
 // Cost2: launched by contact_http_tests::contact_browser_operating_flow with the actual
-// candidate Router, contact engine and #9 transmit owner on a recording hardware double
+// candidate Router, contact engine and transmit owner on a recording hardware double
 // (no audio, PTT or radio). Decoded rows are hand-authored and published through the
 // test-only control peer; expected values below are the independent TC tables.
 // The tests also cover the DXCC column, the approximate distance, the QSO header and the
@@ -41,7 +41,7 @@ test('TC-007-003 QSO pane candidates selection without transmit',{timeout:90000}
     {text:'HB9BLA W1XYZ -10',hz:400,snr:-10},{text:'HB9BL K1ABC -01',hz:2600,snr:-9},{text:'CQ DL1ABC JO62',hz:800,snr:-3}]);
   const rows=page.locator('#band-activity tbody tr[data-sequence]');
   await waitFor(async()=>await rows.count()===9,'nine Band Activity rows',30000);
-  // #55 TC-055-004: the DXCC column from the station's cty.dat entity (United States
+  // TC-055-004: the DXCC column from the station's cty.dat entity (United States
   // 37.60 N 91.87 W, Germany; cty.dat lines 1251/669) and, without a grid in the
   // message, the distance from the country position, marked approximate (~): JN47AA to
   // 37.60 N 91.87 W is 7706 km by hand haversine.
@@ -49,13 +49,13 @@ test('TC-007-003 QSO pane candidates selection without transmit',{timeout:90000}
   assert.deepEqual(await dxcc('HB9BLA W1XYZ -10'),['U.S.A.','U.S.A. \u00b7 NA \u00b7 CQ zone 5 \u00b7 ITU zone 8 (cty.dat)','~7706 km']);
   assert.equal((await dxcc('CQ DL1ABC JO62'))[0],'Germany');
   assert.doesNotMatch((await dxcc('CQ K1ABC FN42'))[2],/~/,'a message grid gives the exact distance');
-  // #37 QsoPane, no contact (operator 2026-11-02): only the stations calling my call, on any
+  // QsoPane, no contact: only the stations calling my call, on any
   // frequency; never the CQs near Rx or HB9BL.
   // (Others).
   const others=async()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
   await waitFor(async()=>(await others()).length===1,async()=>`QSO pane ${JSON.stringify(await others())}`);
   const minus=String.fromCharCode(0x2212);
-  // #37 Calling me (2026-11-04): call, SNR, grid (none in a report) and country.
+  // Calling me: call, SNR, grid (none in a report) and country.
   assert.deepEqual(await others(),[['candidate',['W1XYZ',`${minus}10`,'','U.S.A.']]]);
   assert.equal(await page.locator('#qso-others-none').isVisible(),false);
   // Local sorting: no request. The DX entry is in the QSO fold-out.
@@ -71,7 +71,7 @@ test('TC-007-003 QSO pane candidates selection without transmit',{timeout:90000}
   assert.equal(select.row.source_id,live.source.id);assert.equal(select.row.job_id,live.job.id);assert.equal(select.row.generation,live.generation);
   assert.equal(String(select.row.sequence),await k1abc.getAttribute('data-sequence'));
   await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'K1ABC'}).waitFor();
-  // #55 TC-055-004: the QSO pane header names the partner's country and continent, first on
+  // TC-055-004: the QSO pane header names the partner's country and continent, first on
   // its detail line; the header line stays call and grid.
   await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:/^U\.S\.A\. \(NA\) \u00b7 \d+ km \u00b7 sent /}).waitFor();
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'K1ABC · FN42');
@@ -106,9 +106,9 @@ test('double-click starts transmission, partner report advances to Tx3, Esc abor
   await waitFor(async()=>(await snapshot()).contact.state==='roger_report','roger_report',15000);
   await page.locator('#contact-next').filter({hasText:'K1ABC HB9BLA R-12'}).waitFor();
   assert.equal(await page.locator('input[name=contact-next][value=tx3]').isChecked(),true);
-  // #37: the partner's report is the pane's last partner message, with its SNR.
+  // The partner's report is the pane's last partner message, with its SNR.
   await page.locator('#qso-heard').filter({hasText:`HB9BLA K1ABC -05  ${String.fromCharCode(0x2212)}7 dB`}).waitFor();
-  // #37 review: the confirmation popup is modal, so it carries HALT; clicking it halts at once.
+  // The confirmation popup is modal, so it carries HALT; clicking it halts at once.
   const popupMark=requests.length;
   await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
   assert.equal(await page.locator('#op-confirm-halt').isEnabled(),true,'popup HALT enabled like the top-bar HALT');
@@ -118,7 +118,7 @@ test('double-click starts transmission, partner report advances to Tx3, Esc abor
   assert.equal(await page.locator('#op-confirm[open]').count(),0,'HALT closes the popup');
   await new Promise(r=>setTimeout(r,300));
   assert.deepEqual(requests.slice(popupMark).filter(r=>r.method==='POST').map(r=>r.path),['/transmit/halt'],'the popup HALT sends only the halt; the CQ is not sent');
-  // #39 Abort QSO: a panel is open; Esc in a text field aborts the QSO (one contact
+  // Abort QSO: a panel is open; Esc in a text field aborts the QSO (one contact
   // command, no halt) and closes nothing.
   await page.locator('#station-bar [data-region=help]').click();
   assert.equal(await page.locator('#region-help').isVisible(),true);
@@ -136,7 +136,7 @@ test('double-click starts transmission, partner report advances to Tx3, Esc abor
   const s=await snapshot();assert.equal(s.transmit.arm_state,'disarmed');assert.equal(s.contact.dx_call,null);
   const keys=await (await fetch(control+'/keys')).json();assert.ok(keys.length===0||keys.at(-1)===false,'PTT released after the abort');
   await page.locator('.op-secondary:not([hidden]) .return-operate').click();
-  // #39 Abort QSO: the visible button beside HALT does the same, and the station stays ready.
+  // Abort QSO: the visible button beside HALT does the same, and the station stays ready.
   await publish(evenNow(),[{text:'CQ K2ABC FN31',hz:1300,snr:-4}]);
   const fresh=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ K2ABC FN31'}).first();
   await fresh.waitFor();await fresh.dblclick();
@@ -198,7 +198,7 @@ test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx
   const dblAt=async hz=>{box=await canvas.boundingBox();const p=at(hz);await page.mouse.dblclick(p.x,p.y);};
   const last=async(n=1)=>{await waitFor(()=>commands().length>=n,()=>`command ${n} ${JSON.stringify(requests.slice(-8).map(r=>[r.method,r.path,Math.round(r.at),r.end]))} now ${Math.round(performance.now())}`);return commands().at(-1);};
   const settle=async(field,hz)=>waitFor(async()=>(await snapshot()).settings[field]===hz,async()=>`${field} ${hz}: ${await page.locator('#contact-result').textContent()}`);
-  // #50 PointerEffect: click sets Tx (after the 250 ms double-click wait), double-click sets Rx and Tx.
+  // PointerEffect: click sets Tx (after the 250 ms double-click wait), double-click sets Rx and Tx.
   // Tx away from 1500 Hz first: Hold Tx keeps it there (CL-039-08), and a press on the Tx line is a drag, no click.
   let n=commands().length;
   await clickAt(2000);await last(n+1);await settle('tx_hz',2000);
@@ -214,7 +214,7 @@ test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx
   c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[700,700]);await settle('rx_hz',700);
   await new Promise(r=>setTimeout(r,600));assert.equal(commands().length,n+1,'one request for a double-click');
   assert.equal(commands().slice(n).some(x=>x.action==='redecode'),false,'no re-decode request');
-  // Modifiers no longer change the effect; Hold Tx only blocks implicit moves, so a click still moves Tx.
+  // Modifiers do not change the effect; Hold Tx only blocks implicit moves, so a click still moves Tx.
   await page.locator('#contact-hold').check();await waitFor(async()=>(await snapshot()).settings.hold_tx,'hold');
   n=commands().length;await page.keyboard.down('Shift');await clickAt(1000);await page.keyboard.up('Shift');
   c=await last(n+1);assert.deepEqual([c.rx_hz,c.tx_hz],[null,1000]);await settle('tx_hz',1000);
@@ -237,16 +237,16 @@ test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout
   await label.filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
   const shown=(await label.textContent()).slice(4),now=new Date(),seconds=t=>{const [h,m,s]=t.split(':').map(Number);return h*3600+m*60+s;};
   const delta=Math.abs(seconds(shown)-seconds(now.toISOString().slice(11,19)));assert.ok(delta<=2||delta>=86398,`server UTC ${shown}`);
-  // #50: the period progress is the QSO pane's NEXT bar only (its width follows the period).
+  // The period progress is the QSO pane's NEXT bar only (its width follows the period).
   assert.equal(await page.locator('#radio-toolbar .op-period small, #radio-toolbar .op-period-track').count(),0);
   assert.match(await page.locator('#qso-progress').evaluate(b=>b.style.width),/^\d+(\.\d+)?%$/);
-  // #37: the Rx level meter is in Settings > Radio > Audio; the top bar shows only a low/high chip.
+  // The Rx level meter is in Settings > Radio > Audio; the top bar shows only a low/high chip.
   assert.equal(await page.locator('#settings-audio .op-input-meter strong').textContent(),'47 dB');
   assert.equal(await page.locator('#exception-chips [data-chip=level]').count(),0,'a normal level shows no chip');
   assert.deepEqual(page.errors,[]);
 });
 
-// #41 DirectLog: Log QSO logs at once on the actual server, without a review form.
+// DirectLog: Log QSO logs at once on the actual server, without a review form.
 // (the browser Log QSO button).
 test('manual DX entry and Log QSO log the contact at once without hiding Halt Tx',{timeout:30000},async()=>{
   if(!await page.locator('#qso-more').evaluate(el=>el.open))await page.locator('#qso-more summary').click();
@@ -268,8 +268,8 @@ test('manual DX entry and Log QSO log the contact at once without hiding Halt Tx
   assert.deepEqual(page.errors,[]);
 });
 
-// Review finding P2-2: with the contact snapshot unavailable (GET /contact failing),
-// Alt+H still sends the #9 halt; only a station known to be receive-only skips it.
+// With the contact snapshot unavailable (GET /contact failing),
+// Alt+H still sends the halt; only a station known to be receive-only skips it.
 test('Alt+H halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
   await page.route('**/contact',route=>route.abort('failed'));
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
@@ -287,7 +287,7 @@ test('Alt+H halts even when the contact snapshot is unavailable',{timeout:60000}
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000}).catch(async e=>{throw new Error(`contact client not loaded: ${JSON.stringify(await page.evaluate(()=>({scripts:[...document.scripts].map(s=>s.src),snapshot:typeof snapshot!=='undefined'&&!!snapshot,live:typeof live!=='undefined'?String(live):'undef'})))} errors ${JSON.stringify(page.errors)} requests ${JSON.stringify(requests.filter(r=>r.path.startsWith('/contact')).slice(-6).map(r=>[r.method,r.path,r.end]))}`);});
 });
 
-// Review decision 6 (OpenRegion) / #37 SettingsDrawer: a pointer action outside the drawer closes it.
+// OpenRegion / SettingsDrawer: a pointer action outside the drawer closes it.
 test('a pointer action outside the Settings drawer returns to operation',{timeout:30000},async()=>{
   if(await page.locator('#region-logbook').isVisible())await page.locator('#region-logbook .return-operate').click();
   await page.locator('#operating-workspace').waitFor({state:'visible'});
@@ -298,7 +298,7 @@ test('a pointer action outside the Settings drawer returns to operation',{timeou
   assert.equal(await page.getByRole('button',{name:'HALT',exact:true}).isVisible(),true,'the QSO pane HALT, the one HALT of the operating view (#37)');
 });
 
-// Re-check item 2: the keyboard halt does not wait for contact.js (loaded after the first
+// The keyboard halt does not wait for contact.js (loaded after the first
 // state reads); one Alt+H sends exactly one halt before and after that load.
 test('Alt+H halts once before and once after the contact client loads',{timeout:60000},async()=>{
   // Hold /contact.js so the first Esc happens deterministically before it loads.
@@ -324,8 +324,8 @@ test('Alt+H halts once before and once after the contact client loads',{timeout:
   assert.deepEqual(page.errors,[]);
 });
 
-// #55 live defect 2026-11-02: K1WY's RR73 arrived packed as the grid square RR73 (32373) and
-// showed an exact 5435 km (JN37VL to RR73). RR73 is the roger, never a grid: that row shows
+// K1WY's RR73 packed as the grid square RR73 (32373) gives no exact distance (5435 km,
+// JN37VL to RR73). RR73 is the roger, never a grid: that row shows
 // the entity distance marked approximate like the report row; only the CQ grid is exact.
 // JN47AA to FN31 is 6188 km by hand haversine; U.S.A. is ~7706 km (see TC-007-003 above).
 test('TC-055-004 RR73 sent as a grid square is no grid for the distance, in either order',{timeout:60000},async()=>{
@@ -346,7 +346,7 @@ test('TC-055-004 RR73 sent as a grid square is no grid for the distance, in eith
 // station mid-QSO or during my CQ switches at once, without a confirmation, keeps Enable Tx
 // on, and the next own period calls the new station; Auto Seq then runs that QSO to its
 // completion and it is logged once. The station runs on the real clock, so each step
-// waits for the transmission (#9 transmit view last_text, set when its audio starts).
+// waits for the transmission (transmit view last_text, set when its audio starts).
 const sentTo=async text=>(await snapshot()).transmit.last_text===text;
 async function dblclickRow(text,hz,snr){
   const {sequences}=await publish(evenNow(),[{text,hz,snr}]);
@@ -369,9 +369,9 @@ async function completes(call,report){
   await page.locator('#contact-logged').filter({hasText:`Logged ${call}`}).waitFor({timeout:15000});
 }
 // The browser part (b)/(c) runs as two tests, mid-QSO (then CQ right after the completed
-// contact, the #61 stale_revision path) and from-CQ (then (c) after the completed contact),
+// contact, the stale_revision path) and from-CQ (then (c) after the completed contact),
 // each on its own station and browser started by contact_browser_operating_flow, so that
-// their real-clock periods elapse concurrently (harness#28); every step and assertion is kept.
+// their real-clock periods elapse concurrently; every step and assertion is kept.
 // The actual
 // station pushes transmit.state: all fields first, then what changed; the page reads no
 // GET /transmit and receives nothing while the view is unchanged.
@@ -787,7 +787,7 @@ test('from-CQ: a double-click from my CQ switches with Tx kept on, the new QSO c
   assert.equal((await snapshot()).transmit.arm_state,'armed');
   assert.equal(await page.locator('#contact-change').count(),0,'no confirmation button');
   await completes('EA8BIA','+00');
-  // (c) #50 operator 2026-11-03 (G8KHF after the completed G6WCX): after a completed
+  // (c) G8KHF after the completed G6WCX: after a completed
   // contact (disarmed, contact_completed) a double-click whose second press sees the Band
   // Activity rows redrawn (a result page arrived; the browser then drops that click and the
   // dblclick) still replies: select_row with replace true, then enable_tx, then Tx1.

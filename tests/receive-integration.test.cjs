@@ -19,7 +19,7 @@ test('real native audio reaches Rust manager HTTP and literal browser callsign',
     const errors=[],pages=[];page.on('pageerror',e=>errors.push(e.message));
     page.on('request',request=>{if(request.url().includes('/receive/results'))pages.push({url:request.url(),at:performance.now()});});
     await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();
-    // #37: display preferences are in the Settings drawer (General > Display).
+    // Display preferences are in the Settings drawer (General > Display).
     await page.locator('#open-server-settings').click();
     await page.selectOption('#display-profile','thin');
     await page.locator('.op-secondary:not([hidden]) .return-operate').click();
@@ -32,7 +32,7 @@ test('real native audio reaches Rust manager HTTP and literal browser callsign',
     assert.equal(await page.locator('#receive-toggle').isDisabled(),true);
     assert.equal((await (await fetch(origin+'/receive')).json()).job,null,'a refused browser mutation never activates the input');
     await page.unroute('**/receive/start');
-    // #37: the explicit Refresh status is in Settings > Expert.
+    // The explicit Refresh status is in Settings > Expert.
     await page.locator('#open-server-settings').click();await page.locator('#refresh').click();await page.locator('#settings-drawer .return-operate').click();
     await chip.filter({hasText:'Receive stopped'}).waitFor();
     if(mode==='ft8')await chip.click();
@@ -52,7 +52,7 @@ test('real native audio reaches Rust manager HTTP and literal browser callsign',
       const cells=await row.locator('td').evaluateAll(nodes=>nodes.map(el=>{const s=getComputedStyle(el);return {font:parseFloat(s.fontSize),top:parseFloat(s.paddingTop),bottom:parseFloat(s.paddingBottom)};}));
       assert.ok(cells[0].font>=16,`source time readable at ${width}px`);
       for(const cell of cells.slice(1))assert.ok(cell.font>=16,`decoded cell readable at ${width}px`);
-      // #55 CL-055-05 (operator 2026-11-03): dense rows with a fine pointer keep 1 px vertical
+      // CL-055-05: dense rows with a fine pointer keep 1 px vertical
       // cell padding; a coarse (touch) pointer keeps 8 px so rows stay tappable.
       const coarse=await page.evaluate(()=>matchMedia('(pointer:coarse)').matches),pad=coarse?8:1;
       assert.ok(cells.every(cell=>cell.top>=pad&&cell.bottom>=pad),`cell padding at least ${pad} px at ${width}px (${coarse?'coarse':'fine'} pointer)`);
@@ -94,7 +94,7 @@ test('real native audio reaches Rust manager HTTP and literal browser callsign',
     assert.equal(await row.count(),1,'accepted partial records survive stop');
     assert.equal((await (await fetch(origin+'/receive/results?'+query)).json()).records[0].text,'CQ K1ABC FN42');
     for(const name of ['CQ','Log QSO'])assert.equal(await page.getByRole('button',{name,exact:true}).isDisabled(),true);
-    // #37 one HALT: the top-bar HALT hides while the QSO pane HALT is on screen; both are disabled.
+    // One HALT: the top-bar HALT hides while the QSO pane HALT is on screen; both are disabled.
     for(const id of ['#halt-tx','#qso-halt'])assert.equal(await page.locator(id).isDisabled(),true,id);
     assert.equal(await page.locator('#contact-auto').isDisabled(),true);
     await fs.mkdir('test-results/receive-integration',{recursive:true});

@@ -1,15 +1,14 @@
 'use strict';
 // What a page kept open must never do, for the driver of the in-process station
 // (tests/frontend/receive-page.test.cjs) and of the running station (tests/live-page-check.cjs).
-// Harness retrospective item 3 (SensorsIot/harness#38), from #22 and #50's live defects.
 
-// What a page shows must never read like a programming accident (#22, "Latest undefined period").
+// What a page shows must never read like a programming accident ("Latest undefined period").
 const ACCIDENT=/\bundefined\b|\bNaN\b/;
 // A row keeps its tip while it is on screen. The worked-before status joins it once, when the
 // period's one query is answered; beside the partner of a contact, nothing else can change a tip while nothing is set.
 const WORKED=/ \(worked [^)]*\)/;
-// The strategy's verdict ends a tip (#55). It ranks the rows on screen, so it joins when the station
-// has evaluated the row and its number moves with every new period (seen live 2026-11-07, "#1" -> "#2").
+// The strategy's verdict ends a tip. It ranks the rows on screen, so it joins when the station
+// has evaluated the row and its number moves with every new period.
 // That is not the row's reason changing, so it stays out of the comparison, not out of ACCIDENT.
 const VERDICT=/(?:^| · )(?:Strategy |Contest |Directed CQ|Dupe in).*$/;
 function tipChange(before,after){

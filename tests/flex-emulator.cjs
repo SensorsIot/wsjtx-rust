@@ -10,7 +10,7 @@ const dgram = require('node:dgram');
 const {once} = require('node:events');
 
 const OUI = 0x001c2d, INFO = 0x534c, DAX24 = 0x03e3, DISCOVERY = 0xffff;
-// A real FLEX-6600 (2026-11-06) sends DAX as type 3 with frozen filler timestamps.
+// A real FLEX-6600 sends DAX as type 3 with frozen filler timestamps.
 const FROZEN = {tsi: 1, tsf: 1, integer: 0xa5a5a0a5, fraction: 0x8d88c152a5a5a0a5n};
 const fs = require('node:fs');
 
