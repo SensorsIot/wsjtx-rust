@@ -5190,6 +5190,7 @@ const fullScreenVariants={
 // with rows, one decoded CQ row in Band Activity (for its row menu); init is a further init script.
 async function fullScreenFixture(t,viewport,variant,{rows=false,init=null}={}){
   const commands=[],requests=[];
+  let lookupDone;const lookupFinished=new Promise(r=>{lookupDone=r;});
   const f=await fixture(t,viewport,{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     await p.addInitScript(fullScreenVariants[variant]);
@@ -5208,9 +5209,14 @@ async function fullScreenFixture(t,viewport,variant,{rows=false,init=null}={}){
         await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:1,available_count:1,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
     }
     p.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
+    // The prepared state's own request: render of the replying contact looks the partner up (GET /dxcc?call=K1ABC).
+    const lookup=r=>{const u=new URL(r.url());return u.pathname==='/dxcc'&&u.searchParams.get('call')==='K1ABC';};
+    for(const event of ['requestfinished','requestfailed'])p.on(event,r=>{if(lookup(r))lookupDone();});
   }});
   const {page}=f;
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact?.state==='replying',null,{timeout:45000});
+  // The window of quiet opens only after that lookup has reached the test and finished.
+  let timer;await Promise.race([lookupFinished,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('the partner DXCC lookup did not finish')),15000);})]).finally(()=>clearTimeout(timer));
   if(rows)await page.locator('#band-activity tr[data-sequence="0"]').waitFor({timeout:25000});
   const button=page.locator('#full-screen');
   return {...f,commands,requests,button,
