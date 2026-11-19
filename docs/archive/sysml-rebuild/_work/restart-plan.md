@@ -331,3 +331,11 @@ Review; the gate red twice; the usage limit.
   native-flex TC-023-002 `discovery_unavailable` once (loopback port collision under load, not
   reproduced in three runs). Coder repaired the filters (31a6be6c7: 27 + 1 + 1 = 29 tests);
   `Review: PASS — 31a6be6c7` (6993463043). **#235 landed** 2026-11-18 as master ba7a4721d.
+- Install 2026-11-19: ba7a4721d over d14a0d98d (standing deploy policy; the station was on
+  SIM-IC7300 without its emulator, so the deploy waited for the radio until the operator's
+  `station-switch -To back`); probe PASS, page check NOT-EXERCISED; #85, #230, #235 installed.
+- Accept 2026-11-19 on the emulator and band simulator (tester launched as Alex launches it, with
+  the station MCP): page check green on its rerun; #235 item 2, #85 items 1-4 pass; offline items
+  of #235 and #230 pass (Andreas retired by factory decision 4). `Accepted live` on #235
+  (7002085941), #230 (7002088254), #85 (7002090617); all three accepted and closed. Station back
+  on `ic7300`, emulator stopped.
