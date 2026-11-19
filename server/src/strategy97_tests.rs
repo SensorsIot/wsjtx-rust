@@ -459,7 +459,7 @@ async fn tc_097_002_built_in_names_read_renamed_and_active_never_survives_a_rest
     std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
 }
 
-/// The operator's table on #97 (BuiltinStrategies), written here.
+/// The table of the built-in strategies (BuiltinStrategies), written here.
 fn builtin_table() -> Vec<Value> {
     let base =
         |name: &str, new: &str, per: &str, means: &str, order: Value, leave: Value, cq: bool| {
@@ -1734,7 +1734,7 @@ fn leave_of(remaining: u64, busy: bool, paused: u64) -> Value {
 // report to W9XYZ for two of his periods: leave.busy true, paused 1 and 2, remaining stays 4; his
 // RR73 ends it and the next call counts (remaining 3), his CQ the next (2). (c) three publications
 // without his decode after the report stay paused (busy holds). (e) his report to my call resets
-// every count. Red on the parent: the busy calls count (remaining 3, 2).
+// every count.
 // Proves: TC-097-011
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_011_a_busy_target_pauses_the_runs_count() {
@@ -1820,8 +1820,7 @@ async fn tc_097_011_f_busy_pause_off_counts_and_keeps_the_wsjtx_stop() {
 
 // Oracle: WstxOperatingChain::BusyPartner, hand-worked. KE1J's grid to
 // W9XYZ starts busy (leave.busy true, paused 1, remaining stays 4); his 73 to W9XYZ ends it and
-// that publication's call counts (busy false, remaining 3). Red on the parent: a grid to another
-// call is no busy start (the call counts, remaining 3, busy false).
+// that publication's call counts (busy false, remaining 3).
 // Proves: TC-097-011
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it() {
@@ -1840,8 +1839,8 @@ async fn tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it() {
 // stays 1800, Enable Tx on); the calls while he is busy count (WD 1, 0 after the 2nd and 3rd
 // keyed call, no busy_with shown) and the Tx watchdog stops the 4th at N; the run then stops
 // no_client. The calls are keyed (transmit_own_period): a run step alone keys nothing, so the stop
-// at N is only reached with real sends. No product change: the busy logic of ee0cb13ad already
-// holds this (the 50 Hz stop of partnerWorksOther would disarm at once).
+// at N is only reached with real sends. The busy logic holds this (the 50 Hz stop of
+// partnerWorksOther would disarm at once).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_011_g_unattended_the_busy_calls_count_and_tx_still_moves() {
     let mut t = calling_busy_ke1j(true).await;
@@ -1989,8 +1988,7 @@ async fn tc_097_015_the_contest_built_in_and_a_saved_contest_strategy_run() {
 // to K2ABC keeps it (busy_with K2ABC, paused 2, remaining stays 4) and Tx stays 1500 (no TxMoveRule
 // move while busy, although tx_move_every no_reports 1 moves at every counted call); his free text
 // "TNX QSO" in his period at 1205 Hz (within 10 Hz of his last decode at 1200) ends it and that
-// publication's call counts (remaining 3). Red on the parent: the free text does not end busy
-// (busy true, paused 3, remaining 4).
+// publication's call counts (remaining 3).
 // Proves: TC-097-011
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_011_i_busy_holds_across_a_further_station_and_ends_with_his_free_text() {
@@ -2056,7 +2054,7 @@ async fn empties(f: &Mcp, e: i64, from: i64, n: i64, label: &str) {
 // cq_when_idle on and the CQ wait 1, 2 and 5 the run waits after one fewer empty publication and
 // calls CQ (calling, Tx6 "CQ HB9BLA JN47", armed) at exactly that many; the publications alternate
 // parity, so both count. With cq_when_idle off and the CQ wait 1, eight empty publications call no
-// CQ. Red on the parent: the CQ after 2 for 1 and for 5.
+// CQ.
 // Proves: TC-097-018
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_018_cq_after_exactly_the_cq_wait() {
@@ -2083,7 +2081,7 @@ async fn tc_097_018_cq_after_exactly_the_cq_wait() {
 // one empty, then N1NEW calls my call (a callable station before the CQ is due) and is answered;
 // his R-05 and 73 complete the QSO; then 2 empties wait and the 3rd calls CQ. A leaving: "Test
 // calls" with leave {calls 1, calls_heard 2}: one empty publication, then it selects CQ K1ABC and
-// leaves him at the next publication; then 2 empties wait and the 3rd calls CQ. Red on the parent: the CQ at the 2nd.
+// leaves him at the next publication; then 2 empties wait and the 3rd calls CQ.
 // Proves: TC-097-018
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_018_the_cq_wait_starts_again() {

@@ -491,7 +491,7 @@ async fn plaintext_profile_operating_routes_and_ws_require_runtime_token() {
     };
     assert_eq!(read(Some(&good)).await.status, StatusCode::OK);
     assert_eq!(read(None).await.status, StatusCode::UNAUTHORIZED);
-    // #47: the on-demand capture-clock read follows the same operating-read rules.
+    // The on-demand capture-clock read follows the same operating-read rules.
     let get = axum::http::Method::GET;
     let reply = f
         .request(
@@ -1026,8 +1026,6 @@ async fn http_auth_safety_edit_preserves_key_identity_but_advances_scope_and_cle
     );
 }
 
-// External route regression uses only preexisting App fields; a restored parent
-// binary can be exercised without relying on a missing new Rust module/API.
 #[tokio::test]
 async fn http_auth_status_requires_post_and_wrong_origin_is_forbidden_before_auth() {
     let app = App {
@@ -2182,7 +2180,7 @@ mod automatic_cat {
         assert_eq!(current["receive_state"]["audio"], "closed");
         assert_eq!(current["receive_state"]["decoder"], Value::Null);
         assert_eq!(peer.lock().unwrap().opens, 1);
-        // Review F1: a non-safety edit is a new key; before the next tick the status
+        // A non-safety edit is a new key; before the next tick the status
         // reports waiting, never the previous connection's ready/fresh readback.
         let (id, revision, mut settings) = {
             let store = state.store.lock().unwrap();

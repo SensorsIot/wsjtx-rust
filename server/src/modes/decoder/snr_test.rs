@@ -1,7 +1,7 @@
 use super::*;
 #[test]
 fn ft8_period_follows_the_receive_period_grid() {
-    // A known period start places every window's periods on its 180000-frame grid (#52).
+    // A known period start places every window's periods on its 180000-frame grid.
     assert_eq!(period_of(360000, 22000, Some(14400)), 14400);
     assert_eq!(
         period_of(360000, 22000 + 180000, Some(14400)),

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 // The actual station router (selected HTTPS profile with its auth-v1 owner, the contact
-// engine and the #9 transmit owner thread on the recording hardware double: no audio,
+// engine and the transmit owner thread on the recording hardware double: no audio,
 // PTT or radio) and an independent MCP test client that writes the literal JSON-RPC
 // messages of MCP 2026-07-28 and 2025-11-25. Expected values come from the hand-authored
 // fixture rows, the fixture's own identities and the WstxMcp tables, not from MCP output.
@@ -21,7 +21,7 @@ pub(crate) struct Mcp {
     pub(crate) bench: Bench,
     /// The browser's grant transport (cookie).
     pub(crate) token: String,
-    /// The MCP client token (#58), created in Settings by that browser.
+    /// The MCP client token, created in Settings by that browser.
     pub(crate) mcp: String,
     pub(crate) scope: authorization::WireScope,
     key: Option<ring::signature::EcdsaKeyPair>,
@@ -351,7 +351,7 @@ impl Mcp {
         b
     }
     /// A human action in the browser (cookie and Origin): the operator action the Tx
-    /// watchdog counts from (#39). MCP requests never are one.
+    /// watchdog counts from. MCP requests never are one.
     pub(crate) async fn operator_present(&self) {
         let c = self.browser("GET", "/contact", None).await.json;
         let body = self.command(
@@ -395,7 +395,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         ],
     );
     f.tick();
-    // The browser's strategy store (#39), active as a selection leaves it; no run: the
+    // The browser's strategy store, active as a selection leaves it; no run: the
     // run's own behaviour is in strategy_tests (this test reads views and verdicts).
     let new_calls = crate::strategy::tests::strategy_json("Test calls");
     let saved = f.state.recording.contact.get().unwrap().strategy.put(
@@ -451,7 +451,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
         ])
     );
     assert_eq!(catalog[5]["annotations"]["readOnlyHint"], true);
-    // #37: open_log closes an unfinished contact (DirectLog); the tool says so.
+    // open_log closes an unfinished contact (DirectLog); the tool says so.
     let contact = catalog[2]["description"].as_str().unwrap();
     assert!(
         contact.contains(
@@ -635,7 +635,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         h.extend(extra);
         h
     };
-    // Authorization: only one of this station's MCP client tokens as a bearer (#58).
+    // Authorization: only one of this station's MCP client tokens as a bearer.
     for (auth, extra, label) in [
         (None, vec![], "no credential"),
         (None, vec![("cookie", f.cookie())], "browser cookie alone"),
@@ -1006,7 +1006,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
     assert_eq!(f.read("automation").await["policy_revision"], 0);
     assert_eq!(f.keys(), 0);
     // A valid MCP Enable Tx uses this credential's grant (CL-022), once per command_id,
-    // within the Tx watchdog time of the operator's last browser action (#39).
+    // within the Tx watchdog time of the operator's last browser action.
     f.operator_present().await;
     let revision = f.read("contact").await["contact_revision"]
         .as_u64()

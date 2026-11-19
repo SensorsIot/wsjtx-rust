@@ -1215,7 +1215,7 @@ fn ranked_refinement_matches_exhaustive_grid_search() {
     }
 }
 
-/// The #56 padded residual case: a strong FT8 frame that began 1.5 s before the window
+/// The padded residual case: a strong FT8 frame that began 1.5 s before the window
 /// (its first 1.5 s, including the first Costas block, missing) masks a weak complete frame
 /// on almost the same carrier.
 fn partial_interferer_window() -> (Vec<f32>, Vec<u8>, Vec<u8>) {

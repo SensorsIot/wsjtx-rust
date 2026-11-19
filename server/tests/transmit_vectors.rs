@@ -143,7 +143,7 @@ fn tc_005_001_families_and_explicit_refusals() {
     );
 }
 
-/// Field Day and RTTY Roundup (#24 S2b): every oracle vector of the two families packs
+/// Field Day and RTTY Roundup: every oracle vector of the two families packs
 /// exactly, and every contest shape WSJT-X alters or rejects is refused.
 // Proves: TC-005-001
 #[test]
@@ -258,7 +258,7 @@ fn oracle(message: &str) -> &'static Value {
         })
 }
 
-/// EU VHF (#99): every oracle vector packs bit for bit as ft8code, renders its own tokens
+/// EU VHF: every oracle vector packs bit for bit as ft8code, renders its own tokens
 /// with a hash table that knows both calls and <...> without one; every rejected shape is
 /// never packed as EU VHF; the 38-character message is refused tooLong.
 #[test]

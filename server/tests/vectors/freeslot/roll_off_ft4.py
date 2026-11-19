@@ -1,4 +1,4 @@
-"""Reference vector for TC-039-050 (a) (#66): the WSJT-X passband floor of the 2026-11-07 FT4
+"""Reference vector for TC-039-050 (a): the WSJT-X passband floor of the live FT4
 roll-off table and the Tx slot it implies, computed here independently of the Rust code.
 
 The table (as the test writes it): per native bin k (k x 12000/4096 Hz) 30 dB flat to 2400 Hz,
@@ -7,14 +7,14 @@ above it at 2621..2711 Hz, each bin rounded to whole dB (half away from zero) as
 are. Two runs: "flat" as is, and "station" with an undecoded station 18 dB above the table at
 1500.5..1590.5 Hz (an FT4 signal on the current Tx, bins 513..542; its level and position chosen
 so that every candidate deciding the choice lies at least 0.1 dB from a half dB, margin_db, and
-so that the parent's rule, the rise over each slot's usual level, makes the same choice).
+so that the rule of the rise over each slot's usual level makes the same choice).
 
-The floor (#66 Functionality 3, the WSJT-X FT8/FT4 decoder baseline): the bins 103..921
+The floor (the WSJT-X FT8/FT4 decoder baseline): the bins 103..921
 (300..2700 Hz), ten segments of 81 bins from bin 103, in each the bins at or below its 8th lowest
 level (rank 0.1 x 81 + 0.5 rounded down), one fourth-order least-squares fit through all of them
 (numpy.polynomial.Polynomial.fit), plus 0.65 dB.
 
-The choice (#66 Functionality 4 and 6, operator 2026-11-08 "At or under floor = free"): FT4, the
+The choice ("At or under floor = free"): FT4, the
 current Tx 1500, the called station KC8ZPI at 513 Hz, Hold Tx off, four identical counted periods
 and no decoded station in them. A slot at f covers the bins of [f, f + 90) Hz; its rise is its mean
 level minus the mean floor over the same bins; its value is the rise clamped at 0 and rounded to

@@ -115,7 +115,7 @@ fn fifteen_bin_flat_maximum_retains_its_carrier_coverage() {
 }
 #[test]
 fn ft4_snr_follows_the_candidate_contrast_scale() {
-    // ft4_decode (#52): 10*log10(contrast-1)-14.8 dB, floor -21, whole dB. 1000 Hz + 31.25 Hz
+    // ft4_decode: 10*log10(contrast-1)-14.8 dB, floor -21, whole dB. 1000 Hz + 31.25 Hz
     // is bin 198; an isolated peak 1+10^0.48 is exactly -10 dB.
     let mut ratio = vec![1.; N / 2 + 1];
     ratio[198] = 1. + 10f64.powf(0.48);

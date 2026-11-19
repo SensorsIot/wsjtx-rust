@@ -99,7 +99,7 @@ fn client_id_carries_the_call_and_stays_legal() {
     );
 }
 
-// "He reports": a spot he received counts 600 s and no longer.
+// "He reports": a spot he received counts 600 s, not longer.
 #[test]
 fn reports_counts_up_to_600_s_and_no_longer() {
     let mut h = Hearing::default();
@@ -493,7 +493,7 @@ fn session_against_a_local_peer() {
     assert_eq!(next_ping(&log), (0xc0, vec![]));
     assert_eq!(feed.view()["state"], "connected");
 
-    // Off: a clean disconnect, and nothing known any more.
+    // Off: a clean disconnect, and nothing known.
     assert_eq!(
         feed.set_enabled("other", "b00t", false),
         Err("wrong_profile")
@@ -783,7 +783,7 @@ async fn http_routes_read_and_switch_the_feed() {
     assert_ne!(status, StatusCode::OK);
 }
 
-// ------------------------------------------------------------------ strategydef (TC-039-048)
+// ------------------------------------------------------------------ HearingFeed (TC-039-048)
 fn payload(sender: &str, receiver: &str, hz: u64, t_tx: i64, rp: Option<&str>) -> String {
     let rp = rp.map_or(String::new(), |v| format!(r#","rp":{v}"#));
     format!(

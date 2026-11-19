@@ -290,7 +290,7 @@ fn quality_corpus() {
             {
                 panic!("FALSE PUBLICATION {id}: {d:?}");
             }
-            // #52: whole dB on the WSJT-X scale, never below its floor.
+            // Whole dB on the WSJT-X scale, never below its floor.
             let floor = if mode == Mode::Ft8 {
                 quality("ft8SnrFloorDb")
             } else {
@@ -793,7 +793,7 @@ fn official_modern_recording_baselines() {
                 })
             })
             .count();
-        // #52: the pinned reference jt9 report is the SNR oracle of each matched observation.
+        // The pinned reference jt9 report is the SNR oracle of each matched observation.
         for r in observations {
             let Some(d) = decoded.iter().find(|d| {
                 d.payload
@@ -1467,12 +1467,12 @@ fn resource_concurrency_qualification_rejects_serial_work_and_clock_faults() {
     );
     assert!(std::panic::catch_unwind(|| resource_qualify_round(&[0, 1, 2], &valid[..3])).is_err());
 }
-/// Wall-time sufficient criterion for the cooperative CPU quantum (#36):
+/// Wall-time sufficient criterion for the cooperative CPU quantum:
 /// CHECKPOINT_MAX_MS, in seconds.
 fn resource_cpu_quantum_wall_seconds() -> f64 {
     CHECKPOINT_MAX_MS as f64 / 1000.
 }
-/// Bounded re-qualification of one matrix configuration (#36); mirrored by the guardian.
+/// Bounded re-qualification of one matrix configuration; mirrored by the guardian.
 const RESOURCE_QUALIFICATION_ATTEMPTS: u64 = 3;
 fn resource_runtime_parent() {
     resource_guardian_before_probes("matrix");
@@ -1533,7 +1533,7 @@ fn resource_runtime_parent() {
                             1.
                         };
                     let cold_start = budget("coldStartMaxSeconds");
-                    // #36: a poll over the 50 ms wall criterion leaves the CPU quantum
+                    // A poll over the 50 ms wall criterion leaves the CPU quantum
                     // unmeasured (no CPU claim, not a violation). The configuration is
                     // re-measured up to RESOURCE_QUALIFICATION_ATTEMPTS times; every budget
                     // stays asserted in every attempt. The owning guardian classifies a

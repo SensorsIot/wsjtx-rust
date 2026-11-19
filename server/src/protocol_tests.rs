@@ -147,7 +147,7 @@ async fn detailed_late_tick_rearms_from_actual_acceptance() {
     tick.tick().await;
     let next = super::arm_detail(&mut tick, tokio::time::Instant::now(), false);
     assert_eq!(next - origin, Duration::from_millis(1199));
-    // An old Skip grid would tick again at1000ms, only1ms after the delayed tick.
+    // A Skip grid kept on the first origin would tick again at1000ms, only1ms after the delayed tick.
     tokio::time::advance(Duration::from_millis(1)).await;
     assert!(
         tokio::time::timeout(Duration::from_millis(197), tick.tick())

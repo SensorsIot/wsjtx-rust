@@ -1,4 +1,4 @@
-//! H1 compatibility prerequisites; transport behavior tests are added before integration.
+//! HTTP compression compatibility prerequisites.
 use axum::{
     body::{Body, to_bytes},
     http::{HeaderMap, Request, StatusCode},

@@ -206,7 +206,7 @@ fn a_clock_step_during_the_exchange_does_not_distort_the_offset() {
     assert!(JUMP_CALLS.load(Ordering::SeqCst) >= 1);
     assert!((2_980..=3_000).contains(&m.offset_ms), "{}", m.offset_ms);
     // The offset describes the clock before the step; read now on the stepped clock the
-    // measurement no longer holds, so the state is unknown (not unsynchronized/synchronized).
+    // measurement does not hold, so the state is unknown (not unsynchronized/synchronized).
     assert_eq!(state(Some(&m), m.taken, jumping_now()), ClockState::Unknown);
 }
 
@@ -266,7 +266,7 @@ fn clock_state_rule_and_transmit_admission() {
     assert_eq!(state_at(None, at(fresh)), ClockState::Unknown);
     assert_eq!(MAX_STEP_MS, 100);
     // The system clock stepped after the measurement (e.g. Dimension 4 by 2 s): the
-    // measured offset no longer describes it, so the state is unknown, not synchronized.
+    // measured offset does not describe it, so the state is unknown, not synchronized.
     let stepped = |age: Duration, step_ms: i64| {
         let system = if step_ms >= 0 {
             system0() + age + Duration::from_millis(step_ms as u64)

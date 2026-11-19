@@ -2,7 +2,7 @@
 // Hand-authored records, logs and
 // strategies; the expected verdicts, orders, stop reasons and requests are the WstxValueOrder
 // tables written in these tests (entities from the cited cty.dat columns), not evaluator output.
-// Integration cases use the actual station router, contact engine and #9 transmit owner
+// Integration cases use the actual station router, contact engine and transmit owner
 // on the recording hardware double (virtual UTC; no audio, PTT or radio).
 use super::*;
 use crate::automation_tests::{at_even, not_keyed_in, publish, run_state, transmit_own_period};
@@ -40,8 +40,8 @@ fn me() -> Station {
         ..Station::default()
     }
 }
-/// The schema 3 goals of the cases written before #97, run as their schema 4 whats
-/// (#97 notes on TC-039-030, TC-039-040), the table written out here.
+/// The schema 3 goals of these cases, run as their schema 4 whats
+/// (TC-039-030, TC-039-040), the table written out here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Goal {
     Dxcc,
@@ -146,7 +146,7 @@ fn table() -> Vec<Value> {
 // Proves: TC-039-002
 #[test]
 fn tc_039_002_continent_and_directed_cq_rule() {
-    // #55: the continent of a station is its cty.dat entity's (the continent column of
+    // The continent of a station is its cty.dat entity's (the continent column of
     // the cited cty.dat lines), whatever grid it sends.
     let st = me();
     for (call, continent) in [
@@ -171,7 +171,7 @@ fn tc_039_002_continent_and_directed_cq_rule() {
         ("DX", Some("EU"), Some("EU"), false),
         ("DX", Some("EU"), Some("AS"), true),
         ("DX", Some("EU"), None, false),
-        // #39 2026-11-04: every other directive excludes me.
+        // Every other directive excludes me.
         ("TEST", Some("EU"), Some("NA"), false),
         ("POTA", None, None, false),
         ("JA", Some("EU"), Some("AS"), false),
@@ -485,7 +485,7 @@ fn tc_039_030_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_s
         ("CQ VK2ABC QF56", Some(25.0)),
         ("HB9BLA DL1ABC -15", Some(-20.0)),
     ]);
-    // #97 (TC-097-007): the caller fails the filters (worked, region) and has no rank.
+    // TC-097-007: the caller fails the filters (worked, region) and has no rank.
     assert_eq!(
         ranks(&s, &records, &st),
         vec![(0, Some(0), false), (1, None, false)]
@@ -655,15 +655,15 @@ fn tc_039_002_my_continent_from_config_call_and_locator() {
     assert_eq!(my_continent(&open, None, None, &table), None);
 }
 
-/// The cases written before #97 set "repetitions before leaving" x: leave {calls x,
+/// A case's "repetitions before leaving" x as a strategy: leave {calls x,
 /// calls_heard 2x}, with tx_move_every {0, 1, 1}, which keeps their
-/// slot check at every repetition of a target that does not hear us (#97 note on TC-039-043).
+/// slot check at every repetition of a target that does not hear us (TC-039-043).
 pub(crate) fn set_repetitions(c: &mut Value, x: u64) {
     c["strategies"][0]["leave"] = json!({"mode":"calls","calls":x,"calls_heard":2 * x});
     c["strategies"][0]["tx_move_every"] = json!({"heard":0,"not_heard":1,"no_reports":1});
 }
 /// A schema 4 strategy of class strategy: new [call] ever, not worked, order [snr], leave
-/// {calls 2, calls_heard 4}, retry 1 min (the former "Test calls" fixture as #97 maps it).
+/// {calls 2, calls_heard 4}, retry 1 min (the "Test calls" fixture).
 pub(crate) fn strategy_json(name: &str) -> Value {
     let empty = json!({"include":[],"exclude":[]});
     json!({"name":name,"class":"strategy","bands":null,
@@ -675,8 +675,8 @@ pub(crate) fn strategy_json(name: &str) -> Value {
         "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
         "cq_when_idle":false,"cq_wait_periods":2,"retry_minutes":1})
 }
-/// The presets #97 removed, as schema 4 strategies of their former settings: cases written
-/// before #97 that select one run with a saved user strategy of that name
+/// Presets that are no built-in strategy, as schema 4 strategies of their settings: cases
+/// that select one run with a saved user strategy of that name
 /// (WstxStrategies::BuiltinStrategies).
 fn removed_preset(name: &str) -> Option<Value> {
     let (new, per, region, order, today, cq) = match name {
@@ -707,7 +707,7 @@ fn config(active: Option<&str>) -> Value {
 
 // The configuration is exact: the valid one round-trips; an extra key, two
 // names equal ignoring case and 17 strategies are refused at their path. (The strategy's own keys
-// and paths are schema 4 since #97: TC-097-001.)
+// and paths are schema 4: TC-097-001.)
 // Proves: TC-039-001
 #[test]
 fn tc_039_001_configuration_is_exact() {
@@ -877,7 +877,7 @@ async fn tc_039_003_store_routes_and_evaluate() {
             (status, json!(code), field)
         );
     }
-    // #97: a class "award" (schema 3) is refused on the wire.
+    // A class "award" (schema 3) is refused on the wire.
     let mut award = config(None);
     award["strategies"][0]["class"] = json!("award");
     let r = put(&f, json!(1), award).await;
@@ -990,7 +990,7 @@ async fn tc_039_003_store_routes_and_evaluate() {
 // Proves: TC-039-032
 #[test]
 fn tc_039_032_the_builtin_table_and_what_a_configuration_may_say() {
-    // #97: the table itself is TC-097-003; the refusal, read-only and copy steps stay.
+    // The table itself is TC-097-003; this case holds the refusal, read-only and copy steps.
     let with = |active: Value, strategies: Value| {
         parse_config(
             &json!({"continent":null,"active":active,"strategies":strategies,
@@ -1037,7 +1037,7 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
             .iter()
             .all(|b| b["builtin"] == true)
     );
-    // #97 note: "DX hunting" becomes "Casual" (SNR bucket first: DL1XYZ +9 before K1ABC -15).
+    // "Casual" ranks the SNR bucket first: DL1XYZ +9 before K1ABC -15.
     let chosen = json!({"continent":null,"active":"Casual","strategies":[],
         "ignore_calls":[],"session_ignore_minutes":30});
     select(&f, chosen).await;
@@ -1084,15 +1084,15 @@ async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
         ),
         (400, json!("invalid_request"), json!("strategies[0].name"))
     );
-    // HALT turns Auto off and keeps the selection, as for any strategy (strategydef).
+    // HALT turns Auto off and keeps the selection, as for any strategy.
     halt(&f).await;
     assert_eq!(active_of(&f).await, json!("Casual"));
     assert_eq!(
         f.browser("GET", "/strategy", None).await.json["auto"],
         false
     );
-    // #97: a saved strategy with a built-in's name reads renamed, never dropped (TC-097-002);
-    // "New calls" is no built-in any more and reads as it is.
+    // A saved strategy with a built-in's name reads renamed, never dropped (TC-097-002);
+    // "New calls" is no built-in and reads as it is.
     std::fs::write(
         f.dir.join(FILE_NAME),
         serde_json::to_vec(&json!({"schema_version":4,"profile_id":f.id,"revision":5,
@@ -1120,7 +1120,7 @@ pub(crate) async fn auto(f: &Mcp, on: bool, confirmed: Option<bool>) -> crate::m
     }
     f.browser("POST", "/strategy/auto", Some(body)).await
 }
-/// The browser's selection with Auto on (strategydef: a selection alone only marks): a save
+/// The browser's selection with Auto on (a selection alone only marks): a save
 /// with the strategy or contest selected, then Auto on (confirmed for a contest).
 async fn select(f: &Mcp, configuration: Value) {
     let selected = !configuration["active"].is_null() || !configuration["contest"].is_null();
@@ -1414,7 +1414,7 @@ async fn tc_039_004_halt_turns_auto_off_keeps_the_selection_and_esc_and_a_cancel
     assert_eq!(contact(&f).await.2, json!("disarmed"));
     publish(&f, e + 22_500, &[("CQ G4ABC IO91", 1100.0, Some(-1.0))]);
     assert_eq!(contact(&f).await.0, Value::Null, "not selected again");
-    // HALT: run stopped halted, Auto off, the selection kept (strategydef Q5), a new revision
+    // HALT: run stopped halted, Auto off, the selection kept, a new revision
     // the browser is told of.
     let before = f.browser("GET", "/strategy", None).await.json["revision"].clone();
     halt(&f).await;
@@ -1596,7 +1596,7 @@ async fn tc_039_004_callers_come_first_and_a_cancelled_station_never_again() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
-    // #97 (TC-097-007): the caller passes the filters too; it comes first although weaker.
+    // TC-097-007: the caller passes the filters too; it comes first although weaker.
     select(&f, config(Some("Test calls"))).await;
     publish(
         &f,
@@ -1627,7 +1627,7 @@ async fn tc_039_004_callers_come_first_and_a_cancelled_station_never_again() {
     assert_eq!(contact(&f).await.0, json!("VK2ABC"));
 }
 
-// Review 6683200740 finding 1: a stopped strategy run is restarted only
+// A stopped strategy run is restarted only
 // by a selection; an MCP stop then start is refused.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_004_an_mcp_client_cannot_restart_a_stopped_strategy() {
@@ -1738,7 +1738,7 @@ async fn tc_039_004_a_station_left_is_not_answered_in_its_quiet_time() {
     assert_eq!(c.2, json!("armed"));
 }
 
-// Review finding 3, coordinator's decision: a reload, second tab or 401
+// A reload, second tab or 401
 // recovery (a new proof of the grant) does not stop a strategy; the grant does. The transport's
 // 8 h deadline does not bind it; a policy run keeps its transport (tc_020_003).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1903,7 +1903,7 @@ async fn worked_on_40m_now_on_20m() -> (Mcp, i64, crate::automation::ClientSessi
     let e = at_even(&f);
     let client = f.state.recording.clients.session();
     let mut c = config(Some("Test calls"));
-    // Goal dxcc_band as #97 maps it.
+    // Goal dxcc_band as a strategy.
     c["strategies"][0]["filters"]["new"] = json!(["dxcc"]);
     c["strategies"][0]["filters"]["new_per"] = json!("band");
     select(&f, c).await;
@@ -1918,7 +1918,7 @@ async fn worked_on_40m_now_on_20m() -> (Mcp, i64, crate::automation::ClientSessi
     (f, e, client)
 }
 
-// Review 6685870468 finding 1: a station completed in a run is left out on
+// A station completed in a run is left out on
 // that band and mode only: after a retune it is a candidate again.
 // Proves: TC-039-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3130,7 +3130,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     assert!(armed());
 }
 
-// ------------------------------------------------------------------ #42 ignore lists
+// ------------------------------------------------------------------ ignore lists
 // (WstxIgnoreLists::IgnoreListsRule; the expected tiers, reasons, expiries
 // and selections are written here from the contract, not evaluator output).
 #[test]
@@ -3519,7 +3519,7 @@ async fn tc_042_002_a_run_never_answers_an_ignored_caller() {
     assert_eq!(f.keys(), 0);
 }
 
-// ------------------------------------------------------------------ #125 ignore patterns
+// ------------------------------------------------------------------ ignore patterns
 /// A decoded CQ row of `sequence` whose sender is `call`, whatever its form (the compound
 /// calls of the table are nonstandard messages that cannot be packed, so the sender field is set).
 fn cq_row_from(sequence: u64, call: &str) -> Value {
@@ -3557,7 +3557,7 @@ fn tc_125_001_permanent_list_entries_validate() {
         bad["ignore_calls"] = list.clone();
         assert_eq!(parse_config(&bad, None), Err(field.to_owned()), "{list}");
     }
-    // A stored schema 4 file with exact entries reads unchanged (guard, green on both).
+    // A stored schema 4 file with exact entries reads unchanged.
     let c4 = json!({"continent":null,"active":null,"strategies":[],
         "ignore_calls":["K1ABC","VK2ABC/P"],"session_ignore_minutes":30});
     assert_eq!(parse_config(&c4, None).unwrap().json(), c4);
@@ -3865,7 +3865,7 @@ async fn tc_125_001_a_run_never_answers_a_caller_matched_by_a_pattern() {
     assert_eq!(f.keys(), 0);
 }
 
-// ------------------------------------------------------------------ #42 Pounce
+// ------------------------------------------------------------------ Pounce
 /// The browser's Pounce configuration with these unanswered periods.
 fn pounce_json(call: Value, unanswered: u64) -> Value {
     json!({"modes":["ft8"],"ranking":"first_seen","min_snr_db":null,"allowed_calls":[],"blocked_calls":[],
@@ -4243,7 +4243,7 @@ async fn automation_does_not_start_as_a_hound() {
     assert_eq!(run_state(&f).await, ("waiting".into(), json!("activity")));
 }
 
-// ------------------------------------------------------------------ #42 Alert
+// ------------------------------------------------------------------ Alert
 /// The strategy "Alerts": rule 1 (call prefix K, no alert), rule 2 (any CQ, alert).
 fn alerts_strategy() -> Value {
     let empty = json!({"include":[],"exclude":[]});
@@ -4645,7 +4645,7 @@ async fn tc_063_007_a_contest_selection_store_and_evaluation() {
             .get("contest")
             .is_none()
     );
-    // Auto off: no run starts (strategydef: a selection alone only marks).
+    // Auto off: no run starts (a selection alone only marks).
     assert_eq!(f.read("automation").await["run"], Value::Null);
     // Refusals: a strategy of class strategy and a contest at once; a bad period.
     let mut both = config(Some("Test calls"));
@@ -4690,7 +4690,7 @@ async fn tc_063_007_a_contest_selection_store_and_evaluation() {
 }
 
 /// A contest selection around the bench's period e; `start_h` hours from e.
-/// #97 (CqWhenNoTarget, note on TC-063-010): a contest strategy calls CQ only after two fresh
+/// CqWhenNoTarget (TC-063-010): a contest strategy calls CQ only after two fresh
 /// publications with nothing listed; two empty ones of periods before the bench's.
 fn two_empty(f: &Mcp) {
     let p = f.bench.now_utc_ms().div_euclid(15_000) * 15_000;
@@ -4698,7 +4698,7 @@ fn two_empty(f: &Mcp) {
     publish(f, p - 105_000, &[]);
 }
 /// The active contest strategy of `c` as a saved copy ("WW Digi run" for the built-in), changed
-/// by `edit` (the per-contest settings of a case written before #97 are the strategy's own).
+/// by `edit` (a case's per-contest settings are the strategy's own).
 fn contest_edit(c: &mut Value, edit: impl FnOnce(&mut Value)) {
     let active = c["active"].as_str().unwrap().to_owned();
     let list = c["strategies"].as_array_mut().unwrap();
@@ -4719,7 +4719,7 @@ fn contest_edit(c: &mut Value, edit: impl FnOnce(&mut Value)) {
     let name = list[i]["name"].clone();
     c["active"] = name;
 }
-/// #97 note on TC-063: "Run" is the contest built-in "WW Digi", "S&P" a saved copy with
+/// TC-063: "Run" is the contest built-in "WW Digi", "S&P" a saved copy with
 /// cq_when_idle false.
 fn contest_config(e: i64, operation: &str, start_h: i64) -> Value {
     let hour = 3_600_000;
@@ -4731,7 +4731,7 @@ fn contest_config(e: i64, operation: &str, start_h: i64) -> Value {
         .json();
     sp["name"] = json!("WW Digi S&P");
     sp["cq_when_idle"] = json!(false);
-    // #97 note on TC-039-044 (a), (b): the former x = 2.
+    // TC-039-044 (a), (b): x = 2.
     sp["leave"] = json!({"mode":"calls","calls":2,"calls_heard":4});
     c["strategies"] = json!([strategy_json("Test calls"), sp]);
     c["active"] = json!(if operation == "run" {
@@ -4828,13 +4828,13 @@ async fn tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what
     let _client = f.state.recording.clients.session();
     f.state.recording.fixture_band("20m");
     import_adi(&f, &logged_before("W1DUP", "EM12", e));
-    // strategydef: the confirmation and colouring are refused on PUT with their field.
+    // The confirmation and colouring are refused on PUT with their field.
     let mut confirmed = contest_config(e, "sp", -1);
     confirmed["contest"]["automation_confirmed"] = json!(true);
     let r = put(&f, json!(0), confirmed).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     assert_eq!(r.json["error"]["field"], "contest.automation_confirmed");
-    // #97 D11: an operation is refused by its own path.
+    // An operation is refused by its own path.
     let mut colouring = contest_config(e, "sp", -1);
     colouring["contest"]["operation"] = json!("colouring");
     let r = put(&f, json!(0), colouring).await;
@@ -5032,7 +5032,7 @@ async fn tc_063_011_the_tx_watchdog_stops_a_run_on_a_silent_band() {
     f.tick();
     assert_eq!(contact(&f).await.2, json!("disarmed"));
     assert_eq!(f.keys(), keys);
-    // The stop turned Auto off (strategydef); the contest keeps its operation.
+    // The stop turned Auto off; the contest keeps its operation.
     let s = f.browser("GET", "/strategy", None).await.json;
     assert_eq!(
         (s["configuration"]["active"].clone(), s["auto"].clone()),
@@ -5224,8 +5224,8 @@ async fn tc_063_011_the_safety_of_a_contest_run_stays_on_the_server() {
         )
         .await;
     assert_eq!(m["result"]["error"]["code"], "operator_required", "{m}");
-    // A double-click during the run's CQ: a manual QSO, the run stands aside, resumes. #97 D11:
-    // the run itself selects a callable CQ, so the operator's row is a message to another station.
+    // A double-click during the run's CQ: a manual QSO, the run stands aside, resumes. The run
+    // itself selects a callable CQ, so the operator's row is a message to another station.
     publish(&f, e, &[("W9XYZ K1ABC FN42", 1200.0, Some(5.0))]);
     let row = live_row(&f, "W9XYZ K1ABC FN42");
     let d = f
@@ -5295,7 +5295,7 @@ async fn tc_063_011_the_safety_of_a_contest_run_stays_on_the_server() {
     start(&f).await;
 }
 
-// ------------------------------------------------------------------ strategydef
+// ------------------------------------------------------------------ WstxStrategies
 /// TC-039-040 rows (HB9BLA JN47AA, EU, on 20 m FT8): (text, audio Hz, SNR), sequence in order.
 const VALUE_ROWS: [(&str, f64, f64); 7] = [
     ("CQ K1ABC FN42", 1200.0, -12.0),
@@ -5392,7 +5392,7 @@ fn tc_039_040_the_filter_and_the_value_order() {
         )
     };
     // new_call_band: K1ABC (on 20 m) is no candidate, DL1XYZ (40 m only) is; W1AW calls me but
-    // is worked on 20 m: #97 (TC-097-007) it fails the filters and has no rank.
+    // is worked on 20 m: it fails the filters and has no rank (TC-097-007).
     // [snr]: DL1XYZ and OH1AA tie at -3 dB, the lower audio frequency first (1400 < 1500).
     assert_eq!(
         band(&[Snr], true),
@@ -5423,7 +5423,7 @@ fn tc_039_040_the_filter_and_the_value_order() {
         band(&[Distance], true),
         ["VK2ABC", "JA1XYZ", "ZS6AA", "OH1AA", "DL1XYZ"]
     );
-    // [most_wanted]: JA #40, VK #90, then the rest by the hidden SNR.
+    // [most_wanted]: JA (rank 40), VK (rank 90), then the rest by the hidden SNR.
     assert_eq!(
         band(&[MostWanted], true),
         ["JA1XYZ", "VK2ABC", "OH1AA", "DL1XYZ", "ZS6AA"]
@@ -5478,7 +5478,7 @@ fn tc_039_040_the_filter_and_the_value_order() {
         why(&valued(&[Goal::NewCallBand], &[MostWanted], true), "JA1XYZ"),
         "new: call on 20m · Most Wanted #40"
     );
-    // The caller fails every filter line (worked on 20 m, region AS only, min SNR -10): #97 not
+    // The caller fails every filter line (worked on 20 m, region AS only, min SNR -10): not
     // ranked (TC-097-007), named by its first failing line.
     let strict = Strategy {
         region: Region::Selected(vec!["AS".into()]),
@@ -5546,8 +5546,8 @@ fn tc_039_040_the_filter_and_the_value_order() {
 fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
     use Criterion::*;
     let rows = value_rows(&VALUE_ROWS);
-    // #97: one per for every what: new [call, grid, dxcc] per band and mode (per ever when the
-    // band is unknown), so that every row stays a candidate as with the former goals.
+    // One per for every what: new [call, grid, dxcc] per band and mode (per ever when the
+    // band is unknown), so that every row stays a candidate.
     let order = |c: Criterion, log: &[DatedRow], band: Option<&str>| {
         let st = Station {
             band: band.map(Into::into),
@@ -5616,7 +5616,7 @@ fn tc_039_040_each_needed_first_criterion_with_its_own_log() {
             twenty,
             vec!["DL1XYZ", "ZS6AA", "JA1XYZ", "VK2ABC", "OH1AA", "K1ABC"],
         ),
-        // FN42 logged on 40 m: K1ABC's grid is worked; ZS6AA sends no grid (D13): both after.
+        // FN42 logged on 40 m: K1ABC's grid is worked; ZS6AA sends no grid: both after.
         (
             NewGrid,
             vec![("K9ZZZ", "40m", "FT8", Some("FN42"), d)],
@@ -5973,7 +5973,7 @@ async fn tc_039_042_a_browser_auto_on_ends_a_watchdog_stop_and_arms() {
     );
 }
 
-// ------------------------------------------------------------------ strategydef S2: the run
+// ------------------------------------------------------------------ the run
 /// A PSK Reporter feed without a connection (hand-authored spots), on the 14074000 Hz dial.
 fn attach_feed(f: &Mcp) -> Arc<crate::pskr::Feed> {
     let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
@@ -6009,7 +6009,7 @@ async fn wd(f: &Mcp) -> Value {
     f.tick();
     f.read("contact").await["watchdog"]["tx_remaining_calls"].clone()
 }
-/// #97 note on TC-039-043: the former WD:n of a run's own contact is the leave label's remaining
+/// TC-039-043: the WD:n of a run's own contact is the leave label's remaining
 /// (WstxAutoControl::LeaveCount); WD itself is null there.
 async fn leave_left(f: &Mcp) -> Value {
     assert_eq!(wd(f).await, Value::Null, "no WD in the run's own contact");
@@ -6027,7 +6027,7 @@ struct Leaving {
 async fn leaving(edit: impl FnOnce(&mut Value), first: &[(&str, f64, Option<f64>)]) -> Leaving {
     leaving_from(true, edit, first).await
 }
-/// `leaving` with Hold Tx `hold_tx` before the selection (#39 holdtx: the Rx = Tx steps of
+/// `leaving` with Hold Tx `hold_tx` before the selection (the Rx = Tx steps of
 /// TC-039-010, -022 and -045 run with Hold Tx explicitly off).
 async fn leaving_from(
     hold_tx: bool,
@@ -6392,7 +6392,7 @@ async fn contest_leaving_with(
 ) -> Leaving {
     contest_leaving_from(true, operation, edit, before).await
 }
-/// `contest_leaving_with` with Hold Tx `hold_tx` before the selection (#39 holdtx: the Rx = Tx
+/// `contest_leaving_with` with Hold Tx `hold_tx` before the selection (the Rx = Tx
 /// steps of TC-039-044 run with Hold Tx explicitly off).
 async fn contest_leaving_from(
     hold_tx: bool,
@@ -6466,13 +6466,13 @@ async fn tc_039_044_a_contest_leaves_at_2_and_at_4_with_a_spot() {
 
 // Situation 1 with the spot: K1ABC calling CQ again stays all 10
 // repetitions while nothing more valuable is listed, and the dupe W1DUP calling my call never ends
-// the stay (the #63 fix); JA1XYZ (more valuable) at the 6th leaves at once and is selected next;
+// the stay; JA1XYZ (more valuable) at the 6th leaves at once and is selected next;
 // JA1XYZ from the 1st: K1ABC kept until the 2nd, then left and JA1XYZ selected.
 // Proves: TC-039-044
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
     let dupe = ("HB9BLA W1DUP EM12", 900.0, Some(9.0));
-    // #97 note: leave {contest, tx_changes 1} with tx_move_every {0, 1, 1}.
+    // Leave {contest, tx_changes 1} with tx_move_every {0, 1, 1}.
     let style = |c: &mut Value| {
         contest_edit(c, |s| {
             s["leave"] = json!({"mode":"contest","tx_changes":1});
@@ -6500,7 +6500,7 @@ async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
         publish(f, rep(e, k), &[K1ABC_WW]);
     }
     assert_eq!(contact(f).await.2, json!("armed"));
-    // #97 LeaveRule contest: the stays had no count; JA1XYZ listed makes the 6th a change point
+    // LeaveRule contest: the stays have no count; JA1XYZ listed makes the 6th a change point
     // (heard: k 0, Tx stays) and the 7th the leaving (tx_changes 1).
     publish(f, rep(e, 6), &[K1ABC_WW, JA1XYZ_WW]);
     assert_eq!(contact(f).await.2, json!("armed"), "the change at the 6th");
@@ -6552,12 +6552,12 @@ async fn tc_039_044_a_contest_caller_is_answered_at_once() {
 // not answer K2NEW in its quiet time. Repetitions 3 and quiet_minutes 1 from the selection: left at
 // the 3rd, answered again after 1 minute. Hold Tx explicitly off (with it on the
 // Run's CQ stays on the held Tx); the CQ's slot 900, the quiet one of my Rx
-// parity (cq_quiet_rows, #66).
+// parity (cq_quiet_rows).
 // Proves: TC-039-044
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
     let k2 = ("HB9BLA K2NEW FN31", 1200.0, Some(-8.0));
-    // #97: the built-in's copy with the former x = 2.
+    // The built-in's copy with x = 2.
     let t = contest_leaving_from(
         false,
         "run",
@@ -6672,7 +6672,7 @@ async fn casual(cq: bool) -> Leaving {
     import_adi(&f, &logged_before("W1AW", "FN31", e));
     f.state.logbook.worked_set().unwrap();
     let feed = attach_feed(&f);
-    // #97 note on TC-039-045: "Casual 20 m" is a saved strategy (new [call] per band, worked
+    // TC-039-045: "Casual 20 m" is a saved strategy (new [call] per band, worked
     // since today, order [snr], cq_when_idle as `cq`).
     let mut c = config(Some("Casual 20 m"));
     c["strategies"][1]["cq_when_idle"] = json!(cq);
@@ -6705,7 +6705,7 @@ async fn tc_039_045_cq_when_no_target_calls_answers_and_calls_a_candidate() {
     assert_eq!(c["transmit"]["arm_state"], "armed");
     publish(f, rep(e, 2), &[]);
     assert_eq!(run_of(f).await["state"], "calling_cq");
-    // #97 (TC-097-007): W1AW, worked today, fails the filters and is not answered; the new
+    // TC-097-007: W1AW, worked today, fails the filters and is not answered; the new
     // caller N1NEW is answered from the CQ.
     publish(f, rep(e, 3), &[("HB9BLA W1AW FN31", 1200.0, Some(-10.0))]);
     assert_eq!(run_of(f).await["state"], "calling_cq", "W1AW not answered");
@@ -6747,7 +6747,7 @@ fn bins(from: u32, to: u32) -> std::ops::Range<usize> {
     let bin = |hz: u32| (f64::from(hz) / crate::freeslot::BIN_HZ).ceil() as usize;
     bin(from)..bin(to)
 }
-/// A busy passband for the hand computations (#66): every bin at `busy`, except in each of the ten
+/// A busy passband for the hand computations: every bin at `busy`, except in each of the ten
 /// segments of the WSJT-X passband floor (81 bins from bin 103) its bins 40..47 at `floor`
 /// (418.9..439.5, 656.2..676.8, 893.6..914.1, 1130.9..1151.4, 1368.2..1388.7, 1605.5..1626.0,
 /// 1842.8..1863.3, 2080.1..2100.6, 2317.4..2337.9 and 2554.7..2575.2 Hz), and the `bands` (bins,
@@ -6774,7 +6774,7 @@ fn comb_row(
         .collect();
     f.state.recording.fixture_detail_row(start, &levels, tx);
 }
-/// The CQ's table (#66: judged in my Rx parity only): my 4 even (Rx) periods before e busy
+/// The CQ's table (judged in my Rx parity only): my 4 even (Rx) periods before e busy
 /// (comb_row, floor 20, busy 40) except 900..950 at the floor, my odd periods flat 20. 900 reads
 /// rise -0.65, free: value 0; 890 (bins 304..320) holds one busy bin, 1 dB; 910 (311..327) three,
 /// 3 dB; every other slot more. So a CQ from Tx 1500 takes 900, value 0.
@@ -6879,9 +6879,8 @@ async fn tc_039_045_the_watchdog_and_no_client_end_the_cq_and_its_slot_is_quiet(
 // parity 60 at 1500..1550 (the current Tx). Loud in my Tx parity: ignored, the CQ stays on 1500,
 // value 0 (rise -0.65 under the floor 20.65, free); loud in my Rx parity: avoided, the CQ goes to the nearest floor slot, 1450
 // and 1550 both 50 Hz away, the lower. The CQ is decided at e + 1 s on the publication of e + 30 s,
-// a period not yet begun and never due (#89); e (published, in progress) holds no row and no decode,
-// so the slot reads the same rows of the periods before e whether e counts or not. Red on the parent: it takes the larger rise of both
-// parities while listening and leaves 1500 in both.
+// a period not yet begun and never due; e (published, in progress) holds no row and no decode,
+// so the slot reads the same rows of the periods before e whether e counts or not.
 // Proves: TC-039-045
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity() {
@@ -6908,10 +6907,10 @@ async fn tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity() {
 
 // The router: my Rx parity (even, K1ABC's) is busy (comb_row, floor 20, busy
 // 40) except a quiet band at 1800..1850 Hz in its 3 received periods e - 120, e - 90 and e - 60 s;
-// K1ABC's period e is due on its publication 1 s in (#89: no row yet, his decode at 1500 closes
+// K1ABC's period e is due on its publication 1 s in (no row yet, his decode at 1500 closes
 // 1460..1540), so the counted window is e, e - 30 (transmitted), e - 60 and e - 90, and e - 120
 // and the 6th older e - 150 (quiet at 600, 90 at 1800) do not count; neither does the transmitted
-// period (90, quiet at 600), nor my odd periods (flat 20, #66). Tx and Rx 1800 before the first
+// period (90, quiet at 600), nor my odd periods (flat 20). Tx and Rx 1800 before the first
 // call, tx_slot {1800, 0, unknown}: 1800 reads its
 // floor 20 against the floor 20.65 (1810 also holds only floor bins, the band and the segment's
 // floor bins 629..636, but is farther from 1500; every other slot holds busy bins); the whole QSO
@@ -6974,9 +6973,9 @@ async fn tc_039_010_the_run_calls_from_the_quietest_slot_of_its_rx_parity() {
 
 // After a station band change within the job only the new band's periods count:
 // no power yet keeps Tx (power_db null); a caller on my slot is answered from the quietest slot away
-// from it; a pounce calls from the quietest slot. Hold Tx explicitly off (#39 holdtx). The new
+// from it; a pounce calls from the quietest slot. Hold Tx explicitly off. The new
 // band's even period: a flat floor of 20 (floor 20.65, a free slot 0) with 1350..1450 at 40; its
-// odd period 0 (my Tx parity, not judged, #66). The caller at 1500 on my Tx forbids 1410..1590: the
+// odd period 0 (my Tx parity, not judged). The caller at 1500 on my Tx forbids 1410..1590: the
 // free slots nearest to 1500 are 1600 (100 Hz) and 1300 (200 Hz; 1310..1400 hold busy bins), so
 // 1600. The pounce on G4ABC at 1650 forbids 1560..1740 for my Tx 1600: 1550 (50 Hz, its bins
 // 530..546 free) before 1750.
@@ -7048,7 +7047,7 @@ async fn tc_039_010_a_band_change_a_caller_on_my_slot_and_a_pounce() {
 /// The TC-039-022 run: Tx watchdog 2, repetitions 4, calling K1ABC (CQ at 1800 Hz) from Tx 1500 on
 /// 20 m with no power yet, Hold Tx explicitly off (Hold Tx on is tested apart); `set`
 /// prepares the feed. My odd period before the run transmits reads 0 everywhere (my Tx parity, not
-/// judged, #66). The even rows of `slot_rows` move the quietest slot: 1400 at the 1st repetition,
+/// judged). The even rows of `slot_rows` move the quietest slot: 1400 at the 1st repetition,
 /// 1300 at the 2nd, tied with 1300 at the 3rd.
 async fn slot_check(set: impl FnOnce(&crate::pskr::Feed)) -> Leaving {
     let t = leaving_from(false, |_| {}, &[K1ABC_CQ]).await;
@@ -7122,10 +7121,10 @@ async fn tc_039_022_the_slot_check_at_every_repetition() {
         let t = slot_check(set).await;
         let (f, e) = (&t.f, t.e);
         let x = if heard { 8 } else { 4 };
-        // #97 note: the WD expectations are the leave label (no WD in the run's own contact).
+        // The WD expectations are the leave label (no WD in the run's own contact).
         let left = async |f: &Mcp| run_of(f).await["leave"]["remaining"].clone();
         assert_eq!(wd(f).await, Value::Null, "{name}");
-        // #97 (TC-097-010): a move never keeps the current slot: at the 3rd (flat) the nearest
+        // TC-097-010: a move never keeps the current slot: at the 3rd (flat) the nearest
         // other quiet slot, 1250 before 1350.
         let moves = [1400, 1300, 1250];
         for k in 1..=3 {
@@ -7264,7 +7263,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     // Use off is also no his end: the slot check (not heard) has the power alone. My even period
     // busy (comb_row, floor 20, busy 40) except 1300..1350 at 20 (rise -0.65, free: value 0) and
     // 1650..1700 at 22 (22 - 20.65 = 1.35, value 1); every other slot holds busy bins (1290 three
-    // of 17, 3 dB; 1660 three, 5 dB). My odd period reads 0 (my Tx parity, not judged, #66).
+    // of 17, 3 dB; 1660 three, 5 dB). My odd period reads 0 (my Tx parity, not judged).
     let rows = |f: &Mcp, e: i64| {
         wf_row(f, e - 45_000, 0, &[], false);
         comb_row(
@@ -7313,7 +7312,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
             odd(now) - 60,
         ));
     }
-    // #97 TxMoveRule: a move never uses the fallback of FreeTxSlot (his end ignored, "· no"):
+    // TxMoveRule: a move never uses the fallback of FreeTxSlot (his end ignored, "· no"):
     // with no candidate left Tx stays (1650) and slot_check says moved false.
     publish(f, rep(e, 2), &[]);
     assert_eq!(
@@ -7427,7 +7426,7 @@ async fn tc_039_042_a_selection_with_auto_off_leaves_a_pounce_running() {
 // each test: with Hold Tx on a run keeps Tx and Rx is on the station; Tx alone moves at the slot
 // check of a target that does not hear us, or 50 Hz clear of a station within 50 Hz of it; a CQ
 // goes out on the held Tx. Quietness is a slot's largest rise above the passband floor in my Rx
-// periods (#66).
+// periods.
 
 /// The station clock past `end_ms`, so that a waterfall period ending there counts.
 fn ended(f: &Mcp, end_ms: i64) {
@@ -7603,7 +7602,7 @@ async fn tc_039_049_a_target_that_hears_us_or_has_answered_keeps_tx() {
 // A station within 50 Hz of the held Tx 1500: Tx goes to the nearest slot
 // 50 Hz clear of its signal, the lower on a tie, no power used; Rx on the station. At 1520
 // (1520..1570): below needs f + 50 + 50 <= 1520, so 1420 (80 Hz away); above f >= 1620 (120 Hz):
-// 1420. A caller at 1530: 1430 (70 Hz) against 1630 (130 Hz): 1430. No power is used (D4): a far
+// 1420. A caller at 1530: 1430 (70 Hz) against 1630 (130 Hz): 1430. No power is used: a far
 // quiet slot is in the waterfall (my even period busy, comb_row floor 20 busy 40, except 1000..1050
 // at the floor, value 0), and Tx still takes the nearest clear slot, power_db 19 (1420, bins
 // 485..501, and 1430, bins 489..505, are all busy: 40 - 20.65).
@@ -7633,8 +7632,8 @@ async fn tc_039_049_a_station_within_50_hz_moves_tx_50_hz_clear() {
 }
 
 // FT4, the held Tx 2700 outside the Tx range (300..2610), a station at
-// 1000: the selection keeps Tx 2700 (D7), Rx 1000. At the unanswered repetition with no spot 2700
-// is no candidate (round 3 Q6): my odd period reads 0, the even one a flat floor of 40, so every
+// 1000: the selection keeps Tx 2700, Rx 1000. At the unanswered repetition with no spot 2700
+// is no candidate: my odd period reads 0, the even one a flat floor of 40, so every
 // candidate ties at a rise of 40; were 2700 a candidate the tie would keep it, but it is not, so Tx
 // alone goes to the tied candidate nearest 2700, the top of the range, 2610, and Rx stays 1000.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -7655,7 +7654,7 @@ async fn tc_039_049_a_held_tx_outside_the_range_is_kept_and_moves_in_at_the_slot
     wf_row(f, e, 40, &[], false);
     ended(f, e + 7_500);
     publish(f, e + 15_000, &[]);
-    // #97 (TC-097-010): the upper edge loses every tie, so of the tied candidates the nearest one
+    // TC-097-010: the upper edge loses every tie, so of the tied candidates the nearest one
     // whose signal ends at or below 2400 Hz, 2310 (2310 + 90).
     assert_eq!(rx_tx(f).await, (json!(1000), json!(2310)));
     assert_eq!(
@@ -7665,7 +7664,7 @@ async fn tc_039_049_a_held_tx_outside_the_range_is_kept_and_moves_in_at_the_slot
 }
 
 /// The held CQ's table: both parities a floor of 20, my odd periods 60 at 900..950. Held, the CQ
-/// stays on 900 and names its value in my Rx parity (even), 20 - 20.65 clamped, 0 (#66).
+/// stays on 900 and names its value in my Rx parity (even), 20 - 20.65 clamped, 0.
 fn held_cq_rows(f: &Mcp, e: i64) {
     for k in 0..4 {
         wf_row(f, rep(e, k) - 120_000, 20, &[], false);
@@ -7845,7 +7844,7 @@ fn wf_levels(f: &Mcp, start: i64, level: impl Fn(f64) -> f64, tx: bool) {
         .collect();
     f.state.recording.fixture_detail_row(start, &levels, tx);
 }
-/// The receive filter's roll-off of the 2026-11-07 reproduction: 30 dB, falling linearly from
+/// The receive filter's roll-off of the live reproduction: 30 dB, falling linearly from
 /// 2400 Hz to 15 dB at 2700 Hz.
 fn roll_off(hz: f64) -> f64 {
     if hz < 2400.0 {
@@ -7920,7 +7919,7 @@ fn decoded_in(f: &Mcp, period: i64, hz: &[f64]) {
         .recording
         .fixture_publish_period(&crate::contact_http_tests::period_text(period), records);
 }
-/// The open ranges of the station's latest build (#82), as [lo, hi) pairs.
+/// The open ranges of the station's latest build, as [lo, hi) pairs.
 async fn open_ranges(f: &Mcp) -> Vec<(u64, u64)> {
     free_tx_slots(f).await["open"]
         .as_array()
@@ -7940,7 +7939,7 @@ const K1ABC_2400: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 2400.0, Some(-5.0
 
 /// `with_aa3b` with an undecoded FT4 station 18 dB above it at 1500.5..1590.5 Hz (bins 513..542),
 /// on the current Tx (level and position as roll_off_ft4.py's: every deciding candidate 0.1 dB from
-/// a half dB, and the same choice under the parent's rule).
+/// a half dB, and the same choice under the rule of the rise over each slot's usual level).
 fn with_station(hz: f64) -> f64 {
     with_aa3b(hz)
         + if (1500.5..1590.5).contains(&hz) {
@@ -7956,12 +7955,12 @@ fn with_station(hz: f64) -> f64 {
 // counted Rx periods (my Tx-parity periods without him); the selection of KC8ZPI (513 Hz) from Tx
 // 1500, twice. Oracle: the reference vector, an independent numpy fit of each run's floor and the
 // choice it implies (roll_off_ft4.py), whose tables are the test's; and the rule by hand: at or
-// under the floor a slot is free, 0 (#66 "At or under floor = free"), so the roll-off slots are no
+// under the floor a slot is free, 0 ("At or under floor = free"), so the roll-off slots are no
 // quieter than the free mid-band. Tx 1500 on the flat floor: kept, power_db 0. Tx 1500 on a station
 // 18 dB above the floor at 1500.5..1590.5: to the free slot nearest it, the vector's (a slot holding
 // only a few of the station's bins may still read under 0.5, free), power_db 0. Never a slot in
 // 2400..2610 (raw level alone would choose 2530 at 21 dB, the floor rule without the clamp 2530
-// at -2). A regression guard: green on the parent, red without the clamp.
+// at -2). It fails without the clamp.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_the_roll_off_is_compared_above_the_passband_floor() {
     type Table = fn(f64) -> f64;
@@ -8022,9 +8021,8 @@ async fn tc_039_050_the_roll_off_is_compared_above_the_passband_floor() {
 // other slot on the floor. Its value is 35 - 30.65 = 4.35, 4; a floor slot's rise -0.65, free: 0.
 // The selection of K1ABC (2400) with Hold Tx off leaves 1500 for the nearest floor slot: 1450
 // (bins 495..511) and 1550 (bins 530..546), both 50 Hz away, the lower; tx_slot {1450, 0}, and
-// 1450 lies in an open range of the station's build (#82: it overlaps no decode). With Hold Tx on
-// Tx stays on 1500 and tx_slot names its value 4. Red on the parent: every rise 0 over its own
-// usual level, Tx kept.
+// 1450 lies in an open range of the station's build (it overlaps no decode). With Hold Tx on
+// Tx stays on 1500 and tx_slot names its value 4.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor() {
     let rows = |f: &Mcp, e: i64| {
@@ -8056,14 +8054,13 @@ async fn tc_039_050_a_steady_station_on_the_current_tx_is_a_rise_above_the_floor
 // The busiest period counts. My 4 counted Rx
 // periods busy (comb_row, floor 30, busy 40: every slot off the bands holds at least 9 busy bins of
 // 17, so reads at least 35.3, a value of at least 5): e - 90 s to e, e counted on its complete
-// publication 1 s in by its row so far (#89 Due; e - 120 s is no longer among the last 4 due).
+// publication 1 s in by its row so far (Due; e - 120 s is not among the last 4 due).
 // Slot A, the current Tx 1500 (bins 512..529),
 // on the floor in 3 periods and 6 dB above it in the oldest: its largest rise 36 - 30.65 = 5.35, 5.
 // Slot B 1950 (bins 666..682) 3 dB above the floor in all 4: 33 - 30.65 = 2.35, 2; the slots
 // overlapping it in part hold busy bins and read more (1940: 3 busy and 14 of B, 34.2). So B wins
 // with 2 against 5 (the mean, 0.85 against 2.35, would keep A). No slot is at 0, so the station's
-// build has no open range (#82). Red on the parent: every rise over its own usual level is 0 but
-// A's.
+// build has no open range.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_the_busiest_counted_period_counts() {
     let rows = |f: &Mcp, e: i64| {
@@ -8095,8 +8092,7 @@ async fn tc_039_050_the_busiest_counted_period_counts() {
 // The floor follows each period: my counted Rx
 // periods flat 30 in the two older and 32 in the two later. A floor slot reads -0.65 in each (30
 // against 30.65, 32 against 32.65), so its value is 0, not raised by the floor change; Tx 1500
-// kept, tx_slot {1500, 0}, and 1500 lies in an open range of the station's build (#82). Red on the
-// parent: its rise over the usual level is 31 - 30, 1.
+// kept, tx_slot {1500, 0}, and 1500 lies in an open range of the station's build.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_a_floor_change_does_not_raise_a_free_slot() {
     let rows = |f: &Mcp, e: i64| {
@@ -8120,8 +8116,7 @@ async fn tc_039_050_a_floor_change_does_not_raise_a_free_slot() {
 // One counted period is enough to compare: one Rx period, a
 // flat 30 with the current Tx's slot 1500..1550 (bins 512..529) at 35 (value 4.35, 4): Tx leaves
 // for the nearest free slot. 1460 and 1540 hold 4 of the band's bins, (4 x 35 + 13 x 30) / 17 -
-// 30.65 = 0.53, 1 (not free); so 1450 (the lower of 1450 and 1550), value 0. Red on the parent:
-// with one period every rise over its own usual level is 0 and Tx stays.
+// 30.65 = 0.53, 1 (not free); so 1450 (the lower of 1450 and 1550), value 0.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_one_counted_period_compares() {
     let rows = |f: &Mcp, e: i64| wf_row(f, e - 30_000, 30, &[(1500, 1550, 35)], false);
@@ -8140,8 +8135,7 @@ async fn tc_039_050_one_counted_period_compares() {
 // slot 1500..1550 at 40 on a flat 30 (which would move Tx if counted): an Rx period I transmitted
 // in (30 s before e); a 5th older Rx period (150 s before e); my last Rx periods 3 to 4.5 minutes
 // old, as after a change of my Tx parity; and no period at all. In each no period counts: Tx 1500
-// kept, power_db null. Red on the parent: it counts the old periods (the last 4 of the parity,
-// however old).
+// kept, power_db null.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_transmitted_old_and_absent_periods_never_count() {
     let busy = [(1500, 1550, 40)];
@@ -8176,7 +8170,7 @@ async fn tc_039_050_transmitted_old_and_absent_periods_never_count() {
 // After a station band change only later periods count: on
 // 20 m my Rx period 30 s before e has the current Tx's slot 1500..1550 at 40 on a flat 30; after
 // the change to 40 m one Rx period flat 30. The selection two periods later keeps Tx 1500 at 0
-// (the 20 m period counted would move it). Red on the parent: its rise over the usual level is 0.
+// (the 20 m period counted would move it).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_after_a_band_change_only_later_periods_count() {
     let f = station(true).await;
@@ -8212,8 +8206,7 @@ async fn tc_039_050_after_a_band_change_only_later_periods_count() {
 // at 35: (17 x 31 + 32) / 18 - 30.65 = 0.41 or (17 x 31 + 35) / 18 - 30.65 = 0.57; slot X 1950
 // (bins 666..682) with 666..671 at 30 and 672..682 at 31: (6 x 30 + 11 x 31) / 17 - 30.65 = -0.003;
 // every other slot holds busy bins and reads at least 1.6 (1940, 1490). 0.41 and -0.003 are both 0:
-// a tie, Tx 1500 kept, power_db 0; 0.57 is 1: Tx to 1950, power_db 0. Red on the parent: every rise
-// over its own usual level is 0 with one period, Tx kept.
+// a tie, Tx 1500 kept, power_db 0; 0.57 is 1: Tx to 1950, power_db 0.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_values_compare_in_whole_db() {
     for (bump, expected) in [(32, 1500), (35, 1950)] {
@@ -8249,8 +8242,8 @@ async fn tc_039_050_values_compare_in_whole_db() {
 // 921 (2698.2 Hz). My Rx periods 90 and 60 s before e flat 30 (1024 bins); the one 30 s before e
 // with the current Tx's slot 1500..1550 at 40 and a station decoded at 1500 in it. Its rows of 922
 // bins (to bin 921): it counts, 1500 is busy and on the decoded station, Tx to 1450 (|1450 - 1500|
-// is not below 50), periods now 3. Its rows of 921 bins (to bin 920): neither its levels nor its
-// decode count, Tx stays 1500 at 0, periods now 2. Red on the parent: it counts the short period.
+// is not below 50), periods 3. Its rows of 921 bins (to bin 920): neither its levels nor its
+// decode count, Tx stays 1500 at 0, periods 2.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_050_a_period_counts_only_when_its_levels_reach_bin_921() {
     for (bins_len, expected, now) in [(922, 1450, 3), (921, 1500, 2)] {
@@ -8397,7 +8390,7 @@ impl Peer {
         out
     }
     /// The next free_tx_slots.state message within 5 s (what follows it stays for the next read);
-    /// none of the messages read is an automation.state (automation is never used, #82).
+    /// none of the messages read is an automation.state (automation is never used).
     fn next_free_tx_slots(&mut self) -> Option<Value> {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
@@ -8487,7 +8480,7 @@ fn listening_rows(f: &Mcp, e: i64) {
     }
     wf_row(f, e, 30, &[(1500, 1550, 42)], false);
 }
-/// The build of GET /automation free_tx_slots (with the MCP view's), its keys exactly #82's.
+/// The build of GET /automation free_tx_slots (with the MCP view's), with its exact keys.
 async fn build_of(f: &Mcp) -> Value {
     let v = free_tx_slots(f).await;
     let mut keys: Vec<&String> = v.as_object().expect("a value").keys().collect();
@@ -8511,7 +8504,7 @@ fn listening(at: i64, rx: &str, periods: u64, open: Value) -> Value {
 // [[300, 1000], [1050, 2700]] (1000 closed, 1500 open). At e + 15 s: the odd e - 15 and e - 45 s
 // (2): [[300, 2000], [2050, 2700]] (1000 open). At e + 30 s: e, e - 30 and e - 60 s (3), e's station
 // now counted: [[300, 1000], [1050, 1500], [1550, 2700]]. At e + 45 s as at e + 15 s. The waiting
-// run gives the same values, with no run_id. Red on the parent: no value without a run.
+// run gives the same values, with no run_id.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_082_002_listening_alternates_the_parity_every_period_with_or_without_a_waiting_run() {
     for waiting in [false, true] {
@@ -8563,7 +8556,7 @@ fn unfreeze(f: &Mcp) {
 // change only at the even starts, when an odd period has ended: at e + 30 s 3 periods,
 // [[300, 2000], [2050, 2700]], the same at e + 45 s; at e + 60 s 4 periods, [[300, 2000],
 // [2050, 2400], [2450, 2700]], the same at e + 75 s. Enable Tx off at e + 76 s: at once qso false
-// (rx_parity odd, the period in progress). Red on the parent: no value without a run.
+// (rx_parity odd, the period in progress).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_082_002_my_own_cq_holds_its_rx_parity_over_its_transmissions() {
     let f = station(true).await;
@@ -8646,11 +8639,10 @@ async fn tc_082_002_my_own_cq_holds_its_rx_parity_over_its_transmissions() {
 // bins, 2440 4; 2350 and 2450 none), is not in the build at e + 75 s, nor at e + 89 s (no build
 // within a period), and is from e + 90 s on. (f) A station decoded at 1200 Hz only in the odd
 // period e + 105 s, which is flat in the waterfall (no rise closes a slot): the build at the even
-// start e + 120 s (e + 105, 75, 45 and 15 s count, 4; K1ABC's e - 15 s no longer) has 1200 open,
+// start e + 120 s (e + 105, 75, 45 and 15 s count, 4; K1ABC's e - 15 s does not) has 1200 open,
 // [[300, 2400], [2450, 2700]]; the publication of e + 105 s's decodes builds at once (e + 120.5 s),
-// qso true and rx_parity odd as before, 1160..1240 closed: [[300, 1200], [1250, 2400],
-// [2450, 2700]]. Red on the parent: no value without a run; on the build without "Rebuild on
-// decodes" (f) keeps the period-start value.
+// qso true and rx_parity odd, 1160..1240 closed: [[300, 1200], [1250, 2400],
+// [2450, 2700]].
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_082_002_a_manual_qso_holds_its_rx_parity_and_its_decodes_build_at_once() {
     let f = station(true).await;
@@ -8752,8 +8744,7 @@ async fn tc_082_002_a_manual_qso_holds_its_rx_parity_and_its_decodes_build_at_on
 // 2 periods count. A station band change (20 m to 40 m) at e + 2 s builds at once: only later
 // periods count, periods 0 and open []. The live receive stops: null (GET and MCP). A new live job
 // starts: a value at once from its first period (periods 0, open []); its odd period e + 15 s
-// received, at e + 45 s it counts: periods 1, open [[300, 2700]]. Red on the parent: null without a
-// run.
+// received, at e + 45 s it counts: periods 1, open [[300, 2700]].
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_null() {
     let f = station(true).await;
@@ -8805,8 +8796,7 @@ async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_nu
 // even, odd (case (a) in FT4). The live receive
 // stops: one event with free_tx_slots null, GET null, no further event. No automation.state to any
 // peer, and none of run_id, slots, rise_db, level_db, floor_db or listening in an event. The 48-range
-// value with two UUIDs and a 13-digit at_utc_ms is at most 1024 bytes. Red on the parent: no event
-// and null without a run.
+// value with two UUIDs and a 13-digit at_utc_ms is at most 1024 bytes.
 // Proves: TC-082-003
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_082_003_free_tx_slots_on_the_socket_and_in_the_snapshot_without_a_run() {
@@ -9020,13 +9010,13 @@ fn reports(hz: &[f64]) -> Vec<(&'static str, f64, Option<f64>)> {
 // The 10:28:58 capture (HB9BLA, 10 m FT8): a
 // run's CQ decision ("Casual 20 m"), my Tx parity odd and Rx parity even, Tx 1930, Rx 906, the
 // station clock 13.965 s into 10:28:45. Counted: my even periods 10:27:30, 10:28:00 and 10:28:30
-// (periods now 3), each a flat floor of 30 (32 in 10:28:30), every station decoded in it a band
+// (periods 3), each a flat floor of 30 (32 in 10:28:30), every station decoded in it a band
 // [hz, hz + 50) 12 dB above the floor; my odd periods alike, RK3AW's band in both. Hand computation:
 // the even decodes leave the candidates 300..400, 720..800, 1010..1050, 1250..1310, 1450..1680,
 // 1890..1960, 2120..2130 and 2240..2650 (with Hold Tx on 810..1000 is also within 50 Hz of Rx
-// 906); each lies on the floor in every even period, rise -0.65, so free: 0 (#66 "At or under
-// floor = free"), and the latest period counts (level 32, floor 32.65). #82: the open slots are
-// those decode-free grid points with no clearance of Rx (D1), the same with Hold Tx on and off: a
+// 906); each lies on the floor in every even period, rise -0.65, so free: 0 ("At or under
+// floor = free"), and the latest period counts (level 32, floor 32.65). The open slots are
+// those decode-free grid points with no clearance of Rx, the same with Hold Tx on and off: a
 // decode d closes (d - 50, d + 50), so the even clusters 450.7..451.5, 543.0..660.8, 895.4..896.8,
 // 1101.5..1198.6, 1362.9..1399.1, 1737.9..1835.3, 2011.2..2061.6 and 2180.1..2181.1 leave open
 // 300..400, 720..840, 950..1050, 1250..1310, 1450..1680, 1890..1960, 2120..2130 and 2240..2650
@@ -9036,8 +9026,7 @@ fn reports(hz: &[f64]) -> Vec<(&'static str, f64, Option<f64>)> {
 // overlaps a station decoded in my even periods; DL5XU (1976) and A61DD (765), decoded only in my
 // odd periods, close nothing; qso true (the run's CQ is armed), rx_parity even, periods 3.
 // Hold Tx on: the CQ on the held 1930, Rx 906, tx_slot {1930, 0}. Hold Tx off: the CQ's slot 1930
-// (the current Tx among the quietest), Rx = Tx. Red on the parent: no open ranges (its list ranked
-// five slots by the rise over each slot's own usual level).
+// (the current Tx among the quietest), Rx = Tx.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
     for hold in [true, false] {
@@ -9110,9 +9099,8 @@ async fn tc_066_001_the_capture_lists_free_slots_off_the_busy_region() {
 // two older and 32 in the two later; a station decoded at 659.5 Hz at 38 dB in all 4 even periods,
 // stations decoded at 659.7 and 691.8 Hz at 38 dB in all 4 odd periods. The selection of K1ABC
 // (2400, Hold Tx off): 1550 is free, 0 (rise -0.65), like every free slot (610..700 is on the
-// decoded station), so Tx stays on 1550, tx_slot {1550, 0}. #82: the station's open slots close
-// 610..700 (|f - 659.5| below 50) and nothing for the odd stations: [300, 650), [710, 2700). Red on
-// the parent: it moves Tx to 680 (rise 0 on the station against 1 on the free slots), as live.
+// decoded station), so Tx stays on 1550, tx_slot {1550, 0}. The station's open slots close
+// 610..700 (|f - 659.5| below 50) and nothing for the odd stations: [300, 650), [710, 2700).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_002_the_0729_case_keeps_tx_off_the_station() {
     let rows = |f: &Mcp, e: i64| {
@@ -9149,12 +9137,11 @@ async fn tc_066_002_the_0729_case_keeps_tx_off_the_station() {
 }
 
 // Hold Tx on, the selection of K1ABC at 1520,
-// within 50 Hz of the held Tx 1500 (D4): the nearest candidates 50 Hz clear of his signal (and of
+// within 50 Hz of the held Tx 1500: the nearest candidates 50 Hz clear of his signal (and of
 // Rx on him) are 1420 (80 Hz) below and 1620 (120 Hz) above. A station decoded at 1400 in my last
 // Rx period (flat 20) overlaps 1360..1440, so below only 1350 and lower are left (150 Hz) and Tx
 // goes to 1620, Rx on 1520, tx_slot {1620, 0}. With stations decoded every 40 Hz every candidate is
-// overlapped, all come back and Tx goes to 1420. Red on the parent: decodes leave nothing out, Tx
-// to 1420.
+// overlapped, all come back and Tx goes to 1420.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_002_the_hold_tx_50_hz_move_skips_a_decoded_station() {
     let everywhere: Vec<f64> = (280..=2700).step_by(40).map(f64::from).collect();
@@ -9181,7 +9168,7 @@ async fn tc_066_002_the_hold_tx_50_hz_move_skips_a_decoded_station() {
 // 100 Hz; every free slot 0), tx_slot {900, 0}. A caller at 920 is within 50 Hz of the CQ's slot:
 // the nearest candidate 50 Hz clear of his 920..970 below is 820, on the decoded station (20 Hz),
 // and below it the first free one is 750 (150 Hz); above, 1020 (120 Hz): Tx and Rx to 1020, not
-// 820. Red on the parent: decodes leave nothing out, Tx to 820.
+// 820.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
     let t = casual(true).await;
@@ -9223,14 +9210,13 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
 // owner at each block as live. Timing (the worker's spectrum): a detailed row of 2400 frames
 // completes with its 5th 4096-point transform, 4816 frames (0.4 s) after its middle, so the last 2
 // rows of my Rx period before each Tx period (first frames 0.4 and 0.2 s before it) complete on
-// the air and carry the tx mark (#61), as the live Tx runs of 77 rows. Those periods are received
+// the air and carry the tx mark, as the live Tx runs of 77 rows. Those periods are received
 // (I transmitted in the period after them), so they count (CL-039-09 "periods I transmitted in
-// never counted"): the station's build counts 1 period at the selection (e - 30 s, #82 periods; e,
+// never counted"): the station's build counts 1 period at the selection (e - 30 s, periods; e,
 // published 1 s in, is due but has no row yet), 3 at the slot check of the 1st repetition (+ e, and
-// + e + 30 s, in progress, due on its complete publication 13 s in with its rows so far, #89), 4 at
+// + e + 30 s, in progress, due on its complete publication 13 s in with its rows so far), 4 at
 // the 2nd (+ e + 60 s). My Tx periods are never kept
-// in the per-period power, the received ones are (e - 30, e - 15, e and e + 30 s). Red on the
-// parent: it drops each Rx period with a marked row, 1 at every slot check, as live.
+// in the per-period power, the received ones are (e - 30, e - 15, e and e + 30 s).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_002_received_periods_count_after_my_transmissions() {
     use std::time::{Duration, Instant};

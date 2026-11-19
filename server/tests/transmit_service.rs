@@ -1009,7 +1009,7 @@ fn wait_for(what: &str, limit: Duration, done: impl Fn() -> bool) {
     }
 }
 
-// Review finding 1: the release never depends on the
+// The release never depends on the
 // device reporting the end.
 #[test]
 fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls() {
@@ -1023,7 +1023,7 @@ fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls
         *f.0.audio.lock().unwrap() = Some(stuck);
         // Disarm does not unbound the keyed transmission.
         core.disarm(DisarmCause::Operator);
-        // Audio end P + 13 140 ms plus the 1 000 ms release margin (#49).
+        // Audio end P + 13 140 ms plus the 1 000 ms release margin.
         let deadline = P + 14_140;
         run(&mut core, &f, deadline - 1);
         assert_eq!(f.keys(), vec![(P, true)], "still keyed before the deadline");
@@ -1148,7 +1148,7 @@ fn a_device_that_stops_consuming_half_way_is_stalled_and_released_by_the_bound()
     }
 }
 
-// Review finding 3: an owner panic fails closed.
+// An owner panic fails closed.
 #[test]
 fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
     let f = Fake::new();
@@ -1182,7 +1182,7 @@ fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
     driver.join().unwrap();
 }
 
-// Review finding 2: a halt during the output open
+// A halt during the output open
 // prevents keying.
 #[test]
 fn halt_during_a_slow_output_open_never_keys() {

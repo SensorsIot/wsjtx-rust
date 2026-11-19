@@ -39,7 +39,7 @@ fn dax_packet_of_a_real_radio_decodes() {
     assert_eq!(peak, 0.075_415_015);
 }
 
-// Independently authored issue-13 preparation vector
+// Independently authored preparation vector
 // (hb9bla-progress/flex-readiness/independent-protocol-vectors.json, SHA256
 // d706e67b6bf78ae46ddc8c7b7a3331d8fdde5c15e2a1446eb0110586fa893f3e), not vendor output.
 #[test]

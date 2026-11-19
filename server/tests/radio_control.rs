@@ -244,7 +244,7 @@ fn req(operation: Operation) -> Request {
 }
 
 // Independent addressed replies and fixed
-// sequence expectations distinguish each completed query from the legacy cache.
+// sequence expectations distinguish each completed query from the cache.
 #[test]
 fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_targets() {
     // CL-044-09: each setter reads first. Mode differs (FIL2 to FIL1): read, set (ACK),

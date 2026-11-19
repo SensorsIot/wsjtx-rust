@@ -390,7 +390,7 @@ fn tc_099_001_ft4_eu_vhf_matches_ft4sim() {
     );
 }
 
-/// FT4 carries the same Field Day and RTTY Roundup payloads (#24 S2b), TU; included.
+/// FT4 carries the same Field Day and RTTY Roundup payloads, TU; included.
 #[test]
 fn tc_024_007_ft4_field_day_and_rtty_roundup_match_ft4sim() {
     let mut exact = 0;

@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
-// #111 slice S1: the transmit state, its start actions and its stops, at the contact engine
+// The transmit state, its start actions and its stops, at the contact engine
 // against the actual transmit owner core on a virtual UTC clock (the bench of contact_tests).
 // The oracles are the tables of CL-111-02 and CL-111-03 and the clauses CL-111-05 to -08
-// and -10 as the issue words them, written below as expected values; none is engine output.
+// and -10, written below as expected values; none is engine output.
 use super::*;
 use wstx_rust::transmit::service::{ArmCause, TransmitRefusal};
 

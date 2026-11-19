@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-// The actual router, UDP owner, contact engine and #9 transmit
+// The actual router, UDP owner, contact engine and transmit
 // owner on the recording hardware double (no audio, PTT or radio), hand-authored rows
 // packed with the real codec and loopback UDP peers on ephemeral ports (never 2237). The
 // datagrams are read back with the independent big-endian reader below, not the encoder.
@@ -612,8 +612,8 @@ async fn tc_012_003_no_inbound_message_acts_on_the_station() {
     assert_eq!(arm_state(&f), ArmState::Armed);
 }
 
-// A udp.json saved before send-only and while the
-// instance name was a setting keeps working: the retired accept_commands and instance_name
+// A udp.json holding the keys accept_commands and
+// instance_name keeps working: these
 // keys are dropped on load and gone after the next save.
 // Proves: TC-012-004
 #[tokio::test(flavor = "multi_thread")]
@@ -1051,7 +1051,7 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     assert!(drain(&a).is_empty(), "already stored: nothing sent again");
     f.state.store.lock().unwrap().document.locator = "JN47AA".into();
 
-    // W1AW: Log QSO before completion stores it now and closes the contact (#37).
+    // W1AW: Log QSO before completion stores it now and closes the contact.
     f.bench.frozen.store(P1101 + 80_000, Ordering::SeqCst);
     enter(&f, "W1AW", None);
     operate(&f, "open_log", json!({}), false);
@@ -1274,7 +1274,7 @@ async fn tc_012_006_ipv6_multicast_targets() {
     let reopened = open(&f, true).snapshot(&f.state.recording);
     assert_eq!(reopened["configuration"]["targets"], targets);
 
-    // An IPv6 unicast target keeps the #40 IPv4 interface form (a saved file loads).
+    // An IPv6 unicast target keeps the IPv4 interface form (a saved file loads).
     let mut unicast = multicast_json("[::1]:2240", 1, json!("127.0.0.1"));
     unicast["enabled"] = json!(false);
     let mut with_unicast = targets.as_array().unwrap().clone();
@@ -1481,7 +1481,7 @@ async fn tc_011_002_update_logbook_adds_records_without_any_udp_datagram() {
     );
 }
 
-// ------------------------------------------------------------------ #112 (CL-112-01..06)
+// ------------------------------------------------------------------ CL-112-01..06
 
 /// The saved control of the fixture profile (no radio command).
 fn control(f: &Fixture, mode: &str, endpoint: Option<&str>) {
@@ -2046,7 +2046,7 @@ async fn tc_112_005_qso_logged_exchanges() {
     for (n, (activity, grid, sent, rcvd, locator, expected)) in cases.into_iter().enumerate() {
         f.state.store.lock().unwrap().document.locator = locator.into();
         let mut c = contest_contact(activity, grid, sent, rcvd);
-        // #85 CL-085-01: another station each time, never the newest record's station again.
+        // CL-085-01: another station each time, never the newest record's station again.
         c.dx_call = Some(format!("K{n}ABC"));
         let id = c.id.clone();
         f.contact().fixture_log(c);
