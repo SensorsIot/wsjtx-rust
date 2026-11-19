@@ -220,8 +220,8 @@ class DeployCommandTests(unittest.TestCase):
         self.assertTrue(same_path(args[1], self.manifest_path()), args)
         self.assertEqual(args[2:], ["-DryRun"] if dry_run else [])
 
+    # Proves: TC-245-01
     def test_dry_run_passes_manifest_and_dry_run_only(self):
-        # Proves: TC-245-01
         self.qualifying_log()
         self.plant_package()
         script = os.path.join(self.out, "deploy", *SCRIPT.split("/"))
@@ -240,8 +240,8 @@ class DeployCommandTests(unittest.TestCase):
                 self.assertTrue(same_path(argv[5], script), argv)
                 self.assertEqual(argv[6:], record["args"])
 
+    # Proves: TC-245-02
     def test_the_exit_of_station_update_passes_through(self):
-        # Proves: TC-245-02
         self.qualifying_log()
         self.plant_package()
         for code in (0, 1, 3, 6):
@@ -250,8 +250,8 @@ class DeployCommandTests(unittest.TestCase):
                 self.assertEqual(rc, code, out)
                 self.assertIsNotNone(self.stub_record(), out)
 
+    # Proves: TC-245-03
     def test_a_package_of_the_commit_is_reused_and_an_absent_one_is_built(self):
-        # Proves: TC-245-03
         self.qualifying_log()
         self.plant_package()
         rc, out = self.run_command(self.commit, "--dry-run")
@@ -270,8 +270,8 @@ class DeployCommandTests(unittest.TestCase):
             self.assertEqual(json.load(f)["toolchain"], "rustc 0.0.0 (fake)")
         self.assertIsNotNone(self.stub_record(), out)
 
+    # Proves: TC-245-04
     def test_exactly_the_qualifying_push_gate_log_is_named(self):
-        # Proves: TC-245-04
         c12, other = self.commit[:12], self.parent
         close = self.ver[:8] + ("0" if self.ver[8] != "0" else "1")
         cases = [
@@ -299,8 +299,8 @@ class DeployCommandTests(unittest.TestCase):
                 self.assertEqual(len(named), 1, out)
                 self.assertTrue(same_path(named[0], os.path.join(self.logs, expected)), named)
 
+    # Proves: TC-245-05
     def test_a_commit_not_on_github_master_is_refused(self):
-        # Proves: TC-245-05
         self.git("checkout", "-q", "-b", "side")
         station_drill.write(os.path.join(self.repo, "side.txt"), "side\n")
         self.commit_all("side")
@@ -312,8 +312,8 @@ class DeployCommandTests(unittest.TestCase):
         self.assertIn(f"refused: {side[:9]} is not on GitHub master", out)
         self.assert_nothing_ran(out, side[:9])
 
+    # Proves: TC-245-06
     def test_no_qualifying_push_gate_log_is_refused(self):
-        # Proves: TC-245-06
         other = ("1" if self.ver[0] != "1" else "2") * 9
         self.log(f"20261119T080000Z-{self.commit[:12]}.log", red_log())
         self.log(f"20261119T090000Z-{other}000.log", green_log(other))
@@ -323,8 +323,8 @@ class DeployCommandTests(unittest.TestCase):
         self.assertIn(f"refused: no push-gate log shows the push of {self.ver} to master", out)
         self.assert_nothing_ran(out)
 
+    # Proves: TC-245-07
     def test_two_qualifying_push_gate_logs_are_refused(self):
-        # Proves: TC-245-07
         a = self.log(f"20261119T080000Z-{self.commit[:12]}.log", green_log(self.ver))
         b = self.log(f"20261119T081000Z-{self.commit[:12]}-rerun.log", green_log(self.ver))
         rc, out = self.run_command(self.commit)
@@ -332,8 +332,8 @@ class DeployCommandTests(unittest.TestCase):
         self.assertIn(f"refused: 2 push-gate logs show the push of {self.ver}: {a}, {b}", out)
         self.assert_nothing_ran(out)
 
+    # Proves: TC-245-08
     def test_the_one_line_runs_no_working_tree_bytes(self):
-        # Proves: TC-245-08
         marker = "WORKING-TREE-MARKER"
         for path, line in ((COMMAND, f'print("{marker}")\n'), (SCRIPT, f"'{marker}'\n")):
             full = os.path.join(self.repo, *path.split("/"))
@@ -352,8 +352,8 @@ class DeployCommandTests(unittest.TestCase):
         self.assertEqual(record["sha256"], sha256(self.blob(SCRIPT)))
         self.assert_args(record, dry_run=True)
 
+    # Proves: TC-245-09
     def test_any_other_argument_list_is_refused_with_the_usage_line(self):
-        # Proves: TC-245-09
         log = os.path.join(self.logs, self.qualifying_log())
         c = self.commit
         for args in ([], [c, log], [c, "--force"], [c, "-DryRun"], [c, "--dry-run", "--dry-run"], ["--dry-run"]):
@@ -364,8 +364,8 @@ class DeployCommandTests(unittest.TestCase):
                 self.assertFalse(os.path.exists(os.path.join(self.repo, ".git", "FETCH_HEAD")), out)
                 self.assert_nothing_ran(out)
 
+    # Proves: TC-245-10
     def test_a_dry_run_changes_neither_station_nor_packages(self):
-        # Proves: TC-245-10
         self.qualifying_log()
         self.plant_package()
         station_drill.write(os.path.join(self.station, "ccccccccc", "wstx-rust.exe"), b"running image")
@@ -378,8 +378,8 @@ class DeployCommandTests(unittest.TestCase):
         self.assertEqual((snapshot(self.station), snapshot(self.packages)), before)
         self.assertEqual(self.stub_record()["args"][-1], "-DryRun")
 
+    # Proves: TC-245-11
     def test_a_commit_git_cannot_show_runs_nothing(self):
-        # Proves: TC-245-11
         self.qualifying_log()
         missing = "0" * 40
         rc, out = self.run_line(missing, "--dry-run")
@@ -388,8 +388,8 @@ class DeployCommandTests(unittest.TestCase):
         self.assertFalse(os.path.exists(self.packages), out)
         self.assertIsNone(self.stub_record(), out)
 
+    # Proves: TC-245-12
     def test_a_folder_without_the_commits_package_is_refused_unchanged(self):
-        # Proves: TC-245-12
         self.qualifying_log()
         for name, manifest in (("no manifest", False), ("another commit's manifest", True)):
             with self.subTest(name):
@@ -404,8 +404,8 @@ class DeployCommandTests(unittest.TestCase):
                 self.assertEqual(snapshot(self.out), before)
                 self.assertIsNone(self.stub_record(), out)
 
+    # Proves: TC-245-14
     def test_an_unreachable_origin_is_refused(self):
-        # Proves: TC-245-14
         self.qualifying_log()
         os.rename(self.origin, self.origin + "-moved")
         rc, out = self.run_command(self.commit)
@@ -413,8 +413,8 @@ class DeployCommandTests(unittest.TestCase):
         self.assertIn("refused: git fetch of GitHub master failed", out)
         self.assert_nothing_ran(out)
 
+    # Proves: TC-245-15
     def test_an_abbreviated_commit_is_resolved_to_its_full_id(self):
-        # Proves: TC-245-15
         self.qualifying_log()
         self.plant_package()
         rc, out = self.run_command(self.commit[:7], "--dry-run")
