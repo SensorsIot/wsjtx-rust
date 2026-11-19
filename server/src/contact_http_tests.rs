@@ -1146,7 +1146,7 @@ async fn transmit_state_revision_follows_the_read_view_only() {
         transmit_http::view_digest(keyed)
     );
     // The first event holds the whole pushed view; each later one only what changed.
-    let first_view = transmit_http::pushed_view(r).unwrap();
+    let first_view = transmit_http::state_read(r).unwrap().1;
     assert!(first_view.get("outcomes").is_none() && first_view.get("profile_id").is_none());
     let whole = transmit_http::changed_fields(&Value::Null, &first_view);
     assert_eq!(Value::Object(whole.clone()), first_view);
@@ -3388,4 +3388,144 @@ async fn tc_085_003_the_newest_record_whatever_wrote_it() {
     entered_qso_85(&g, P85, "K1ABC");
     assert_eq!(calls_85(&g), ["K1ABC"]);
     assert_eq!(calls_85(&f), ["K1ABC", "DL1ABC", "K1ABC"]);
+}
+
+/// A recording in a new directory whose transmit owner runs on its station clock over `ntp`,
+/// as main wires them. Without a radio its startup release stays pending (no readback), so
+/// its view changes with the SNTP monitor only.
+fn on_station_clock(
+    ntp: Arc<wstx_rust::transmit::clock::Monitor>,
+) -> (std::path::PathBuf, Arc<recording::Recording>) {
+    let dir = std::env::temp_dir().join(format!("wstx-tx-clock-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let r = recording::Recording::open(
+        &dir,
+        profile::new_uuid().unwrap(),
+        profile::new_uuid().unwrap(),
+    );
+    let clock = clock_http::Clock::new(ntp);
+    let _ = r.clock.set(clock.clone());
+    let _ = r
+        .transmit
+        .set(transmit_http::Station::start(clock.station.clone()).unwrap());
+    (dir, r)
+}
+/// An SNTP measurement of `offset_ms` taken `age` ago.
+fn sntp(offset_ms: i64, age: Duration) -> wstx_rust::transmit::clock::Measurement {
+    wstx_rust::transmit::clock::Measurement {
+        server: "ch.pool.ntp.org".into(),
+        offset_ms,
+        round_trip_ms: 20,
+        taken: std::time::Instant::now() - age,
+        system: std::time::SystemTime::now() - age,
+    }
+}
+/// `read` on three threads, from before `write` runs on this one until after it returned.
+fn reads_while<T: Send>(read: impl Fn() -> T + Sync, write: impl FnOnce()) -> Vec<T> {
+    use std::sync::atomic::AtomicUsize;
+    let (started, done) = (AtomicUsize::new(0), AtomicBool::new(false));
+    std::thread::scope(|scope| {
+        let readers: Vec<_> = (0..3)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut reads = vec![];
+                    loop {
+                        let last = done.load(Ordering::SeqCst);
+                        reads.push(read());
+                        if reads.len() == 1 {
+                            started.fetch_add(1, Ordering::SeqCst);
+                        }
+                        if last {
+                            return reads;
+                        }
+                    }
+                })
+            })
+            .collect();
+        while started.load(Ordering::SeqCst) < readers.len() {
+            std::thread::yield_now();
+        }
+        write();
+        done.store(true, Ordering::SeqCst);
+        readers
+            .into_iter()
+            .flat_map(|h| h.join().unwrap())
+            .collect()
+    })
+}
+
+// The transmit.state read (a revision with its fields) on three threads while SNTP records
+// 501, 502, …: a higher transmit_revision never carries a lower clock_measurement.offset_ms,
+// and each offset has at most one revision.
+// Proves: TC-007-005
+#[test]
+fn a_transmit_revision_never_carries_older_fields() {
+    let ntp = wstx_rust::transmit::clock::Monitor::new();
+    ntp.record(Some(sntp(501, Duration::ZERO)));
+    let (dir, r) = on_station_clock(ntp.clone());
+    let read = || {
+        let (revision, fields) = transmit_http::state_read(&r).unwrap();
+        (
+            revision,
+            fields["clock_measurement"]["offset_ms"].as_i64().unwrap(),
+        )
+    };
+    let mut seen = reads_while(read, || {
+        for offset in 502..20_000 {
+            ntp.record(Some(sntp(offset, Duration::ZERO)));
+            std::thread::yield_now();
+        }
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+    seen.sort_unstable();
+    seen.dedup();
+    assert!(seen.len() > 1, "{seen:?}");
+    for w in seen.windows(2) {
+        assert!(
+            w[0].0 < w[1].0 && w[0].1 < w[1].1,
+            "revision and offset out of step: {w:?}"
+        );
+    }
+}
+
+// GET /transmit's view on three threads of a station whose transmit owner runs on the station
+// clock: (a) while SNTP records +40 and +525 in turn, clock_warning is pc_clock_off exactly
+// when clock_measurement.offset_ms is beyond 500; (b) while an asked round's measurement
+// reaches 600 s, clock_warning is ntp_unreachable exactly when clock_measurement.age_ms is
+// beyond 600000.
+// Proves: TC-007-005
+#[test]
+fn transmit_view_shows_one_sntp_snapshot() {
+    let ntp = wstx_rust::transmit::clock::Monitor::new();
+    ntp.record(Some(sntp(40, Duration::ZERO)));
+    let (dir, r) = on_station_clock(ntp.clone());
+    let service = &r.transmit.get().unwrap().service;
+    let read = || transmit_http::view_json(&r, &service.view());
+    for v in reads_while(read, || {
+        for k in 0..20_000 {
+            let offset = if k % 2 == 0 { 525 } else { 40 };
+            ntp.record(Some(sntp(offset, Duration::ZERO)));
+            std::thread::yield_now();
+        }
+    }) {
+        let off = v["clock_measurement"]["offset_ms"].as_i64().unwrap().abs() > 500;
+        assert_eq!(v["clock_warning"] == "pc_clock_off", off, "{v}");
+    }
+    let mut stale = 0;
+    for _ in 0..200 {
+        ntp.round(true, Some(sntp(40, Duration::from_millis(599_998))));
+        let until = std::time::Instant::now() + Duration::from_millis(4);
+        for v in reads_while(read, || {
+            while std::time::Instant::now() < until {
+                std::hint::spin_loop();
+            }
+        }) {
+            let unreachable = v["clock_warning"] == "ntp_unreachable";
+            let age_ms = v["clock_measurement"]["age_ms"].as_u64().unwrap();
+            assert_eq!(unreachable, age_ms > 600_000, "{v}");
+            stale += usize::from(unreachable);
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(stale > 0, "the boundary was crossed");
 }

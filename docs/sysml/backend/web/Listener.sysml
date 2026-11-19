@@ -254,7 +254,9 @@ package WstxListener {
         objective { verify 'CL-003-08'; }
         @TestedBy {
             test = "server/src/transmit/clock_http_tests.rs::"
-                + "clock_state_is_pushed_to_every_profile";
+                + "clock_state_is_pushed_to_every_profile; "
+                + "server/src/transmit/clock_http_tests.rs::"
+                + "a_revision_never_carries_older_clock_values";
         }
     }
     verification 'TC-111-007' {

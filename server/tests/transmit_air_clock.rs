@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use wstx_rust::decoder::{Call, CallKind, Exchange, Fields, Mode};
 use wstx_rust::transmit::air::{
-    AirClock, Estimate, MAX_AGE_MS, StationClock, Warning, estimate, sender, warning,
+    AirClock, Estimate, MAX_AGE_MS, StationClock, View, Warning, estimate, sender, warning,
 };
 use wstx_rust::transmit::clock::{self, Measurement, Monitor, Sntp, Source};
 use wstx_rust::transmit::{ClockState, ScheduleError, plan_start};
@@ -781,4 +781,112 @@ fn rounds_record_whether_a_server_was_asked() {
         Some(Warning::NtpUnreachable)
     );
     assert_eq!(StationClock::new(empty).view().warning, None);
+}
+
+/// Views of `clock` taken on three threads, from before `write` runs on this one until after
+/// it returned.
+fn views_while(clock: &StationClock, write: impl FnOnce()) -> Vec<View> {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst};
+    let (started, done) = (AtomicUsize::new(0), AtomicBool::new(false));
+    std::thread::scope(|scope| {
+        let readers: Vec<_> = (0..3)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut views = vec![];
+                    loop {
+                        let last = done.load(SeqCst);
+                        views.push(clock.view());
+                        if views.len() == 1 {
+                            started.fetch_add(1, SeqCst);
+                        }
+                        if last {
+                            return views;
+                        }
+                    }
+                })
+            })
+            .collect();
+        while started.load(SeqCst) < readers.len() {
+            std::thread::yield_now();
+        }
+        write();
+        done.store(true, SeqCst);
+        readers
+            .into_iter()
+            .flat_map(|h| h.join().unwrap())
+            .collect()
+    })
+}
+
+// Views while SNTP records +40 and +525 in turn: in each view the SNTP state is
+// unsynchronized and the warning pc_clock_off exactly when its shown offset is beyond 500 ms.
+// Proves: TC-092-003
+#[test]
+fn a_view_judges_the_measurement_it_shows() {
+    let ntp = Monitor::new();
+    ntp.record(Some(measured(40)));
+    let clock = StationClock::new(ntp.clone());
+    let views = views_while(&clock, || {
+        for k in 0..20_000 {
+            ntp.record(Some(measured(if k % 2 == 0 { 525 } else { 40 })));
+            std::thread::yield_now();
+        }
+    });
+    for v in &views {
+        let off = v.ntp.as_ref().unwrap().offset_ms.abs() > 500;
+        assert_eq!(
+            (
+                v.ntp_state == Unsynchronized,
+                v.warning == Some(Warning::PcClockOff)
+            ),
+            (off, off),
+            "{v:?}"
+        );
+    }
+}
+
+// A new monitor's first round (asked, +40, taken now) completed while views are taken: no
+// view shows ntp_unreachable.
+// Proves: TC-092-003
+#[test]
+fn a_completed_round_is_read_whole() {
+    for _ in 0..500 {
+        let ntp = Monitor::new();
+        let clock = StationClock::new(ntp.clone());
+        let views = views_while(&clock, || ntp.round(true, Some(measured(40))));
+        for v in &views {
+            assert_ne!(v.warning, Some(Warning::NtpUnreachable), "{v:?}");
+        }
+    }
+}
+
+// An asked round's measurement (+40) reaching 600 s while views are taken: in each view the
+// SNTP state is unknown exactly when the warning is ntp_unreachable, and exactly when the
+// view's age_ms is beyond 600000.
+// Proves: TC-092-003
+#[test]
+fn a_view_takes_its_age_once() {
+    let mut stale = 0;
+    for _ in 0..200 {
+        let ntp = Monitor::new();
+        let (now, system) = (Instant::now(), SystemTime::now());
+        ntp.round(
+            true,
+            Some(aged(40, now, system, Duration::from_millis(599_998))),
+        );
+        let clock = StationClock::new(ntp);
+        let until = now + Duration::from_millis(4);
+        let views = views_while(&clock, || {
+            while Instant::now() < until {
+                std::hint::spin_loop();
+            }
+        });
+        for v in &views {
+            let unknown = v.ntp_state == ClockState::Unknown;
+            assert_eq!(unknown, v.warning == Some(Warning::NtpUnreachable), "{v:?}");
+            assert_eq!(unknown, v.ntp_age_ms.unwrap() > 600_000, "{v:?}");
+            stale += usize::from(unknown);
+        }
+    }
+    assert!(stale > 0, "the boundary was crossed");
 }

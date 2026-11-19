@@ -36,27 +36,28 @@ fn state(s: ClockState) -> &'static str {
         ClockState::Unknown => "unknown",
     }
 }
-/// The clock fields of clock.state and their clock_revision, which increases at each change
-/// any reader observes (GET /clock and every peer's push read the same counter).
-fn fields(r: &recording::Recording, c: &Clock, v: &wstx_rust::transmit::air::View) -> (Value, u64) {
+/// The station clock view, the clock fields of clock.state and their clock_revision, which
+/// increases at each change any reader observes (GET /clock and every peer's push read the
+/// same counter). The values are read under the revision lock, so a revision and its values
+/// are one snapshot and values read before the stored ones never replace them.
+fn fields(r: &recording::Recording, c: &Clock) -> (wstx_rust::transmit::air::View, Value, u64) {
+    let mut seen = c.revision.lock().unwrap_or_else(|p| p.into_inner());
+    let v = c.station.view();
     let pc_clock_off = v.warning == Some(Warning::PcClockOff);
     let fields = json!({"state":state(v.state),"correction_ms":v.correction_ms,
         "warning":v.warning.map(Warning::name),
         "ntp_offset_ms":v.ntp.as_ref().filter(|_|pc_clock_off).map(|m|m.offset_ms),
         "capture_warning":r.capture_warning()});
-    let mut seen = c.revision.lock().unwrap_or_else(|p| p.into_inner());
     if seen.0 != fields {
         *seen = (fields.clone(), seen.1 + 1);
     }
-    (fields, seen.1)
+    (v, fields, seen.1)
 }
 /// GET /clock: exactly the view of CL-043-01.
 pub(crate) fn view(r: &recording::Recording, c: &Clock) -> Value {
-    let v = c.station.view();
-    let (fields, revision) = self::fields(r, c, &v);
-    let measurement = v.ntp.as_ref().map(|m| {
-        json!({"server":m.server,"offset_ms":m.offset_ms,"round_trip_ms":m.round_trip_ms,
-            "age_ms":u64::try_from(m.taken.elapsed().as_millis()).unwrap_or(u64::MAX)})
+    let (v, fields, revision) = self::fields(r, c);
+    let measurement = v.ntp.as_ref().zip(v.ntp_age_ms).map(|(m, age_ms)| {
+        json!({"server":m.server,"offset_ms":m.offset_ms,"round_trip_ms":m.round_trip_ms,"age_ms":age_ms})
     });
     let estimate = v.air.map(|(e, age)| {
         json!({"median_dt_ms":e.median_dt_ms,"stations":e.stations,"plus":e.plus,"minus":e.minus,"age_ms":age.max(0)})
@@ -69,9 +70,7 @@ pub(crate) fn view(r: &recording::Recording, c: &Clock) -> Value {
 }
 /// The clock.state event and its clock_revision; None without a station clock.
 pub(crate) fn state_event(r: &recording::Recording) -> Option<(u64, String)> {
-    let c = r.clock.get()?;
-    let v = c.station.view();
-    let (clock, revision) = fields(r, c, &v);
+    let (_, clock, revision) = fields(r, r.clock.get()?);
     let text = json!({"v":1,"type":"clock.state","data":{"profile_id":r.profile,"boot_id":r.boot,
         "clock_revision":revision,"clock":clock}})
     .to_string();
