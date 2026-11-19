@@ -472,8 +472,7 @@ package WstxProfileDocument {
     }
 
     verification 'TC-097-002' {
-        doc /* A strategies file of another schema version, a strategy without its CQ
-             wait, and saved names of built-ins. */
+        doc /* Other strategy file schemas, a strategy without CQ wait, saved built-in names */
         subject profile : PersistedProfile;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }

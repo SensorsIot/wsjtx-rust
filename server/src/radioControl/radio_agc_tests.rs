@@ -437,7 +437,7 @@ fn ft8_and_ft4_selections_apply_the_agc_inside_the_selection() {
 // TC-044-009 (h)
 // Proves: TC-044-009
 #[test]
-fn profile_radio_settings_default_migrate_and_validate() {
+fn profile_radio_settings_default_and_validate() {
     use profile::{ControlSelection, Radio};
     let cat = ControlSelection {
         mode: "cat".into(),
