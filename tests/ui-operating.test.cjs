@@ -33,7 +33,7 @@ async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFa
   return {page,app,errors,sent,dir};
 }
 
-// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+// The status refreshes itself; the explicit Refresh status is in Settings > Expert.
 async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 function liveFixture(idle){
@@ -74,7 +74,7 @@ test('TC-010-005 display preference is isolated by origin and validated profile 
   await chooseDisplay(page,'off');let current=base;
   // Profile identity wire fixtures test browser preference identity only; no decoded traffic is injected.
   await page.route('**/profile',route=>route.fulfill({json:current}));
-  // #74 (CL-074-01): a recording reply naming another boot than the profile's is discarded, so the
+  // CL-074-01: a recording reply naming another boot than the profile's is discarded, so the
   // fixture's station names the same boot in GET /recording as in GET /profile.
   await page.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,boot_id:current.boot_id}});});
   current={...base,boot_id:crypto.randomUUID(),revision:base.revision+1};await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);
@@ -85,7 +85,7 @@ test('TC-010-005 display preference is isolated by origin and validated profile 
   current=base;await page.reload();await page.waitForFunction(()=>profileData&&snapshot&&!syncPending);assert.equal(await page.inputValue('#display-profile'),'off');
   const other=await fixture(t,{width:1440,height:900}),otherPage=await page.context().newPage();t.after(()=>otherPage.close());
   await otherPage.route('**/profile',route=>route.fulfill({json:base}));
-  // The other station's GET /recording names the boot of the profile it is shown with (#74).
+  // The other station's GET /recording names the boot of the profile it is shown with.
   await otherPage.route('**/recording',async route=>{const real=await (await route.fetch()).json();await route.fulfill({json:{...real,boot_id:base.boot_id}});});
   await otherPage.goto(other.app.origin);await otherPage.waitForFunction(()=>profileData&&snapshot&&!syncPending);
   assert.equal(await otherPage.inputValue('#display-profile'),'detail','same profile UUID on another origin cannot inherit Off');await chooseDisplay(otherPage,'thin');
@@ -179,7 +179,7 @@ test('receive snapshot race preserves unknown mutation until a later read',{time
     await p.route('**/receive',async route=>{if(hold){entered.resolve();await release.promise;}await route.fulfill({json:idle});});
     await p.route('**/receive/start',route=>route.abort('failed'));
   }});
-  // #37: a stopped receive starts from its exception chip (or Expert / Alt+M).
+  // A stopped receive starts from its exception chip (or Expert / Alt+M).
   const chip=page.locator('#exception-chips [data-chip=receive]');
   await chip.filter({hasText:'Receive stopped'}).waitFor();await page.waitForFunction(()=>live&&!livePending);
   hold=true;await page.evaluate(()=>{void receiveSync();});await entered.promise;
@@ -319,9 +319,9 @@ test('agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activit
  assert.match(await page.locator('#radio-toolbar').innerText(),/Band \u27F3[\s\S]*Mode \u27F3/,'band and mode are marked as restart changes');
  assert.equal(await page.locator('#op-dial').isDisabled(),true);assert.equal(await page.locator('#op-dial').inputValue(),'');
  assert.match(await page.locator('#signal .op-signal-heading').innerText(),/Sensitivity/,'Sensitivity stays in the waterfall corner');
- // #39: without a saved strategy None, the built-ins, the editor and Value are offered.
+ // Without a saved strategy None, the built-ins, the editor and Value are offered.
  await page.waitForFunction(()=>!document.querySelector('#strategy-edit').disabled,null,{timeout:15000});
- // #97 StrategySelector: the five built-ins of class strategy, "DXCC all" first; no contest built-in.
+ // StrategySelector: the five built-ins of class strategy, "DXCC all" first; no contest built-in.
  assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None','DXCC all','New DXCC on band','New DXCC','Casual','POTA/SOTA'],'None and the five built-ins');
  for(const id of ['#strategy-highlight','#strategy-auto'])assert.equal(await page.locator(id).count(),0,`${id} is gone`);
  assert.equal(await page.locator('#activity-value').isVisible(),true,'the Value control is visible');
@@ -343,7 +343,7 @@ test('agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activit
  assert.equal(sent.some(m=>/transmit|qso|log|radio\./.test(m.type)),false);assert.deepEqual(errors,[]);
 });
 
-// ---------------------------------------------------------------- #37 operating screen
+// ---------------------------------------------------------------- operating screen
 // WstxOperatingScreen::ScreenLayout and friends. The
 // expected sets below come from the model's decisions, not from the candidate markup.
 const removedControls=['#receive-start','#receive-stop','#receive-mode','#operating-stop','#operating-monitor','#contact-enable','#activity-sort','#activity-direction','#band-strip','#strategy-panel','#workspace-statusbar','#rx-frequency','#region-server-settings','#region-expert'];
@@ -389,7 +389,7 @@ test('Auto Seq off is shown on the QSO pane and an RR73 offers 73 next',{timeout
   const metrics=await page.evaluate(()=>({x:document.documentElement.scrollWidth>innerWidth,y:document.documentElement.scrollHeight>innerHeight}));
   assert.deepEqual(metrics,{x:false,y:false});
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
-  // #37 compact pane: the line sits in the pane with the last partner message and the
+  // Compact pane: the line sits in the pane with the last partner message and the
   // buttons, all fully visible on the 1366x768 screen; there is no dialogue or LAST row.
   assert.equal(await page.locator('#rx-pane,#contact-last').count(),0);
   await page.screenshot({path:'test-results/ui-operating/autoseq-off-1366x768.png'});
@@ -443,7 +443,7 @@ test('the compact QSO pane shows only the running QSO and clears when it ends',{
   const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
   const show=async(next,tx={},l=null)=>{contact=next;transmit=tx;log=l;await page.evaluate(()=>window.wstxContact.load());};
   const waitCommands=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);};
-  // Removed: the old dialogue history pane, LAST row and crowding badge.
+  // Absent: a dialogue history pane, LAST row and crowding badge.
   for(const selector of ['#rx-pane','#rx-pane-rows','#contact-last','#qso-crowd','#rx-pane-erase'])assert.equal(await page.locator(selector).count(),0,`${selector} is gone`);
 
   // Idle: every station calling my call, on any frequency, oldest first, with its call, SNR and
@@ -473,14 +473,14 @@ test('the compact QSO pane shows only the running QSO and clears when it ends',{
   // Independent great-circle distance between the JN47AA and JM68 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[38.5,13]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.equal(await page.locator('#rx-focus .op-contact-identity strong').textContent(),'IW9FRA · JM68');
-  // #55: the partner's cty.dat entity (shown name and continent) leads the detail line once
+  // The partner's cty.dat entity (shown name and continent) leads the detail line once
   // GET /dxcc answers; with a grid the distance stays the exact one.
   await page.locator('#rx-focus .op-contact-identity div > span').filter({hasText:'Italy'}).waitFor();
   assert.equal(await page.locator('#rx-focus .op-contact-identity div > span').textContent(),`Italy (EU) · ${km} km · sent +10 · rcvd +10`);
   assert.equal(await page.locator('#qso-heard').textContent(),'◂ HB9BLA IW9FRA RR73  +17 dB ×3');
   assert.deepEqual(await others(),[['candidate',['DL1ABC','−8','FN42','']],['warn',['SV1DZB ⚠','−8','FN42','']],['warn',['EA8BIA ⚠','0','FN42','']],['candidate',['F1PBZ','−10','FN42','']]],'every caller but the partner; ⚠ within ±50 Hz of my Rx (1500) or Tx (2100)');
   const lines=await page.locator('#qso-dialogue tr').evaluateAll(rows=>rows.map(tr=>[...tr.cells].map(td=>td.textContent)));
-  // #60 (operator 2026-11-03): Rep in its own column; Rx/Tx SNR the latest received values on every row.
+  // Rep in its own column; Rx/Tx SNR the latest received values on every row.
   assert.deepEqual([lines.length,lines[0],lines[1],lines[2],lines.at(-1)],[10,['11:58:15','IW9FRA ◂ HB9BLA','JN47','×2','',''],['11:58:30','HB9BLA ◂ IW9FRA','-05','','−5','−5'],['11:58:45','IW9FRA ◂ HB9BLA','R+10','','−5','−5'],['12:00:30','HB9BLA ◂ IW9FRA','RR73','×3','+17','−5']]);
   // The QSO section scrolls inside the card, kept at its newest line, and grows nothing.
   const area=await page.locator('#qso-area').evaluate(a=>({scrolls:a.scrollHeight>a.clientHeight,bottom:Math.abs(a.scrollTop+a.clientHeight-a.scrollHeight)<=2,overflow:getComputedStyle(a).overflowY}));
@@ -495,11 +495,11 @@ test('the compact QSO pane shows only the running QSO and clears when it ends',{
   const clipped=selector=>page.locator(selector).first().evaluate(el=>{const r=el.getBoundingClientRect();for(let p=el.parentElement;p;p=p.parentElement){if(/auto|scroll|hidden/.test(getComputedStyle(p).overflowY)){const b=p.getBoundingClientRect();if(r.top<b.top-1||r.bottom>b.bottom+1)return true;}}return r.bottom>innerHeight;});
   for(const selector of ['#qso-heard','#qso-others tr:last-child','#qso-dialogue tr:last-child','#qso-next','#qso-cq','#contact-log'])assert.equal(await clipped(selector),false,`${selector} fully visible`);
   await page.screenshot({path:'test-results/ui-operating/qso-dialogue-1366x768.png'});
-  // #39 Abort QSO, Auto and PSK: with seven direct buttons the partner's message keeps its room and the longest
+  // Abort QSO, Auto and PSK: with seven direct buttons the partner's message keeps its room and the longest
   // badge stays inside the pane.
   const headFit=await page.evaluate(()=>{const pane=document.querySelector('#rx-focus').getBoundingClientRect(),badge=document.querySelector('#rx-focus .op-contact-badge');badge.textContent='Transmitting';const b=badge.getBoundingClientRect();return {heard:document.querySelector('#qso-heard').getBoundingClientRect().width,inside:b.right<=pane.right+0.5&&b.right<=innerWidth};});
   assert.ok(headFit.heard>=50,`the partner's message has room: ${headFit.heard} px`);assert.equal(headFit.inside,true,'the Transmitting badge stays inside the pane');
-  // Item 8 (#37, operator 2026-11-04): the pane has a fixed height with the QSO section (12
+  // The pane has a fixed height with the QSO section (12
   // rows, here all ten entries without scrolling) and Calling me; TC-037-003 proves that nothing
   // below it moves. At 1920x1080 the height below the column stays free.
   await page.screenshot({path:'test-results/ui-operating/qso-pane-compact-1366x768.png'});
@@ -522,7 +522,7 @@ test('the compact QSO pane shows only the running QSO and clears when it ends',{
   settings={tx_hz:2100};await show(running,{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr[data-kind=warn]').length===2);
   // Not armed: no NEXT.
   await show(running,{arm_state:'disarmed'});await page.waitForFunction(()=>document.querySelector('#qso-next').hidden);
-  // Auto Seq off (#11) stays visible in the compact pane.
+  // Auto Seq off stays visible in the compact pane.
   await page.setViewportSize({width:360,height:800});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 360 px');
   await page.locator('#rx-focus').scrollIntoViewIfNeeded();
@@ -564,11 +564,11 @@ test('the compact QSO pane shows only the running QSO and clears when it ends',{
 });
 
 // The QSO dialogue is a table,
-// UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR (the callers, formerly rows of it, are the
-// #37 Calling me section since 2026-11-04); Direction is the two calls as on
+// UTC | Direction | Exchange | Rep | Rx SNR | Tx SNR (the callers are the
+// Calling me section); Direction is the two calls as on
 // the air, recipient first, with "◂" pointing to the recipient; a CQ is "CQ <call>" with its
 // grid; free text is all Exchange; Rep is ×N; on every dialogue row Rx SNR (ours) and Tx SNR
-// (the partner's report on us) are the latest received values at or before it (2026-11-03).
+// (the partner's report on us) are the latest received values at or before it.
 // Proves: TC-060-001
 test('TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the recipient, Exchange, Rep, Rx SNR and Tx SNR',{timeout:60000},async t=>{
   let state,contact=null;const period='2026-10-27T12:00:15.0000000Z';
@@ -595,7 +595,7 @@ test('TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the r
   assert.deepEqual(await cells('#qso-others tr'),[['DL1ABC','−8','JO31',''],['<...>','−12','JO31',''],['<PJ4/K1ABC>','−5','JO31',''],['EA8BIA','0','JO31','']]);
   assert.equal(await page.locator('#qso-dialogue tr').count(),0,'no dialogue rows idle');
   assert.equal(await shown(page,'#qso-table'),false,'"No QSO" instead of the table');
-  // A running QSO with CT1BFP (the operator's #60 example), with my CQ before it, a repeated
+  // A running QSO with CT1BFP (the operator's example), with my CQ before it, a repeated
   // 73 with my call hashed and unknown, and a free-text message.
   const p0=Date.parse('2026-11-03T22:51:00Z'),entry=(i,dir,text,snr=null,count=1)=>({dir,text,snr,period_utc_ms:p0+i*15000,count});
   const dialogue=[entry(0,'tx','CQ HB9BLA JN37'),entry(1,'rx','HB9BLA CT1BFP IM59',8),entry(2,'tx','CT1BFP HB9BLA +08'),entry(3,'rx','HB9BLA CT1BFP R-02',7),
@@ -678,7 +678,7 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
   // Keyed in the odd period (e.g. Tune or a late start): red while the station transmits.
   r=await tickAndRead(page,offset+15000,true);
   assert.equal(r.colour,RED,'transmitting: red');
-  // A backward step of the station clock (#43 correction, here 1 s) is taken at once.
+  // A backward step of the station clock (a correction, here 1 s) is taken at once.
   clock.offset=offset+14000;r=await tickAndRead(page,offset+14000,false);
   assert.ok(Math.abs(r.width-phase(r.utc))<=4,`after a 1 s step back: width ${r.width} vs station phase ${phase(r.utc)}`);
   clock.offset=offset+15000;r=await tickAndRead(page,offset+15000,false);
@@ -696,7 +696,6 @@ test('TC-050-003 the period bar follows the station clock and is red in my Tx pe
 // busy_with is set " · K1ABC busy with W9XYZ, not counted (2/6)" follows WD:n in the QSO pane and
 // the station bar (k the paused_calls, N the Tx watchdog's tx_calls), gone with busy_with null; in a
 // run's own contact (tx_remaining_calls null) it follows the leave label with the run's paused.
-// Red on the parent: no suffix.
 test('the busy marker follows WD:n and the leave label',{timeout:40000},async t=>{
   let watchdog={tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:0,busy_with:'W9XYZ',paused_calls:2},run=null;
   const contact=partner('replying');
@@ -797,7 +796,7 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   transmit={arm_state:'disarmed'};watchdog={tx_remaining_calls:0,tx_expired:true,tune_remaining_seconds:0};
   await page.evaluate(()=>window.wstxContact.load());
   assert.match(await page.locator('#contact-watchdog').textContent(),/^Tx watchdog: same message sent \d+ times$/);
-  // TC-039-022 as #97 changes it (CL-097-04, "WD:∞ goes"): null is no WD (a run's own contact
+  // TC-039-022 with CL-097-04: null is no WD (a run's own contact
   // shows its leave label instead; without a run nothing); a number is WD:n again.
   transmit={arm_state:'armed'};watchdog={tx_remaining_calls:null,tx_expired:false,tune_remaining_seconds:0};
   await page.evaluate(()=>window.wstxContact.load());
@@ -831,25 +830,25 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
   for(const selector of operateItems)assert.equal(await inViewport(page,selector),true,`${selector} on the 1366x768 screen`);
   for(const selector of [...Object.values(drawerItems).flat(),...healthyTexts])assert.equal(await shown(page,selector),false,`${selector} is not on the operating screen`);
   // Top bar holds only band, mode, dial, UTC/period, chips, Logbook, Settings, HALT (plus the
-  // status refresh and "?" overview affordances; #96 TopBarItem fullScreen left of "?").
+  // status refresh and "?" overview affordances; TopBarItem fullScreen left of "?").
   const allowed=['operating-band','operating-mode','op-dial','open-logbook','open-server-settings','full-screen','Help','halt-tx'];
   const extra=await page.locator('#station-bar').evaluate((bar,allowed)=>[...bar.querySelectorAll('button,select,input')].filter(n=>n.getClientRects().length&&!n.closest('#exception-chips')&&!allowed.includes(n.id)&&!allowed.includes(n.getAttribute('aria-label'))).map(n=>n.id||n.textContent),allowed);
   assert.deepEqual(extra,[],'the top bar holds only its decided items');
   assert.equal(await page.locator('#station-bar #refresh').count(),0,'no refresh in the top bar: the status refreshes itself');
-  // #37 LowerPanel: the DX entry is in the Control panel below the pane; Tx1-Tx6 in the fold-out.
+  // LowerPanel: the DX entry is in the Control panel below the pane; Tx1-Tx6 in the fold-out.
   for(const selector of ['#dx-call','#dx-grid','#dx-generate'])assert.equal(await inViewport(page,selector),true,`${selector} in the Control panel`);
   assert.equal(await shown(page,'#contact-messages'),false,'Tx1-Tx6 folded away');
   await page.locator('#qso-more summary').click();assert.equal(await shown(page,'#contact-messages'),true,'Tx1-Tx6 in the fold-out');await page.locator('#qso-more summary').click();
   assert.equal(await page.locator('#connection').evaluate(el=>el.getBoundingClientRect().width<=1),true,'a connected link shows no status text');
-  // #37 (operator 2026-11-03): one HALT on the screen, the QSO pane's.
+  // One HALT on the screen, the QSO pane's.
   assert.deepEqual(await page.getByRole('button',{name:/^HALT$|^Halt Tx$/}).filter({visible:true}).evaluateAll(list=>list.map(b=>b.id)),['qso-halt'],'one HALT, in the QSO pane');
   await page.screenshot({path:'test-results/ui-operating/operating-screen-1366x768.png'});
   // A pointer HALT is on screen without scrolling at every size (the stacked pane at 360 px is
   // below the fold, so the top-bar HALT shows there).
   const haltOnScreen=async()=>page.waitForFunction(()=>[...document.querySelectorAll('#halt-tx,#qso-halt')].some(b=>{const r=b.getBoundingClientRect();return b.checkVisibility()&&r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth;}),null,{timeout:3000});
   for(const [width,height] of [[1024,768],[1366,768],[1920,1080]]){await page.setViewportSize({width,height});await haltOnScreen();}
-  // At 1024x768 the stacked pane's header (with its HALT) is on screen below Band Activity since
-  // the #37 fixed-height pane (2026-11-04): the top-bar HALT shows exactly when it is not.
+  // At 1024x768 the stacked pane's header (with its HALT) is on screen below Band Activity with
+  // the fixed-height pane: the top-bar HALT shows exactly when it is not.
   await page.setViewportSize({width:1024,height:768});
   await page.waitForFunction(()=>{const q=document.querySelector('#qso-halt'),r=q.getBoundingClientRect(),full=q.checkVisibility()&&r.top>=0&&r.bottom<=innerHeight;return document.querySelector('#halt-tx').checkVisibility()===!full;},null,{timeout:3000});
   await page.setViewportSize({width:1366,height:768});await page.waitForFunction(()=>!document.querySelector('#halt-tx').checkVisibility(),null,{timeout:3000});
@@ -917,7 +916,7 @@ test('the Settings drawer has four sections holding every control moved off the 
     assert.equal(await inViewport(page,'#halt-tx'),true,'HALT stays reachable');
   }
   assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
-  // #44 CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
+  // CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
   assert.ok(requests.includes('GET /audio/endpoints'));assert.equal(requests.includes('GET /audio/devices'),false);assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
   await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc closes no panel');
   await page.locator('#band-activity').click({position:{x:40,y:200}});assert.equal(await page.locator('#settings-drawer').isVisible(),false,'a pointer action outside closes the drawer');
@@ -1078,7 +1077,7 @@ test('TC-068-001 SWR at the end of the Rx/Tx strip',{timeout:90000},async t=>{
   // (d) to (f): the reading, kept after a level change and a band change.
   await inject({...base,meters:meters(14)});await shows('SWR 1.4',false,'14');
   await inject({...base,level_db:-11,meters:meters(14)});await shows('SWR 1.4',false,'after the transmission');
-  // (g) the boundary: 2.0 plain, 2.1 and 3.0 red; the swr_fault entry as before.
+  // (g) the boundary: 2.0 plain, 2.1 and 3.0 red; swr_fault an error entry of the error field.
   await inject({...base,meters:meters(20)});await shows('SWR 2.0',false,'20');
   await inject({...base,meters:meters(21)});await shows('SWR 2.1',true,'21');
   await inject({...base,meters:meters(30),warnings:['swr_fault']});await shows('SWR 3.0',true,'30');
@@ -1237,7 +1236,7 @@ test('TC-039-021 Settings shows the PSK Reporter status, pushed, and saves the s
   drop=true;for(const s of sockets)s.destroy();
   await box.check();await status.filter({hasText:'Not connected'}).waitFor({timeout:30000});
   assert.match(await status.textContent(),/^Not connected \u00b7 connection_(closed|lost) \u00b7 retrying$/);
-  // #39 strategydef: the PSK toggle is on the operating screen; a PSK Reporter state never is.
+  // The PSK toggle is on the operating screen; a PSK Reporter state never is.
   assert.doesNotMatch(await page.locator('#operating-workspace').textContent(),/connection_(closed|lost)|PSK Reporter/,'never an error on the operating screen');
   assert.deepEqual(errors,[]);
 });
@@ -1479,8 +1478,8 @@ async function waterfallMappingPass(page,commands,settings,label){
   const brackets=()=>page.evaluate(()=>['rx','txm'].map(key=>{const m=document.querySelector(`#waterfall-wrap .ct-${key}`),g=m.querySelector('.ct-goal');if(!g)return null;const r=g.getBoundingClientRect(),s=getComputedStyle(g);return {hz:Number(m.dataset.hz),left:r.left,right:r.right,top:r.top,height:r.height,colour:s.borderTopColor,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0,pointer:s.pointerEvents,dragging:m.classList.contains('ct-dragging'),txMax:document.querySelector('#contact-tx').max};}));
   for(const [period,width] of [[15000,50],[7500,4*12000/576],[15000,50]]){
     await page.evaluate(period=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,test:true,message:{v:1,type:'station.tick',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,utc_ms:Date.now(),period_ms:period,transmitting:false,rx_level_db:null}}}})),period);
-    // Bounded tolerance, cause not established: one gate (2026-11-06) read a bracket of the previous mode's
-    // width 50 ms after the tick. If it recurs, the message says whether the tick arrived and a line was held.
+    // Bounded tolerance, cause not established: a gate can read a bracket of the previous mode's
+    // width 50 ms after the tick. Then the message says whether the tick arrived and a line was held.
     let got=await brackets();
     for(let n=0;n<40&&!(got[0]&&Math.abs(got[0].right-x(got[0].hz+width))<=1);n++){await page.waitForTimeout(50);got=await brackets();}
     for(const [i,colour] of [[0,'rgb(48, 208, 80)'],[1,'rgb(255, 64, 64)']]){const b=got[i];
@@ -1515,8 +1514,8 @@ test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency
 });
 
 // WstxSignalArea::OpenSlotMarks. Oracle: the CL-050-07 mapping (the waterfall
-// canvas's own box carries 0..3000 Hz), the operator's #82 answers ("open slots are shown all the time
-// as a part of the waterfall", "nothing else on screen") and #76 numbers (bars 8 px high, 2 px inset
+// canvas's own box carries 0..3000 Hz), the operator's answers ("open slots are shown all the time
+// as a part of the waterfall", "nothing else on screen") and numbers (bars 8 px high, 2 px inset
 // at each end, a drawn colour difference of at least 40); the free_tx_slots values are hand-written.
 const freeTxValue=(open,{mode='ft8',at=1,qso=false}={})=>({at_utc_ms:at,mode,rx_parity:'even',qso,periods:4,open});
 // The ruler's marks, the waterfall box and the Rx/Tx lines as the page shows them.
@@ -1656,7 +1655,7 @@ test('TC-082-004 open slot marks always on the waterfall',{timeout:180000},async
     const without=await actions();
     assert.deepEqual(withMarks,without,'the same requests as without marks');
     assert.equal(withMarks[0][0],'set_frequency');
-    // GET /automation (read only after automation.state, #74) replaces the held value only with a
+    // GET /automation (read only after automation.state) replaces the held value only with a
     // later at_utc_ms: an older value and null leave the marks, a later one replaces them.
     await push(freeTxValue(first,{at:100}));
     const announce=()=>page.evaluate(r=>new Promise(done=>{addEventListener('wstx-automation',()=>done(),{once:true});dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:0,run_revision:r}}}}));}),++automation.runRevision);
@@ -1705,9 +1704,9 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   // Independent great-circle distance between the JN47AA and FN42 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[42.5,-71]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.deepEqual(await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.children[5].textContent,r.children[6].textContent,r.className])),[['CQ K1ABC FN42','\u2014',`${km} km`,'ba-cq'],['CQ W1XYZ FN42','\u2014',`${km} km`,'ba-cq']],'columns, distance JN47AA-FN42 and the CQ colour');
-  // #56: an a-priori word (a_priori 1) carries the WSJT-X a1 marker outside the message text.
+  // An a-priori word (a_priori 1) carries the WSJT-X a1 marker outside the message text.
   assert.deepEqual(await page.locator('tr[data-result-id] td[data-col=message]').evaluateAll(cells=>cells.map(c=>[c.dataset.ap??null,getComputedStyle(c,'::after').content])),[[null,'none'],['a1','" a1"']],'a-priori marker');
-  // QSO pane (#37, operator 2026-11-02): a CQ near Rx (W1XYZ at 1480 Hz) is no QSO pane line;
+  // QSO pane: a CQ near Rx (W1XYZ at 1480 Hz) is no QSO pane line;
   // nobody calls me yet.
   await page.locator('#qso-others-none').filter({hasText:'Nobody is calling'}).waitFor();
   assert.deepEqual(await page.locator('#qso-others tr').allTextContents(),[]);
@@ -1736,9 +1735,9 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   let m=commands.length;await page.locator('#qso-cq').click();for(let i=0;i<40&&commands.length<m+1;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.enabled,c.safety_revision]),[['enable_tx',true,7]]);
   contact=partner('replying');await page.evaluate(()=>window.wstxContact.load());await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'K1ABC'}).waitFor();
-  // #37 (operator 2026-11-03): no RR73 or 73 button; the fold-out Now of a Tx line chooses it
-  // next and turns Enable Tx on, as WSJT-X Next/Now. No Reply button either since the #50
-  // double-click fix is installed: the double-click above replies.
+  // No RR73 or 73 button; the fold-out Now of a Tx line chooses it
+  // next and turns Enable Tx on, as WSJT-X Next/Now. No Reply button either:
+  // the double-click above replies.
   assert.equal(await page.locator('#qso-rr73,#qso-73,#qso-reply').count(),0,'no Reply, RR73 or 73 button');
   assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Auto','PSK','Tune','HALT','Abort QSO (Esc)','Log QSO']);
   await page.locator('#qso-more summary').click();
@@ -1747,7 +1746,7 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.slot??c.enabled,c.safety_revision]),[['choose_next','tx4',undefined],['enable_tx',true,7]],'Now Tx4: Tx4 next, then transmit');
   m=commands.length;await now('tx5').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.slot??c.enabled,c.safety_revision]),[['choose_next','tx5',undefined],['enable_tx',true,7]],'Now Tx5 on a contact in progress: Tx5 next, then transmit');
-  // #37 review: on a completed contact Enable Tx would start a fresh CQ, so Now is off.
+  // On a completed contact Enable Tx would start a fresh CQ, so Now is off.
   contact=partner('completed');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
   assert.deepEqual([await now('tx4').isDisabled(),await now('tx5').isDisabled()],[true,true],'Now disabled on a completed contact');
   m=commands.length;await now('tx4').click({force:true});await now('tx5').click({force:true});
@@ -1781,7 +1780,7 @@ test('TC-007-009 Day, Dark and Night themes switch manually and by time without 
 });
 
 // No automatic restart or mutation retry.
-// Investigation guard for #37: with a running receive, reconnects, status refreshes, repeated
+// Investigation guard: with a running receive, reconnects, status refreshes, repeated
 // readiness and a second tab never send a receive start, stop or selection by themselves.
 test('no receive start, stop or selection without an operator action across reconnects and two tabs',{timeout:90000},async t=>{
   let running;const mutations=[];
@@ -1927,7 +1926,7 @@ test('TC-007-002 readable text reflows throughout every operating region at 200 
 // Presentation-only captured FT4/FT8 text plus independent edge cases; no decoder/RF success claim.
 const bandPresentationFixture={"purpose":"Presentation-only text fixture; not decoder/RF truth. Captured DT is unavailable and normalized to U+2014. Independent edge rows are explicitly synthetic.","capture_sha256":"030d849cdc8fbc5a62b7251f1dbb1c275fd1485ef11baca297f8eed67dd347ca","rows":[{"kind":"captured-physical-FT4-text-only","values":["64.987 s","10.8","\u2014","2199.2","R4SF LZ2MP KN23","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["64.916 s","6.5","\u2014","2733.3","DL1LN SP9JBT +00","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["64.916 s","-15.6","\u2014","1774.9","CQ LB1PI JO49","Decoded"]},{"kind":"captured-physical-FT4-text-only","values":["73.198 s","22.3","\u2014","399.9","CQ LZ2II KN22","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.898 s","22.3","\u2014","1195.0","DB1BC EB4FSM IN80","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.711 s","12.5","\u2014","1454.5","IW1BYR IZ8EYN +17","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.744 s","-6.4","\u2014","449.9","G5ACE/P LA1KKA 73","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.678 s","-7.6","\u2014","1844.3","NF3R SQ8AA 73","Decoded"]},{"kind":"captured-physical-FT8-text-only","values":["6.718 s","-16.3","\u2014","2768.4","CQ AA3B FN20","Decoded"]},{"kind":"independent-presentation-edge","values":["123456.789 s","-60.0","-0.123","3499.9","CQ PJ4/PA3XYZ FK52","Decoded"]},{"kind":"independent-presentation-edge","values":["23:59:59","+23.0","+0.123","1000.0","PJ4/PA3XYZ HB9BLA RR73 THANKS FOR THE CONTACT 73","unsupported"]},{"kind":"independent-presentation-edge","values":["Unknown","\u2014","\u2014","200.0","Payload invalid_payload","invalid_payload"]}],"capture_ft8_sha256":"820f9dfc5744f30f0cb1d30c5aff6843d364e4df44a5961d0e186bdb83f6a353"};
 test('populated Band Activity has dominant width and complete readable field details',{timeout:25000},async t=>{
- // #37 columns: UTC, dB, DT, Freq, Message, DXCC, Dist (the payload status is in the message).
+ // Columns: UTC, dB, DT, Freq, Message, DXCC, Dist (the payload status is in the message).
  const {page,errors}=await fixture(t,{width:1440,height:1000}),rows=bandPresentationFixture.rows.map((r,i)=>({...r,values:[...r.values.slice(0,5),'—',i%3?'—':'19999 km']}));
  // The contact client re-renders Band Activity when it arrives; insert the fixture after it.
  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
@@ -1960,7 +1959,7 @@ test('populated Band Activity has dominant width and complete readable field det
 // Explicit presentation/clock fixtures, never modem/RF truth.
 // Proves: TC-007-006
 test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot restore old stations',{timeout:45000},async t=>{
-  // Detailed fetches the next page at once (#57), so the second page waits for the first sort.
+  // Detailed fetches the next page at once, so the second page waits for the first sort.
   let state,records,held=null,hold=false;const pending=deferred(),secondPage=deferred();
   const makeRecord=(sequence,period,dt)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12.3,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`UI FIXTURE STATION ${sequence}`,fields:{},period_start_utc:period,dt_seconds:dt});
   const period='2026-10-27T12:00:15.0000000Z';
@@ -1979,7 +1978,7 @@ test('TC-007-006 latest period spans pages, signed DT and obsolete pages cannot 
     });
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===16);
-  // #55: the default is the value order; Freq once ascending, twice descending.
+  // The default is the value order; Freq once ascending, twice descending.
   await clickSort(page,'frequency');await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','desc']);secondPage.resolve();
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===18);
   assert.equal(await page.locator('tr[data-period=latest]').first().getAttribute('data-sequence'),'18','new page re-sorts the entire selected view');
@@ -2120,7 +2119,7 @@ test('TC-061-006 Tx rows are painted as Tx and level warnings show for receive p
 // at 10 px/s with y(s)=floor(s*10*H/C): a Tx period takes a 4 px band, the labels beyond it stay exact.
 // Proves: TC-061-008
 test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothing turns pale',{timeout:45000},async t=>{
-  // A plot that holds the 20 s the bands below need at 10 px/s; at 1366x768 the default split leaves the room to the QSO pane (#37).
+  // A plot that holds the 20 s the bands below need at 10 px/s; at 1366x768 the default split leaves the room to the QSO pane.
   const {page,errors}=await liveDisplayFixture(t,{width:1366,height:1200});
   await page.locator('#waterfall').evaluate(()=>{speed=1;updateSliders();paint();});
   const rx=Array.from({length:1024},()=>60),tx=Array.from({length:1024},()=>118);
@@ -2218,7 +2217,7 @@ test('TC-007-006 a page-announced period refetches its prefix instead of skippin
       return route.fulfill({json:{...emptyResults(state),next_sequence:19,available_count:19,next,more:next<19,records:batch,latest_decode:view}});
     });
   }});
-  // #10 PushedStationState: the station announces each publication with receive.state; the
+  // PushedStationState: the station announces each publication with receive.state; the
   // page then reads results once more, and that page announces the newer period.
   await page.waitForFunction(()=>resultCursor===19&&!resultPending);
   await page.evaluate(s=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation,source_id:s.source.id,job_id:s.job.id,state:'running'}}}})),state);
@@ -2246,7 +2245,7 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
   }});
   const order=()=>page.locator('tr[data-period=latest]').evaluateAll(rows=>rows.map(r=>Number(r.dataset.sequence)));
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===5);
-  // #55 CL-055-04: by default the value order (all without a flag here), strongest SNR first, unknown last.
+  // CL-055-04: by default the value order (all without a flag here), strongest SNR first, unknown last.
   assert.deepEqual(await order(),[1,4,3,0,2]);assert.deepEqual(await sortState(page),['value','desc']);
   await clickSort(page,'frequency');
   assert.deepEqual(await order(),[1,4,0,3,2],'frequency200 precedes1000, numeric ties retain sequence');
@@ -2284,7 +2283,7 @@ test('completed QSOs log without a review and the open Logbook lists them live',
  }});
  await page.waitForFunction(()=>profileData&&window.wstxLogbook&&window.wstxContact?.snapshot(),null,{timeout:25000});
  const profile=await (await fetch(app.origin+'/profile')).json();
- // #37: Log QSO is offered while the QSO runs; it logs and closes it (the station completes it).
+ // Log QSO is offered while the QSO runs; it logs and closes it (the station completes it).
  const contact=partner('completed',{report_rcvd:'-05'});
  snapshot={contact:{...contact,state:'rogers',next_slot:'tx4'},log:null};await page.evaluate(()=>window.wstxContact.load());
  await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='rogers');
@@ -2335,7 +2334,7 @@ test('Update logbook from ADIF in Settings consolidates a logger export and Expo
  };
  await update('log4om.adi',good,'Logbook updated: 2 added, 0 already present (0 confirmations updated), 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
  await update('log4om.adi',good,'Logbook updated: 0 added, 2 already present (0 confirmations updated), 1 skipped (1 missing required field call) · fields left out: 1 invalid value gridsquare');
- // #10 (2026-11-04) a rerun that confirms a present QSO upgrades only its confirmation.
+ // A rerun that confirms a present QSO upgrades only its confirmation.
  await update('lotw.adi','<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20261031 <TIME_ON:6>123000 <LOTW_QSL_RCVD:1>Y <eor>\n','Logbook updated: 0 added, 1 already present (1 confirmation updated), 0 skipped');
  const bad='<call:5>N0NEW <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n<call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor\n';
  await update('bad.adi',bad,'Logbook not updated · nothing was added · malformed in record 2');
@@ -2379,10 +2378,10 @@ test('Band Activity shows the worked_status of each record with no query',{timeo
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
  await page.locator('tr[data-result-id][data-worked]').first().waitFor();
- // #50: no text marks; the New call slots come from the #55 flags of every sender (CL-055-04) and are on
- // by default. Only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X): no CQ slot, so
+ // No text marks; the New call slots come from the flags of every sender (CL-055-04) and are on
+ // by default. Only interesting stations are coloured (unlike WSJT-X): no CQ slot, so
  // the CQ of a station worked on this band and mode has no colour; rows in value order.
- // #50 CL-050-08: a row in QSO with another station colours only its sender's call (the .ba-from span).
+ // CL-050-08: a row in QSO with another station colours only its sender's call (the .ba-from span).
  const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.querySelector('.ba-from')??r.children[4]).backgroundColor]));
  const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
  assert.deepEqual(await rowsNow(),[['CQ W1XYZ FN42','not_worked','new_call new_call_band',newCall],['K9XX W2AB R-05','not_worked','new_call new_call_band',newCall],['CQ K1ABC FN42','worked_this_band_and_mode',null,none],['FREE TEXT',null,null,none]],'no CQ colour; worked before has no colour; New slots on non-CQ senders too (CL-055-04)');
@@ -2391,7 +2390,7 @@ test('Band Activity shows the worked_status of each record with no query',{timeo
  await page.locator('#band-colours [data-hl-slot=new_call]').uncheck();await page.locator('#settings-drawer .return-operate').click();
  assert.deepEqual((await rowsNow()).map(r=>r[3]),[newCallBand,newCallBand,none,none],'with New call off, New call on band remains');
  assert.deepEqual(JSON.parse(await page.evaluate(()=>localStorage.getItem('wstx.band-colours.v1'))).new_call,false,'the choice is per browser');
- // Priority by the WSJT-X order for the #55 flags: My call over New continent over New DXCC; no CQ colour.
+ // Priority by the WSJT-X order for the flags: My call over New continent over New DXCC; no CQ colour.
  const priority=await page.evaluate(()=>{const tbody=document.querySelector('#band-activity tbody');return ['new_dxcc','new_dxcc new_continent','new_dxcc new_continent mycall','new_grid','new_itu_zone','cq'].map(hl=>{const tr=document.createElement('tr'),td=document.createElement('td');tr.dataset.hl=hl;tr.append(td);tbody.append(tr);const c=getComputedStyle(td).backgroundColor;tr.remove();return c;});});
  assert.deepEqual(priority,['rgba(255, 0, 255, 0.26)','rgba(255, 0, 99, 0.28)','rgba(255, 102, 102, 0.32)',none,none,none],'WSJT-X priority; New grid and ITU zone are off by default; no CQ colour');
  await clickSort(page,'frequency');await page.waitForTimeout(300);
@@ -2424,7 +2423,7 @@ test('QSO pane callers show worked-before status and only interesting stations a
  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr[data-worked]').length===3,null,{timeout:25000});
  const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.text,tr.dataset.worked??null,tr.dataset.hl??null,getComputedStyle(tr.cells[1]).backgroundColor,tr.title,tr.getAttribute('aria-description')]));
  const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
- // #50 BandActivityHover rule (operator 2026-11-04, "too much information"): one line, only the
+ // BandActivityHover rule: one line, only the
  // enabled colour reasons, the strongest per kind; an uncoloured line has no tip.
  assert.deepEqual(await others(),[
   ['HB9BLA K1ABC FN42','worked_this_band_and_mode',null,none,'',null],
@@ -2442,7 +2441,7 @@ test('QSO pane callers show worked-before status and only interesting stations a
 });
 
 // Browser subset.
-// The result records (with #55 dxcc and flags and the station's worked_status), the strategy verdict and the selection band
+// The result records (with dxcc and flags and the station's worked_status), the strategy verdict and the selection band
 // are presentation fixtures.
 // Proves: TC-055-006
 test('TC-055-006 Band Activity colours every sender, names each reason on hover and sorts by value',{timeout:40000},async t=>{
@@ -2479,7 +2478,7 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
   await page.route('**/strategy/evaluate',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'Hover test',my_continent:'EU',verdicts:[{sequence:8,rank:0,grey:false}]}}));
  }});
  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('tr.ba-strategy'),null,{timeout:25000});
- // #50 CL-050-08: the one-line reason tip of the colour; a row in QSO with another station colours only its sender's call.
+ // CL-050-08: the one-line reason tip of the colour; a row in QSO with another station colours only its sender's call.
  const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.tip??'',getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description'),r.querySelector('.ba-from')?getComputedStyle(r.querySelector('.ba-from')).backgroundColor:null]));
  const none='rgba(0, 0, 0, 0)';
  const expected=[
@@ -2499,7 +2498,7 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
  assert.equal(await page.locator('#band-activity th[data-sort=value]').textContent(),'DXCC');
  assert.deepEqual(await sortState(page),['value','desc']);
  await page.screenshot({path:'test-results/ui-operating/band-activity-value-1440.png'});
- // New call (on by default, #50) and an enabled New grid colour the non-CQ senders as well (operator decision, not WSJT-X).
+ // New call (on by default) and an enabled New grid colour the non-CQ senders as well (not WSJT-X).
  await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_grid]').check();await page.locator('#settings-drawer .return-operate').click();
  assert.deepEqual((await shown()).map(r=>r[4]??r[2]),['rgba(255, 102, 102, 0.32)',none,'rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none]);
  assert.equal((await shown())[4][1],'New grid IO91','an enabled New grid names its reason');
@@ -2540,7 +2539,7 @@ test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:3
 });
 
 // Only interesting stations are coloured. The
-// receive pages (with the #55 flags and the worked_status a station derives from its log,
+// receive pages (with the flags and the worked_status a station derives from its log,
 // CL-055-04) are routed fixtures; the colours are the served client's CSS.
 // Proves: TC-050-002
 test('TC-050-002 a CQ from a station worked on this band and mode has no colour; My call still applies',{timeout:30000},async t=>{
@@ -2791,7 +2790,7 @@ test('transmit status shows the SNTP clock measurement',{timeout:45000},async t=
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
     view=await (await fetch(app.origin+'/transmit')).json();
   }});
-  // #92: the station clock is never unknown; the isolated server never measured SNTP.
+  // The station clock is never unknown; the isolated server never measured SNTP.
   assert.equal(view.clock,'synchronized');assert.equal(view.clock_measurement,null);
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const status=async()=>page.evaluate(v=>{profileData.settings.control.ptt='cat';transmitView=null;transmitApply(v);transmitShow();return document.querySelector('#transmit-status').textContent;},view);
@@ -2829,7 +2828,7 @@ test('TC-007-005 contact.state rows arrive in order and a continuation is shown'
   assert.deepEqual(reads,[],'no GET /contact');
   assert.deepEqual(errors,[]);
 });
-// #92: one routed clock.state event into the page (the socket's own first one has arrived).
+// One routed clock.state event into the page (the socket's own first one has arrived).
 const clockEvent=(page,clock)=>page.evaluate(clock=>{dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'clock.state',data:{profile_id:profileData.profile_id,boot_id:profileData.boot_id,clock_revision:(clockState?.clock_revision??0)+1,clock:{state:'synchronized',correction_ms:0,warning:null,ntp_offset_ms:null,capture_warning:null,...clock}}}}}));window.wstxChipsShow();},clock);
 // The error-field entries of the clock and audio clock (key, severity, text) with `ptt` set in the page.
 const clockEntries=(page,ptt)=>page.evaluate(ptt=>{profileData.settings.control.ptt=ptt;window.wstxChipsShow();return [...document.querySelectorAll('#exception-chips [data-chip^=clock],#exception-chips [data-chip=capture-warning]')].map(b=>[b.dataset.chip,b.dataset.severity,b.textContent.slice(2)]);},ptt);
@@ -2933,7 +2932,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   const standard=(from,to='CQ',grid='FN42')=>({type:'standard',to:{kind:to.startsWith('CQ')?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:grid}});
   const record=(sequence,text,from,hz,to,grid)=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to,grid),period_start_utc:period});
   const records=[record(0,'CQ K1ABC FN42','K1ABC',1000,'CQ','FN42'),record(1,'CQ NA W1AW FN31','W1AW',1200,'CQ NA','FN31'),record(2,'CQ DL1XYZ JO62','DL1XYZ',1400,'CQ','JO62')];
-  // #97 schema 4 (WstxStrategies::Strategy).
+  // Schema 4 (WstxStrategies::Strategy).
   const lists={countries:{include:[],exclude:[]},states:{include:[],exclude:[]},cq_targets:{include:[],exclude:[]}};
   const strategy={name:'DX first',class:'strategy',bands:null,filters:{new:['dxcc','call'],new_per:'ever',new_means:'not_worked',region:{kind:'dx'},min_snr_db:null,worked_since:{kind:'all'},treat_73_as_cq:false,...lists},order:['most_wanted'],contest:null,callers_first:true,leave:{mode:'calls',calls:4,calls_heard:8},tx_move_every:{heard:0,not_heard:1,no_reports:2},busy_pause:true,cq_when_idle:false,cq_wait_periods:2,retry_minutes:10};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -2974,7 +2973,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   assert.deepEqual(evaluations.map(b=>[b.source_id,b.job_id,b.generation,b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[state.source.id,state.job.id,state.generation,0,3,null,false]]);
   await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence]').children[4].textContent==='CQ DL1XYZ JO62');
   assert.deepEqual(await message(),[['CQ DL1XYZ JO62','ba-strategy','1'],['CQ K1ABC FN42','ba-strategy','2'],['CQ NA W1AW FN31','ba-grey','']],'by value in the station order; the directed CQ greyed');
-  // Never on a timer: the old 5 s check is gone; nothing asks while nothing is published.
+  // Never on a timer: no 5 s check; nothing asks while nothing is published.
   const asked=evaluations.length;await page.waitForTimeout(5500);assert.equal(evaluations.length,asked,'no time-based evaluation');
   await page.screenshot({path:'test-results/ui-operating/strategy-value-1366.png'});
   // A column click overrides (the marks stay); Value returns to the station's order.
@@ -3010,7 +3009,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   assert.equal(await page.locator('#strategy-editor-halt').isDisabled(),await page.locator('#halt-tx').isDisabled(),'the popup HALT has the top-bar HALT state');
   await page.locator('#se-preview tr').nth(2).waitFor();
   assert.deepEqual(await page.locator('#se-preview tr').evaluateAll(rows=>rows.map(r=>[...r.children].map(c=>c.textContent))),[['#1','CQ DL1XYZ JO62','needed: dxcc · Most Wanted #3'],['#2','CQ K1ABC FN42','needed: new_call'],['—','CQ NA W1AW FN31','CQ NA — not for EU']]);
-  // #97 StrategyEditor: the nine decisions in order.
+  // StrategyEditor: the nine decisions in order.
   assert.deepEqual(await page.locator('#se-body h3').allTextContents(),['1 Band','2 Filters','3 Order','4 Calling stations are answered','5 Leaving a station','6 Tx frequency','7 Busy pause','8 CQ when idle','9 Retry pause']);
   for(const gone of ['.se-condition','#se-sort','#se-role','#se-switch','#se-skip','#se-callers','[data-alert]','#se-new','[data-goal]','#se-repetitions','#se-quiet'])assert.equal(await page.locator(gone).count(),0,`${gone} is gone`);
   await page.screenshot({path:'test-results/ui-operating/strategy-editor-1366.png'});
@@ -3071,7 +3070,7 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
   const profiles=[profile('ww_digi','WW Digi',{activity:'ww_digi',automation:'forbidden',automation_text:'A human operator must initiate calling each QSO partner.',period:{start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',band:null}}),profile('arrl_vhf_jan','ARRL January VHF',{activity:'na_vhf'})];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
-    // #97: the contest built-ins of the two profiles (BuiltinStrategies), not listed in the selector.
+    // The contest built-ins of the two profiles (BuiltinStrategies), not listed in the selector.
     view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:4,configuration:{continent:null,active:null,strategies:[],ignore_calls:[],session_ignore_minutes:30},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:'',builtin_strategies:[contestBuiltin('WW Digi','ww_digi'),contestBuiltin('ARRL January VHF','arrl_vhf_jan')],auto:false,strategy_refusal:null};
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:period,canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
@@ -3102,7 +3101,7 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
   assert.equal(await page.inputValue('#cp-end'),'2026-08-30T12:00');
   assert.match(await page.locator('#cp-notes').textContent(),/A human operator must initiate/);
   assert.match(await page.locator('#cp-activity').textContent(),/ww digi/);
-  // #97 D11: the profile's contest built-in, no S&P/Run operation.
+  // The profile's contest built-in, no S&P/Run operation.
   assert.deepEqual([await page.locator('#cp-strategy option').allTextContents(),await page.inputValue('#cp-strategy')],[['WW Digi'],'WW Digi']);
   assert.equal(await page.locator('input[name=cp-operation]').count(),0,'no operation');
   await page.selectOption('#cp-profile','arrl_vhf_jan');
@@ -3168,8 +3167,8 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
 });
 
 
-// ---------------------------------------------------------------- #39 strategydef in the browser
-// #97 WstxStrategies::Strategy (schema 4) and BuiltinStrategies as the model lists them, in its order
+// ---------------------------------------------------------------- WstxStrategies in the browser
+// WstxStrategies::Strategy (schema 4) and BuiltinStrategies as the model lists them, in its order
 // (hand-written here): the five of class strategy, then one contest built-in per contest.
 const noLists=()=>({countries:{include:[],exclude:[]},states:{include:[],exclude:[]},cq_targets:{include:[],exclude:[]}});
 const strategyFilters=(extra={})=>({new:['dxcc'],new_per:'band_mode',new_means:'not_confirmed',region:{kind:'all'},min_snr_db:null,worked_since:{kind:'all'},treat_73_as_cq:true,...noLists(),...extra});
@@ -3186,9 +3185,9 @@ const BUILTIN_NAMES=STRATEGY_BUILTINS.map(s=>s.name);
 const userStrategy=(name,extra={})=>strategyOf(name,{filters:{new:['call'],new_per:'ever',new_means:'not_worked',treat_73_as_cq:false},order:['most_wanted'],...extra});
 const contestProfile=(id,name,extra)=>({id,name,cabrillo:null,cabrillo_confirmed:false,activity:'none',bands:['20m'],modes:'',exchange:'',dupes:'band',points:'one_per_call',multipliers:'none',score:'',automation:'silent',automation_text:'The rules do not address automatic operation.',schedule:`${name} schedule`,notes:[],source:'',period:{start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z',band:null},...extra});
 const CONTEST_PROFILES=[contestProfile('ww_digi','WW Digi',{activity:'ww_digi',automation:'forbidden',automation_text:'A human operator must initiate calling each QSO partner.'}),contestProfile('ft8_activity','FT8 Activity')];
-// A run of the GET /automation snapshot (WstxAutoControl::AutoActivity) with the strategydef keys.
+// A run of the GET /automation snapshot (WstxAutoControl::AutoActivity) with the strategy run keys.
 const strategyRunOf=(state,extra={})=>({id:'7d1f6c2e-0000-4000-8000-000000000039',state,reason:null,mode:'ft8',completed_contacts:0,unanswered_periods:0,contact_id:null,selected:null,last_decision:null,given_up:[],left:null,quiet:[],hearing:null,tx_slot:null,slot_check:null,pounce:null,...extra});
-// The routed station of the strategydef browser cases: GET and PUT /strategy, POST
+// The routed station of the strategy browser cases: GET and PUT /strategy, POST
 // /strategy/auto, GET /pskr, POST /pskr/use, GET /strategy/contests and GET /automation answer with
 // the model's wire shapes (WstxStrategies::StrategiesState, WstxAutoControl::SwitchAuto,
 // WstxHearing::FeedStatus, WstxStrategies::ContestList, WstxAutoControl::AutoActivity). The station changes its state on a
@@ -3235,7 +3234,7 @@ const toggle=locator=>locator.evaluate(e=>(e.getAnimations().forEach(a=>a.finish
 test('Auto and PSK follow only the push, one POST per click, their disabled states and the strategy status',{timeout:90000},async t=>{
   const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768});
   const auto=page.locator('#qso-auto'),psk=page.locator('#qso-pskr');
-  // QsoPane item 5: Auto right of CQ, PSK right of Auto.
+  // QsoPane: Auto right of CQ, PSK right of Auto.
   assert.deepEqual(await page.locator('#rx-focus .op-qso-buttons button').allTextContents(),['CQ','Auto','PSK','Tune','HALT','Abort QSO (Esc)','Log QSO']);
   assert.deepEqual(await outsidePane(page),[],'the direct buttons, the fold-out and the badge fit the pane at 1366x768');
   assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None',...BUILTIN_NAMES,'Mine'],'None, the five built-ins of class strategy and the user strategy');
@@ -3543,7 +3542,7 @@ test('Fully automatic: the warning on Auto on, the confirmation and the run stat
   const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768},{strategies:[]});
   const auto=page.locator('#qso-auto'),period='Contest WW Digi · 08-29 12:00 to 08-30 12:00 UTC';
   const open=async()=>{await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();};
-  // #97 D11: the contest built-in WW Digi (no S&P/Run); Start sends one PUT and asks nothing.
+  // The contest built-in WW Digi (no S&P/Run); Start sends one PUT and asks nothing.
   await open();let mark=s.requests.length;
   assert.equal(await page.locator('input[name=cp-operation]').count(),0,'no operation');
   assert.equal(await page.inputValue('#cp-strategy'),'WW Digi');
@@ -3591,7 +3590,7 @@ test('Fully automatic: the warning on Auto on, the confirmation and the run stat
   assert.deepEqual(errors,[]);
 });
 
-// ---------------------------------------------------------------- #74 an open page after a station restart
+// ---------------------------------------------------------------- an open page after a station restart
 // The station requests of a page (its HTTP requests to the station except static files), and the
 // count of those not yet finished.
 function stationRequests(page,origin){
@@ -3752,7 +3751,7 @@ test('TC-074-003 on a new boot every view drops the previous boot at once, disca
     }});
     const announce=(type,data)=>page.evaluate(([type,data])=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type,data}}})),[type,data]);
     await page.waitForFunction(()=>document.querySelector('#strategy-name')?.disabled===false&&!!window.wstxContact?.snapshot()&&!document.querySelector('#qso-pskr').disabled&&!document.querySelector('#monitor-off-startup').disabled,null,{timeout:30000});
-    // Boot A: the run announced; its open slots (#82: always shown, no checkbox), AGC, Tx level and
+    // Boot A: the run announced; its open slots (always shown, no checkbox), AGC, Tx level and
     // transmit pushed.
     await announce('automation.state',{profile_id:base.profile_id,boot_id:A,policy_revision:1,run_revision:1});
     await announce('free_tx_slots.state',{profile_id:base.profile_id,boot_id:A,free_tx_slots:freeTxValue([[1000,1050],[1300,1350]])});
@@ -3884,7 +3883,7 @@ test('Built-in strategies are read-only in the editor and copy to a user strateg
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
   const puts=[];page.on('request',r=>{if(r.url().endsWith('/strategy')&&r.method()==='PUT')puts.push(JSON.parse(r.postData()));});
   await page.locator('#strategy-edit').click();await page.locator('#strategy-editor[open]').waitFor();
-  // #97: the five built-ins of class strategy (the contest built-ins in the Contest group).
+  // The five built-ins of class strategy (the contest built-ins in the Contest group).
   assert.deepEqual(await page.locator('#se-which optgroup[label=Strategy] option').allTextContents(),BUILTIN_NAMES.map(n=>`${n} (built-in)`));
   assert.ok(await page.locator('#se-which optgroup[label=Contest] option').count()>0,'the contest built-ins');
   // No user strategy: the first built-in, read-only; Save with nothing stores nothing and selects nothing.
@@ -4008,7 +4007,7 @@ test('Band Activity Ignore and the Settings ignore lists',{timeout:60000},async 
   await page.locator('#ignore-session li').first().waitFor();
   assert.deepEqual(await page.locator('#ignore-session li').evaluateAll(l=>l.map(x=>[x.querySelector('.ig-call').textContent,x.querySelector('.ig-left').textContent])),[['K1ABC','30 min']]);
   // One change: leaving the field is the change (a dispatched change plus the blur would be two);
-  // the saved list is shown once the station's answer is applied, before the next field (#61 gate race).
+  // the saved list is shown once the station's answer is applied, before the next field.
   await page.fill('#ignore-calls','dl1xyz, w1aw');await page.locator('#ignore-calls').blur();
   await page.waitForFunction(()=>document.querySelector('#ignore-calls').value==='DL1XYZ W1AW');
   for(let i=0;i<60&&!puts.length;i++)await page.waitForTimeout(50);
@@ -4269,7 +4268,7 @@ test('Settings lists MCP clients, shows a new token once and revokes after confi
   assert.deepEqual(errors,[]);
 });
 
-// #51 PageUpdate: the station is restarted on the same profile and its station.status carries
+// PageUpdate: the station is restarted on the same profile and its station.status carries
 // another client build (a WebSocket proxy stands for the updated station, whose real build is
 // this candidate's). Restart, boot id and every other message are real.
 async function updatedStation(page,app,dir,t){
@@ -4361,7 +4360,7 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   assert.deepEqual(errors,[]);
 });
 
-// #54: live frames for the current routed live job, injected as the station would announce them.
+// Live frames for the current routed live job, injected as the station would announce them.
 async function liveFrames(page,frames){
   await page.evaluate(frames=>{for(const {sequence,levels,thin,tx} of frames){
     const data={boot_id:live.boot_id,source_id:live.source.id,job_id:live.job.id,generation:live.generation,sequence,first_frame:sequence*(thin?12000:2400),end_frame:(sequence+1)*(thin?12000:2400)};
@@ -4453,9 +4452,9 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===4&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const marks=await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.classList.contains('ba-tome')]));
-  // #55 value order: the three rows to my call (also as <HB9BLA> and nonstandard) are value 1, first.
+  // Value order: the three rows to my call (also as <HB9BLA> and nonstandard) are value 1, first.
   assert.deepEqual(marks,[['<HB9BLA> PJ4/K1ABC',true],['HB9BLA <PJ4/K1ABC> -12',true],['<HB9BLA> K1ABC -12',true],['<...> PJ4/K1ABC',false]]);
-  // QsoPane Calling me (#24, the same mycall rule): an own CQ is idle, so every station calling my
+  // QsoPane Calling me (the same mycall rule): an own CQ is idle, so every station calling my
   // call is listed, oldest first, one line per station (its newest row: PJ4/K1ABC sent twice); the
   // unresolved <...> row is not.
   const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(r=>r.dataset.text));
@@ -4650,7 +4649,7 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
   assert.deepEqual(await shown(),['|FT8 period 12:00:15 UTC','history:2','|FT8 period 12:00:00 UTC','history:0','history:1'],'Band Activity keeps the decoded periods');
   await liveFrames(page,[{sequence:0,levels:level(50)},{sequence:1,levels:level(60)}]);
   assert.deepEqual(await waterfall(),[[-5,10],[-4,20],[-3,30],[-2,40],[-1,null],[0,50],[1,60]],'old rows kept, one gap row, then the new epoch');
-  // #37 CL-037-02: a receive restart is informational, no error field entry; the gap row marks the loss.
+  // CL-037-02: a receive restart is informational, no error field entry; the gap row marks the loss.
   assert.equal(await page.locator('#error-field .op-error-entry').count(),0,'the error field stays empty for the epoch');
   publish(1,periods[2],1);await page.evaluate(()=>receiveSync());
   await page.waitForFunction(()=>resultView?.period_start_utc==='2026-10-27T12:00:30.0000000Z'&&document.querySelectorAll('tr[data-period=latest]').length===1);
@@ -4663,9 +4662,9 @@ test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a St
   assert.deepEqual(errors,[]);
 });
 
-// ---------------------------------------------------------------- #37 lower panel
+// ---------------------------------------------------------------- lower panel
 // WstxLowerPanel::ControlPanel, ErrorField. Oracle: the operator's comments
-// of 2026-11-03 (vertical stack, the QSO card's width, the controls always visible, the error
+// (vertical stack, the QSO card's width, the controls always visible, the error
 // field with current problems only and no history), not the candidate markup.
 const panelControls=['#dx-call','#dx-grid','#dx-generate','#contact-report','#contact-auto','#contact-call-first','#contact-hold','#contact-parity'];
 async function lowerStack(page){return page.evaluate(()=>{
@@ -5007,7 +5006,7 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   await page.waitForFunction(()=>document.querySelectorAll("tr[data-period=latest]").length===10&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const show=async(next,tx={})=>{contact=next;transmit=tx;await page.evaluate(()=>window.wstxContact.load());};
   // The same period gains the callers of my call (a later result page of the published view).
-  // #10 PushedStationState: the station announces the publication with receive.state.
+  // PushedStationState: the station announces the publication with receive.state.
   const addCallers=async()=>{records=[...cqs,...callers];Object.assign(state.job,{next_sequence:records.length,available_count:records.length,latest_decode:{...state.job.latest_decode,id:2,next_sequence:records.length}});
     await page.evaluate(s=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'receive.state',data:{profile_id:s.profile_id,boot_id:s.boot_id,generation:s.generation,source_id:s.source.id,job_id:s.job.id,state:'running'}}}})),state);
     await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr').length===3,null,{timeout:15000});};
@@ -5036,7 +5035,7 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
   assert.deepEqual(await page.locator('#calling-table thead th').allTextContents(),['Calling me','SNR','Grid','Country']);
   assert.equal(await shown(page,'#qso-others-none'),false);
   await note('callers');
-  // The QSO starts with IW9FRA: one dialogue row; the partner is no longer a caller.
+  // The QSO starts with IW9FRA: one dialogue row; the partner is not a caller.
   await show(qso(1),{arm_state:'armed'});await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===1&&document.querySelectorAll('#qso-others tr').length===2);
   assert.equal(await shown(page,'#qso-none'),false,'no placeholder during a QSO');
   assert.deepEqual((await calling()).map(r=>r[0]),['DL1ABC','EA8BIA ⚠'],'the partner is not calling me; EA8BIA is within 50 Hz of my Rx');
@@ -5174,7 +5173,7 @@ test('TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and 
   assert.deepEqual(errors,[]);
 });
 
-// ---------------------------------------------------------------- #96 full screen
+// ---------------------------------------------------------------- full screen
 // WstxOperatingScreen::AppWindow. The expected values are the operator's words and
 // the WHATWG Fullscreen Standard (requestFullscreen on the document element, fullscreenElement,
 // fullscreenEnabled, exitFullscreen), not the candidate markup.
@@ -5263,7 +5262,7 @@ test('the full-screen button left of ?, its states, Esc in and after full screen
   await page.locator('#band-activity tr[data-sequence="0"]').click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   await page.keyboard.press('Escape');await page.locator('#ba-menu').waitFor({state:'hidden'});
   assert.equal(x.aborts(),0);
-  // The button leaves; outside full screen a first Esc is Abort QSO, as before.
+  // The button leaves; outside full screen a first Esc is Abort QSO.
   await x.quiet(async()=>{await button.click();await x.left();},'leave');
   assert.deepEqual(await x.look(),fullScreenOff);
   await page.keyboard.press('Escape');
@@ -5330,7 +5329,7 @@ test('a refused full-screen request changes nothing and reports no error',{timeo
   await page.evaluate(()=>window.wstxChipsShow?.());assert.deepEqual(await entries(),before,'no error-field entry');
   assert.deepEqual(errors,[],'no page error');
 });
-// #243: the window of quiet opens only after the requests of the prepared state, the partner's DXCC lookup
+// The window of quiet opens only after the requests of the prepared state, the partner's DXCC lookup
 // among them, have reached the test and finished; a request or frame inside the window still fails.
 const lateLookup=()=>{const send=window.fetch;
   window.fetch=(input,...rest)=>/\/dxcc\?/.test(String(input?.url??input))?new Promise(r=>setTimeout(r,200)).then(()=>send(input,...rest)):send(input,...rest);};
@@ -5351,7 +5350,7 @@ test('Negative: a press that sends a WebSocket frame fails quiet with no WebSock
   await assert.rejects(x.quiet(()=>button.click(),'press'),{message:/^press: no WebSocket frame\n/});
 });
 
-// ---------------------------------------------------------------- #110 saved Auto Seq and Call 1st
+// ---------------------------------------------------------------- saved Auto Seq and Call 1st
 // The candidate server on a disposable profile directory
 // configured for transmission (CAT PTT and an output device, neither opened: nothing is armed), so
 // that Call 1st is an enabled setting. Oracle: WstxQsoControl::QsoConfig, kept per profile, not the candidate's file.

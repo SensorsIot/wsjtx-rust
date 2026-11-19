@@ -27,7 +27,7 @@ fn gate(revision: u64) -> Gate {
         configuration: cat::Configuration::parse(ENDPOINT).unwrap(),
     }
 }
-/// The station clock of a profile (#92: the air is the reference, SNTP only warns).
+/// The station clock of a profile (the air is the reference, SNTP only warns).
 pub(crate) fn ntp_clock(
     ntp: Arc<wstx_rust::transmit::clock::Monitor>,
 ) -> Arc<wstx_rust::transmit::air::StationClock> {
@@ -247,7 +247,7 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
             "tune"
         ]
     );
-    // No SNTP measurement yet: the station clock is never unknown (#92), no warning before
+    // No SNTP measurement yet: the station clock is never unknown, no warning before
     // the first round.
     assert_eq!(view["clock"], "synchronized");
     assert_eq!(view["clock_measurement"], Value::Null);
@@ -461,7 +461,7 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
 
 // GET /transmit reports the station's SNTP
 // measurement (exact keys) and the clock state the transmit owner plans with: the station
-// clock, which SNTP never makes unsynchronized (#92); SNTP beyond 500 ms only warns.
+// clock, which SNTP never makes unsynchronized; SNTP beyond 500 ms only warns.
 #[tokio::test]
 async fn transmit_wire_shows_the_sntp_clock_measurement() {
     use wstx_rust::transmit::clock::{Measurement, Monitor};

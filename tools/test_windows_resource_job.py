@@ -700,7 +700,7 @@ class CaseTranscriptTests(ApiFreeCase):
 
 
 class MatrixQualificationTests(ApiFreeCase):
-    """#36 outcome classification: qualified, bounded re-qualification, inconclusive,
+    """Outcome classification: qualified, bounded re-qualification, inconclusive,
     and budgets that stay red in every attempt. Synthetic transcripts only."""
 
     parse = staticmethod(CaseTranscriptTests.parse)
@@ -708,7 +708,7 @@ class MatrixQualificationTests(ApiFreeCase):
     SLOW = (0, 3, 0.0556, 0.020)  # the observed 55.6 ms poll; decode well within budget
 
     def test_requalified_configuration_is_qualified_with_all_attempts_recorded(self):
-        # Proves: CL-007-04 (#36 bounded re-qualification).
+        # Proves: CL-007-04 (bounded re-qualification).
         result = self.parse("matrix", self.matrix_events({5: [self.SLOW, self.SLOW, None]}))
         self.assertEqual(result["outcome"], guardian.QUALIFIED)
         self.assertEqual(result["attempts"], 18)
@@ -716,7 +716,7 @@ class MatrixQualificationTests(ApiFreeCase):
         self.assertEqual(result["inconclusive_configurations"], [])
 
     def test_three_unqualified_attempts_are_inconclusive_not_failed(self):
-        # Proves: CL-007-04 (#36 inconclusive outcome).
+        # Proves: CL-007-04 (inconclusive outcome).
         result = self.parse("matrix", self.matrix_events({5: [self.SLOW] * 3}))
         self.assertEqual(result["outcome"], guardian.INCONCLUSIVE)
         self.assertEqual(len(result["inconclusive_configurations"]), 1)
@@ -726,7 +726,7 @@ class MatrixQualificationTests(ApiFreeCase):
         self.assertEqual(entry["unqualified_polls"][0]["max_poll_wall_seconds"], 0.0556)
 
     def test_ordinary_gate_reports_inconclusive_as_not_run_and_strict_refuses_it(self):
-        # Proves: CL-007-04 (#36 ordinary gate vs exclusive window).
+        # Proves: CL-007-04 (ordinary gate vs exclusive window).
         evidence = {"case": "matrix",
                     "transcript": self.parse("matrix", self.matrix_events({5: [self.SLOW] * 3}))}
         ordinary, strict = io.StringIO(), io.StringIO()
@@ -744,7 +744,7 @@ class MatrixQualificationTests(ApiFreeCase):
             self.assertIn("QUALIFIED", output.getvalue())
 
     def test_cli_default_is_strict_and_ordinary_gate_is_matrix_only(self):
-        # Proves: CL-007-04 (#36 exclusive window stays strict by default).
+        # Proves: CL-007-04 (exclusive window stays strict by default).
         evidence = {"case": "matrix",
                     "transcript": self.parse("matrix", self.matrix_events({5: [self.SLOW] * 3}))}
         receipt = ["--artifact-receipt", "unused.json"]
@@ -761,7 +761,7 @@ class MatrixQualificationTests(ApiFreeCase):
                                             *receipt]), 1)
 
     def test_qualified_or_unqualified_budget_violation_is_still_red(self):
-        # Proves: CL-007-04 (#36: a qualified run over budget stays red).
+        # Proves: CL-007-04 (a qualified run over budget stays red).
         # Injected slow decodes: ft8 short single worker has 5 s rounds and 7 s cold.
         over_round = (0, 3, 0.001, 5.5)
         cases = {
@@ -793,7 +793,7 @@ class MatrixQualificationTests(ApiFreeCase):
                 self.assertEqual(caught.exception.operation, "matrix_budget_exceeded")
 
     def test_false_qualification_claims_and_unbounded_or_early_stop_refuse(self):
-        # Proves: CL-007-04 (#36: inconclusive cannot be forged or stopped early).
+        # Proves: CL-007-04 (inconclusive cannot be forged or stopped early).
         original = self.matrix_events()
         first = next(index for index, (prefix, _value) in enumerate(original)
                      if prefix == "RESOURCE_CONFIGURATION")
@@ -1028,7 +1028,7 @@ class RegistryTests(ApiFreeCase):
         self.assertIn("--test-threads=1 --skip release_runtime_and_overlapping_window_history", entry)
         self.assertIn("| python tools/windows_resource_job.py resolve", entry)
         self.assertIn("python tools/windows_resource_job.py run --case matrix", entry)
-        # #36: only the ordinary gate tolerates an inconclusive matrix.
+        # Only the ordinary gate tolerates an inconclusive matrix.
         self.assertIn("run --case matrix --ordinary-gate --artifact-receipt", entry)
         for name in ("tools/windows_resource_job.py", "tools/test_windows_resource_job.py",
                      "tools/windows_process_metrics.py", "tools/test_windows_process_metrics.py"):

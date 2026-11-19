@@ -27,7 +27,7 @@ pub const EVALUATE_MAX: u64 = 2048;
 pub const IGNORE_CALLS_MAX: usize = 100;
 pub const SESSION_IGNORE_MAX: usize = 64;
 pub const SESSION_IGNORE_MINUTES: u64 = 30;
-/// #42 WstxRankingControl::Alert bounds: the history length and the dedupe window.
+/// WstxRankingControl::Alert bounds: the history length and the dedupe window.
 pub const ALERT_HISTORY_MAX: usize = 100;
 pub const ALERT_DEDUPE_MINUTES: i64 = 10;
 pub const ALERT_DEDUPE_MS: i64 = ALERT_DEDUPE_MINUTES * 60_000;
@@ -37,7 +37,7 @@ use crate::contact::Activity;
 pub use crate::dxcc::CONTINENTS;
 use crate::dxcc::{Category, Standing, Worked};
 
-/// WstxStrategies::StrategyClass (#97 D19), wire names "strategy" and "contest".
+/// WstxStrategies::StrategyClass, wire names "strategy" and "contest".
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Class {
     Strategy,
@@ -253,7 +253,7 @@ pub(crate) enum Window {
     Today,
     FromTo(u32, u32),
 }
-/// WstxStrategies::Strategy (#97 D19, schema 4): the nine decisions of one strategy. A contest
+/// WstxStrategies::Strategy (schema 4): the nine decisions of one strategy. A contest
 /// strategy (class contest) uses only the three lists of its filters; the other filter fields
 /// keep their base values and are never read for it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -400,10 +400,10 @@ pub(crate) struct Config {
     pub continent: Option<String>,
     pub active: Option<String>,
     pub strategies: Vec<Strategy>,
-    /// #42 the permanent ignore list (entries of CL-042-02's form) and the session list expiry.
+    /// The permanent ignore list (entries of CL-042-02's form) and the session list expiry.
     pub ignore_calls: Vec<String>,
     pub session_ignore_minutes: u64,
-    /// #63 the contest in force (memory only, never with an active award strategy).
+    /// The contest in force (memory only, never with an active award strategy).
     pub contest: Option<crate::contest::Selection>,
 }
 impl Default for Config {
@@ -862,7 +862,7 @@ fn region_snr_window(v: &Value, field: &str) -> Result<(Region, Option<i64>, Win
 /// Exact StrategyConfiguration parsing (field names a refused value). `table`: the country
 /// table a PUT checks country names against (None: a file, read as it is).
 pub(crate) fn parse_config(v: &Value, table: Option<&crate::dxcc::Table>) -> Result<Config, Field> {
-    // #63 contest is optional: a browser or a file without it selects no contest.
+    // Contest is optional: a browser or a file without it selects no contest.
     let keys: &[&str] = if v.get("contest").is_some() {
         &[
             "continent",
@@ -935,7 +935,7 @@ pub(crate) fn parse_config(v: &Value, table: Option<&crate::dxcc::Table>) -> Res
         }
         ignore_calls.push(c);
     }
-    // WstxStrategies::ContestSelection (#97): a contest goes with active naming a contest strategy
+    // WstxStrategies::ContestSelection: a contest goes with active naming a contest strategy
     // of its profile, and a contest strategy only with its contest.
     let contest = match v.get("contest") {
         None | Some(Value::Null) => None,
@@ -1071,7 +1071,7 @@ impl Config {
     pub(crate) fn selected(&self) -> bool {
         self.active.is_some() || self.contest.is_some()
     }
-    /// What a run follows: the active strategy (#97: a contest strategy with its contest; the
+    /// What a run follows: the active strategy (a contest strategy with its contest; the
     /// contest evaluates, the strategy's decisions bound the run).
     pub(crate) fn run_strategy(&self) -> Option<Strategy> {
         self.active_strategy().cloned()
@@ -1197,8 +1197,8 @@ pub(crate) fn facts(record: &Value) -> Option<Facts> {
     })
 }
 /// Station facts of one evaluation: my call and continent, the band, the mode, the country
-/// table (#55), the worked set of the strategy's window (None: the log is unreadable), the
-/// ignore lists (#42) and the Most Wanted list.
+/// table, the worked set of the strategy's window (None: the log is unreadable), the
+/// ignore lists and the Most Wanted list.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Station {
     pub my_call: String,
@@ -1209,11 +1209,11 @@ pub(crate) struct Station {
     pub worked: Option<std::sync::Arc<Worked>>,
     pub ignored: HashMap<String, Tier>,
     pub most_wanted: Option<std::sync::Arc<crate::most_wanted::List>>,
-    /// #63 the station's activity, for the DirectedCqRule.
+    /// The station's activity, for the DirectedCqRule.
     pub activity: Activity,
-    /// #63 the profile locator, for a contest's distance points.
+    /// The profile locator, for a contest's distance points.
     pub my_locator: Option<String>,
-    /// #97 ValueOrder hears_us: the stations with a spot of my call at most 600 s old on this
+    /// ValueOrder hears_us: the stations with a spot of my call at most 600 s old on this
     /// band and mode; None with PskrUse off or no feed (the criterion ties).
     pub hears: Option<Vec<String>>,
 }
@@ -1237,7 +1237,7 @@ struct SessionEntry {
     band: Option<String>,
     until: Instant,
 }
-/// #42 WstxIgnoreLists::IgnoreListsRule session list: station memory only, at most 64 entries in
+/// WstxIgnoreLists::IgnoreListsRule session list: station memory only, at most 64 entries in
 /// the order added, each ending at its expiry; any change of the observed station band
 /// empties it.
 #[derive(Clone, Debug, Default)]
@@ -1295,7 +1295,7 @@ pub(crate) fn answerable(target: Option<&str>, mine: Option<&str>, sender: Optio
         Some(t) => mine == Some(t),
     }
 }
-/// #63 the rule in a contest activity: the activity's own CQ word (CQ TEST, WW, FD, RU) is also
+/// The rule in a contest activity: the activity's own CQ word (CQ TEST, WW, FD, RU) is also
 /// answerable, without a warning.
 pub(crate) fn answerable_in(
     activity: Activity,
@@ -1335,7 +1335,7 @@ pub(crate) fn selection_warning(
     ))
     .then(|| not_for_me(f.target.as_deref().unwrap_or(""), mine.as_deref()))
 }
-/// #97 CqTargetList: the strategy run's own select_row of this record passes the directed-CQ
+/// CqTargetList: the strategy run's own select_row of this record passes the directed-CQ
 /// check when it is a CQ whose directive word is on the active strategy's include list (the
 /// caller holds the contact lock; the strategy lock is a leaf).
 pub(crate) fn run_admits(state: &ProfileState, record: &Value) -> bool {
@@ -1435,7 +1435,7 @@ impl Station {
             NewWhat::Continent => entity(Category::Continent),
             NewWhat::Call => s.needed.holds(w.call_scoped(&f.from, band, mode)),
             NewWhat::Prefix => s.needed.holds(w.wpx_scoped(&f.from, band, mode)),
-            // D13: no grid in the message, or a logged QSO without one: unknown, never new.
+            // No grid in the message, or a logged QSO without one: unknown, never new.
             NewWhat::Grid => {
                 !w.gridless(&f.from)
                     && f.grid
@@ -1571,7 +1571,7 @@ pub(crate) struct Verdict {
     pub grey: bool,
     pub why: String,
     pub kind: Option<Kind>,
-    /// #63 what a contest adds (WstxRankingControl::ContestVerdict).
+    /// What a contest adds (WstxRankingControl::ContestVerdict).
     pub contest: Option<crate::contest::ContestValue>,
 }
 impl Verdict {
@@ -1588,12 +1588,12 @@ impl Verdict {
         v
     }
 }
-/// #97 CqTargetList: the directive word of this CQ is on the strategy's include list, so it is
+/// CqTargetList: the directive word of this CQ is on the strategy's include list, so it is
 /// answerable for the strategy (not grey, and its run's own select_row passes).
 pub(crate) fn included_target(s: &Strategy, target: Option<&str>) -> bool {
     target.is_some_and(|t| s.cq_targets.include.iter().any(|w| w == t))
 }
-/// #97 UsStateOf (1): the US states the RTTY Roundup exchanges of these records carry, per
+/// UsStateOf (1): the US states the RTTY Roundup exchanges of these records carry, per
 /// sender.
 fn message_states(records: &[Value]) -> HashMap<String, String> {
     records
@@ -1633,7 +1633,7 @@ fn classify(
     if let Some(why) = st.off_band(s) {
         return (None, false, why.to_owned());
     }
-    // #97 CallerOfMyCall: a caller must pass the filters too (every line but "a CQ" and the CQ
+    // CallerOfMyCall: a caller must pass the filters too (every line but "a CQ" and the CQ
     // target line).
     let caller = st.calls_me(f);
     let fail = |why: &str| {
@@ -1746,7 +1746,7 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
     out.extend(rest);
     out
 }
-/// #97 a contest strategy's verdicts: the contest's (WstxContestRanking::ContestVerdictRule, the contest's
+/// A contest strategy's verdicts: the contest's (WstxContestRanking::ContestVerdictRule, the contest's
 /// rules first), then the strategy's bands and its country, US state and CQ target lists on top,
 /// ranked by ContestValueOrder with the strategy's callers_first.
 pub(crate) fn evaluate_contest(
@@ -1844,7 +1844,7 @@ fn window_dates(window: Window) -> Option<(u32, u32)> {
 /// WstxRankingControl::WorkedSince for the station step: never builds on it. The worked set of a
 /// window is cached per (log revision, country table, first date, last date; today is its UTC
 /// date), at most 4 windows, so it is not rebuilt per evaluation. A rebuild takes about 100 ms
-/// with 26,902 QSOs (measured 2026-11-06, release build, two station steps), so it never runs on
+/// with 26,902 QSOs (measured: release build, two station steps), so it never runs on
 /// the station step: a set missing or behind the log is built on its own thread for a later step.
 pub(crate) fn worked_of(state: &ProfileState, window: Window) -> Option<std::sync::Arc<Worked>> {
     state.logbook.worked_latest(window_dates(window))
@@ -1924,7 +1924,7 @@ fn contest_log(
 }
 
 // ------------------------------------------------------------------ alerts
-/// #42 WstxAlert::AlertRule: the station's alert history (memory only) with its live-job
+/// WstxAlert::AlertRule: the station's alert history (memory only) with its live-job
 /// cursor and the dedupe memory (kept apart from the history: Clear keeps it).
 #[derive(Default)]
 struct AlertLog {
@@ -1974,7 +1974,7 @@ struct Inner {
     error: Option<&'static str>,
     /// WstxAutoMode::AutoSwitchRule: station memory only, off at start.
     auto: bool,
-    /// #97 configuration_note: the renames of the read (from, to) until the next PUT.
+    /// configuration_note: the renames of the read (from, to) until the next PUT.
     notes: Vec<(String, String)>,
 }
 /// The strategy store of one station (strategy.json beside profile.json), read on first
@@ -1982,15 +1982,15 @@ struct Inner {
 #[derive(Default)]
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
-    /// #42 the session ignore list; a leaf lock, never held with `inner`.
+    /// The session ignore list; a leaf lock, never held with `inner`.
     session: Mutex<Session>,
-    /// #42 the alert history; taken before `inner` and `session`, never under them.
+    /// The alert history; taken before `inner` and `session`, never under them.
     alerts: Mutex<AlertLog>,
     /// Its revision, read without the lock by the alert.state event.
     alert_revision: std::sync::atomic::AtomicU64,
     /// The store revision, read without the lock by the strategy.state event.
     revision_seen: std::sync::atomic::AtomicU64,
-    /// #63 the ContestLog last built, for the station step, which never builds it.
+    /// The ContestLog last built, for the station step, which never builds it.
     contest_log: Arc<ContestCache>,
     contest_building: Arc<std::sync::atomic::AtomicBool>,
     /// The HaltTransmit count an Auto on has seen (a change turns Auto off).
@@ -2031,7 +2031,7 @@ impl Owner {
                             Some(4) => v["configuration"].clone(),
                             _ => return None,
                         };
-                        // #97: a saved name colliding with a built-in reads renamed, never
+                        // A saved name colliding with a built-in reads renamed, never
                         // dropped.
                         let notes = rename_builtin_names(&mut configuration);
                         ok.then(|| parse_config(&configuration, None).ok())
@@ -2335,7 +2335,7 @@ impl Owner {
             self.switch_auto(&mut inner, false);
         }
     }
-    /// #42 WstxAlert::AlertRule, once per station step: reads the live records past the
+    /// WstxAlert::AlertRule, once per station step: reads the live records past the
     /// cursor once each and records an alert for each new candidate of the active strategy.
     /// Never transmits or changes a contact or run.
     pub(crate) fn alert_step(&self, state: &ProfileState) {
@@ -2860,7 +2860,7 @@ fn start_selection(
         if let Some(s) = config.as_ref().and_then(Config::active_strategy) {
             worked_build(state, s.window);
         }
-        // #63 the run's first step finds the contest's log.
+        // The run's first step finds the contest's log.
         if let Some(c) = config.as_ref().and_then(Config::automatic_contest) {
             let (_, locator) = contact_http::profile_facts(state);
             station
@@ -2888,7 +2888,7 @@ pub async fn put(
         Err(e) => return *e,
     };
     // WstxAutoMode::AutoSwitchRule: the request's grant starts the run (the boundary guard has
-    // refused an MCP principal: this request is the browser's, #58).
+    // refused an MCP principal: this request is the browser's).
     let access = authorization_http::operating_access_async(&headers, &app)
         .await
         .ok()
@@ -2918,7 +2918,7 @@ pub async fn put(
     }
 }
 /// POST /strategy/auto (WstxAutoControl::SwitchAuto): the browser only (the boundary guard has
-/// refused an MCP principal, #58). Auto on ends any running pounce or MCP run and starts the
+/// refused an MCP principal). Auto on ends any running pounce or MCP run and starts the
 /// selection's run; Auto off ends the run at once. Returns the GET /strategy snapshot.
 pub async fn auto_route(
     State(app): State<App>,

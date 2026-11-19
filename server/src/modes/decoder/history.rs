@@ -8,7 +8,7 @@ const RECORD_CAP: usize = 2048;
 /// The largest frame, written as JSON with its sequence.
 const RECORD_MAX_BYTES: usize = 1024;
 
-/// Real fixed-table graphs plus the old inline array of one lists() reallocation.
+/// Real fixed-table graphs plus the `old_inline` array of one lists() reallocation.
 /// MaybeUninit slots represent moved String headers, never duplicate String owners.
 #[cfg(test)]
 pub(super) struct UnpackTableReserve {
@@ -422,7 +422,7 @@ pub struct DecodeState {
     live_history: bool,
     last_window_origin: Option<u64>,
     period_start: Option<u64>,
-    /// The station's a-priori context of the next window (#56 slice 5).
+    /// The station's a-priori context of the next window.
     a_priori: super::APriori,
 }
 impl DecodeState {

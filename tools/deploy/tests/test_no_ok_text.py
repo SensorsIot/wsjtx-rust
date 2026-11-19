@@ -1,7 +1,7 @@
-"""TC-196-07 (#196): no tracked text states an operator's OK for the deploy or the parameter that carried it.
+"""TC-196-07: no tracked text states an operator's OK for the deploy or the parameter that carried it.
 
 The oracle is git grep over the tracked files of this repository (not the harness submodule,
-whose rule is SensorsIot/harness#89's), this file excluded: it names both strings, joined from
+which keeps its own rule), this file excluded: it names both strings, joined from
 two parts so that this file is the only place that would otherwise hold them.
 """
 import os

@@ -1,4 +1,4 @@
-"""Show each refusal of station-update.ps1 happening before the destination changes (#34, #171).
+"""Show each refusal of station-update.ps1 happening before the destination changes.
 
 usage: python tools/deploy/station_drill.py [--script <station-update.ps1>] [--keep <dir>]
 
@@ -22,11 +22,11 @@ package's copy of the script and requires: a non-zero exit, the refusal's own me
 refusal for another reason fails the case), no sentinel, and the sandbox station (version
 directories, active.json, profiles, launcher) unchanged byte for byte; only logs\\ may change.
 A busy station gives up with exit 3, a radio that does not answer with exit 6; a changed
-mechanism (#196) is no refusal and reaches the stop, while a commit without pins, pins out of
+mechanism is no refusal and reaches the stop, while a commit without pins, pins out of
 order and a package file that differs from its pin refuse with exit 1. Positive controls show that the mocks do not refuse everything: the intact
 package passes -DryRun unchanged, and without -DryRun it reaches the station stop. Cases
 marked LIMIT are not refused today; they are reported so that the rule stays stated as
-unmet (#31, #32) and fail the drill if that ever changes unnoticed.
+unmet and fail the drill if that ever changes unnoticed.
 
 Exit 0: every case as expected. Exit 1: a case differs. Exit 2: the drill could not run.
 """
@@ -561,7 +561,7 @@ IDLE_CASES = [
     ("second update between the check and the stop", nothing, {"DRILL_SECOND": "1"}, "stop station", "second refused"),
 ]
 
-# TC-196-01 and TC-196-02 (#196): a changed mechanism needs no OK; the pins still guard the package.
+# TC-196-01 and TC-196-02: a changed mechanism needs no OK; the pins still guard the package.
 PIN_CASES = [
     ("pins: all equal, -DryRun", nothing, {}, ["deploy mechanism equals its pins", "dry run: nothing changed"], "dry-run accepted"),
     ("pins: a working-folder copy of the script is not run", working_folder_copy, {}, "run the package's own copy", "refused"),
@@ -584,7 +584,7 @@ PIN_CASES = [
     ("dry run with the radio closed does not read it", nothing, {"DRILL_RADIO": "closed"}, "dry run: nothing changed", "dry-run accepted"),
 ]
 
-# With the deploy authority on (#31), station-update.ps1 carries the amendment of
+# With the deploy authority on, station-update.ps1 carries the amendment of
 # Project-Specifics.md#deployment-authority and asks the protected verifier first. The
 # verifier's own refusals are tested in tests/test_authority.py; here the mock answers for it.
 PROTECTED_TASK = {"DRILL_TASK_ARGS": r'-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\ProgramData\WstxRust\deploy-authority\protected-launcher.ps1"'}

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! #44 radio detection and IC-7300 setup (CL-044-01..05). Portable rules only: the
+//! Radio detection and IC-7300 setup (CL-044-01..05). Portable rules only: the
 //! probe runs over any `Transport`, the topology and endpoint lists are plain data.
 //! Probing writes nothing but the frames of `ProbeFrame`; menu writes exist only as
 //! `Setting` values the executor sends through the station's CAT owner.
@@ -185,7 +185,7 @@ impl Setting {
     }
 }
 
-/// #44 CL-044-10/11 IC-7300 AGC, CI-V command 16 sub 12 with one data byte 01 FAST,
+/// CL-044-10/11 IC-7300 AGC, CI-V command 16 sub 12 with one data byte 01 FAST,
 /// 02 MID, 03 SLOW; read with the same command without data (Icom IC-7300 Full Manual,
 /// section 19 command table, "16 12 AGC"). The JSON names are the radio's labels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -219,7 +219,7 @@ impl Agc {
         }
     }
 }
-/// #44 CL-044-12 IC-7300 meters read in one burst under the transmit hold (Full Manual
+/// CL-044-12 IC-7300 meters read in one burst under the transmit hold (Full Manual
 /// section 19, "15 11 Po", "15 12 SWR", "15 13 ALC", data 0000..0255 in BCD). None: the
 /// radio refused that read (FA).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

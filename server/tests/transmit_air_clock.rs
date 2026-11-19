@@ -477,7 +477,7 @@ fn sntp_is_never_applied_and_only_warns() {
     );
 }
 
-/// Live receive coverage of corrected DT (#47 LIVE_WINDOWS: prompt FT8 window DT -1.7 to
+/// Live receive coverage of corrected DT (LIVE_WINDOWS: prompt FT8 window DT -1.7 to
 /// +0.66 s, late window +0.2 to +2.56 s): a station is decoded only inside it.
 const DECODABLE: std::ops::RangeInclusive<i64> = -1700..=2560;
 /// Runs `periods` FT8 periods of the crowd plus one station with a bad clock (+1.2 s) on
@@ -689,7 +689,7 @@ fn three_situations_correction_state_and_warnings() {
         air.period_done(20_000, 20_000 + step, FT8);
         assert_eq!(air.applied_ms(), 0, "{step}");
     }
-    // The 2026-11-09 recovery: SNTP +525 with the mixed crowd of TC-092-002 (0,
+    // A live recovery: SNTP +525 with the mixed crowd of TC-092-002 (0,
     // pc_clock_off); Windows Time steps the system clock +525 ms (correction 0 stays 0; the
     // SNTP step gap is unknown with a young measurement: null); the next round +3 ms: null.
     let mut air = AirClock::default();

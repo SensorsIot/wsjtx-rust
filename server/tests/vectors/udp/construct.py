@@ -106,8 +106,8 @@ vector("logged-adif", "outbound",
         "adif": "\n<adif_ver:5>3.1.8\n<programid:9>WSTX-Rust\n<EOH>\n<call:5>K1ABC <EOR>"})
 
 # ---------------------------------------------------------------- inbound
-# Send-only (issue #40, operator 2026-11-06): a target's Heartbeat header is all the station
-# reads. Every other message type, the former commands first, is refused by that read.
+# Send-only: a target's Heartbeat header is all the station
+# reads. Every other message type, the command messages first, is refused by that read.
 vector("in-heartbeat", "inbound", header(0, 3) + u32(3) + utf8("1.24") + utf8("r1"),
        expect={"schema": 3, "id": ID})
 vector("in-heartbeat-old", "inbound", header(0, 2, "JTAlert"),

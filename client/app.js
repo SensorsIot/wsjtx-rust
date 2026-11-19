@@ -21,11 +21,11 @@ let socket, timer, pendingId, handshakeProbe;
 // The socket that has carried an automation.state, so that
 // the operating client, loaded after the first snapshots, reads GET /automation only after one.
 let automationAnnounced = null;
-// #82 FreeTxSlotMarks: the socket's latest free_tx_slots.state value, for an operating client that
+// FreeTxSlotMarks: the socket's latest free_tx_slots.state value, for an operating client that
 // loads after it.
 let freeTxSlotsHeld = null;
 let retry = LinkRule.RETRY_MS, lastMessage = 0, nextId = 1;
-// #102: every call names the path that made the page stale (station-stale detail.path), as evidence.
+// Every call names the path that made the page stale (station-stale detail.path), as evidence.
 function stale(path) { connection.textContent = 'Disconnected · stale'; connection.dataset.state = 'stale'; refresh.disabled = true; window.dispatchEvent(Object.assign(new Event('station-stale'), {detail: {path}})); }
 function requestStatus() {
   if (socket?.readyState !== WebSocket.OPEN) return;
@@ -205,7 +205,7 @@ for (const [button, action] of [[logoutButton, 'logout'], [forgetButton, 'forget
 }
 connect();
 
-// #44 CL-044-11: the managed AGC is sent only while the CAT endpoint names a radio
+// CL-044-11: the managed AGC is sent only while the CAT endpoint names a radio
 // with a known CI-V AGC command (the row is shown), so other radios carry no radio key.
 function agcManaged() {
   return document.querySelector('#control-mode').value === 'cat' && /^(icom7300:\/\/COM[0-9]{1,3}\?|COM[0-9]{1,3}$)/i.test(document.querySelector('#control-endpoint').value);

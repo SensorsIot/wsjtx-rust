@@ -66,7 +66,7 @@ function wav(seconds=1,amplitude=.5,frequency=750){
   for(let n=0;n<count;n++)b.writeInt16LE(Math.max(-32768,Math.min(32767,Math.round(amplitude*32768*Math.sin(2*Math.PI*frequency*n/12000)))),44+n*2);return b;
 }
 async function page(f,viewport={width:1100,height:850},connectMs=30000){const p=await f.context.newPage();await p.setViewportSize(viewport);await p.goto(f.origin,{timeout:120000});await p.locator('#connection[data-state=connected]').waitFor({timeout:connectMs});if(await p.locator('#open-server-settings').count()){await p.locator('#open-server-settings').click();await p.locator('#tab-expert').click();}await p.locator('#signal-status').filter({hasText:/No recording|Recording ready|unavailable/}).waitFor({timeout:30000});const recording=p.locator('#recorded-input');if(await recording.count()&&!await recording.evaluate(el=>el.open))await recording.locator('summary').click();return p;}
-// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+// The status refreshes itself; the explicit Refresh status is in Settings > Expert.
 async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
 
@@ -98,7 +98,7 @@ test('authenticated reconnect accepts only current connected operating snapshots
     await p.evaluate(()=>new Promise(resolve=>{addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
     await p.waitForFunction(()=>socket!==window.__operatingWitness.socket&&connection.dataset.state==='connected');
     old.release.resolve();await old.delivered.promise;await current.entered.promise;
-    // The replacement socket's own first selection.state may already have cleared it (#10); the old reply never does.
+    // The replacement socket's own first selection.state may already have cleared it; the old reply never does.
     const {kept,own}=await p.evaluate(()=>({kept:operatingState===window.__operatingWitness.state,own:operatingState===operatingHeld&&operatingHeldSocket===socket}));
     assert.ok(kept||own,'old-socket reply cannot replace accepted operating state');
     if(kept)assert.equal(await p.locator('#operating-selection-status').textContent(),'Disconnected · operating data stale','Connected header alone cannot clear operating staleness');
@@ -221,7 +221,7 @@ test('TC-010-003 late recording asset bootstraps an already connected station on
   await p.route('**/recording.js',async route=>{await held;await route.continue();});
   const navigation=p.goto(f.origin);await p.locator('#connection[data-state=connected]').waitFor({timeout:5000});
   assert.equal(snapshots,0,'status/profile is ready while the recording module is still unavailable');release();await navigation;
-  // #37: recordings and the receive status are in Settings > Expert.
+  // Recordings and the receive status are in Settings > Expert.
   await p.locator('#open-server-settings').click({timeout:2000});await p.locator('#tab-expert').click();
   await p.locator('#signal-status').filter({hasText:'No recording imported'}).waitFor({timeout:2000});assert.equal(await p.locator('#recording-import').isEnabled(),true);
   await p.evaluate(()=>{dispatchEvent(new CustomEvent('station-ready',{detail:socket}));dispatchEvent(new CustomEvent('station-ready',{detail:socket}));});
@@ -253,7 +253,7 @@ test('TC-010-003 calibrated real spectrum, source rows and accessible splitter',
   await p.evaluate(()=>document.documentElement.style.zoom='2');assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
 });
 
-// The 25-file provenance sweep is in tests/profile/recording-fixtures.test.cjs (#70); here one real
+// The 25-file provenance sweep is in tests/profile/recording-fixtures.test.cjs; here one real
 // original of each mode goes through the server's import.
 // One pinned real FT8 and one FT4 recording; cost level 2, read-only acquired inputs.
 // Proves: TC-018-001
@@ -313,7 +313,7 @@ test('TC-010-002 recording state and import progress are pushed on change, witho
   assert.equal(watcher.profile.length,1,'one profile.state after the first subscription');assert.deepEqual(Object.keys(watcher.profile[0]).sort(),['boot_id','profile_id','revision']);assert.deepEqual(bare.profile,[],'a peer without a subscription gets no profile.state');
   assert.equal(watcher.log.length,1,'one recording.state after the first subscription');assert.ok(!('id' in watcher.log[0].value));
   assert.deepEqual(watcher.log[0].value.data,{generation:initial.generation,source_id:initial.recording.id,job_id:null,state:null,import:null});
-  // Idle: no event and no read for longer than the old 2 s and 5 s timers.
+  // Idle: no event and no read for longer than 5 s (no 2 s or 5 s timer).
   const idle=reads.length;await sleep(6000);assert.equal(watcher.log.length,1,'an unchanged state sends nothing');assert.equal(reads.length,idle,'no timer GET /recording');
   // Another actor's replay: announced within the 1 s check, read by the browser.
   const start=performance.now(),job=await f.replay();
@@ -437,7 +437,7 @@ test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level
   const context=await browser.newContext({deviceScaleFactor:2});t.after(()=>context.close());
   const mobile=await page({...f,context},{width:360,height:640});
   for(const p of [desktop,mobile])assert.equal(await p.inputValue('#display-profile'),'detail');
-  // #54: the spectrum line is off by default; this geometry case shows it.
+  // The spectrum line is off by default; this geometry case shows it.
   for(const p of [desktop,mobile])await p.evaluate(()=>{const box=document.querySelector('#display-spectrum');box.checked=true;box.dispatchEvent(new Event('change'));});
   await desktop.locator('#recording-replay').click();
   for(const p of [desktop,mobile])await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>=45,{timeout:15000});
@@ -448,7 +448,7 @@ test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level
   for(const p of [desktop,mobile]){
     assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     for(const key of ['Home','End']){await p.getByRole('separator').focus();await p.keyboard.press(key);await p.waitForTimeout(30);const g=await p.evaluate(()=>{const a=document.querySelector('#spectrum').getBoundingClientRect(),b=waterfall.getBoundingClientRect();return {ratio:b.height-5*a.height,pixels:waterfall.height,expected:Math.round(b.height*devicePixelRatio)};});assert.ok(Math.abs(g.ratio)<=2,JSON.stringify(g));assert.equal(g.pixels,g.expected);}
-    // #54: a fixed reference after real rows (no noise estimate), Range as a slider.
+    // A fixed reference after real rows (no noise estimate), Range as a slider.
     const before=await p.evaluate(()=>({black:displayBlack,range:displayRange,copy:[...rows.at(-1).levels]}));
     assert.deepEqual([before.black,before.range],[-85,50]);
     await p.locator('#display-range').fill('30');await p.locator('#display-range').dispatchEvent('input');
@@ -498,7 +498,7 @@ test('TC-010-005 review real Detailed peer cadence and control priority',{timeou
   await sleep(1700);const started=performance.now();
   const status=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('no station.status within 2 s')),2000);ws.on('message',raw=>{if(JSON.parse(String(raw)).type==='station.status'){clearTimeout(timer);resolve();}});});
   ws.send(JSON.stringify({v:1,type:'station.get',id:2}));await status;assert.ok(performance.now()-started<2000);
-  // #54: 200 ms steady, 170 ms while retained rows wait: at least 165 ms apart and at most 5.9 rows/s.
+  // 200 ms steady, 170 ms while retained rows wait: at least 165 ms apart and at most 5.9 rows/s.
   assert.ok(stamps.length>=5);for(let k=1;k<stamps.length;k++)assert.ok(stamps[k]-stamps[k-1]>=165,JSON.stringify(stamps));
   assert.ok((stamps.length-1)*1000/(stamps.at(-1)-stamps[0])<=5.9,JSON.stringify(stamps));
   const s=await f.snapshot();await f.req('/recording/jobs/'+s.job.id,'DELETE');
@@ -560,7 +560,7 @@ test('TC-010-007 waterfall moves at fixed source-time speed and exits the bottom
 test('TC-010-006 complete canvas, speed projection, gaps and geometry',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(120));const p=await page(f);await p.locator('#recording-replay').click();await p.locator('#signal-status').filter({hasText:/running/}).waitFor();await p.selectOption('#display-profile','off');const s=await f.snapshot();
   const result=await p.evaluate(async s=>{
-    // #54: this geometry case shows the optional spectrum line (1:5 with the waterfall).
+    // This geometry case shows the optional spectrum line (1:5 with the waterfall).
     {const box=document.querySelector('#display-spectrum');box.checked=true;box.dispatchEvent(new Event('change'));}
     profileSelect.value='detail';rows=[];displayBlack=-120;displayRange=30;speed=2;
     const send=(sequence,q)=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'spectrum.detail.frame',data:{boot_id:s.boot_id,source_id:s.job.source_id,job_id:s.job.id,generation:s.generation,sequence,first_frame:sequence*2400,end_frame:(sequence+1)*2400,levels_b64:btoa(String.fromCharCode(...new Uint8Array(1024).fill(q)))}}}}));
@@ -620,7 +620,7 @@ test('TC-010-006 live sensitivity and speed sliders preserve original data and r
     document.querySelector('#display-speed').value=8;document.querySelector('#display-speed').dispatchEvent(new Event('input'));resetLevels();
     return {results,persist:[sensitivity,speed],reset:[displayBlack,displayRange],speedLabel:document.querySelector('#speed-value').textContent};
   });
-  // #54: E=clamp(-85-g,-120,-R) with the default Range 50; a reset of the view keeps the levels.
+  // E=clamp(-85-g,-120,-R) with the default Range 50; a reset of the view keeps the levels.
   for(const o of observations.results){assert.equal(o.E,Math.max(-120,Math.min(-50,-85-o.g)));assert.ok(o.unchanged);assert.match(o.label,/dB/);}
   assert.deepEqual(observations.persist,[30,8]);assert.deepEqual(observations.reset,[-85,50]);assert.equal(observations.speedLabel,'80 px/s');
   await p.selectOption('#display-profile','thin');assert.equal(await p.inputValue('#display-sensitivity'),'30');assert.equal(await p.inputValue('#display-speed'),'8');

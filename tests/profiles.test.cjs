@@ -26,7 +26,7 @@ const readinessMs = () => 10000;
 // A model name as WstxStationLink::WireNames writes it on the wire.
 const wireName = name => name.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`);
 // The wire names of the members of the model's refusal enumerations: naming one the model does
-// not list throws, so the test fails when the model no longer has it.
+// not list throws, so the test fails when the model does not have it.
 const OUTCOMES = {StartupOutcome: ['WstxStartup::StartupOutcome'], HttpOutcome: ['WstxStationLink::WireRefusal', 'WstxStationCommands::StationRefusal', 'WstxProfileAccess::SaveRefusal']};
 function outcomes(definition) {
   const qualified = OUTCOMES[definition].join(', ');
@@ -168,7 +168,7 @@ async function connected(page) {
   const settings=page.locator('#station-settings');
   if(await settings.count() && !await settings.evaluate(el=>el.open))await settings.locator('summary').click();
 }
-// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+// The status refreshes itself; the explicit Refresh status is in Settings > Expert.
 // The station's profile.state for a newer revision, delivered to this socket's actual handler: one background profile read.
 async function announceProfile(page) {await page.evaluate(() => socket.onmessage({data: JSON.stringify({v: 1, type: 'profile.state', data: {profile_id: profileData.profile_id, boot_id: profileData.boot_id, revision: profileData.revision + 1}})}));}
 async function refreshStatus(page) {const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
@@ -396,7 +396,7 @@ test('actual two tabs share retained authorization and rotated transport', {time
   await a.locator('#login').waitFor({state: 'visible'});
   await a.locator('#token').fill(p.env.WSTX_TOKEN); await a.locator('#login button').click(); await connected(a);
   await a.evaluate(() => {window.__twoTabOriginalSocket = socket;});
-  // #37: A's lazy clients (contact, logbook) read once after the first snapshots; let those
+  // A's lazy clients (contact, logbook) read once after the first snapshots; let those
   // reads finish so B's rotation meets an idle tab A, as the counts below assume.
   await a.waitForFunction(() => !!window.wstxContact, null, {timeout: 30000}); await a.waitForLoadState('networkidle');
   const firstCredential = await credential(a), beforeFiles = await fileHashes();
@@ -2007,7 +2007,7 @@ test('TC-022-001: four real windows, independent edits and HTTP input boundaries
   assert.equal(await staleWindow.locator('#settings-save').isDisabled(), true); assert.equal(await staleWindow.locator('#display-name').inputValue(), 'Unsaved concurrent edit');
   await staleWindow.locator('#settings-reload').click(); await staleWindow.locator('#settings-result').filter({hasText: 'Loaded saved settings.'}).waitFor(); assert.equal(await staleWindow.locator('#settings-save').isEnabled(), true); await staleWindow.close();
   const literal = {...settings(1), display_name: '<img src=x onerror=alert(1)>', audio: {input_device: '<script>alert(1)</script>', output_device: null}};
-  // A markup device can no longer be saved (CL-044-05) but still loads from an older profile file.
+  // A markup device cannot be saved (CL-044-05) but loads from a profile file that holds one.
   assert.equal((await request(profiles[0].origin, 'PUT', edit(1, revision, {...literal, audio: settings(1).audio}))).status, 200); revision++;
   await profiles[0].app.close(); const literalFile = path.join(profiles[0].dir, 'profile.json');
   await fs.writeFile(literalFile, JSON.stringify({...JSON.parse(await fs.readFile(literalFile, 'utf8')), audio: literal.audio}));

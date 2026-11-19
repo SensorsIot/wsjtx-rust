@@ -2,7 +2,7 @@
 // WstxHoldTx::QuietSpace worked by hand: compared values in dB per candidate written here, the
 // detailed bin of 12000/4096 Hz, and the operator's rule (lowest whole dB, a tie keeps the current
 // Tx, else nearer, then lower; 50 Hz from the called station and from his decoded frequencies;
-// #66: my Rx periods only, the recent ones, each slot's largest rise above the WSJT-X passband
+// my Rx periods only, the recent ones, each slot's largest rise above the WSJT-X passband
 // floor, clear of the stations decoded in them). A flat floor F is its own lowest tenth in every
 // segment, so its fit is F exactly and the floor F + 0.65 dB.
 use super::*;
@@ -107,7 +107,7 @@ fn tc_039_010_whole_db_decides_the_tie() {
     // 41 dB against 40 dB moves, however close.
     let one = table(50.0, &[(1500, 41.0), (1510, 40.0)]);
     assert_eq!(ft8(1500, None, None, &one).hz, 1510);
-    // #66: a rise at or under the floor is free, 0: -2 at 1500 and -5 at 1800 tie, the current Tx
+    // A rise at or under the floor is free, 0: -2 at 1500 and -5 at 1800 tie, the current Tx
     // stays with power_db 0; free (-0.6) beats 0.6 (1 dB).
     let under = table(50.0, &[(1500, -2.0), (1800, -5.0)]);
     assert_eq!(
@@ -309,7 +309,7 @@ fn tc_039_010_the_counted_periods_are_my_recent_rx_periods() {
     let all = w.periods(job, due_at(EVEN + 6 * 30_000, None));
     assert_eq!(all.len(), 6, "the transmitted periods are not kept");
     assert_eq!(all[0].levels[0], 25.0, "the mean of the two rows");
-    // No complete publication of a period in progress (#89): only ended periods are due.
+    // No complete publication of a period in progress: only ended periods are due.
     let starts = |now: i64, since: i64| {
         Judged::new(&all, Mode::Ft8, Parity::Even, since, due_at(now, None), &[])
             .counted
@@ -319,7 +319,7 @@ fn tc_039_010_the_counted_periods_are_my_recent_rx_periods() {
     };
     let at = |n: i64| EVEN + n * 30_000;
     // 1 s into the even period 6: the last 4 even periods before it. In the odd period after it,
-    // the even period 6 (not received) is one of the 4 and 2 is no longer.
+    // the even period 6 (not received) is one of the 4 and 2 is not.
     assert_eq!(
         recent_starts(Mode::Ft8, Parity::Even, due_at(at(6) + 1_000, None)),
         [at(5), at(4), at(3), at(2)]
@@ -540,10 +540,10 @@ fn tc_039_050_the_roll_off_floor_matches_the_numpy_reference() {
     }
 }
 
-// #66 decoded stations (TC-066-002). Oracle: the operator's rule of 2026-11-08 (issue #66
-// Functionality 5): a candidate f is left out while another is free when |f - d| is below the width
+// Decoded stations (TC-066-002). Oracle: the operator's
+// rule: a candidate f is left out while another is free when |f - d| is below the width
 // (FT8 50 Hz, FT4 90 Hz) for a station decoded at d in a counted period; with none free all come
-// back; his end applies among those left. #82: the marks are the open slots of the same decoded
+// back; his end applies among those left. The marks are the open slots of the same decoded
 // stations (TC-066-002 (j)): no open signal overlaps a counted decode, also where every candidate
 // is overlapped (open is [], no fallback, while the choice still uses all candidates).
 
@@ -701,7 +701,7 @@ fn tc_066_002_decodes_of_periods_that_do_not_count_leave_nothing_out() {
 // decoded stations leave: a station decoded at 1500 leaves out 1460..1540 and his frequency 1450 of
 // my Tx parity 1410..1490, so on a flat table the nearest left is 1550 (his_end yes); his
 // frequencies every 40 Hz leave none, his end is ignored, and of the decode-free ones 1450 and
-// 1550 (both 50 Hz away) the lower, his_end no. The open slots apply no his end (#82 D1): 1450
+// 1550 (both 50 Hz away) the lower, his_end no. The open slots apply no his end: 1450
 // stays open, 1460..1540 (on the decoded station) do not.
 // Proves: TC-066-002
 #[test]
@@ -982,8 +982,7 @@ fn judge_p(
 // complete one: the station passes no publication (automation published_start; router: case
 // (c) of the router test), so as (b). (g) A complete publication naming P + 30 s (the next odd period) while P + 15 s
 // is in progress, at P + 20 s: P + 30 s has not started, so it is not due and its decode at 1200
-// closes nothing; P has ended: P .. P - 90 s count. Red on the parent: (a) P not counted and 2340
-// open.
+// closes nothing; P has ended: P .. P - 90 s count.
 // Proves: TC-089-001
 #[test]
 fn tc_089_001_the_newest_rx_period_counts_once_its_complete_publication_is_there() {
@@ -1027,8 +1026,7 @@ fn tc_089_001_the_newest_rx_period_counts_once_its_complete_publication_is_there
 // above the 8th lowest level of their floor segment (bins 508..588), so the flat-floor fit stands.
 // At P + 14.1 s with P's complete publication and its rows 0..69: level (62 x 42 + 8 x 30) / 70 =
 // 40.629, rise 9.979, value 10. Then rows 70..74 and P + 15.2 s (P ended, all 75 rows): (62 x 42 +
-// 13 x 30) / 75 = 39.92, rise 9.27, value 9. A slot off the band (1000, 2000) is 0. Red on the
-// parent: value 0 at P + 14.1 s (P not counted).
+// 13 x 30) / 75 = 39.92, rise 9.27, value 9. A slot off the band (1000, 2000) is 0.
 // Proves: TC-089-001
 #[test]
 fn tc_089_001_the_newest_period_counts_by_its_rows_so_far() {
@@ -1074,7 +1072,7 @@ fn tc_089_001_the_newest_period_counts_by_its_rows_so_far() {
 
 // (e) At P + 15.2 s P has ended without its
 // publication: it counts by its levels (P - 90 .. P), and with no decode of it 2340 is open; once
-// its complete publication brings the station at 2340, 2300..2380 close (unchanged, #82). (f) FT4
+// its complete publication brings the station at 2340, 2300..2380 close (unchanged). (f) FT4
 // (7.5 s periods, my Rx parity Q's): at Q + 6.9 s with Q's complete publication Q is due, the last
 // 4 due periods of its parity are Q, Q - 15, Q - 30 and Q - 45 s, and Q counts by its row so far.
 // Proves: TC-089-001

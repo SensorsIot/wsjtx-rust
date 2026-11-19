@@ -543,7 +543,7 @@ fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file()
         ),
         (json!("N2BBB"), Value::Null, Value::Null, Value::Null)
     );
-    // One distinct reason per kept field (a repeated kept field each, 26 with #24): 16 groups listed, all counted.
+    // One distinct reason per kept field (a repeated kept field each, 26): 16 groups listed, all counted.
     let mut many = String::new();
     for name in FIELDS.iter().chain(&[ID_FIELD, SOURCE_FIELD]) {
         many.push_str(&format!("<call:5>N5EEE <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <{name}:1>1 <{name}:1>1 <eor>\n"));
@@ -707,7 +707,7 @@ fn update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_t
     let started = Instant::now();
     assert_eq!(Logbook::open(&dir.0).total().unwrap(), 27_000);
     eprintln!("reopen {:?}", started.elapsed());
-    // #10 the rerun of the export with every QSO confirmed in LoTW upgrades all of them
+    // The rerun of the export with every QSO confirmed in LoTW upgrades all of them
     // in one replace, and the worked set includes the confirmation.
     let confirmed = file.replace(
         " <eor>\n",
@@ -789,7 +789,7 @@ fn import_retry_by_id_and_sha256_has_no_second_effect_and_mismatch_is_refused() 
         json!({"code":"integrity_mismatch","record":null,"field":null})
     );
     assert_eq!(log.total().unwrap(), 1);
-    // An idle receiving import no longer blocks the next reservation.
+    // An idle receiving import does not block the next reservation.
     log.reserve(ID1, 5, &sha, now).unwrap();
     assert_eq!(
         log.reserve(ID2, 5, &sha, now + Duration::from_secs(61))
@@ -1119,7 +1119,7 @@ fn contest_fields_and_rtty_rst_are_validated() {
 }
 
 // Update logbook keeps only contest values that
-// SaveContact admits (coordinator decision on #10, 2026-11-04): a non-conforming STX, SRX
+// SaveContact admits: a non-conforming STX, SRX
 // or contest text is dropped and reported, the record is still added, a conforming value
 // (exactly 32 characters, 4 digits) is kept.
 // Proves: TC-011-002
@@ -1270,7 +1270,7 @@ fn export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock() {
     assert!(next.contains("<call:5>W1XYZ "));
 }
 
-// ------------------------------------------------------------------ #10 confirmation
+// ------------------------------------------------------------------ confirmation
 /// Synthetic confirmation fixtures (no real log data): ADIF 3.1 QSL Rcvd fields as a
 /// logger such as Log4OM 2 exports them.
 const CONFIRM_HEADER: &str = "Log4OM 2 test export\n<ADIF_VER:5>3.1.0 <PROGRAMID:7>LOG4OM2 <eoh>\n";
@@ -1436,7 +1436,7 @@ fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one(
     assert_eq!(log.put(changed, GATE).unwrap(), LogOutcome::AlreadySaved);
 }
 
-// Measurement for review 6683200740 finding 4: the rebuild of a worked set from a 26,902-QSO
+// Measurement: the rebuild of a worked set from a 26,902-QSO
 // log after one log write (run with --release --nocapture); no timing assertion.
 #[cfg(not(debug_assertions))]
 #[test]
@@ -1679,8 +1679,8 @@ fn qso(call: &str, dial_hz: Option<u64>, ft4: bool, grid: Option<&str>) -> Recor
 }
 
 // The terms of "the same station again"
-// after the newest QSO: CALL ignoring case (K1ABC/P is another station, L4), the band (BAND,
-// else the band of FREQ; unknown equals only unknown, L2) and the mode (FT8 and FT4 differ);
+// after the newest QSO: CALL ignoring case (K1ABC/P is another station), the band (BAND,
+// else the band of FREQ; unknown equals only unknown) and the mode (FT8 and FT4 differ);
 // under a contest its dupe rule decides within that (band_grid: a rover from a new grid is no
 // dupe). Expected values are the hand-written table of CL-085-01, never candidate output.
 // Proves: TC-085-002
@@ -1701,11 +1701,11 @@ fn tc_085_002_terms_of_the_same_station_again() {
     assert!(qso("K1ABC", M20, false, None).same_station_again(&freq_only, None));
     freq_only.set("freq", "7.074000".into());
     assert!(!qso("K1ABC", M20, false, None).same_station_again(&freq_only, None));
-    // (e) "k1abc" is K1ABC; K1ABC/P after K1ABC is another station (L4).
+    // (e) "k1abc" is K1ABC; K1ABC/P after K1ABC is another station.
     let lower = qso("k1abc", M20, false, None);
     assert!(qso("K1ABC", M20, false, None).same_station_again(&lower, None));
     assert!(!qso("K1ABC/P", M20, false, None).same_station_again(&k1, None));
-    // (f) unknown band equals only unknown band (L2).
+    // (f) unknown band equals only unknown band.
     let unknown = qso("K1ABC", None, false, None);
     assert!(qso("K1ABC", None, false, None).same_station_again(&unknown, None));
     assert!(!qso("K1ABC", M20, false, None).same_station_again(&unknown, None));

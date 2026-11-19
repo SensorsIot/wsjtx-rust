@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 // GET /clock on the actual router (exact keys of CL-043-01, no source setting, POST /clock an
-// unknown route, a #43 clock.json ignored and left in place), GET /transmit carrying the same
+// unknown route, a clock.json ignored and left in place), GET /transmit carrying the same
 // warning, capture_warning, clock_revision, the actual station transmit owner admitting and
 // timing transmit by the station clock, and clock.state pushed over the actual status
 // WebSocket to every profile. Expected values come from the model's rule and texts.

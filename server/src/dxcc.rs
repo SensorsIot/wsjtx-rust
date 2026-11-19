@@ -245,7 +245,7 @@ impl Cty {
     pub fn entity_count(&self) -> usize {
         self.entities.len()
     }
-    /// The entity full names (the Most Wanted mapping's test; #97 CountryList names).
+    /// The entity full names (the Most Wanted mapping's test; CountryList names).
     pub fn entity_names(&self) -> impl Iterator<Item = &str> {
         self.entities.iter().map(|e| e.name.as_str())
     }
@@ -398,16 +398,16 @@ pub struct Logged {
     pub grid: Option<String>,
     /// ADIF band, lower case.
     pub band: Option<String>,
-    /// #42 the effective ADIF mode (MFSK by its SUBMODE), upper case.
+    /// The effective ADIF mode (MFSK by its SUBMODE), upper case.
     pub mode: Option<String>,
-    /// #10 the contact is confirmed (logbook::Record::confirmed).
+    /// The contact is confirmed (logbook::Record::confirmed).
     pub confirmed: bool,
-    /// #39 QSO_DATE as YYYYMMDD (None: counts only for the all-time window).
+    /// QSO_DATE as YYYYMMDD (None: counts only for the all-time window).
     pub date: Option<u32>,
     /// The ADIF STATE (WstxValueOrder::UsStateFilterRule), upper case.
     pub state: Option<String>,
 }
-/// #10 award standing of a key (for example a DXCC entity) in a scope: worked by any
+/// Award standing of a key (for example a DXCC entity) in a scope: worked by any
 /// logged contact, and confirmed by at least one of them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Standing {
@@ -415,7 +415,7 @@ pub struct Standing {
     pub confirmed: bool,
 }
 impl Standing {
-    /// #39 award strategies: needed when not worked or not confirmed.
+    /// Award strategies: needed when not worked or not confirmed.
     pub fn needed(self) -> bool {
         !self.worked || !self.confirmed
     }
@@ -438,7 +438,7 @@ impl Category {
         }
     }
 }
-/// The index of the CQ WPX prefix in the per-band and per-band-and-mode maps (#97 NewNeeded
+/// The index of the CQ WPX prefix in the per-band and per-band-and-mode maps (NewNeeded
 /// prefix per band and band_mode).
 const WPX: u8 = 6;
 /// WstxValueOrder::UsStateFilterRule: the entities whose ADIF STATE is a US state (291 United
@@ -487,16 +487,16 @@ pub fn wpx_prefix(call: &str) -> String {
 /// square upper case; the entity categories use the logged call's entity (WSJT-X keys
 /// DXCC by the full entity name, WAE entities included). A call without an entity adds
 /// nothing to the entity categories. Each key maps to whether a confirmed contact holds
-/// it (#10), so the confirmation costs no extra lookup.
+/// it, so the confirmation costs no extra lookup.
 #[derive(Default)]
 pub struct Worked {
     ever: HashMap<(u8, String), bool>,
     band: HashMap<(u8, String, String), bool>,
-    /// #42 per band and mode (the strategy's scope), for the entity categories.
+    /// Per band and mode (the strategy's scope), for the entity categories.
     band_mode: HashMap<(u8, String, String, String), bool>,
     /// The CQ WPX prefixes (WstxOperatingChain::WorkedCategory) with their confirmation.
     wpx: HashMap<String, bool>,
-    /// #39 calls with a logged contact that has no grid: their grid status is unknown.
+    /// Calls with a logged contact that has no grid: their grid status is unknown.
     gridless: HashSet<String>,
     /// WstxValueOrder::UsStateFilterRule: per call the STATE of its newest record that has one, a
     /// confirmed record before an unconfirmed one: (confirmed, date, state). Every record
@@ -588,22 +588,22 @@ impl Worked {
         }
         w
     }
-    /// #39 the standing of a call, ever.
+    /// The standing of a call, ever.
     #[cfg(test)]
     pub fn call_standing(&self, call: &str) -> Standing {
         standing(self.ever.get(&(0, call.to_ascii_uppercase())))
     }
-    /// #39 the standing of a grid's 4-character square, ever.
+    /// The standing of a grid's 4-character square, ever.
     #[cfg(test)]
     pub fn grid_standing(&self, grid: &str) -> Standing {
         standing(square(grid).and_then(|g| self.ever.get(&(1, g))))
     }
-    /// #39 the standing of a call's CQ WPX prefix, ever.
+    /// The standing of a call's CQ WPX prefix, ever.
     #[cfg(test)]
     pub fn wpx_standing(&self, call: &str) -> Standing {
         standing(self.wpx.get(&wpx_prefix(call)))
     }
-    /// #97 the standing of a key of index `i` (0 call, 1 grid square, 6 WPX prefix) ever, on a
+    /// The standing of a key of index `i` (0 call, 1 grid square, 6 WPX prefix) ever, on a
     /// band in any mode, or on a band and mode.
     fn scoped(&self, i: u8, key: String, band: Option<&str>, mode: Option<&str>) -> Standing {
         standing(match (band, mode) {
@@ -616,11 +616,11 @@ impl Worked {
             }
         })
     }
-    /// #97 NewNeeded call per ever, band or band and mode.
+    /// NewNeeded call per ever, band or band and mode.
     pub fn call_scoped(&self, call: &str, band: Option<&str>, mode: Option<&str>) -> Standing {
         self.scoped(0, call.to_ascii_uppercase(), band, mode)
     }
-    /// #97 NewNeeded grid (its 4-character square) per ever, band or band and mode.
+    /// NewNeeded grid (its 4-character square) per ever, band or band and mode.
     pub fn grid_scoped(&self, grid: &str, band: Option<&str>, mode: Option<&str>) -> Standing {
         square(grid).map_or(Standing::default(), |g| self.scoped(1, g, band, mode))
     }
@@ -639,7 +639,7 @@ impl Worked {
     pub fn gridless(&self, call: &str) -> bool {
         self.gridless.contains(&call.to_ascii_uppercase())
     }
-    /// #10 worked and confirmed standing of an entity's key of the category: ever (no
+    /// Worked and confirmed standing of an entity's key of the category: ever (no
     /// band), on a band in any mode, or on a band and mode. One lookup per query.
     pub fn entity_standing(
         &self,
@@ -716,7 +716,7 @@ fn sender(record: &Value) -> Option<String> {
         .then(|| call["text"].as_str().map(str::to_owned))
         .flatten()
 }
-/// #55 DecodedEntity: adds to each decoded record with a resolved sender call its
+/// DecodedEntity: adds to each decoded record with a resolved sender call its
 /// `dxcc` (compact, when the call has an entity), `flags` (only the FLAGS that hold,
 /// against the cached worked set of the log; omitted when none holds or the log is
 /// unreadable) and `worked_status` (WorkedBeforeQuery, with a known band). Band: the CAT dial band, else the operating selection band; without a
@@ -740,7 +740,7 @@ pub(crate) fn annotate(state: &crate::ProfileState, records: &mut [Value]) {
             continue;
         };
         // WstxLogbook::WorkedBeforeQuery: this record's worked-before status, so the browser
-        // needs no query (#10); a hash is no concrete call.
+        // needs no query; a hash is no concrete call.
         if let (Some(band), Some(mode)) = (band, mode.as_deref())
             && record["fields"]["type"] == "standard"
             && record["fields"]["from"]["kind"] == "call"

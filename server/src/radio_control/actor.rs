@@ -27,7 +27,7 @@ struct PttCommand {
     deadline: Instant,
     response: SyncSender<Result<()>>,
 }
-/// #44 menu exchange under an ordinary lease (lease 1): excluded by any transmit hold.
+/// Menu exchange under an ordinary lease (lease 1): excluded by any transmit hold.
 struct SetupRequest {
     command: SetupCommand,
     deadline: Instant,
@@ -35,7 +35,7 @@ struct SetupRequest {
     /// Set when the exchange runs inside a receive transition's reservation.
     reservation: Option<Arc<AtomicBool>>,
 }
-/// #44 CL-044-12 one meter burst, only under the transmit hold.
+/// CL-044-12 one meter burst, only under the transmit hold.
 struct MeterRequest {
     deadline: Instant,
     response: SyncSender<Result<super::setup::Meters>>,
@@ -88,7 +88,7 @@ impl TransitionLease {
         self.actor
             .execute_inner(request, Some(self.released.clone()))
     }
-    /// A menu exchange (#44 AGC on mode selection) inside this reservation, so it
+    /// A menu exchange (AGC on mode selection) inside this reservation, so it
     /// completes before the transition releases the actor.
     pub fn setup(&self, command: SetupCommand, deadline: Instant) -> Result<SetupReply> {
         self.actor
@@ -373,7 +373,7 @@ impl Actor {
         }
         outcome
     }
-    /// #44 menu exchange (ID read, menu read, menu write with readback) through this
+    /// Menu exchange (ID read, menu read, menu write with readback) through this
     /// single I/O owner. It takes the ordinary lease, waiting until deadline while an
     /// operation, transition, poll or transmit hold holds it (then Busy); no queue.
     pub fn setup(&self, command: SetupCommand, deadline: Instant) -> Result<SetupReply> {
@@ -431,7 +431,7 @@ impl Actor {
             }
         }
     }
-    /// #44 CL-044-12 one meter burst (reads only) while this station holds the transmit
+    /// CL-044-12 one meter burst (reads only) while this station holds the transmit
     /// hold, otherwise Busy with no bytes: it takes no lease, cannot delay a key, and a
     /// PTT exchange cancels it. The caller never holds the transmit owner's lock.
     pub fn read_meters(&self, deadline: Instant) -> Result<super::setup::Meters> {

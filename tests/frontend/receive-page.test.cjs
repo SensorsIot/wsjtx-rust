@@ -48,7 +48,7 @@ test('TC-050-008 a page kept across a restart and periods shows no accident and 
     await until('the page sees the station gone',seen=>seen.state!=='connected',30000);
     await until('the page is back on the new boot',seen=>seen.state==='connected'&&seen.boot&&seen.boot!==firstBoot&&!seen.rows.length,60000);
     assert.ok(fs.existsSync(path.join(control,'restarted')),'the new boot answers only after the restart');
-    // No receive job yet: this window showed "Latest undefined period" with the old boot's rows.
+    // No receive job yet: the window where a faulty page shows "Latest undefined period" with the old boot's rows.
     const quiet=Date.now()+8000;
     while(Date.now()<quiet){const seen=await sample();assert.deepEqual([[...accidents.keys()],seen.rows],[[],[]],'no accident and no row of the previous boot');await page.waitForTimeout(500);}
 
@@ -106,7 +106,7 @@ test('the live page check lets the page send only reads and is green only with b
   assert.equal(missingTriggers(2,null,false).length,1,'#50 needs a worked-before kept row');
 });
 
-// The live check's wait between its band selection and the stop (#247), on a scripted page.
+// The live check's wait between its band selection and the stop, on a scripted page.
 const row=(when,message)=>({period:'latest',tip:null,when,message,sender:message.split(' ')[1],partner:false});
 const shown=(generation,rows)=>({text:'',heading:'',attributes:[],rows,band:'20m',on:'1',boot:'b1',state:'connected',job:'j',generation});
 // A page that shows each of `states` once per sample and stays on the last; `rowsAt` is the first
@@ -162,7 +162,7 @@ test('the live page check is never green after a band selection not made or not 
   assert.deepEqual(done.message,{stopping:true});
   assert.deepEqual(done.unexercised,[why]);
   assert.equal(done.rows,false,'no wait for rows without a selection');
-  // The new boot without a job is the #22 window by the generations alone, but nothing was selected.
+  // The new boot without a job is the restart-generation window by the generations alone, but nothing was selected.
   assert.deepEqual(exerciseMissing([why],1,null,true),[`#22: ${why}`]);
   assert.deepEqual(exerciseMissing([],2,1,true),[],'a selection that took, generations old 2 and new 1');
 });

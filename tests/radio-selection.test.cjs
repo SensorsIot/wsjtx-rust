@@ -47,8 +47,8 @@ test('network lifetime and correlated Off oracle reject true violations',()=>{
   const frames=[{socket:2,type:'spectrum.frame',at:13},{socket:2,type:'heartbeat',at:15}];assert.deepEqual(optionalAfterOff(frames,ack),[]);frames.push({socket:2,type:'spectrum.detail.frame',at:15});assert.equal(optionalAfterOff(frames,ack).length,1);
 });
 
-// Evidence of #102 items 3 to 6 (no promise): the failure output of a Thin or Off window, from fixed
-// sockets, stale records and frames. Each item appears exactly once, on the one UTC-ms clock.
+// Evidence (no promise): the failure output of a Thin or Off window, from fixed
+// sockets, stale records and frames. Each record appears exactly once, on the one UTC-ms clock.
 test('Failure evidence of a Thin or Off window lists each socket, stale and close once in UTC ms',async()=>{
   const parse=lines=>{assert.match(lines[0],/judged on issue #102/);assert.equal(lines.filter(l=>l.includes('#102')).length,1,'one #102 line');return lines.slice(1).map(l=>{assert.match(l,/^WSTX_EVIDENCE \{/);return JSON.parse(l.slice('WSTX_EVIDENCE '.length));});};
   // Hand calculation: origin 1800000000000.5 ms; Node 1000 -> 1800000001000.5, 61000.25 -> 1800000061000.75.
@@ -107,7 +107,7 @@ test('no timer reads the selection: source and caller fault controls',async t=>{
     const lf=(await fs.readFile(path.join(__dirname,'../client/recording.js'),'utf8')).replace(/\r\n/g,'\n'),crlf=lf.replace(/\n/g,'\r\n');
     const lines=({fetchLine,explicitLines})=>({fetchLine,explicitLines}),base=lines(cadenceSource(Buffer.from(lf)));
     assert.notEqual(lf,crlf);assert.deepEqual(lines(cadenceSource(Buffer.from(crlf))),base);
-    // A change that only moves lines (a comment above the fetch) moves the mapping with it (#8).
+    // A change that only moves lines (a comment above the fetch) moves the mapping with it.
     const at=lf.indexOf("    const response=await stationFetch('/receive/selection'"),shifted=lines(cadenceSource(Buffer.from(lf.slice(0,at)+'    // shifted\n'+lf.slice(at))));
     assert.deepEqual(shifted,{fetchLine:base.fetchLine+1,explicitLines:base.explicitLines.map(n=>n+1)});
     // A timer read coming back, or an ambiguous or lost fetch, needs review, not a renewal.
@@ -124,8 +124,8 @@ test('no timer reads the selection: source and caller fault controls',async t=>{
   await t.test('accepted socket closure or replacement during segment refused',()=>{const sockets=coldSockets();sockets[2].closed=80;assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/remains live/);sockets.push({index:3,opened:81,closed:null});assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/new socket/);});
   await t.test('new measured socket refused despite otherwise valid context',()=>{const sockets=coldSockets();sockets.push({index:3,opened:80,closed:null});assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/new socket/);});
   await t.test('wrong baseline socket index or time refused',()=>{for(const change of [{index:0},{index:3},{at:25},{at:121},{end:null}])assert.throws(()=>cadenceSocketSegment(coldSockets(),{...socketBaseline(),...change}));const sockets=coldSockets();sockets[2].index=1;assert.throws(()=>cadenceSocketSegment(sockets,socketBaseline()),/identity/);});
-  // #8 gate flake mode (b): catSync's automatic CAT status read (POST, no operator action)
-  // landed after the acceptance baseline and was counted as a station mutation (1 !== 0).
+  // catSync's automatic CAT status read (POST, no operator action) can land after the
+  // acceptance baseline; it is no station mutation.
   const expectedIdentity={profile_id:'profile-A',boot_id:'boot-A',profile_revision:3};
   const qualified=(transfers,withAction=true)=>{
     const event={action:false,epoch:0,connected:true,sameSocket:true,acceptedSequence:20,...expectedIdentity};
@@ -145,8 +145,8 @@ test('no timer reads the selection: source and caller fault controls',async t=>{
     assert.throws(()=>cadenceQualification(qualified([{method:'PUT',route:'/profile',wallStarted:1500}],false)),/exactly one/);
     assert.throws(()=>cadenceQualification(qualified([select],false)),/exactly one/);
   });
-  // #8 gate flake mode (a): a Cold-load selection read hit the page's own 10 s timeout
-  // (net::ERR_ABORTED) before the baseline and failed the join, though the page superseded it.
+  // A Cold-load selection read can hit the page's own 10 s timeout (net::ERR_ABORTED) before
+  // the baseline; the page supersedes it, so it does not fail the join.
   await t.test('Cold selection read the page timed out before baseline is superseded, not a failure',async()=>{
     const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../client/recording.js'))),origin='https://station-A';
     const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:mapping.explicitLines[0]}]}};
@@ -335,7 +335,7 @@ test('browser preferred selection and Stop fence a genuinely delayed POST',{time
   const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}}),page=await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await loginPage(page,origin,token);await page.locator('#operating-band:enabled').waitFor();
-  // #37: selection diagnostics and the explicit receive control are in Settings > Expert; the
+  // Selection diagnostics and the explicit receive control are in Settings > Expert; the
   // drawer leaves the top-bar band and mode selects reachable.
   await page.locator('#open-server-settings').click();await page.locator('#tab-expert').click();
   await page.selectOption('#operating-band','40m');await page.locator('#operating-selection-status').filter({hasText:'audio_unconfigured'}).waitFor();
@@ -414,7 +414,7 @@ test('browser confirms receive-only setup once, has no Connect CAT buttons and s
   const manual=[];page.on('request',r=>{if(/\/radio\/(connect|disconnect)$/.test(new URL(r.url()).pathname))manual.push(r.url());});
   await loginPage(page,origin,token);
   assert.equal(await page.locator('#radio-connect, #radio-disconnect, #radio-receive-only').count(),0,'normal UI has no Connect/Disconnect CAT controls');
-  // #37: an unconfirmed receive-only setup is an exception chip that opens Settings > Radio.
+  // An unconfirmed receive-only setup is an exception chip that opens Settings > Radio.
   await page.locator('#exception-chips [data-chip=cat]').filter({hasText:'CAT setup not confirmed'}).click({timeout:20000});
   await page.locator('#cat-status[data-condition="commissioningRequired"]').waitFor({timeout:20000});
   const button=page.locator('#cat-confirm-button');
@@ -442,8 +442,8 @@ test('browser confirms receive-only setup once, has no Connect CAT buttons and s
   assert.deepEqual(errors,[]);
 });
 
-// #8: the live Thin/Off workload failed when the page's own request timeout abandoned a /receive
-// body after its headers. The real Chromium page here abandons one the same way, and the same
+// The page's own request timeout can abandon a /receive body after its headers, in the live
+// Thin/Off workload. The real Chromium page here abandons one the same way, and the same
 // evidence reader must keep it aside only until the route is read complete again, while a
 // completed malformed body, and an abandoned body never read again, stay refused.
 test('evidence reader tolerates only a page-abandoned receive body that is read again',{timeout:30000},async t=>{
@@ -488,24 +488,24 @@ function selectionNetworkSummary(transfers,start,end){
   let active=0,maxActive=0;for(const event of events){active+=event.delta;assert.ok(active>=0);maxActive=Math.max(maxActive,active);}
   return {maxActive,requests,pendingAtEnd:requests.filter(r=>r.ended===null||r.ended>end).length};
 }
-// #37: the status refreshes itself; the explicit Refresh status is in Settings > Expert.
+// The status refreshes itself; the explicit Refresh status is in Settings > Expert.
 async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 // A read the client sends as POST is not a station mutation: /authorization/v1/status (catSync, sent on a CAT identity/state change, never by an
 // operator action) only reads the CAT condition and receive state (authorization_http.rs
-// Operation::Status). Every other non-GET request, including /receive/select, still counts (#8).
+// Operation::Status). Every other non-GET request, including /receive/select, counts.
 const readOnlyPosts=['/authorization/v1/status'];
 function stationMutation(r){return !['GET','HEAD'].includes(r.method)&&!(r.method==='POST'&&readOnlyPosts.includes(r.route));}
 // A Cold-load selection read the page itself abandoned: its frozen AbortSignal.timeout(10000)
 // fired (CDP lifetime >= 9500 ms, net::ERR_ABORTED) and the read ended before the accepted
 // baseline, so the page's next read superseded it and nothing it carried reaches the qualified
 // segment. Any other failure, any abort ending inside the segment, or an abort with no later read
-// still fails the join (#8).
+// fails the join.
 function supersededColdRead(transfer,read,baseline){
   return transfer.failure==='net::ERR_ABORTED'&&read?.failed===true&&!read.body&&transfer.ended!==null&&Number.isFinite(baseline?.at)&&transfer.ended<baseline.at&&transfer.ended-transfer.started>=9500;
 }
 // Map the actual served caller sites and acceptance guards, not just a function name. The
 // mapping is derived from the served source, so a change that only moves lines needs no
-// renewal; a site that is missing or ambiguous fails and asks for a review (#8).
+// renewal; a site that is missing or ambiguous fails and asks for a review.
 function cadenceSource(bytes){
   // The station serves working-tree bytes, whose line endings depend on the checkout
   // (autocrlf CRLF or LF). Derive from the LF-normalized text, the same as git's content.
@@ -565,7 +565,7 @@ function cadenceSocketSegment(sockets,baseline){
   assert.ok(sockets.every(s=>s.opened<=baseline.at),'all socket creations precede baseline');
   assert.ok(accepted.closed===null||accepted.closed>baseline.end,'accepted socket remains live throughout segment');
 }
-// #102: the evidence a failed Thin or Off window prints (stdout, so the gate log keeps it) and the
+// The evidence a failed Thin or Off window prints (stdout, so the gate log keeps it) and the
 // report keeps. One clock, UTC ms: Node times are performance.now() values converted by the stated
 // origin (performance.timeOrigin), page times are Date.now(); the station's own socket records are
 // printed by the Rust test. Frames count before a close C when C-12000 <= t <= C (clientSilenceMs).
@@ -588,7 +588,7 @@ function failureEvidence({timeOrigin,now,windows,browsers}){
   }
   return lines;
 }
-// #102: after hooks run in registration order. The first ends a failed window at the failure time,
+// After hooks run in registration order. The first ends a failed window at the failure time,
 // before the browser close ends both browsers' sockets; the evidence is printed after the close.
 function failureHooks(after,{now,underWay,close,evidence}){
   after(()=>{const w=underWay();if(w&&w.end===null)w.end=now();});
@@ -624,7 +624,7 @@ function correlatedOffAck(requests,acks,after){
 function assertOffAckDeadline(ack){const elapsed=ack.ackAt-ack.requestedAt;assert.ok(Number.isFinite(elapsed)&&elapsed>=0&&elapsed<=2000,`actual Off acknowledgement ${elapsed}ms exceeds2000ms`);return elapsed;}
 function optionalAfterOff(frames,ack){return frames.filter(frame=>frame.socket===ack.socket&&frame.at>ack.ackAt&&['spectrum.frame','spectrum.detail.frame'].includes(frame.type));}
 // Reads the body of one /receive, /receive/selection or /receive/results response into the
-// evidence (#8). On the starved link the page's own 10 s request timeout (AbortSignal.timeout in
+// evidence. On the starved link the page's own 10 s request timeout (AbortSignal.timeout in
 // recording.js request()) can fire after the headers arrived but before the body did: the request
 // ends net::ERR_ABORTED, the client drops that read and reads again, and Chromium holds no body
 // (Network.getResponseBody "No data found ..."; Playwright's hint about navigation is generic).
@@ -649,7 +649,7 @@ function liveSelectionFixture(){
     const {performance}=require('node:perf_hooks'),{chromium}=require('playwright');
     const oracle=JSON.parse(process.env.WSTX_SELECTION_EXPECTED),token=process.env.WSTX_SELECTION_TOKEN;
     assert.ok(oracle.ft8&&oracle.ft4&&token,'both independent mode oracles and authentication are mandatory');
-    // #80: an unshaped TLS connection; the link budget is judged from the link byte log (TC-080-001).
+    // An unshaped TLS connection; the link budget is judged from the link byte log (TC-080-001).
     const port=await browserPort();
     process.stdout.write(`WSTX_SELECTION_PORT ${port}\n`);
     await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('real TLS fixture READY deadline')),15000);process.stdin.once('data',data=>{clearTimeout(timeout);if(data.toString().trim()==='READY')resolve();else reject(new Error('invalid real TLS fixture handshake'));});});
@@ -659,10 +659,10 @@ function liveSelectionFixture(){
     const waitUntil=async deadline=>{while(performance.now()<deadline)await sleep(Math.max(1,Math.ceil(deadline-performance.now())));};
     const save=async()=>{await fs.mkdir('test-results/radio-selection',{recursive:true});await fs.writeFile('test-results/radio-selection/live-link.json',JSON.stringify(report,null,2));};
     let activePhase=null;
-    // #102: the Thin and Off windows, and the one under way (from its profile switch to its end).
+    // The Thin and Off windows, and the one under way (from its profile switch to its end).
     const windows=[];let underWay=null;
-    // A failed run keeps its own copy: the next run (a gate rerun) overwrites live-link.json (#8).
-    // A Thin or Off phase that failed at any point prints its evidence (#102), from what Node holds;
+    // A failed run keeps its own copy: the next run (a gate rerun) overwrites live-link.json.
+    // A Thin or Off phase that failed at any point prints its evidence, from what Node holds;
     // its window ends at the failure, read before the browser close ends the sockets.
     failureHooks(hook=>t.after(hook),{now:()=>performance.now(),underWay:()=>underWay,close:()=>browser.close(),evidence:async()=>{
       if(!activePhase&&!underWay)return;
@@ -674,7 +674,7 @@ function liveSelectionFixture(){
       const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:900}});contexts.push(context);
       const page=await context.newPage();pages.push(page);
       const seen={selectionEvents:[],reads:[],profileBodies:[],receive:null,results:[],frames:[],active:0,maxActive:0,gestures:[],failures:[],http:[],sockets:[],transfers:[],wireFrames:[],subscriptionRequests:[],subscriptionAcks:[],navigations:[],abandonedBodies:[],staleRecords:[]};observations.push(seen);
-      // #102: each station-stale reaches Node as it happens, so it survives a failure before the cadence check.
+      // Each station-stale reaches Node as it happens, so it survives a failure before the cadence check.
       await page.exposeFunction('__wstxStaleRecord',record=>{seen.staleRecords.push(record);});
       page.on('framenavigated',frame=>{if(frame===page.mainFrame())seen.navigations.push({url:frame.url(),at:performance.now()});});
       const cdp=await context.newCDPSession(page),transfers=new Map();await cdp.send('Network.enable');
@@ -692,8 +692,8 @@ function liveSelectionFixture(){
       page.on('response',async response=>{
         const route=new URL(response.url()).pathname;
         if(route==='/recording.js'){seen.cadenceSource=await response.body();return;}
-        // On the starved cold link Chromium can report a /profile response whose body it no longer
-        // holds (the request then ends net::ERR_ABORTED). Keep the entry without a body, with how
+        // On the starved cold link Chromium can report a /profile response whose body it does not
+        // hold (the request then ends net::ERR_ABORTED). Keep the entry without a body, with how
         // the request ended, as evidence; the qualified segment below still requires every body.
         if(route==='/profile'&&response.status()===200){const entry={at:performance.now(),body:null};try{entry.body=await response.json();}catch(error){entry.bodyError=error.message;entry.finished=await response.finished().then(e=>e?String(e):'finished',e=>String(e));entry.failure=response.request().failure()?.errorText??null;}seen.profileBodies.push(entry);}
         const entry={route,status:response.status(),at:performance.now(),bodyBytes:null,contentEncoding:response.headers()['content-encoding']??null};seen.http.push(entry);
@@ -711,7 +711,7 @@ function liveSelectionFixture(){
       // The link has one FIFO bottleneck per direction: while the other browser's cold assets are
       // queued, this browser's 10 s authorization attempts can time out. The client retries a
       // timed-out step itself; only if every attempt fails ("Could not authenticate")
-      // does the operator press Connect securely again. Each such press is kept as evidence (#55).
+      // does the operator press Connect securely again. Each such press is kept as evidence.
       seen.loginRetries=[];
       for(;;){
         await page.locator('#token').fill(token,{timeout:coldRemaining()});await page.locator('#login button').click({timeout:coldRemaining()});
@@ -726,7 +726,7 @@ function liveSelectionFixture(){
       await page.locator('#operating-band:enabled').waitFor({timeout:coldRemaining()});seen.operatingObserved=performance.now();
       await page.locator('#open-server-settings').click({timeout:coldRemaining()});await page.selectOption('#display-profile','thin',{timeout:coldRemaining()});await page.locator('#tab-expert').click({timeout:coldRemaining()});
       assert.equal(await page.locator('#display-profile').inputValue({timeout:coldRemaining()}),'thin');seen.thinConfigured=performance.now();
-      // The cold load ends with the log and contact clients, loaded after the first snapshots (#37).
+      // The cold load ends with the log and contact clients, loaded after the first snapshots.
       await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:coldRemaining()});seen.clientsLoaded=performance.now();coldRemaining();
     }));}
     catch(error){
@@ -739,13 +739,13 @@ function liveSelectionFixture(){
       assert.deepEqual(observations[index].navigations.map(n=>n.url),[origin+'/'],'one main-frame navigation (the goto): the client never navigates or reloads');
       // The qualified segment starts once the page has no Cold-load selection read in flight. On the
       // starved cold link both browsers' cold loads can overlap (e.g. after the client retried a
-      // timed-out login step itself, #22), so a read can still be queued behind contact.js when the
+      // timed-out login step itself), so a read can still be queued behind contact.js when the
       // clients arrive; its page timeout would then end just inside the segment. The baseline still
-      // refuses every abort that ends after it (#8, supersededColdRead).
+      // refuses every abort that ends after it (supersededColdRead).
       // It also starts only on an established status socket: on the starved link a page can
       // still be reconnecting after a Cold-load socket closed (its last socket closed and the
       // next not yet created), and a baseline taken then counts the reconnect as a new socket
-      // inside the segment (#8, harness#28). The page's current socket must be open, connected
+      // inside the segment. The page's current socket must be open, connected
       // and the one the selection reads were synchronized on.
       await page.waitForFunction(()=>connection.dataset.state==='connected'&&socket?.readyState===WebSocket.OPEN&&operatingSocket===socket&&!operatingReadPending&&!operatingReadAgain,null,{timeout:coldRemaining()});
       const socketBaseline={index:observations[index].sockets.length-1,count:observations[index].sockets.length,at:performance.now(),end:null};
@@ -754,7 +754,7 @@ function liveSelectionFixture(){
         const snapshot=action=>{events.push({at:performance.timeOrigin+performance.now(),action,epoch:operatingEpoch,connected:connection.dataset.state==='connected',sameSocket:socket===initialSocket&&socket.readyState===WebSocket.OPEN,profile_id:profileData.profile_id,boot_id:profileData.boot_id,profile_revision:profileData.revision,acceptedSequence:operatingState?.snapshot_sequence??null});};
         snapshot(false);
         addEventListener('station-ready',()=>snapshot(false));addEventListener('station-stale',()=>snapshot(false));
-        // #102: the stale's path, the page's silence, a pending deferred download, the ended socket's state and the authorization state.
+        // The stale's path, the page's silence, a pending deferred download, the ended socket's state and the authorization state.
         addEventListener('station-stale',event=>{const at=Date.now();window.__wstxStaleRecord({at,path:event.detail?.path??null,silenceMs:at-lastMessage,deferredPending:deferredDownloads>0,socketState:socket?.readyState??null,authorization:authorization?.snapshot().state??null});});
         // Bubble after the source handler's synchronous epoch increment. This
         // observes only the two existing selections; it does not wrap fetch.
@@ -768,7 +768,7 @@ function liveSelectionFixture(){
       const deadline=performance.now()+12000;while(!seen.reads.slice(before).some(r=>r.ended!==null&&r.body?.v===1)){assert.ok(performance.now()<deadline,'actual explicit operating read completed');await sleep(20);}
       // A click during a read in flight is coalesced into a follow-up read (operatingReadAgain),
       // and Node may see that read only after `before`. The operator acts once the page has no
-      // selection read pending, so the next action cannot make the page discard its own read (#8).
+      // selection read pending, so the next action cannot make the page discard its own read.
       await pages[index].waitForFunction(()=>!operatingReadPending&&!operatingReadAgain,null,{timeout:Math.max(1,Math.ceil(deadline-performance.now()))});
     };
     async function command(action,value,mode,hz){
@@ -816,7 +816,7 @@ function liveSelectionFixture(){
       for(const [index,page]of pages.entries()){const after=performance.now();if(!await page.locator('#settings-drawer').isVisible())await page.locator('#open-server-settings').click();await page.selectOption('#display-profile',profile);await page.locator('#tab-expert').click();if(profile==='off'){const deadline=performance.now()+10000;let ack;while(!(ack=correlatedOffAck(observations[index].subscriptionRequests,observations[index].subscriptionAcks,after))){assert.ok(performance.now()<deadline,'actual correlated Off acknowledgement');await sleep(10);}offProofs.push(ack);report.offAcknowledgements=[...offProofs];await save();assertOffAckDeadline(ack);}}
       await sleep(500);const start=performance.now();phaseWindow.start=start;const readStarts=observations.map(o=>o.reads.length),frameStarts=observations.map(o=>o.frames.length),latencies=[];
       activePhase=profile;report.phases[profile]={state:'running',startedUtc:new Date().toISOString()};await save();console.log(`Actual ${profile} workload started`);
-      // #80: the window is as long as its gestures need: the two commands, a status refresh of each
+      // The window is as long as its gestures need: the two commands, a status refresh of each
       // browser every 5.5 s while they run (at least one), no padding.
       let done=false;
       const status=async()=>{for(let n=1;n===1||!done;n++){await waitUntil(start+n*5500);await Promise.all(pages.map(async page=>{const previous=await page.locator('#updated').textContent(),began=performance.now();await refreshStatus(page);await page.waitForFunction(value=>document.querySelector('#updated').textContent!==value,previous,{timeout:2000});const ms=performance.now()-began;assert.ok(ms<=2000,`actual ${profile} visible status ${ms}ms`);latencies.push(ms);}));}};
@@ -868,7 +868,7 @@ function liveSelectionFixture(){
       if(profile==='thin')assert.ok(polling.every(p=>p.frames>0),'real optional live spectrum was present, not an idle body-size exercise');
       if(profile==='off'){assert.equal(offProofs.length,2);for(const [index,ack]of offProofs.entries()){assert.ok(ack.ackAt<=start);assert.deepEqual(optionalAfterOff(observations[index].wireFrames,ack),[],'no optional frame after its correlated Off ACK');assert.equal(polling[index].frames,0,'no optional spectrum during actual Off window');}}
       report.phases[profile]={...report.phases[profile],state:'passed',seconds,statusMs:latencies,polling,commands,endedUtc:new Date().toISOString()};activePhase=null;await save();console.log(`Actual ${profile} workload completed ${seconds.toFixed(3)}s`);
-      // #102: the window's bounds on the UTC clock of the station's socket records, in every run.
+      // The window's bounds on the UTC clock of the station's socket records, in every run.
       phaseWindow.end=performance.now();underWay=null;console.log('WSTX_SELECTION_WINDOW '+JSON.stringify(evidenceWindow(performance.timeOrigin,phaseWindow)));
     }
     await measure('thin',[['mode','ft4','ft4',7047500],['band','20m','ft4',14080000]]);

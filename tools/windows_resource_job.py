@@ -57,7 +57,7 @@ ORDINARY_ARGV = (
     "--message-format=json", "--", "--test-threads=1", "--skip", MATRIX,
 )
 CASES = {"matrix": MATRIX, "busy": BUSY}
-# #36: the decoder_signal matrix re-measures a configuration whose 50 ms CPU quantum
+# The decoder_signal matrix re-measures a configuration whose 50 ms CPU quantum
 # was not established up to this many attempts (RESOURCE_QUALIFICATION_ATTEMPTS).
 QUALIFICATION_ATTEMPTS = 3
 CPU_QUANTUM_WALL_SECONDS = 0.050
@@ -836,7 +836,7 @@ def run_case(receipt_path, case, root):
 
 
 def report_outcome(evidence, ordinary_gate, stream=None):
-    """Exit status of a complete owned run (#36).
+    """Exit status of a complete owned run.
 
     A qualified run is 0. An inconclusive matrix (some configuration's CPU quantum
     still unmeasured after the bounded re-qualification) is reported visibly; the

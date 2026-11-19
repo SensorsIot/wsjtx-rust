@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! #44 CL-044-12/13 the Tx audio level: a digital attenuation of our Tx audio, stored per
+//! CL-044-12/13 the Tx audio level: a digital attenuation of our Tx audio, stored per
 //! radio profile in its own file (a level change never advances the profile revision,
 //! which would reconnect CAT). "Set level" is the default way to set it: it runs Tune,
 //! steps the level up until the radio's ALC first rises, backs off one step, stores it
@@ -78,7 +78,7 @@ pub(crate) fn assistant_step(level: i32, meters: &Meters, limit: Option<u8>) -> 
 }
 
 /// CL-044-14 ALC above this lowers the level. Onset reads 4-7 and ALC moves about 6 per dB
-/// (live 2026-11-06), so the level one step above Set level's stop stays inside it.
+/// (measured on the station), so the level one step above Set level's stop stays inside it.
 pub(crate) const ALC_LIMIT_RAW: u16 = 10;
 /// CL-044-14 ALC at or above this counts for the warning: half the ALC zone (0120 is its
 /// top). Lowering from the limit up to here is routine and shows no entry.
@@ -212,7 +212,7 @@ impl Owner {
         }
         METER_READ_MAX_MS
     }
-    /// Test seam only (#87): every meter read of this owner takes `bound` instead.
+    /// Test seam only: every meter read of this owner takes `bound` instead.
     #[cfg(test)]
     pub(crate) fn set_read_bound(&self, bound: Duration) {
         self.lock().read_bound = Some(bound);

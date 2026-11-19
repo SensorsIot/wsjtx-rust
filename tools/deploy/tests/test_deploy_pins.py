@@ -1,6 +1,6 @@
 """The deploy pins of harness/project/docs/Project-Specifics.md (section Deploy pins).
 
-Acceptance item 2 of #171: the mechanism files are versioned with -text and each pin is the
+The mechanism files are versioned with -text and each pin is the
 SHA-256 of its blob; TC-171-02 (i): a checkout or export with CRLF settings holds the blob's bytes.
 The oracle is git itself: the blob of HEAD and git archive under core.autocrlf=true.
 """

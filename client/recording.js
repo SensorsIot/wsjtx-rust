@@ -97,7 +97,7 @@ for(const [name,legendText,ids] of [['radio','CAT &#10227;',['control-mode','con
 document.querySelector('#settings-save').textContent='Apply ⟳';
 radioSection.append(profilePanel);
 const catSettings=block('settings-cat','CAT receive-only confirmation',radioSection);
-// #44 CL-044-08: one Audio section; the selects belong to the profile form (Apply ⟳), their values are endpoint IDs.
+// CL-044-08: one Audio section; the selects belong to the profile form (Apply ⟳), their values are endpoint IDs.
 const audioSettings=block('settings-audio','Audio &#10227;',radioSection,'<div class="op-audio-input"></div><div class="op-input-meter"><span>Rx level <strong>Unknown</strong></span><div></div></div><div class="op-audio-output"></div><div id="tx-level" hidden><p><button type="button" id="tx-level-set">Set level</button> <span id="tx-level-line" role="status"></span></p><p id="tx-meters" class="op-muted" role="status" hidden></p><label id="tx-level-manual" hidden>Tx level (no ALC over CI-V) <input id="tx-level-slider" type="range" min="-40" max="0" step="1"></label></div><p id="audio-recommend" hidden><span id="audio-recommend-text"></span> <button type="button" id="audio-use-radio">Use IC-7300 audio</button></p><p id="audio-list-status" class="op-muted" role="status"></p>');
 for(const [id,slot] of [['audio-input','.op-audio-input'],['audio-output','.op-audio-output']]){const select=document.getElementById(id);select.setAttribute('form','settings');audioSettings.querySelector(slot).append(select.closest('label'));}
 for(const type of ['input','change'])audioSettings.addEventListener(type,event=>{if(event.target.form===serverForm)serverForm.dispatchEvent(new Event(type));});
@@ -119,8 +119,8 @@ localPreferences.innerHTML='<label>Waterfall link <select id="display-profile"><
 panel.append(document.querySelector('#signal-meta'));
 displaySettings.append(localPreferences);
 // WstxBandActivityPane::Highlight: WSJT-X 3.3 DecodeHighlightingModel slots in its priority order;
-// only interesting stations are coloured (operator 2026-11-03, unlike WSJT-X: no CQ slot, New call on by default).
-// A slot without data (cty.dat flags #55; grids, LotW) stays inactive until a record carries it. Worked before: none.
+// only interesting stations are coloured (unlike WSJT-X: no CQ slot, New call on by default).
+// A slot without data (cty.dat flags; grids, LotW) stays inactive until a record carries it. Worked before: none.
 const bandSlots=[['mycall','My call',true],['new_continent','New continent',true],['new_continent_band','New continent on band',true],['new_cq_zone','New CQ zone',true],['new_cq_zone_band','New CQ zone on band',true],['new_itu_zone','New ITU zone',false],['new_itu_zone_band','New ITU zone on band',false],['new_dxcc','New DXCC',true],['new_dxcc_band','New DXCC on band',true],['new_grid','New grid',false],['new_grid_band','New grid on band',false],['new_call','New call',true],['new_call_band','New call on band',true],['lotw','LotW user',false]];
 const bandFlags=bandSlots.map(([k])=>k).filter(k=>k.startsWith('new_'));
 const bandColours=document.createElement('fieldset');bandColours.id='band-colours';bandColours.className='op-server-fieldset';
@@ -191,7 +191,7 @@ function restoreDisplayPreference(){
   profileSelect.value=['detail','thin','off'].includes(saved)?saved:defaultDisplayProfile();
 }
 restoreDisplayPreference();
-// #54 WstxSignalArea::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal
+// WstxSignalArea::DisplayLevels: a fixed dBFS-to-colour mapping (WSJT-X Wide Graph): no level follows the signal
 // over time. displayBlack is the fixed -85 dBFS reference; nothing in this page changes it.
 let displayBlack=DisplayLevels.REFERENCE_DBFS, displayRange=FrontendConfig.RANGE_DB, flatten=FrontendConfig.FLATTEN, spectrumLine=FrontendConfig.SPECTRUM_LINE, selectedBin=0, selectedRow=0, pointerColumn=null, pointerTime=null, sensitivity=FrontendConfig.SENSITIVITY_DB, speed=FrontendConfig.SPEED, fallbackText='', detailRequest;
 try{const saved=Number(localStorage.getItem('wstx.waterfall-speed.v1'));if(saved>=.5&&saved<=8&&Number.isInteger(2*saved))speed=saved;}catch{}
@@ -252,7 +252,7 @@ function split(value) {
   const minimum=Math.max(160,Math.ceil(signalText+60));
   main.style.minHeight=`${minimum+228+otherHeight}px`;
   const available = Math.max(minimum+228,main.clientHeight-otherHeight)-splitter.offsetHeight, maximum = available-200;
-  upper = Math.max(minimum,Math.min(maximum,value ?? Math.min(330,available-490))); // #37: room for the fixed QSO pane (12 dialogue rows), Control and error field
+  upper = Math.max(minimum,Math.min(maximum,value ?? Math.min(330,available-490))); // Room for the fixed QSO pane (12 dialogue rows), Control and error field
   signal.style.height = `${upper}px`;
   for (const [name,value] of [['min',minimum],['max',maximum],['now',Math.round(upper)]]) splitter.setAttribute(`aria-value${name}`,String(value));
   paint();
@@ -266,7 +266,7 @@ splitter.addEventListener('pointermove',event => {if (splitter.hasPointerCapture
 addEventListener('resize',() => split(upper));
 const textLayoutObserver=new ResizeObserver(()=>split(upper));
 for(const node of [stationBar,strip,document.querySelector("#frequency-ruler"),document.querySelector("#level-legend")])textLayoutObserver.observe(node); split();
-// #61 CL-061-05: a run of Tx rows takes one thin band of this height, whatever its source time.
+// CL-061-05: a run of Tx rows takes one thin band of this height, whatever its source time.
 const TX_BAND_CSS_PX=4;
 function timeProjection(H=waterfall.height,C=waterfall.getBoundingClientRect().height){
   const groups=Array(H),T=(rows.at(-1)?.end_frame??0)/12000,scale=10*speed*H/Math.max(C,1),txRuns=[];
@@ -357,7 +357,7 @@ function paint() {
             const group=projection.groups[y],key=group?group.join(','):'none';
             if(key!==previous){
               previous=key;line=new Uint8ClampedArray(W*4);const native=group?groupLevels(...group,B):null,values=native?project(native):null;
-              // #61 CL-061-04: rows of a Tx period are Tx rows, never received silence.
+              // CL-061-04: rows of a Tx period are Tx rows, never received silence.
               if(group&&rows.slice(rows.length-1-group[1],rows.length-group[0]).some(r=>r.tx)){for(let x=0;x<W;x++)line.set([90,20,30,255],x*4);}
               else if(!values){for(let x=0;x<W;x++)line.set(group?[96,96,96,255]:[0,0,12,255],x*4);}
               else for(let k=0;k<values.length;k++){
@@ -375,7 +375,7 @@ function paint() {
         const ruler=document.querySelector('#time-ruler');ruler.replaceChildren();
         if(last){
           const latest=projection.T,times=[latest];let previousY=0;
-          // #61 CL-061-05: no label inside a collapsed Tx run; the times beyond it stay exact.
+          // CL-061-05: no label inside a collapsed Tx run; the times beyond it stay exact.
           for(let t=Math.floor(latest/5)*5;t>=Math.max(0,latest-projection.capacity-projection.elided);t-=5){if(projection.txRuns.some(run=>t<run.end&&t>run.first))continue;const y=projection.rowOf(t)/devicePixelRatio;if(y-previousY>=16){times.push(t);previousY=y;}}
           for(const t of times){const label=document.createElement('span');label.textContent=`${t.toFixed(1)}s`;label.style.top=`${projection.rowOf(t)/devicePixelRatio}px`;ruler.append(label);}
         }
@@ -423,10 +423,10 @@ async function sync(current=socket) {
   const authEpoch=authorization?.snapshot().epoch;
   try {
     const data=await request('/recording');if(!stationContext(current,authEpoch)) return;
-    // #74 PushedStationState: a reply of another boot than the browser's is discarded.
+    // PushedStationState: a reply of another boot than the browser's is discarded.
     if(profileData&&data.boot_id!==profileData.boot_id)return;
     const previousImport=snapshot?.import?.id,previousGeneration=snapshot?.generation;
-    if(identity(data)!==identity(snapshot)&&!(data.job?.kind==='live'&&snapshot?.job?.kind==='live'&&data.boot_id===snapshot.boot_id)){rows=[];resetLevels();paint();}snapshot=data; // #61: receiveSync decides a live identity change
+    if(identity(data)!==identity(snapshot)&&!(data.job?.kind==='live'&&snapshot?.job?.kind==='live'&&data.boot_id===snapshot.boot_id)){rows=[];resetLevels();paint();}snapshot=data; // receiveSync decides a live identity change
     if(data.job?.kind!=='live'&&live?.job){live=undefined;resultRows=[];resultView=null;activityHistory=[];renderResults();receiveShow();}
     if(previousImport && !data.import && previousGeneration===data.generation){
       try{const outcome=await request(`/recording/imports/${previousImport}`);if(!stationContext(current,authEpoch))return;importOutcome={...outcome,generation:data.generation};}catch{if(current===socket)progress.textContent='Import outcome unavailable · current source state refreshed';}
@@ -471,7 +471,7 @@ addEventListener('station-message',event => {
   if(!f||!context||!['running','completed'].includes(context.job?.state)||f.boot_id!==context.boot_id||f.generation!==context.generation||f.job_id!==context.job?.id||f.source_id!==context.job?.source_id)return;
   if(Object.keys(message).sort().join(',')!=='data,type,v'||message.v!==1){stationData('waterfall',false);return;}
   const keys=['boot_id','source_id','job_id','generation','sequence','first_frame','end_frame',detail?'levels_b64':'levels'].sort().join(',');
-  // #61 CL-061-04: a live row of a Tx period carries tx true.
+  // CL-061-04: a live row of a Tx period carries tx true.
   if(Object.keys(f).filter(k=>!(k==='tx'&&f.tx===true&&currentLive)).sort().join(',')!==keys){stationData('waterfall',false);return;}if(!Number.isSafeInteger(f.sequence)||f.sequence<0||(!currentLive&&f.sequence>=cap)||!Number.isSafeInteger(f.first_frame)||!Number.isSafeInteger(f.end_frame)||f.first_frame!==f.sequence*interval||f.end_frame<=f.first_frame)return;
   if(currentLive ? f.end_frame!==f.first_frame+interval : (!snapshot.recording||f.first_frame>=snapshot.recording.frames||f.end_frame!==Math.min(f.first_frame+interval,snapshot.recording.frames)))return;
   let values=f.levels;
@@ -481,9 +481,9 @@ addEventListener('station-message',event => {
   }
   if((!detail&&!Array.isArray(values))||values.length!==B||!values.every(q=>Number.isInteger(q)&&q>=0&&q<=120))return;
   const previous=rows.at(-1)?.sequence??-1;if(f.sequence<=previous)return;
-  // #54: live Thin is paced to one row per 2 s, so one or two missing sequences are drawn with the next row (held); longer runs are real gaps.
+  // Live Thin is paced to one row per 2 s, so one or two missing sequences are drawn with the next row (held); longer runs are real gaps.
   const held=!detail&&currentLive&&previous>=0&&f.sequence-previous<=3;
-  // #61 CL-061-05: a row missing between two Tx rows of one Tx period is a Tx row, not a grey gap.
+  // CL-061-05: a row missing between two Tx rows of one Tx period is a Tx row, not a grey gap.
   const txGap=f.tx===true&&(held||(rows.at(-1)?.tx===true&&f.first_frame-rows.at(-1).end_frame<=90000));
   for(let sequence=Math.max(previous+1,f.sequence-cap+1);sequence<f.sequence;sequence++)rows.push({sequence,first_frame:sequence*interval,end_frame:currentLive?(sequence+1)*interval:Math.min((sequence+1)*interval,snapshot.recording.frames),levels:held?Uint8Array.from(values):null,held,tx:txGap});
   const row={...f,levels:Uint8Array.from(values),tx:f.tx===true};stationData('waterfall',true);rows.push(row);rows=rows.slice(-cap);paint();
@@ -542,14 +542,14 @@ let catStatus=null,catPending=false,catAgain=false,catConfirming=false;
 let receiveMutationEpoch=0,liveRevision=0,resultView=null,activityHistory=[],ownReceiveMutationAt=-Infinity,liveOperatingRevision=null,liveEventAt=-Infinity;
 let lastReceiveReady=null;
 let activitySortProfile=null,activitySortField=FrontendConfig.SORT_FIELD,activitySortDirection=FrontendConfig.SORT_DESCENDING?'desc':'asc';
-const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||liveFailed||resultsAnnounced!==null||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // #57 CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
+const liveIdentity=s=>s?`${s.profile_id}/${s.boot_id}/${s.source?.id??''}/${s.job?.id??''}/${s.generation}`:'';const resultsUnread=()=>resultFailed||liveFailed||resultsAnnounced!==null||(!!resultView&&resultCursor<resultView.next_sequence)||(Number.isSafeInteger(live?.job?.next_sequence)&&live.job.next_sequence>resultCursor)||(!!live?.job?.latest_decode&&live.job.latest_decode.id!==resultView?.id);const resultsDue=()=>profileSelect.value==='detail'&&!resultFailed&&!!resultView&&resultCursor<resultView.next_sequence; // CL-057-01: Detailed fetches a published view's records at once, page after page; the next page follows a page that moved the cursor; Thin/Off, the idle poll and a failed read stay at most once/4 s.
 const receiveStatus=document.querySelector('#receive-status');
 function validPeriodTime(value,mode){
   return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}Z$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(Date.parse(value)).toISOString().slice(0,19)===value.slice(0,19)&&(value.endsWith('.0000000Z')||(mode==='ft4'&&value.endsWith('.5000000Z')))&&Date.parse(value)%(mode==='ft8'?15000:7500)===0;
 }
 function validLatestDecode(view,mode,end){
   if(view===null)return true;
-  // #61 CL-061-04: a Tx period carries transmitted true (no attempt: an empty range, not complete).
+  // CL-061-04: a Tx period carries transmitted true (no attempt: an empty range, not complete).
   return view&&Object.keys(view).filter(k=>!(k==='transmitted'&&view.transmitted===true&&view.period_start_utc!==null&&!view.complete&&view.first_sequence===view.next_sequence)).sort().join(',')==='complete,first_sequence,id,next_sequence,period_start_utc'&&
     ['id','first_sequence','next_sequence'].every(k=>Number.isSafeInteger(view[k])&&view[k]>=0)&&view.id>0&&
     view.first_sequence<=view.next_sequence&&view.next_sequence<=end&&typeof view.complete==='boolean'&&
@@ -558,7 +558,7 @@ function validLatestDecode(view,mode,end){
 function applyLatestDecode(view,first){
   if(resultView&&view&&view.id<resultView.id)return false;
   if(resultView&&view&&view.id===resultView.id){
-    // #47: a later window of the same correlated period extends its view in place (same id,
+    // A later window of the same correlated period extends its view in place (same id,
     // period and first_sequence): next_sequence only grows and complete only turns true. Keep
     // the rows and cursor; an older snapshot/page of that view is a prefix. Anything else is an error.
     const same=view.period_start_utc!==null&&view.period_start_utc===resultView.period_start_utc&&view.first_sequence===resultView.first_sequence;
@@ -569,10 +569,10 @@ function applyLatestDecode(view,first){
     return true;
   }
   if(resultView===null&&view===null)return true;
-  // #37/#57: only the latest even and odd periods; the replaced period stays below only when it is the other parity.
+  // Only the latest even and odd periods; the replaced period stays below only when it is the other parity.
   const parity=p=>p&&live?.job?Math.round(Date.parse(p)/(live.job.mode==='ft4'?7500:15000))%2:null;
   const other=parity(resultView?.period_start_utc)!==null&&parity(view?.period_start_utc)!==null&&parity(resultView.period_start_utc)!==parity(view.period_start_utc);
-  // #61 CL-061-03: the station's Tx period has nothing to show; the period kept below it stays.
+  // CL-061-03: the station's Tx period has nothing to show; the period kept below it stays.
   const transmitted=resultView?.transmitted===true;
   activityHistory=resultView===null?activityHistory.filter(h=>Date.parse(view?.period_start_utc??'')-Date.parse(h.period??'')===(live.job.mode==='ft4'?7500:15000)).slice(0,1):transmitted?activityHistory.slice(0,1):other&&resultRows.length?[{id:resultView.id,period:resultView.period_start_utc,mode:live.job.mode,context:liveIdentity(live),rows:[...resultRows]}]:[];
   resultView=view;resultRows=[];resultCursor=Math.max(first,view?.first_sequence??first);
@@ -639,7 +639,7 @@ function activityOrdering(records=resultRows){
   for(const th of document.querySelectorAll('#band-activity th[data-sort]'))th.setAttribute('aria-sort',th.dataset.sort===activitySortField?(activitySortDirection==='asc'?'ascending':'descending'):'none');
   const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
   const missing=v=>v===null||v===undefined||v==='';
-  return [...records].sort((a,b)=>{if(activitySortField==='value')return activityValue(a)-activityValue(b)||(missing(a.snr_db)!==missing(b.snr_db)?(missing(a.snr_db)?1:-1):missing(a.snr_db)?0:b.snr_db-a.snr_db)||a.sequence-b.sequence;// #55 CL-055-04: value, strongest SNR (unavailable last), decode order
+  return [...records].sort((a,b)=>{if(activitySortField==='value')return activityValue(a)-activityValue(b)||(missing(a.snr_db)!==missing(b.snr_db)?(missing(a.snr_db)?1:-1):missing(a.snr_db)?0:b.snr_db-a.snr_db)||a.sequence-b.sequence;// CL-055-04: value, strongest SNR (unavailable last), decode order
     const left=key(a),right=key(b);
     if(missing(left)!==missing(right))return missing(left)?1:-1;
     const compared=missing(left)?0:typeof left==='number'?left-right:left<right?-1:left>right?1:0;
@@ -657,7 +657,7 @@ function renderResults(){
   const ordered=activityOrdering(resultRows);
   const body=document.querySelector('#band-activity tbody');
   const loading=resultView&&resultCursor<resultView.next_sequence;
-  // #61 CL-061-03: the station's Tx period (CL-061-04) shows its marker row and no empty block;
+  // CL-061-03: the station's Tx period (CL-061-04) shows its marker row and no empty block;
   // the receive period it replaced stays below its divider.
   const own=resultView?.transmitted===true,mode=live?.job?.mode;
   document.querySelector('#band-activity header .op-muted').textContent=own?`Tx \u00b7 ${mode?.toUpperCase()} period ${periodLabel(resultView.period_start_utc,mode)} UTC \u00b7 this station transmitted, no decode`:resultView?
@@ -686,7 +686,7 @@ function renderResults(){
   for(const record of ordered)body.append(activityRow(record,'latest',liveIdentity(live),live.job.mode));
   window.wstxRenderHistory?.(body);partnerFirst(body);
 }
-// #50 CL-050-08: the partner rows of every shown period go to the top, newest period first, above one
+// CL-050-08: the partner rows of every shown period go to the top, newest period first, above one
 // red stripe; a period divider left without rows is dropped.
 function partnerFirst(body){
   const rows=[...body.querySelectorAll('tr.ba-partner')];if(!rows.length)return;
@@ -698,9 +698,9 @@ function activityRow(record,period,context,mode){
   const labels=[...document.querySelectorAll('#band-activity th')].map(th=>th.textContent);
   const row=document.createElement('tr');row.setAttribute('role','row');row.dataset.resultId=`${context}/${record.sequence}`;row.dataset.sequence=String(record.sequence);row.dataset.period=period;
   const f=record.fields,decoded=record.status==='decoded',to=recordTo(f),my=(profileData?.settings?.callsign??'').trim().toUpperCase();
-  // #50 BandActivityColours: the slots this row matches; the new_* slots from the #55 record flags of
-  // every decoded sender (operator decision CL-055-04; WSJT-X: CQ/QRZ lines only). No CQ slot (#50).
-  // #50 CL-050-08 BandActivityScheme (operator 2026-11-04): the QSO partner's rows carry the partner
+  // BandActivityColours: the slots this row matches; the new_* slots from the record flags of
+  // every decoded sender (CL-055-04; WSJT-X: CQ/QRZ lines only). No CQ slot.
+  // CL-050-08 BandActivityScheme: the QSO partner's rows carry the partner
   // marker and no slot; a row to my call from another station is red as a whole; a CQ/QRZ of interest
   // is coloured as a whole; any other row of interest colours only its sender's call.
   const from=decoded?recordFrom(f)?.replace(/^<(.+)>$/,'$1').toUpperCase()??null:null,partner=window.wstxPartner?.()??null,isPartner=!!(partner&&from===partner);
@@ -710,7 +710,7 @@ function activityRow(record,period,context,mode){
   else if(decoded&&my&&to===my){row.classList.add('ba-tome');hl.push('mycall');}
   const cqLike=/^(CQ|QRZ)\b/.test(record.text)||(f?.type==='nonstandard'&&f.cq);
   const senderOnly=hl.length>0&&!row.classList.contains('ba-tome')&&!cqLike;
-  // #37 (operator 2026-11-04): a row of a QSO between others cannot start a contact for me.
+  // A row of a QSO between others cannot start a contact for me.
   if(from)row.dataset.sender=from;
   if(from&&!cqLike&&to!==my)row.dataset.foreign='true';
   if(senderOnly)row.classList.add('ba-sender');
@@ -726,7 +726,7 @@ function activityRow(record,period,context,mode){
       // The sender's call word (also in < >) of a sender-only row is its own span; the text stays the message.
       const words=text.split(' '),at=senderOnly&&from?[...words.keys()].sort((a,b)=>(a===0)-(b===0)).find(i=>words[i].replace(/^<(.+)>$/,'$1').toUpperCase()===from):undefined;
       if(at!==undefined){const mark=document.createElement('span');mark.className='ba-from';mark.textContent=words[at];cell.replaceChildren(words.slice(0,at).map(w=>w+' ').join(''),mark,words.slice(at+1).map(w=>' '+w).join(''));}
-      // #56: WSJT-X's a-priori marker (aN), shown after the message but not part of its text.
+      // WSJT-X's a-priori marker (aN), shown after the message but not part of its text.
       if(decoded&&Number.isInteger(record.a_priori)){cell.dataset.ap=`a${record.a_priori}`;cell.title=`A-priori decode (WSJT-X a${record.a_priori})`;}}
     if(index===5&&dx)cell.title=`${dx.name} \u00b7 ${dx.cont} \u00b7 CQ zone ${dx.cq} \u00b7 ITU zone ${dx.itu} (cty.dat)`;if(index===6&&approx)cell.title='Approximate: from the country position (cty.dat), no grid in the message';
     row.append(cell);
@@ -745,7 +745,7 @@ function validRecord(r){
 }const FLAG_NAMES=['new_call','new_call_band','new_grid','new_grid_band','new_dxcc','new_dxcc_band','new_continent','new_continent_band','new_cq_zone','new_cq_zone_band','new_itu_zone','new_itu_zone_band'];function validDxcc(d){return !!d&&typeof d==='object'&&!Array.isArray(d)&&Object.keys(d).every(k=>['name','cont','cq','itu','km'].includes(k))&&typeof d.name==='string'&&/^[\x20-\x7e]{1,40}$/.test(d.name)&&['AF','AN','AS','EU','NA','OC','SA'].includes(d.cont)&&Number.isInteger(d.cq)&&d.cq>=0&&d.cq<=40&&Number.isInteger(d.itu)&&d.itu>=0&&d.itu<=90&&(d.km===undefined||(Number.isInteger(d.km)&&d.km>=0&&d.km<=20038));}function validFlags(f){return !!f&&typeof f==='object'&&!Array.isArray(f)&&Object.keys(f).length>0&&Object.entries(f).every(([k,v])=>FLAG_NAMES.includes(k)&&v===true);}
 async function receiveResults(){
   if(resultPending||livePending||mutationPending||uncertainMutation||operatingReadPending||operatingBlocked()||refresh.disabled||connection.dataset.state!=='connected'||!live?.source||!['ft4','ft8'].includes(live.job?.mode))return;
-  // #10 PushedStationState: Thin/Off read records of an announced or unread view at most once
+  // PushedStationState: Thin/Off read records of an announced or unread view at most once
   // per 4 s; with nothing announced or pending they wait for receive.state (the station pushes
   // each publication) and keep only a safety read at most once per 30 s.
   const now=performance.now();if(now-lastResultStart<(resultsDue()?0:resultsUnread()?4000:30000))return;
@@ -795,7 +795,7 @@ async function receiveStop(){
   catch(error){receiveMutationEpoch++;uncertainMutation=true;receiveFailure=`Stop outcome unknown · ${error.message} · refresh before another action`;}
   finally{mutationPending=false;receiveShow();}
 }
-// #44 CL-044-08: the pickers name the endpoints (GET /audio/endpoints); the ID is only a hover title and in Expert.
+// CL-044-08: the pickers name the endpoints (GET /audio/endpoints); the ID is only a hover title and in Expert.
 let audioView=null,audioRead=-Infinity,audioLoading=null,audioRevision=null;
 const audioIds=document.createElement('dl');audioIds.id='audio-endpoint-ids';audioIds.innerHTML='<div><dt>Input</dt><dd id="audio-id-input">none</dd></div><div><dt>Output</dt><dd id="audio-id-output">none</dd></div>';
 secondary('audio-ids','Audio endpoint IDs',audioIds,expertSection).open=true;
@@ -1101,7 +1101,7 @@ document.querySelector('#cat-confirm-button').addEventListener('click',async()=>
   }catch(error){result.textContent=`Confirmation not recorded · ${error.message}`;}
   finally{catConfirming=false;catSync();}
 });
-// #44 CL-044-06 Settings > Radio "Detect radio": one request per button press, no polling.
+// CL-044-06 Settings > Radio "Detect radio": one request per button press, no polling.
 // Detection writes nothing; "Use this setup" only fills the Radio form, which the operator
 // applies with Apply (restart receive) and then the receive-only confirmation above.
 const detectSection=block('settings-detect','Detect radio',radioSection,'<p class="op-muted">Detection opens only USB radio bridges (Silicon Labs CP210x) that this station\'s CAT does not hold, reads the CI-V ID and the IC-7300 menu, and writes nothing.</p><p id="discovery-state" class="op-muted" role="status">Radio discovery on start is off until confirmed once: tick the line below and press Detect radio.</p><label class="receive-only-verification"><input type="checkbox" id="detect-ack">USB SEND and USB keying (CW/RTTY) are OFF or the radio is on a dummy load; opening a port can pulse DTR/RTS, also on other CP210x boards</label><p class="op-actions"><button type="button" id="detect-run" disabled>Detect radio</button></p><p id="detect-result" role="status">Not run</p><div id="detect-proposal" hidden><dl id="detect-fields"></dl><p class="op-actions"><button type="button" id="detect-use">Use this setup</button></p></div><div id="detect-settings" hidden><h4>IC-7300 settings</h4><ul id="detect-items"></ul><p class="op-actions"><button type="button" id="radio-settings-apply" disabled>Apply recommended radio settings</button><button type="button" id="radio-settings-undo" disabled>Undo radio settings</button></p><p id="radio-settings-result" role="status"></p></div>');
@@ -1172,7 +1172,7 @@ async function radioSettings(action){
 detectEl('radio-settings-apply').addEventListener('click',()=>radioSettings('apply'));
 detectEl('radio-settings-undo').addEventListener('click',()=>radioSettings('undo'));
 radioSetupShow();
-// #44 CL-044-11 AGC is a Radio/CAT setting the station manages: shown only for a radio
+// CL-044-11 AGC is a Radio/CAT setting the station manages: shown only for a radio
 // with a known CI-V AGC command, saved with Apply ⟳, applied by the station over CI-V
 // (read, write only when it differs, read back) when CAT connects and on each FT8/FT4
 // selection. The read-back arrives as the server's radio.agc event; nothing is polled.
@@ -1210,7 +1210,7 @@ function validTxLevelEvent(d){
   return operatingShape(d,'profile_id,boot_id,managed,level_db,stored,alc,assistant,result,meters,power_limit_pct,warnings,keying_confirmed')&&typeof d.keying_confirmed==='boolean'&&Array.isArray(d.warnings)&&d.warnings.every(w=>typeof w==='string')&&typeof d.managed==='boolean'&&Number.isSafeInteger(d.level_db)&&typeof d.stored==='boolean'&&['unknown','available','unavailable'].includes(d.alc)&&
     typeof d.assistant==='boolean'&&(d.result===null||typeof d.result==='string')&&(d.power_limit_pct===null||Number.isSafeInteger(d.power_limit_pct))&&(m===null||operatingShape(m,'alc,po_pct,swr_x10')&&meter(m.alc)&&meter(m.po_pct)&&meter(m.swr_x10));
 }
-// #68 CL-068-01: the last pushed SWR at the end of the Rx/Tx strip, red above 2.0; display only.
+// CL-068-01: the last pushed SWR at the end of the Rx/Tx strip, red above 2.0; display only.
 const SWR_RED_ABOVE_X10=SwrValue.RED_ABOVE_SWR*10;
 function stripSwrShow(){
   const out=document.getElementById('strip-swr');if(!out)return;
@@ -1277,7 +1277,7 @@ function transmitShow(){
 // WstxStationLink::SocketProtocol / WstxTransmitControl::TransmitStatus: the browser holds
 // the transmit state from transmit.state: the socket's first event has every field, each later
 // one what changed. It does not read GET /transmit. Ages advance locally; HALT is enabled as
-// soon as the station is ready (#57).
+// soon as the station is ready.
 let transmitEventSocket=null;
 // WstxQsoControl::QsoState: this client is loaded before the socket opens and the
 // contact client is not, so the contact state from the events is held here: every field in the
@@ -1299,7 +1299,7 @@ function transmitApply(changed){
   for(const [key,value] of Object.entries(changed))view[key]=['transmit','watchdog'].includes(key)&&view[key]?{...view[key],...value}:value;
   transmitView=view;if('clock_measurement' in changed)transmitViewAt=performance.now();
 }
-// #92 CL-043-01 clock.state (every profile): the browser holds the station clock state from these
+// CL-043-01 clock.state (every profile): the browser holds the station clock state from these
 // events, without GET /clock and without a timer; the error field and the Clock line read it.
 let clockState=null;
 function clockSettingShow(){
@@ -1341,7 +1341,7 @@ document.documentElement.dataset.theme=FrontendConfig.THEME;try{const saved=JSON
 // browser's first recording and receive snapshots (or 20 s after the station is ready), so
 // their bytes never compete with the cold page, authorization or the first state reads on a
 // 32 kbit/s link (TC-009-005 and TC-010-002 bounds). Their downloads still hold the station's
-// messages behind them on that link, so app.js deferredDownload sets the silence bound (#8).
+// messages behind them on that link, so app.js deferredDownload sets the silence bound.
 let clientLoader=null;
 function clientsLoad(){
   if(clientLoader||document.querySelector('script[src="/logbook.js"]'))return;
@@ -1374,7 +1374,7 @@ function stationNoticeShow(){
 function stationData(kind,accepted){if(accepted===rejectedData.has(kind)){if(accepted)rejectedData.delete(kind);else rejectedData.add(kind);stationNoticeShow();}}
 addEventListener('station-updated',event=>{stationUpdate=event.detail;stationNoticeShow();});
 window.wstxStationData=stationData;
-// #61 CL-061-01: an unknown-loss source epoch of the same receive brings a fresh source, job and
+// CL-061-01: an unknown-loss source epoch of the same receive brings a fresh source, job and
 // generation (results from sequence 0, frames from 0) but is no new receive: loss_epochs grew
 // (it restarts at 0 with every receive start), same mode and input, no Start/Stop or band/mode
 // change. The display is kept then; anything else clears it.
@@ -1392,8 +1392,8 @@ function keepWaterfall(){
 
 // WstxBandActivityPane::Ordering (1 calling me .. 8 no flag; 2, the strategy
 // hits, is applied by the value view in contact.js) and BandActivityHover (title and aria-description).
-// #24 S1b: the call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
-// 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1 (#55).
+// The call a decoded message is addressed to, also as a filled-in hash <MYCALL> or the
+// 'to' call of a nonstandard i3=4 message; shared by the my-call colour and value 1.
 function recordTo(f){return f?.type==='nonstandard'?(f.cq?null:(f.hash_second?f.full_call:f.hashed_call)?.text??null):['call','hash'].includes(f?.to?.kind)?f.to.text:null;}
 // Its sender: the other call of a nonstandard i3=4 message (the full call of a CQ).
 function recordFrom(f){return f?.type==='nonstandard'?((!f.cq&&f.hash_second?f.hashed_call:f.full_call)?.text??null):['call','hash'].includes(f?.from?.kind)?f.from.text:null;}
@@ -1410,7 +1410,7 @@ function activityReasons(r){
   const text={new_continent:`New continent ${dx?.cont??''}`,new_continent_band:`New continent on ${band}`,new_dxcc:`New DXCC: ${dx?.name??''}`,new_dxcc_band:`New DXCC on ${band}`,new_cq_zone:`New CQ zone ${dx?.cq??''}`,new_cq_zone_band:`New CQ zone on ${band}`,new_itu_zone:`New ITU zone ${dx?.itu??''}`,new_itu_zone_band:`New ITU zone on ${band}`,new_grid:`New grid ${grid}`,new_grid_band:`New grid on ${band}`,new_call:'New call',new_call_band:`New call on ${band}`};
   return Object.keys(text).filter(k=>r.flags[k]===true).map(k=>text[k].replace(/:?\s+$/,''));
 }
-// #50 CL-050-08 BandActivityHover (operator 2026-11-04): the row's tip names only the reasons of its
+// CL-050-08 BandActivityHover: the row's tip names only the reasons of its
 // colour that the row does not show (no country, continent, distance or "Calls you"): per kind
 // (continent, DXCC, zone, grid, call) the strongest enabled slot, so "New call" never also says
 // "New on 40m"; the call reason carries the worked-before status in parentheses.
@@ -1453,7 +1453,7 @@ function activityWhy(row){
  new MutationObserver(()=>{if(state.row&&!state.row.isConnected)state.show(null);}).observe(tbody,{childList:true});}
 window.wstxActivityWhy=activityWhy;
 
-// WstxSignalArea::RxTxStrip frequency mapping (#50, CL-050-07): the waterfall canvas's own
+// WstxSignalArea::RxTxStrip frequency mapping (CL-050-07): the waterfall canvas's own
 // box carries the fixed 0..3000 Hz span (the time ruler beside it is outside). The frequency axis
 // ticks, the Rx/Tx lines with their brackets and the pointer frequency all use this one mapping.
 // x(hz,container): the CSS px offset of hz in the container's padding box; hz(clientX): the

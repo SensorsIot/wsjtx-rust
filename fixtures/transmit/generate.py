@@ -46,7 +46,7 @@ MESSAGES = [
     # i3=0 n3=0 free text and n3=5 telemetry.
     "TNX BOB 73 GL", "HELLO", "73 GL", "ABCDEFGHIJKLM", "A.B/C-D+?", "Q1ABC W9XYZ", "QRP 5W DIPOLE",
     "123456789ABCDEF012", "7FFFFFFFFFFFFFFFFF", "000000000000000001",
-    # i3=0 n3=3/4 ARRL Field Day and i3=3 RTTY Roundup (#24 S2b): counts 1/16/17/32, every
+    # i3=0 n3=3/4 ARRL Field Day and i3=3 RTTY Roundup: counts 1/16/17/32, every
     # class edge, R, DX, serial and multiplier edges, TU;.
     "W9XYZ K1ABC 1A EMA", "W9XYZ K1ABC 16D NB", "W9XYZ K1ABC 32F DX", "K1ABC W9XYZ 10A WI",
     "HB9BLA K1ABC R 2A DX", "K1ABC HB9BLA 1A DX", "K1ABC W9XYZ R 6A WI",
@@ -60,12 +60,12 @@ MESSAGES = [
     "W9XYZ G8ABC 529 8000", "W9XYZ G8ABC 529 0000", "W9XYZ G8ABC 519 0001", "W9XYZ G8ABC 599 13",
     "W9XYZ G8ABC 599 DX", "TU; K1ABC W9XYZ RR73", "TU; TU; K1ABC W9XYZ 579 MA", "K1ABC W9XYZ 579",
     # Messages WSJT-X alters or packs in a family the Rust encoder refuses; except K1A K2B 6A WI,
-    # K1ABC W9XYZ R 17B EMA and K1ABC W9XYZ 579 WI, which since #24 S2b encode exactly.
+    # K1ABC W9XYZ R 17B EMA and K1ABC W9XYZ 579 WI, which it encodes exactly.
     "HELLO WORLD 123", "A", "CAFE", "TNX BOB 73 GL!", "K1ABC W9XYZ -51", "CQ <PJ4/K1ABC>",
     "K1ABC FN42 37", "PJ4/K1ABC 37", "K1A K2B 6A WI", "K1ABC W9XYZ R 17B EMA",
     "K1ABC RR73; W9XYZ <KH1/KH7Z> -08", "K1ABC W9XYZ 579 WI", "<PA9XYZ> <G4ABC/P> 570123 IO91NP",
     "<PJ4/K1ABC> <W9XYZ>", "<K1ABC> <PJ4/W9XYZ>", "<K1ABC/P> <W9XYZ>", "<PJ4/K1ABC> <W9XYZ> -10",
-    # i3=5 EU VHF contest (#99, TC-099-001): R and none, reports 52/59, serials 1/2047, /P and
+    # i3=5 EU VHF contest (TC-099-001): R and none, reports 52/59, serials 1/2047, /P and
     # compound calls, 3 and 11 characters, grid edges, lower case, the 37-character message.
     "<K1ABC> <HB9BLA> 550001 JN37VL", "<HB9BLA> <K1ABC> R 590003 FN42AX",
     "<G4ABC/P> <HB9BLA> 522047 IO91NP", "<PJ4/K1ABC> <HB9BLA> 590123 FK52UD",

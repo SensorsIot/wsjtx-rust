@@ -3,7 +3,7 @@
 //! It chooses one calling station per completed receive publication under an explicitly
 //! configured policy and drives the one contact engine through the same ContactCommand
 //! path as the browser (select_row, enable_tx). The engine alone progresses the contact;
-//! the #9 owner alone transmits. Policy and run are volatile: every boot starts
+//! the transmit owner alone transmits. Policy and run are volatile: every boot starts
 //! unconfigured with no run, so nothing is armed by automation after a restart.
 //! Routes: GET /automation (AutomationSnapshot), POST /automation/command.
 use crate::*;
@@ -15,7 +15,7 @@ use strategy::Leave;
 use wstx_rust::transmit::service::DisarmCause;
 
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
-/// Run commands are the station's own automation: never an operator action (#39, #58).
+/// Run commands are the station's own automation: never an operator action.
 const AUTOMATION: authorization::Principal = authorization::Principal::Automation;
 pub const RECEIPTS: usize = 16;
 pub const CALLS_MAX: usize = 16;
@@ -25,7 +25,7 @@ pub const CLIENT_GONE: Duration = Duration::from_secs(60);
 /// The longest a strategy run lasts
 /// from its selection, also with a browser open.
 pub const STRATEGY_RUN_MAX: Duration = Duration::from_secs(8 * 3600);
-/// #39 who is connected: open status WebSocket sessions (authenticated at the upgrade) and an
+/// Who is connected: open status WebSocket sessions (authenticated at the upgrade) and an
 /// authenticated MCP request since the last run step (MCP has no sessions).
 #[derive(Default)]
 pub(crate) struct Clients {
@@ -77,7 +77,7 @@ impl Ranking {
         }
     }
 }
-/// The run duration when the configuration omits max_run_minutes (D7).
+/// The run duration when the configuration omits max_run_minutes.
 pub const RUN_MINUTES_DEFAULT: u64 = 120;
 /// WstxStrategies::AutoKeys (every policy key required; only the run duration
 /// bound has a default).
@@ -225,7 +225,7 @@ pub(crate) fn parse_config(v: &Value) -> Result<Option<Config>, Refusal> {
         Some(Value::Bool(true)) => return Err(("operator_required", Some("strategy"))),
         Some(_) => return Err(bad("strategy")),
     }
-    // #42 Pounce: one sane call, never a blocked call.
+    // Pounce: one sane call, never a blocked call.
     let pounce = match o.get("pounce") {
         None | Some(Value::Null) => None,
         Some(c) => Some(
@@ -349,7 +349,7 @@ pub(crate) fn candidates(
 enum RunState {
     Waiting,
     ContactActive,
-    /// #39 ManualIntervention: an operator's contact is on the engine; the strategy waits.
+    /// ManualIntervention: an operator's contact is on the engine; the strategy waits.
     Manual,
     /// WstxCqWhenIdle::CqRule: the run's own CQ is on the air.
     CallingCq,
@@ -384,7 +384,7 @@ struct Quiet {
 #[derive(Clone, Debug, Default)]
 struct Target {
     /// The text of the message it was selected on when it called my call: a repeat of it is no
-    /// answer (#63 b9e7cb3b0).
+    /// answer.
     selected_on: Option<String>,
     /// It sent a message to my call in this contact (other than that repeat).
     answered: bool,
@@ -392,19 +392,19 @@ struct Target {
     band: Option<&'static str>,
     /// Its WstxContestRanking::ContestValueOrder value at the selection (a contest run).
     value: Option<crate::contest::ContestValue>,
-    /// A contest stay (#97 LeaveRule contest: heard, decoded, nothing more valuable).
+    /// A contest stay (LeaveRule contest: heard, decoded, nothing more valuable).
     staying: bool,
     /// The called station's frequency (FreeTxSlot keeps clear of it), from its last decode.
     hz: Option<u32>,
-    /// #97 TxMoveRule: repetitions since the selection or the last move.
+    /// TxMoveRule: repetitions since the selection or the last move.
     move_count: u64,
-    /// #97 LeaveRule contest: the Tx changes made.
+    /// LeaveRule contest: the Tx changes made.
     changes: u64,
-    /// #97 LeaveRule until_logged: the period start (UTC ms) of his newest decoded message, and
+    /// LeaveRule until_logged: the period start (UTC ms) of his newest decoded message, and
     /// whether he is decoded in the latest publication of his parity (LeaveCountLabel).
     last_heard_ms: Option<i64>,
     decoded_last: bool,
-    /// #97 BusyPause: the paused calls of the message due (at most N, the Tx watchdog limit).
+    /// BusyPause: the paused calls of the message due (at most N, the Tx watchdog limit).
     paused: u64,
 }
 struct Run {
@@ -416,7 +416,7 @@ struct Run {
     identity: (String, String, u64),
     access: authorization::Access,
     /// The starting request's grant transport (memory only, never serialized): the run
-    /// lives no longer than it (D7).
+    /// never outlives it.
     token: String,
     deadline: Instant,
     safety_revision: u64,
@@ -431,7 +431,7 @@ struct Run {
     selected: Option<Value>,
     worked: Vec<OnBand>,
     last_decision: Option<Value>,
-    /// #39 strategy runs: the stations the operator cancelled or aborted (never again in
+    /// Strategy runs: the stations the operator cancelled or aborted (never again in
     /// this run).
     given_up: Vec<String>,
     /// WstxLeave::LeaveRule: the last station left and why; RetryPause: who is quiet.
@@ -440,9 +440,9 @@ struct Run {
     target: Target,
     /// When a client was last there (WstxAutoMode::AutoStops; a selection counts).
     client_seen: Instant,
-    /// #42 Pounce: the call and the station band captured at start.
+    /// Pounce: the call and the station band captured at start.
     pounce: Option<(String, String)>,
-    /// No client or past the run limit: the stop at N is back, whatever else ends the contact.
+    /// No client or past the run limit: the stop at N applies, whatever else ends the contact.
     unattended: bool,
     /// WstxAutoControl::LeaveCount: the last slot check, and WD:n (None: no count, a stay).
     slot_check: Option<Value>,
@@ -560,14 +560,14 @@ struct Finishing {
 }
 #[derive(Default)]
 struct Inner {
-    /// #81 the started QSO a run end let finish, until it has ended or a new run starts.
+    /// The started QSO a run end let finish, until it has ended or a new run starts.
     finishing: Option<Finishing>,
     policy_revision: u64,
     run_revision: u64,
     configuration: Option<Config>,
     run: Option<Run>,
     receipts: VecDeque<(String, Value, Value)>,
-    /// #39 why the last selection started no run (the strategy stays selected).
+    /// Why the last selection started no run (the strategy stays selected).
     strategy_refusal: Option<&'static str>,
     /// WstxHoldTx::QuietSpace: the station band last seen and the station time from which the
     /// waterfall periods count (a retune keeps the live job), for every run.
@@ -582,7 +582,7 @@ struct Inner {
     /// The latest complete publication of a counted period's decodes the value was built on.
     free_tx_slots_decoded: Option<u64>,
 }
-/// What one open-slot build judges (#82 Built): the live job, its mode, a QSO, the judged parity,
+/// What one open-slot build judges: the live job, its mode, a QSO, the judged parity,
 /// the period in progress and the band change the periods count from.
 type FreeKey = (
     (String, String, u64),
@@ -596,7 +596,7 @@ type FreeKey = (
 #[derive(Default)]
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
-    /// #82 the free_tx_slots.state cursor: one more at each build of the station's value.
+    /// The free_tx_slots.state cursor: one more at each build of the station's value.
     free_tx_slots_builds: std::sync::atomic::AtomicU64,
     /// Test seam: added to the monotonic clock of every automation step.
     #[cfg(test)]
@@ -685,7 +685,7 @@ impl Owner {
             })
             .and_then(|run| run.contact_id.clone())
     }
-    /// #97 WstxOperatingChain::BusyPartner: the contact a run owns and how it treats a busy partner. A
+    /// WstxOperatingChain::BusyPartner: the contact a run owns and how it treats a busy partner. A
     /// strategy or contest run whose strategy has busy_pause on takes the split move, and its sends
     /// pause while it is attended; a pounce, an MCP policy run and busy_pause off neither.
     pub(crate) fn busy_policy(&self) -> Option<crate::contact::Automated> {
@@ -734,7 +734,7 @@ impl Owner {
             "run_revision":inner.run_revision,"configuration":inner.configuration.as_ref().map(Config::json),"run":run,
             "strategy_refusal":inner.strategy_refusal,"free_tx_slots":free_tx_slots})
     }
-    /// #82 free_tx_slots.state: the station's latest built value with its cursor and whether it
+    /// free_tx_slots.state: the station's latest built value with its cursor and whether it
     /// is null, None before the first build (with or without a run) and while the peer holds
     /// build `seen` already.
     pub(crate) fn free_tx_slots_event(
@@ -777,7 +777,7 @@ impl Owner {
         let identity = (source, job, generation);
         let mode = contact_http::mode_of(mode_name);
         let now = utc_now(r);
-        // D5: a QSO is Enable Tx on (my own CQ included) or a contact in progress; Tune alone
+        // A QSO is Enable Tx on (my own CQ included) or a contact in progress; Tune alone
         // does not count.
         let armed = r.transmit.get().is_some_and(|t| {
             t.service.view().arm_state == wstx_rust::transmit::service::ArmState::Armed
@@ -803,9 +803,9 @@ impl Owner {
             wstx_rust::transmit::parity(mode, start)
         };
         let since = inner.slot_since_ms;
-        // "Rebuild on decodes" (operator 2026-11-09): the build at a period start counts the
+        // Rebuild on decodes: the build at a period start counts the
         // period just ended before its decodes exist; the publication of a counted period's
-        // decodes builds again; #89 also the complete publication of the period in progress of
+        // decodes builds again; so does the complete publication of the period in progress of
         // the judged parity, which makes it due.
         let published = published_start(r);
         let counted = freeslot::recent_starts(mode, rx, (now, published));
@@ -982,7 +982,7 @@ impl Owner {
                     .configuration
                     .clone()
                     .ok_or(("not_configured", Some("configuration")))?;
-                // #39 only a browser's selection starts a strategy run (the configuration a
+                // Only a browser's selection starts a strategy run (the configuration a
                 // stopped one left stays until replaced; WstxAutoMode::AutoStops).
                 if config.strategy {
                     return Err(("operator_required", Some("strategy")));
@@ -1000,18 +1000,18 @@ impl Owner {
                 if !auto_seq {
                     return Err(("not_ready", Some("auto_seq")));
                 }
-                // #24 S1b: station automation stays standard-only; a nonstandard own call
+                // Station automation is standard-only; a nonstandard own call
                 // would call CQ without ever recognizing a caller's <MYCALL>.
                 if contact_http::my_call(state)
                     .is_some_and(|c| !crate::contact::is_standard_call(&c))
                 {
                     return Err(("not_ready", Some("call")));
                 }
-                // #24 S2a: in a contest activity automation only observes (scope default).
+                // In a contest activity automation only observes (scope default).
                 if contact.status_facts().activity != crate::contact::Activity::None {
                     return Err(("not_ready", Some("activity")));
                 }
-                // #42 Pounce waits on the current band: it must be known.
+                // Pounce waits on the current band: it must be known.
                 let pounce = match &config.pounce {
                     None => None,
                     Some(call) => Some((
@@ -1042,14 +1042,14 @@ impl Owner {
                 }
                 let id = profile::new_uuid().map_err(|_| ("storage_unavailable", None))?;
                 // A start from the browser is the operator's decision to transmit again
-                // after a Tx watchdog stop; an MCP start never is (#39).
+                // after a Tx watchdog stop; an MCP start never is.
                 if operator {
                     transmit.service.with(|c| c.operator_restart());
                 }
                 let last_decode = r.latest_publication().map_or(0, |p| p.0);
                 let deadline = self.now() + Duration::from_secs(config.max_run_minutes * 60);
                 inner.strategy_refusal = None;
-                // #81 a new run drops the finishing guard.
+                // A new run drops the finishing guard.
                 inner.finishing = None;
                 inner.run = Some(Run::new(
                     id,
@@ -1078,7 +1078,7 @@ impl Owner {
                 }
                 // Future dispatch ends before the acknowledgement; a contact armed by
                 // this run is disarmed through the same Enable Tx path (not a Halt), unless it
-                // is a started QSO, which is finished (#81).
+                // is a started QSO, which is finished.
                 let (armed, own_cq) = (run.state.armed(), run.state == RunState::CallingCq);
                 let kept = Self::keep_started(&mut inner, &contact, state);
                 Self::finish(&mut inner, "stopped");
@@ -1132,9 +1132,9 @@ impl Owner {
         });
         true
     }
-    /// #81 the finishing guard at each station step: the finished QSO's contact is disarmed and
-    /// cancelled when the station band or mode differs from the run's end, the run's grant is no
-    /// longer current or a HALT came from any source (StartedQso "Still at once": Enable Tx off and
+    /// The finishing guard at each station step: the finished QSO's contact is disarmed and
+    /// cancelled when the station band or mode differs from the run's end, the run's grant is not
+    /// current or a HALT came from any source (StartedQso "Still at once": Enable Tx off and
     /// the contact cancelled); the guard ends with that contact.
     fn guard_finishing(inner: &mut Inner, contact: &contact_http::Station, state: &ProfileState) {
         let Some(g) = inner.finishing.as_ref() else {
@@ -1165,7 +1165,7 @@ impl Owner {
     }
     /// WstxAutoMode::AutoStops: a browser's selection change or Auto on (no strategy lock
     /// held). Any run ends: a contact it armed is disarmed and cancelled, except a started QSO,
-    /// which is finished (#81, StartedQso); with `start` (Auto on) and a selection a run starts
+    /// which is finished (StartedQso); with `start` (Auto on) and a selection a run starts
     /// with the request's grant. True when a run started; a refused start names why in
     /// strategy_refusal.
     pub(crate) fn selected(
@@ -1244,7 +1244,7 @@ impl Owner {
         })();
         match started {
             Ok(run) => {
-                // #81 a new run drops the finishing guard: it waits for the QSO as for the
+                // A new run drops the finishing guard: it waits for the QSO as for the
                 // operator's contact (ManualIntervention).
                 inner.finishing = None;
                 inner.configuration = Some(run.config.clone());
@@ -1272,7 +1272,7 @@ impl Owner {
     }
     /// WstxAutoMode::AutoStops, Auto off: the strategy or contest run ends at once, stopped; a
     /// contact it armed (its CQ too) is disarmed and cancelled, except a started QSO, which is
-    /// finished as an ordinary contact (#81, StartedQso). A pounce or MCP run is not Auto's and is
+    /// finished as an ordinary contact (StartedQso). A pounce or MCP run is not Auto's and is
     /// left alone.
     pub(crate) fn end_strategy_run(&self, contact: &contact_http::Station, state: &ProfileState) {
         let mut inner = self.lock();
@@ -1356,7 +1356,7 @@ impl Owner {
                 return Some("outside_period");
             }
         }
-        // #97 StrategyBands: off the strategy's bands (an unknown band is none of them).
+        // StrategyBands: off the strategy's bands (an unknown band is none of them).
         if let Some(bands) = bands
             && !strategy::station_band(r).is_some_and(|b| bands.iter().any(|x| x == b))
         {
@@ -1380,7 +1380,7 @@ impl Owner {
             }
             inner.slot_band = Some(b);
         }
-        // #81 a finishing QSO still ends at once on a band or mode change, a lost grant or a HALT.
+        // A finishing QSO still ends at once on a band or mode change, a lost grant or a HALT.
         Self::guard_finishing(&mut inner, contact, state);
         let since = inner.slot_since_ms;
         let Some(run) = inner.run.as_mut() else {
@@ -1448,17 +1448,17 @@ impl Owner {
             return stop(&mut inner, "authority_lost", armed);
         }
         if !is_strategy && now >= run.deadline {
-            // #81 a started QSO is finished.
+            // A started QSO is finished.
             let kept = Self::keep_started(&mut inner, contact, state);
             return stop(&mut inner, "time_limit", armed && !kept);
         }
-        // #42 Pounce: a station band change ends it.
+        // Pounce: a station band change ends it.
         if let Some((_, band)) = &run.pounce
             && strategy::station_band(r) != Some(band.as_str())
         {
             return stop(&mut inner, "band_changed", armed);
         }
-        // #39: a strategy run reads the saved active strategy at every step (Save applies
+        // A strategy run reads the saved active strategy at every step (Save applies
         // at once); without one it stops.
         let chosen = if is_strategy {
             let saved = saved_config.and_then(|c| c.run_strategy().map(|s| (c, s)));
@@ -1487,7 +1487,7 @@ impl Owner {
         let (_, facts, _) = contact.facts();
         let view = r.transmit.get().map(|t| t.service.view());
         let arm = view.as_ref().map(|v| v.arm_state);
-        // A disarm by the Tx watchdog is named as such (#39).
+        // A disarm by the Tx watchdog is named as such.
         let disarmed = if view
             .as_ref()
             .is_some_and(|v| v.last_disarm_cause == DisarmCause::TxWatchdog)
@@ -1496,7 +1496,7 @@ impl Owner {
         } else {
             "transmit_stopped"
         };
-        // #111 CL-111-03: the contact engine, which steps first, ended the contact for a band
+        // CL-111-03: the contact engine, which steps first, ended the contact for a band
         // change (state off, cause bandChanged): the run goes on as after its own band stop.
         let band_stop = arm != Some(wstx_rust::transmit::service::ArmState::Armed)
             && view
@@ -1564,7 +1564,7 @@ impl Owner {
                         true,
                     );
                 }
-                // The band, the activity or the period no longer fit: back to waiting.
+                // The band, the activity or the period does not fit: back to waiting.
                 if waiting_reason.is_some() {
                     run.wait();
                     run.reason = waiting_reason;
@@ -1603,7 +1603,7 @@ impl Owner {
                     if let Some(call) = c.dx_call {
                         run.worked.push((call, band, run.mode));
                     }
-                    // #42 a pounce ends on its success.
+                    // A pounce ends on its success.
                     if run.pounce.is_some() {
                         return stop(&mut inner, "completed", false);
                     }
@@ -1663,7 +1663,7 @@ impl Owner {
                 };
                 // StrategyRun "Ends at once": a band change since the target's selection and the
                 // end of a contest period disarm and cancel at the next step, with no quiet time;
-                // at the period end a started QSO is finished, the run manual meanwhile (#81).
+                // at the period end a started QSO is finished, the run manual meanwhile.
                 if band == run.target.band && waiting_reason == Some("outside_period") && c.started
                 {
                     Self::keep_started(&mut inner, contact, state);
@@ -1682,7 +1682,7 @@ impl Owner {
                 // WstxHearing::TargetReport: whether the target hears us (unknown with Use off).
                 let hearing = pskr::target_hearing(r, target.as_deref(), mode);
                 let heard = hearing.hears_us();
-                // #97 TxMoveRule: the PSK case (he reports: HearingFeed "He reports").
+                // TxMoveRule: the PSK case (he reports: HearingFeed "He reports").
                 let reports = heard || pskr::target_reports(r, target.as_deref(), mode);
                 // LeaveRule: unattended no m, no stay and no caller exception.
                 let hears = heard && !run.unattended;
@@ -1694,7 +1694,7 @@ impl Owner {
                 }
                 let run = inner.run.as_mut().expect("checked");
                 let leave = chosen.1.leave;
-                // #97 BusyPause: paused calls in an attended run whose strategy has it on.
+                // BusyPause: paused calls in an attended run whose strategy has it on.
                 let busy_pause = chosen.1.busy_pause && !run.unattended;
                 let busy_now = contact.busy_facts().0;
                 let tx_limit = u64::from(view.as_ref().map_or(6, |v| v.tx_calls));
@@ -1721,9 +1721,9 @@ impl Owner {
                     inner.run_revision += 1;
                     let run = inner.run.as_mut().expect("checked");
                     let retry = chosen.1.retry_minutes;
-                    // #97 LeaveRule until_logged: gone at the first publication of his parity
+                    // LeaveRule until_logged: gone at the first publication of his parity
                     // whose period start is g minutes or more after his newest decode (also after
-                    // his answer); attended only (unattended the stop at N is back). The period is
+                    // his answer); attended only (unattended the stop at N applies). The period is
                     // the publication's, so an empty publication counts as well.
                     let period_ms =
                         published
@@ -1748,7 +1748,7 @@ impl Owner {
                         return;
                     }
                     if seen.answered {
-                        // Progress, also a repeated message (the #63 fix): every count restarts.
+                        // Progress, also a repeated message: every count restarts.
                         run.target.answered = true;
                         run.target.staying = false;
                         run.target.move_count = 0;
@@ -1770,12 +1770,12 @@ impl Owner {
                         disarm(contact, state);
                         return self.tick(contact, state, publication);
                     } else if busy_pause && busy_now && run.target.paused < tx_limit {
-                        // #97 BusyPause: this repetition is a paused call (his publication comes
+                        // BusyPause: this repetition is a paused call (his publication comes
                         // before the stop point of the send it counts); it counts for nothing of
                         // the run: no leave count, no TxMoveRule count, no move.
                         run.target.paused += 1;
                     } else {
-                        // #97 TxMoveRule: the PSK case and its k.
+                        // TxMoveRule: the PSK case and its k.
                         let (case, k) = if heard {
                             ("heard", chosen.1.tx_move_every.heard)
                         } else if reports {
@@ -1834,7 +1834,7 @@ impl Owner {
                             return;
                         }
                         let before = contact.status_facts().tx_hz;
-                        // A target that has answered has proved the slot: no move. #97 BusyPause:
+                        // A target that has answered has proved the slot: no move. BusyPause:
                         // no move while he is busy (the split move keeps Tx clear of him).
                         if try_move && !run.target.answered && !(chosen.1.busy_pause && busy_now) {
                             let (revision, _, _) = contact.facts();
@@ -1886,7 +1886,7 @@ impl Owner {
                         (!run.target.staying).then(|| tx_changes.saturating_sub(run.target.changes))
                     }
                 };
-                // #97 BusyPause: busy while the target is busy and the calls pause.
+                // BusyPause: busy while the target is busy and the calls pause.
                 let busy = busy_pause && busy_now;
                 let view = json!({"mode":leave.mode(),"remaining":remaining,"busy":busy,
                     "paused":run.target.paused,"staying":run.target.staying});
@@ -1923,7 +1923,7 @@ impl Owner {
                     .map(|v| v["period_start_utc"].clone())
                     .unwrap_or(Value::Null);
                 let list: Vec<Pick> = match (&run.pounce, &chosen) {
-                    // #42 Pounce: the chosen call's CQ (not greyed) or RR73/73 to another
+                    // Pounce: the chosen call's CQ (not greyed) or RR73/73 to another
                     // call, never when ignored; the first by sequence.
                     (Some((target, _)), _) => {
                         let config = contact.strategy.config(state).unwrap_or_default();
@@ -1995,7 +1995,7 @@ impl Owner {
             run.unanswered += 1;
             if run.unanswered >= run.config.max_unanswered {
                 if run.pounce.is_some() {
-                    // #42 the pounce stays: wait again for the same call.
+                    // The pounce stays: wait again for the same call.
                     run.wait();
                     inner.run_revision += 1;
                     cancel(contact, state);
@@ -2040,7 +2040,7 @@ impl Owner {
             "generation":run.identity.2,"sequence":pick.sequence});
         let (revision, _, _) = contact.facts();
         let held_tx = contact.status_facts().tx_hz;
-        // #97 CqTargetList: a strategy run's own select_row (never a pounce's).
+        // CqTargetList: a strategy run's own select_row (never a pounce's).
         let own = run.config.strategy && run.pounce.is_none();
         contact
             .strategy_select
@@ -2076,7 +2076,7 @@ impl Owner {
         let prepared = contact.facts().1.map(|c| c.id);
         let mut revision = receipt["contact_revision"].as_u64().unwrap_or(revision);
         // WstxHoldTx::QuietSpace: the call goes out from the quietest slot, never from the
-        // called station's frequency (the selection's Rx); Rx = Tx. With Hold Tx on (holdtx D16)
+        // called station's frequency (the selection's Rx); Rx = Tx. With Hold Tx on
         // Tx stays and Rx stays on the station, unless the station is within 50 Hz of Tx.
         let called = contact.status_facts().rx_hz;
         if run.config.strategy || run.pounce.is_some() {
@@ -2227,7 +2227,7 @@ fn manual(inner: &mut Inner) {
         inner.run_revision += 1;
     }
 }
-/// The enable_tx refusal as a stop reason (#39: the Tx watchdog has its own).
+/// The enable_tx refusal as a stop reason (the Tx watchdog has its own).
 fn refused(code: &str) -> &'static str {
     if code == "tx_watchdog" {
         "tx_watchdog"
@@ -2243,7 +2243,7 @@ struct Pick {
     caller: bool,
     value: Option<crate::contest::ContestValue>,
     text: Option<String>,
-    /// #97 LeaveRule until_logged: the period start (UTC ms) of the message it was selected on.
+    /// LeaveRule until_logged: the period start (UTC ms) of the message it was selected on.
     period_ms: Option<i64>,
 }
 impl Pick {
@@ -2322,7 +2322,7 @@ fn picks(
 struct Seen {
     /// The target is decoded (situation 1 without progress; else situation 2).
     decoded: bool,
-    /// #97 the period start (UTC ms) of the target's decode in this publication.
+    /// The period start (UTC ms) of the target's decode in this publication.
     heard_ms: Option<i64>,
     /// Progress: a message of the target to my call, also a repeated one, except the message a
     /// caller was selected on.
@@ -2379,7 +2379,7 @@ fn assess(
                 v
             })
         });
-    // #97 LeaveRule contest: a more valuable callable station strictly before the target by the
+    // LeaveRule contest: a more valuable callable station strictly before the target by the
     // strategy's order (a contest strategy: ContestValueOrder; else the ranks of ValueOrder).
     let better = reference.as_ref().is_some_and(|t| {
         list.iter().any(|v| {
@@ -2449,11 +2449,11 @@ enum SlotRule {
     /// Selecting a station to call: the quietest slot of my Rx parity, free at his end where
     /// known; with Hold Tx on the held Tx, moved only when within 50 Hz of the station.
     Call,
-    /// #97 a move of TxMoveRule: another quiet slot of my Rx parity, never overlapping the current
+    /// A move of TxMoveRule: another quiet slot of my Rx parity, never overlapping the current
     /// Tx nor within 50 Hz of his frequencies (no fallback; none left: Tx stays); with Hold Tx on
     /// Tx alone moves, clear of my Rx as well.
     Move,
-    /// Its own CQ: the quietest slot of my Rx parity, the other of the CQ's (#66), no his end;
+    /// Its own CQ: the quietest slot of my Rx parity, the other of the CQ's, no his end;
     /// with Hold Tx on the held Tx.
     Listen,
     /// Answering from its own CQ (WstxCqWhenIdle::CqRule): the CQ's slot stays
@@ -2483,7 +2483,7 @@ fn take_slot(
         wstx_rust::transmit::Parity::Odd => wstx_rust::transmit::Parity::Even,
     };
     let now = utc_now(r);
-    // #89 Due: my newest Rx period counts once its complete publication is there, also while it
+    // My newest Rx period counts once its complete publication is there, also while it
     // is in progress (its rows so far).
     let published = published_start(r);
     let periods = r
@@ -2491,7 +2491,7 @@ fn take_slot(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .periods((&run.identity.1, run.identity.2), (now, published));
-    // #66: every decision judges my Rx periods only (a CQ's the other of its Tx parity), the
+    // Every decision judges my Rx periods only (a CQ's the other of its Tx parity), the
     // recent ones, by each slot's largest rise above the passband floor clamped at 0 (at or under
     // the floor a slot is free), clear of the stations
     // decoded in them.
@@ -2525,13 +2525,13 @@ fn take_slot(
         .chain(hold.then_some(facts.rx_hz))
         .collect();
     let slot = match (rule, hold) {
-        // Hold Tx on, a CQ: on the held Tx, no decision (round 1 Q3); its value is shown.
+        // Hold Tx on, a CQ: on the held Tx, no decision; its value is shown.
         (SlotRule::Listen, true) => freeslot::Slot {
             hz: current,
             power_db: power(current).map(freeslot::compared),
             his_end: freeslot::HisEnd::Unknown,
         },
-        // Hold Tx on, a selection: Tx stays unless within 50 Hz of the station (Q1, Q2, D7).
+        // Hold Tx on, a selection: Tx stays unless within 50 Hz of the station.
         (SlotRule::Call | SlotRule::KeepCq, true) => {
             freeslot::held(mode, current, &avoid, decoded, his.as_deref(), &power)
         }
@@ -2544,7 +2544,7 @@ fn take_slot(
         }
         (SlotRule::KeepCq, false) => {
             // The rule without power keeps the current slot or moves it nearest away from him
-            // (clear of the decoded stations while one is free, #66 D4); its value is still shown.
+            // (clear of the decoded stations while one is free); its value is still shown.
             let mut slot =
                 freeslot::quietest(mode, current, called, decoded, his.as_deref(), &|_| None);
             slot.power_db = power(slot.hz).map(freeslot::compared);
@@ -2552,7 +2552,7 @@ fn take_slot(
         }
         _ => freeslot::quietest_clear(mode, current, &avoid, decoded, his.as_deref(), &power),
     };
-    // Auto's own ranking (#82 D18: not on screen; the station's open slots are built apart).
+    // Auto's own ranking (not on screen; the station's open slots are built apart).
     run.tx_slot = Some(slot.json());
     let unchanged = if hold {
         facts.tx_hz == slot.hz
@@ -2602,7 +2602,7 @@ fn fresh_records(
         })
         .collect()
 }
-/// #82 free_tx_slots.state: carries its state, the station's latest built value (at most 1024
+/// free_tx_slots.state: carries its state, the station's latest built value (at most 1024
 /// bytes).
 pub(crate) fn free_tx_slots_event(r: &recording::Recording, value: &Value) -> String {
     json!({"v":1,"type":"free_tx_slots.state","data":{"profile_id":r.profile,"boot_id":r.boot,
@@ -2701,7 +2701,7 @@ pub async fn command(
     };
     let checked = authorization_http::operating_access_async(&headers, &app).await;
     // A start from the browser is the operator action the Tx watchdog needs; an MCP
-    // client's start never is (#58: the principal comes from the credential).
+    // client's start never is (the principal comes from the credential).
     let operator = match &checked {
         Ok(Some(a)) => a.principal.is_operator(),
         Ok(None) => true,

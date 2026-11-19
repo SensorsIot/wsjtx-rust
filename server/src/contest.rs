@@ -435,7 +435,7 @@ fn weekdays(year: i64, month: u32, weekday: i64) -> Vec<i64> {
         .filter(|ms| civil(*ms).1 == month && (ms / DAY_MS + 4).rem_euclid(7) == weekday)
         .collect()
 }
-/// The Saturdays whose Sunday is in the same month ('full weekend', operator default #63).
+/// The Saturdays whose Sunday is in the same month ('full weekend', the default).
 fn full_weekends(year: i64, month: u32) -> Vec<i64> {
     let mut list = weekdays(year, month, 6);
     list.retain(|ms| civil(ms + DAY_MS).1 == month);
@@ -504,13 +504,13 @@ pub(crate) fn profile(id: &str) -> Option<&'static Profile> {
     PROFILES.iter().find(|p| p.id == id)
 }
 
-/// #97 the contest table (WstxStrategies::BuiltinStrategies: one contest built-in per profile).
+/// The contest table (WstxStrategies::BuiltinStrategies: one contest built-in per profile).
 pub(crate) fn all_profiles() -> &'static [Profile] {
     PROFILES
 }
 
 // ------------------------------------------------------------------ the selection
-/// WstxStrategies::ContestSelection: the contest in force, in memory only (#97 D11: the period
+/// WstxStrategies::ContestSelection: the contest in force, in memory only (the period
 /// only; the operation, repetitions and quiet time are the contest strategy's own decisions).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Selection {
@@ -537,8 +537,8 @@ pub(crate) fn parse_selection(v: &Value, field: &str) -> Result<Selection, Strin
     let o = v.as_object().ok_or(field)?;
     let keys = ["profile", "start", "end"];
     let f = |k: &str| format!("{field}.{k}");
-    // Gone keys are refused by their own path (automation_confirmed: strategydef; operation,
-    // repetitions and quiet_minutes: #97 D11); any other extra key by the selection's.
+    // The keys automation_confirmed, operation, repetitions and quiet_minutes are refused by
+    // their own path; any other extra key by the selection's.
     if let Some(k) = [
         "automation_confirmed",
         "operation",
@@ -874,7 +874,7 @@ fn record_facts(record: &Value) -> Option<Facts> {
 pub(crate) fn order(a: &Verdict, b: &Verdict) -> std::cmp::Ordering {
     order_by(a, b, true)
 }
-/// #97 ContestValueOrder with the contest strategy's callers_first: off, callers rank by value.
+/// ContestValueOrder with the contest strategy's callers_first: off, callers rank by value.
 pub(crate) fn order_by(a: &Verdict, b: &Verdict, callers_first: bool) -> std::cmp::Ordering {
     let key = |v: &Verdict| {
         let c = v.contest.unwrap_or_default();

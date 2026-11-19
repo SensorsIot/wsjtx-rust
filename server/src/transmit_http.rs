@@ -30,7 +30,7 @@ pub(crate) struct Inputs {
     /// The current CL-022 safety revision while the automatic CAT gate is eligible.
     safety_revision: Option<u64>,
     actor: Option<Arc<Actor>>,
-    /// #44 CL-044-14 starts the one meter read of a transmission (never blocks).
+    /// CL-044-14 starts the one meter read of a transmission (never blocks).
     meter_sink: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 type Stopper = Arc<dyn Fn() + Send + Sync>;
@@ -42,7 +42,7 @@ pub(crate) struct StationHardware {
     abort: Arc<std::sync::atomic::AtomicBool>,
     origin: Instant,
     clock: Arc<StationClock>,
-    /// #44 CL-044-12 the Tx level of the next play and a running Tune.
+    /// CL-044-12 the Tx level of the next play and a running Tune.
     level_db: i32,
 }
 impl Hardware for StationHardware {
@@ -71,7 +71,7 @@ impl Hardware for StationHardware {
         self.origin.elapsed().as_millis() as i64
     }
     fn now_utc_ms(&self) -> i64 {
-        // #43/#92: station UTC is always the system clock plus the clock-from-the-air
+        // Station UTC is always the system clock plus the clock-from-the-air
         // correction; the system clock itself is never set.
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -204,7 +204,7 @@ impl Hardware for StationHardware {
 
 pub(crate) struct Station {
     inputs: Arc<Mutex<Inputs>>,
-    /// The station clock (#43); None for injected test hardware.
+    /// The station clock; None for injected test hardware.
     clock: Option<Arc<StationClock>>,
     slot: Arc<Mutex<Option<Stopper>>>,
     pub(crate) service: Service<Box<dyn Hardware>>,
@@ -237,7 +237,7 @@ impl Station {
             revision: Mutex::new((None, 0)),
         }))
     }
-    /// #44 CL-044-14 what the transmit step calls in the middle of a transmission.
+    /// CL-044-14 what the transmit step calls in the middle of a transmission.
     pub(crate) fn set_meter_sink(&self, sink: Arc<dyn Fn() + Send + Sync>) {
         self.inputs
             .lock()
@@ -301,7 +301,7 @@ impl Station {
     ) {
         let c = &document.control;
         if let Some(clock) = &self.clock {
-            // #43: the station's own decodes never count for the clock from the air.
+            // The station's own decodes never count for the clock from the air.
             clock.set_own_call(&document.callsign);
         }
         let mut i = self.inputs.lock().unwrap_or_else(|p| p.into_inner());

@@ -214,7 +214,7 @@ pub(crate) struct Peer {
     pub opens: usize,
     pub closes: usize,
     pub writes: Vec<Vec<u8>>,
-    /// Radio transmit state reported by 1C 00 (a #9 transmit owner may release it).
+    /// Radio transmit state reported by 1C 00 (a transmit owner may release it).
     pub transmitting: bool,
     /// Dial frequency in Hz answered to 03 (independent BCD encoding below).
     pub dial: u64,
@@ -472,7 +472,7 @@ fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_o
         7_074_000
     );
     // Cable removal: the next poll fails, the transport is released and retained
-    // frequency is no longer presented as fresh. Reset made the next delay 1 s.
+    // frequency is not presented as fresh. After the reset the next delay is 1 s.
     s.set(Device::Removed);
     s.settle(FAILED);
     assert!(!s.frequency_confirmed());
@@ -632,7 +632,7 @@ fn station_identity_change_mid_attempt_fences_late_result() {
     s.assert_read_only();
 }
 
-// Review F2: an attempt refused before any actor exists (Actor::begin validation)
+// An attempt refused before any actor exists (Actor::begin validation)
 // is a failed attempt with its reason and the normal backoff, not a silent wait.
 #[test]
 fn station_begin_failure_reports_retry_reason_and_backs_off() {
@@ -658,7 +658,7 @@ fn station_begin_failure_reports_retry_reason_and_backs_off() {
     assert_eq!(s.peer.lock().unwrap().opens, 0, "zero native open");
 }
 
-// Review F1: a configuration the policy has not yet observed is only waiting, even
+// A configuration the policy has not yet observed is only waiting, even
 // when the previous key is ready.
 #[test]
 fn status_for_unobserved_key_is_waiting_not_previous_ready() {

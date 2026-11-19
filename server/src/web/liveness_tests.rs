@@ -330,7 +330,7 @@ fn utc_now_ms() -> u64 {
         .as_millis() as u64
 }
 
-// Evidence of #102 (no promise; the record of TC-009-005 case 7's failure output). Each socket the
+// Evidence (no promise; the record of TC-009-005 case 7's failure output). Each socket the
 // station ends leaves its reason, begin and end, last heartbeat write and longest heartbeat
 // interval, in UTC ms: the begin's system UTC plus the driven runtime's elapsed time. Hand values
 // from connection(): the first heartbeat tick is consumed at the begin, writes follow every

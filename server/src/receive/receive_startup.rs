@@ -1,4 +1,4 @@
-//! #45 WstxRequirements CL-045-01..03: the last started receive choice and the
+//! WstxRequirements CL-045-01..03: the last started receive choice and the
 //! Monitor-off-at-startup setting, persisted next to profile.json, and the one resume
 //! of that choice when the station starts. Resuming only receives: it never arms,
 //! keys or tunes for transmit.

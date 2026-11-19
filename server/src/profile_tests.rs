@@ -7,7 +7,7 @@ mod model_values;
 
 /// A launch refusal the model lists: the name is checked against the members of
 /// `WstxStartup::StartupOutcome`, written as `WstxStationLink::WireNames` says, so a test
-/// fails when the model no longer lists it.
+/// fails when the model does not list it.
 fn outcome(name: &'static str) -> &'static str {
     let members = model_values::Model::load()
         .enum_members("WstxStartup::StartupOutcome")
@@ -60,8 +60,6 @@ fn independent_document() -> ProfileDocument {
 }
 
 // An expected private authorization record cannot be silently reset.
-// This uses only the preexisting Store API so the unchanged parent compiles and
-// fails on its actual accepted startup, rather than a missing new module/API.
 #[test]
 fn expected_authorization_corruption_blocks_profile_startup_without_rewriting_files() {
     for record in [None, Some(b"{corrupt".as_slice())] {

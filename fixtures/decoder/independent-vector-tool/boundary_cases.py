@@ -1,7 +1,7 @@
 """Data-only fixed field-boundary proposal; independent of production code.
 The Field Day section and RTTY exchange edges follow the WSJT-X 3.3.0-beta5
-PACK77_ARRL_SECTIONS (86) and PACK77_RTTY_MULTIPLIERS (171) tables (#24 S2b,
-protocol-data/provenance.json); the QEX 2020 tables had 84 and 65 entries."""
+PACK77_ARRL_SECTIONS (86) and PACK77_RTTY_MULTIPLIERS (171) tables
+(protocol-data/provenance.json); the QEX 2020 tables had 84 and 65 entries."""
 import json
 from pathlib import Path
 

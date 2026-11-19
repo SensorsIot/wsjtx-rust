@@ -197,8 +197,8 @@ pub async fn execute(
     if op.validate().is_err() {
         return error("invalid_request");
     }
-    // Direct setters stay unsupported until their complete shared RF-context barrier
-    // is admitted. Operating mode/band uses that barrier through /receive/select.
+    // Direct setters are unsupported: they have no shared RF-context barrier.
+    // Operating mode/band uses that barrier through /receive/select.
     if matches!(
         op,
         Operation::SetFrequency { .. }

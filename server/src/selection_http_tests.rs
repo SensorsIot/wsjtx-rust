@@ -165,7 +165,7 @@ async fn live_native_selection_tls_thin_and_off() {
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
-    // #102: the station's records of the sockets it ends during this run, printed in every run.
+    // The station's records of the sockets it ends during this run, printed in every run.
     let closes_before = crate::SOCKET_CLOSES.lock().unwrap().len();
     let counts = Arc::new(CaptureCounts::default());
     let mut inputs: Vec<Box<dyn recording::LiveInput>> = Vec::new();
@@ -262,7 +262,7 @@ async fn live_native_selection_tls_thin_and_off() {
     )
     .await
     .unwrap();
-    // #80: the browsers reach the station directly on an unshaped TLS connection.
+    // The browsers reach the station directly on an unshaped TLS connection.
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let server = axum_server::from_tcp_rustls(listener, config).unwrap();

@@ -1,4 +1,4 @@
-"""make_package.py as the one deploy command (#245): given only the commit, it checks the
+"""make_package.py as the one deploy command: given only the commit, it checks the
 commit and its push-gate log, builds or reuses the package and runs the package's own
 station-update.ps1, whose exit it returns.
 

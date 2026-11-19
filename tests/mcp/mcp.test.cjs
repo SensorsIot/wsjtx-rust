@@ -1,7 +1,7 @@
 'use strict';
 // Cost 2: the compiled candidate executable on a disposable selected HTTPS profile (TLS
 // with a throwaway certificate, no radio, audio or RF), a browser-style grant that creates
-// an MCP client token in Settings (#58) and an independent MCP client writing literal
+// an MCP client token in Settings and an independent MCP client writing literal
 // JSON-RPC. Expected values: the fixture profile document and the WstxMcp tool catalog table.
 const {test, before, after} = require('node:test');
 const assert = require('node:assert/strict');
@@ -86,7 +86,7 @@ test('an MCP client with its own MCP client token observes the browser state of 
   const contact = await modern(headers.Authorization, 'tools/call', {name: 'wstx_read', arguments: {view: 'contact'}});
   assert.equal(contact.body.result.structuredContent.result.profile_id, document.profile_id);
   assert.equal(contact.body.result.structuredContent.result.transmit.arm_state, 'disarmed');
-  // The strategy view (#39) the browser reads, unchanged through MCP.
+  // The strategy view the browser reads, unchanged through MCP.
   const strategyPage = await send('/strategy', 'GET', undefined, {Cookie: browser.cookie});
   assert.equal(strategyPage.status, 200);
   const strategy = await modern(headers.Authorization, 'tools/call', {name: 'wstx_read', arguments: {view: 'strategy'}});
@@ -103,8 +103,8 @@ test('browser credentials never authorize MCP, an MCP token never opens a browse
   const cookieOnly = await send('/mcp', 'POST', {jsonrpc: '2.0', id: 1, method: 'tools/list', params: {_meta: meta}},
     {Cookie: browser.cookie, 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': 'tools/list'});
   assert.equal(cookieOnly.status, 401); assert.equal(cookieOnly.headers['www-authenticate'], 'Bearer realm="wstx"');
-  // Configurations from before #58 (the grant transport or the station access token as
-  // the bearer) are refused with the hint to the MCP client token.
+  // Configurations with the grant transport or the station access token as the
+  // bearer are refused with the hint to the MCP client token.
   for (const legacy of [browser.cookie.split('=')[1], token]) {
     const refused = await modern('Bearer ' + legacy, 'tools/list');
     assert.equal(refused.status, 401);

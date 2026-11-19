@@ -16,11 +16,11 @@ pub enum Family {
     FreeText,
     /// i3=0, n3=5
     Telemetry,
-    /// i3=0, n3=3/4 (ARRL Field Day, #24 S2b)
+    /// i3=0, n3=3/4 (ARRL Field Day)
     FieldDay,
-    /// i3=3 (ARRL RTTY / FT Roundup, #24 S2b)
+    /// i3=3 (ARRL RTTY / FT Roundup)
     RttyRoundup,
-    /// i3=5 (EU VHF contest, #99)
+    /// i3=5 (EU VHF contest)
     EuVhf,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,7 +95,7 @@ pub fn pack(message: &str) -> Result<Packed, PackError> {
     {
         return Ok(packed);
     }
-    // Type 5 is tried after type 4, as WSJT-X does (#99).
+    // Type 5 is tried after type 4, as WSJT-X does.
     if let Some(bits) = eu_vhf(&words)
         && let Ok(packed) = checked(text.clone(), Family::EuVhf, bits)
     {
@@ -548,7 +548,7 @@ fn rtty(w: &[&str]) -> Result<Option<[u8; 77]>, PackError> {
 }
 
 /// Type 5 EU VHF contest (pack77_parse_type5_source, pack77_5_candidate,
-/// encode_pack77_type5; #99): "<CALL1> <CALL2> [R] 5nSSSS GRID6", both calls hashed
+/// encode_pack77_type5): "<CALL1> <CALL2> [R] 5nSSSS GRID6", both calls hashed
 /// (h12, h22), n 2-9, serial 1-2047, GRID6 AA00AA..RR99XX.
 fn eu_vhf(w: &[&str]) -> Option<[u8; 77]> {
     let (first, second, r, exchange, grid) = match w {

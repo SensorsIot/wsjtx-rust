@@ -1,5 +1,5 @@
 'use strict';
-// Harness retrospective item 3 (SensorsIot/harness#38): one page kept open on the running station
+// One page kept open on the running station
 // across a real restart and several periods. Red on `undefined` or NaN in what it shows, on a
 // row tip that changes, on an uncaught page error or on a page command that is not a read.
 //   powershell -File tools/deploy/live-page-check.ps1 -Repo <root> -Shared <git common dir>\harness-parallel -AgentClient <client>
@@ -13,10 +13,10 @@
 //   {"stopping":true}               the station is being stopped now
 //   {"abort":"why"}                 the station is in use: no restart, exit 3
 // Exit 0 green; 1 red; 3 busy; 4 not exercised: nothing went wrong, but the old boot's generation
-// was not above the new one's (#22), the band selection was not made or did not take, or no
-// kept row had a worked-before tip (#50).
+// was not above the new one's, the band selection was not made or did not take, or no
+// kept row had a worked-before tip.
 // The page sends no command. Before the restart that script makes one band selection of the band
-// and mode the station receives on (#247), so that the old boot's job stands at generation 2 or
+// and mode the station receives on, so that the old boot's job stands at generation 2 or
 // more; the station resumes receive by itself after the restart. A station that does not, or a
 // dead band after the restart, ends in a timeout, red.
 // The page is the station's actual client. Only its authorization component is replaced: a browser
@@ -39,8 +39,8 @@ function allowed(method,at,origin){
   if(at.pathname==='/authorization.js')return 'stub';
   return method==='GET'||READS.includes(at.pathname)?'pass':'refuse';
 }
-// Which live trigger was not on screen. #22 needs the new boot without a receive job yet
-// (generation null: recording.js sync cleared live) or below the old boot's generation; #50 a
+// Which live trigger was not on screen. The restart generation needs the new boot without a receive job yet
+// (generation null: recording.js sync cleared live) or below the old boot's generation; the worked-before tip a
 // worked-before tip on a kept row. Without them nothing was shown wrong, but nothing was proven.
 function missingTriggers(oldGeneration,newGeneration,workedKept){
   const missing=[];
@@ -107,14 +107,14 @@ async function run({origin,control,lines}){
     let {message,last,unexercised}=await awaitStop({watch,lines,control,clean,wait:WAIT,pause:ms=>page.waitForTimeout(ms)});
     if(message.abort)return {status:'busy',why:message.abort};
     const gone=await watch.until('the page sees the station gone',seen=>{if(seen.state==='connected'&&seen.boot===firstBoot)last=seen;return seen.state!=='connected'||seen.boot!==firstBoot;},60000);
-    // Every row the old boot showed, up to its last period: a #22 defect keeps those.
+    // Every row the old boot showed, up to its last period: a page that misses the restart keeps those.
     const old=new Set(watch.tips.keys()),oldGeneration=last.generation;
     await watch.until('the new session',()=>{const m=lines.poll();if(m)message=m;return message.cookies;},4*MINUTES);
     await setCookies(message.cookies);
     const oldRows=seen=>seen.rows.filter(r=>old.has(rowKey(r)));
     // Rows of the old boot may stay until the first reads of the new boot answer.
     const back=await watch.until('the page is back on the new boot',seen=>seen.state==='connected'&&seen.boot&&seen.boot!==firstBoot&&!oldRows(seen).length,2*MINUTES);
-    // The window that showed "Latest undefined period" with the old boot's rows.
+    // The window where a faulty page shows "Latest undefined period" with the old boot's rows.
     const quiet=Date.now()+8000;
     while(Date.now()<quiet){
       const seen=await watch.sample();clean('just after the restart');

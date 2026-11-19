@@ -66,7 +66,7 @@ pub struct Decode {
     pub start_frame: u64,
     pub frequency_hz: f64,
     pub snr_db: Option<f64>,
-    /// The WSJT-X a-priori type (1..6) of an a-priori word (#56 slice 5); absent otherwise.
+    /// The WSJT-X a-priori type (1..6) of an a-priori word; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub a_priori: Option<u8>,
 }
@@ -77,11 +77,11 @@ pub enum DecodeError {
     SearchLimited,
     DecodeLimit,
 }
-/// Verified subtractions per window (#56: jt9 subtracts every decode, MAX_EARLY 200).
+/// Verified subtractions per window (jt9 subtracts every decode, MAX_EARLY 200).
 const SUBTRACTIONS: usize = 200;
 /// Subtraction passes per window.
 const PASSES: usize = 3;
-/// Verifications run at once (#57 CL-057-02); each holds one 1.2 MB known-word waveform.
+/// Verifications run at once (CL-057-02); each holds one 1.2 MB known-word waveform.
 const VERIFICATIONS: usize = 16;
 /// The padded FT8 residual: 2.0 s of zeros before and 0.64 s after an FT8 window (jt9 sync8
 /// lags -62..+62, DT -2.5..+2.5 s).
@@ -112,7 +112,7 @@ struct Subtraction {
 pub struct Decoder {
     channel: Channel,
     scalar: bool,
-    /// Threads of the parallel decode stages, this one included (#57 CL-057-02).
+    /// Threads of the parallel decode stages, this one included (CL-057-02).
     threads: usize,
 }
 impl Default for Decoder {
@@ -226,7 +226,7 @@ impl Decoder {
         if samples.len() < frame {
             return Ok(());
         }
-        // FT8 runs on the zero-padded residual (#56 padded residual): frames that run past
+        // FT8 runs on the zero-padded residual: frames that run past
         // either window edge are found and subtracted like jt9's, and published only when
         // they lie inside the window to within half a symbol.
         let length = samples.len();
@@ -318,7 +318,7 @@ impl Decoder {
             // Every candidate's verification is independent of the others; only the duplicate
             // checks depend on this window's earlier records. Candidates are therefore
             // verified in parallel and replayed here in order, each step and error taken
-            // exactly where the single-threaded loop takes it (#57 CL-057-02).
+            // exactly where the single-threaded loop takes it (CL-057-02).
             // Each verification holds one 1.2 MB known-word waveform while it refines, so at
             // most VERIFICATIONS run at once (about 20 MB).
             let stop = || cancel();

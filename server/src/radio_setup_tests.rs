@@ -1271,7 +1271,7 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
             .unwrap()
             .contains("COM6")
     );
-    // A saved radio another station reserved is no longer this station's.
+    // A saved radio another station reserved is not this station's.
     let c = fixture("http://127.0.0.1:18054", false);
     radio_setup::confirm_keying(&c.state);
     saved_on(&c, 3);

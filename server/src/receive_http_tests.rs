@@ -238,7 +238,7 @@ async fn live_native_browser_mode(mode: &str) {
     if mode == "ft8" {
         recording.fixture_input(Box::new(Input::new(fixture)));
     } else {
-        // #37: the browser chooses FT4 with the top-bar band and mode selects; the band
+        // The browser chooses FT4 with the top-bar band and mode selects; the band
         // selection starts receive (in FT8) first and the mode change restarts it in FT4,
         // so each of the two receive starts opens its own native fixture input.
         recording.fixture_inputs(vec![
@@ -307,7 +307,7 @@ async fn live_native_browser_mode(mode: &str) {
 
 /// The hash-pinned busy recording websdr_test7.wav (27 decodes) as real-time native
 /// capture whose QPC clock is the system clock: it fills the first UTC FT8 period at least
-/// 2 s after Start and again the periods 30 s and 60 s later, with silence around them (#57).
+/// 2 s after Start and again the periods 30 s and 60 s later, with silence around them.
 #[cfg(all(windows, not(debug_assertions)))]
 struct BusyPeriodInput {
     queue: Arc<audio::PacketQueue>,

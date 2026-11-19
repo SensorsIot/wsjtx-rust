@@ -12,7 +12,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 /// SaveContact body cap: a 1024-character comment stays admissible with worst-case
-/// two-byte JSON escaping of every character (#10 decision 2026-10-31).
+/// two-byte JSON escaping of every character.
 pub const SAVE_BODY_MAX: usize = crate::limits::RECORD_BYTES;
 
 pub fn error(code: &str, field: Option<&str>) -> Response {
@@ -175,28 +175,28 @@ struct WireRecord {
     tx_pwr: Option<String>,
     #[serde(deserialize_with = "nullable")]
     comment: Option<String>,
-    /// Contest exchange field (#24 S2b), optional.
+    /// Contest exchange field, optional.
     #[serde(default)]
     stx: Option<String>,
-    /// Contest exchange field (#24 S2b), optional.
+    /// Contest exchange field, optional.
     #[serde(default)]
     stx_string: Option<String>,
-    /// Contest exchange field (#24 S2b), optional.
+    /// Contest exchange field, optional.
     #[serde(default)]
     srx: Option<String>,
-    /// Contest exchange field (#24 S2b), optional.
+    /// Contest exchange field, optional.
     #[serde(default)]
     contest_id: Option<String>,
-    /// Contest exchange field (#24 S2b), optional.
+    /// Contest exchange field, optional.
     #[serde(default)]
     srx_string: Option<String>,
-    /// Contest exchange field (#24 S2b), optional.
+    /// Contest exchange field, optional.
     #[serde(default, rename = "class")]
     class_: Option<String>,
-    /// Contest exchange field (#24 S2b), optional.
+    /// Contest exchange field, optional.
     #[serde(default)]
     arrl_sect: Option<String>,
-    /// Contest exchange field (#24 S2b), optional.
+    /// Contest exchange field, optional.
     #[serde(default)]
     state: Option<String>,
     /// CL-112-05 APP_WSTXRUST_ACTIVITY, optional (absent: activity none).

@@ -21,12 +21,12 @@ pub(crate) struct Bench {
     pub(crate) offset: Arc<AtomicI64>,
     /// When nonzero, the station's UTC stands still at this value (offset ignored).
     pub(crate) frozen: Arc<AtomicI64>,
-    /// Every Tx level handed to the hardware (#44 CL-044-12).
+    /// Every Tx level handed to the hardware (CL-044-12).
     pub(crate) levels: Arc<Mutex<Vec<i32>>>,
-    /// Safety edits since the start: the safety revision is 3 plus this (#81 TC-081-005 (g)).
+    /// Safety edits since the start: the safety revision is 3 plus this (TC-081-005 (g)).
     pub(crate) safety_edits: Arc<AtomicU64>,
     /// When nonzero, the transmit owner's thread reads its UTC at most this value while the
-    /// test thread reads the moved clock: a jump the engine sees first (#87).
+    /// test thread reads the moved clock: a jump the engine sees first.
     pub(crate) owner_hold: Arc<AtomicI64>,
 }
 impl Hardware for Bench {
@@ -420,7 +420,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     );
     assert_eq!(v["transmit"]["capability"], "available");
     assert_eq!(v["transmit"]["arm_state"], "disarmed");
-    // TC-111-007 (#111 L3): off with cause startup and no start yet at a station start.
+    // TC-111-007: off with cause startup and no start yet at a station start.
     assert_eq!(
         (
             &v["transmit"]["last_disarm_cause"],
@@ -438,7 +438,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         (StatusCode::FORBIDDEN, "forbidden_origin")
     );
     // The maximum shape (six 37-character messages, 13-character calls, a log outcome,
-    // 16 maximal dialogue entries, #37; #97 a 13-character busy_with and paused_calls 99) fits;
+    // 16 maximal dialogue entries, a 13-character busy_with and paused_calls 99) fits;
     // one byte over the cap is refused, never truncated.
     let long = "A".repeat(37);
     let entry =
@@ -465,7 +465,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
     // Event payloads stay within 192 bytes.
     let r = &f.state.recording;
     // station.tick with its exact keys is at least 220 bytes at maximum values (two
-    // UUIDs, a 13-digit utc_ms); the model's StationTickEvent bound is 224 (#10 NOTES).
+    // UUIDs, a 13-digit utc_ms); the model's StationTickEvent bound is 224.
     let tick = contact_http::tick_event(r).0;
     let worst = tick
         .replace("\"rx_level_db\":null", "\"rx_level_db\":90")
@@ -477,7 +477,6 @@ const MAX_SAFE_TEST: u64 = 9_007_199_254_740_991;
 // Oracle: WstxOperatingChain::BusyPartner "Shown". The operator selects CQ
 // KE1J; KE1J's report to W9XYZ (packed with the real codec) is published: GET /contact's watchdog
 // carries busy_with "W9XYZ" and paused_calls 0 (no paused send yet); his RR73 to W9XYZ clears it.
-// Red on the parent: no busy_with key.
 #[tokio::test]
 async fn tc_097_017_d_get_contact_carries_the_busy_partner() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -620,7 +619,7 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
         (f.body(current, "select_row", json!({"row":{"source_id":f.id,"job_id":f.id,"generation":1,"sequence":0},"replace":false})), "row_unavailable", Some("row")),
         (f.body(current, "redecode", json!({})), "redecode_unavailable", None),
         (f.body(current, "open_log", json!({})), "no_contact", None),
-        // #41: the review queue and its discard action are retired.
+        // There is no review queue: its discard action is an invalid request.
         (f.body(current, "discard_review", json!({"contact_id":f.id})), "invalid_request", Some("action")),
     ];
     for (body, expected, field) in cases {
@@ -680,7 +679,7 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
         .raw("POST", "/contact/command", Some(&f.origin), Some(over), &[])
         .await;
     assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
-    // 16 receipts retained: the 17th oldest command_id is no longer a replay.
+    // 16 receipts retained: the 17th oldest command_id is not a replay.
     let first = f.body(
         rev(&f.snapshot().await),
         "set_hold_tx",
@@ -867,7 +866,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
     assert_eq!(s, StatusCode::ACCEPTED, "{receipt}");
     let snap = f.snapshot().await;
     assert_eq!(snap["transmit"]["arm_state"], "armed");
-    // Accepted TransmitRequest sequences as #9 reports them.
+    // Accepted TransmitRequest sequences as the transmit owner reports them.
     let accepted = |t: &Value| -> std::collections::BTreeSet<u64> {
         t["outcomes"]
             .as_array()
@@ -893,7 +892,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     // The audio may start after the fifth step (real clock); the next request is then
-    // queued by a later step, so keep stepping for a bounded time (#10 flake).
+    // queued by a later step, so keep stepping for a bounded time.
     let deadline = Instant::now() + Duration::from_secs(5);
     let (t1, started, new) = loop {
         let (_, t1, _, _) = f.call("GET", "/transmit", None).await;
@@ -918,7 +917,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             assert!(at - period < 11_250, "key at {at} after the start window");
         }
     }
-    // Halt (priority #9 route) first, then cancel.
+    // Halt (the transmit owner's priority route) first, then cancel.
     let (s, v, _, _) = f.call("POST", "/transmit/halt", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap()}))).await;
     assert_eq!(s, StatusCode::ACCEPTED, "{v}");
     let (s, _) = f.send("cancel", json!({})).await;
@@ -964,7 +963,7 @@ async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action
             "{action}"
         );
     }
-    // #41: Log QSO logs at once on a receive-only station, without a review form.
+    // Log QSO logs at once on a receive-only station, without a review form.
     let (s, _) = f.send("open_log", json!({})).await;
     assert_eq!(s, StatusCode::ACCEPTED);
     let snap = f.snapshot().await;
@@ -1150,7 +1149,7 @@ async fn transmit_state_revision_follows_the_read_view_only() {
     assert!(first_view.get("outcomes").is_none() && first_view.get("profile_id").is_none());
     let whole = transmit_http::changed_fields(&Value::Null, &first_view);
     assert_eq!(Value::Object(whole.clone()), first_view);
-    // TC-111-007 (#111 L3): the event carries last_arm_cause and stays within 1024 bytes
+    // TC-111-007: the event carries last_arm_cause and stays within 1024 bytes
     // with the longest causes of each direction.
     assert_eq!(
         first_view["transmit"].get("last_arm_cause"),
@@ -1509,7 +1508,7 @@ async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     outcome
 }
 
-// ---------------------------------------------------------------- FT4 (#11 slice B)
+// ---------------------------------------------------------------- FT4
 fn tick_period(f: &Fixture) -> u64 {
     let (text, _) = contact_http::tick_event(&f.state.recording);
     serde_json::from_str::<Value>(&text).unwrap()["data"]["period_ms"]
@@ -1575,12 +1574,12 @@ async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mo
 }
 
 // An FT4 and an FT8 station at once, each
-// with its own router, engine, #9 owner and log; then the FT4 station switches mode.
+// with its own router, engine, transmit owner and log; then the FT4 station switches mode.
 // Station time stands still 3 s before the FT4 station's first own (odd) period at
 // even + 7.5 s, so its Tx1 request is still unstarted when the mode switches, however
-// slowly the test runs: the switch, not the #9 owner's period start, ends it. (On wall
-// time a slow run let that period start first; the owner then refused the request as
-// stale_request, last_disarm_cause "refused", before the contact step saw the switch.)
+// slowly the test runs: the switch, not the transmit owner's period start, ends it. (On wall
+// time a slow run lets that period start first; the owner then refuses the request as
+// stale_request, last_disarm_cause "refused", before the contact step sees the switch.)
 // (the cause mode_changed on the wire).
 #[tokio::test]
 async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cancels_only_its_own() {
@@ -1609,7 +1608,7 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
         assert_eq!(s, StatusCode::ACCEPTED, "{v}");
         rows.push(row);
     }
-    // #41: Log QSO stored each station's record in its own contacts.adi.
+    // Log QSO stored each station's record in its own contacts.adi.
     let review = |snap: &Value| {
         let f = if snap["profile_id"] == f4.id {
             &f4
@@ -1632,7 +1631,7 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
     assert_eq!(review(&logged4), (Some("MFSK".into()), Some("FT4".into())));
     assert_eq!(review(&s8), (Some("FT8".into()), None));
     assert_ne!(logged4["contact"]["id"], s8["contact"]["id"]);
-    // #37: Log QSO closed each station's contact.
+    // Log QSO closed each station's contact.
     assert_eq!(
         (
             logged4["contact"]["state"].as_str(),
@@ -1832,7 +1831,7 @@ async fn published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73
 }
 
 // The same IW9FRA replay on a transmit-capable station
-// through the actual station step, router and #9 owner on a virtual UTC: each partner
+// through the actual station step, router and transmit owner on a virtual UTC: each partner
 // record is published 7.0 s after its period start (live +6.7..7.3 s), just before my
 // odd period; Hold Tx keeps my Tx at 2439 Hz. Expected: Tx1, R+10, R+10, 73, completed,
 // logged once (contacts.adi) with Enable Tx off.
@@ -1973,7 +1972,6 @@ async fn the_contact_step_gives_the_hash_table_the_dx_call() {
 #[tokio::test]
 async fn set_activity_reads_back_and_reaches_udp_status() {
     let f = fixture("http://127.0.0.1:18001", true);
-    // "eu_vhf" until #99 (TC-099-002).
     let (s, v) = f
         .send("set_activity", json!({"activity":"q65_pileup"}))
         .await;
@@ -2280,7 +2278,7 @@ async fn a_priori_context_follows_profile_and_contact() {
     );
 }
 
-// ---------------------------------------------------------------- #110 QsoSettingsFile
+// ---------------------------------------------------------------- QsoSettingsFile
 const QSO_FILE: &str = "qso-settings.json";
 /// (auto_seq, call_first) as GET /contact `settings` shows them.
 async fn seq_and_first(f: &Fixture) -> (Value, Value) {
@@ -2304,8 +2302,8 @@ async fn profile_revision(f: &Fixture) -> Value {
     v["revision"].clone()
 }
 
-// Expected values are points 1, 2, 3, 5
-// and 6 as the issue states them; a station start is a new station owner (new boot id) on
+// Expected values are hand-written;
+// a station start is a new station owner (new boot id) on
 // the same disposable profile directory.
 #[tokio::test]
 async fn tc_110_001_auto_seq_and_call_first_are_saved_across_a_station_start() {
@@ -2714,9 +2712,9 @@ async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station()
     assert_eq!(snap["transmit"]["arm_state"], "armed");
 }
 
-// ------------------------------------------------------------------ #85
+// ------------------------------------------------------------------ same station again
 // Never the same station twice in a row in the log (CL-085-01 to -03). The actual router,
-// station step, log and UDP owner with a loopback target; the #9 transmit owner on the
+// station step, log and UDP owner with a loopback target; the transmit owner on the
 // recording double on a virtual UTC. Expected outcomes are the hand-written rule table of
 // CL-085-01 (refused: no record, nothing at the target, `same_station_again`), never output.
 
@@ -2831,7 +2829,7 @@ impl<'a> Air85<'a> {
             .collect()
     }
 }
-/// Reply (#111): one command selects the row and starts, with the safety revision shown.
+/// Reply: one command selects the row and starts, with the safety revision shown.
 async fn reply_85(f: &Fixture, row: &Value) {
     let (s, v) = f
         .send("reply", json!({"row":row,"safety_revision":3}))
@@ -3004,7 +3002,7 @@ fn refused_85(f: &Fixture, call: &str) -> Value {
 // Log QSO of a running second QSO with the station logged last closes it and writes
 // nothing; a cancelled or an invalid (log_invalid_field) first QSO leaves the next one with that
 // station logged; a pending first record is the newest QSO; the stored log is read again after a
-// restart; SaveContact stores what it is given (L5).
+// restart; SaveContact stores what it is given.
 // Proves: TC-085-001, TC-085-002, TC-085-003
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_085_001_log_qso_pending_records_and_restart() {
@@ -3134,7 +3132,7 @@ fn log_qso_85(f: &Fixture, at: i64, call: &str, grid: Option<&str>) {
 // strategy is of class contest) the serial counts only when the log accepts the contact: a
 // second QSO in a row with K1ABC (a dupe under the contest's rule) keeps the serial and the next
 // station is sent the same one; under band_grid a rover from a new grid is logged and counts; a
-// record refused log_invalid_field is accepted for the answer and counts (L6).
+// record refused log_invalid_field is accepted for the answer and counts.
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_085_004_the_contest_serial_counts_only_on_accepted() {
     let f = fixture("http://127.0.0.1:18089", false);
@@ -3331,7 +3329,7 @@ fn open_gate_85(
 // The newest record of a log prepared by
 // hand (another program's K1ABC on 40 m in FT8, the confirmed CAT dial of the radio double being
 // 7.074 MHz) makes the next QSO with K1ABC not logged; an ADIF import appending DL1ABC makes the
-// next one logged (L5). A second profile reads only its own log.
+// next one logged. A second profile reads only its own log.
 // Proves: TC-085-002, TC-085-003
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_085_003_the_newest_record_whatever_wrote_it() {

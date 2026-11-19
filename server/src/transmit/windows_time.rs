@@ -1,4 +1,4 @@
-//! #92 situation 1: reads the Windows Time (W32Time) service state through the service
+//! Reads the Windows Time (W32Time) service state through the service
 //! control manager with query rights only (no administrator rights). Never starts, stops
 //! or configures the service.
 use super::clock::WindowsTime;

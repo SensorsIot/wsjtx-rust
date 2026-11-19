@@ -7,7 +7,7 @@
 // above its test, on flat rows of 30 dB (floor 30.65, every slot -0.65, free, value 0) unless a
 // band is named: a candidate f is closed by a station decoded at d in a counted period when
 // |f - d| is below 50 Hz, and of equal values the current Tx is kept, else the nearer, then the
-// lower. The actual station router, contact engine and #9 transmit owner on the recording
+// lower. The actual station router, contact engine and transmit owner on the recording
 // hardware double (virtual UTC; no audio, PTT or radio).
 use super::*;
 
@@ -18,7 +18,7 @@ fn other_at(hz: f64) -> (&'static str, f64, Option<f64>) {
 const HA7NB: (&str, f64, Option<f64>) = ("CQ HA7NB JN97", 1001.0, Some(-12.0));
 const M7HNI: (&str, f64, Option<f64>) = ("G4AAA M7HNI -10", 2340.0, Some(-8.0));
 
-/// TC-089-002 (the 12:24:29 reproduction, #66 comment 6740465378): a station on 20 m FT8, Hold Tx
+/// TC-089-002 (the 12:24:29 reproduction): a station on 20 m FT8, Hold Tx
 /// off, Tx 2340; my odd periods P - 120 .. P - 30 s and P = e + 15 s received flat 30 (one row
 /// each); a station decoded at 2290 only in P - 120 s; `start` starts the run (a strategy run or a
 /// pounce on HA7NB); then the clock at P + 14.1 s and P's complete publication: HA7NB's CQ at
@@ -49,8 +49,7 @@ async fn newest_p(start: impl AsyncFnOnce(&Mcp)) -> (Mcp, crate::automation::Cli
 // 2340 in P (2300..2380 closed), all at value 0; the current Tx 2340 is closed, the nearest free
 // slots 2290 and 2390 are both 50 Hz away: the lower, 2290; Rx = Tx = 2290, tx_slot {2290, 0,
 // unknown}, not 2340. The station decoded at 2290 only in P - 120 s (the 5th older odd period once
-// P counts) closes nothing, else 2390. A pounce on HA7NB chooses the same. Red on the parent: P not
-// counted, Tx stays on 2340 (with M7HNI on it).
+// P counts) closes nothing, else 2390. A pounce on HA7NB chooses the same.
 // Proves: TC-089-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_002_a_selection_on_the_newest_publication_counts_its_stations() {
@@ -75,8 +74,7 @@ async fn tc_089_002_a_selection_on_the_newest_publication_counts_its_stations() 
 // e - 30 s flat 30. K1ABC silent: at rep 1 (e + 30 s) a station decoded on my Tx 1500 only in that
 // period, its row flat 30, published complete at e + 44.1 s (in progress). The slot check counts it:
 // 1460..1540 closed, Tx alone to the nearest free slot clear of the station and of Rx (1800): 1450
-// and 1550 both 50 Hz away, the lower 1450; Rx stays 1800. Red on the parent: rep 1 not counted, Tx
-// stays 1500.
+// and 1550 both 50 Hz away, the lower 1450; Rx stays 1800.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_002_a_held_slot_check_counts_the_newest_period() {
     let rows = |f: &Mcp, e: i64| {
@@ -103,8 +101,7 @@ async fn tc_089_002_a_held_slot_check_counts_the_newest_period() {
 // e - 60 .. e - 15 s flat 30 and the odd P = e + 15 s flat 30 (its row so far). Enable Tx on at
 // e + 16 s: a build counting e - 15 and e - 45 s (2), [[300, 2700]]. P's complete publication at
 // P + 14.1 s with a station decoded at 1200 Hz in P: one build at once, at_utc_ms P + 14.1 s, P
-// counted (3), 1160..1240 closed: [[300, 1200], [1250, 2700]]. Red on the parent: no build at P's
-// publication, the e + 16 s value with 1200 open until the next period start.
+// counted (3), 1160..1240 closed: [[300, 1200], [1250, 2700]].
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_003_the_marks_count_the_publication_of_the_period_in_progress_in_a_qso() {
     let f = station(true).await;
@@ -149,8 +146,8 @@ async fn tc_089_003_the_marks_count_the_publication_of_the_period_in_progress_in
 // even e (the other parity, ended) with a station at 1800 Hz: the judged odd periods unchanged, no
 // build. (b) P's complete publication at P + 14.1 s with the station at 1200: a build at once,
 // rx_parity odd, P counted (3), [[300, 1200], [1250, 2700]]. At the next period start e + 30 s the
-// parity flips as before: even, e - 30 and e - 60 s (2), the odd decode closes nothing:
-// [[300, 2700]]. Red on the parent: no build at P's publication.
+// parity flips: even, e - 30 and e - 60 s (2), the odd decode closes nothing:
+// [[300, 2700]].
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_003_listening_counts_the_period_in_progress_once_completely_published() {
     let f = station(true).await;
@@ -190,8 +187,8 @@ async fn tc_089_003_listening_counts_the_period_in_progress_once_completely_publ
     );
 }
 
-/// TC-089-004 (#97: no contest Run; a contest strategy calls CQ only after two empty fresh
-/// publications, CqWhenNoTarget D11): the WW Digi contest strategy on 20 m (the period in force,
+/// TC-089-004 (a contest strategy calls CQ only after two empty fresh
+/// publications, CqWhenNoTarget): the WW Digi contest strategy on 20 m (the period in force,
 /// W1DUP a dupe), Hold Tx `hold`, Tx 1500, my Rx parity even; my even periods e - 90 .. e - 30 s
 /// and P = e flat 30, one row each; `before` runs before Auto on (it sets the clock); Auto on, then
 /// one station step.
@@ -255,8 +252,7 @@ async fn calls_from(f: &Mcp, hz: u64, name: &str) {
 // e + 29.1 s, the second empty publication: in that station step the CQ's slot with P counted,
 // 1460..1540 closed, the nearest free 1450 (the lower of 1450 and 1550), enable_tx. (e) P published
 // before Auto on (not fresh) and Auto on at P + 20 s: waiting after the fresh empty e + 15 s, the
-// CQ from 1450 after the fresh empty e + 30 s. Red on the parent (the #89 contest Run): the CQ
-// before the second empty publication.
+// CQ from 1450 after the fresh empty e + 30 s.
 // Proves: TC-089-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_a_contest_strategy_cq_counts_the_newest_rx_period() {
@@ -299,10 +295,9 @@ async fn tc_089_004_a_contest_strategy_cq_counts_the_newest_rx_period() {
 
 // (c) Hold Tx on: no CQ at Auto on (P + 5 s) nor at
 // the first empty publication; at the second the CQ on the held Tx 1500 with no slot decision
-// (D16), armed. (d) Auto off, and separately Halt, at P + 20 s between the two publications:
+// armed. (d) Auto off, and separately Halt, at P + 20 s between the two publications:
 // stopped, and at the second no decision and no enable_tx. (f) Auto on again at P + 20 s: still
-// waiting, and on the second empty publication one decision, 1450 as (a). Red on the parent (the
-// #89 contest Run): (c) armed at P + 5 s, (f) the CQ on P's publication.
+// waiting, and on the second empty publication one decision, 1450 as (a).
 // Proves: TC-089-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_hold_tx_stop_and_a_second_auto_on() {
@@ -376,8 +371,7 @@ async fn tc_089_004_hold_tx_stop_and_a_second_auto_on() {
 // s nor at P's complete publication at P + 14.1 s (a station decoded on the current Tx 1800 in P,
 // to another call: the first empty publication after Esc); the odd e + 15 s published empty at
 // e + 29.1 s, the second: the CQ's slot with P counted, 1760..1840 closed (also by K1ABC in
-// e - 30 s), the nearest free 1750 (the lower of 1750 and 1850). Red on the parent (the #89 contest
-// Run): the CQ on P's publication.
+// e - 30 s), the nearest free 1750 (the lower of 1750 and 1850).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_after_esc_on_a_manual_contact_the_cq_waits() {
     let t = run_cq(false, |f, e| {
@@ -431,8 +425,7 @@ async fn tc_089_004_after_esc_on_a_manual_contact_the_cq_waits() {
 // at e + 30 s (no publication), nor at the first empty publication after the contact (the even
 // e + 30 s, flat, at e + 44.1 s); at the second (the odd e + 45 s at e + 59.1 s) it decides with
 // what is due (flat rows; K1ABC at 1800 in e - 30 s closes at most 1760..1840): the current Tx 1500
-// is free and kept, Rx = Tx = 1500, tx_slot {1500, 0}. Red on the parent (the #89 contest Run): the
-// CQ at e + 30 s.
+// is free and kept, Rx = Tx = 1500, tx_slot {1500, 0}.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_after_a_completed_manual_contact_the_cq_waits() {
     const RR73: (&str, f64, Option<f64>) = ("HB9BLA K1ABC RR73", 1800.0, Some(-5.0));

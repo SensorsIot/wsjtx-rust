@@ -27,7 +27,7 @@ pub const HISTORY_PAGE_RECORDS_MAX: usize = 10;
 pub const HISTORY_PAGE_BYTES_MAX: usize = 16_384;
 pub const FILE_NAME: &str = "contacts.adi";
 const ID_FIELD: &str = "app_wstxrust_contact_id";
-/// #10 UpdateLogbook source marker of a record added from another logger's export.
+/// UpdateLogbook source marker of a record added from another logger's export.
 const SOURCE_FIELD: &str = "app_wstxrust_source";
 /// CL-112-05 the contact's activity at logging time (absent for activity none).
 const ACTIVITY_FIELD: &str = "app_wstxrust_activity";
@@ -48,9 +48,9 @@ fn activity_value(v: &str) -> bool {
 fn app_field(lname: &str) -> bool {
     [ID_FIELD, SOURCE_FIELD, ACTIVITY_FIELD].contains(&lname)
 }
-/// #10 consolidation window: a record this close to a stored one is already present.
+/// Consolidation window: a record this close to a stored one is already present.
 const CONSOLIDATION_SECONDS: i64 = 120;
-/// #10 at most this many skip/drop reason groups are listed in the update summary.
+/// At most this many skip/drop reason groups are listed in the update summary.
 const REASON_GROUPS: usize = 16;
 const RECEIPTS: usize = 16;
 /// WstxLogbook::UpdateLogbook::idleSeconds: a receiving import untouched this long gives
@@ -76,7 +76,7 @@ pub const FIELDS: [&str; 31] = [
     "my_gridsquare",
     "tx_pwr",
     "comment",
-    // Contest exchanges in AdifQso::to_adif order (#24 S2b, LogRecord).
+    // Contest exchanges in AdifQso::to_adif order (LogRecord).
     "stx",
     "stx_string",
     "srx",
@@ -85,7 +85,7 @@ pub const FIELDS: [&str; 31] = [
     "class",
     "arrl_sect",
     "state",
-    // QSO confirmation (#10, operator 2026-11-04, ADIF 3.1 QSL Rcvd / QSL Via): kept by
+    // QSO confirmation (ADIF 3.1 QSL Rcvd / QSL Via): kept by
     // UpdateLogbook and only ever upgraded to a confirmation, never removed.
     "lotw_qsl_rcvd",
     "lotw_qslrdate",
@@ -111,13 +111,13 @@ const STATE: usize = 23;
 const CONTEST: usize = 16;
 /// The confirmation fields are FIELDS[CONFIRMATION..]; the LogRecord fields before them.
 const CONFIRMATION: usize = 24;
-/// #10 confirmation channels (LoTW, paper QSL, eQSL): received status, received date and
+/// Confirmation channels (LoTW, paper QSL, eQSL): received status, received date and
 /// received via indexes.
 const CHANNELS: [(usize, usize, Option<usize>); 3] =
     [(24, 25, None), (26, 27, Some(28)), (29, 30, None)];
 
 /// ADIF 3.1.8 band enumeration with inclusive limits in Hz.
-/// #97 a band name of the ADIF band enumeration, in lower case (WstxRankingControl::StrategyBands).
+/// A band name of the ADIF band enumeration, in lower case (WstxRankingControl::StrategyBands).
 pub fn is_band(name: &str) -> bool {
     BANDS.iter().any(|(b, _, _)| *b == name)
 }
@@ -186,14 +186,14 @@ impl Record {
             .expect("supported field");
         self.values[index] = Some(value);
     }
-    /// #10 QSO confirmation: LOTW_QSL_RCVD, QSL_RCVD or EQSL_QSL_RCVD is Y or V
+    /// QSO confirmation: LOTW_QSL_RCVD, QSL_RCVD or EQSL_QSL_RCVD is Y or V
     /// (ADIF 3.1 QSL Rcvd: Y yes, V verified; N, R, I and absent are not confirmed).
     pub fn confirmed(&self) -> bool {
         CHANNELS
             .iter()
             .any(|(status, _, _)| self.values[*status].as_deref().is_some_and(confirmation))
     }
-    /// #10 UpdateLogbook upgrade: each channel that `other` confirms and this record does
+    /// UpdateLogbook upgrade: each channel that `other` confirms and this record does
     /// not takes `other`'s status and, where `other` has them, its date and via. Nothing
     /// else changes and a confirmation is never removed. Whether anything changed.
     fn upgrade_confirmation(&mut self, other: &Record) -> bool {
@@ -239,7 +239,7 @@ impl Record {
             .map(|b| b.to_ascii_lowercase())
             .or_else(|| self.values[FREQ].as_deref().and_then(band_of_mhz))
     }
-    /// CL-085-01 (#85): this record, handed to the log, is the same station again after
+    /// CL-085-01: this record, handed to the log, is the same station again after
     /// `newest`, the newest QSO of the log: CALL equal ignoring case (K1ABC/P is not K1ABC),
     /// the same band (an unknown band equals only an unknown band) and the same mode (FT8
     /// and FT4 differ). Under a contest, `contest` is its dupe rule and decides instead
@@ -299,7 +299,7 @@ impl Record {
         };
         Some(days * 86_400 + number(&time[..2])? * 3600 + number(&time[2..4])? * 60 + seconds)
     }
-    /// #10 consolidation key: call, effective band and effective mode.
+    /// Consolidation key: call, effective band and effective mode.
     fn consolidation_key(&self) -> (String, String, String) {
         (
             self.values[CALL]
@@ -314,7 +314,7 @@ impl Record {
         let mut object = serde_json::Map::new();
         object.insert("index".into(), json!(index));
         object.insert("contact_id".into(), json!(self.contact_id));
-        // ContactHistory shows the LogRecord fields, not the confirmation fields (#10).
+        // ContactHistory shows the LogRecord fields, not the confirmation fields.
         for (name, value) in FIELDS.iter().zip(&self.values).take(CONFIRMATION) {
             object.insert((*name).into(), json!(value));
         }
@@ -470,7 +470,7 @@ fn confirmation(value: &str) -> bool {
     value.eq_ignore_ascii_case("Y") || value.eq_ignore_ascii_case("V")
 }
 /// Report rendering of WstxMessageChoice::ReportRange, "%+2.2d" in -50..+49, an RTTY
-/// Roundup 5n9 RST (#24 S2b, LogRecord) or an EU VHF RS 52..59 (#99, EuVhfExchange).
+/// Roundup 5n9 RST (LogRecord) or an EU VHF RS 52..59 (EuVhfExchange).
 pub fn valid_report(value: &str) -> bool {
     let b = value.as_bytes();
     if b.len() == 3 && b[0] == b'5' && (b'2'..=b'9').contains(&b[1]) && b[2] == b'9' {
@@ -485,7 +485,7 @@ pub fn valid_report(value: &str) -> bool {
         && value.parse::<i32>().is_ok_and(|n| (-50..=49).contains(&n))
 }
 
-/// #24 contest field domain of LogRecord (STX/SRX 1-4 digits, the others at most 32
+/// Contest field domain of LogRecord (STX/SRX 1-4 digits, the others at most 32
 /// printable characters without '<' and '>'), shared by SaveContact and UpdateLogbook.
 fn valid_contest_value(name: &str, value: &str) -> bool {
     match name {
@@ -698,9 +698,8 @@ fn interpret(index: usize, raw: Vec<RawField>) -> Result<Record, Fault> {
             ));
         }
         if let Some(i) = supported {
-            // A confirmation field that a log written before #10 kept verbatim (the former
-            // ImportAdi) and that is invalid or repeated stays an unknown field, so such a
-            // log stays readable.
+            // A confirmation field of a stored log that is invalid or repeated stays an unknown
+            // field, so such a log stays readable.
             if i >= CONFIRMATION
                 && (record.values[i].is_some()
                     || !value.is_empty() && !valid_import_value(i, &value))
@@ -768,7 +767,7 @@ pub fn parse_records(bytes: &[u8], limits: &Limits) -> Result<Vec<Record>, Fault
 }
 /// A fault that keeps a record out of an update, or a field out of its record.
 type FieldFault = (&'static str, String);
-/// #10 UpdateLogbook reading of one record: only the kept fields (FIELDS, contact id,
+/// UpdateLogbook reading of one record: only the kept fields (FIELDS, contact id,
 /// source); every other field is not stored. A missing or invalid required field, or a
 /// kept field given twice, skips the record; an invalid optional field is dropped.
 fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), FieldFault> {
@@ -792,8 +791,8 @@ fn interpret_update(raw: Vec<RawField>) -> Result<(Record, Vec<FieldFault>), Fie
             } else if v.is_empty() {
                 Ok(None)
             } else if match supported {
-                // UpdateLogbook keeps only contest values SaveContact would accept (#10,
-                // 2026-11-04); the stored-log reading stays as before.
+                // UpdateLogbook keeps only contest values SaveContact would accept; the
+                // stored-log reading does not apply this rule.
                 Some(i) => {
                     valid_import_value(i, &v)
                         && (!(CONTEST..CONFIRMATION).contains(&i)
@@ -888,13 +887,13 @@ pub struct Group {
     pub count: usize,
     pub record: usize,
 }
-/// #10 UpdateLogbook summary: added, already present, skipped (with reasons) and the
+/// UpdateLogbook summary: added, already present, skipped (with reasons) and the
 /// optional fields dropped from added or present records.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Summary {
     pub added: usize,
     pub present: usize,
-    /// #10 present records whose confirmation this update upgraded.
+    /// Present records whose confirmation this update upgraded.
     pub confirmed: usize,
     pub skipped: usize,
     pub reasons: Vec<Group>,
@@ -958,13 +957,13 @@ struct Inner {
     created: String,
     import: Option<Import>,
     receipts: VecDeque<Receipt>,
-    /// Counts every change of `records` (#55 worked-set cache key).
+    /// Counts every change of `records` (the worked-set cache key).
     revision: u64,
     #[cfg(test)]
     fault: Option<&'static str>,
 }
 /// (records revision, country table, worked set of that log and table).
-/// #10 worked-before index of the log: (effective band, effective mode) per call and
+/// Worked-before index of the log: (effective band, effective mode) per call and
 /// per 4-character grid square, so a query looks up the asked calls, not every record.
 #[derive(Default)]
 struct WorkedIndex {
@@ -990,7 +989,7 @@ impl WorkedIndex {
     fn status(entries: Option<&Vec<(String, String)>>, band: &str, mode: &str) -> &'static str {
         match entries {
             None => "not_worked",
-            // A record without band is never "this band" (as before the index).
+            // A record without band is never "this band".
             Some(e)
                 if e.iter()
                     .any(|(b, m)| !b.is_empty() && b == band && m == mode) =>
@@ -1036,16 +1035,16 @@ type WorkedCache = (
 pub struct Logbook {
     directory: PathBuf,
     inner: Mutex<Inner>,
-    /// #55 the country table of this profile (WSJT-X keeps AD1CCty in WorkedBefore).
+    /// The country table of this profile (WSJT-X keeps AD1CCty in WorkedBefore).
     dxcc: Mutex<DxccState>,
-    /// #55 the worked set of the log for (records revision, country table), rebuilt only
+    /// The worked set of the log for (records revision, country table), rebuilt only
     /// when either changes: /receive/results reads it on every page.
     /// The table is held (not its address), so a later table can never match it.
     worked_set: Mutex<Option<WorkedCache>>,
     worked_windows: Mutex<Vec<WindowCache>>,
     /// The keys a background build is running for (WstxLogbook::WorkedBeforeQuery).
     worked_building: Mutex<Vec<Option<(u32, u32)>>>,
-    /// #10 the worked-before index for the records revision it was built from.
+    /// The worked-before index for the records revision it was built from.
     worked_index: Mutex<Option<(u64, std::sync::Arc<WorkedIndex>)>>,
 }
 struct DxccState {
@@ -1334,7 +1333,7 @@ impl Logbook {
             source: next[index].source.clone(),
             ..record
         };
-        // #10 a confirmation is never removed: the stored confirmation fields stay.
+        // A confirmation is never removed: the stored confirmation fields stay.
         replaced.values[CONFIRMATION..].clone_from_slice(&next[index].values[CONFIRMATION..]);
         next[index] = replaced;
         self.publish(&inner, &next, gate)?;
@@ -1363,7 +1362,7 @@ impl Logbook {
         self.lock()
             .is_ok_and(|inner| inner.ids.contains_key(contact_id))
     }
-    /// CL-085-01 (#85): the last stored record in storage order (the last entry of QSO
+    /// CL-085-01: the last stored record in storage order (the last entry of QSO
     /// History), whatever wrote it; None for an empty log.
     pub fn newest(&self) -> Result<Option<Record>, StoreError> {
         Ok(self.lock()?.records.last().cloned())
@@ -1432,7 +1431,7 @@ impl Logbook {
             .collect())
     }
 
-    /// #55 WorkedBefore of the stored log against the current country table (cached).
+    /// WorkedBefore of the stored log against the current country table (cached).
     pub fn worked_set(&self) -> Result<std::sync::Arc<crate::dxcc::Worked>, StoreError> {
         let (table, _) = self.dxcc();
         let (revision, logged) = {
@@ -1572,12 +1571,12 @@ impl Logbook {
             .collect();
         Ok((inner.revision, list))
     }
-    /// #55 the country table in use and whether an uploaded file was unreadable.
+    /// The country table in use and whether an uploaded file was unreadable.
     pub fn dxcc(&self) -> (crate::dxcc::Table, bool) {
         let d = self.dxcc.lock().unwrap_or_else(|p| p.into_inner());
         (d.table.clone(), d.unreadable)
     }
-    /// #55 replaces the profile's cty.dat with `text` (validated first), or with None
+    /// Replaces the profile's cty.dat with `text` (validated first), or with None
     /// removes the upload so the bundled table applies. The file is written beside the
     /// log, flushed and renamed through the gate; the table changes only after that.
     pub fn replace_dxcc(&self, text: Option<&str>, gate: Gate) -> Result<(), DxccError> {
@@ -1745,7 +1744,7 @@ impl Logbook {
         inner.import = Some(import);
         outcome.map(|()| view)
     }
-    /// #10 UpdateLogbook before publication: the structural parse (any fault refuses the
+    /// UpdateLogbook before publication: the structural parse (any fault refuses the
     /// file), then each record skipped, already present or added. A record is present
     /// when its contact id is stored or added earlier from this file, or when a stored
     /// or earlier added record has the same consolidation key and a start at most
@@ -1834,7 +1833,7 @@ impl Logbook {
     }
 }
 
-/// #10 the record a consolidated update record is present as: a stored one (its index) or
+/// The record a consolidated update record is present as: a stored one (its index) or
 /// one added earlier from the same file (its index among the added).
 #[derive(Clone, Copy)]
 enum Target {
@@ -1924,7 +1923,7 @@ pub fn validate_record(record: &Record, callsign: &str, locator: &str) -> Result
     }) {
         return Err("record.comment");
     }
-    // Contest exchange fields (#24 S2b, LogRecord): STX/SRX 1-4 digits, the others at
+    // Contest exchange fields (LogRecord): STX/SRX 1-4 digits, the others at
     // most 32 printable characters without '<' and '>'.
     for (i, name) in FIELDS.iter().enumerate().take(CONFIRMATION).skip(CONTEST) {
         let Some(value) = v(i) else { continue };

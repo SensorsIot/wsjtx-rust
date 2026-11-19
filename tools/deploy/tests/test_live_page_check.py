@@ -1,5 +1,5 @@
-"""live-page-check.ps1 (SensorsIot/harness#38 item 3): it restarts the station only when it is free,
-and before the restart makes one band selection of the band the station receives on (#247).
+"""live-page-check.ps1: it restarts the station only when it is free,
+and before the restart makes one band selection of the band the station receives on.
 
 Everything that reaches the system is mocked: the agent client, the station process, the Ctrl+C
 helper, the scheduled task. The page check is a stand-in that asks for the restart, reports the

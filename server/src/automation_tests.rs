@@ -2,7 +2,7 @@
 // Hand-authored candidate tables and contact scenarios; the
 // expected selections, states and stop reasons are the WstxTargetChoice::PickRule and
 // WstxAutoMode::AutoStops tables written below, not automation output. Integration cases use
-// the actual station router, contact engine and #9 transmit owner on the recording
+// the actual station router, contact engine and transmit owner on the recording
 // hardware double (virtual UTC; no audio, PTT or radio) through the MCP test client.
 use super::*;
 use crate::automation::{Config, Ranking, candidates, parse_config};
@@ -192,8 +192,7 @@ fn tc_020_003_configuration_is_exact_and_has_no_default_policy() {
 
 /// WstxHoldTx::QuietSpace: the instant of a slot judgement, the station time and the
 /// period start of the latest complete publication, as the slot functions take it. The tests
-/// state both; a slot function that takes the station time alone (the parent of #89) is handed
-/// that, so a test that needs the publication is red there by its assertion, not by its build.
+/// state both.
 pub(crate) trait DueAt {
     fn due_at(now_ms: i64, published: Option<i64>) -> Self;
 }
@@ -235,7 +234,7 @@ pub(crate) fn publish(f: &Mcp, period: i64, list: &[(&str, f64, Option<f64>)]) {
     f.tick();
 }
 pub(crate) async fn automation(f: &Mcp, action: &str, extra: Value) -> Value {
-    // #39: an MCP run arms only within the Tx watchdog time of the operator's last
+    // An MCP run arms only within the Tx watchdog time of the operator's last
     // browser action; these MCP cases start with the operator present.
     if action == "start" {
         f.operator_present().await;
@@ -287,7 +286,7 @@ pub(crate) async fn run_state(f: &Mcp) -> (String, Value) {
 /// One own (odd) transmission of the pending request in period `own`, run to completion.
 pub(crate) async fn not_keyed_in(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
-    // A request still pending at the limit is stopped at once, at this instant (#87: a tick
+    // A request still pending at the limit is stopped at once, at this instant (a tick
     // after the jump would race the transmit service's late start); a run's change it
     // reads at a tick (such as its attendance) applies from the next one.
     f.tick();
@@ -319,7 +318,7 @@ fn bound_period(f: &Mcp) -> Option<i64> {
     Some(wstx_rust::transmit::next_period(mode, floor, parity))
 }
 /// Fails at once when a pending request is bound to another period than `own`: a clock
-/// moved past that period would race the transmit service's StalePeriod refusal (#87).
+/// moved past that period would race the transmit service's StalePeriod refusal.
 pub(crate) fn assert_bound(f: &Mcp, own: i64) {
     if let Some(bound) = bound_period(f) {
         assert_eq!(
@@ -330,8 +329,8 @@ pub(crate) fn assert_bound(f: &Mcp, own: i64) {
 }
 /// Moves the bench UTC by `by_ms` and ticks the station once, the transmit owner kept at the
 /// UTC before the jump until that tick has run: a jump past a pending request's period (a
-/// contest period's end an hour on) that the engine, not the transmit service, sees first
-/// (#87); in real time the engine ticks long before such a period is due.
+/// contest period's end an hour on) that the engine, not the transmit service, sees first;
+/// in real time the engine ticks long before such a period is due.
 pub(crate) fn jump_and_tick(f: &Mcp, by_ms: i64) {
     f.bench
         .owner_hold
@@ -348,7 +347,7 @@ fn advance_to(f: &Mcp, to: i64) {
 }
 /// One own transmission of the pending request in period `own`, run to completion. The
 /// bench clock moves only to the request's own period, so the transmit service never
-/// meets a period the clock has passed (#87): `own` must be the period the pending
+/// meets a period the clock has passed: `own` must be the period the pending
 /// request is bound to. Each step waits on the transmit owner's event; the 5 s deadline
 /// is a hang guard only.
 pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
@@ -705,7 +704,7 @@ async fn tc_020_003_no_answer_context_change_and_lost_authority_stop_and_disarm(
     );
     assert_eq!(f.read("contact").await["transmit"]["arm_state"], "disarmed");
     // Revoking the starting MCP client in Settings ends the run at the next step and the
-    // MCP credential is gone (#58: revocation is immediate).
+    // MCP credential is gone (revocation is immediate).
     cancel(&f).await;
     let a = f.read("automation").await;
     let s = automation(&f, "start", json!({"expected_policy_revision":a["policy_revision"],"expected_run_revision":a["run_revision"],"mode":"ft8","safety_revision":3})).await;
@@ -843,7 +842,7 @@ fn skew(f: &Mcp, d: Duration) {
 }
 
 // A plain MCP policy run decides no slot, with Hold
-// Tx on (the default) as before #39 holdtx.
+// Tx on (the default).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_010_a_plain_policy_run_keeps_its_tx_on_the_called_station() {
     let f = station(true).await;
@@ -941,7 +940,7 @@ async fn tc_020_003_the_run_ends_with_its_transport_and_its_duration() {
     f.tick();
     assert_eq!(run_state(&f).await, ("stopped".into(), json!("time_limit")));
     skew(&f, Duration::ZERO);
-    // A newer proof of the browser's grant is another credential (#58): the MCP
+    // A newer proof of the browser's grant is another credential: the MCP
     // client's run keeps its own transport and waits on; the client's revocation ends
     // it.
     cfg["max_run_minutes"] = json!(480);

@@ -128,13 +128,13 @@ fn station(ic7300: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
         std::thread::sleep(Duration::from_millis(5));
     }
     ic7300.lock().unwrap().writes.clear();
-    // #87: the scripted radio answers at once, so a read's time is scheduling only; the
+    // The scripted radio answers at once, so a read's time is scheduling only; the
     // station's meter reads take the hang guard (the contract's 400 ms is the default,
     // the_meter_read_bound_is_400_ms_without_an_override).
     f.state.recording.tx_level.set_read_bound(HANG_GUARD);
     (f, ic7300)
 }
-/// The bound of every wait of these tests: a hang guard, never a measurement (#87).
+/// The bound of every wait of these tests: a hang guard, never a measurement.
 const HANG_GUARD: Duration = Duration::from_secs(5);
 fn actor(f: &Fixture) -> Arc<cat::actor::Actor> {
     f.state.recording.radio_actor().unwrap()
@@ -203,7 +203,7 @@ fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
 }
 
 // A meter read is bounded at 400 ms (the contract's number); only a test
-// fixture's override changes it (#87).
+// fixture's override changes it.
 #[test]
 fn the_meter_read_bound_is_400_ms_without_an_override() {
     let owner = Owner::default();
@@ -487,7 +487,7 @@ fn tune_meters_are_read_once_a_second_and_pushed_as_one_event() {
         c.set_tune(true, 1500).unwrap();
     });
     let deadline = Instant::now() + HANG_GUARD;
-    // #87: a tick that meets the transmit owner busy (its try-lock) starts no read; the next
+    // A tick that meets the transmit owner busy (its try-lock) starts no read; the next
     // tick at the same instant tries again.
     while recording.tx_level.lock().read_at.is_none() {
         assert!(Instant::now() < deadline, "no read started");
@@ -1033,7 +1033,7 @@ async fn a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted() {
 
 // The wait is bounded; a refusal changes nothing. The refusal
 // comes at 3 s, never before, and at most 250 ms after (the margin of CL-044-16: 35 runs on
-// HB9BLA, 2026-11-07, waited 3001.9 to 3081.6 ms, the most beside a 2-job cargo build).
+// HB9BLA waited 3001.9 to 3081.6 ms, the most beside a 2-job cargo build).
 // Proves: TC-044-023
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing() {

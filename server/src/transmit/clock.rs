@@ -9,7 +9,7 @@ use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-/// #92 situation 1: the Windows Time service state, read without administrator rights
+/// The Windows Time service state, read without administrator rights
 /// for the remedy of pc_clock_off; the station never starts or configures it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowsTime {
@@ -48,7 +48,7 @@ pub const SERVERS: [&str; 3] = ["ch.pool.ntp.org", "time.windows.com", "pool.ntp
 pub const MAX_OFFSET_MS: i64 = 500;
 /// The age of a measurement (WstxStationClock::TimeServerCheck).
 pub mod time_server_check {
-    /// A measurement older than this (s) no longer counts: the state is unknown.
+    /// A measurement older than this (s) does not count: the state is unknown.
     pub const MAX_AGE_SECONDS: u64 = 600;
 }
 pub const MAX_AGE: Duration = Duration::from_secs(time_server_check::MAX_AGE_SECONDS);
@@ -90,7 +90,7 @@ fn step_ms(m: &Measurement, now: Instant, system_now: SystemTime) -> i128 {
         - unix_ms(m.system)
         - now.saturating_duration_since(m.taken).as_millis() as i128
 }
-/// Whether a measurement `age` old no longer counts: its age in whole milliseconds is above
+/// Whether a measurement `age` old does not count: its age in whole milliseconds is above
 /// `MAX_AGE` (TimeServerCheck), so a view's age_ms, state and warning always agree.
 pub fn stale(age: Duration) -> bool {
     age.as_millis() > MAX_AGE.as_millis()
@@ -285,7 +285,7 @@ pub fn query(
 pub trait Source: Send {
     fn measure(&mut self) -> Option<Measurement>;
     /// Whether a round asks any server (false for an empty server list), for the
-    /// warning ntp_unreachable (#92).
+    /// warning ntp_unreachable.
     fn asks(&self) -> bool {
         true
     }
@@ -339,7 +339,7 @@ impl Source for Sntp {
 #[derive(Default)]
 pub struct Monitor {
     /// The last completed round as one: the latest valid measurement, and whether any round
-    /// since start asked a server (#92 ntp_unreachable).
+    /// since start asked a server (the warning ntp_unreachable).
     last: Mutex<(Option<Measurement>, bool)>,
 }
 impl Monitor {

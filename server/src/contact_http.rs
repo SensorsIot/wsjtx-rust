@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! WstxQsoControl::QsoControl for the contact engine: GET /contact (ContactSnapshot) and
 //! POST /contact/command (ContactCommand, CommandReceipt), the station step of the
-//! engine, its direct log (WstxLogbook::DirectLog, #41) and the contact.state /
+//! engine, its direct log (WstxLogbook::DirectLog) and the contact.state /
 //! station.tick WebSocket event payloads. Validation
 //! order is WstxStationLink::RequestOrder: route, Origin, TLS/session, size/media/syntax,
 //! version/enums/UUIDs/safe integers, profile, boot/revision, capability, state.
@@ -111,7 +111,7 @@ pub(crate) struct Station {
     pub(crate) automation: crate::automation::Owner,
     /// WstxStrategies::StrategyConfiguration of this station, read on first use.
     pub(crate) strategy: crate::strategy::Owner,
-    /// #97 set by a strategy run around its own select_row (CqTargetList admission).
+    /// Set by a strategy run around its own select_row (CqTargetList admission).
     pub(crate) strategy_select: std::sync::atomic::AtomicBool,
     /// Test seam only: stands in for the CL-022 grant a plaintext test router lacks.
     #[cfg(test)]
@@ -183,7 +183,7 @@ pub(crate) struct StatusFacts {
     /// WstxHoldTx::HoldTxRule: Hold Tx, read by a run at each slot decision.
     pub hold_tx: bool,
     pub next_message: Option<String>,
-    /// GridExchangeContest (#24 S2a).
+    /// GridExchangeContest.
     pub activity: contact::Activity,
 }
 pub(crate) fn mode_of(text: &str) -> decoder::Mode {
@@ -197,7 +197,7 @@ fn call_of(v: &Value) -> Option<Call> {
     match v["kind"].as_str()? {
         "call" => Some(Call::Sign(v["text"].as_str()?.to_owned())),
         "token" => Some(Call::Token(v["text"].as_str()?.to_owned())),
-        // A hash the station filled in names its call (HashResolution, #24 S1b).
+        // A hash the station filled in names its call (HashResolution).
         "hash" => Some(match v["text"].as_str() {
             Some(t) => Call::Hashed(t.to_owned()),
             None => Call::Hash,
@@ -232,7 +232,7 @@ fn nonstandard_of(f: &Value) -> Option<Standard> {
         exchange,
     })
 }
-/// A Field Day or RTTY Roundup record as an engine message (ContestExchange, #24 S2b):
+/// A Field Day or RTTY Roundup record as an engine message (ContestExchange):
 /// the exchange is its last two words ("6A WI", "579 MA", "559 0013"); TU; is ignored.
 fn contest_of(f: &Value) -> Option<Standard> {
     let (kind, text) = match f["type"].as_str()? {
@@ -274,7 +274,7 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
     let contest = (record["status"] == "decoded")
         .then(|| contest_of(f))
         .flatten();
-    // HoundOperation (#24 S4b): a 0.1 DXpedition record keeps its fields.
+    // HoundOperation: a 0.1 DXpedition record keeps its fields.
     let dxpedition = (record["status"] == "decoded" && f["type"] == "dxpedition")
         .then(|| {
             Some(Box::new(contact::Dxpedition {
@@ -285,7 +285,7 @@ pub(crate) fn row_of(record: &Value, identity: &(String, String, u64), mode: &st
             }))
         })
         .flatten();
-    // EuVhfExchange (#99): an i3=5 record keeps its fields with the received hashes.
+    // EuVhfExchange: an i3=5 record keeps its fields with the received hashes.
     let vhf = (record["status"] == "decoded" && f["type"] == "vhf")
         .then(|| {
             let hash = |c: &Value, bits: u64| {
@@ -396,7 +396,7 @@ impl Station {
         });
         (e.revision, facts, e.settings.auto_seq)
     }
-    /// #97 WstxOperatingChain::BusyPartner for the run: (the partner is busy, the paused calls of the
+    /// WstxOperatingChain::BusyPartner for the run: (the partner is busy, the paused calls of the
     /// message due next).
     pub(crate) fn busy_facts(&self) -> (bool, u32) {
         let inner = self.lock();
@@ -469,9 +469,9 @@ impl Station {
     ) -> Result<(StatusCode, Value), Refusal> {
         self.operate_as(state, body, granted, authorization::Principal::Browser)
     }
-    /// The ContactCommand path with the request's principal (#58). Every principal that
+    /// The ContactCommand path with the request's principal. Every principal that
     /// is not the browser (automation, MCP) is automatic: it never resets the Tx
-    /// watchdog and arms only within the watchdog time of the last browser action (#39).
+    /// watchdog and arms only within the watchdog time of the last browser action.
     pub(crate) fn operate_as(
         &self,
         state: &ProfileState,
@@ -489,7 +489,7 @@ impl Station {
         if body["boot_id"] != r.boot.as_str() {
             return Err(("state_conflict", Some("boot_id")));
         }
-        // #97 CqTargetList: the strategy run's own select_row of a CQ whose directive word is on
+        // CqTargetList: the strategy run's own select_row of a CQ whose directive word is on
         // its active strategy's include list passes the directed-CQ check (never MCP or UDP).
         let run_select = principal == authorization::Principal::Automation
             && self
@@ -530,7 +530,7 @@ impl Station {
         let inner = &mut *guard;
         inner.engine.repeat_exempt = repeat_exempt;
         inner.engine.automated = automated;
-        // #97 BusyPartner split move: his PSK Reporter frequencies of my Tx parity, while the feed
+        // BusyPartner split move: his PSK Reporter frequencies of my Tx parity, while the feed
         // follows this very partner.
         let dx = inner
             .engine
@@ -586,7 +586,7 @@ impl Station {
                 band: strategy::station_band(r),
             };
             inner.engine.step(core.as_deref_mut(), &ctx, &rows);
-            // HashResolution's DX-call rule reads the current contact's DX call (#24 S1b).
+            // HashResolution's DX-call rule reads the current contact's DX call.
             r.hashes
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
@@ -701,7 +701,7 @@ impl Station {
     /// dropped (log_queue_full); an invalid record is never stored (log_invalid_field).
     /// A completed contact already logged at completion keeps that record (its dial, Tx
     /// offset and location of completion): Log QSO on it changes nothing.
-    /// CL-085-01 (#85): a contact that is the same station again after the newest QSO of
+    /// CL-085-01: a contact that is the same station again after the newest QSO of
     /// the log (the last pending record, else the last stored one; `contest` is the dupe
     /// rule of a contest in force) is refused: no record, the outcome same_station_again,
     /// and the engine counts no serial for it (CL-085-02, CL-085-03).
@@ -773,7 +773,7 @@ impl Station {
         }
     }
     /// The dupe rule of the contest in force for CL-085-01: the active strategy is of class
-    /// contest (#53); None otherwise. Read before the station lock is taken.
+    /// contest; None otherwise. Read before the station lock is taken.
     fn contest_dupes(&self, state: &ProfileState) -> Option<crate::contest::Dupes> {
         let config = self.strategy.config(state)?;
         let s = config.active_strategy()?;
@@ -885,7 +885,7 @@ impl Station {
                 json!(v.tx_remaining_calls)
             }
         });
-        // #97 WstxOperatingChain::BusyPartner: busy_with and the paused calls of the message due next.
+        // WstxOperatingChain::BusyPartner: busy_with and the paused calls of the message due next.
         let watchdog = json!({"tx_remaining_calls":remaining,
             "tx_expired":view.as_ref().is_some_and(|v|v.tx_expired),
             "tune_remaining_seconds":view.as_ref().map_or(0,|v|v.tune_remaining_seconds),
@@ -1054,7 +1054,7 @@ fn params(action: &str) -> Option<&'static [&'static str]> {
         "set_tx1_skip" | "set_hold_tx" | "set_auto_seq" | "set_call_first" => &["enabled"],
         "set_activity" => &["activity", "exchange"],
         "enable_tx" | "tune" => &["enabled", "safety_revision"],
-        // #111 CL-111-02: the start actions, each with the safety revision shown.
+        // CL-111-02: the start actions, each with the safety revision shown.
         "reply" => &["row", "directive_confirmed", "safety_revision"],
         "call_cq" | "reset_repetitions" => &["safety_revision"],
         "call_dx" => &["dx_call", "dx_grid", "replace", "safety_revision"],
@@ -1177,7 +1177,7 @@ fn parse_command(b: &Value, action: &str) -> Result<Option<Command>, Refusal> {
                 Value::String(x) => Some(x.as_str()),
                 _ => return Err(("invalid_request", Some("exchange"))),
             };
-            // ContestExchange (#24 S2b): field_day and rtty need their exchange.
+            // ContestExchange: field_day and rtty need their exchange.
             let exchange = contact::contest_exchange(activity, exchange)
                 .ok_or(("invalid_request", Some("exchange")))?;
             Command::SetContest { activity, exchange }
@@ -1237,7 +1237,7 @@ fn envelope(b: &Value) -> Result<(String, u64, String), Refusal> {
         let _ = k;
         return Err(("invalid_request", None));
     }
-    // set_activity's exchange is optional (ContestExchange, #24 S2b), and so is
+    // set_activity's exchange is optional (ContestExchange), and so is
     // select_row's directive_confirmed (WstxStandardQso::DirectedCqRule).
     // Tune off needs no safety revision (CL-111-06).
     let optional = |k: &str| {
@@ -1299,7 +1299,7 @@ pub async fn command(
         return refusal("state_conflict", Some("boot_id"));
     }
     // Transmit authority needs a current CL-022 grant (selected HTTPS profile). The
-    // principal comes from the credential (#58): an MCP client's transport is never the
+    // principal comes from the credential: an MCP client's transport is never the
     // browser, whichever route carried it; an unreadable one is never an operator.
     let access = authorization_http::operating_access_async(&headers, &app).await;
     #[allow(unused_mut)]
@@ -1316,7 +1316,7 @@ pub async fn command(
     {
         granted |= station.grant.load(Ordering::Acquire);
     }
-    // #39: only a human action in the browser is an operator action for the Tx
+    // Only a human action in the browser is an operator action for the Tx
     // watchdog; an MCP tool call runs like automation (no reset, arms only within it).
     let outcome =
         tokio::task::spawn_blocking(move || station.operate_as(&state, body, granted, principal))
@@ -1440,7 +1440,7 @@ impl Station {
                 band: strategy::station_band(r),
             };
             if let Err(code) = inner.engine.command(command, core.as_deref_mut(), &ctx) {
-                // A refusal that names its field (EuVhfExchange, #99) keeps it.
+                // A refusal that names its field (EuVhfExchange) keeps it.
                 let field = inner.engine.refusal_field.or(match code {
                     "stale_revision" => Some("safety_revision"),
                     "out_of_range" if action == "set_tx4" => Some("form"),
@@ -1485,10 +1485,10 @@ pub(crate) fn station_tick(state: &ProfileState) {
         let publication = state.recording.latest_publication();
         // WstxAutoMode::AutoStops: a HALT from any source turns Auto off (the selection stays).
         s.strategy.halt_step(state);
-        // #42 IgnoreLists: a station band change empties the session list before a run step.
+        // IgnoreLists: a station band change empties the session list before a run step.
         s.strategy
             .observe_band(crate::strategy::station_band(&state.recording));
-        // #42 Alert: every new live decode once, whether or not a browser is connected.
+        // Alert: every new live decode once, whether or not a browser is connected.
         s.strategy.alert_step(state);
         s.tick(state);
         s.automation.tick(s, state, publication);

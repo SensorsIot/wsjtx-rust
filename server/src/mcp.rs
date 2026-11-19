@@ -6,8 +6,8 @@
 //! Every tool is one existing versioned station operation, dispatched in-process
 //! through the station router with an internal MCP-principal transport of the caller's
 //! validated MCP client token; the adapter keeps no station state, modem, QSO engine or
-//! transmit authority. Authorization is `Authorization: Bearer <MCP client token>` only
-//! (#58): cookies sent to /mcp are never read, and a browser grant transport or the
+//! transmit authority. Authorization is `Authorization: Bearer <MCP client token>` only:
+//! cookies sent to /mcp are never read, and a browser grant transport or the
 //! station access token is refused, so MCP never acts as the browser operator.
 use crate::*;
 use axum::extract::RawQuery;
@@ -57,7 +57,7 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
     let token = value.strip_prefix("Bearer ")?;
     (1..=128).contains(&token.len()).then(|| token.to_owned())
 }
-/// The migration hint for a bearer that is not an MCP client token (#58).
+/// The migration hint for a bearer that is not an MCP client token.
 pub const TOKEN_HINT: &str = "POST /mcp accepts only an MCP client token (wstx_mcp_...). \
 Create one in Settings > General > Access & grants > MCP clients and configure it as \
 Authorization: Bearer <token>; the station access token and browser grants are not accepted.";
@@ -151,7 +151,7 @@ fn tool_route(method: &Method, path: &str) -> bool {
         _ => false,
     }
 }
-/// #58 boundary guard for every station route: a request whose session credential is an
+/// The boundary guard for every station route: a request whose session credential is an
 /// MCP-principal transport is refused 401 on every route that no MCP tool dispatches to
 /// (POST /transmit/command, PUT /profile, PUT /strategy, logbook, WS, settings, receive and radio
 /// control ...), so the principal never depends on that handle staying in-process.
@@ -160,7 +160,7 @@ pub(crate) async fn principal_guard(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    // #80: on a counted connection the grant of an accepted browser credential is also the
+    // On a counted connection the grant of an accepted browser credential is also the
     // client the link byte log puts the connection's traffic on.
     let counted = crate::link_log::Link::of(&request).is_some();
     let tool = tool_route(request.method(), request.uri().path());
@@ -408,7 +408,7 @@ pub async fn endpoint(
     let Some(token) = bearer(&headers) else {
         return unauthorized(None);
     };
-    // Only an MCP client token (#58), checked by the station's authority owner; a
+    // Only an MCP client token, checked by the station's authority owner; a
     // plaintext profile has no grant authority and therefore no MCP access.
     let checked = {
         let app = app.clone();
@@ -450,7 +450,7 @@ pub async fn endpoint(
     }
     let action = audit_action(&body);
     let mut response = dispatch(&app, &caller.transport, &headers, query, body).await;
-    // #80: the link byte log puts this connection's traffic on the MCP client.
+    // The link byte log puts this connection's traffic on the MCP client.
     response
         .extensions_mut()
         .insert(crate::link_log::Credential(format!(

@@ -17,7 +17,7 @@ pub(crate) mod authorization_tests;
 const CAP: usize = 64;
 const CHALLENGE_LIFE: Duration = Duration::from_secs(60);
 const TRANSPORT_LIFE: Duration = Duration::from_secs(28_800);
-/// MCP client credentials per station (#58).
+/// MCP client credentials per station.
 pub const MCP_CAP: usize = 8;
 /// Every MCP client token starts with this marker; anything else on POST /mcp is refused
 /// with the migration hint (the station access token and grant transports never qualify).
@@ -25,7 +25,7 @@ pub const MCP_TOKEN_PREFIX: &str = "wstx_mcp_";
 /// last_used is written to disk at most this often per client (memory is exact).
 const MCP_LAST_USED_PERSIST_MS: u64 = 600_000;
 
-/// Who sent a request, fixed at the auth boundary from the credential (#58, CL-039-06):
+/// Who sent a request, fixed at the auth boundary from the credential (CL-039-06):
 /// a browser grant transport (or the plaintext runtime token) is the human operator;
 /// an MCP client token and the station's own automation never are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,7 +41,7 @@ impl Principal {
     }
 }
 
-/// A durable MCP client credential: only the SHA-256 of its token is kept (#58).
+/// A durable MCP client credential: only the SHA-256 of its token is kept.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct McpClient {
@@ -265,7 +265,7 @@ pub struct Record {
     pub grants: Vec<Verifier>,
     pub revocation_generation: u64,
     pub operation_receipts: VecDeque<JournalEntry>,
-    /// Absent in records written before #58; omitted while empty.
+    /// Absent from a record without MCP clients; omitted while empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mcp_clients: Vec<McpClient>,
 }
@@ -996,7 +996,7 @@ impl Authority {
             .filter(|n| *n <= profile::MAX_REVISION)
             .ok_or(Error::Conflict)?;
         if all {
-            // Revoking every grant of the radio also revokes its MCP clients (#58).
+            // Revoking every grant of the radio also revokes its MCP clients.
             next.grants.clear();
             next.mcp_clients.clear();
         } else {
@@ -1063,7 +1063,7 @@ impl Authority {
         self.persist(store, next)?;
         Ok((client, token))
     }
-    /// Removes an MCP client; its transports end at once (#58: revocation is immediate).
+    /// Removes an MCP client; its transports end at once (revocation is immediate).
     pub fn revoke_mcp_client(
         &mut self,
         store: &mut profile::Store,

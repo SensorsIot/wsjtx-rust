@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 //! WstxHoldTx::QuietSpace: the quietest Tx slot a strategy or contest run or a pounce calls
-//! from (#39 strategydef, operator grill 2026-11-07 Q18, Q30-Q32, Q36, Q39), judged in my Rx
+//! from, judged in my Rx
 //! periods by each slot's level above the WSJT-X passband floor, clear of the stations decoded in
-//! them (#66). Pure: the counted periods and their decodes, the bounds, the called station and his
+//! them. Pure: the counted periods and their decodes, the bounds, the called station and his
 //! decoded frequencies in, a slot out. The per-period waterfall power is kept by `Waterfall`, fed
 //! by the live receive's detailed rows.
 use crate::contact::{TX_MIN_HZ, tx_max_hz};
@@ -20,7 +20,7 @@ pub(crate) const CLEARANCE_HZ: i64 = 50;
 /// FreeTxSlot stepHz: the candidate grid.
 pub(crate) const STEP_HZ: u32 = 10;
 /// FreeTxSlot periodsPerParity: the last due periods of my Rx parity whose received ones count
-/// (#66 "Only if recent", #89 Due).
+/// ("Only if recent", Due).
 pub(crate) const PERIODS_PER_PARITY: usize = 4;
 /// The detailed waterfall's native bin: 12000 Hz over a 4096-point transform (about 2.93 Hz).
 pub(crate) const BIN_HZ: f64 = 12000.0 / 4096.0;
@@ -58,22 +58,22 @@ pub(crate) fn band(mode: Mode) -> (u32, u32) {
 }
 /// Auto's candidates start at 500 Hz (WstxHoldTx::SlotLimits::candidateLowHz).
 pub(crate) const CANDIDATE_LOW_HZ: u32 = 500;
-/// #97 (#90, Q3) a slot whose signal reaches above 2400 Hz loses every tie.
+/// A slot whose signal reaches above 2400 Hz loses every tie.
 pub(crate) const UPPER_EDGE_HZ: u32 = 2400;
 /// Auto's candidate range of `mode`: FT8 500..2650, FT4 500..2610.
 pub(crate) fn auto_band(mode: Mode) -> (u32, u32) {
     (CANDIDATE_LOW_HZ, band(mode).1)
 }
-/// #97 the slot's signal reaches above the upper edge.
+/// The slot's signal reaches above the upper edge.
 fn on_upper_edge(f: u32, width: u32) -> bool {
     f + width > UPPER_EDGE_HZ
 }
-/// #97 BusyPartner split clearance: my signal at `f` is clear of his at `d` (FT8 100 Hz, FT4
+/// BusyPartner split clearance: my signal at `f` is clear of his at `d` (FT8 100 Hz, FT4
 /// 140 Hz between the lower edges: width + 50).
 pub(crate) fn split_clear(mode: Mode, f: u32, d: u32) -> bool {
     (i64::from(f) - i64::from(d)).abs() >= i64::from(width_hz(mode)) + CLEARANCE_HZ
 }
-/// #97 WstxOperatingChain::BusyPartner split frequency: FreeTxSlot's grid from 500 Hz inside the Tx range,
+/// WstxOperatingChain::BusyPartner split frequency: FreeTxSlot's grid from 500 Hz inside the Tx range,
 /// clear of his signal at `his_signal` (`split_clear`); of them those overlapping no station
 /// `decoded` while one is free, and those at least 50 Hz from a frequency his PSK Reporter spots
 /// show him decoding in my Tx parity (`his`) while one is free; the nearest to `current`, the lower
@@ -206,7 +206,7 @@ impl HisEnd {
 pub(crate) struct Slot {
     pub hz: u32,
     /// The whole-dB compared value of the chosen slot (its largest rise above the passband floor
-    /// clamped at 0, #66, `compared`); None before any counted period.
+    /// clamped at 0, `compared`); None before any counted period.
     pub power_db: Option<i64>,
     pub his_end: HisEnd,
 }
@@ -216,7 +216,7 @@ impl Slot {
     }
 }
 /// The compared value of a slot in whole dB: its largest rise above the passband floor clamped
-/// at 0 (#66, operator 2026-11-08 "At or under floor = free": a single fourth-order floor cannot
+/// at 0 (a single fourth-order floor cannot
 /// follow a sharp receive-filter knee, where slots read below it; at or under the floor a slot is
 /// free, never quieter than another free one).
 pub(crate) fn compared(rise: f64) -> i64 {
@@ -234,7 +234,7 @@ fn clear_of_all(f: u32, avoid: &[u32], width: u32) -> bool {
     avoid.iter().all(|a| clear_of(f, Some(*a), width))
 }
 /// My signal of `width` at `f` overlaps a station decoded at `decoded` (its audio frequency, the
-/// lower edge of its signal): |f - d| below the width (#66 round 1 Q2).
+/// lower edge of its signal): |f - d| below the width.
 fn occupied(f: u32, decoded: &[f64], width: u32) -> bool {
     decoded
         .iter()
@@ -272,7 +272,7 @@ fn at_his_end(f: u32, his: &[u32]) -> bool {
 }
 /// The candidates of one FreeTxSlot decision: every STEP_HZ and the current Tx inside the Tx
 /// range, clear of every signal in `avoid`; of them those not overlapping a station `decoded` in
-/// the counted periods, all of them when that leaves none (#66); among those, where his decoded
+/// the counted periods, all of them when that leaves none; among those, where his decoded
 /// frequencies are known (`his`), only those free at his end, all of them when that leaves none
 /// (his_end no).
 fn candidates(
@@ -313,8 +313,8 @@ fn candidates(
     }
 }
 /// `quietest` keeping clear of every signal in `avoid`: the called station and, with Hold Tx on,
-/// my Rx (#39 holdtx, "never to the Rx frequency"). A current Tx outside the Tx range is no
-/// candidate (round 3 Q6).
+/// my Rx ("never to the Rx frequency"). A current Tx outside the Tx range is no
+/// candidate.
 pub(crate) fn quietest_clear(
     mode: Mode,
     current: u32,
@@ -365,10 +365,10 @@ fn his_end_of(hz: u32, his: Option<&[u32]>) -> HisEnd {
         None => HisEnd::Unknown,
     }
 }
-/// Hold Tx on at a selection (a caller of my call as well, also from the run's CQ; #39 holdtx
-/// round 1 Q1, Q2, D4, D7): Tx stays, also outside the Tx range, unless the station's signal at
+/// Hold Tx on at a selection (a caller of my call as well, also from the run's CQ): Tx
+/// stays, also outside the Tx range, unless the station's signal at
 /// `station` (or my Rx) is within CLEARANCE_HZ of it; then the nearest candidate in range clear of
-/// both (so also of the decoded stations while one is free, #66 D4), free at his end where known,
+/// both (so also of the decoded stations while one is free), free at his end where known,
 /// the lower on a tie, no power used. `power` only names the value of the slot in the status.
 pub(crate) fn held(
     mode: Mode,
@@ -394,13 +394,13 @@ pub(crate) fn held(
 }
 
 /// The numbers of one slot of a decision: its largest rise above the passband floor over the
-/// counted periods (#66; the compared value is that rise clamped at 0, `compared`), and the level
+/// counted periods (the compared value is that rise clamped at 0, `compared`), and the level
 /// and the floor of that busiest period as measured, in dB.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Numbers {
     pub rise: f64,
     /// The measured level and floor, read by TC-039-010 and TC-039-050; the station uses the rise
-    /// only (#82: no per-slot numbers on the wire).
+    /// only (no per-slot numbers on the wire).
     pub level: f64,
     pub floor: f64,
 }
@@ -460,8 +460,8 @@ impl Open {
 }
 /// The per-period waterfall power of the live receive (WstxHoldTx::QuietSpace, counted
 /// periods): fed with every detailed row, its period and whether that period is a Tx period (one
-/// I transmitted in, #61), never whether the station was on the air when the row completed (#66:
-/// the last rows of a received period complete after PTT is keyed for the next). A period I
+/// I transmitted in), never whether the station was on the air when the row completed (the
+/// last rows of a received period complete after PTT is keyed for the next). A period I
 /// transmitted in is not kept; a new live job starts empty.
 #[derive(Debug, Default)]
 pub(crate) struct Waterfall {
@@ -524,7 +524,7 @@ impl Waterfall {
         }
     }
     /// The received periods of `job`, oldest first, with the open one once it is due at `now_ms`
-    /// (`due`: ended, or in progress with its complete publication `published`, #89), over the
+    /// (`due`: ended, or in progress with its complete publication `published`), over the
     /// rows received so far.
     pub(crate) fn periods(
         &self,
@@ -560,7 +560,7 @@ pub(crate) fn due(start_ms: i64, period_ms: i64, now_ms: i64, published: Option<
 }
 /// The starts of the last PERIODS_PER_PARITY due periods of my Rx parity `rx` at `now_ms`, the
 /// latest first (FT8 about the last 2 minutes, FT4 the last minute): the ended ones, and the period
-/// in progress first when its complete publication `published` is there (#89).
+/// in progress first when its complete publication `published` is there.
 pub(crate) fn recent_starts(
     mode: Mode,
     rx: Parity,
@@ -613,7 +613,7 @@ pub(crate) struct Counted<'a> {
 }
 /// What one slot decision judges (WstxHoldTx::QuietSpace and SlotLevel: parity, counted
 /// periods, floor, value, decoded stations): the counted periods, my Rx parity's received periods among its last
-/// PERIODS_PER_PARITY due ones (#89), from a band change on, with a floor; and the stations decoded
+/// PERIODS_PER_PARITY due ones, from a band change on, with a floor; and the stations decoded
 /// in them.
 #[derive(Debug)]
 pub(crate) struct Judged<'a> {
@@ -625,7 +625,7 @@ impl<'a> Judged<'a> {
     /// `periods` the received periods of the live job and `decodes` its decodes (period start,
     /// audio frequency); my Rx parity `rx`, from `since_ms` on (a station band change), at the
     /// decision's station time `now_ms`, `published` the period start of the latest complete
-    /// publication (#89: the period in progress it names is due).
+    /// publication (the period in progress it names is due).
     pub(crate) fn new(
         periods: &'a [Period],
         mode: Mode,

@@ -80,20 +80,20 @@ pub struct ControlSelection {
     pub endpoint: Option<String>,
     pub ptt: String,
 }
-/// #44 CL-044-10 radio settings the station manages over CAT. Present exactly when the
+/// CL-044-10 radio settings the station manages over CAT. Present exactly when the
 /// control names a radio with a known CI-V AGC command (`manages_radio`); kept apart
 /// from `control`, which is the receive-only authorization's checked identity.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Radio {
     pub agc: wstx_rust::radio_control::setup::Agc,
-    /// #44 CL-044-12 the profile power: the Po (percent of the radio's full scale) the Tx
+    /// CL-044-12 the profile power: the Po (percent of the radio's full scale) the Tx
     /// level never drives above. None: only the radio's own RF power setting limits it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub power_limit_pct: Option<u8>,
 }
 impl Radio {
-    /// FT8/FT4 default on the IC-7300 (operator decision 2026-11-04, #44/#54).
+    /// FT8/FT4 default on the IC-7300.
     pub const DEFAULT: Self = Self {
         agc: wstx_rust::radio_control::setup::Agc::Slow,
         power_limit_pct: None,
@@ -142,7 +142,7 @@ impl Endpoint {
     const ORIGIN: Option<&str> = None;
 }
 /// FR-023 persisted native intent (schema 2 only). A radio identity, slice indices,
-/// stream IDs and client handles are never stored (#22, NativeProfileDocument).
+/// stream IDs and client handles are never stored (NativeProfileDocument).
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Native {
@@ -428,7 +428,7 @@ impl ProfileDocument {
     }
     fn validate(&self) -> Result<SocketAddr, &'static str> {
         match (self.schema_version, &self.native) {
-            // Schema 1 keeps refusing the formerly reserved spelling without an intent.
+            // Schema 1 refuses the reserved spelling without an intent.
             (1, _) if self.connection_type == "native_flex" => {
                 return Err("unsupported_connection_type");
             }

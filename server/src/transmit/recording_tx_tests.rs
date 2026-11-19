@@ -1,4 +1,4 @@
-//! #61 Tx periods (CL-061-04, TC-061-005): the station neither decodes nor measures the Rx
+//! Tx periods (CL-061-04, TC-061-005): the station neither decodes nor measures the Rx
 //! level in a period it transmitted in, and marks that period's waterfall rows. Cost 2,
 //! Windows PC; no hardware. The Tx periods are noted directly on the station's Tx period
 //! record, an explicit fixture of the transmit owner's observation.
@@ -50,7 +50,7 @@ impl LiveInput for Blocks {
     }
 }
 
-/// Router test seam (#66, TC-066-002): the actual live worker of the injected live job
+/// Router test seam (TC-066-002): the actual live worker of the injected live job
 /// (`fixture_live_job`, FT8), its capture clock putting canonical frame 0 at station UTC
 /// `anchor_ms` (a period start), fed with silent blocks. The worker observes the station's own
 /// transmit owner (on the Router the hardware double) at each block, as live.
@@ -119,7 +119,7 @@ impl Recording {
 }
 
 // The noted Tx period 12:00:15 gets no decode attempt and a
-// transmitted view; the receive period after it is decoded as before.
+// transmitted view; the receive period after it is decoded.
 // Proves: TC-061-005
 #[test]
 fn tx_period_has_no_decode_attempt_and_publishes_a_transmitted_view() {
@@ -188,7 +188,7 @@ fn tx_period_has_no_decode_attempt_and_publishes_a_transmitted_view() {
 
 // No Rx level while on the air or in the rest of a Tx
 // period; Tx rows are marked; the next receive period measures again. Capture is never stopped.
-// Neither Tx period is kept in the per-period waterfall power (#66).
+// Neither Tx period is kept in the per-period waterfall power.
 // Proves: TC-061-005
 #[test]
 fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
@@ -322,7 +322,7 @@ fn transmit_owner_on_the_air_records_the_tx_period_and_suspends_the_level() {
             c.arm(3).unwrap();
             c.set_tune(true, 1500).unwrap();
         });
-        // #87: a read that meets the transmit owner busy keeps the last known state, so the
+        // A read that meets the transmit owner busy keeps the last known state, so the
         // state is read until seen; 5 s is a hang guard only.
         let deadline = Instant::now() + Duration::from_secs(5);
         while r.rx_level().is_some() && Instant::now() < deadline {

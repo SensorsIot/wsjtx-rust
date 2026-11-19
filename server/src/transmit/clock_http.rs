@@ -1,7 +1,7 @@
-//! #43/#92 CL-043-01: the station clock view of Settings > General > Clock, read on demand
+//! CL-043-01: the station clock view of Settings > General > Clock, read on demand
 //! (GET /clock) rather than on the thin status link, and the pushed clock.state event for
-//! every profile. There is no source setting: clock.json (#43) is neither read nor written,
-//! and POST /clock no longer exists.
+//! every profile. There is no source setting: clock.json is neither read nor written,
+//! and there is no POST /clock.
 use crate::*;
 use axum::extract::RawQuery;
 use recording_http::{authorize, error};

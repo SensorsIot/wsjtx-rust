@@ -131,7 +131,7 @@ fn tc_063_001_the_profile_table_holds_the_rule_facts() {
         assert!(bands("arrl_field_day").contains(&band), "Field Day {band}");
         assert!(bands("arrl_vhf_jun").contains(&band), "VHF {band}");
     }
-    // RTTY Roundup is dropped (operator 2026-11-06); no id twice.
+    // RTTY Roundup is no contest profile; no id twice.
     assert!(profile("rtty").is_none() && profile("arrl_rtty").is_none());
     let mut ids: Vec<&str> = PROFILES.iter().map(|p| p.id).collect();
     ids.sort_unstable();
@@ -667,7 +667,7 @@ fn tc_063_006_a_field_day_exchange_to_my_call_is_a_caller() {
 // Proves: TC-063-007
 #[test]
 fn tc_063_007_a_selection_is_parsed_exactly() {
-    // #97 D11: {profile, start, end}; operation, repetitions and quiet_minutes are refused by
+    // {profile, start, end}; operation, repetitions and quiet_minutes are refused by
     // their own path.
     let good = json!({"profile":"ww_digi","start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z"});
     let s = parse_selection(&good, "contest").expect("a selection");
@@ -706,12 +706,12 @@ fn tc_063_007_a_selection_is_parsed_exactly() {
     );
 }
 
-// strategydef: the confirmation goes with Auto on (POST /strategy/auto,
+// The confirmation goes with Auto on (POST /strategy/auto,
 // strategy_tests.rs); a selection asks nothing, and colouring and automation_confirmed are
 // refused on PUT with their field.
 #[test]
 fn tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmation() {
-    // #97 D11: a selection is {profile, start, end}; operation, repetitions and quiet_minutes
+    // A selection is {profile, start, end}; operation, repetitions and quiet_minutes
     // are refused by their own path (TC-097-015).
     let form = |id: &str, extra: Option<(&str, Value)>| {
         let mut v = json!({"profile":id,"start":"2026-08-29T12:00Z","end":"2026-08-30T12:00Z"});

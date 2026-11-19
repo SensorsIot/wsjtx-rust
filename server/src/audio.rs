@@ -665,7 +665,7 @@ impl ClockCorrelation {
 }
 
 /// A canonical-frame interval the engine delivered as silence (zero-filled) or flagged as
-/// a glitch on a continuous timeline (#52 window diagnostics).
+/// a glitch on a continuous timeline (window diagnostics).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaptureMark {
     pub first_frame: u64,
@@ -715,7 +715,7 @@ impl LiveSource {
     pub fn clock_sample(&self) -> Option<(u64, u64)> {
         self.clock
     }
-    /// Zero-filled and glitch-flagged canonical frames inside `[from, to)` (#52).
+    /// Zero-filled and glitch-flagged canonical frames inside `[from, to)`.
     pub fn marked_frames(&self, from: u64, to: u64) -> (u64, u64) {
         let mut out = (0, 0);
         for m in &self.marks {

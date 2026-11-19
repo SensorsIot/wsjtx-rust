@@ -59,7 +59,7 @@ impl Renderer {
             phase: 0.,
         }
     }
-    /// #44 the Tx level of a running Tune, without a phase step in the tone.
+    /// The Tx level of a running Tune, without a phase step in the tone.
     pub fn set_scale(&mut self, scale: f32) {
         self.scale = scale;
     }
@@ -123,7 +123,7 @@ pub fn write_sample(encoding: Encoding, value: f32, out: &mut [u8]) {
 
 /// Requested shared-mode render buffer (WstxPlayback::ProgramPlayback renderBufferMs). The
 /// program keeps up to this much queued, so a render thread delayed by CPU load does
-/// not underrun the device and stretch the transmission (#49).
+/// not underrun the device and stretch the transmission.
 pub const RENDER_BUFFER_MS: u32 = 100;
 /// The rate of the program and of the device.
 pub const SAMPLE_RATE_HZ: u32 = 48_000;

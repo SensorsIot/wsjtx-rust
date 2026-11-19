@@ -1563,7 +1563,7 @@ fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
     let empty = f.recording();
     assert_eq!(empty.snapshot()["source_error"], Value::Null);
     assert_eq!(empty.snapshot()["recording"], Value::Null);
-    // These bytes are indistinguishable from a pre-commit crash or loss of a previously committed manifest.
+    // These bytes are indistinguishable from a pre-commit crash or the loss of a committed manifest.
     let id = profile::new_uuid().unwrap();
     let bytes = wav(&[1]);
     fs::write(empty.path(&id, "wav"), &bytes).unwrap();
@@ -2722,7 +2722,7 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
     while first < total {
         if first == 150 * 12000 {
             // Twelve stations heard 2 s late against the system clock: windows of two
-            // periods apply the -2000 ms correction, at most 1000 ms per period (#92).
+            // periods apply the -2000 ms correction, at most 1000 ms per period.
             clock.station.with_air(|a| {
                 for k in 0..2 {
                     let t = k * 15_000;

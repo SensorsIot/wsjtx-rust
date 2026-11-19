@@ -27,10 +27,10 @@ pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const HALT_BOUND_MS: u64 = 250;
 /// Playback scale of the unit-peak waveform (-6.02 dBFS, TransmitTiming playbackScale).
 pub const PLAYBACK_SCALE: f32 = 0.5;
-/// #44 CL-044-12 the Tx level: digital attenuation below PLAYBACK_SCALE, in whole dB.
+/// CL-044-12 the Tx level: digital attenuation below PLAYBACK_SCALE, in whole dB.
 pub const LEVEL_MIN_DB: i32 = -40;
 pub const LEVEL_MAX_DB: i32 = 0;
-/// #44 CL-044-14 a transmission with less audio left than this gets no meter read.
+/// CL-044-14 a transmission with less audio left than this gets no meter read.
 pub const METER_MIN_REMAINING_MS: i64 = 2_000;
 /// The playback scale of a Tx level.
 pub fn level_scale(level_db: i32) -> f32 {
@@ -79,7 +79,7 @@ pub enum DisarmCause {
     DeviceLost,
     Startup,
     AuthorityChanged,
-    /// #111 CL-111-03: the partner works another station on the own Tx frequency.
+    /// CL-111-03: the partner works another station on the own Tx frequency.
     PartnerWorksOther,
     ModeChanged,
     BandChanged,
@@ -87,7 +87,7 @@ pub enum DisarmCause {
     RunEnded,
 }
 impl DisarmCause {
-    /// #111 CL-111-03: the place of a stop in the order of shown causes (lowest first). Abort
+    /// CL-111-03: the place of a stop in the order of shown causes (lowest first). Abort
     /// QSO and Cancel contact share `ContactCancelled`: `abort` tells them apart. Causes of
     /// one rank of the clause are ordered as the clause lists them.
     fn rank(self, abort: bool) -> u8 {
@@ -110,7 +110,7 @@ impl DisarmCause {
         }
     }
 }
-/// #111 CL-111-01, L3: who switched the transmit state on last.
+/// CL-111-01, L3: who switched the transmit state on last.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArmCause {
     Operator,
@@ -156,7 +156,7 @@ pub enum OutcomeKind {
     Halted,
     Refused,
     Failed,
-    /// #39 Abort QSO: stopped by the operator's abort, not by a halt.
+    /// Abort QSO: stopped by the operator's abort, not by a halt.
     Aborted,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -266,10 +266,10 @@ pub trait Hardware: Send {
     fn attach_abort(&mut self, abort: Arc<AtomicBool>) {
         let _ = abort;
     }
-    /// #44 CL-044-14 the middle of a transmission: exactly once per transmission, from the
+    /// CL-044-14 the middle of a transmission: exactly once per transmission, from the
     /// transmit step. It must return at once; the meter read runs elsewhere.
     fn meter_due(&mut self) {}
-    /// #44 The Tx level the next `play` uses; a running Tune tone follows it at once.
+    /// The Tx level the next `play` uses; a running Tune tone follows it at once.
     fn set_level_db(&mut self, level_db: i32) {
         let _ = level_db;
     }
@@ -328,14 +328,14 @@ struct Job {
     audio_start_utc_ms: Option<i64>,
     /// Device-independent release deadline once audio started.
     release_by_mono_ms: Option<i64>,
-    /// #44 CL-044-14 when the one meter read of this transmission is due.
+    /// CL-044-14 when the one meter read of this transmission is due.
     meter_at_mono_ms: Option<i64>,
 }
 struct Tune {
     hz: f64,
     until_utc_ms: i64,
     keyed: bool,
-    /// The safety revision Tune was started under (its own authority, #111 CL-111-06).
+    /// The safety revision Tune was started under (its own authority, CL-111-06).
     revision: u64,
 }
 
@@ -347,7 +347,7 @@ pub struct Core<H: Hardware> {
     armed_revision: Option<u64>,
     cause: DisarmCause,
     arm_cause: Option<ArmCause>,
-    /// #111 CL-111-03: a stop was applied since the contact engine's last step began, and
+    /// CL-111-03: a stop was applied since the contact engine's last step began, and
     /// the rank of the cause shown for the stops since then (or since the last switch-on).
     stopped: bool,
     stop_rank: Option<u8>,
@@ -371,7 +371,7 @@ pub struct Core<H: Hardware> {
     /// The consumer's message is for a strategy run's own contact that the Tx watchdog does
     /// not bound (no count is reported for it).
     tx_unbounded: bool,
-    /// #39: an operator action (operator arm or accepted browser activity) was seen this
+    /// An operator action (operator arm or accepted browser activity) was seen this
     /// boot; automation never sets it.
     operator_seen: bool,
     tx_expired: bool,
@@ -379,7 +379,7 @@ pub struct Core<H: Hardware> {
     startup_release: StartupRelease,
     abort: Arc<AtomicBool>,
     faulted: bool,
-    /// #44 the Tx level (dB): Tune follows it at once, a transmission takes it at its
+    /// The Tx level (dB): Tune follows it at once, a transmission takes it at its
     /// audio start and keeps it to its end.
     level_db: i32,
     /// WstxTransmitControl::StationMode: the station's operating mode (None: not gated).
@@ -505,7 +505,7 @@ impl<H: Hardware> Core<H> {
     pub fn hardware(&self) -> &H {
         &self.hardware
     }
-    /// #61 (CL-061-04): whether the station is on the air now (PTT keyed or not confirmed
+    /// CL-061-04: whether the station is on the air now (PTT keyed or not confirmed
     /// released, a transmission's audio running or Tune on) and the start of the last
     /// transmitted period (station UTC ms); a cheap read for the receive path.
     pub fn on_air(&self) -> (bool, Option<i64>) {
@@ -519,7 +519,7 @@ impl<H: Hardware> Core<H> {
             self.last_period,
         )
     }
-    /// #44 CL-044-12 sets the Tx level. A running Tune follows at once; a transmission
+    /// CL-044-12 sets the Tx level. A running Tune follows at once; a transmission
     /// already playing keeps its level, so a change takes effect between transmissions.
     pub fn set_tx_level(&mut self, level_db: i32) {
         self.level_db = level_db.clamp(LEVEL_MIN_DB, LEVEL_MAX_DB);
@@ -527,7 +527,7 @@ impl<H: Hardware> Core<H> {
             self.hardware.set_level_db(self.level_db);
         }
     }
-    /// #44 CL-044-14 after a clear fault only an operator action lets automation arm again.
+    /// CL-044-14 after a clear fault only an operator action lets automation arm again.
     pub fn require_operator(&mut self) {
         self.operator_seen = false;
     }
@@ -579,17 +579,17 @@ impl<H: Hardware> Core<H> {
         }
         self.stopped = true;
     }
-    /// The contact engine begins a step: the stops before it are no longer "this step's".
+    /// The contact engine begins a step: the stops before it do not count as "this step's".
     pub fn begin_step(&mut self) {
         self.stopped = false;
         self.stop_rank = None;
     }
-    /// #111 CL-111-03: a stop was applied since the engine's last step began; a start that
+    /// CL-111-03: a stop was applied since the engine's last step began; a start that
     /// arrives now loses against it.
     pub fn stopped_in_step(&self) -> bool {
         self.stopped
     }
-    /// #111 CL-111-07: a start was admitted while transmission is not possible; the view
+    /// CL-111-07: a start was admitted while transmission is not possible; the view
     /// names the reason, the state and its cause stay.
     pub fn refuse_start(&mut self, refusal: TransmitRefusal) {
         self.refusal = Some(refusal);
@@ -673,7 +673,7 @@ impl<H: Hardware> Core<H> {
     pub fn activity(&mut self) {
         self.operator_seen = true;
     }
-    /// A browser strategy selection or run start: the explicit operator decision to transmit again after a stop.
+    /// A browser strategy selection or run start: the operator's explicit choice to transmit again after a stop.
     pub fn operator_restart(&mut self) {
         self.operator_seen = true;
         self.tx_expired = false;
@@ -760,7 +760,7 @@ impl<H: Hardware> Core<H> {
         };
         // Replacement window: only while the audio of the pending request has not started.
         // From keying the current request is bound to its period: a request for another
-        // period becomes the next one (#10: never a busy refusal that disarms for timing).
+        // period becomes the next one (never a busy refusal that disarms for timing).
         let slot = match &self.current {
             Some(job) if job.audio_start_utc_ms.is_some() && same_period(job) => {
                 return self.refuse(sequence, TransmitRefusal::AudioStarted, false);
@@ -918,7 +918,7 @@ impl<H: Hardware> Core<H> {
         };
         self.start_tune(hz, revision)
     }
-    /// #111 CL-111-06: starts an unmodulated Tune tone at `hz` under `safety_revision`,
+    /// CL-111-06: starts an unmodulated Tune tone at `hz` under `safety_revision`,
     /// whatever the transmit state: the capability is available, the revision is the
     /// station's, and nothing is on the air or pending. It never changes the transmit state.
     pub fn start_tune(&mut self, hz: u32, safety_revision: u64) -> Result<(), TransmitRefusal> {
@@ -1011,7 +1011,7 @@ impl<H: Hardware> Core<H> {
                 self.hardware.stop_audio();
                 self.release();
                 // Tune itself never changes the transmit state or its cause (CL-111-06); a
-                // state that is on stops for the loss it shares with Tune, as before.
+                // state that is on stops for the loss it shares with Tune.
                 if was_on && (lost || matches!(audio, AudioPoll::Failed(_))) {
                     self.disarm_with(DisarmCause::DeviceLost);
                 }
@@ -1164,7 +1164,7 @@ impl<H: Hardware> Core<H> {
             self.hardware.meter_due();
         }
         // The device is polled first, also at the deadline: a device that consumed every
-        // sample completes normally however late its step ran (#49). Otherwise the
+        // sample completes normally however late its step ran. Otherwise the
         // device-independent bound releases PTT at the deadline whatever the device
         // reports (stalled, silent, never finishing).
         match self.hardware.poll_audio() {
@@ -1426,7 +1426,7 @@ impl<H: Hardware + 'static> Service<H> {
         let mut core = self.core.lock().unwrap_or_else(|p| p.into_inner());
         f(&mut core)
     }
-    /// Like `with`, but never waits: None while another thread holds the core (#61: the
+    /// Like `with`, but never waits: None while another thread holds the core (the
     /// receive path must not stall its capture queue on a slow transmit step).
     pub fn try_with<R>(&self, f: impl FnOnce(&mut Core<H>) -> R) -> Option<R> {
         match self.core.try_lock() {

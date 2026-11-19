@@ -3,7 +3,7 @@
 // ("Auto only starts"; a QSO is started once he has sent a message to my call and our transmission to
 // him has started), the standard sequence of WstxStandardQso::SequenceRule (Tx1, R-report, 73 after his
 // RR73), WstxQsoTransmit::RepetitionLimit (the stop at N) and the FT8 transmission length of 12.64 s
-// (79 symbols of 0.16 s). The actual station router, contact engine, logbook and #9 transmit owner on
+// (79 symbols of 0.16 s). The actual station router, contact engine, logbook and transmit owner on
 // the recording hardware double (virtual UTC; no audio, PTT or radio) with the scripted IC-7300 dial
 // on 14.074 MHz (the log's band); hand-authored decodes packed with the real codec.
 use super::*;
@@ -152,8 +152,7 @@ async fn new_calls_answered(limit: Option<u64>) -> Station81 {
 // Auto off after K1ABC's report: Auto off at once
 // (one strategy.state) and the run stopped, reason stopped; Enable Tx stays on, our R-report goes out
 // in the next own period and 73 after his RR73; the contact completes with Enable Tx off and logs
-// itself once; afterwards nothing is armed, selected or keyed for DL1XYZ's CQ or W1AW's calls. Red
-// on the parent: Enable Tx off and the contact cancelled at the Auto off.
+// itself once; afterwards nothing is armed, selected or keyed for DL1XYZ's CQ or W1AW's calls.
 // Proves: TC-081-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_001_auto_off_in_a_started_qso_finishes_it_and_logs_it_once() {
@@ -222,8 +221,7 @@ async fn w1aw_answered(f: &Mcp, e: i64) {
 
 // He called us and our reply is on the air: a started QSO. Auto off
 // 2 s into the period of our report to W1AW: the report's period ends normally (no abort, no halt),
-// then his R-05 is answered with RR73 and the contact completes and logs W1AW once. Red on the parent:
-// Enable Tx off and the contact cancelled at the Auto off.
+// then his R-05 is answered with RR73 and the contact completes and logs W1AW once.
 // Proves: TC-081-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_002_a_reply_on_the_air_is_a_started_qso() {
@@ -259,7 +257,7 @@ async fn tc_081_002_a_reply_on_the_air_is_a_started_qso() {
     assert_eq!(logged(f, e), vec![qso("W1AW", "FN31")]);
 }
 
-// Regression guards, green on the parent. (b) He called
+// Guards. (b) He called
 // us and our reply is only armed: no started QSO; Auto off disarms and cancels at once, his further
 // calls are not answered, nothing is keyed or logged. (c) We called K1ABC's CQ and he has sent nothing
 // to my call: Auto off 2 s into our second Tx1 lets it finish its period, then nothing is keyed, the
@@ -330,8 +328,7 @@ async fn tc_081_002_b_c_d_no_started_qso_ends_at_once_and_its_period_on_the_air_
 // None, another strategy with Auto on and Auto off twice
 // let the started QSO finish: (a) the run stopped, Auto off; (b) the old run stopped, Auto on, the new
 // run manual until the completion, then waiting, JA1XYZ (CQ during the QSO) selected only from a
-// publication after the completion; (h) the second Auto off changes no revision and no contact. Red
-// on the parent: each case disarms and cancels K1ABC at the end, nothing logged.
+// publication after the completion; (h) the second Auto off changes no revision and no contact.
 // Proves: TC-081-003
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_003_none_another_strategy_and_auto_off_twice_finish_the_qso() {
@@ -441,7 +438,7 @@ async fn contest_finished(f: &Mcp, own: i64, e: i64) {
 
 // A contest deselected in a started QSO: the run stopped, Auto
 // off, the QSO finished. The end of the contest period in a started QSO: the run manual while it
-// finishes, then waiting outside_period. Red on the parent: K1ABC disarmed and cancelled at the end.
+// finishes, then waiting outside_period.
 // Proves: TC-081-003
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_003_a_contest_deselected_or_its_period_end_finishes_the_qso() {
@@ -476,8 +473,7 @@ async fn tc_081_003_a_contest_deselected_or_its_period_end_finishes_the_qso() {
 }
 
 // Auto on ending a pounce in its started QSO: the pounce stopped,
-// the strategy run manual until the completion, then waiting. Red on the parent: K1ABC disarmed and
-// cancelled at the Auto on.
+// the strategy run manual until the completion, then waiting.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_003_auto_on_ending_a_pounce_finishes_its_qso() {
     let t = station81(None).await;
@@ -503,7 +499,7 @@ async fn tc_081_003_auto_on_ending_a_pounce_finishes_its_qso() {
 
 // An MCP policy run's AutomationCommand stop (run stopped
 // stopped) and its time limit (max_run_minutes 1, the automation clock moved by the seam; stopped
-// time_limit) let its started QSO finish. Red on the parent: K1ABC disarmed at the end.
+// time_limit) let its started QSO finish.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_003_an_mcp_stop_and_the_time_limit_finish_the_qso() {
     // (f)
@@ -576,7 +572,7 @@ async fn rules_ended(f: &Mcp, feed: &crate::pskr::Feed, slot_check: &Value, rema
 // not by the run. (a) Auto off after our 1st R-report, his RR73 after our 2nd: the 2nd R-report goes
 // out (the limit not passed), then 73, completed, one log entry. (b) He repeats his report: the
 // R-report is keyed a 2nd time, never a 3rd; Enable Tx goes off with cause tx_watchdog, no halt,
-// nothing logged. Red on the parent: K1ABC disarmed at the Auto off, no 2nd R-report.
+// nothing logged.
 // Proves: TC-081-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_004_a_b_the_finishing_qso_keeps_the_tx_watchdog_limit() {
@@ -628,8 +624,7 @@ async fn tc_081_004_a_b_the_finishing_qso_keeps_the_tx_watchdog_limit() {
 
 // With Auto on the run's exemption sends the R-report a 3rd time
 // (past the limit 2, StrategyWatchdog); after the Auto off it is not sent again: Enable Tx goes off
-// with cause tx_watchdog in the next due period. Red on the parent: the cause is the Auto off's
-// disarm, not the Tx watchdog.
+// with cause tx_watchdog in the next due period.
 // Proves: TC-081-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_004_c_a_message_past_the_limit_is_not_sent_again_after_the_auto_off() {
@@ -671,8 +666,7 @@ async fn finishing() -> Station81 {
 // into our next R-report: the transmission stops and the contact is cancelled (the finishing guard),
 // nothing is keyed after it and nothing logged, also after his RR73; (b) Abort
 // QSO likewise, the contact cancelled, no halt; (c) a double-click of W1AW calling my call replaces
-// K1ABC's contact and calls W1AW; K1ABC is never logged. Red on the parent: the QSO has already ended
-// at the Auto off.
+// K1ABC's contact and calls W1AW; K1ABC is never logged.
 // Proves: TC-081-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_005_halt_abort_and_a_double_click_end_a_finishing_qso_at_once() {
@@ -780,7 +774,7 @@ async fn ended_at_once(t: &Station81) {
 
 // After the run's end the finishing guard still ends the
 // QSO at once on (d) the radio's dial to 7.074 MHz, (e) the operating mode to FT4 and (f) the browser
-// grant revoked. Red on the parent: the QSO has already ended at the Auto off.
+// grant revoked.
 // Proves: TC-081-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_005_band_mode_and_grant_end_a_finishing_qso_at_once() {
@@ -811,14 +805,12 @@ async fn tc_081_005_band_mode_and_grant_end_a_finishing_qso_at_once() {
 
 // A safety edit after the run's end: Enable Tx off with cause
 // authority_changed in the transmit owner, and the finishing guard cancels the contact (the edit
-// makes the run's grant no longer current); nothing keyed after it and nothing logged. Red on the
-// parent: the QSO has already ended at the Auto off; red without the guard's grant check: the contact
-// stays in roger_report.
+// makes the run's grant not current); nothing keyed after it and nothing logged.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_005_g_a_safety_edit_ends_a_finishing_qso_at_once() {
     // (g) A safety edit: the transmit owner's context takes the new safety revision (the hardware
     // double's seam stands for it) and disarms with cause authority_changed; the saved changed
-    // control is reconciled into the authorization (a new scope), so the run's grant is no longer
+    // control is reconciled into the authorization (a new scope), so the run's grant is not
     // current and the finishing guard cancels the contact.
     let t = finishing().await;
     let f = &t.f;
@@ -860,7 +852,7 @@ async fn tc_081_005_g_a_safety_edit_ends_a_finishing_qso_at_once() {
     );
 }
 
-// A regression guard, green on the parent. With Auto on and the run
+// A guard. With Auto on and the run
 // still on, the run's own leaving ends a started QSO at once: K1ABC silent after his report for 4
 // repetitions (no spot) is left {K1ABC, repetitions} at the 4th, disarmed and cancelled, the run
 // waiting.

@@ -1,4 +1,4 @@
-//! #52 WstxRequirements CL-052-01: per-window receive diagnostics and the optional dump of
+//! WstxRequirements CL-052-01: per-window receive diagnostics and the optional dump of
 //! FT8 prompt windows. The dump setting is persisted next to profile.json and is off by
 //! default; the window counters are kept in memory and read on demand, never in the
 //! GET /receive snapshot.
@@ -20,7 +20,7 @@ pub(crate) const DUMP_BYTES: u64 = DUMP_MI_B * 1024 * 1024;
 pub(crate) const KEPT_WINDOWS: usize = 20;
 /// WstxReceiveControl::ReceiveConfig: the window dump is off until it is switched on.
 const WINDOW_DUMP: bool = false;
-/// WSJT-X's first FT8 decoding sees the first 41*3456 frames of the period (#52).
+/// WSJT-X's first FT8 decoding sees the first 41*3456 frames of the period.
 const EARLY_FRAMES: u64 = 41 * 3456;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
