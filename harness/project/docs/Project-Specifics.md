@@ -125,8 +125,14 @@ The **live page check** (`tools/deploy/live-page-check.ps1`) is in no
 suite: it needs the installed station and one real restart. It runs on HB9BLA after every
 deploy under the [standing deploy policy](#standing-deploy-policy) and at live
 acceptance (CR step 6) of a change to `client/`, the receive, recording or logbook owners or
-`tests/page-watch.cjs`, receive only, and restarts the station only while nothing is armed,
-keyed, in a contact or an automation run. `live-station-browser` gates the same oracle in-process.
+`tests/page-watch.cjs`. It keys nothing and restarts the station only while nothing is armed,
+keyed, in a contact or an automation run. Before the restart it makes one band selection of the
+band the station receives on, keeping its mode, so that the old boot's receive job stands at
+generation 2 or more (the #22 trigger): only while receive runs FT8 or FT4 on a selected band,
+Monitor off at startup is not set and the saved receive choice is that mode and band, so that the
+selection tunes the radio as the resume after the restart does and saves the same choice.
+Otherwise, or when the selection is refused or does not take, the result is NOT-EXERCISED naming
+why. `live-station-browser` gates the same oracle in-process.
 
 Measurements run only when the change touches time-critical code. Every
 timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`:
@@ -467,7 +473,7 @@ a646e65f893f3c3552327ff5bf5df4d3f760796bdf207c3c2574951d68556f2f  tools/deploy/s
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
 b74735120afa989117183f4a2e1f3cafbd5f733fe95da38a7b5557bf4c3acdb0  tools/deploy/station-probe.ps1
-187270d4b645d7c7e123c6718a6f9264698d27749d9810a3b106c7cfcb26bab7  tools/deploy/live-page-check.ps1
+dd08b9615147396c3e3c3f96caa07f8096c13d07e235a8338366c32c0dcf3a94  tools/deploy/live-page-check.ps1
 ```
 
 ### Standing consent at 1 %

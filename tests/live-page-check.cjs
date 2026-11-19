@@ -6,12 +6,19 @@
 // That script stops and starts the station when this asks for it, in the file <control>/restart,
 // and hands the session on stdin, one JSON line each, so that it is on no command line or disk:
 //   {"cookies":[{"name","value"}]}  at the start, and again once the new boot answers
+//   {"selected":{"generation","ms"}} it made its band selection at that generation: this waits
+//                                   up to ms for a higher generation with new rows on the page,
+//                                   then writes the file <control>/rows
+//   {"unexercised":"why"}           it made no band selection, or the selection did not take
 //   {"stopping":true}               the station is being stopped now
 //   {"abort":"why"}                 the station is in use: no restart, exit 3
 // Exit 0 green; 1 red; 3 busy; 4 not exercised: nothing went wrong, but the old boot's generation
-// was not above the new one's (#22) or no kept row had a worked-before tip (#50).
-// Receive only: it starts nothing and selects nothing. The station resumes receive by itself;
-// a station that does not, or a dead band, ends in a timeout, red.
+// was not above the new one's (#22), the band selection was not made or did not take, or no
+// kept row had a worked-before tip (#50).
+// The page sends no command. Before the restart that script makes one band selection of the band
+// and mode the station receives on (#247), so that the old boot's job stands at generation 2 or
+// more; the station resumes receive by itself after the restart. A station that does not, or a
+// dead band after the restart, ends in a timeout, red.
 // The page is the station's actual client. Only its authorization component is replaced: a browser
 // grant is made with the access token, and this runs on the agent's session instead.
 const fs=require('node:fs'),path=require('node:path'),readline=require('node:readline');
@@ -41,6 +48,37 @@ function missingTriggers(oldGeneration,newGeneration,workedKept){
   if(!workedKept)missing.push('#50: no worked-before tip on a kept row');
   return missing;
 }
+// The same, after why the band selection did not raise the old boot's generation: never green then.
+function exerciseMissing(unexercised,oldGeneration,newGeneration,workedKept){
+  return [...unexercised.map(why=>`#22: ${why}`),...missingTriggers(oldGeneration,newGeneration,workedKept)];
+}
+// What the page must show after the band selection made at `generation`: a higher generation,
+// with a row of a decoded period that was not on screen when the selection was reported.
+function raisedWithRows(seen,generation,known){
+  return Number.isInteger(seen.generation)&&seen.generation>generation&&seen.rows.some(r=>!known.has(rowKey(r)));
+}
+// From the restart request to the stop or the abort. Each message may take as long as the idle
+// wait, the selection's retries and its result together (3 x -WaitSeconds), plus a margin.
+async function awaitStop({watch,lines,control,clean,wait,pause}){
+  const unexercised=[];
+  let message,last;
+  for(;;){
+    message=undefined;
+    await watch.until('the restart is not answered',seen=>{clean('waiting for the restart');last=seen;return (message=lines.poll());},3*wait+3*MINUTES);
+    if(message.unexercised){unexercised.push(message.unexercised);continue;}
+    if(!message.selected)return {message,last,unexercised};
+    const {generation,ms}=message.selected,end=Date.now()+ms;
+    last=await watch.sample();clean('at the band selection');
+    const known=new Set(watch.tips.keys());
+    for(;;){
+      if(raisedWithRows(last,generation,known))break;
+      if(Date.now()>=end){unexercised.push(`no rows of a generation above ${generation} on the page within ${Math.round(ms/1000)} s of the band selection`);break;}
+      await pause(500);
+      last=await watch.sample();clean('waiting for the raised generation');
+    }
+    fs.writeFileSync(path.join(control,'rows'),'');
+  }
+}
 
 async function run({origin,control,lines}){
   const browser=await chromium.launch();
@@ -66,9 +104,7 @@ async function run({origin,control,lines}){
     const before={periods:watch.periods.size,moved:watch.moved()};
 
     fs.writeFileSync(path.join(control,'restart'),'');
-    let message;
-    let last;
-    await watch.until('the restart is not answered',seen=>{clean('waiting for the restart');last=seen;return (message=lines.poll());},WAIT+3*MINUTES);
+    let {message,last,unexercised}=await awaitStop({watch,lines,control,clean,wait:WAIT,pause:ms=>page.waitForTimeout(ms)});
     if(message.abort)return {status:'busy',why:message.abort};
     const gone=await watch.until('the page sees the station gone',seen=>{if(seen.state==='connected'&&seen.boot===firstBoot)last=seen;return seen.state!=='connected'||seen.boot!==firstBoot;},60000);
     // Every row the old boot showed, up to its last period: a #22 defect keeps those.
@@ -88,8 +124,8 @@ async function run({origin,control,lines}){
     // Several periods of the new boot, again with a row that moved.
     await watch.until('several periods after the restart',()=>{clean('after the restart');return watch.periods.size>=before.periods+PERIODS&&watch.moved()>before.moved;},4*MINUTES);
     clean('at the end');
-    // Green only with both live triggers on screen.
-    const generations={old:oldGeneration,new:back.generation},missing=missingTriggers(oldGeneration,back.generation,watch.worked.kept>0);
+    // Green only with both live triggers on screen, after a band selection that took.
+    const generations={old:oldGeneration,new:back.generation},missing=exerciseMissing(unexercised,oldGeneration,back.generation,watch.worked.kept>0);
     return {status:missing.length?'not-exercised':'green',missing,generations,gone:gone.state,before,after:{periods:watch.periods.size,moved:watch.moved()},rowsWatched:watch.tips.size,tipsWatched:[...watch.tips.values()].filter(Boolean).length,worked:watch.worked,commands:[...new Set(watch.commands)]};
   }finally{await browser.close();}
 }
@@ -108,7 +144,7 @@ function stdinLines(){
     next:(what,timeout)=>queue.length?Promise.resolve(queue.shift()):new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error(`no ${what}`)),timeout);waiting.push(m=>{clearTimeout(t);resolve(m);});}),
   };
 }
-module.exports={run,allowed,missingTriggers,READS};
+module.exports={run,allowed,missingTriggers,exerciseMissing,raisedWithRows,awaitStop,READS};
 if(require.main===module){
   const origin=process.env.WSTX_LIVE_PAGE_ORIGIN,control=process.env.WSTX_LIVE_PAGE_CONTROL;
   if(!origin?.startsWith('https://')||!control){console.error('run through tools/deploy/live-page-check.ps1');process.exit(2);}
