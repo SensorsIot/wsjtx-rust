@@ -412,18 +412,11 @@ under it needs no OK per install.
    the package. The page check takes the repository root, the shared folder and the agent
    client as parameters and derives none of them from its own location. Before any write,
    `station-update.ps1` compares each mechanism file of the package with the pins of the
-   commit's own `Project-Specifics.md` (read with `git show`), and compares the launcher in
-   the station folder with its pin (item 4). It reads `<commit>:harness/project/docs/Project-Specifics.md`;
-   only when that file is absent at the commit (a commit from before #230) does it read
-   `<commit>:docs/harness/Project-Specifics.md`. Neither present means no pins; a file at the
-   new path without a Deploy pins section means no pins, with no fallback. This holds for the
-   commit to install and for the running commit. A deploy of a commit from before #230 runs
-   that commit's own script, whose record step calls the harness at its old place; in a
-   checkout in the new layout that call fails, the log says "record not posted", the install
-   goes ahead and the coordinator posts the record by hand
-   ([MEMORY](MEMORY.md#preserve-the-runtime)). The install record's `cr_state.py installed`
-   runs `harness\general\core\tools\cr_state.py` of the repository when it exists, else
-   `harness\core\tools\cr_state.py`.
+   commit's own `harness/project/docs/Project-Specifics.md` (read with `git show`), and
+   compares the launcher in the station folder with its pin (item 4). A commit without that
+   file, or whose file has no Deploy pins section, has no pins. This holds for the commit to
+   install and for the running commit. The install record's `cr_state.py installed` runs
+   `harness\general\core\tools\cr_state.py` of the repository.
 4. **A changed mechanism deploys without an OK.** The deploy installs a commit whose
    mechanism files or pins differ from those of the running commit like any other commit:
    pins that differ from the running commit's pins, a running commit without pins and a

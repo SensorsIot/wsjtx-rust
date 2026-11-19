@@ -893,7 +893,8 @@
   - fixtures/decoder/protocol-data/
   needs: >-
     Python 3.12 standard library and the immutable CR18 portable fixture store,
-    provisioned before the gate. Set WSTX_SIMULATOR_SAMPLE_DIR to its ft4 directory;
+    provisioned before the gate from the release fixtures-cr18-v2 (its zip extracted
+    under the common Git directory's migration-data, the archive SHA-256 checked). Set WSTX_SIMULATOR_SAMPLE_DIR to its ft4 directory;
     its sibling ft8 directory is required. Set WSTX_SIMULATOR_ORACLE_DIR to
     fixtures/decoder for repository tests (portable tests default to sibling oracle).
     Preserve delivery-catalog.json and both mode manifests with the frozen store;
