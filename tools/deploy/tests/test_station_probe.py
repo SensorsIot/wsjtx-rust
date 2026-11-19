@@ -1,4 +1,4 @@
-"""station-probe.ps1 (#33): the probe trusts what it observes, not the receipt."""
+"""station-probe.ps1: the probe trusts what it observes, not the receipt."""
 import hashlib
 import json
 import os

@@ -1322,8 +1322,8 @@ def extract(commit: str, destination: Path, paths=()) -> None:
     archive`; links are left out. Nothing in the repository is written."""
     destination.mkdir(parents=True, exist_ok=True)
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    # The whole archive is read before it is unpacked: reading it as a stream stopped at the
-    # end-of-archive blocks and left git blocked on the rest of its output.
+    # The whole archive is read before it is unpacked: a stream reader stops at the
+    # end-of-archive blocks and leaves git blocked on the rest of its output.
     try:
         result = subprocess.run(["git", "-C", str(ROOT), "archive", "--format=tar", commit, *paths],
                                 stdin=subprocess.DEVNULL, capture_output=True, env=env, timeout=600)
@@ -1565,7 +1565,7 @@ def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, 
 
     def deep(entries, members, normal, memo, key):
         """An element's own facts and those of its named members, by member name: the
-        content same-named elements are paired by (D2)."""
+        content same-named elements are paired by."""
         if key not in memo:
             entry = entries[key]
             nested = sorted((entries[member]["rel"].rsplit("::", 1)[-1], repr(deep(entries, members, normal, memo, member)))
@@ -1579,7 +1579,7 @@ def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, 
     rel_b, rel_h = by_rel(entries_b), by_rel(entries_h)
     pair, missing, added = {}, [], []
     # Owners first, so that a member prefers the counterpart under its owner's counterpart.
-    # Among equal candidates (D2) each name is paired in passes, so that no element takes a
+    # Among equal candidates each name is paired in passes, so that no element takes a
     # candidate another one is preferred for: a member of a paired owner under the owner's
     # counterpart; then a top-level element, or a member of an unpaired owner, in its own
     # package (P3 still allows a change of package); then any equal one. File order decides

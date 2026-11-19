@@ -1,4 +1,4 @@
-"""CR18 test-only upstream simulator execution and immutable PCM fixture checks."""
+"""Test-only upstream simulator execution and immutable PCM fixture checks."""
 from __future__ import annotations
 import argparse, hashlib, importlib.util, json, math, pathlib, re, shutil, struct, subprocess, wave
 

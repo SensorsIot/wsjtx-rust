@@ -1,4 +1,4 @@
-"""station_drill.py (#34): the drill refuses unknown commands and catches a lost refusal."""
+"""station_drill.py: the drill refuses unknown commands and catches a lost refusal."""
 import os
 import sys
 import tempfile
