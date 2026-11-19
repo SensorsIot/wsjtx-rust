@@ -1,21 +1,26 @@
-"""Build a station package for one pushed commit.
+"""Deploy one pushed commit: build or reuse its station package, then run the package's own install.
 
 usage (Git Bash; the script itself is read from the commit, never from a working folder):
-  git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> <push-gate-log>
+  set -o pipefail; git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> [--dry-run]
 
-Exports the commit with `git archive` into a clean directory on C:, builds
-`cargo build --release --locked -p wstx-rust` there, and writes
+The commit must be on GitHub master, and exactly one merge-queue log under
+<git common dir>/harness-parallel/queue/logs/ must show its green push gate; that log is the
+package's push-gate log. The package lives in
 <git common dir>/harness-parallel/resources/station-update/packages/<ver>/{package/, deploy/,
-manifest.json, gates.json, gate-receipt-<ver>.log}, never into a working tree. The gate log
-must show the green push gate that published exactly this commit to master. COPYING and
-every file under server/third-party are copied from the exported commit into package/. The
-deploy mechanism files (every file under tools/deploy/station-update/ and MECHANISM_FILES)
-are copied from the export into deploy/<their path>; the manifest lists their SHA-256, and
-station-update.ps1 runs from there.
+manifest.json, gates.json, gate-receipt-<ver>.log}, never in a working tree. When that folder
+holds the commit's package it is reused; when it is absent, the commit is exported with
+`git archive` into a clean directory on C: and built there with
+`cargo build --release --locked -p wstx-rust`. COPYING and every file under
+server/third-party are copied from the exported commit into package/. The deploy mechanism
+files (every file under tools/deploy/station-update/ and MECHANISM_FILES) are copied from the
+export into deploy/<their path>; the manifest lists their SHA-256. Then the package's own
+station-update.ps1 runs with -Manifest (and -DryRun for --dry-run); the command exits with
+its exit code.
 """
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +30,10 @@ REPO = r"D:\Github\wsjtx-rust"
 BUILD_ROOT = r"C:\wstx-build"
 MECHANISM_DIR = "tools/deploy/station-update"
 MECHANISM_FILES = ("tools/deploy/agent-client.ps1", "tools/deploy/station-probe.ps1", "tools/deploy/live-page-check.ps1")
+POWERSHELL = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), r"System32\WindowsPowerShell\v1.0\powershell.exe")
+USAGE = "usage: make_package.py <commit> [--dry-run]"
+VERDICT = re.compile(r"^harness gate: \d+ suites, green", re.M)
+PUSH = re.compile(r"^\s*[0-9a-f]+\.\.([0-9a-f]+)  HEAD -> master\s*$", re.M)
 
 
 def sha256(path):
@@ -39,10 +48,28 @@ def git(repo, *args):
     return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
+def common_dir(repo):
+    return git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+
+
 def packages_root(repo):
     """The shared packages folder of the repository, outside every working tree."""
-    common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    return os.path.join(common, "harness-parallel", "resources", "station-update", "packages")
+    return os.path.join(common_dir(repo), "harness-parallel", "resources", "station-update", "packages")
+
+
+def push_gate_logs(repo, commit):
+    """The merge-queue logs that show a green gate and the push of `commit` to master."""
+    logs = os.path.join(common_dir(repo), "harness-parallel", "queue", "logs")
+    found = []
+    for name in sorted(os.listdir(logs)) if os.path.isdir(logs) else []:
+        path = os.path.normpath(os.path.join(logs, name))
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        if VERDICT.search(text) and any(commit.startswith(new) for new in PUSH.findall(text)):
+            found.append(path)
+    return found
 
 
 def export(repo, commit, dest):
@@ -78,30 +105,28 @@ def copy_mechanism(src, out):
     return files
 
 
-def main():
-    commit_arg, gate_log = sys.argv[1], sys.argv[2]
-    commit = git(REPO, "rev-parse", commit_arg + "^{commit}")
-    ver = commit[:9]
-    git(REPO, "fetch", "-q", "origin", "master")
-    subprocess.run(["git", "-C", REPO, "merge-base", "--is-ancestor", commit, "FETCH_HEAD"], check=True)
-    log = open(gate_log, encoding="utf-8", errors="replace").read()
-    if "suites, green" not in log or f"..{ver}  HEAD -> master" not in log:
-        sys.exit(f"{gate_log} does not show a green push of {ver} to master")
+def holds_package(out, commit):
+    """Whether the folder holds a package of the commit: a manifest that names it."""
+    try:
+        with open(os.path.join(out, "manifest.json"), encoding="utf-8") as f:
+            return json.load(f).get("source_commit") == commit
+    except (OSError, ValueError, AttributeError):
+        return False
 
-    out = os.path.join(packages_root(REPO), ver)
-    if os.path.exists(out):
-        sys.exit(f"{out} already exists")
+
+def build(commit, ver, out, gate_log):
+    """Build the package of the commit into out from its git archive export."""
     src = os.path.join(BUILD_ROOT, ver, "src")
     target = os.path.join(BUILD_ROOT, ver, "target")
     export(REPO, commit, src)
     # The station reports this commit itself (x-wstx-source-commit on GET /, #33).
     env = dict(os.environ, CARGO_TARGET_DIR=target, CARGO_BUILD_JOBS="2", WSTX_SOURCE_COMMIT=commit)
-    build = subprocess.run(["cargo", "build", "--release", "--locked", "-p", "wstx-rust"], cwd=src, env=env,
-                           capture_output=True, text=True)
+    result = subprocess.run(["cargo", "build", "--release", "--locked", "-p", "wstx-rust"], cwd=src, env=env,
+                            capture_output=True, text=True)
     os.makedirs(out)
     with open(os.path.join(out, "build.log"), "w", encoding="utf-8") as f:
-        f.write(build.stdout + build.stderr)
-    if build.returncode != 0:
+        f.write(result.stdout + result.stderr)
+    if result.returncode != 0:
         sys.exit(f"release build failed, see {out}\\build.log")
     exe = os.path.join(target, "release", "wstx-rust.exe")
 
@@ -152,11 +177,41 @@ def main():
     with open(os.path.join(out, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     shutil.rmtree(os.path.join(BUILD_ROOT, ver), ignore_errors=True)
+
+
+def main(argv):
+    if len(argv) not in (1, 2) or argv[0].startswith("-") or argv[1:] not in ([], ["--dry-run"]):
+        sys.exit(USAGE)
+    dry_run = len(argv) == 2
+    commit = git(REPO, "rev-parse", argv[0] + "^{commit}")
+    ver = commit[:9]
+    if subprocess.run(["git", "-C", REPO, "fetch", "-q", "origin", "master"]).returncode != 0:
+        sys.exit("refused: git fetch of GitHub master failed")
+    if subprocess.run(["git", "-C", REPO, "merge-base", "--is-ancestor", commit, "FETCH_HEAD"]).returncode != 0:
+        sys.exit(f"refused: {ver} is not on GitHub master")
+    logs = push_gate_logs(REPO, commit)
+    if not logs:
+        sys.exit(f"refused: no push-gate log shows the push of {ver} to master")
+    if len(logs) > 1:
+        sys.exit(f"refused: {len(logs)} push-gate logs show the push of {ver}: "
+                 + ", ".join(os.path.basename(p) for p in logs))
+    print(f"push-gate log: {logs[0]}", flush=True)
+
+    out = os.path.normpath(os.path.join(packages_root(REPO), ver))
+    if not os.path.exists(out):
+        build(commit, ver, out, logs[0])
+        print(f"package {ver}: built {out}", flush=True)
+    elif holds_package(out, commit):
+        print(f"package {ver}: reused {out}", flush=True)
+    else:
+        sys.exit(f"refused: {out} exists and holds no package of {commit}")
+
     station_update = os.path.join(out, "deploy", "tools", "deploy", "station-update", "station-update.ps1")
-    print(f"package {ver}: exe {exe_hash[:12]} ({os.path.getsize(os.path.join(package, 'wstx-rust.exe'))} bytes), "
-          f"{len(files)} files, {len(deploy_files)} mechanism files -> {out}")
-    print(f"install: powershell -NoProfile -ExecutionPolicy Bypass -File {station_update} -Manifest {os.path.join(out, 'manifest.json')}")
+    args = ["-Manifest", os.path.join(out, "manifest.json")] + (["-DryRun"] if dry_run else [])
+    run = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+                          station_update, *args])
+    sys.exit(run.returncode)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
