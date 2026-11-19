@@ -7,9 +7,9 @@ contract; the references below are the constraints a change must respect.
 | Subject | Reference |
 |---|---|
 | Product contract | [Functional model entry point](../../../docs/sysml/Requirements.sysml); [exclusive authority selection](Project-Specifics.md#exclusive-functional-authority) |
-| Product component/interface boundaries | [Architecture](../../../docs/sysml/Station.sysml) and its referenced behaviour/interface packages |
+| Product component/interface boundaries | [Architecture](../../../docs/sysml/Shack.sysml) and its referenced behaviour/interface packages |
 | The finished model: the rules every model change and its check name (M1–M8) | [Finished model](Finished-Model.md); read first by the definer and the reviewer of a model change |
-| Product SysML artifacts and view scope | [Architecture model](../../../docs/sysml/Station.sysml); [catalog and validation](../../../tools/sysml/README.md#canonical-model-catalog-and-source-bindings) |
+| Product SysML artifacts and view scope | [Architecture model](../../../docs/sysml/Shack.sysml); [catalog and validation](../../../tools/sysml/README.md#the-rules) |
 | Behavior baseline and provenance | [Functional model](../../../docs/sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../../README.md#license-and-attribution) |
 | The machine (HB9BLA, with the transceiver) | [Machine](Project-Specifics.md#machine) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
@@ -118,10 +118,9 @@ notice to the operator (the user who last edited the schedule); it names the cra
 ## Documentation is current-state
 
 The [exclusive authority binding](Project-Specifics.md#exclusive-functional-authority)
-selects one functional authority. With the canonical model declaration and archived
-functional Markdown, SysML alone owns product requirements, behaviour, architecture,
-interfaces and durable verification definitions. Retired Markdown is historical and is
-not edited, regenerated or read by the active workflow. Harness instructions, skills,
+selects one functional authority. With the canonical model declaration, SysML alone owns
+product requirements, behaviour, architecture, interfaces and durable verification
+definitions. Harness instructions, skills,
 standards, process, build and gate documentation remain Markdown.
 
 For each functional issue follow the [required sequence](Project-Specifics.md#required-sequence-for-functional-issues):
@@ -138,7 +137,7 @@ not duplicated into another active specification. Product-specific tests and add
 execution wiring remain with their functional CR; reusable method changes follow the
 harness rollout process.
 
-The model tools' own clauses and tests are in
+The model tools' own rules (TR-nn) and tests (TV-nnn) are in
 [tools/sysml/README.md](../../../tools/sysml/README.md), not in product SysML. Full parsing/name checking, architecture integrity and trace checks do not prove
 behavioural equivalence or implementation readiness; the ready check, independent review
 and relevant application tests supply that evidence.

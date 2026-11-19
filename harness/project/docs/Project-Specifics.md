@@ -40,32 +40,6 @@ No radio, sound device, third-party decoder or repository secrets are required. 
 
 The workflow has read-only repository permissions and pins its checkout and artifact actions to specific commits. It does not publish GitHub releases or packages.
 
-## Native Windows FFI boundary
-
-The `wstx-rust` library crate may contain the Windows audio and CAT adapters. Its
-crate root uses `#![deny(unsafe_code)]`; the binary crate retains
-`#![forbid(unsafe_code)]`. Only the `audio::windows` and `radio_control::windows`
-module declarations may use `#[allow(unsafe_code)]`. Public interfaces crossing
-those boundaries are safe Rust. The decoder and canonical source-value modules
-retain `forbid(unsafe_code)`; portable processing and protocol code have no exception.
-
-The `audio_contract`, `audio_hardware`, `audio_listen`, `radio_control`,
-`radio_native` and `radio_hardware` integration-test targets may use
-`#![deny(unsafe_code)]` when they import those actual adapters. They inherit the
-same two narrowly scoped adapter exceptions. Only `radio_native` additionally
-permits an explicitly named Windows fixture module containing the owned-handle
-and local named-pipe FFI calls. Test setup, assertions and protocol logic remain
-outside that fixture exception. Test targets using only safe library APIs retain
-`#![forbid(unsafe_code)]`.
-
-Every unsafe block states its preconditions in a `// SAFETY:` comment. Tests cover
-handle and buffer ownership, initialization, cancellation, failure ordering and
-acknowledged release. Failed native close retains its owning resources rather
-than granting another owner access. Independent review checks changes to these
-boundaries. Crate-wide `allow(unsafe_code)`, an exception on the whole audio/CAT
-module, new exceptions outside these locations, and compiler or gate bypasses
-are prohibited.
-
 ## Local Windows development
 
 Install Rust through [rustup](https://rustup.rs/) and the Visual Studio C++ Build Tools with the Desktop development with C++ workload and a Windows SDK. The toolchain file selects the compiler version automatically.
@@ -98,7 +72,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | Group | Functional coverage | Direct change owners |
 |---|---|---|
 | `wstx-rust` | Rust unit and integration tests, except the library's `decoder::` unit tests (`wstx-rust-decoder`) | Native sources, the transmit and decoder fixtures the tests include, the model (`docs/sysml/`), whose values its tests read, the model-value fixture tree, Cargo inputs and Rust toolchain |
-| `wstx-rust-decoder` | The library's `decoder::` unit tests, optimized with debug assertions and overflow checks | Decoder sources, the transmit packer (`transmit/pack.rs`, `transmit/mod.rs`), the library root, the decoder fixtures they include, the model (`docs/sysml/`), whose values its tests read, the Rust model-value reader, Cargo inputs and Rust toolchain |
+| `wstx-rust-decoder` | The library's `decoder::` unit tests, optimized with debug assertions and overflow checks | Decoder sources, the transmit packer (`transmit/pack.rs`, its module root `modes/transmit/mod.rs`), the library root, the decoder fixtures they include, the model (`docs/sysml/`), whose values its tests read, the Rust model-value reader, Cargo inputs and Rust toolchain |
 | `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
 | `protocol-thin` | Timing: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Timing inputs: router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
 | `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests, the model file whose values its tests read (`docs/sysml/backend/profile/Profile.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader |
@@ -112,13 +86,13 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
 | `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
 | `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, the model file whose values its provenance sweep reads (`docs/sysml/backend/profile/Recordings.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader, plus Node package metadata |
-| `model-values` | TC-DOC-014: the JavaScript model-value reader on its fixture tree | The JavaScript model-value reader, its test file, the model-value fixture tree, plus Node package metadata |
-| `sysml-documentation` | Canonical catalog/trace checks, one full semantic validation (`sysml.py check`), the tests that read the model `test_[dr]*.py` | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
-| `sysml-tools` | The SysML tool's own unit tests `test_[!adre]*.py` on isolated models | The SysML tool and its tests |
-| `sysml-equivalence-tests` | TC-DOC-015: `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
-| `sysml-equivalence` | CL-014-17: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
-| `sysml-architecture-context` | TC-DOC-005's context list on the working model: `test_architecture_context.py` reads `docs/sysml`, the oracle file and the pending list, without the Pilot | `Station.sysml`, `Context.sysml`, `Requirements.sysml`, `interfaces/`, the part files, the SysML tool, the oracle file `architecture-oracle.json`, the pending list `pending-structure.json` and its test file |
-| `sysml-architecture` | TC-DOC-005 architecture integrity, the validator tests: every `test_a*.py` but `test_architecture_context.py` (`-p "test_a*[!x]?.py"`), the mutation tests on the pinned model of `1df1ba3a5` and its oracle file, and the `oracle` tests and TC-DOC-016's structure-check tests on fixture trees, one Pilot validation per mutation or model state | The SysML tool, `Validate.java`, the toolchain pin and its own test files (the pin and the fixtures); not a model edit, the oracle file or the pending list. The model and the client/server/test source are fingerprint inputs only |
+| `model-values` | TR-20 (TV-158, TV-159): the JavaScript model-value reader on its fixture tree | The JavaScript model-value reader, its test file, the model-value fixture tree, plus Node package metadata |
+| `sysml-documentation` | `sysml.py check` (catalog/trace checks, one full semantic validation, the oracle, the identity history and the model rules) and the `test_[dr]*.py` tests (TV-049, TV-111 to TV-114) | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
+| `sysml-tools` | The SysML tool's tests `test_[!adre]*.py` (TV-033 to TV-048, TV-075 to TV-110, TV-115 to TV-155), on isolated models and five on the real model | The SysML tool and its tests |
+| `sysml-equivalence-tests` | TR-21 (TV-050 to TV-074): `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
+| `sysml-equivalence` | TR-21: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
+| `sysml-architecture-context` | TR-07 (TV-001, TV-002) on the working model: `test_architecture_context.py` compares the outside things of `ShackContext` in `Context.sysml` with its owner table, without the Pilot | `Context.sysml`, `interfaces/external/`, the SysML tool, the oracle file `architecture-oracle.json` and its test file |
+| `sysml-architecture` | TR-06 to TR-09 (TV-003 to TV-032), the validator tests: every `test_a*.py` but `test_architecture_context.py` (`-p "test_a*[!x]?.py"`), `oracle`, the architecture comparison and the deployment rules on fixture trees, one Pilot validation per model state | The SysML tool, `Validate.java`, the toolchain pin and its own test files (the fixtures); not a model edit or the oracle file. The model and the client/server/test source are fingerprint inputs only |
 | `decoder-correctness` | The release `decoder_signal` correctness, thread-parity and jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
 | `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
@@ -237,16 +211,16 @@ meet.
 The model has an explicit documentation owner. Its edits select the catalog/trace check,
 one full semantic validation and the tests that read the model (`sysml-documentation`, about
 30 s); the tool's own unit tests (`sysml-tools`, about 50 s) run only when the tool changes.
-An edit to an architecture model file, the oracle file `architecture-oracle.json` or the
-pending list `pending-structure.json` also selects the architecture's working-model checks
-(`sysml-architecture-context`, no Pilot); `sysml-documentation` judges the same files with
-`check`. The architecture validator tests (`sysml-architecture`, one Pilot JVM per mutation
-or fixture state) judge the pinned model of `1df1ba3a5` and fixture trees, so they run only
-when the tool, `Validate.java`, the toolchain pin or their own test files change.
+An edit to `Context.sysml`, an external interface (`interfaces/external/`) or the oracle
+file `architecture-oracle.json` also selects the context check
+(`sysml-architecture-context`, TR-07, no Pilot); `sysml-documentation` judges the model and
+the oracle file with `check`. The architecture validator tests (`sysml-architecture`, one
+Pilot JVM per fixture state) judge fixture trees only, so they run only when the tool,
+`Validate.java`, the toolchain pin or their own test files change.
 Runtime oracles are selected by changed implementation and executable tests. Source
 edits also select the fast binding check, without a dependency that runs the full Pilot
-mutation suite on every code edit. `sysml-documentation` and `sysml-architecture`
-fingerprint the model, tool and complete client/server/test source inputs they read. A
+suites on every code edit. `sysml-documentation` and `sysml-architecture`
+fingerprint the model, tool and complete client/server/test source inputs. A
 source edit or deletion invalidates old trace evidence, full-model evidence and the
 validator tests' evidence, even when only the fast suite is selected.
 Independent contract comparison still checks that tests prove the changed promises.
@@ -294,8 +268,8 @@ cargo build --workspace --locked --release --target x86_64-pc-windows-msvc
 ```
 
 The server stays running. Open `http://127.0.0.1:8080` in a browser; stop the server
-with Ctrl+C. Remote TLS and access settings are defined in the
-[communication contract](../../../docs/sysml/Requirements.sysml).
+with Ctrl+C. Remote TLS and access settings are `WstxListener::ListenRule`
+([Listener.sysml](../../../docs/sysml/backend/web/Listener.sysml)).
 
 For automated browser tests, install Node 24 and run from the repository root:
 
@@ -314,8 +288,11 @@ remains an alternative execution location for this full recipe when explicitly c
 `WSTX_TEST_EXE` optionally selects an exact packaged executable. Otherwise tests use
 the debug executable under `CARGO_TARGET_DIR` when set, or `target/`.
 Screenshots and the thin-link measurement report are written to ignored `test-results/`.
-The portable link simulator uses modelled network overhead, not packet capture;
-see the [measurement limits](../../../docs/sysml/Requirements.sysml).
+The portable link simulator uses modelled network overhead, not packet capture. The link
+budget is `WstxStationLink::ThinLinkBudget`
+([StationLink.sysml](../../../docs/sysml/interfaces/internal/StationLink.sysml)), the
+counted overhead `WstxListener::LinkTrafficLog`
+([Listener.sysml](../../../docs/sysml/backend/web/Listener.sysml)).
 
 ## Merge queue
 
@@ -661,7 +638,7 @@ selects the exclusive authority policy below and the local toolchain. The rules 
 project's model are the [finished model](Finished-Model.md) (M0 to M8 and its authoring
 rules); where they differ from the general skill and standard, they win. The
 functional entry point is [Requirements.sysml](../../../docs/sysml/Requirements.sysml), with the
-[architecture](../../../docs/sysml/Station.sysml) and the model packages it references.
+[architecture](../../../docs/sysml/Shack.sysml) and the model packages it references.
 Harness instructions are not represented in product SysML.
 
 ### Exclusive functional authority
@@ -674,15 +651,12 @@ authority or projection path.
 
 When the marker is present, only SysML owns functional requirements, architecture,
 behaviour, interfaces, constraints and the test cases (skeleton and title, M6.5) bound to
-their tests. Functional
-Markdown is historical archive material: it is not edited, regenerated, synchronized
-or read by preparation, implementation or validation. There is no replacement Markdown
-FSD. Optional views present existing model facts and carry no additional authority.
-The archived FSD lives under `docs/archive/markdown-functional-specification/`.
+their tests. There is no Markdown FSD. Optional views present existing model facts and
+carry no additional authority.
 HOW rollout and product publication remain separate: a harness change is reviewed and
 published, a product change follows the CR process.
 
-The model tools' contract (toolchain pins, commands, validation limits, the method clauses CL-014 and their tests TC-DOC, the catalog and source bindings) is in [tools/sysml/README.md](../../../tools/sysml/README.md).
+The model tools' contract (toolchain pins, commands, validation limits, the rules TR-nn and their tests TV-nnn, the catalog and source bindings) is in [tools/sysml/README.md](../../../tools/sysml/README.md).
 
 ## Project model documentation contract
 
@@ -692,8 +666,7 @@ The model tools' contract (toolchain pins, commands, validation limits, the meth
 2. Settle the changed promises in the issue, in the model's wording: each clause with the
    FR it derives from and the use-case step that carries it (M6.2, M6.11), each test case
    by identity and title (M6.5), and a negative test for each clause that prevents
-   something. The coder writes them into the model with the code; archived Markdown is not
-   edited. An issue that changes the architecture lists its added and removed parts, ports and
+   something. The coder writes them into the model with the code. An issue that changes the architecture lists its added and removed parts, ports and
    connections, written before `python tools/sysml.py oracle` runs and never from its
    output; its acceptance compares that list with `oracle`'s change lines.
 3. Settle open decisions on behaviour, data, ownership, states, timing, errors and test
@@ -722,42 +695,3 @@ The limits the [CR process](../../general/core/docs/CR-Process.md) leaves to the
   ([handoff](MEMORY.md#preserve-the-runtime)), and short test transmissions only.
 - Anything that needs the operator (the Flex switched on) is prepared and dry-run first.
 - Three real runs without an answer mean stop and report to the operator.
-
-## Communication verification model
-
-Functional limits and measurement acceptance are specified in
-[the canonical communication requirements](../../../docs/sysml/Requirements.sysml).
-The following describes this project's verification machinery.
-
-The portable test proxy shapes actual TCP-stream bytes (including real TLS records
-in TLS tests), in at most 512-byte segments, with a shared 4,000-byte/s schedule in each
-direction and 150 ms one-way latency. Each segment is additionally charged 80 bytes
-for TCP/IPv6 headers and 80 bytes in the reverse direction for an ACK. This is explicit
-modelled network overhead, not a packet capture. It does not reproduce retransmissions,
-packet loss, congestion control or exact kernel packetization. Its bulk-transfer timing
-is tested independently of the station application. Physical-link certification is outside
-this CR; results MUST identify this model rather than claim on-wire measurements.
-The simulator disconnects overloaded peers above its 128 KiB per-direction pending/write
-buffer cap instead of modelling an unlimited congestion queue.
-Browser Navigation/Resource Timing separately reports cold page and asset transfer sizes
-at the browser HTTP layer, including its reported HTTP-header overhead; these counters
-exclude TLS/TCP/IP overhead. Connection-to-displayed-status time and concurrent visible
-Refresh status times are measured separately. Silent loss is exercised by discarding bytes
-without closing the established test connections; this is a byte-stream blackhole, not
-packet-level loss emulation. Automated real-time bounds allow one second of scheduler
-tolerance for the nominal 13-second silent-loss detection bound.
-
-The stalled-reader test keeps a peer paused with automatic Pong replies disabled
-past the liveness deadline plus heartbeat-tick bound, then checks disconnection and
-the other peer's responsiveness. It proves bounded unresponsive-peer removal; because
-OS buffers can absorb the request burst, it does not claim to observe the two-second
-send-timeout branch or independently measure total queue memory.
-
-## Recording fixture acquisition
-
-Candidate recordings and oracle limitations are specified in
-[the canonical model](../../../docs/sysml/Requirements.sysml).
-
-- Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
-- Keep original WAV files and expected-output texts unchanged, with hashes and source URLs recorded in a fixture manifest when imported.
-- For the selected WSJT-X `v3.3.0-beta4` behavior reference, generate a separate output set and record the exact binary, settings, command, and audio input. Do not overwrite the historical references.

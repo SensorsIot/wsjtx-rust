@@ -13,7 +13,7 @@ its project harness, is `harness/project/`.
 - The main session is the coordinator: load the `harness-coordinator` skill first. It is
   composed from the [coordinator role](harness/general/core/agents/roles.md#role-coordinator) and
   this project's additions.
-- Read the [functional authority binding](harness/project/docs/Project-Specifics.md#exclusive-functional-authority) before contract edits. Canonical SysML is edited directly; archived functional Markdown is not maintained or an active oracle. Harness/process documentation stays Markdown.
+- Read the [functional authority binding](harness/project/docs/Project-Specifics.md#exclusive-functional-authority) before contract edits. Canonical SysML is edited directly. Harness/process documentation stays Markdown.
 - Product changes follow [CR process](harness/general/core/docs/CR-Process.md); changes to how the
   project is built, tested or gated follow [Harness changes](harness/general/core/docs/Harness-Changes.md).
   A gap in the harness itself is fixed inside `harness/general/` (Harness changes, "Improving the
