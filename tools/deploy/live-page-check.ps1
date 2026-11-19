@@ -1,6 +1,6 @@
 # Harness retrospective item 3 (SensorsIot/harness#38): runs tests/live-page-check.cjs against the
 # station installed on this PC, and gives it the one real restart it asks for, after it has
-# watched the page for several periods. Receive only: it keys nothing and sets nothing on the radio.
+# watched the page for several periods. It keys nothing.
 #   live-page-check.ps1 -Repo <repository root> -Shared <git common dir>\harness-parallel
 #                       -AgentClient <agent-client.ps1> [-WaitSeconds 300] [-Station <folder>]
 # It derives no path from its own location, so it runs from a station package as well: the check
@@ -9,9 +9,18 @@
 # The restart happens only while /transmit is disarmed, not transmitting and PTT released, /contact
 # has no running contact, /automation has no active run, no update runs and nobody holds the radio
 # lease; otherwise it waits up to -WaitSeconds and gives up with the station untouched.
+# Before the restart (#247) it makes one band selection (POST /receive/select, action band) of the
+# band the station receives on, naming no mode, so that the old boot's receive job stands at
+# generation 2 or more. It does so only while receive runs FT8 or FT4 on a selected band of that
+# mode, Monitor off at startup is not set and the saved receive choice is that mode and band: the
+# selection then tunes the radio as the resume after the restart does and saves the same choice.
+# Otherwise, or when the selection is refused or does not take, the result is NOT-EXERCISED naming
+# why, never PASS, and the restart follows. After a selection that took it waits until the check
+# has seen the raised generation with new rows, at most -WaitSeconds from the 202. Just before
+# Ctrl+C it reads the idle conditions again: a station in use then is not stopped (BUSY).
 # Stop and start as in radio-preflight.ps1: Ctrl+C, then the scheduled task.
-# While it restarts it holds the station's update.lock, so station-update.ps1 and radio-preflight.ps1
-# refuse to start in that window.
+# From its first idle read until the new boot answers it holds the station's update.lock, so
+# station-update.ps1 and radio-preflight.ps1 refuse to start in that window.
 # Exit 0: PASS. 1: RED. 2: ERROR, it could not run or the station did not come back (it says which).
 # 3: BUSY, the station was in use and was not restarted. 4: NOT-EXERCISED, nothing was shown wrong
 # but a live trigger of #22 or #50 was not on screen (the PAGE CHECK line says which).
@@ -79,6 +88,59 @@ function Station-Busy {
   if ($run -and [string]$run.state -ne 'stopped') { return "an automation run is $($run.state)" }
   $null
 }
+# Why the check makes no band selection in this state of GET /receive/selection and
+# GET /receive/startup, or $null: only then does the selection equal the resume after the restart.
+function No-Selection($view, $startup) {
+  $state = [string]$view.receive.state; $mode = [string]$view.receive.mode; $band = [string]$view.selection.band
+  if ($state -ne 'running') { return "receive is not running (state $(if ($state) { $state } else { 'none' }))" }
+  if ($mode -notin @('ft8', 'ft4')) { return "receive runs $mode, not FT8 or FT4" }
+  if (-not $band) { return 'no band is selected' }
+  if ([string]$view.selection.mode -ne $mode) { return "the selected mode $($view.selection.mode) is not the receive mode $mode" }
+  if ($startup.monitor_off_at_startup) { return 'Monitor off at startup is set' }
+  $saved = $startup.last_receive
+  $choice = if ($null -eq $saved) { 'none' } else { "$($saved.mode) $($saved.band)" }
+  if ($null -eq $saved -or [string]$saved.mode -ne $mode -or [string]$saved.band -ne $band) { return "the saved receive choice ($choice) is not the running $mode $band" }
+  $null
+}
+# The codes a selection is read afresh and retried on, every 10 s within -WaitSeconds.
+$Transient = @('busy', 'state_conflict', 'radio_unavailable', 'radio_timeout', 'cancelled')
+function Refusal($reply) {
+  if ($reply.Body -is [Management.Automation.PSCustomObject] -and $reply.Body.PSObject.Properties['error']) { return [string]$reply.Body.error.code }
+  "HTTP $($reply.Status)"
+}
+# One band selection of the band the station receives on, keeping its mode. Returns
+# @{ command; generation; band; at } once it is admitted (202), or @{ why } when it makes none.
+function Select-Band {
+  $deadline = (Now).AddSeconds($WaitSeconds)
+  for (;;) {
+    try { $view = Agent-Get $script:Session '/receive/selection'; $startup = Agent-Get $script:Session '/receive/startup' }
+    catch { return @{ why = "no band selection: the receive state cannot be read ($($_.Exception.GetType().Name))" } }
+    $why = No-Selection $view $startup
+    if ($why) { return @{ why = "no band selection: $why" } }
+    $body = [ordered]@{ v = 1; action = 'band'; profile_id = $view.profile_id; boot_id = $view.boot_id
+      command_id = [guid]::NewGuid().ToString('D'); profile_revision = $view.profile_revision
+      generation = $view.generation; operating_revision = $view.operating_revision; band = [string]$view.selection.band }
+    try { $reply = Agent-Post $script:Session '/receive/select' $body }
+    catch { return @{ why = "the band selection could not be sent ($($_.Exception.GetType().Name))" } }
+    if ($reply.Status -eq 202) { return @{ command = $body.command_id; generation = $body.generation; band = $body.band; at = (Now) } }
+    $code = Refusal $reply
+    if ($code -notin $Transient -or (Now) -ge $deadline) { return @{ why = "the band selection was refused: $code" } }
+    Start-Sleep -Seconds 10
+  }
+}
+# $null once the admitted selection has succeeded, or why it did not take by $until.
+function Selection-Result([string]$Command, [DateTime]$Until) {
+  for (;;) {
+    $op = $null
+    try { $op = (Agent-Get $script:Session '/receive/selection').operation } catch { }
+    if ($op -and [string]$op.command_id -ne $Command) { return "the band selection was replaced by command $($op.command_id)" }
+    if ($op -and [string]$op.result -eq 'success') { return $null }
+    if ($op -and [string]$op.result -ne 'pending') { return "the band selection ended $($op.result): $(if ($op.error) { $op.error } else { 'no error named' })" }
+    if ((Now) -ge $Until) { return "the band selection had no result $WaitSeconds s after its 202" }
+    Start-Sleep -Seconds 1
+  }
+}
+function Send-Line($message) { $node.StandardInput.WriteLine(($message | ConvertTo-Json -Compress -Depth 3)); $node.StandardInput.Flush() }
 function Restart-Station {
   $process = @(Station-Procs)[0]
   $rc = Send-CtrlC ([int]$process.ProcessId)
@@ -127,8 +189,27 @@ try {
       $deadline = (Now).AddSeconds($WaitSeconds); $busy = Station-InUse
       while ($busy -and (Now) -lt $deadline -and -not $node.HasExited) { Write-Output "waiting: $busy"; Start-Sleep -Seconds 10; $busy = Station-InUse }
       if ($node.HasExited) { break }
-      if ($busy) { $node.StandardInput.WriteLine((@{ abort = $busy } | ConvertTo-Json -Compress)); $node.StandardInput.Flush(); continue }
-      $node.StandardInput.WriteLine('{"stopping":true}'); $node.StandardInput.Flush()
+      if ($busy) { Send-Line @{ abort = $busy }; continue }
+      # The update lock is held from here until the new boot answers.
+      $selected = Select-Band
+      if ($selected.ContainsKey('why')) { Write-Output "not exercised: $($selected.why)"; Send-Line @{ unexercised = $selected.why } }
+      else {
+        Write-Output "band selection of $($selected.band) admitted at generation $($selected.generation), $((Now).ToString('HH:mm:ss')) UTC"
+        $until = $selected.at.AddSeconds($WaitSeconds)
+        $untaken = Selection-Result $selected.command $until
+        if ($untaken) { Write-Output "not exercised: $untaken"; Send-Line @{ unexercised = $untaken } }
+        else {
+          $ms = [int][Math]::Max(0, ($until - (Now)).TotalMilliseconds)
+          Send-Line @{ selected = @{ generation = $selected.generation; ms = $ms } }
+          $rows = Join-Path $control 'rows'; $deadline = (Now).AddMilliseconds($ms + 60000)
+          while (-not (Test-Path -LiteralPath $rows) -and -not $node.HasExited -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+          if ($node.HasExited) { break }
+        }
+      }
+      # The wait may have outlasted the idle state: a station in use now is not stopped.
+      $busy = Station-Busy
+      if ($busy) { $script:Lock.Dispose(); $script:Lock = $null; Write-Output "in use before the stop: $busy"; Send-Line @{ abort = $busy }; continue }
+      Send-Line @{ stopping = $true }
       Write-Output "restarting the station, $((Now).ToString('HH:mm:ss')) UTC"
       Restart-Station
       $deadline = (Now).AddSeconds(90); $session = $null
