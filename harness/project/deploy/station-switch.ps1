@@ -2,7 +2,7 @@
 # tests on the FT-8 Band Simulator (harness/project/docs/Project-Specifics.md, Simulator live tests,
 # Switch). It needs no administrator rights.
 #   station-switch.ps1 -To simulator     the tester or the coordinator
-#   station-switch.ps1 -To back          the coordinator only: no agent switches the station to ic7300
+#   station-switch.ps1 -To back          the tester as its run's last step, or the coordinator
 #   -DryRun prints every step and changes nothing (it still reads the station's state).
 # -To simulator refuses unless profiles\SIM-IC7300 exists and names no COM3; backs up
 # station\launcher.ps1 once (launcher.ps1.before-simulator; a launcher already switched is not

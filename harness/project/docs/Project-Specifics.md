@@ -497,9 +497,9 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   `logged_adif`), `pskr.json` disabled. The
   operator profile `ic7300` and its logbook are never touched; their hashes are taken before
   and compared after.
-- **Switch.** The real IC-7300 is off (the operator switches it).
-  `harness/project/deploy/station-switch.ps1 -To simulator` (the tester or the coordinator) backs
-  up `station\launcher.ps1` once, points its profile line at `profiles\SIM-IC7300` and sets
+- **Switch.** The real IC-7300 may be on or off: with `WSTX_RADIO_DISCOVERY=off` the station
+  opens only COM4. `harness/project/deploy/station-switch.ps1 -To simulator` (the tester or
+  the coordinator) backs up `station\launcher.ps1` once, points its profile line at `profiles\SIM-IC7300` and sets
   `WSTX_RADIO_DISCOVERY=off` and `WSTX_PSKR=off` (without discovery off, a silent COM4 makes
   the station adopt the real radio on COM3), and `WSTX_UDP=off` unless every target of the
   profile's `udp.json` is on `127.0.0.1` and none on the operator logger's port 2237 (it says
@@ -507,13 +507,24 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   (Ctrl+C, `station-control.ps1`, as `radio-preflight.ps1` does), restarts the task, reads
   the profile back (`GET /radio`, `station-running.json`) and compares the hashes of the
   operator profile and its logbook; any difference exits non-zero. Return:
-  `station-switch.ps1 -To back`, the coordinator only: the backed-up launcher (without one,
-  the pinned launcher), the same restart. `-DryRun` prints every step and changes nothing.
+  `station-switch.ps1 -To back`, the last step of the tester's run, or the coordinator: the
+  backed-up launcher (without one, the pinned launcher), the same restart. `-DryRun` prints
+  every step and changes nothing.
 - **CAT confirmation.** A new profile, and any change of its CAT setup, needs the operator's
   receive-only confirmation in the browser (Settings, "CAT receive-only confirmation");
   until then CAT stays closed. Agents never change the CAT endpoint during a simulator run.
-- **Emulator and band simulator.** Operated as their own project describes it: the tester
-  skill `skills/wsjtx-simulator-testing/SKILL.md` and the handoff package of
+- **Emulator.** Each run starts its own IC-7300 emulator on COM5 at 115200 baud and stops it:
+  `harness/project/deploy/emulator.ps1 -Start` refuses while any process runs the emulator on
+  COM5 or its record names a live one, starts `simulator.py --serial COM5 --baud 115200` of
+  `D:/Github/IC-7300 simulator` as its own hidden process with stdin held open, waits until its
+  new run folder starts the serial transport and records it (pid, creation time, command) in
+  `<git common dir>/harness-parallel/radio/emulator.json` beside the radio lease; `-Stop` ends
+  exactly the recorded process and its descendants, never another; `-Status` reads it. The
+  run's order: `station-switch.ps1 -To simulator`, `emulator.ps1 -Start` once the station runs
+  (the station opens COM4 before the emulator's transport), test, halt, `emulator.ps1 -Stop`,
+  `station-switch.ps1 -To back`; the station is not restarted while the emulator runs.
+- **Band simulator.** Operated as its project describes it: the tester skill
+  `skills/wsjtx-simulator-testing/SKILL.md` and the handoff package of
   SensorsIot/FT-8-Band-Simulator. Agents here do not change the simulator projects.
   `GET /radio` reads `ready` when CAT works.
 - **Deploys.** A deploy writes the pinned launcher, so the station returns to `ic7300`;
@@ -522,9 +533,9 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   that the active profile is SIM-IC7300; no simulated contact reaches the real logbook, the
   operator's logger, Club Log or PSK Reporter; a loopback listener the test run starts in its
   run folder may receive the station's UDP messages (WSJT-X QSO Logged and Logged ADIF) and
-  count the records of each QSO, and the run stops it at its end; no agent switches the
-  station to the `ic7300`
-  profile. Live tests key the simulator: the IC-7300 emulator and the band simulator. The
+  count the records of each QSO, and the run stops it at its end; an agent returns the
+  station to the `ic7300` profile only with `station-switch.ps1 -To back`, after the emulator
+  is stopped. Live tests key the simulator: the IC-7300 emulator and the band simulator. The
   real IC-7300 is keyed once the operator has decided so in #239 (`alex.restrictions`).
 - **Administrator rights.** Agents have none. A step that needs them is a script the
   operator runs in an elevated shell, restoring what it changed in a `finally` block.

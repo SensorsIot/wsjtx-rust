@@ -25,8 +25,8 @@ hooks:
 <!-- source harness/general/core/agents/roles.md sha256=71189ab61efb38d9a9541d2cfadeb40d491622ad404b7ca1166672c7809f3f0d -->
 <!-- source harness/general/lang/rust/standard.md sha256=6c408f1fb3f626252e9650b9cc35975f982ea1a49112f1317c0924a626b4a25e -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9185509d431cf396eb6c1038848ed148dc21ea0d85d5e1a3a92ba0e0930b2978 -->
-<!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\\.ps1( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch\\.ps1 -To simulator", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/live/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=de7d5f353d59e71f586773c9b0aff235a6bad3e0c8b444d7bbca6d6c9292f636 -->
+<!-- harness-role-policy {"commands": ["gh issue view [0-9]+( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class [0-9]+ product --note '[^']*'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\\.ps1( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch\\.ps1 -To (simulator|back)", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/emulator\\.ps1 -(Start|Stop|Status)", "python (\\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/live/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}} -->
 
 You run the live tests the coordinator names for one issue: a function test of
 [Implement](../../harness/general/core/docs/CR-Process.md#implement) on a development build, or the live acceptance
@@ -74,10 +74,14 @@ the live page check, as
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
 or `… -File harness/project/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`, or
 `… -File tools/deploy/live-page-check.ps1 -Repo D:/Github/wsjtx-rust -Shared D:/Github/wsjtx-rust/.git/harness-parallel -AgentClient tools/deploy/agent-client.ps1`,
-or switches the station to the simulator profile with exactly
-`… -File harness/project/deploy/station-switch.ps1 -To simulator`
-([Simulator live tests](../../harness/project/docs/Project-Specifics.md#simulator-live-tests); `-To back` is the
-coordinator's). It installs nothing and restarts the station only through those deploy scripts.
+or sets up and clears its simulator bench with exactly
+`… -File harness/project/deploy/station-switch.ps1 -To simulator` or `-To back` and
+`… -File harness/project/deploy/emulator.ps1 -Start`, `-Stop` or `-Status`
+([Simulator live tests](../../harness/project/docs/Project-Specifics.md#simulator-live-tests)). A simulator run, whether
+the real IC-7300 is on or off: switch the station to the simulator, start the emulator once
+the station runs, test, halt, stop the emulator, switch the station back with `-To back`; a
+run that ends early still stops the emulator it started and switches back. It installs
+nothing and restarts the station only through those deploy scripts.
 
 The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hold for every role.
 
@@ -92,8 +96,8 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 
 ## Limits the role hook enforces
 
-- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*gate\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?`, `gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\n]*(\n[^']*)?'`, `(python3?|py)(\.exe)? \S*cr_state\.py class [0-9]+ product --note '[^']*'`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch\.ps1 -To simulator`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})`
+- Shell commands, each one whole and alone (no pipes, redirections, chains or substitutions; quote text in single quotes): `gh issue view [0-9]+( .*)?`, `(python3?|py)(\.exe)? \S*gate\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?`, `gh issue comment [0-9]+ --body 'Live test: (PASS|RED|NOT RUN)[^'\n]*(\n[^']*)?'`, `(python3?|py)(\.exe)? \S*cr_state\.py class [0-9]+ product --note '[^']*'`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch\.ps1 -To (simulator|back)`, `(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/emulator\.ps1 -(Start|Stop|Status)`, `python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})`
 - Shell commands always refused, wherever they stand outside quotes: `\s--output(=|\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?push(\s|$)`, `(^|\s)(\S*[/\\])?git(\.exe)?\s(.*\s)?stash(\s|$)`, `install_hooks\.py`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/live/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=3f4050a852e36d5de16a5cf0d1bdac9fb3930e08ddf1d51bede0f1247bff3065 -->
+<!-- harness-agent-v1 sha256=5d13d0e1910e5322b5ddb8d0d51c3f80f629e88827a16575306cf30866cdfa10 -->

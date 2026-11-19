@@ -11,7 +11,7 @@ description: 'coordinator: the main session of a project with harness/project/ (
 <!-- source harness/general/core/agents/roles.md sha256=71189ab61efb38d9a9541d2cfadeb40d491622ad404b7ca1166672c7809f3f0d -->
 <!-- source harness/general/lang/rust/standard.md sha256=6c408f1fb3f626252e9650b9cc35975f982ea1a49112f1317c0924a626b4a25e -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9185509d431cf396eb6c1038848ed148dc21ea0d85d5e1a3a92ba0e0930b2978 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=de7d5f353d59e71f586773c9b0aff235a6bad3e0c8b444d7bbca6d6c9292f636 -->
 
 # Coordinator
 
@@ -195,4 +195,4 @@ holds the rules, before a handover and for an issue another machine owns.
 - At a pause, a handoff or a context restart, write the
   [checkpoint](../../../harness/general/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint), and release a file's
   ownership before another agent writes it.
-<!-- harness-forwarder-v1 sha256=23c96bba0609142bfa38a5c09fc70b35f22afc3c110138171c6c022f996b3fb1 -->
+<!-- harness-forwarder-v1 sha256=f6a8b53a4a8ac5f3498e418e4c1fd711fbe90a18315b40d79386930ae530ed10 -->

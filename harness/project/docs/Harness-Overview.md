@@ -38,8 +38,9 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   - `suites.yaml`: the test registry;
   - `model_bindings.py`: the gate's model bindings (`gate.model_bindings`);
   - `deploy/`: the radio preflight (`radio-preflight.ps1`, `radio-port.json`), the station
-    switch for simulator tests (`station-switch.ps1`), their shared station control
-    (`station-control.ps1`) and their tests (`tests/`);
+    switch and the IC-7300 emulator's start and stop for simulator tests (`station-switch.ps1`,
+    `emulator.ps1`), the shared station control (`station-control.ps1`) and their tests
+    (`tests/`);
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
     [Escapes ledger](Escapes-Ledger.md), [Finished model](Finished-Model.md), this overview,
