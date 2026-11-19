@@ -345,19 +345,12 @@
   paths:
   - docs/sysml/
   - tools/sysml.py
-  - tools/sysml/architecture-oracle.json
   - tools/sysml/tests/test_architecture_context.py
-  - tools/sysml/pending-structure.json
   select:
   - docs/sysml/Context.sysml
   - docs/sysml/interfaces/external/
   - tools/sysml.py
-  - tools/sysml/architecture-oracle.json
   - tools/sysml/tests/test_architecture_context.py
-  # Held while TV-130 names them, until wsjtx-rust#241 has landed.
-  - docs/sysml/Station.sysml
-  - docs/sysml/interfaces/internal/
-  - tools/sysml/pending-structure.json
   needs: "Python 3.12. Windows PC; TR-07 (TV-001, TV-002): the outside things of ShackContext with their ports, each joined once through an interface of interfaces/external to its station function, read from Context.sysml and compared with the test's owner table. No Java, Pilot, radio or live service."
 
 # The validator tests of the architecture: every test_a*.py but test_architecture_context.py.

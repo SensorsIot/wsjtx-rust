@@ -91,7 +91,7 @@ names in its own `select` the files whose behaviour its test cases prove.
 | `sysml-tools` | The SysML tool's tests `test_[!adre]*.py` (TV-033 to TV-048, TV-075 to TV-110, TV-115 to TV-155), on isolated models and five on the real model | The SysML tool and its tests |
 | `sysml-equivalence-tests` | TR-21 (TV-050 to TV-074): `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
 | `sysml-equivalence` | TR-21: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
-| `sysml-architecture-context` | TR-07 (TV-001, TV-002) on the working model: `test_architecture_context.py` compares the outside things of `ShackContext` in `Context.sysml` with its owner table, without the Pilot | `Context.sysml`, `interfaces/external/`, the SysML tool, the oracle file `architecture-oracle.json` and its test file |
+| `sysml-architecture-context` | TR-07 (TV-001, TV-002) on the working model: `test_architecture_context.py` compares the outside things of `ShackContext` in `Context.sysml` with its owner table, without the Pilot | `Context.sysml`, `interfaces/external/`, the SysML tool and its test file |
 | `sysml-architecture` | TR-06 to TR-09 (TV-003 to TV-032), the validator tests: every `test_a*.py` but `test_architecture_context.py` (`-p "test_a*[!x]?.py"`), `oracle`, the architecture comparison and the deployment rules on fixture trees, one Pilot validation per model state | The SysML tool, `Validate.java`, the toolchain pin and its own test files (the fixtures); not a model edit or the oracle file. The model and the client/server/test source are fingerprint inputs only |
 | `decoder-correctness` | The release `decoder_signal` correctness, thread-parity and jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
 | `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
@@ -211,8 +211,8 @@ meet.
 The model has an explicit documentation owner. Its edits select the catalog/trace check,
 one full semantic validation and the tests that read the model (`sysml-documentation`, about
 30 s); the tool's own unit tests (`sysml-tools`, about 50 s) run only when the tool changes.
-An edit to `Context.sysml`, an external interface (`interfaces/external/`) or the oracle
-file `architecture-oracle.json` also selects the context check
+An edit to `Context.sysml` or an external interface (`interfaces/external/`) also selects
+the context check
 (`sysml-architecture-context`, TR-07, no Pilot); `sysml-documentation` judges the model and
 the oracle file with `check`. The architecture validator tests (`sysml-architecture`, one
 Pilot JVM per fixture state) judge fixture trees only, so they run only when the tool,
