@@ -6,7 +6,6 @@
 use super::ClockState;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -91,15 +90,20 @@ fn step_ms(m: &Measurement, now: Instant, system_now: SystemTime) -> i128 {
         - unix_ms(m.system)
         - now.saturating_duration_since(m.taken).as_millis() as i128
 }
+/// Whether a measurement `age` old no longer counts: its age in whole milliseconds is above
+/// `MAX_AGE` (TimeServerCheck), so a view's age_ms, state and warning always agree.
+pub fn stale(age: Duration) -> bool {
+    age.as_millis() > MAX_AGE.as_millis()
+}
 /// The rule of TransmitClock at monotonic `now` and system time `system_now`:
-/// synchronized when the latest measurement is at most `MAX_AGE` old, the system clock
-/// has not stepped by more than `MAX_STEP_MS` since, and |offset| <= `MAX_OFFSET_MS`;
+/// synchronized when the latest measurement is not `stale`, the system clock has not
+/// stepped by more than `MAX_STEP_MS` since, and |offset| <= `MAX_OFFSET_MS`;
 /// unsynchronized when it is that recent and unstepped but outside; otherwise unknown
 /// (the next measurement decides).
 pub fn state(latest: Option<&Measurement>, now: Instant, system_now: SystemTime) -> ClockState {
     match latest {
         Some(m)
-            if now.saturating_duration_since(m.taken) <= MAX_AGE
+            if !stale(now.saturating_duration_since(m.taken))
                 && step_ms(m, now, system_now).abs() <= i128::from(MAX_STEP_MS) =>
         {
             if m.offset_ms.abs() <= MAX_OFFSET_MS {
@@ -334,28 +338,33 @@ impl Source for Sntp {
 /// The latest measurement, shared between the measuring thread and its readers.
 #[derive(Default)]
 pub struct Monitor {
-    latest: Mutex<Option<Measurement>>,
-    /// Whether any completed round since start asked a server (#92 ntp_unreachable).
-    asked: AtomicBool,
+    /// The last completed round as one: the latest valid measurement, and whether any round
+    /// since start asked a server (#92 ntp_unreachable).
+    last: Mutex<(Option<Measurement>, bool)>,
 }
 impl Monitor {
     /// A monitor that never measures by itself (state unknown until `record`).
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
     }
-    /// One completed round: `asked` whether it asked any server, `measurement` its valid
-    /// answer (none keeps the previous measurement, which then ages out).
+    /// One completed round, stored as one step: `asked` whether it asked any server,
+    /// `measurement` its valid answer (none keeps the previous measurement, which then ages
+    /// out).
     pub fn round(&self, asked: bool, measurement: Option<Measurement>) {
-        if asked {
-            self.asked.store(true, Ordering::Release);
-        }
+        let mut last = self.last.lock().unwrap_or_else(|p| p.into_inner());
+        last.1 |= asked;
         if let Some(m) = measurement {
-            *self.latest.lock().unwrap_or_else(|p| p.into_inner()) = Some(m);
+            last.0 = Some(m);
         }
+    }
+    /// One read of the last completed round: the latest measurement and whether any round
+    /// since start asked a server.
+    pub fn read(&self) -> (Option<Measurement>, bool) {
+        self.last.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
     /// Whether any round since start asked a server.
     pub fn asked(&self) -> bool {
-        self.asked.load(Ordering::Acquire)
+        self.read().1
     }
     /// Measures with `source` now and then every `interval` on a dedicated thread,
     /// which ends after the monitor is dropped.
@@ -383,10 +392,7 @@ impl Monitor {
         self.round(false, measurement);
     }
     pub fn latest(&self) -> Option<Measurement> {
-        self.latest
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+        self.read().0
     }
     pub fn state(&self) -> ClockState {
         state(self.latest().as_ref(), Instant::now(), SystemTime::now())

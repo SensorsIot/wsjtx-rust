@@ -56,9 +56,8 @@ fn fields(r: &recording::Recording, c: &Clock) -> (wstx_rust::transmit::air::Vie
 /// GET /clock: exactly the view of CL-043-01.
 pub(crate) fn view(r: &recording::Recording, c: &Clock) -> Value {
     let (v, fields, revision) = self::fields(r, c);
-    let measurement = v.ntp.as_ref().map(|m| {
-        json!({"server":m.server,"offset_ms":m.offset_ms,"round_trip_ms":m.round_trip_ms,
-            "age_ms":u64::try_from(m.taken.elapsed().as_millis()).unwrap_or(u64::MAX)})
+    let measurement = v.ntp.as_ref().zip(v.ntp_age_ms).map(|(m, age_ms)| {
+        json!({"server":m.server,"offset_ms":m.offset_ms,"round_trip_ms":m.round_trip_ms,"age_ms":age_ms})
     });
     let estimate = v.air.map(|(e, age)| {
         json!({"median_dt_ms":e.median_dt_ms,"stations":e.stations,"plus":e.plus,"minus":e.minus,"age_ms":age.max(0)})

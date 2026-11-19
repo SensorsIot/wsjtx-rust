@@ -8,7 +8,7 @@
 //! plus the current correction, never from DT already shifted by the windows the
 //! correction aligns, so the correction converges to the middle without oscillating.
 use super::ClockState;
-use super::clock::{MAX_AGE, MAX_STEP_MS, Measurement, Monitor, WindowsTime};
+use super::clock::{MAX_STEP_MS, Measurement, Monitor, WindowsTime, stale};
 use crate::decoder::{CallKind, Fields};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -282,7 +282,7 @@ impl Warning {
 /// The warning of CL-043-03 from the SNTP state, the age of the latest valid measurement,
 /// whether any SNTP round since start asked a server, and the correction: pc_clock_off
 /// while SNTP is unsynchronized; else ntp_unreachable while a round asked and no valid
-/// measurement is at most 600 s old (a young measurement covers the step gap; no round
+/// measurement counts (none, or `stale`: a young measurement covers the step gap; no round
 /// yet or an empty server list never asks); else stations_off while SNTP is synchronized
 /// and |correction| is above STATIONS_OFF_MS.
 pub fn warning(
@@ -293,7 +293,7 @@ pub fn warning(
 ) -> Option<Warning> {
     if ntp == ClockState::Unsynchronized {
         Some(Warning::PcClockOff)
-    } else if asked && ntp_age.is_none_or(|age| age > MAX_AGE) {
+    } else if asked && ntp_age.is_none_or(stale) {
         Some(Warning::NtpUnreachable)
     } else if ntp == ClockState::Synchronized && correction_ms.abs() > STATIONS_OFF_MS {
         Some(Warning::StationsOff)
@@ -309,9 +309,11 @@ pub struct View {
     pub state: ClockState,
     /// The correction applied to station UTC.
     pub correction_ms: i64,
-    /// The SNTP state of the system clock (may be unknown) and its latest measurement.
+    /// The SNTP state of the system clock (may be unknown), its latest measurement and that
+    /// measurement's age in whole milliseconds, all of one completed round at one instant.
     pub ntp_state: ClockState,
     pub ntp: Option<Measurement>,
+    pub ntp_age_ms: Option<u64>,
     /// The latest air estimate and its age (ms).
     pub air: Option<(Estimate, i64)>,
     pub warning: Option<Warning>,
@@ -329,10 +331,12 @@ pub struct StationClock {
     inner: Mutex<Inner>,
     windows_time: Mutex<WindowsTimeReader>,
 }
-fn system_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+fn unix_ms(t: SystemTime) -> i64 {
+    t.duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
+}
+fn system_ms() -> i64 {
+    unix_ms(SystemTime::now())
 }
 impl StationClock {
     pub fn new(ntp: Arc<Monitor>) -> Arc<Self> {
@@ -392,24 +396,23 @@ impl StationClock {
     pub fn windows_time(&self) -> WindowsTime {
         (self.windows_time.lock().unwrap_or_else(|p| p.into_inner()))()
     }
+    /// One read of the monitor's last completed round, judged at one instant.
     pub fn view(&self) -> View {
-        let ntp = self.ntp.latest();
-        let ntp_state = self.ntp.state();
-        let asked = self.ntp.asked();
-        let (mono, system) = (self.mono_ms(), system_ms());
+        let (ntp, asked) = self.ntp.read();
+        let (now, system_now) = (Instant::now(), SystemTime::now());
+        let age = ntp.as_ref().map(|m| now.saturating_duration_since(m.taken));
+        let ntp_state = super::clock::state(ntp.as_ref(), now, system_now);
+        let mono = now.saturating_duration_since(self.origin).as_millis() as i64;
+        let system = unix_ms(system_now);
         let i = self.lock();
         let correction_ms = i.air.applied_ms();
         View {
             state: i.air.state(mono, system),
             correction_ms,
             ntp_state,
-            warning: warning(
-                ntp_state,
-                ntp.as_ref().map(|m| m.taken.elapsed()),
-                asked,
-                correction_ms,
-            ),
+            warning: warning(ntp_state, age, asked, correction_ms),
             ntp,
+            ntp_age_ms: age.map(|a| u64::try_from(a.as_millis()).unwrap_or(u64::MAX)),
             air: i.air.latest(mono),
         }
     }

@@ -1328,8 +1328,7 @@ async fn connection(
                         }
                     }
                 }
-                if let Some(revision)=transmit_http::state_revision(r) && transmit_seen!=Some(revision) {
-                    let now=transmit_http::pushed_view(r).unwrap_or(Value::Null);
+                if let Some((revision,now))=transmit_http::state_read(r) && transmit_seen!=Some(revision) {
                     let changed=transmit_http::changed_fields(&transmit_sent,&now);
                     if changed.is_empty() {transmit_seen=Some(revision);}
                     else if transmit_http::due(display_profile,&changed,transmit_sent_at.elapsed()) {
@@ -1425,9 +1424,14 @@ async fn connection(
                 }
                 if clock_sent_at.is_some_and(|at| at.elapsed() < Duration::from_millis(socket_protocol::EVENT_DELAY_MS)) { continue; }
                 if let Some((revision,text))=clock_http::state_event(recording.as_ref().unwrap()) && clock_seen!=Some(revision) {
+                    #[cfg(test)]
+                    let (handed,event)=(Instant::now(),text.clone());
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
-                        Ok(Some(flushed))=>{clock_seen=Some(revision);clock_sent_at=Some(Instant::now());if !flushed {optional_since=Some(Instant::now());}},
+                        Ok(Some(flushed))=>{
+                            #[cfg(test)]
+                            record.clock_state(handed,event);
+                            clock_seen=Some(revision);clock_sent_at=Some(Instant::now());if !flushed {optional_since=Some(Instant::now());}},
                         Err(_)=>break "optional write error",
                     }
                 }
@@ -1537,11 +1541,20 @@ async fn connection(
 /// two-browser selection workload prints the records as failure evidence, #102).
 #[cfg(test)]
 pub(crate) static SOCKET_CLOSES: Mutex<Vec<Value>> = Mutex::new(Vec::new());
+/// Each clock.state write of this test process: the socket's number, the instant on the
+/// connection's runtime clock at which the event was handed to it, and the event (TC-092-009).
+#[cfg(test)]
+pub(crate) static CLOCK_WRITES: Mutex<Vec<(u64, tokio::time::Instant, String)>> =
+    Mutex::new(Vec::new());
+#[cfg(test)]
+static SOCKETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// The test-only record of one `connection()`. All times are UTC ms on one clock: the system UTC
 /// at the begin, plus the runtime clock's elapsed time since the begin, so that a driven runtime
 /// gives exact values.
 #[cfg(test)]
 struct SocketRecord {
+    /// This socket's number in the process.
+    socket: u64,
     begin_utc_ms: u64,
     begin: tokio::time::Instant,
     /// The last heartbeat write, ms after the begin.
@@ -1554,6 +1567,7 @@ struct SocketRecord {
 impl SocketRecord {
     fn begin() -> SocketRecord {
         SocketRecord {
+            socket: SOCKETS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             begin_utc_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_millis() as u64),
@@ -1575,6 +1589,12 @@ impl SocketRecord {
             self.longest_heartbeat = Some((interval, at));
         }
         self.last_heartbeat = Some(at);
+    }
+    fn clock_state(&self, handed: tokio::time::Instant, event: String) {
+        CLOCK_WRITES
+            .lock()
+            .unwrap()
+            .push((self.socket, handed, event));
     }
     fn end(self, reason: &str) {
         let utc = |ms: u64| self.begin_utc_ms + ms;

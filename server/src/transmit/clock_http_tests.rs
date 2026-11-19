@@ -385,11 +385,29 @@ fn transmit_owner_admits_and_times_by_the_air_clock() {
     );
 }
 
+/// The clock.state writes of the station `boot` handed to each socket at or after `since`, in
+/// order, by socket number.
+fn handed_writes(
+    boot: &str,
+    since: tokio::time::Instant,
+) -> std::collections::BTreeMap<u64, Vec<(tokio::time::Instant, Value)>> {
+    let mut sockets = std::collections::BTreeMap::<u64, Vec<_>>::new();
+    for (socket, at, text) in crate::CLOCK_WRITES.lock().unwrap().iter() {
+        let event: Value = serde_json::from_str(text).unwrap();
+        if *at >= since && event["data"]["boot_id"] == boot {
+            sockets.entry(*socket).or_default().push((*at, event));
+        }
+    }
+    sockets
+}
+
 // clock.state over the actual status WebSocket of a receive-only and a
 // transmit-configured profile, to a Detailed and a Thin peer: one event after subscribing
 // with exactly the keys of CL-043-01 within 512 bytes; none while nothing changes or for an
-// SNTP move within 500 ms; one within 1 s for +525 and for +530; quick changes coalesced to at
-// most one per second; drift_high and back; clock_revision equal to GET /clock's.
+// SNTP move within 500 ms; one for +525 and for +530, handed to each socket within 1 s; quick
+// changes coalesced, handed to each socket at least eventDelayMs apart; drift_high and back;
+// clock_revision equal to GET /clock's. Timing on the station's writes, count, order and
+// content at receipt.
 // Proves: TC-092-009
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clock_state_is_pushed_to_every_profile() {
@@ -414,15 +432,16 @@ async fn clock_state_is_pushed_to_every_profile() {
                 .map(|s| Peer::open(address, &f, s))
                 .collect()
         });
-        // Clock events of each peer within `wait`, with their arrival.
-        let mut events = |wait: Duration| -> Vec<Vec<(Instant, Value)>> {
+        let sockets = peers.len();
+        // Clock events received by each peer within `wait`.
+        let mut events = |wait: Duration| -> Vec<Vec<Value>> {
             let deadline = Instant::now() + wait;
             let mut got = vec![vec![]; peers.len()];
             while Instant::now() < deadline {
                 for (i, p) in peers.iter_mut().enumerate() {
                     for m in tokio::task::block_in_place(|| p.read(Duration::from_millis(20))) {
                         if m["type"] == "clock.state" {
-                            got[i].push((Instant::now(), m));
+                            got[i].push(m);
                         }
                     }
                 }
@@ -434,7 +453,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         let view = current().await;
         for got in &first {
             assert_eq!(got.len(), 1, "one event after subscribing: {got:?}");
-            let event = &got[0].1;
+            let event = &got[0];
             assert!(event.to_string().len() <= 512, "{event}");
             assert_eq!(keys(event), ["data", "type", "v"]);
             assert_eq!(
@@ -469,25 +488,35 @@ async fn clock_state_is_pushed_to_every_profile() {
                 .iter()
                 .all(Vec::is_empty)
         );
-        // +525 and then +530: one event each within 1 s.
+        // +525 and then +530: one event each, handed to each socket within 1 s.
         for offset in [525, 530] {
+            let set = tokio::time::Instant::now();
             ntp.record(Some(measured(offset)));
-            let set = Instant::now();
             let got = events(Duration::from_millis(1500));
             let view = current().await;
             for got in &got {
                 assert_eq!(got.len(), 1, "{offset}: {got:?}");
-                let (at, event) = &got[0];
-                assert!(
-                    at.duration_since(set) <= Duration::from_millis(1000),
-                    "{offset}"
-                );
+                let event = &got[0];
                 assert_eq!(event["data"]["clock"]["warning"], "pc_clock_off");
                 assert_eq!(event["data"]["clock"]["ntp_offset_ms"], offset);
                 assert_eq!(event["data"]["clock_revision"], view["clock_revision"]);
             }
+            let handed = handed_writes(&f.boot, set);
+            assert_eq!(handed.len(), sockets, "{offset}: {handed:?}");
+            for writes in handed.values() {
+                assert_eq!(writes.len(), 1, "{offset}: {writes:?}");
+                let (at, event) = &writes[0];
+                assert_eq!(event["data"]["clock"]["ntp_offset_ms"], offset);
+                assert!(
+                    at.duration_since(set) <= Duration::from_millis(1000),
+                    "{offset}: {:?}",
+                    at.duration_since(set)
+                );
+            }
         }
-        // Three changes within 300 ms: at most one event per second, the last delivered.
+        // Three changes within 300 ms: coalesced, the last delivered, handed to each socket at
+        // least eventDelayMs apart.
+        let set = tokio::time::Instant::now();
         let mut got = vec![vec![]; 2];
         for (offset, wait) in [(540, 100), (550, 100), (560, 2500)] {
             ntp.record(Some(measured(offset)));
@@ -498,13 +527,20 @@ async fn clock_state_is_pushed_to_every_profile() {
         let view = current().await;
         for got in &got {
             assert!(!got.is_empty() && got.len() <= 2, "{got:?}");
-            assert!(
-                got.windows(2)
-                    .all(|w| w[1].0.duration_since(w[0].0) >= Duration::from_millis(900))
-            );
-            let (_, last) = got.last().unwrap();
+            let last = got.last().unwrap();
             assert_eq!(last["data"]["clock"]["ntp_offset_ms"], 560);
             assert_eq!(last["data"]["clock_revision"], view["clock_revision"]);
+        }
+        let handed = handed_writes(&f.boot, set);
+        assert_eq!(handed.len(), sockets, "{handed:?}");
+        for writes in handed.values() {
+            for w in writes.windows(2) {
+                let gap = w[1].0.duration_since(w[0].0);
+                assert!(
+                    gap >= Duration::from_millis(crate::socket_protocol::EVENT_DELAY_MS),
+                    "{gap:?}: {writes:?}"
+                );
+            }
         }
         // Capture drift 1500 ppm: drift_high; then everything restored: null.
         f.state
@@ -513,7 +549,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         let got = events(Duration::from_millis(1500));
         for got in &got {
             assert_eq!(
-                got.last().unwrap().1["data"]["clock"]["capture_warning"],
+                got.last().unwrap()["data"]["clock"]["capture_warning"],
                 "drift_high"
             );
         }
@@ -524,7 +560,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         let got = events(Duration::from_millis(1500));
         let view = current().await;
         for got in &got {
-            let (_, last) = got.last().unwrap();
+            let last = got.last().unwrap();
             assert_eq!(
                 last["data"]["clock"],
                 json!({"state":"synchronized","correction_ms":0,"warning":null,"ntp_offset_ms":null,"capture_warning":null})
@@ -592,4 +628,54 @@ fn a_revision_never_carries_older_clock_values() {
             "revision and offset out of step: {w:?}"
         );
     }
+}
+
+// GET /clock's view read on three threads while an asked round's measurement (+40) reaches
+// 600 s: in each view ntp.state is unknown exactly when warning is ntp_unreachable, and
+// exactly when ntp.measurement.age_ms is beyond 600000.
+// Proves: TC-043-003
+#[test]
+fn get_clock_shows_one_age() {
+    let ntp = Monitor::new();
+    let s = station(directory(), ntp.clone());
+    let (r, c) = (&*s.recording, s.recording.clock.get().unwrap());
+    let mut stale = 0;
+    for _ in 0..200 {
+        let (now, system) = (Instant::now(), SystemTime::now());
+        let age = Duration::from_millis(599_998);
+        ntp.round(
+            true,
+            Some(Measurement {
+                taken: now - age,
+                system: system - age,
+                ..measured(40)
+            }),
+        );
+        let until = now + Duration::from_millis(4);
+        let views: Vec<Value> = std::thread::scope(|scope| {
+            let readers: Vec<_> = (0..3)
+                .map(|_| {
+                    scope.spawn(move || {
+                        let mut views = vec![view(r, c)];
+                        while Instant::now() < until {
+                            views.push(view(r, c));
+                        }
+                        views
+                    })
+                })
+                .collect();
+            readers
+                .into_iter()
+                .flat_map(|h| h.join().unwrap())
+                .collect()
+        });
+        for v in &views {
+            let unknown = v["ntp"]["state"] == "unknown";
+            let age_ms = v["ntp"]["measurement"]["age_ms"].as_u64().unwrap();
+            assert_eq!(unknown, v["warning"] == "ntp_unreachable", "{v}");
+            assert_eq!(unknown, age_ms > 600_000, "{v}");
+            stale += usize::from(unknown);
+        }
+    }
+    assert!(stale > 0, "the boundary was crossed");
 }

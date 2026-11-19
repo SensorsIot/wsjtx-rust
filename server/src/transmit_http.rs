@@ -335,11 +335,30 @@ fn outcome(o: &Outcome) -> Value {
     json!({"outcome_sequence":o.outcome_sequence,"request_sequence":o.request_sequence,"kind":name(o.kind),
         "refusal":o.refusal.map(name),"failure":o.failure.map(name),"audio_start_utc_ms":o.audio_start_utc_ms})
 }
-fn measurement(m: &Measurement) -> Value {
-    json!({"server":m.server,"offset_ms":m.offset_ms,"round_trip_ms":m.round_trip_ms,
-        "age_ms":u64::try_from(m.taken.elapsed().as_millis()).unwrap_or(u64::MAX)})
+fn measurement(m: &Measurement, age_ms: u64) -> Value {
+    json!({"server":m.server,"offset_ms":m.offset_ms,"round_trip_ms":m.round_trip_ms,"age_ms":age_ms})
 }
 pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
+    // With a station clock, the time server reading, its age and the warning come from one
+    // view of it (one SNTP snapshot); a transmit owner without one shows its own reading.
+    let (clock_measurement, clock_warning) = match r.clock.get().map(|c| c.station.view()) {
+        Some(c) => (
+            c.ntp
+                .as_ref()
+                .zip(c.ntp_age_ms)
+                .map(|(m, age)| measurement(m, age)),
+            c.warning.map(wstx_rust::transmit::air::Warning::name),
+        ),
+        None => (
+            v.clock_measurement.as_ref().map(|m| {
+                measurement(
+                    m,
+                    u64::try_from(m.taken.elapsed().as_millis()).unwrap_or(u64::MAX),
+                )
+            }),
+            None,
+        ),
+    };
     let halt = match v.halt_state {
         HaltState::Idle => "idle",
         HaltState::Pending => "pending",
@@ -358,24 +377,38 @@ pub(crate) fn view_json(r: &recording::Recording, v: &View) -> Value {
             "tune":v.tune,"pending_sequence":v.pending_sequence,"last_text":v.last_text,"last_period_utc":v.last_period_utc_ms,
             "halt_state":halt,"refusal":v.refusal.map(name)},
         "ptt":name(v.ptt),"transmitting":v.transmitting,"clock":name(v.clock),
-        "clock_measurement":v.clock_measurement.as_ref().map(measurement),
-        "clock_warning":r.clock.get().and_then(|c|c.station.view().warning).map(wstx_rust::transmit::air::Warning::name),
+        "clock_measurement":clock_measurement,"clock_warning":clock_warning,
         "watchdog":{"tx_calls":v.tx_calls,
             "tx_remaining_calls":(!v.tx_remaining_null).then_some(v.tx_remaining_calls),"tx_expired":v.tx_expired,
             "tune_seconds":v.tune_seconds,"tune_remaining_seconds":v.tune_remaining_seconds},
         "outcomes":recent,"startup_release":name(v.startup_release)})
 }
 /// WstxTransmitControl::TransmitStatus transmit.state: the station-wide revision of the read view
-/// (every field of GET /transmit except clock_measurement.age_ms). It increases at each
-/// change any peer's step observes; None without a transmit owner.
-pub(crate) fn state_revision(r: &recording::Recording) -> Option<u64> {
+/// (every field of GET /transmit except clock_measurement.age_ms) and the fields transmit.state
+/// carries, of one read. It increases at each change any peer's step observes. The view is
+/// read under the revision lock, so a revision and its fields are one snapshot and a view read
+/// before the stored one never replaces it; None without a transmit owner.
+pub(crate) fn state_read(r: &recording::Recording) -> Option<(u64, Value)> {
     let s = r.transmit.get()?;
-    let digest = view_digest(view_json(r, &s.service.view()));
     let mut seen = s.revision.lock().unwrap_or_else(|p| p.into_inner());
+    let mut view = view_json(r, &s.service.view());
+    let digest = view_digest(view.clone());
     if seen.0 != Some(digest) {
         *seen = (Some(digest), seen.1 + 1);
     }
-    Some(seen.1)
+    let revision = seen.1;
+    drop(seen);
+    // Without the identity (in the event's data) and the outcomes (no browser shows them;
+    // they stay in GET /transmit).
+    let fields = view.as_object_mut()?;
+    for key in ["v", "profile_id", "boot_id", "outcomes"] {
+        fields.remove(key);
+    }
+    Some((revision, view))
+}
+/// The transmit.state revision of `state_read`.
+pub(crate) fn state_revision(r: &recording::Recording) -> Option<u64> {
+    state_read(r).map(|(revision, _)| revision)
 }
 /// Digest of a GET /transmit view without clock_measurement.age_ms (the one field that
 /// changes with time alone).
@@ -387,17 +420,6 @@ pub(crate) fn view_digest(mut view: Value) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     view.to_string().hash(&mut hasher);
     hasher.finish()
-}
-/// The fields transmit.state carries: the read view without the identity (in the event's
-/// data) and the outcomes (no browser shows them; they stay in GET /transmit).
-pub(crate) fn pushed_view(r: &recording::Recording) -> Option<Value> {
-    let s = r.transmit.get()?;
-    let mut view = view_json(r, &s.service.view());
-    let fields = view.as_object_mut()?;
-    for key in ["v", "profile_id", "boot_id", "outcomes"] {
-        fields.remove(key);
-    }
-    Some(view)
 }
 /// What `now` changes against `sent`: changed top-level fields, and only the changed members
 /// of `transmit` and `watchdog`. clock_measurement goes whole when anything but age_ms
