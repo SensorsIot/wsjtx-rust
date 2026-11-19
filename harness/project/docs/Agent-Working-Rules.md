@@ -92,14 +92,9 @@ included, installed with `python harness/general/core/tools/install_skills.py --
 
 ### Role: definer
 
-```yaml
-guard:
-  writes: [".git/harness-parallel/worktrees/*/docs/**"]
-```
-
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
 [model authoring and validation](../../../tools/sysml/README.md#model-authoring-and-validation),
-run in an issue worktree by the worktree path rule under "Role: every" below.
+run on the main checkout.
 A definition that changes the model is written against the [finished model](Finished-Model.md),
 read before the model itself: every model text it writes meets its rules, and a statement
 that would break one comes to the coordinator as a question naming the rule.
@@ -111,7 +106,7 @@ scripts have loaded over the 32 kbit/s link and after they fail to load.
 ```yaml
 guard:
   commands:
-    - 'gh issue comment [0-9]+ --body ''Ready: (PASS|not yet) — [0-9a-f]{7,40}( \(renewed from [0-9a-f]{7,40}\))?(\n[^'']*)?'''
+    - 'gh issue comment {issue} --body ''Ready: (PASS|not yet) — [0-9a-f]{7,40}( \(renewed from [0-9a-f]{7,40}\))?(\n[^'']*)?'''
 ```
 
 The checker posts its verdict as its own issue comment, in the posting form under
@@ -126,12 +121,10 @@ line.
 ```yaml
 guard:
   commands:
-    - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
-    - 'python (\.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/)?fixtures/transmit/generate\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+'
-    - 'python -m unittest discover -s \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml/tests( -t \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?'
-    - 'python -m unittest discover -s \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/deploy/tests( -t \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+)?( -p [A-Za-z0-9_*.]+)?( -v)?'
-    - 'python \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\.py oracle'
-    - 'python \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+/tools/sysml\.py paths \S+'
+    - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( {worktree}(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+    - 'python {worktree}/fixtures/transmit/generate\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+'
+    - 'python {worktree}/tools/sysml\.py oracle'
+    - 'python {worktree}/tools/sysml\.py paths \S+'
   deny:
     - '^(?!(python3?|py)(\.exe)? \S*red_on_parent\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
 ```
@@ -173,7 +166,7 @@ guard:
 ```yaml
 guard:
   commands:
-    - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( \.git/harness-parallel/worktrees/(cr|issue-)[A-Za-z0-9._-]+(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
+    - 'node --test( --test-concurrency=1| --test-name-pattern=([\[\]A-Za-z0-9_.,:^+=/-]+|''[^'']+'')){0,2}( {worktree}(/(?!\.\.?(?=[/\s]|$))[A-Za-z0-9_.@+-]+)+)+'
   deny:
     - '^(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\bnode\s+--test'
 ```
@@ -201,10 +194,11 @@ any other repository, for reading too.
 ```yaml
 guard:
   commands:
-    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/[0-9]+/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/{issue}/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?'
     - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch\.ps1 -To (simulator|back)'
     - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/emulator\.ps1 -(Start|Stop|Status)'
-  writes: ["D:/wstx-tmp/live/**"]
+  writes: ["D:/wstx-tmp/live/{issue}/**"]
+  reads: ["D:/wstx-tmp/live/{issue}/**"]
 ```
 
 The live-test binding is [Preserve the runtime](MEMORY.md#preserve-the-runtime):
@@ -233,16 +227,17 @@ nothing and restarts the station only through those deploy scripts.
 ```yaml
 guard:
   commands:
-    - '(python|py)(\.exe)? D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.py( .*)?'
-    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/[0-9]+/[A-Za-z0-9_-]+\.ps1( .*)?'
-  writes: ["D:/wstx-tmp/experiments/**"]
+    - '(python|py)(\.exe)? D:/wstx-tmp/experiments/{issue}/[A-Za-z0-9_-]+\.py( .*)?'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/{issue}/[A-Za-z0-9_-]+\.ps1( .*)?'
+  writes: ["D:/wstx-tmp/experiments/{issue}/**"]
+  reads: ["D:/wstx-tmp/experiments/{issue}/**", ".git/migration-data/recordings/**"]
 ```
 
 The experiment folder is `D:/wstx-tmp/experiments/<issue>/`, within the
 [limits for experiments](Project-Specifics.md#limits-for-experiments); its scripts run as
 `python D:/wstx-tmp/experiments/<issue>/<name>.py …` or
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/<issue>/<name>.ps1 …`.
-They read recordings, logs and the code; they do not use the station client, open COM3 or
+They read the recordings under `.git/migration-data/recordings/`, logs and the code; they do not use the station client, open COM3 or
 key the radio: that is a live test for the tester.
 
 ### Role: every
@@ -250,15 +245,23 @@ key the radio: that is a live test for the tester.
 ```yaml
 guard:
   commands:
-    - 'python (\.git/harness-parallel/worktrees/[A-Za-z0-9._-]+/)?tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})'
+    - 'python tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})'
+    - 'python {worktree}/tools/sysml\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})'
 ```
 
 The [agent working rules](Agent-Working-Rules.md) hold for every role.
 
-- **Worktree paths.** A role's session folder is the project folder, and a change of folder
-  is refused. In an issue worktree, run each command from the project folder with the
-  worktree's path in it, such as `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check`
-  (the tool checks the repository it lives in), and write its files by that path.
+- **Worktree paths.** A role's session folder is the project folder. In its issue worktree,
+  a role runs each command from the project folder with the worktree's path in it, such as
+  `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check` (the tool checks
+  the repository it lives in), and writes its files by that path; the coder and the reviewer
+  change into the worktree (`cd <worktree>`) only to run its tests.
+- **Context places** of this project ([context map](../../general/core/docs/Context.md)): the
+  test inputs and recordings under `.git/migration-data/` (the prober reads the recordings),
+  the live runs under `D:/wstx-tmp/live/<issue>/` (the tester), the experiments under
+  `D:/wstx-tmp/experiments/<issue>/` (the prober), the station data under
+  `%LOCALAPPDATA%/WstxRust/` (no role) and the notifier's secrets file
+  `~/.harness/wsjtx-rust/secrets.md` (no role).
 - **Posting form.** A role that posts on an issue uses exactly
   `gh issue comment <number> --body '<text>'`: single quotes, no `'`, `$` or backticks in the
   text, no `--body-file`, and no `--repo` on this project's issues (the harness-improver's

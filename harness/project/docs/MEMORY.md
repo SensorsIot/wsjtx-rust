@@ -95,6 +95,8 @@ recommendation; a helper report or an isolated passing test is not issue complet
   <previous>` and the install record on each issue it moves).
 - Official WSJT-X **3.3.0-beta4** runs alongside ours as `WSTX-Comparison`,
   Rig=None, no CAT/PTT, Fast/AP-off. A connected Edge frontend runs here too.
+- Notifier secrets: `~/.harness/wsjtx-rust/secrets.md`, outside the repository
+  (`python harness/general/core/tools/notify.py check` names a missing key, never a value).
 - Credentials: `%LOCALAPPDATA%\WstxMigration\credential-tools\PRIVATE-CREDENTIAL-HANDOFF.md`.
   A value is never printed; readiness is checked without it. Scoped Infisical authentication
   and secret reading work with normal TLS validation; native CLI use needs standard Windows CA

@@ -44,8 +44,9 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
     [Escapes ledger](Escapes-Ledger.md), [Finished model](Finished-Model.md), this overview,
-    [MEMORY](MEMORY.md) and [Project specifics](Project-Specifics.md);
-  - `secrets.md`: the machine's notifier secrets, local and never tracked (`.gitignore`).
+    [MEMORY](MEMORY.md) and [Project specifics](Project-Specifics.md).
+
+The machine's notifier secrets are outside the repository, in `~/.harness/wsjtx-rust/secrets.md`.
 
 The generated anchors `AGENTS.md`, `CLAUDE.md` and `.claude/` stay at the repository root,
 where the hosts look for them. Project-specific environment, build and model-maintenance
