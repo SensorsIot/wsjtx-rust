@@ -966,154 +966,6 @@ pub(crate) fn parse_config(v: &Value, table: Option<&crate::dxcc::Table>) -> Res
         )?,
     })
 }
-/// A file of schema_version 1 (rules, sort, auto role, highlight): strategies dropped,
-/// active None, continent and the ignore keys kept. One written before #42 has neither
-/// ignore key (exactly one of them stays malformed, parse_config refuses it).
-fn upgrade(old: &Value) -> Value {
-    let (calls, minutes) = (old.get("ignore_calls"), old.get("session_ignore_minutes"));
-    let mut v = json!({"continent":old["continent"],"active":null,"strategies":[]});
-    match (calls, minutes) {
-        (None, None) => {
-            v["ignore_calls"] = json!([]);
-            v["session_ignore_minutes"] = json!(SESSION_IGNORE_MINUTES);
-        }
-        (calls, minutes) => {
-            if let Some(c) = calls {
-                v["ignore_calls"] = c.clone();
-            }
-            if let Some(m) = minutes {
-                v["session_ignore_minutes"] = m.clone();
-            }
-        }
-    }
-    v
-}
-/// A file of schema_version 2 (before strategydef): each strategy's calls_per_station (1..20)
-/// is dropped and the strategydef defaults are added. A strategy without calls_per_station,
-/// with a bad one or with a key of schema 3 already is malformed (None).
-fn upgrade_2(configuration: &Value) -> Option<Value> {
-    let mut v = configuration.clone();
-    if let Some(list) = v.get_mut("strategies").and_then(Value::as_array_mut) {
-        for s in list {
-            let o = s.as_object_mut()?;
-            let old = o.remove("calls_per_station")?;
-            if !old.as_u64().is_some_and(|n| (1..=20).contains(&n)) {
-                return None;
-            }
-            for (k, default) in [
-                ("value", json!(["most_wanted"])),
-                ("callers_first", json!(true)),
-                ("cq_when_no_target", json!(false)),
-                ("repetitions", json!(4)),
-                ("quiet_minutes", json!(10)),
-            ] {
-                if o.insert(k.to_owned(), default).is_some() {
-                    return None;
-                }
-            }
-        }
-    }
-    Some(v)
-}
-/// The exact keys of a schema 3 strategy (read only by the upgrade).
-const SCHEMA_3_KEYS: [&str; 13] = [
-    "name",
-    "class",
-    "goals",
-    "needed",
-    "region",
-    "min_snr_db",
-    "value",
-    "callers_first",
-    "cq_when_no_target",
-    "repetitions",
-    "quiet_minutes",
-    "treat_73_as_cq",
-    "window",
-];
-/// The schema 3 goals as (what, per) (StrategyConfiguration upgrade table).
-fn goal_of(goal: &str) -> Option<(NewWhat, NewPer)> {
-    Some(match goal {
-        "dxcc" => (NewWhat::Dxcc, NewPer::Ever),
-        "dxcc_band" => (NewWhat::Dxcc, NewPer::Band),
-        "dxcc_slot" => (NewWhat::Dxcc, NewPer::BandMode),
-        "waz" => (NewWhat::CqZone, NewPer::Ever),
-        "wpx" => (NewWhat::Prefix, NewPer::Ever),
-        "grid" => (NewWhat::Grid, NewPer::Ever),
-        "new_call" => (NewWhat::Call, NewPer::Ever),
-        "new_call_band" => (NewWhat::Call, NewPer::Band),
-        _ => return None,
-    })
-}
-/// #97 one schema 3 strategy mapped key by key to schema 4 (StrategyConfiguration); None when it
-/// is not a schema 3 strategy (the file is then malformed). The values are checked by
-/// parse_config afterwards.
-pub(crate) fn upgrade_3_strategy(s: &Value) -> Option<Value> {
-    let o = s.as_object()?;
-    if o.len() != SCHEMA_3_KEYS.len() || !SCHEMA_3_KEYS.iter().all(|k| o.contains_key(*k)) {
-        return None;
-    }
-    if s["class"] != "award" {
-        return None;
-    }
-    let goals = s["goals"].as_array().filter(|g| !g.is_empty())?;
-    let mut whats: Vec<NewWhat> = Vec::new();
-    let mut per = NewPer::Ever;
-    for g in goals {
-        let (what, p) = goal_of(g.as_str()?)?;
-        if !whats.contains(&what) {
-            whats.push(what);
-        }
-        per = per.max(p);
-    }
-    let order: Vec<Value> = s["value"]
-        .as_array()?
-        .iter()
-        .map(|c| {
-            if c == "new_dxcc_slot" {
-                json!("new_dxcc_band_mode")
-            } else {
-                c.clone()
-            }
-        })
-        .collect();
-    let repetitions = s["repetitions"].as_u64()?;
-    let empty = json!({"include":[],"exclude":[]});
-    Some(json!({"name":s["name"],"class":"strategy","bands":null,
-        "filters":{"new":whats.iter().map(|w| w.name()).collect::<Vec<_>>(),
-            "new_per":per.name(),"new_means":s["needed"],"region":s["region"],
-            "min_snr_db":s["min_snr_db"],"worked_since":s["window"],
-            "treat_73_as_cq":s["treat_73_as_cq"],"countries":empty,"states":empty,
-            "cq_targets":empty},
-        "order":order,"contest":null,"callers_first":s["callers_first"],
-        "leave":{"mode":"calls","calls":repetitions,"calls_heard":repetitions.saturating_mul(2)},
-        "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
-        "cq_when_idle":s["cq_when_no_target"],"cq_wait_periods":CQ_WAIT_DEFAULT,
-        "retry_minutes":s["quiet_minutes"]}))
-}
-/// A schema 4 file: a strategy written without cq_wait_periods reads with the default
-/// (StrategyConfiguration); a PUT always carries the key.
-fn with_cq_wait(configuration: &Value) -> Value {
-    let mut v = configuration.clone();
-    if let Some(list) = v.get_mut("strategies").and_then(Value::as_array_mut) {
-        for s in list {
-            if let Some(o) = s.as_object_mut() {
-                o.entry("cq_wait_periods").or_insert(json!(CQ_WAIT_DEFAULT));
-            }
-        }
-    }
-    v
-}
-/// A schema 3 configuration with every strategy mapped to schema 4.
-fn upgrade_3(configuration: &Value) -> Option<Value> {
-    let mut v = configuration.clone();
-    if let Some(list) = v.get_mut("strategies").and_then(Value::as_array_mut) {
-        for s in list.iter_mut() {
-            *s = upgrade_3_strategy(s)?;
-        }
-    }
-    Some(v)
-}
 /// StrategyConfiguration names: a saved strategy whose name equals a built-in's ignoring case
 /// reads renamed "<name> copy", else "<name> copy 2", ..., the first free name of at most 32
 /// characters (the name cut so that the suffix fits). Returns the renames (from, to).
@@ -2122,7 +1974,7 @@ struct Inner {
     error: Option<&'static str>,
     /// WstxAutoMode::AutoSwitchRule: station memory only, off at start.
     auto: bool,
-    /// #97 configuration_note: the renames of the upgrade (from, to) until the next PUT.
+    /// #97 configuration_note: the renames of the read (from, to) until the next PUT.
     notes: Vec<(String, String)>,
 }
 /// The strategy store of one station (strategy.json beside profile.json), read on first
@@ -2176,14 +2028,11 @@ impl Owner {
                             && v["profile_id"] == state.recording.profile.as_str()
                             && v["revision"].as_u64().is_some_and(|n| n <= MAX_SAFE);
                         let mut configuration = match v["schema_version"].as_u64() {
-                            Some(1) => upgrade_3(&upgrade(&v["configuration"]))?,
-                            Some(2) => upgrade_3(&upgrade_2(&v["configuration"])?)?,
-                            Some(3) => upgrade_3(&v["configuration"])?,
-                            Some(4) => with_cq_wait(&v["configuration"]),
+                            Some(4) => v["configuration"].clone(),
                             _ => return None,
                         };
                         // #97: a saved name colliding with a built-in reads renamed, never
-                        // dropped (every schema).
+                        // dropped.
                         let notes = rename_builtin_names(&mut configuration);
                         ok.then(|| parse_config(&configuration, None).ok())
                             .flatten()

@@ -363,82 +363,81 @@ async fn tc_097_001_a_put_is_read_back_and_an_oversized_body_is_refused() {
     std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
 }
 
-/// The schema 4 "Mine" of TC-097-002, written from the upgrade table by hand.
-fn mine_v4() -> Value {
-    json!({"name":"Mine","class":"strategy","bands":null,
-        "filters":{"new":["dxcc","call"],"new_per":"band","new_means":"not_confirmed",
-            "region":{"kind":"dx"},"min_snr_db":null,"worked_since":{"kind":"today"},
-            "treat_73_as_cq":false,"countries":empty(),"states":empty(),"cq_targets":empty()},
-        "order":["new_dxcc_band_mode","snr"],"contest":null,"callers_first":true,
-        "leave":{"mode":"calls","calls":5,"calls_heard":10},
-        "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
-        "cq_when_idle":true,"cq_wait_periods":2,"retry_minutes":15})
-}
-fn schema_3(name: &str, goals: Value) -> Value {
-    json!({"name":name,"class":"award","goals":goals,"needed":"not_worked",
-        "region":{"kind":"all"},"min_snr_db":null,"value":["most_wanted"],"callers_first":true,
-        "cq_when_no_target":false,"repetitions":4,"quiet_minutes":10,"treat_73_as_cq":true,
-        "window":{"kind":"all"}})
+// Proves: TC-097-002
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_097_002_a_strategy_without_its_cq_wait_cannot_be_used() {
+    let f = station(true).await;
+    let path = f.dir.join(FILE_NAME);
+    let write = |strategy: Value| {
+        let bytes = serde_json::to_vec(&json!({"schema_version":4,"profile_id":f.id,
+            "revision":7,"configuration":configuration(json!([strategy]))}))
+        .unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        bytes
+    };
+    let mut without = strategy_json("Mine");
+    without.as_object_mut().unwrap().remove("cq_wait_periods");
+    let bytes = write(without);
+    let s = Owner::default().snapshot(&f.state);
+    assert_eq!(
+        (s["configuration"].clone(), s["configuration_error"].clone()),
+        (Value::Null, json!("invalid_configuration"))
+    );
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        bytes,
+        "the file is left as it is"
+    );
+    let mut five = strategy_json("Mine");
+    five["cq_wait_periods"] = json!(5);
+    write(five.clone());
+    let s = Owner::default().snapshot(&f.state);
+    assert_eq!(
+        (
+            s["configuration_error"].clone(),
+            s["configuration"]["strategies"].clone()
+        ),
+        (Value::Null, json!([five]))
+    );
+    std::fs::remove_file(&path).unwrap();
 }
 
 // Proves: TC-097-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_097_002_a_schema_3_file_upgrades_key_by_key_and_renames_built_in_names() {
+async fn tc_097_002_built_in_names_read_renamed_and_active_never_survives_a_restart() {
     let f = station(true).await;
-    let write = |schema: u64, strategies: Value| {
+    let write = |revision: u64, configuration: Value| {
         std::fs::write(
             f.dir.join(FILE_NAME),
-            serde_json::to_vec(
-                &json!({"schema_version":schema,"profile_id":f.id,"revision":7,
-                "configuration":configuration(strategies)}),
-            )
+            serde_json::to_vec(&json!({"schema_version":4,"profile_id":f.id,
+                "revision":revision,"configuration":configuration}))
             .unwrap(),
         )
         .unwrap();
     };
-    let mine = json!({"name":"Mine","class":"award","goals":["dxcc_band","new_call"],
-        "needed":"not_confirmed","region":{"kind":"dx"},"min_snr_db":null,
-        "value":["new_dxcc_slot","snr"],"callers_first":true,"cq_when_no_target":true,
-        "repetitions":5,"quiet_minutes":15,"treat_73_as_cq":false,"window":{"kind":"today"}});
     write(
-        3,
-        json!([
-            mine,
-            schema_3("Grid", json!(["grid"])),
-            schema_3("DXCC all", json!(["dxcc"])),
-            schema_3("dxcc all copy", json!(["dxcc"])),
-            schema_3("Casual", json!(["new_call_band"]))
-        ]),
+        7,
+        configuration(json!([
+            strategy_json("Mine"),
+            strategy_json("DXCC all"),
+            strategy_json("dxcc all copy"),
+            strategy_json("casual")
+        ])),
     );
     let g = f.browser("GET", "/strategy", None).await.json;
     assert_eq!(g["revision"], 7);
-    let list = g["configuration"]["strategies"].clone();
-    assert_eq!(list[0], mine_v4(), "Mine key by key");
     assert_eq!(
-        (
-            list[1]["filters"]["new"].clone(),
-            list[1]["filters"]["new_per"].clone()
-        ),
-        (json!(["grid"]), json!("ever"))
-    );
-    assert_eq!(
-        list.as_array()
+        g["configuration"]["strategies"]
+            .as_array()
             .unwrap()
             .iter()
             .map(|s| s["name"].clone())
             .collect::<Vec<_>>(),
-        [
-            "Mine",
-            "Grid",
-            "DXCC all copy 2",
-            "dxcc all copy",
-            "Casual copy"
-        ]
-        .map(|n| json!(n))
+        ["Mine", "DXCC all copy 2", "dxcc all copy", "casual copy"].map(|n| json!(n))
     );
     assert_eq!(
         g["configuration_note"],
-        json!([{"from":"DXCC all","to":"DXCC all copy 2"},{"from":"Casual","to":"Casual copy"}])
+        json!([{"from":"DXCC all","to":"DXCC all copy 2"},{"from":"casual","to":"casual copy"}])
     );
     // The next PUT writes schema 4 at revision 8 and the note is gone.
     let p = put(&f, json!(7), g["configuration"].clone()).await;
@@ -450,127 +449,13 @@ async fn tc_097_002_a_schema_3_file_upgrades_key_by_key_and_renames_built_in_nam
         (saved["schema_version"].clone(), saved["revision"].clone()),
         (json!(4), json!(8))
     );
-    // A schema 3 strategy otherwise malformed: the file is malformed.
-    let mut broken = schema_3("Bad", json!(["dxcc"]));
-    broken["value"] = json!(["rarest"]);
-    write(3, json!([broken]));
+    // After a restart a file with an active name reads active null.
+    write(9, config(Some("Test calls")));
     let s = Owner::default().snapshot(&f.state);
     assert_eq!(
-        (s["configuration"].clone(), s["configuration_error"].clone()),
-        (Value::Null, json!("invalid_configuration"))
+        (s["revision"].clone(), s["configuration"].clone()),
+        (json!(9), config(None))
     );
-    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
-    // Property: each mapped goal is the (what, per) of its goal, so it gives the verdicts
-    // TC-039-030 expects of the goal (tc_039_030_each_goal_in_both_needed_settings runs them).
-    for (goal, what, per) in [
-        ("dxcc", NewWhat::Dxcc, NewPer::Ever),
-        ("dxcc_band", NewWhat::Dxcc, NewPer::Band),
-        ("dxcc_slot", NewWhat::Dxcc, NewPer::BandMode),
-        ("waz", NewWhat::CqZone, NewPer::Ever),
-        ("wpx", NewWhat::Prefix, NewPer::Ever),
-        ("grid", NewWhat::Grid, NewPer::Ever),
-        ("new_call", NewWhat::Call, NewPer::Ever),
-        ("new_call_band", NewWhat::Call, NewPer::Band),
-    ] {
-        let c = configuration(json!([v4(schema_3("G", json!([goal])))]));
-        let parsed = parse_config(&c, None).unwrap();
-        assert_eq!(
-            (
-                parsed.strategies[0].new.clone(),
-                parsed.strategies[0].new_per
-            ),
-            (vec![what], per),
-            "{goal}"
-        );
-    }
-}
-
-// The schema 2 and schema 3 store cases, and a schema 4 file written without cq_wait_periods.
-// "Mine" in schema 4 is written by hand from the upgrade table of StrategyConfiguration (schema 2:
-// calls_per_station dropped, the schema 3 defaults added; schema 3: key by key, with the CQ wait 2
-// of CL-097-08); the next PUT writes schema 4 at the next revision.
-// Proves: TC-097-002
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_097_002_schema_2_and_4_files_and_the_cq_wait_default() {
-    let f = station(true).await;
-    let write = |schema: u64, strategies: Value| {
-        std::fs::write(
-            f.dir.join(FILE_NAME),
-            serde_json::to_vec(
-                &json!({"schema_version":schema,"profile_id":f.id,"revision":7,
-                "configuration":configuration(strategies)}),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-    };
-    let read = || Owner::default().snapshot(&f.state);
-    let old = json!({"name":"Mine","class":"award","goals":["new_call"],"needed":"not_worked",
-        "region":{"kind":"all"},"min_snr_db":null,"calls_per_station":5,"treat_73_as_cq":true,
-        "window":{"kind":"all"}});
-    let mine = json!({"name":"Mine","class":"strategy","bands":null,
-        "filters":{"new":["call"],"new_per":"ever","new_means":"not_worked",
-            "region":{"kind":"all"},"min_snr_db":null,"worked_since":{"kind":"all"},
-            "treat_73_as_cq":true,"countries":empty(),"states":empty(),"cq_targets":empty()},
-        "order":["most_wanted"],"contest":null,"callers_first":true,
-        "leave":{"mode":"calls","calls":4,"calls_heard":8},
-        "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
-        "cq_when_idle":false,"cq_wait_periods":2,"retry_minutes":10});
-    // Schema 2: read at its revision, key by key.
-    write(2, json!([old]));
-    let s = read();
-    assert_eq!(
-        (s["revision"].clone(), s["configuration_error"].clone()),
-        (json!(7), Value::Null)
-    );
-    assert_eq!(s["configuration"]["strategies"], json!([mine]));
-    // The next PUT writes schema 4 at revision 8.
-    let mut changed = s["configuration"].clone();
-    changed["continent"] = json!("AS");
-    let p = put(&f, json!(7), changed.clone()).await;
-    assert_eq!(p.status, StatusCode::OK, "{}", p.json);
-    let saved: Value =
-        serde_json::from_slice(&std::fs::read(f.dir.join(FILE_NAME)).unwrap()).unwrap();
-    assert_eq!(
-        saved,
-        json!({"schema_version":4,"profile_id":f.id,"revision":8,"configuration":changed})
-    );
-    // A schema 2 strategy otherwise malformed: the file reads configuration null.
-    let with = |k: &str, v: Value| {
-        let mut s = old.clone();
-        s[k] = v;
-        s
-    };
-    let mut missing = old.clone();
-    missing.as_object_mut().unwrap().remove("calls_per_station");
-    for bad in [
-        with("calls_per_station", json!(0)),
-        with("calls_per_station", json!(21)),
-        with("region", json!({"kind":"east"})),
-        with("value", json!(["snr"])),
-        missing,
-    ] {
-        write(2, json!([bad.clone()]));
-        let s = read();
-        assert_eq!(
-            (s["configuration"].clone(), s["configuration_error"].clone()),
-            (Value::Null, json!("invalid_configuration")),
-            "{bad}"
-        );
-    }
-    // A schema 3 file needs its schema 3 keys.
-    write(3, json!([old]));
-    assert_eq!(read()["configuration_error"], "invalid_configuration");
-    // Schema 4 without cq_wait_periods (a test build's file) reads 2; with it, its value.
-    let mut without = mine.clone();
-    without.as_object_mut().unwrap().remove("cq_wait_periods");
-    let mut five = mine.clone();
-    five["name"] = json!("Five");
-    five["cq_wait_periods"] = json!(5);
-    write(4, json!([without, five.clone()]));
-    let s = read();
-    assert_eq!(s["configuration_error"], Value::Null);
-    assert_eq!(s["configuration"]["strategies"], json!([mine, five]));
     std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
 }
 

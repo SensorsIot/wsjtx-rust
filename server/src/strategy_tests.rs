@@ -40,9 +40,8 @@ fn me() -> Station {
         ..Station::default()
     }
 }
-/// The schema 3 goals of the cases written before #97, run as their mapped schema 4 whats
-/// (#97 notes on TC-039-030, TC-039-040: the upgrade table of WstxStrategies::StrategyConfiguration,
-/// written out here).
+/// The schema 3 goals of the cases written before #97, run as their schema 4 whats
+/// (#97 notes on TC-039-030, TC-039-040), the table written out here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Goal {
     Dxcc,
@@ -656,13 +655,8 @@ fn tc_039_002_my_continent_from_config_call_and_locator() {
     assert_eq!(my_continent(&open, None, None, &table), None);
 }
 
-/// A schema 3 strategy fixture of a case written before #97, run as the upgrade maps it (the
-/// BuiltinStrategies note on such cases; TC-097-002 checks the mapping itself by hand).
-pub(crate) fn v4(old: Value) -> Value {
-    upgrade_3_strategy(&old).expect("a schema 3 strategy")
-}
 /// The cases written before #97 set "repetitions before leaving" x: leave {calls x,
-/// calls_heard 2x}, as the upgrade maps it, with tx_move_every {0, 1, 1}, which keeps their
+/// calls_heard 2x}, with tx_move_every {0, 1, 1}, which keeps their
 /// slot check at every repetition of a target that does not hear us (#97 note on TC-039-043).
 pub(crate) fn set_repetitions(c: &mut Value, x: u64) {
     c["strategies"][0]["leave"] = json!({"mode":"calls","calls":x,"calls_heard":2 * x});
@@ -681,25 +675,28 @@ pub(crate) fn strategy_json(name: &str) -> Value {
         "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
         "cq_when_idle":false,"cq_wait_periods":2,"retry_minutes":1})
 }
-/// The presets #97 removed, as schema 3 strategies (their former settings): cases written before
-/// #97 that select one run with a saved user strategy of that name, as the upgrade maps it
+/// The presets #97 removed, as schema 4 strategies of their former settings: cases written
+/// before #97 that select one run with a saved user strategy of that name
 /// (WstxStrategies::BuiltinStrategies).
 fn removed_preset(name: &str) -> Option<Value> {
-    let (goal, region, value, today, cq) = match name {
-        "New calls" => ("new_call", "all", "most_wanted", false, false),
-        "DX hunting" => ("new_call", "dx", "most_wanted", false, false),
-        "DXCC slots" => ("dxcc_slot", "all", "most_wanted", false, false),
-        "Strongest new on band" => ("new_call_band", "all", "snr", false, false),
-        "Farthest new on band" => ("new_call_band", "all", "distance", false, false),
-        "Casual 20 m" => ("new_call_band", "all", "snr", true, true),
+    let (new, per, region, order, today, cq) = match name {
+        "New calls" => ("call", "ever", "all", "most_wanted", false, false),
+        "DX hunting" => ("call", "ever", "dx", "most_wanted", false, false),
+        "DXCC slots" => ("dxcc", "band_mode", "all", "most_wanted", false, false),
+        "Strongest new on band" => ("call", "band", "all", "snr", false, false),
+        "Farthest new on band" => ("call", "band", "all", "distance", false, false),
+        "Casual 20 m" => ("call", "band", "all", "snr", true, true),
         _ => return None,
     };
-    Some(v4(
-        json!({"name":name,"class":"award","goals":[goal],"needed":"not_worked",
-        "region":{"kind":region},"min_snr_db":null,"value":[value],"callers_first":true,
-        "cq_when_no_target":cq,"repetitions":4,"quiet_minutes":10,"treat_73_as_cq":true,
-        "window":{"kind":if today {"today"} else {"all"}}}),
-    ))
+    let empty = json!({"include":[],"exclude":[]});
+    Some(json!({"name":name,"class":"strategy","bands":null,
+        "filters":{"new":[new],"new_per":per,"new_means":"not_worked","region":{"kind":region},
+            "min_snr_db":null,"worked_since":{"kind":if today {"today"} else {"all"}},
+            "treat_73_as_cq":true,"countries":empty,"states":empty,"cq_targets":empty},
+        "order":[order],"contest":null,"callers_first":true,
+        "leave":{"mode":"calls","calls":4,"calls_heard":8},
+        "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
+        "cq_when_idle":cq,"cq_wait_periods":2,"retry_minutes":10}))
 }
 fn config(active: Option<&str>) -> Value {
     let mut strategies = vec![strategy_json("Test calls")];
@@ -738,79 +735,60 @@ fn tc_039_001_configuration_is_exact() {
 #[path = "strategy97_tests.rs"]
 mod redesign;
 
-// The upgrade and restart of WstxStrategies::StrategyConfiguration.
+// Proves: TC-097-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_030_an_old_file_upgrades_and_active_never_survives_a_restart() {
+async fn tc_097_002_a_file_of_schema_1_2_or_3_cannot_be_used_and_is_left_as_it_is() {
     let f = station(true).await;
-    let write = |schema: u64, revision: u64, configuration: Value| {
-        std::fs::write(
-            f.dir.join(FILE_NAME),
-            serde_json::to_vec(&json!({"schema_version":schema,"profile_id":f.id,
-                "revision":revision,"configuration":configuration}))
-            .unwrap(),
-        )
-        .unwrap();
+    let path = f.dir.join(FILE_NAME);
+    let sha = |b: &[u8]| {
+        ring::digest::digest(&ring::digest::SHA256, b)
+            .as_ref()
+            .to_vec()
     };
-    let read = || {
-        let owner = Owner::default();
-        let snapshot = owner.snapshot(&f.state);
-        (
-            snapshot["revision"].clone(),
-            snapshot["configuration"].clone(),
-            snapshot["configuration_error"].clone(),
-        )
-    };
-    // An old file with rules, sort, highlight and an active strategy.
     let rule = json!({"name":"NA first","rules":[{"conditions":[{"kind":"message","negate":false,"value":"cq"}]}],
         "sort":"strongest","treat_73_as_cq":true,"apply_to_callers":false,"skip_after":2,"auto_role":"cq","switch_after":2});
-    write(
-        1,
-        7,
-        json!({"continent":"AS","active":"NA first","highlight":true,"strategies":[rule],
-            "ignore_calls":["K1ABC"],"session_ignore_minutes":45}),
-    );
-    assert_eq!(
-        read(),
-        (
-            json!(7),
-            json!({"continent":"AS","active":null,"strategies":[],"ignore_calls":["K1ABC"],
-                "session_ignore_minutes":45}),
-            Value::Null
-        ),
-        "strategies dropped, active None, continent and ignore lists kept"
-    );
-    // Written before #42: neither ignore key.
-    write(
-        1,
-        3,
-        json!({"continent":null,"active":null,"highlight":false,"strategies":[rule]}),
-    );
-    assert_eq!(
-        read().1,
-        json!({"continent":null,"active":null,"strategies":[],"ignore_calls":[],
+    let per_station = json!({"name":"Mine","class":"award","goals":["new_call"],
+        "needed":"not_worked","region":{"kind":"all"},"min_snr_db":null,"calls_per_station":5,
+        "treat_73_as_cq":true,"window":{"kind":"all"}});
+    let award = json!({"name":"Mine","class":"award","goals":["dxcc_band","new_call"],
+        "needed":"not_confirmed","region":{"kind":"dx"},"min_snr_db":null,
+        "value":["new_dxcc_slot","snr"],"callers_first":true,"cq_when_no_target":true,
+        "repetitions":5,"quiet_minutes":15,"treat_73_as_cq":false,"window":{"kind":"today"}});
+    let saved = |strategies: Value| {
+        json!({"continent":null,"active":null,"strategies":strategies,"ignore_calls":[],
             "session_ignore_minutes":30})
-    );
-    // Malformed: exactly one of them, a bad continent, an unknown schema.
-    write(
-        1,
-        3,
-        json!({"continent":null,"active":null,"highlight":false,"strategies":[],"ignore_calls":[]}),
-    );
-    assert_eq!(read().2, json!("invalid_configuration"));
-    write(
-        1,
-        3,
-        json!({"continent":"XX","active":null,"highlight":false,"strategies":[]}),
-    );
-    assert_eq!(read().2, json!("invalid_configuration"));
-    write(5, 3, config(None));
-    assert_eq!(read().2, json!("invalid_configuration"));
-    // A current file (#97: schema 4), even with an active name, reads active None after a
-    // restart.
-    write(4, 9, config(Some("Test calls")));
-    assert_eq!(read().1, config(None));
-    assert_eq!(read().0, json!(9));
-    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
+    };
+    for (schema, configuration) in [
+        (
+            1,
+            json!({"continent":"AS","active":"NA first","highlight":true,"strategies":[rule],
+                "ignore_calls":["K1ABC"],"session_ignore_minutes":45}),
+        ),
+        (
+            1,
+            json!({"continent":null,"active":null,"highlight":false,"strategies":[rule]}),
+        ),
+        (2, saved(json!([per_station]))),
+        (3, saved(json!([award]))),
+        (5, config(None)),
+    ] {
+        let bytes = serde_json::to_vec(&json!({"schema_version":schema,"profile_id":f.id,
+            "revision":7,"configuration":configuration}))
+        .unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let s = Owner::default().snapshot(&f.state);
+        assert_eq!(
+            (s["configuration"].clone(), s["configuration_error"].clone()),
+            (Value::Null, json!("invalid_configuration")),
+            "schema {schema}: {configuration}"
+        );
+        assert_eq!(
+            sha(&std::fs::read(&path).unwrap()),
+            sha(&bytes),
+            "schema {schema}: the file is left as it is"
+        );
+    }
+    std::fs::remove_file(&path).unwrap();
 }
 
 async fn put(f: &Mcp, revision: Value, configuration: Value) -> crate::mcp_tests::Reply {
@@ -3338,46 +3316,6 @@ async fn tc_042_002_ignore_route_store_and_band_change() {
     let f = station(true).await;
     f.state.recording.fixture_band("40m");
     f.tick();
-    // A configuration saved before #42 reads with an empty list and 30 minutes.
-    let legacy = json!({"continent":null,"active":null,"highlight":true,"strategies":[]});
-    std::fs::write(
-        f.dir.join(FILE_NAME),
-        serde_json::to_vec(
-            &json!({"schema_version":1,"profile_id":f.id,"revision":3,"configuration":legacy}),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let old = Owner::default().snapshot(&f.state);
-    assert_eq!(
-        (
-            old["revision"].clone(),
-            old["configuration"]["ignore_calls"].clone(),
-            old["configuration"]["session_ignore_minutes"].clone(),
-            old["configuration_error"].clone()
-        ),
-        (json!(3), json!([]), json!(30), Value::Null)
-    );
-    let mut one = legacy.clone();
-    one["ignore_calls"] = json!([]);
-    std::fs::write(
-        f.dir.join(FILE_NAME),
-        serde_json::to_vec(
-            &json!({"schema_version":1,"profile_id":f.id,"revision":3,"configuration":one}),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let half = Owner::default().snapshot(&f.state);
-    assert_eq!(
-        (
-            half["configuration"].clone(),
-            half["configuration_error"].clone()
-        ),
-        (Value::Null, json!("invalid_configuration"))
-    );
-    std::fs::remove_file(f.dir.join(FILE_NAME)).unwrap();
-
     let g = f.browser("GET", "/strategy", None).await;
     assert_eq!(
         (
@@ -4308,11 +4246,15 @@ async fn automation_does_not_start_as_a_hound() {
 // ------------------------------------------------------------------ #42 Alert
 /// The strategy "Alerts": rule 1 (call prefix K, no alert), rule 2 (any CQ, alert).
 fn alerts_strategy() -> Value {
-    v4(
-        json!({"name":"Alerts","class":"award","goals":["new_call"],"needed":"not_worked","region":{"kind":"all"},
-        "min_snr_db":null,"value":["most_wanted"],"callers_first":true,"cq_when_no_target":false,
-        "repetitions":2,"quiet_minutes":10,"treat_73_as_cq":false,"window":{"kind":"all"}}),
-    )
+    let empty = json!({"include":[],"exclude":[]});
+    json!({"name":"Alerts","class":"strategy","bands":null,
+        "filters":{"new":["call"],"new_per":"ever","new_means":"not_worked","region":{"kind":"all"},
+            "min_snr_db":null,"worked_since":{"kind":"all"},"treat_73_as_cq":false,
+            "countries":empty,"states":empty,"cq_targets":empty},
+        "order":["most_wanted"],"contest":null,"callers_first":true,
+        "leave":{"mode":"calls","calls":2,"calls_heard":4},
+        "tx_move_every":{"heard":0,"not_heard":1,"no_reports":2},"busy_pause":true,
+        "cq_when_idle":false,"cq_wait_periods":2,"retry_minutes":10})
 }
 
 async fn alerts(f: &Mcp) -> Value {

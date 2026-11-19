@@ -15,9 +15,7 @@
       "expected_a": 0.6,
       "expected_b": -0.8,
       "expected_explained_energy": 7499.006035216027,
-      "gram_explained": 7499.006035216072,
-      "legacy_twice_complex_energy": 7510.028265641584,
-      "legacy_relative_error": 0.0014698255173812846
+      "gram_explained": 7499.006035216072
     },
     {
       "frequency_hz": 1499.9,
@@ -29,9 +27,7 @@
       "expected_a": 0.6,
       "expected_b": -0.8,
       "expected_explained_energy": 7497.9001336763695,
-      "gram_explained": 7497.900133676383,
-      "legacy_twice_complex_energy": 7507.814273902861,
-      "legacy_relative_error": 0.0013222555715248774
+      "gram_explained": 7497.900133676383
     },
     {
       "frequency_hz": 1500.0,
@@ -43,9 +39,7 @@
       "expected_a": 0.6,
       "expected_b": -0.8,
       "expected_explained_energy": 1404.4802904946434,
-      "gram_explained": 1404.4802904946127,
-      "legacy_twice_complex_energy": 683.8832792806072,
-      "legacy_relative_error": -0.5130702197040085
+      "gram_explained": 1404.4802904946127
     },
     {
       "frequency_hz": 1500.1,
@@ -57,9 +51,7 @@
       "expected_a": 0.6,
       "expected_b": -0.8,
       "expected_explained_energy": 7497.5932741534625,
-      "gram_explained": 7497.593274153359,
-      "legacy_twice_complex_energy": 7507.200089504106,
-      "legacy_relative_error": 0.0012813198848435903
+      "gram_explained": 7497.593274153359
     },
     {
       "frequency_hz": 1501.0,
@@ -71,9 +63,7 @@
       "expected_a": 0.6,
       "expected_b": -0.8,
       "expected_explained_energy": 7495.990562861427,
-      "gram_explained": 7495.990562861431,
-      "legacy_twice_complex_energy": 7503.992630746411,
-      "legacy_relative_error": 0.0010675130682034073
+      "gram_explained": 7495.990562861431
     },
     {
       "frequency_hz": 2999.0,
@@ -85,9 +75,7 @@
       "expected_a": 0.6,
       "expected_b": -0.8,
       "expected_explained_energy": 7487.62997648255,
-      "gram_explained": 7487.629976482559,
-      "legacy_twice_complex_energy": 7487.276148174603,
-      "legacy_relative_error": -4.725504719893525e-05
+      "gram_explained": 7487.629976482559
     },
     {
       "frequency_hz": 3000.0,
@@ -99,9 +87,7 @@
       "expected_a": 0.6,
       "expected_b": -0.8,
       "expected_explained_energy": 9262.359915239753,
-      "gram_explained": 9262.359915239687,
-      "legacy_twice_complex_energy": 16399.642528770335,
-      "legacy_relative_error": 0.7705684813421372
+      "gram_explained": 9262.359915239687
     },
     {
       "frequency_hz": 3001.0,
@@ -113,9 +99,7 @@
       "expected_a": 0.6,
       "expected_b": -0.8,
       "expected_explained_energy": 7483.2776572227085,
-      "gram_explained": 7483.277657222655,
-      "legacy_twice_complex_energy": 7478.566819468905,
-      "legacy_relative_error": -0.0006295152965835049
+      "gram_explained": 7483.277657222655
     }
   ]
 }

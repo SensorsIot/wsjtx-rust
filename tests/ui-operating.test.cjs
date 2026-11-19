@@ -20,6 +20,8 @@ async function fixture(t,viewport,{inputDevice=null,beforeNavigate,deviceScaleFa
   const port=await browserPort();
   const dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA <station>',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',audio:{input_device:inputDevice,output_device:null},control:control??{mode:'disabled',endpoint:null,ptt:'disabled'}};
+  // A managed radio (CAT on a COM port the station can drive) is saved with its radio settings.
+  if(control?.mode==='cat'&&/^(icom7300:\/\/)?COM\d+(\?|$)/i.test(control.endpoint??''))doc.radio={agc:'SLOW'};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
   const app=await server(env,['--profile',dir]),context=await browser.newContext({viewport,deviceScaleFactor}),page=await context.newPage();
   t.after(async()=>{await context.close();await app.close();});
@@ -5330,7 +5332,7 @@ test('a refused full-screen request changes nothing and reports no error',{timeo
 test('TC-110-005 Call 1st unticked in the browser stays unticked after a station restart',{timeout:120000},async t=>{
   const port=await browserPort(),dir=await fs.mkdtemp(path.join(root,'station-'));
   const doc={schema_version:1,profile_id:crypto.randomUUID(),revision:0,display_name:'HB9BLA saved settings',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin:null},connection_type:'standard',
-    audio:{input_device:null,output_device:'test-only-unopened-output'},control:{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'}};
+    audio:{input_device:null,output_device:'test-only-unopened-output'},control:{mode:'cat',endpoint:'icom7300://COM250?baud=19200&radio=94&controller=e0',ptt:'cat'},radio:{agc:'SLOW'}};
   await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify(doc));
   const errors=[];
   const open=async before=>{const context=await browser.newContext({viewport:{width:1366,height:768}}),page=await context.newPage();t.after(()=>context.close());

@@ -8,8 +8,7 @@
 # package's own wstx-rust.exe, recomputed here, not the manifest's field). It then requires
 # HTTP 200 over TLS verified by Windows from the station URL, and finally that the launcher
 # receipt agrees with what it observed. The same response's x-wstx-source-commit header is
-# the commit the service itself reports (#33); it must equal the candidate. A build from
-# before #33 sends no header; then the running image's digest stays the version identity.
+# the commit the service itself reports (#33); it must be there once and equal the candidate.
 # Exit 0: PROBE PASS. Exit 1: PROBE FAIL <reason> (run station-update.ps1 -Rollback).
 # Exit 2: the probe could not run (bad arguments).
 param([string]$Manifest, [string]$Commit, [string]$ArtifactSha256,
@@ -56,7 +55,7 @@ try {
   Write-Output "health: $Url/ 200 over trusted TLS"
   $reported = @($page.Headers['x-wstx-source-commit'] | Where-Object { $null -ne $_ })
   if (-not $reported.Count) {
-    Write-Output 'service: reports no commit (a build from before #33); the image digest is the identity'
+    Fail "service reports no commit, expected $Commit"
   } elseif ($reported.Count -ne 1 -or [string]$reported[0] -cne $Commit) {
     Fail "service reports commit $(($reported | ForEach-Object { [string]$_ }) -join ','), expected $Commit"
   } else {

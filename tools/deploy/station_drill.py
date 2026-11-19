@@ -34,7 +34,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -48,10 +47,6 @@ COMMIT = "1234567890" + "ab" * 15
 OLDER = "0" * 40
 PREVIOUS = "d" * 40
 TASK = "WSTX Rust Station HB9BLA"
-COMMENT_ID = "987654321"
-# The removed parameter of the deploy that asked for an operator's OK (#196). Built from two
-# parts: no tracked text but the test of TC-196-07 may state it.
-REMOVED_PARAMETER = "-Ok" + "Comment"
 # The mechanism files in pin order (harness/project/docs/Project-Specifics.md, Deploy pins).
 MECHANISM = ("tools/deploy/station-update/station-update.ps1", "tools/deploy/station-update/make_package.py",
              "tools/deploy/station-update/launcher.ps1", "tools/deploy/agent-client.ps1",
@@ -237,12 +232,6 @@ def classify(script):
     return sorted({n for n in names if n not in MOCKED | LOCAL | TYPES})
 
 
-def takes(script, name):
-    """Whether the script's param() names -<name> (an older script is drilled without it)."""
-    with open(script, encoding="utf-8-sig") as f:
-        return re.search(r"(?im)^param\(.*\$" + name + r"\b", f.read()) is not None
-
-
 class Sandbox:
     def __init__(self, root, script):
         self.root = root
@@ -255,7 +244,6 @@ class Sandbox:
         with open(script, "rb") as f:
             self.script_bytes = f.read()
         self.run_script = None
-        self.extra = []
         write(os.path.join(self.station, CURRENT[:9], "wstx-rust.exe"), b"current station image")
         write(os.path.join(self.station, "launcher.ps1"), LAUNCHER)
         write(os.path.join(self.station, "profiles", "ic7300", "station.json"), '{"profile": 1}')
@@ -304,20 +292,17 @@ class Sandbox:
         """[(sha256, path)] of the package's mechanism files, in pin order."""
         return [(sha256(os.path.join(self.pkg, "deploy", *p.split("/"))), p) for p in MECHANISM]
 
-    def specifics(self, commit, old=False):
-        """The file `git ls-tree` finds and `git show <commit>:<path>` reads: harness/project/docs/Project-Specifics.md,
-        or with `old` docs/harness/Project-Specifics.md (a commit from before #230)."""
-        rel = ("docs", "harness") if old else ("harness", "project", "docs")
-        return os.path.join(self.store, commit, *rel, "Project-Specifics.md")
+    def specifics(self, commit):
+        """The file `git ls-tree` finds and `git show <commit>:<path>` reads: harness/project/docs/Project-Specifics.md."""
+        return os.path.join(self.store, commit, "harness", "project", "docs", "Project-Specifics.md")
 
-    def pin(self, commit, pins=None, text=None, old=False):
-        """Give `commit` a Project-Specifics.md (git show) with these pins (default: the package's),
-        at the new path, or with `old` at the old path."""
-        write(self.specifics(commit, old), text if text is not None else pins_text(self.pins() if pins is None else pins))
+    def pin(self, commit, pins=None, text=None):
+        """Give `commit` a Project-Specifics.md (git show) with these pins (default: the package's)."""
+        write(self.specifics(commit), text if text is not None else pins_text(self.pins() if pins is None else pins))
 
-    def unpin(self, commit, old=False):
-        """`commit` has no Project-Specifics.md at that path."""
-        path = self.specifics(commit, old)
+    def unpin(self, commit):
+        """`commit` has no Project-Specifics.md."""
+        path = self.specifics(commit)
         if os.path.exists(path):
             os.remove(path)
 
@@ -348,9 +333,7 @@ class Sandbox:
 
     def command(self, script, dry_run=False, rollback=False):
         args = ["-Rollback"] if rollback else [f"-Manifest '{os.path.join(self.pkg, 'manifest.json')}'"] + (["-DryRun"] if dry_run else [])
-        if takes(script, "Repo"):
-            args.append(f"-Repo '{self.repo}'")
-        args += self.extra
+        args.append(f"-Repo '{self.repo}'")
         return f"& '{script}' {' '.join(args)}"
 
     def env(self, env=None):
@@ -483,43 +466,26 @@ def running_without_pins(s):
     s.pin(CURRENT, text="# Project-specific harness bindings\n")
 
 
-def commit_pins_at_old_path_only(s):
-    """#230: a commit from before the move states its pins at docs/harness/."""
-    s.unpin(COMMIT)
-    s.pin(COMMIT, old=True)
-
-
-def commit_new_file_without_pins_old_file_with_pins(s):
-    """#230: a file at the new path decides; the old one is not read."""
-    s.pin(COMMIT, text="# Project-specific harness bindings\n\n## Deployment authority\n\nNo pins.\n")
-    s.pin(COMMIT, old=True)
-
-
 def commit_without_any_specifics(s):
     s.unpin(COMMIT)
-    s.unpin(COMMIT, old=True)
 
 
-def running_pins_at_old_path(s):
-    """#230: the running commit is from before the move, with the same pins."""
-    s.unpin(CURRENT)
-    s.pin(CURRENT, old=True)
+def pins_only_at_docs_harness(s, commit):
+    """`commit` states its pins only in docs/harness/Project-Specifics.md, a path that is not read."""
+    s.unpin(commit)
+    write(os.path.join(s.store, commit, "docs", "harness", "Project-Specifics.md"), pins_text(s.pins()))
 
 
-def running_other_pins_at_old_path(s):
-    pins = s.pins()
-    pins[4] = ("0" * 64, pins[4][1])
-    s.unpin(CURRENT)
-    s.pin(CURRENT, pins, old=True)
+def commit_pins_only_at_docs_harness(s):
+    pins_only_at_docs_harness(s, COMMIT)
+
+
+def running_pins_only_at_docs_harness(s):
+    pins_only_at_docs_harness(s, CURRENT)
 
 
 def station_launcher_differs(s):
     write(os.path.join(s.station, "launcher.ps1"), b"# another launcher\n")
-
-
-def removed_parameter(s):
-    """A call with the parameter that asked for an operator's OK before #196."""
-    s.extra = [REMOVED_PARAMETER, COMMENT_ID]
 
 
 def pins_in_another_order(s):
@@ -537,8 +503,8 @@ def rollback_with_other_pins(s):
 
 
 # (name, change, environment, expected messages, outcome) where outcome is "refused",
-# "busy", "radio", "binding refused", "dry-run accepted", "reaches stop", "rollback reaches
-# stop", "second refused" or "LIMIT accepted".
+# "busy", "radio", "dry-run accepted", "reaches stop", "rollback reaches stop", "second
+# refused" or "LIMIT accepted".
 CASES = [
     ("intact package, -DryRun", nothing, {}, "dry run: nothing changed", "dry-run accepted"),
     ("intact package reaches the station stop", nothing, {}, "stop station", "reaches stop"),
@@ -608,17 +574,11 @@ PIN_CASES = [
      ["deploy mechanism changed: the running commit ccccccccc has no deploy pins", "stop station"], "reaches stop"),
     ("changed mechanism: station launcher differs from its pin", station_launcher_differs, {},
      ["deploy mechanism changed: the launcher in the station folder differs from its pin", "stop station"], "reaches stop"),
-    # #230: the pins are read at harness/project/docs/, at docs/harness/ only when that file is absent.
-    ("pins: at the old path only, -DryRun", commit_pins_at_old_path_only, {},
-     ["deploy mechanism equals its pins", "dry run: nothing changed"], "dry-run accepted"),
-    ("pins: new file without pins, old file with pins", commit_new_file_without_pins_old_file_with_pins, {},
-     "commit 123456789 has no deploy pins", "refused"),
     ("pins: neither file", commit_without_any_specifics, {}, "commit 123456789 has no deploy pins", "refused"),
-    ("running commit pins at the old path, equal", running_pins_at_old_path, {},
-     ["deploy mechanism equals its pins", "dry run: nothing changed"], "dry-run accepted"),
-    ("running commit pins at the old path, differing", running_other_pins_at_old_path, {},
-     ["deploy mechanism changed: the pins of 123456789 differ from those of the running ccccccccc", "stop station"], "reaches stop"),
-    ("the removed OK parameter stops at binding", removed_parameter, {}, REMOVED_PARAMETER.lstrip("-"), "binding refused"),
+    # TC-248-01 and TC-248-02: the pins are read at harness/project/docs/ only.
+    ("pins: only at docs/harness/", commit_pins_only_at_docs_harness, {}, "commit 123456789 has no deploy pins", "refused"),
+    ("running commit pins only at docs/harness/", running_pins_only_at_docs_harness, {},
+     ["deploy mechanism changed: the running commit ccccccccc has no deploy pins", "stop station"], "reaches stop"),
     ("rollback with differing pins never asks", rollback_with_other_pins, {}, "rollback: ccccccccc -> ddddddddd", "rollback reaches stop"),
     ("rollback with the radio closed never asks", rollback_previous, {"DRILL_RADIO": "closed"}, "rollback: ccccccccc -> ddddddddd", "rollback reaches stop"),
     ("dry run with the radio closed does not read it", nothing, {"DRILL_RADIO": "closed"}, "dry run: nothing changed", "dry-run accepted"),
@@ -666,17 +626,15 @@ def run_case(root, script, case):
         if before != after:
             changed = sorted(set(before.items()) ^ set(after.items()))
             problems.append(f"destination changed: {[c[0] for c in changed][:5]}")
-        failing = ("refused", "busy", "radio", "binding refused")
+        failing = ("refused", "busy", "radio")
         if outcome in failing and rc == 0:
             problems.append("exit 0")
-        if outcome in ("refused", "binding refused") and rc != 1:
+        if outcome == "refused" and rc != 1:
             problems.append(f"exit {rc}, not 1 (refused)")
         if outcome == "busy" and rc != 3:
             problems.append(f"exit {rc}, not 3 (busy)")
         if outcome == "radio" and rc != 6:
             problems.append(f"exit {rc}, not 6 (the radio did not answer)")
-        if outcome == "binding refused" and "verify package" in out:
-            problems.append("a step ran before the parameter was refused")
         if outcome not in failing and rc != 0:
             problems.append(f"exit {rc}")
     if any(line.startswith("Deploy " + "OK:") for line in out.splitlines()):

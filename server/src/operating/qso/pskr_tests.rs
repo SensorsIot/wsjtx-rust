@@ -868,15 +868,15 @@ fn tc_039_048_decoded_offsets_are_kept_per_parity() {
     assert_eq!(of(Parity::Odd), Vec::<u32>::new());
 }
 
-// pskr.json schema 2 with use: schema 1 reads use true and is written as 2 by
-// the next change; use false is kept; a broken file reads enabled and use true, invalid_pskr.
+// pskr.json schema 2 with use: use false is kept; a broken file, also one of schema 1, reads
+// enabled and use true, invalid_pskr.
 #[test]
 fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
     let dir = Dir::new();
     let file = dir.0.join(FILE);
     std::fs::write(
         &file,
-        br#"{"schema_version":1,"profile_id":"p","enabled":false}"#,
+        br#"{"schema_version":2,"profile_id":"p","enabled":false,"use":true}"#,
     )
     .unwrap();
     let feed = Feed::start(&dir.0, "p", "b", None, FAST);
@@ -915,6 +915,8 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         br#"{"schema_version":2,"profile_id":"p","enabled":true}"#,
         br#"{"schema_version":2,"profile_id":"p","enabled":true,"use":"no"}"#,
         br#"{"schema_version":1,"profile_id":"p","enabled":true,"use":false}"#,
+        br#"{"schema_version":1,"profile_id":"p","enabled":false}"#,
+        br#"{"schema_version":1,"profile_id":"p","enabled":true}"#,
         br#"{"schema_version":3,"profile_id":"p","enabled":true,"use":false}"#,
     ] {
         std::fs::write(&file, broken).unwrap();

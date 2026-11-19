@@ -151,14 +151,13 @@ function Switch-Back($from,$to,[bool]$restoreProfile) {
 }
 # The pins a commit states (Project-Specifics.md, section Deploy pins, read with git show), in
 # their order, or $null when it states none. The file is harness/project/docs/Project-Specifics.md;
-# only a commit without it (one from before #230) is read at docs/harness/Project-Specifics.md.
-# Which one exists is asked with git ls-tree, which writes nothing to stderr for an absent path:
-# a git show of a missing file would, and a caller capturing stderr under Stop would end here.
+# a commit without it has no pins. Whether it exists is asked with git ls-tree, which writes
+# nothing to stderr for an absent path: a git show of a missing file would, and a caller
+# capturing stderr under Stop would end here.
 function Specifics-Path([string]$Commit) {
-  foreach ($p in @('harness/project/docs/Project-Specifics.md','docs/harness/Project-Specifics.md')) {
-    $found=@(& git -C $Repo ls-tree --name-only $Commit -- $p)
-    if ($LASTEXITCODE -eq 0 -and $found -contains $p) { return $p }
-  }
+  $p='harness/project/docs/Project-Specifics.md'
+  $found=@(& git -C $Repo ls-tree --name-only $Commit -- $p)
+  if ($LASTEXITCODE -eq 0 -and $found -contains $p) { return $p }
   return $null
 }
 function Read-Pins([string]$Commit) {
@@ -225,11 +224,9 @@ function Last-Line($lines,[string]$prefix) {
   if ($m.Count) { return [string]$m[-1] }
   return "no $($prefix.Trim()) line"
 }
-# The issues the install moves to installed (their state change is cr_state.py's). The harness
-# is at harness\general since #230; a checkout still in the old layout has it at harness\.
+# The issues the install moves to installed (their state change is cr_state.py's).
 function Move-Installed($commit,$previous) {
   $tool=Join-Path $Repo 'harness\general\core\tools\cr_state.py'
-  if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { $tool=Join-Path $Repo 'harness\core\tools\cr_state.py' }
   Push-Location -LiteralPath $Repo
   try { $out=@(& python $tool installed $commit --since $previous) } finally { Pop-Location }
   return ,$out

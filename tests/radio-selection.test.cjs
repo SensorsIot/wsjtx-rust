@@ -17,7 +17,9 @@ async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'})
   const origin=`https://localhost:${port}`,id=randomUUID(),token=randomUUID().replaceAll('-','');
   const cert=await selfsigned.generate([{name:'commonName',value:'localhost'}],{days:1,keySize:2048,extensions:[{name:'subjectAltName',altNames:[{type:2,value:'localhost'}]}]});
   await fs.writeFile(path.join(dir,'cert.pem'),cert.cert);await fs.writeFile(path.join(dir,'key.pem'),cert.private);
-  await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify({schema_version:1,profile_id:id,revision:0,display_name:'Selection fixture',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin},connection_type:'standard',audio:{input_device:null,output_device:null},control}));
+  // A managed radio (CAT on a COM port the station can drive) is saved with its radio settings.
+  const radio=control.mode==='cat'&&/^(icom7300:\/\/)?COM\d+(\?|$)/i.test(control.endpoint??'')?{radio:{agc:'SLOW'}}:{};
+  await fs.writeFile(path.join(dir,'profile.json'),JSON.stringify({schema_version:1,profile_id:id,revision:0,display_name:'Selection fixture',callsign:'HB9BLA',locator:'JN47AA',endpoint:{bind:`127.0.0.1:${port}`,origin},connection_type:'standard',audio:{input_device:null,output_device:null},control,...radio}));
   const app=await server({WSTX_TLS_CERT:path.join(dir,'cert.pem'),WSTX_TLS_KEY:path.join(dir,'key.pem'),WSTX_TOKEN:token},['--profile',dir]);t.after(()=>app.close());
   let cookie='';
   const request=(route,method='GET',body,extra={})=>new Promise((resolve,reject)=>{

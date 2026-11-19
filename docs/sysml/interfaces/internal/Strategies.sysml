@@ -233,44 +233,19 @@ package WstxStrategies {
              its rule is named, as ConfigurationKeys says. */
     }
     attribute def StrategyReading {
-        doc /* How saved strategies are read from the strategies file, also from the
-             forms of its older schema versions 1, 2 and 3.
-             A strategy without cqWaitPeriods is read with a CQ wait of 2, and one
-             without cqQuietPeriods with a CQ pause of 8; a strategy that holds
-             busyPause is read without it. A
-             configuration that also holds one of the keys continent, ignoreCalls and
-             sessionIgnoreMinutes is read without them: their values are not taken
-             over and are not checked. A country entry is read as it stands.
+        doc /* How saved strategies are read from the strategies file.
+             A strategy without cqQuietPeriods is read with a CQ pause of 8; a strategy
+             that holds busyPause is read without it. A configuration that also holds
+             one of the keys continent, ignoreCalls and sessionIgnoreMinutes is read
+             without them: their values are not taken over and are not checked. A
+             country entry is read as it stands.
              A saved strategy whose name is that of a built-in, without regard to
              letter case, is read under another name: the name with copy after it,
              and when that name is taken, with copy 2, copy 3 and so on, the first
              that is neither a built-in's nor a saved one; the name is cut so that the
              whole has at most 32 characters.
-             Version 3. A strategy has exactly the keys name, class with the value
-             award, goals, needed, region, minSnrDb, value, callersFirst,
-             cqWhenNoTarget, repetitions, quietMinutes, treat73AsCq and window.
-             It is read as a strategy of class strategy for every band, with empty
-             country, US state and CQ target lists. Its goals give what must be new
-             and the scope: dxcc is dxcc per ever, dxccBand dxcc per band, dxccSlot
-             dxcc per bandMode, waz cqZone per ever, wpx prefix per ever, grid grid
-             per ever, newCall call per ever, newCallBand call per band; each once,
-             in the order of the goals; of different scopes the one scope is
-             bandMode before band before ever. needed is what new means, window the
-             worked since, value the order with newDxccSlot read as
-             newDxccBandMode; region, minSnrDb, treat73AsCq and callersFirst
-             are taken as they are. It is left after repetitions calls and after twice
-             as many while heard; the transmit frequency moves never, at every call
-             and at every 2nd call for the three cases in the order of AutoKeys;
-             cqWhenNoTarget is CQ when idle, with a CQ wait of 2;
-             quietMinutes is the retry pause.
-             Version 2. A strategy has callsPerStation, from 1 to 20, in the place
-             of value, callersFirst, cqWhenNoTarget, repetitions and
-             quietMinutes. It is read as one of version 3 with the order mostWanted,
-             calling stations answered, no CQ when idle, 4 repetitions and 10 quiet
-             minutes; callsPerStation is not taken over.
-             Version 1. The strategies are not taken over.
-             A file of another version, and one of whose strategies is not of its
-             version's form or outside StrategyForm, cannot be used. */
+             A file of another schemaVersion than 4, and one of whose strategies is
+             outside StrategyForm, cannot be used. */
     }
 
     enum def DupeRule {

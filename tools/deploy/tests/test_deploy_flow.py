@@ -157,7 +157,6 @@ class DeployFlowTests(unittest.TestCase):
     def test_probe_and_page_check_pass_install_with_the_new_launcher_and_post_the_record(self):
         """TC-196-03 (a) and (c): launcher written without an OK; TC-171-03 order and lock; TC-171-04 record."""
         self.with_old_launcher()
-        self.cr_state_at("harness")
         record_call = self.cr_state_at("harness", "general")
         new = sha(station_drill.LAUNCHER)[:12]
         rc, out, steps = self.deploy()
@@ -185,9 +184,10 @@ class DeployFlowTests(unittest.TestCase):
         self.assertEqual([l for l in lines if l.startswith(OK_LINE_START)], [])
         self.assertIn("Return to the previous version: none", lines)
 
-    def test_a_checkout_in_the_old_layout_records_with_the_old_cr_state(self):
-        """#230 item 10: without harness/general/core/tools/cr_state.py the record runs harness/core/tools/cr_state.py."""
-        record_call = self.cr_state_at("harness")
+    # Proves: TC-248-04
+    def test_the_record_runs_the_cr_state_of_harness_general_only(self):
+        self.cr_state_at("harness")
+        record_call = f"python {os.path.join(self.s.repo, 'harness', 'general', 'core', 'tools', 'cr_state.py')} installed {COMMIT} --since {CURRENT}"
         rc, out, steps = self.deploy()
         self.assertEqual(rc, 0, out)
         self.assertEqual(steps[4:], [record_call, "posted 171 repo=SensorsIot/wsjtx-rust"], out)

@@ -14,8 +14,3 @@ __pycache__/
 .DS_Store
 Thumbs.db
 Desktop.ini
-
-# Project secrets per machine (harness#80 notifier); never committed. The old place stays
-# ignored, so a leftover there cannot be committed either.
-harness/project/secrets.md
-.harness/secrets.md

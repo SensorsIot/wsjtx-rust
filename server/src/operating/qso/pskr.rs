@@ -621,14 +621,6 @@ struct Record {
     #[serde(rename = "use")]
     use_: bool,
 }
-/// A file of schema_version 1 reads with use true (written as 2 by the next change).
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RecordV1 {
-    schema_version: u8,
-    profile_id: String,
-    enabled: bool,
-}
 /// WstxHearing::SpotsConfig: the two switches while no file is saved or it cannot be read.
 mod spots_config {
     pub const ENABLED: bool = true;
@@ -638,10 +630,6 @@ mod spots_config {
 fn read_record(path: &Path, profile: &str) -> Option<(bool, bool)> {
     let v: Value = recording::bounded_json(path, FILE_LIMIT).ok()?;
     match v["schema_version"].as_u64()? {
-        1 => serde_json::from_value::<RecordV1>(v)
-            .ok()
-            .filter(|r| r.schema_version == 1 && r.profile_id == profile)
-            .map(|r| (r.enabled, true)),
         2 => serde_json::from_value::<Record>(v)
             .ok()
             .filter(|r| r.profile_id == profile)

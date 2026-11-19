@@ -726,13 +726,8 @@ fn read_document(directory: &Path) -> Result<(ProfileDocument, SocketAddr), &'st
     if bytes.len() > usize::try_from(MAX_FILE).map_err(|_| "resource_unavailable")? {
         return Err("invalid_profile");
     }
-    let mut document: ProfileDocument =
+    let document: ProfileDocument =
         serde_json::from_slice(&bytes).map_err(|_| "invalid_profile")?;
-    // CL-044-10 migration: a profile saved before the radio settings existed gets the
-    // default for a managed radio (IC-7300 CAT) in memory; the file changes on next save.
-    if document.radio.is_none() && manages_radio(&document.control) {
-        document.radio = Some(Radio::DEFAULT);
-    }
     let address = document.validate()?;
     Ok((document, address))
 }
