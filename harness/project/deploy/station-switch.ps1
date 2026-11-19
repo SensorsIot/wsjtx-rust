@@ -8,7 +8,8 @@
 # station\launcher.ps1 once (launcher.ps1.before-simulator; a launcher already switched is not
 # backed up again), points its profile line at profiles\SIM-IC7300 and sets WSTX_RADIO_DISCOVERY,
 # WSTX_UDP and WSTX_PSKR off (without discovery off, a silent COM4 makes the station adopt the
-# real radio on COM3). -To back writes the backup back, or, without one, the repository's pinned
+# real radio on COM3); WSTX_UDP stays on only when every target of the simulator profile's
+# udp.json is on 127.0.0.1 and none on the operator logger's port 2237. -To back writes the backup back, or, without one, the repository's pinned
 # launcher (what a deploy writes). Both then stop the station gracefully (Ctrl+C, station-control.ps1),
 # restart its scheduled task and read the profile back from the station (GET /radio) and from the
 # launcher's receipt (station-running.json). -To simulator also hashes the operator profile
@@ -30,6 +31,9 @@ function Act($text, [scriptblock]$Do) {
 
 $SimProfile = 'SIM-IC7300'
 $EnvLine = "`$env:WSTX_RADIO_DISCOVERY='off';`$env:WSTX_UDP='off';`$env:WSTX_PSKR='off'"
+# UDP stays on only toward the test run's loopback listener (Udp-Loopback).
+$EnvLoopback = "`$env:WSTX_RADIO_DISCOVERY='off';`$env:WSTX_PSKR='off'"
+$LoggerPort = 2237
 $ProfileLine = "(?m)^\`$stationProfilePath=Join-Path \`$base 'profiles\\([^'\\]+)'"
 
 function Sha($path) {
@@ -53,14 +57,28 @@ function Profile-Id([string]$name) {
   $endpoint = if ($p.PSObject.Properties['control'] -and $p.control -and $p.control.PSObject.Properties['endpoint']) { [string]$p.control.endpoint } else { '' }
   [pscustomobject]@{ id = [string]$p.profile_id; endpoint = $endpoint }
 }
-function Simulator-Launcher([string]$text) {
+# $null when every UDP target of the simulator profile is on 127.0.0.1 and none on the
+# operator logger's port; else why UDP stays off. It only reads udp.json.
+function Udp-Loopback {
+  $path = Join-Path $Station "profiles\$SimProfile\udp.json"
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'the simulator profile has no udp.json' }
+  try { $udp = [IO.File]::ReadAllText($path) | ConvertFrom-Json } catch { return "udp.json cannot be read: $($_.Exception.Message)" }
+  $targets = @(if ($udp -and $udp.PSObject.Properties['targets']) { $udp.targets })
+  if ($targets.Count -eq 0) { return 'udp.json has no target' }
+  foreach ($t in $targets) {
+    $address = if ($t -and $t.PSObject.Properties['address']) { [string]$t.address } else { '' }
+    $m = [regex]::Match($address, '^127\.0\.0\.1:(\d{1,5})$')
+    if (-not $m.Success) { return "the target '$address' is not on 127.0.0.1" }
+    if ([int]$m.Groups[1].Value -eq $LoggerPort) { return "the target $address is on the operator logger's port $LoggerPort" }
+  }
+  $null
+}
+function Simulator-Launcher([string]$text, [string]$chosen) {
   $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
   $text = [regex]::Replace($text, $ProfileLine, { param($m) $m.Value.Replace("profiles\$($m.Groups[1].Value)'", "profiles\$SimProfile'") })
-  if (-not $text.Contains($EnvLine)) {
-    $at = [regex]::Match($text, $ProfileLine).Index
-    $text = $text.Substring(0, $at) + $EnvLine + $nl + $text.Substring($at)
-  }
-  $text
+  foreach ($old in @($EnvLine, $EnvLoopback)) { $text = $text.Replace($old + $nl, '') }
+  $at = [regex]::Match($text, $ProfileLine).Index
+  $text.Substring(0, $at) + $chosen + $nl + $text.Substring($at)
 }
 # Why the station cannot be stopped now, or $null.
 function Busy {
@@ -121,7 +139,10 @@ try {
     if ($sim.endpoint -match '(?i)COM3\b') { Finish 2 'ERROR' "profiles\$SimProfile names COM3, the real radio's port: nothing switched" }
     $before = Operator-Hashes
     foreach ($k in $before.Keys) { Say "before: $k sha256 $($before[$k])" }
-    $new = Simulator-Launcher $current
+    $udpOff = Udp-Loopback
+    if ($udpOff) { $wanted = $EnvLine; $setting = 'WSTX_RADIO_DISCOVERY, WSTX_UDP, WSTX_PSKR off'; Say "UDP off: $udpOff" }
+    else { $wanted = $EnvLoopback; $setting = 'WSTX_RADIO_DISCOVERY, WSTX_PSKR off'; Say 'UDP on: every target of the simulator profile is on 127.0.0.1, none on the logger port' }
+    $new = Simulator-Launcher $current $wanted
     $expected = $SimProfile; $expectedId = $sim.id
   } else {
     if (Test-Path -LiteralPath $backup -PathType Leaf) { $source = $backup; $what = "the backup $backup" }
@@ -142,7 +163,7 @@ try {
     else { Act "back up the launcher to $backup" { Copy-Item -LiteralPath $launcher -Destination $backup -Force } }
   }
   if ($new -ne $current) {
-    $step = if ($To -eq 'simulator') { "point the launcher at profiles\$SimProfile and set WSTX_RADIO_DISCOVERY, WSTX_UDP, WSTX_PSKR off" } else { "write $what as the launcher" }
+    $step = if ($To -eq 'simulator') { "point the launcher at profiles\$SimProfile and set $setting" } else { "write $what as the launcher" }
     Act $step {
       [IO.File]::WriteAllText($launcher, $new, [Text.UTF8Encoding]::new($false))
       if ([IO.File]::ReadAllText($launcher) -ne $new) { throw 'the launcher does not read back as written' }
@@ -165,14 +186,15 @@ try {
   Say "read back: GET /radio profile_id $($read.profile_id), state $($read.state), device $($read.device)"
   Say "read back: station-running.json profile $($read.receipt) (process $($read.pid))"
   $text = [IO.File]::ReadAllText($launcher)
-  $envOff = $text.Contains($EnvLine)
-  Say "read back: the launcher sets WSTX_RADIO_DISCOVERY, WSTX_UDP, WSTX_PSKR off: $envOff"
+  $envOff = if ($To -eq 'simulator') { $text.Contains($wanted) } else { $text.Contains($EnvLine) -or $text.Contains($EnvLoopback) }
+  $named = if ($To -eq 'simulator') { $setting } else { 'WSTX_RADIO_DISCOVERY, WSTX_UDP, WSTX_PSKR off' }
+  Say "read back: the launcher sets ${named}: $envOff"
   $problems = @()
   if ($read.profile_id -ne $expectedId) { $problems += "the station runs profile $($read.profile_id), not $expected ($expectedId)" }
   if (-not $read.receipt.EndsWith("profiles\$expected", [StringComparison]::OrdinalIgnoreCase)) { $problems += "the receipt names $($read.receipt), not profiles\$expected" }
   if ($read.device -match '(?i)COM3\b' -and $To -eq 'simulator') { $problems += "the station holds $($read.device), the real radio's port" }
   if ($To -eq 'simulator') {
-    if (-not $envOff) { $problems += 'the launcher does not set discovery, UDP and PSK Reporter off' }
+    if (-not $envOff) { $problems += "the launcher does not set $setting" }
     $after = Operator-Hashes
     foreach ($k in $after.Keys) {
       Say "after: $k sha256 $($after[$k])"

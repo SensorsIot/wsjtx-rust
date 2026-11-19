@@ -28,6 +28,7 @@ LAUNCHER = ("$ErrorActionPreference='Stop'\r\n"
             "$stationProfilePath=Join-Path $base 'profiles\\ic7300';$stamp=[DateTime]::UtcNow.ToString('yyyyMMdd')\r\n"
             "$child=Start-Process -FilePath $exe\r\n")
 ENV_LINE = "$env:WSTX_RADIO_DISCOVERY='off';$env:WSTX_UDP='off';$env:WSTX_PSKR='off'"
+LOOPBACK_LINE = "$env:WSTX_RADIO_DISCOVERY='off';$env:WSTX_PSKR='off'"
 IDS = {"ic7300": "11111111-0000-0000-0000-000000000000", "SIM-IC7300": "50a24529-f7d9-4dcb-b555-77d652d771b6"}
 
 
@@ -285,6 +286,74 @@ function Agent-Get($c, $Route) {{
             self.assertTrue(os.path.isfile(path), path)
         self.assertIn(f"pinned launcher {pin}", out)
         self.assertEqual((self.snapshot(), self.system()), (before, []))
+
+    def udp(self, *addresses, raw=None):
+        doc = raw if raw is not None else json.dumps({"profile_id": IDS["SIM-IC7300"], "revision": 1, "schema_version": 1,
+                                                      "targets": [{"address": a, "enabled": True, "messages": ["qso_logged"]}
+                                                                  for a in addresses]})
+        self.write(os.path.join("profiles", "SIM-IC7300", "udp.json"), doc)
+
+    def test_udp_stays_on_when_every_simulator_target_is_a_loopback_listener(self):
+        self.udp("127.0.0.1:22370", "127.0.0.1:22371")
+        operator = self.operator_files()
+        rc, out = self.switch("-To", "simulator")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("UDP on: every target of the simulator profile is on 127.0.0.1", out)
+        self.assertIn("read back: the launcher sets WSTX_RADIO_DISCOVERY, WSTX_PSKR off: True", out)
+        launcher = self.read("launcher.ps1")
+        self.assertIn(LOOPBACK_LINE + "\r\n$stationProfilePath", launcher)
+        self.assertNotIn("WSTX_UDP", launcher)
+        self.assertEqual(self.operator_files(), operator)
+
+    def test_udp_stays_off_for_each_simulator_target_that_is_not_a_loopback_listener(self):
+        cases = {
+            "another address": (("192.168.0.10:22370",), "is not on 127.0.0.1"),
+            "the logger port": (("127.0.0.1:2237",), "on the operator logger's port 2237"),
+            "a mix": (("127.0.0.1:22370", "192.168.0.10:2237"), "is not on 127.0.0.1"),
+            "a name for loopback": (("localhost:22370",), "is not on 127.0.0.1"),
+            "no port": (("127.0.0.1",), "is not on 127.0.0.1"),
+            "no target": ((), "udp.json has no target"),
+        }
+        for label, (addresses, why) in cases.items():
+            with self.subTest(label):
+                self.write("launcher.ps1", LAUNCHER)
+                self.udp(*addresses)
+                rc, out = self.switch("-To", "simulator")
+                self.assertEqual(rc, 0, out)
+                self.assertIn("UDP off: ", out)
+                self.assertIn(why, out)
+                launcher = self.read("launcher.ps1")
+                self.assertEqual(launcher.count(ENV_LINE), 1, launcher)
+                self.assertNotIn(LOOPBACK_LINE + "\r\n", launcher)
+
+    def test_udp_stays_off_without_a_readable_udp_file(self):
+        for label, raw in (("no file", None), ("not JSON", "{not json")):
+            with self.subTest(label):
+                self.write("launcher.ps1", LAUNCHER)
+                path = os.path.join(self.station, "profiles", "SIM-IC7300", "udp.json")
+                if raw is None:
+                    if os.path.exists(path):
+                        os.unlink(path)
+                else:
+                    self.udp(raw=raw)
+                rc, out = self.switch("-To", "simulator")
+                self.assertEqual(rc, 0, out)
+                self.assertIn("UDP off: ", out)
+                self.assertEqual(self.read("launcher.ps1").count(ENV_LINE), 1)
+
+    def test_a_second_switch_follows_a_changed_udp_file_with_one_line(self):
+        self.udp("127.0.0.1:22370")
+        self.assertEqual(self.switch("-To", "simulator")[0], 0)
+        self.udp("192.168.0.10:22370")
+        rc, out = self.switch("-To", "simulator")
+        self.assertEqual(rc, 0, out)
+        launcher = self.read("launcher.ps1")
+        self.assertEqual((launcher.count(ENV_LINE), launcher.count(LOOPBACK_LINE + "\r\n")), (1, 0), launcher)
+        self.udp("127.0.0.1:22370")
+        self.assertEqual(self.switch("-To", "simulator")[0], 0)
+        launcher = self.read("launcher.ps1")
+        self.assertEqual((launcher.count(ENV_LINE), launcher.count(LOOPBACK_LINE + "\r\n")), (0, 1), launcher)
+        self.assertEqual(self.read(self.BACKUP), LAUNCHER, "the backup stays the operator's launcher")
 
     def test_the_script_writes_no_profile_and_opens_no_port(self):
         with open(TOOL, encoding="utf-8") as f:

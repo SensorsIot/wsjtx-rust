@@ -490,14 +490,17 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
 
 - **Profile.** `%LOCALAPPDATA%\WstxRust\station\profiles\SIM-IC7300`: CAT and PTT on COM4
   (`icom7300://COM4?baud=115200&radio=94&controller=e0`), the VB-Audio cables of the
-  handoff, its own `contacts.adi`, `udp.json` without targets, `pskr.json` disabled. The
+  handoff, its own `contacts.adi`, `udp.json` with one target `127.0.0.1:22370` (`qso_logged`,
+  `logged_adif`), `pskr.json` disabled. The
   operator profile `ic7300` and its logbook are never touched; their hashes are taken before
   and compared after.
 - **Switch.** The real IC-7300 is off (the operator switches it).
   `harness/project/deploy/station-switch.ps1 -To simulator` (the tester or the coordinator) backs
   up `station\launcher.ps1` once, points its profile line at `profiles\SIM-IC7300` and sets
-  `WSTX_RADIO_DISCOVERY=off`, `WSTX_UDP=off`, `WSTX_PSKR=off` (without discovery off, a
-  silent COM4 makes the station adopt the real radio on COM3), stops the station gracefully
+  `WSTX_RADIO_DISCOVERY=off` and `WSTX_PSKR=off` (without discovery off, a silent COM4 makes
+  the station adopt the real radio on COM3), and `WSTX_UDP=off` unless every target of the
+  profile's `udp.json` is on `127.0.0.1` and none on the operator logger's port 2237 (it says
+  which, and why UDP stays off), stops the station gracefully
   (Ctrl+C, `station-control.ps1`, as `radio-preflight.ps1` does), restarts the task, reads
   the profile back (`GET /radio`, `station-running.json`) and compares the hashes of the
   operator profile and its logbook; any difference exits non-zero. Return:
@@ -513,8 +516,11 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
 - **Deploys.** A deploy writes the pinned launcher, so the station returns to `ic7300`;
   switch back to the simulator afterwards if the run continues.
 - **Keying the emulator** is not a transmission. Before every keying the agent confirms
-  that the active profile is SIM-IC7300; no simulated contact reaches the real logbook,
-  Club Log, PSK Reporter or a UDP target; no agent switches the station to the `ic7300`
+  that the active profile is SIM-IC7300; no simulated contact reaches the real logbook, the
+  operator's logger, Club Log or PSK Reporter; a loopback listener the test run starts in its
+  run folder may receive the station's UDP messages (WSJT-X QSO Logged and Logged ADIF) and
+  count the records of each QSO, and the run stops it at its end; no agent switches the
+  station to the `ic7300`
   profile. Live tests key the simulator: the IC-7300 emulator and the band simulator. The
   real IC-7300 is keyed once the operator has decided so in #239 (`alex.restrictions`).
 - **Administrator rights.** Agents have none. A step that needs them is a script the
