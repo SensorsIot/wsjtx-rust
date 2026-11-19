@@ -109,8 +109,8 @@ if ($null -eq $pins) { 'pins=none' } else { 'pins=' + (@($pins | ForEach-Object 
 
 
 class ReadPinsStderrTests(unittest.TestCase):
-    """#230 item 10: which Project-Specifics.md a commit has is asked without writing to stderr,
-    so a caller that captures stderr under Stop gets the fallback, not a NativeCommandError."""
+    """Whether a commit has harness/project/docs/Project-Specifics.md is asked without writing to
+    stderr, so a caller that captures stderr under Stop gets no pins, not a NativeCommandError."""
 
     def setUp(self):
         import tempfile
@@ -158,9 +158,10 @@ class ReadPinsStderrTests(unittest.TestCase):
         rc, out = self.run_probe(self.commits["old"], old_form=True)
         self.assertIn("fatal: path 'harness/project/docs/Project-Specifics.md' does not exist", out)
 
-    def test_each_commit_gets_its_file_or_none_without_an_error(self):
+    # Proves: TC-248-03
+    def test_only_harness_project_docs_holds_pins_and_none_is_asked_without_an_error(self):
         expected = {"new": ("harness/project/docs/Project-Specifics.md", "new/path.ps1"),
-                    "old": ("docs/harness/Project-Specifics.md", "old/path.ps1"),
+                    "old": ("", "none"),
                     "neither": ("", "none")}
         for name, (path, pins) in expected.items():
             with self.subTest(name):

@@ -57,11 +57,12 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(rc, 1, out)
             self.assertIn(f"PROBE FAIL service reports commit {reported}, expected {COMMIT}", out)
 
-    def test_build_from_before_33_without_header_keeps_the_digest_identity(self):
+    # Proves: TC-248-05
+    def test_fail_when_the_service_reports_no_commit(self):
         rc, out = self.probe(prelude(exe=self.exe, commit=None))
-        self.assertEqual(rc, 0, out)
-        self.assertIn("service: reports no commit", out)
-        self.assertIn("PROBE PASS", out)
+        self.assertEqual(rc, 1, out)
+        self.assertIn(f"PROBE FAIL service reports no commit, expected {COMMIT}", out)
+        self.assertNotIn("PROBE PASS", out)
 
     def test_fail_when_listener_runs_another_version(self):
         other = os.path.join(self.station, OTHER[:9], "wstx-rust.exe")
