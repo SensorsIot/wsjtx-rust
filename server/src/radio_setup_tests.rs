@@ -989,6 +989,14 @@ async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_in
 
 /// CL-044-07: the answer code of GET /audio/endpoints over `endpoints` (None when listed).
 async fn list_code(endpoints: Vec<AudioEndpoint>) -> Option<String> {
+    let (s, v) = list_answer(endpoints).await;
+    match s {
+        StatusCode::OK => None,
+        _ => v["error"]["code"].as_str().map(String::from),
+    }
+}
+/// CL-044-07: the status and body of GET /audio/endpoints over `endpoints`.
+async fn list_answer(endpoints: Vec<AudioEndpoint>) -> (StatusCode, Value) {
     let f = fixture("http://127.0.0.1:18049", false);
     let hw = Arc::new(Listing {
         ports: vec![],
@@ -997,10 +1005,16 @@ async fn list_code(endpoints: Vec<AudioEndpoint>) -> Option<String> {
     *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
     let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
     let _ = std::fs::remove_dir_all(&f.dir);
-    match s {
-        StatusCode::OK => None,
-        _ => v["error"]["code"].as_str().map(String::from),
-    }
+    (s, v)
+}
+/// The entry of `id` in the `key` list ("inputs" or "outputs") of a listing.
+fn entry_of<'a>(v: &'a Value, key: &str, id: &str) -> &'a Value {
+    v[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("no {key} in {v}"))
+        .iter()
+        .find(|e| e["id"] == id)
+        .unwrap_or_else(|| panic!("{id} not in {key}: {v}"))
 }
 fn endpoint(id: &str, name: &str, flow: Flow) -> AudioEndpoint {
     AudioEndpoint {
@@ -1060,6 +1074,70 @@ async fn an_endpoint_name_longer_than_max_text_bytes_is_refused_device_limit() {
     let long = |n: usize| vec![endpoint("id-long", &"n".repeat(n), Flow::Capture)];
     assert_eq!(list_code(long(256)).await, None);
     assert_eq!(list_code(long(257)).await.as_deref(), Some("device_limit"));
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn both_flows_at_max_endpoints_are_listed() {
+    let mut list = endpoints(64, Flow::Capture);
+    list.extend((0..64).map(|i| endpoint(&format!("out-{i}"), &format!("Out {i}"), Flow::Render)));
+    let (s, v) = list_answer(list).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        (
+            v["inputs"].as_array().map(Vec::len),
+            v["outputs"].as_array().map(Vec::len)
+        ),
+        (Some(64), Some(64))
+    );
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn endpoint_text_limits_count_utf8_bytes() {
+    let wide = "ä".repeat(128);
+    assert_eq!((wide.len(), wide.chars().count()), (256, 128));
+    // The 256-byte id and name are listed unchanged.
+    let (s, v) = list_answer(vec![endpoint(&wide, "Microphone", Flow::Capture)]).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(entry_of(&v, "inputs", &wide)["name"], "Microphone");
+    let (s, v) = list_answer(vec![endpoint("id-wide", &wide, Flow::Capture)]).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(entry_of(&v, "inputs", "id-wide")["name"], wide.as_str());
+    // 257 bytes in 129 characters are refused.
+    let id = format!("{wide}i");
+    let name = format!("{wide}n");
+    assert_eq!((id.len(), id.chars().count()), (257, 129));
+    assert_eq!(
+        list_code(vec![endpoint(&id, "Microphone", Flow::Capture)])
+            .await
+            .as_deref(),
+        Some("device_limit")
+    );
+    assert_eq!(
+        list_code(vec![endpoint("id-wide", &name, Flow::Capture)])
+            .await
+            .as_deref(),
+        Some("device_limit")
+    );
+}
+
+// Proves: TC-044-006
+#[tokio::test]
+async fn the_name_limit_holds_the_folded_name() {
+    let raw = format!(" {}   {} ", "n".repeat(128), "n".repeat(127));
+    let folded = format!("{} {}", "n".repeat(128), "n".repeat(127));
+    assert_eq!((raw.len(), folded.len()), (260, 256));
+    let (s, v) = list_answer(vec![endpoint("id-fold", &raw, Flow::Capture)]).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(entry_of(&v, "inputs", "id-fold")["name"], folded.as_str());
+    let raw = format!("{}   {}", "n".repeat(128), "n".repeat(128));
+    assert_eq!(
+        list_code(vec![endpoint("id-fold", &raw, Flow::Capture)])
+            .await
+            .as_deref(),
+        Some("device_limit")
+    );
 }
 
 /// The saved control of a fixture: IC-7300 CAT on `port`, saved once.
