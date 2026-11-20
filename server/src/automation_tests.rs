@@ -339,22 +339,18 @@ pub(crate) fn jump_and_tick(f: &Mcp, by_ms: i64) {
     f.tick();
     f.bench.owner_hold.store(0, Ordering::SeqCst);
 }
-/// Moves the bench UTC forward to `to` (never back: the clock may already be past it).
-fn advance_to(f: &Mcp, to: i64) {
+/// Moves the bench UTC forward to `to` (never back: the clock may already be past it). The one
+/// way the transmission helpers move the clock; it reads only the bench, never the transmit
+/// owner.
+pub(crate) fn advance_to(f: &Mcp, to: i64) {
     f.bench
         .offset
         .fetch_add((to - f.bench.now_utc_ms()).max(0), Ordering::SeqCst);
 }
-/// One own transmission of the pending request in period `own`, run to completion. The
-/// bench clock moves only to the request's own period, so the transmit service never
-/// meets a period the clock has passed: `own` must be the period the pending
-/// request is bound to. Each step waits on the transmit owner's event; the 5 s deadline
-/// is a hang guard only.
-pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
-    assert_bound(f, own);
-    let service = &f.state.recording.transmit.get().unwrap().service;
+/// The planned audio start of a transmission started on time in the own period `own`.
+pub(crate) fn planned_audio_start(f: &Mcp, own: i64) -> i64 {
     let mode = crate::contact_http::mode_of(f.state.recording.operating_mode());
-    let audio_start = wstx_rust::transmit::plan_start(
+    wstx_rust::transmit::plan_start(
         mode,
         own,
         wstx_rust::transmit::ClockState::Synchronized,
@@ -362,7 +358,59 @@ pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
         48_000,
     )
     .unwrap()
-    .audio_start_ms;
+    .audio_start_ms
+}
+/// No transmission stalled, and the transmit owner never read, while keyed, a station time
+/// before its key.
+pub(crate) fn assert_on_a_forward_clock(f: &Mcp) {
+    let view = f.state.recording.transmit.get().unwrap().service.view();
+    assert!(
+        !f.bench.stepped_back.load(Ordering::SeqCst),
+        "the station time went back across the key: {view:?}"
+    );
+    assert!(
+        !view.outcomes.iter().any(|o| o.failure
+            == Some(wstx_rust::transmit::service::TransmitFailure::AudioStalled)),
+        "a transmission stalled: {view:?}"
+    );
+}
+/// The transmission of the own period `own` completed, on a forward clock.
+pub(crate) fn assert_completed(f: &Mcp, own: i64) {
+    assert_on_a_forward_clock(f);
+    let view = f.state.recording.transmit.get().unwrap().service.view();
+    let period = crate::contact::period_ms(crate::contact_http::mode_of(
+        f.state.recording.operating_mode(),
+    ));
+    assert!(
+        view.outcomes.iter().any(|o| o.kind
+            == wstx_rust::transmit::service::OutcomeKind::Completed
+            && o.audio_start_utc_ms
+                .is_some_and(|at| (own..own + period).contains(&at))),
+        "the transmission of {own} completed: {view:?}"
+    );
+}
+/// The bench clock placed 100 ms into the own period `own` and its pending request keyed there:
+/// the station as a test thread late past the period start meets it.
+pub(crate) async fn keyed_late(f: &Mcp, own: i64) {
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    advance_to(f, own + 100);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while service.view().ptt != wstx_rust::transmit::service::PttState::Keyed {
+        assert!(Instant::now() < deadline, "{:?}", service.view());
+        f.tick();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+/// One own transmission of the pending request in period `own`, run to completion. The
+/// bench clock moves only forward, to fixed targets in the request's own period, so the
+/// transmit service never meets a period the clock has passed, never reads a time before its
+/// key and is released between the audio end and the release deadline: `own` must be the
+/// period the pending request is bound to. Each step waits on the transmit owner's event; the
+/// 5 s deadline is a hang guard only.
+pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
+    assert_bound(f, own);
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    let audio_start = planned_audio_start(f, own);
     let deadline = Instant::now() + Duration::from_secs(5);
     let wait = async |done: &dyn Fn(&wstx_rust::transmit::service::View) -> bool, tick: bool| {
         loop {
@@ -377,9 +425,7 @@ pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     };
-    f.bench
-        .offset
-        .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
+    advance_to(f, own - 30);
     wait(
         &|v| v.ptt == wstx_rust::transmit::service::PttState::Keyed,
         true,
@@ -387,7 +433,7 @@ pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
     .await;
     advance_to(f, audio_start);
     wait(&|v| v.transmitting, true).await;
-    // Past the end of the longest (FT8) waveform.
+    // Past the end of the longest (FT8) waveform, before its release deadline.
     advance_to(f, audio_start + 13_000);
     wait(
         &|v| !v.transmitting && v.ptt == wstx_rust::transmit::service::PttState::Released,
@@ -395,6 +441,22 @@ pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
     )
     .await;
     f.tick();
+    assert_completed(f, own);
+}
+
+// A request keyed in its own period before the helper runs, as a late test thread meets it:
+// the transmission runs to its end and the clock never goes back across the key.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_transmission_keyed_before_its_helper_completes_on_a_forward_clock() {
+    let f = station(true).await;
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    run(&f, config_json(), "ft8").await;
+    publish(&f, e, &[("CQ W1AW FN31", 900.0, Some(-3.0))]);
+    assert_eq!(f.read("contact").await["transmit"]["arm_state"], "armed");
+    keyed_late(&f, e + 15_000).await;
+    transmit_own_period(&f, e + 15_000).await;
+    assert_completed(&f, e + 15_000);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

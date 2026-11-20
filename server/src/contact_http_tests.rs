@@ -28,24 +28,65 @@ pub(crate) struct Bench {
     /// When nonzero, the transmit owner's thread reads its UTC at most this value while the
     /// test thread reads the moved clock: a jump the engine sees first.
     pub(crate) owner_hold: Arc<AtomicI64>,
+    /// When armed, the next device poll holds the transmit owner between its poll and its
+    /// release deadline read.
+    gate: Arc<PollGate>,
+    /// The station UTC of the current PTT key; 0 while released.
+    key_at: Arc<AtomicI64>,
+    /// Set when the transmit owner, keyed, read a station UTC before its key.
+    pub(crate) stepped_back: Arc<AtomicBool>,
+}
+/// A test's hold of the transmit owner inside one device poll: the poll computes its answer,
+/// sets `entered` and returns it only at `release`.
+#[derive(Default)]
+struct PollGate {
+    armed: AtomicBool,
+    entered: AtomicBool,
+    release: AtomicBool,
+}
+impl Bench {
+    /// Arms the poll gate and waits until the transmit owner is held in its next device poll,
+    /// holding the core: until `release_poll`, a read of the transmit owner waits.
+    pub(crate) async fn hold_poll(&self) {
+        self.gate.entered.store(false, Ordering::SeqCst);
+        self.gate.release.store(false, Ordering::SeqCst);
+        self.gate.armed.store(true, Ordering::SeqCst);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !self.gate.entered.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "the transmit owner never polled");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    /// Lets the held device poll return.
+    pub(crate) fn release_poll(&self) {
+        self.gate.release.store(true, Ordering::SeqCst);
+    }
 }
 impl Hardware for Bench {
     fn set_level_db(&mut self, level_db: i32) {
         self.levels.lock().unwrap().push(level_db);
     }
     fn now_utc_ms(&self) -> i64 {
+        let owner = std::thread::current().name() == Some("transmit");
         let frozen = self.frozen.load(Ordering::SeqCst);
-        if frozen != 0 {
-            return frozen;
-        }
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64
-            + self.offset.load(Ordering::SeqCst);
-        let hold = self.owner_hold.load(Ordering::SeqCst);
-        if hold != 0 && std::thread::current().name() == Some("transmit") {
-            return now.min(hold);
+        let now = if frozen != 0 {
+            frozen
+        } else {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64
+                + self.offset.load(Ordering::SeqCst);
+            let hold = self.owner_hold.load(Ordering::SeqCst);
+            if hold != 0 && owner {
+                now.min(hold)
+            } else {
+                now
+            }
+        };
+        let key = self.key_at.load(Ordering::SeqCst);
+        if owner && key != 0 && now < key {
+            self.stepped_back.store(true, Ordering::SeqCst);
         }
         now
     }
@@ -69,6 +110,7 @@ impl Hardware for Bench {
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
         let at = self.now_utc_ms();
         self.keys.lock().unwrap().push((at, on));
+        self.key_at.store(if on { at } else { 0 }, Ordering::SeqCst);
         Ok(())
     }
     fn open_audio(&mut self) -> Result<(), AudioError> {
@@ -83,11 +125,20 @@ impl Hardware for Bench {
         Ok(())
     }
     fn poll_audio(&mut self) -> AudioPoll {
-        match *self.playing.lock().unwrap() {
+        let answer = match *self.playing.lock().unwrap() {
             Some((at, n)) if (self.now_utc_ms() - at) * 48 >= n as i64 => AudioPoll::Finished,
             Some(_) => AudioPoll::Playing,
             None => AudioPoll::Idle,
+        };
+        if self.gate.armed.swap(false, Ordering::SeqCst) {
+            self.gate.entered.store(true, Ordering::SeqCst);
+            // A hang guard only: the test releases the poll within its own steps.
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !self.gate.release.load(Ordering::SeqCst) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
+        answer
     }
     fn stop_audio(&mut self) {
         *self.playing.lock().unwrap() = None;
