@@ -1,15 +1,18 @@
 # Radio preflight before any agent Tx: the test sets its own power, read back before anything
 # keys, so nothing keys at an assumed level.
-#   radio-preflight.ps1 -Holder <run name> -PowerBcd <hhll> [-NoWrite] [-Minutes 30]    take the lease, set the power
+#   radio-preflight.ps1 -Holder <run name> -PowerBcd <hhll> [-NoWrite] [-Minutes 30] [-Port COMn -Baud n]    take the lease, set the power
 #   radio-preflight.ps1 -Restore -Holder <run name>                          put the old power back, end the lease
 #   radio-preflight.ps1 -Status                                              who holds the lease
 #   radio-preflight.ps1 -Release -Holder <run name>                          give the lease back
 # -PowerBcd is the value of CI-V 14 0A the test needs, required, four digits: the radio's RF POWER
 # control from 0000 to 0255, not watts. Po also follows the Tx level and the profile's limit, so a
-# confirmed value is the control and not the output. Measured on 20 m at -12 dB: 0077 gave Po
-# 24-26 %, 0090 gave Po 30-31 %; 0003 showed Po 0 %; no wattmeter. A test that makes QSOs needs at
-# least 30 W, so it uses 0090 or more and checks Po on its first Tx; short keying without a QSO may
-# use 0003. -NoWrite reads only, and refuses if the radio reads another value. An agent runs it before it keys and keys only on exit 0, while its lease is live.
+# confirmed value is the control and not the output. Measured on 20 m at -19 dB: 0128 gave Po
+# 34-43 %; 0003, 0013 and 0026 gave Po 0 to 1 %; no wattmeter. Short keying uses 0003; a QSO test
+# (qso-test.ps1) keys its SWR check at 0128 and its QSO at 0255 (Project-Specifics.md, QSO tests).
+# -NoWrite reads only, and refuses if the radio reads another value. An agent runs it before it keys and keys only on exit 0, while its lease is live.
+# -Port and -Baud name the CAT port, both or neither; without them it is radio-port.json's. The
+# lease and each record hold the port and baud. -Restore, a renewal and -NoWrite use the live
+# lease's port; a call naming another one while that lease is live exits 2 and opens no port.
 # Exit 0: PREFLIGHT PASS, the radio's power reads the level asked for. Exit 2: PREFLIGHT ERROR,
 # it could not read, write or confirm it by the read-back. Exit 3: PREFLIGHT BUSY, another live
 # writer holds the lease, or the station is in use: the station was not stopped.
@@ -21,6 +24,7 @@
 # (a renewal keeps the first one) and recorded in <git common dir>/harness-parallel/radio/
 # preflight.jsonl beside the lease (lease.json), so every worktree of the repository sees them.
 param([string]$Holder, [string]$PowerBcd, [int]$Minutes = 30, [switch]$Status, [switch]$Release, [switch]$Restore, [switch]$NoWrite,
+      [string]$Port, [string]$Baud,
       [string]$StateDir, [string]$Station, [string]$AgentClient,
       [string]$TaskName = 'WSTX Rust Station HB9BLA')
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
@@ -94,6 +98,9 @@ function Set-RfPower($config, [int]$target) {
 function Old-Power($lease) {
   if ($lease -and $lease.PSObject.Properties['old_power_bcd']) { $lease.old_power_bcd }
 }
+function Lease-Port($lease) {
+  if ($lease -and $lease.PSObject.Properties['port'] -and $lease.port) { [pscustomobject]@{ port = [string]$lease.port; baud = [int]$lease.baud } }
+}
 
 try {
   if (-not $StateDir) { $StateDir = Join-Path (git -C $PSScriptRoot rev-parse --path-format=absolute --git-common-dir) 'harness-parallel\radio' }
@@ -107,6 +114,8 @@ try {
     exit 0
   }
   if (-not $Holder -or $Minutes -lt 1 -or $Minutes -gt 240) { Finish 2 'ERROR' 'need -Holder and -Minutes from 1 to 240' }
+  if ([bool]$Port -ne [bool]$Baud) { Finish 2 'ERROR' 'need -Port and -Baud together, or neither (then radio-port.json)' }
+  if ($Port -and ($Port -cnotmatch '^COM[1-9][0-9]{0,2}$' -or $Baud -notmatch '^[1-9][0-9]{2,6}$')) { Finish 2 'ERROR' "need -Port COM<n> and -Baud <n>, not '$Port' '$Baud'" }
   if ($Release) {
     $script:GivenUp = $null
     $released = With-LeaseLock { $l = Read-Lease; if ($l -and $l.holder -ne $Holder) { $false } else { $script:GivenUp = Old-Power $l; Remove-Item -LiteralPath (Join-Path $StateDir 'lease.json') -ErrorAction SilentlyContinue; $true } }
@@ -122,17 +131,23 @@ try {
     if ($PowerBcd -notmatch '^[0-9]{4}$' -or [int]$PowerBcd -gt 255) { Finish 2 'ERROR' "need -PowerBcd, the level this test keys at, four digits from 0000 to 0255 (the radio's control, not watts), not '$PowerBcd'" }
     $target = [int]$PowerBcd
   }
-  $config = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'radio-port.json')) | ConvertFrom-Json
+  $config = if ($Port) { [pscustomobject]@{ port = $Port; baud = [int]$Baud } } else { [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'radio-port.json')) | ConvertFrom-Json }
 
   # Before the station is touched: a second live writer stops here, and learns whose run it is.
-  $held = $null
+  $held = $null; $clash = $null
   $taken = With-LeaseLock {
     $l = Read-Lease
     if ($l -and $l.holder -ne $Holder) { return $l }
+    $leased = Lease-Port $l
+    if ($leased) {
+      if ($Port -and ($leased.port -ne $Port -or $leased.baud -ne [int]$Baud)) { $script:clash = "the live lease of $Holder is on $($leased.port) at $($leased.baud), not $Port at ${Baud}: nothing opened"; return $null }
+      $script:config = $leased
+    }
     $script:held = $l
-    if (-not $Restore) { Write-Lease ([pscustomobject]@{ holder = $Holder; acquired = (Iso (Now)); expires = (Iso (Now).AddMinutes($Minutes)); old_power_bcd = (Old-Power $l) }) }
+    if (-not $Restore) { Write-Lease ([pscustomobject]@{ holder = $Holder; acquired = (Iso (Now)); expires = (Iso (Now).AddMinutes($Minutes)); old_power_bcd = (Old-Power $l); port = [string]$script:config.port; baud = [int]$script:config.baud }) }
     $null
   }
+  if ($clash) { Finish 2 'ERROR' $clash }
   if ($Restore -and -not $taken) {
     $target = Old-Power $held
     if ($null -eq $target) { Finish 2 'ERROR' "$Holder has no live lease with an old value: see preflight.jsonl" }
@@ -167,7 +182,7 @@ try {
     $why = if ($Restore) { "RF power restored: reads $shown ($what). Lease of $Holder ended." }
            else { "RF power reads $shown ($what). Old value $('{0:D4}' -f (@((Old-Power $script:held), $script:OldRaw) -ne $null)[0]): restore it with -Restore. Lease: $Holder for $Minutes min." }
   }
-  Record ([ordered]@{ time = (Iso (Now)); holder = $Holder; restore = [bool]$Restore; rf_power_old_bcd = $script:OldRaw; rf_power_target_bcd = $target; rf_power_read_bcd = $raw; written = $script:Written; verdict = $word; station_stopped = $stopped; why = $why })
+  Record ([ordered]@{ time = (Iso (Now)); holder = $Holder; restore = [bool]$Restore; port = [string]$config.port; baud = [int]$config.baud; rf_power_old_bcd = $script:OldRaw; rf_power_target_bcd = $target; rf_power_read_bcd = $raw; written = $script:Written; verdict = $word; station_stopped = $stopped; why = $why })
   # Nobody keys on a result but exit 0, so only that takes or renews the lease; it keeps the first
   # old value for -Restore. BUSY says nothing about the power: a lease this holder already had,
   # for its own contact, stays as it was, and so does the lease of a restore that failed, which

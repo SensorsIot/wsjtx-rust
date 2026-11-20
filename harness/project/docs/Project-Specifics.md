@@ -523,8 +523,8 @@ Cost 4 and 5 live tests run without asking when all of these hold:
 - the test transmits only on 10, 15, 20 or 40 m;
 - afterwards it restores the power found and every setting it changed.
 
-QSO tests, their power and their bounds are not covered by this consent; they are open work
-in #192.
+A QSO test keys under this consent with the two exceptions, power and bounds of
+[QSO tests](#qso-tests).
 
 ### Keying the radio
 
@@ -534,14 +534,19 @@ says.
 - **RF power** is whatever the radio reads: each test sets the level it needs, and nothing
   keys at an assumed one. The value of CI-V `14 0A` is the radio's RF POWER control from
   `0000` to `0255`, not watts, and Po also follows the Tx level and the profile's limit.
-  Measured on 20 m at -12 dB, without a wattmeter: `0077` gave Po 24-26 %, `0090` gave Po
-  30-31 %, `0003` showed Po 0 %. A test that makes QSOs uses `0090` or more and checks Po on
-  its first Tx; short keying without a QSO may use `0003`. CI-V reads first and writes only
-  on a difference.
+  Measured on 20 m at -19 dB, without a wattmeter: `0128` gave Po 34–43 %; `0003`, `0013`
+  and `0026` gave Po 0 to 1 %. Short keying without a QSO uses `0003`; a QSO test keys its
+  SWR check at `0128` and its QSO at `0255` ([QSO tests](#qso-tests), items 4 and 7). CI-V
+  reads first and writes only on a difference.
 - **Preflight.** Before keying, an agent runs
   `tools/test/powershell/radio-preflight.ps1 -Holder <run> -PowerBcd <value>` and keys only
-  on exit 0, under its lease (`-Status`, `-Release`). It stops an idle station gracefully,
-  because the station holds COM3, reads the power, writes it only if different, reads it
+  on exit 0, under its lease (`-Status`, `-Release`). `-Port COM<n> -Baud <n>`, both or
+  neither, name the CAT port (the simulator profile's: `-Port COM4 -Baud 115200`); without
+  them it is `radio-port.json`'s (COM3, the real IC-7300). The lease and each record of
+  `preflight.jsonl` hold the port and baud; `-Restore`, a renewal and `-NoWrite` use the live
+  lease's port, and a call naming another one while that lease is live exits 2 and opens no
+  port. It stops an idle station gracefully,
+  because the station holds the port, reads the power, writes it only if different, reads it
   back, starts the station again and records the old value. It refuses to key only when the
   power cannot be read, written or confirmed by the read-back: exit 2, nothing keys, and the
   agent reports it to the coordinator. Afterwards `radio-preflight.ps1 -Restore -Holder <run>`
@@ -597,7 +602,9 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   exactly the recorded process and its descendants, never another; `-Status` reads it. The
   run's order: `station-switch.ps1 -To simulator`, `emulator.ps1 -Start` once the station runs
   (the station opens COM4 before the emulator's transport), test, halt, `emulator.ps1 -Stop`,
-  `station-switch.ps1 -To back`; the station is not restarted while the emulator runs.
+  `station-switch.ps1 -To back`; the station is not restarted while the emulator runs, with
+  one exception: the radio preflight of a QSO test stops and restarts it on SIM-IC7300 while
+  the emulator runs ([QSO tests](#qso-tests), item 7).
 - **Band simulator.** Operated as its project describes it: the tester skill
   `skills/wsjtx-simulator-testing/SKILL.md` and the handoff package of
   SensorsIot/FT-8-Band-Simulator. Agents here do not change the simulator projects.
@@ -614,6 +621,92 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   real IC-7300 is keyed once the operator has decided so in #239 (`alex.restrictions`).
 - **Administrator rights.** Agents have none. A step that needs them is a script the
   operator runs in an elevated shell, restoring what it changed in a `finally` block.
+
+### QSO tests
+
+A CR whose acceptance names a QSO is tested by an agent with the QSO test driver
+`tools/test/powershell/qso-test.ps1`, run as `powershell -NoProfile -ExecutionPolicy Bypass
+-File tools/test/powershell/qso-test.ps1 -Holder <run> -Issue <n> -Item <k>`; its tests are
+`test_qso_test.py` beside it (suite test-bench). The operator's bounds, approved on
+2026-11-12, 2026-11-13 and 2026-11-14 and bound by #192 (its decision comments quote them),
+are its items 3 to 11; the numbers follow #192:
+
+3. **Profile guard** (2026-11-14). It keys only while `GET /transmit` `profile_id` is the
+   one of `profiles\SIM-IC7300\profile.json`, and takes the preflight's `-Port` and `-Baud`
+   from that profile's `control.endpoint`; an endpoint naming COM3, or one that does not
+   parse, exits 2 before any preflight call. It checks the profile before the preflight,
+   before Tune and before every own transmission, and every command it sends carries that
+   `profile_id`, so a station running another profile refuses it (`wrong_profile`); any other
+   profile ends the run under the stop order, naming #239. It never switches the profile; the
+   bench is the tester's.
+4. **Use** (2026-11-12). Only where an acceptance item names a QSO, under this consent, with
+   two exceptions to `0003`: the SWR key at `0128` and the QSO at `0255`. It answers a CQ;
+   the CQ path or Auto only where the item names it.
+5. **Target** (2026-11-13), from the decode data, never the text: a general CQ (`fields.type`
+   standard, `fields.to.kind` token, `fields.to.text` exactly CQ; a nonstandard call is
+   skipped); his newest decoded message is that CQ; not field_day, rtty, vhf or dxpedition;
+   `worked_status` present and not worked_this_band_and_mode; fewer than 2 other stations
+   sent to his call in the two most recent decoded periods that each follow one of his CQs.
+   While fewer than two such periods are decoded it waits without keying. He is dropped when
+   he does not call CQ again within two of his cycles (his Tx period plus the next: 30 s FT8,
+   15 s FT4) or his newest message is no longer a CQ. Waiting does not count.
+6. **Tx frequency** (2026-11-13). Before its first command the driver records Hold Tx Freq,
+   `rx_hz` and `tx_hz`; before the first call it sets Hold Tx Freq on and `tx_hz` by
+   `set_frequency`; at the end it sets all three back. `tx_hz` is an f with lo ≤ f ≤ hi −
+   width in an open range of the newest `free_tx_slots` build whose `rx_parity` is his Tx
+   parity: the f nearest his frequency that is `split_clear` of his signal, with none the lo of
+   the nearest range. While the build is null, has the other parity or has no such f, it
+   does not call.
+7. **Power and SWR** (2026-11-12, 2026-11-13). The preflight sets `0128` with read-back
+   (`-Holder <run> -Minutes 90` on the port of item 3); after each preflight call the driver
+   waits up to 60 s for `GET /radio` ready, else not tested before keying. It subscribes to
+   `radio.tx_level`, runs Tune for 3 s and reads the pushes received between the Tune-on reply
+   and the Tune-off command with `meters`, `po_pct` and `swr_x10` not null; the SWR is their
+   highest `swr_x10`. No such push, `po_pct` 0 in every one, `swr_x10` 30 or more (SWR 3.0) or
+   `swr_fault`: not tested, no `0255` write, the reading reported to the operator. Otherwise
+   the preflight sets `0255` with read-back, which renews the lease.
+8. **Counting and time** (2026-11-13). A transmission is a distinct non-null
+   `last_period_utc`; Tune is not counted. `watchdog.tx_calls` 6 or below is accepted, 7 or
+   above ends the run before keying; the driver never sets it. No call within 30 minutes of
+   the `0255` read-back: not tested. Phase 1, before the first answer: at most 4 calls to one
+   station, then another target; at most 10 transmissions, then not tested. A limit counts
+   whole sends: the send that reaches it ends before the abort, which comes before the next
+   own period. Phase 2 starts
+   at a decoded message from the target to the own call; the QSO runs to the 73 under the
+   station's rules and is logged normally; a silent partner, or an end by the station's
+   watchdog or leave rule, is not tested with the observation. The backstop is 30 minutes from
+   the first call; reaching it is a fail.
+9. **Stop order**, at every end: Auto off; abort the contact the driver started unless it is
+   at rogers, signoff or completed (it ends on its own and the driver waits; one aborted at
+   the backstop stays unlogged, and the test fails); Halt only if PTT is still keyed; the
+   item 6 values set back; `-Restore` with read-back, a BUSY restore retried every 10 s.
+   Without a live lease the value restored is `rf_power_old_bcd` of this holder's first
+   `preflight.jsonl` record with verdict PASS and restore false, set on that record's port,
+   then the lease is released. A contact the driver did not start is never aborted.
+10. **Verdicts** (2026-11-13). Failed: the backstop or a wrong action, whatever else happens:
+    (a) a new `last_period_utc` while the transmit state is off (no accepted start since the
+    last stop, judged on the state read before it appeared), outside Tune, or after the stop
+    order released PTT; a send on the air when a stop arrives may finish; (b) a keyed CQ or a
+    message to another call than the target; (c) in a manual test QSO with Hold Tx Freq on, a
+    `tx_hz` other than the driver's, except the busy move (while `busy_with` is set or in the
+    step that cleared it) until #109 or #314 lands, and not checked in Auto; (d) one message
+    keyed more than `tx_calls` times, or twice that with busy pauses; (e) a completed contact
+    with outcome unsaved or an error; (f) the previous message keyed again in the second own
+    period after a decode that moved `contact.state` forward. Passed: the target's contact
+    completed with `last_disarm_cause` contact_completed, its dialogue with his message to the
+    own call, a report each way and RR73 or 73, the log saved without error. Not tested beats
+    passed: the cases of items 3, 5, 7 and 8, and every `last_disarm_cause` other than
+    contact_completed and the driver's own abort, with the cause and the newest outcomes
+    failure recorded.
+11. **Records and retries.** Each verdict is appended to `qso-tests.jsonl` beside
+    `preflight.jsonl` under the issue and item. Not tested leaves the item open, with no
+    revert and no escapes row, retried at another time or band; at most 3 attempts per item,
+    a 4th is refused and names the operator. Beyond C of #171 the operator is asked only for
+    a high SWR, no Po or no fresh reading, and for an item left not tested 3 times.
+
+**Stated limits.** The decode data does not mark a Fox's own plain CQ or the contests with
+the standard exchange (ARRL Digi, WW Digi); the driver cannot recognise either, and the
+pile-up and newest-message rules skip them often, not always.
 
 ### Operator role and returns
 

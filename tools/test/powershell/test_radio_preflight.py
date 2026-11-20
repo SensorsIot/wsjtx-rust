@@ -29,11 +29,13 @@ def seen_at(command, variables, into):
 
 
 def prelude(log, raw="00 26", running=True, ptt="released", contact="idle", open_fails=False, comes_back=True,
-            stops_after=0, write="takes", reads_answered=99, ctrl_c_exit=0):
+            stops_after=0, write="takes", reads_answered=99, ctrl_c_exit=0, show_port=False):
     """The fake radio holds `raw` in 14 0A (None: it never answers) and acknowledges a write:
     `takes` FB and stored, `ignored` FB and not stored, `refused` FA, `silent` no reply and not
-    stored. It answers the first `reads_answered` reads. `log` receives what reached the system."""
+    stored. It answers the first `reads_answered` reads. `log` receives what reached the system;
+    with `show_port` an open also notes `port <name> <baud>`."""
     bytes_of = "" if raw is None else f"0x{raw[:2]},0x{raw[3:]}"
+    port_note = "Note \"port $($this.PortName) $($this.BaudRate)\"; " if show_port else ""
     return f"""
 $global:Log = {pwsh.ps_quote(log)}
 function Note($t) {{ Add-Content -LiteralPath $global:Log -Value $t }}
@@ -55,11 +57,12 @@ function Start-ScheduledTask {{ param($TaskName)
   if (@(Get-CimInstance).Count -gt 0) {{ Note 'task-start ignored: still running' }} else {{ Note 'task-start'; $global:Up = ${comes_back} }} }}
 function New-Object {{ param($TypeName, [Parameter(ValueFromRemainingArguments=$true)]$Rest)
   if ($TypeName -ne 'System.IO.Ports.SerialPort') {{ return Microsoft.PowerShell.Utility\\New-Object $TypeName @Rest }}
-  $p = [pscustomobject]@{{DtrEnable=$true; RtsEnable=$true; ReadTimeout=0; WriteTimeout=0; IsOpen=$false; Queue=$null}}
+  $given = @($Rest | ForEach-Object {{ $_ }})
+  $p = [pscustomobject]@{{DtrEnable=$true; RtsEnable=$true; ReadTimeout=0; WriteTimeout=0; IsOpen=$false; Queue=$null; PortName=$given[0]; BaudRate=$given[1]}}
   $p.Queue = [System.Collections.Generic.Queue[int]]::new()
   $p | Add-Member ScriptProperty BytesToRead {{ $this.Queue.Count }}
   $p | Add-Member ScriptMethod Open {{ if (${open_fails}) {{ throw [UnauthorizedAccessException]::new('Access to the port COM3 is denied.') }}
-    Note "open dtr=$($this.DtrEnable) rts=$($this.RtsEnable)"; $this.IsOpen = $true }}
+    {port_note}Note "open dtr=$($this.DtrEnable) rts=$($this.RtsEnable)"; $this.IsOpen = $true }}
   $p | Add-Member ScriptMethod Close {{ Note 'close'; $this.IsOpen = $false }}
   $p | Add-Member ScriptMethod DiscardInBuffer {{ }}
   $p | Add-Member ScriptMethod Write {{ param($b,$o,$c) Note ('write ' + (($b | ForEach-Object {{ $_.ToString('X2') }}) -join ' '))
@@ -360,6 +363,75 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual(os.path.normcase(resolved), os.path.normcase(expected))
         self.assertTrue(os.path.isfile(resolved), resolved)
         self.assertEqual(self.system(), [], "nothing reached the system")
+
+    # TC-192-01: the port of the simulator profile's IC-7300 emulator.
+    def ported(self, *args, **radio):
+        return self.run_tool(*args, show_port=True, **radio)
+
+    def lease_file(self):
+        with open(os.path.join(self.state, "lease.json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    # Proves: TC-192-01
+    def test_a_named_port_is_opened_and_held_by_the_lease_and_the_record(self):
+        rc, out = self.ported("-Holder", "run44-a", "-PowerBcd", "0128", "-Port", "COM4", "-Baud", "115200", raw="00 26")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("port COM4 115200", self.system())
+        self.assertNotIn("port COM3 9600", self.system())
+        lease = self.lease_file()
+        self.assertEqual((lease["port"], lease["baud"]), ("COM4", 115200))
+        record = self.records()[-1]
+        self.assertEqual((record["port"], record["baud"], record["verdict"]), ("COM4", 115200, "PASS"))
+
+    # Proves: TC-192-01
+    def test_without_a_port_radio_port_json_is_used(self):
+        rc, out = self.ported("-Holder", "run44-a", "-PowerBcd", "0003", raw="00 26")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("port COM3 9600", self.system())
+        self.assertEqual((self.lease_file()["port"], self.records()[-1]["port"]), ("COM3", "COM3"))
+
+    # Proves: TC-192-01
+    def test_a_port_or_a_baud_alone_or_a_malformed_port_opens_nothing(self):
+        for args in (("-Port", "COM4"), ("-Baud", "115200"), ("-Port", "COM4x", "-Baud", "115200"),
+                     ("-Port", "/dev/ttyS4", "-Baud", "115200"), ("-Port", "COM4", "-Baud", "fast")):
+            rc, out = self.ported("-Holder", "run44-a", "-PowerBcd", "0128", *args, raw="00 26")
+            self.assertEqual(rc, 2, f"{args}: {out}")
+            self.assertIn("PREFLIGHT ERROR", out)
+            self.assertEqual(self.system(), [], args)
+            self.assertEqual(self.lease(), "lease: free", args)
+
+    # Proves: TC-192-01
+    def test_restore_under_a_com4_lease_opens_com4(self):
+        self.assertEqual(self.ported("-Holder", "run44-a", "-PowerBcd", "0128", "-Port", "COM4", "-Baud", "115200", raw="01 74")[0], 0)
+        os.unlink(self.log)
+        rc, out = self.ported("-Restore", "-Holder", "run44-a", raw="01 28")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("port COM4 115200", self.system())
+        self.assertNotIn("port COM3 9600", self.system())
+        self.assertIn("write FE FE 94 E0 14 0A 01 74 FD", self.writes())
+        self.assertEqual((self.records()[-1]["port"], self.records()[-1]["restore"]), ("COM4", True))
+
+    # Proves: TC-192-01
+    def test_a_renewal_or_no_write_naming_com3_under_a_com4_lease_opens_nothing(self):
+        self.assertEqual(self.ported("-Holder", "run44-a", "-PowerBcd", "0128", "-Port", "COM4", "-Baud", "115200", raw="01 74")[0], 0)
+        before = self.lease_file()
+        for extra in ((), ("-NoWrite",)):
+            if os.path.exists(self.log):
+                os.unlink(self.log)
+            rc, out = self.ported("-Holder", "run44-a", "-PowerBcd", "0255", "-Port", "COM3", "-Baud", "9600", *extra, raw="01 28")
+            self.assertEqual(rc, 2, f"{extra}: {out}")
+            self.assertIn("COM4", out)
+            self.assertEqual(self.system(), [], extra)
+            self.assertEqual(self.lease_file(), before, extra)
+
+    # Proves: TC-192-01
+    def test_a_renewal_without_a_port_keeps_the_lease_port(self):
+        self.assertEqual(self.ported("-Holder", "run44-a", "-PowerBcd", "0128", "-Port", "COM4", "-Baud", "115200", raw="01 74")[0], 0)
+        os.unlink(self.log)
+        rc, out = self.ported("-Holder", "run44-a", "-PowerBcd", "0255", raw="01 28")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("port COM4 115200", self.system())
+        self.assertEqual((self.lease_file()["port"], self.lease_file()["old_power_bcd"]), ("COM4", 174))
 
     def test_an_expired_lease_is_free(self):
         os.makedirs(self.state)

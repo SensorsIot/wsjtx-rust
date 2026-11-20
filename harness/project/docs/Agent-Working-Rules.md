@@ -198,7 +198,7 @@ any other repository, for reading too.
 ```yaml
 guard:
   commands:
-    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/{issue}/[A-Za-z0-9_-]+|tools/test/powershell/radio-preflight|tools/deploy/live-page-check)\.ps1( .*)?'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/{issue}/[A-Za-z0-9_-]+|tools/test/powershell/radio-preflight|tools/test/powershell/qso-test|tools/deploy/live-page-check)\.ps1( .*)?'
     - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/station-switch\.ps1 -To (simulator|back)'
     - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/emulator\.ps1 -(Start|Stop|Status)'
   writes: ["D:/wstx-tmp/live/{issue}/**"]
@@ -214,6 +214,8 @@ scripts, which act on the station only through the station client
 the live page check, as
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
 or `… -File tools/test/powershell/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`, or
+a QSO test ([QSO tests](Project-Specifics.md#qso-tests)) as
+`… -File tools/test/powershell/qso-test.ps1 -Holder <run> -Issue <n> -Item <k>`, or
 `… -File tools/deploy/live-page-check.ps1 -Repo D:/Github/wsjtx-rust -Shared D:/Github/wsjtx-rust/.git/harness-parallel -AgentClient tools/deploy/agent-client.ps1`,
 or sets up and clears its simulator bench with exactly
 `… -File tools/test/powershell/station-switch.ps1 -To simulator` or `-To back` and

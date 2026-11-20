@@ -27,7 +27,7 @@ hooks:
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
 <!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
 <!-- source harness/general/lang/javascript/standard.md sha256=018b21f4d1ed383044ccc31e6c7fc66e8c9cb07b6f3c8d54cee8c17f5b796265 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=f013df9d2f6442850bfb59894bb65dcbf0c199116663cb397359ee86ad4318bd -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=e4e4a300de23acca9122b1654d87176b9d536a7e3dab5300b75ec4e07d8ffbf4 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view {issues}( .*)?", "gh api repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/{issues}/comments( --paginate)?( (--jq|-q) '[^']*')?", "gh issue comment {issue} --body '(Coordinator|Scope): [^']*'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py set {issue} (deciding|defining|checking|ready|implementing|in-review) --note '[^']*'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py body {issue} (--from-definition|--moved)", "(python3?|py)(\\.exe)? \\S*(cr_state|merge_queue)\\.py status( --json)?", "gh issue create --title '[^']*' --body '[^']*'( --label [A-Za-z0-9:,_-]+)*", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{session}/**"]} -->
 
 You are the coordinator agent of one issue, started by [Alex](../../harness/general/core/docs/Alex.md#the-middle-level)
@@ -106,4 +106,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{session}/**`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=6867582d15939726b9d9d120b7724afe3bc4fefa40fd83438f0ac1fe1c1e241d -->
+<!-- harness-agent-v1 sha256=cc1b2586602eaebfa2d01a2614921f982554b1fa360a5696d4675b7b29fab185 -->
