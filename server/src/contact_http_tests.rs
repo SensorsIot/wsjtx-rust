@@ -1996,17 +1996,51 @@ async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     );
 }
 
-// The station's startup wiring gives the transmit
-// owner the Recording's call hash table and sets my call from the profile.
+// The station's startup wiring makes the requests the transmit owner accepts teach the
+// Recording's call hash table, and sets my call from the profile: before it, an accepted
+// request teaches that table nothing.
 #[test]
 fn startup_shares_the_hash_table_with_the_transmit_owner() {
+    use wstx_rust::decoder::{HashTable, unpack};
+    use wstx_rust::transmit::service::{OutcomeKind, Request};
+    let shown = |t: &HashTable, text: &str| {
+        let bits = wstx_rust::transmit::pack(text).unwrap().bits;
+        t.resolve(&unpack(&bits)).text.unwrap()
+    };
     let f = fixture("http://127.0.0.1:18001", true);
     let r = &f.state.recording;
-    assert!(r.transmit.get().unwrap().hash_table().is_none());
+    let service = &r.transmit.get().unwrap().service;
+    // The bench's UTC stands still 5 s before an FT8 period: nothing is keyed.
+    let period = (now_ms().div_euclid(15_000) + 2) * 15_000;
+    f.bench.frozen.store(period - 5_000, Ordering::SeqCst);
+    let submit = |sequence: u64, text: &str| {
+        service.with(|c| {
+            c.submit(Request {
+                contact_id: None,
+                request_sequence: sequence,
+                mode: decoder::Mode::Ft8,
+                period_start_utc_ms: period,
+                message_text: text.into(),
+                tx_offset_hz: 1500,
+            })
+            .kind
+        })
+    };
+    service.with(|c| c.arm(3).unwrap());
+    assert_eq!(submit(1, "<3D2CR/P> HB9BLA"), OutcomeKind::Accepted);
+    assert_eq!(
+        shown(&r.hashes.lock().unwrap(), "<3D2CR/P> W9XYZ"),
+        "<...> W9XYZ"
+    );
     r.start_hashes("hb9bla");
-    let shared = r.transmit.get().unwrap().hash_table().unwrap();
-    assert!(Arc::ptr_eq(&shared, &r.hashes));
-    assert_eq!(r.hashes.lock().unwrap().my_call(), Some("HB9BLA"));
+    assert_eq!(submit(2, "<VP2X/K1JT> HB9BLA"), OutcomeKind::Accepted);
+    {
+        let t = r.hashes.lock().unwrap();
+        assert_eq!(shown(&t, "<VP2X/K1JT> W9XYZ"), "<VP2X/K1JT> W9XYZ");
+        assert_eq!(shown(&t, "<3D2CR/P> W9XYZ"), "<...> W9XYZ");
+        assert_eq!(t.my_call(), Some("HB9BLA"));
+    }
+    service.with(|c| c.halt());
 }
 
 // A nonstandard manual entry over POST /contact/command
