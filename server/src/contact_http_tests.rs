@@ -2526,6 +2526,9 @@ async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station()
     r.fixture_band("20m");
     let (source, job, generation) = r.fixture_live_job("ft8");
     let even = now_ms().div_euclid(30_000) * 30_000;
+    // Station time stands still where the partner's messages are published: the reply's own
+    // period lies ahead, so no transmission starts while the test runs.
+    f.bench.frozen.store(even + 13_000, Ordering::SeqCst);
     let seq = r.fixture_publish_period(
         &period_text(even),
         vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
@@ -2625,6 +2628,7 @@ async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station()
         .call("POST", "/contact/command", Some(reply.clone()))
         .await;
     assert_eq!(s, StatusCode::ACCEPTED, "{receipt}");
+    tokio::time::sleep(Duration::from_millis(20)).await;
     let snap = f.snapshot().await;
     assert_eq!(
         state(&snap),
