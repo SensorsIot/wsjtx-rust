@@ -13,12 +13,12 @@ import tempfile
 import unittest
 
 # The one copy of the PowerShell runner is tools/deploy/tests/pwsh.py.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "tools", "deploy", "tests"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "deploy", "tests"))
 import pwsh  # noqa: E402
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(HERE, "station-switch.ps1")
-# The checkout: three folders above harness/project/deploy/.
+# The checkout: three folders above tools/test/powershell/.
 REPO = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 
 # The lines of tools/deploy/station-update/launcher.ps1 the switch reads and writes.

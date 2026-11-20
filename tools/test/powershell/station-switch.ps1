@@ -120,7 +120,7 @@ function Read-Back($expected) {
 try {
   if ($To -notin @('simulator', 'back')) { Finish 2 'ERROR' "need -To simulator or -To back, not '$To'" }
   if (-not $Station) { $Station = Join-Path $env:LOCALAPPDATA 'WstxRust\station' }
-  # The repository root is three folders above harness/project/deploy/.
+  # The repository root is three folders above tools/test/powershell/.
   if (-not $AgentClient) { $AgentClient = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\tools\deploy\agent-client.ps1')) }
   if (-not $Pin) { $Pin = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\tools\deploy\station-update\launcher.ps1')) }
   $script:CtrlCExit = 'not run'; $script:StillRuns = $false

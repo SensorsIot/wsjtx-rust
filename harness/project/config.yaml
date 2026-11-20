@@ -185,7 +185,7 @@ alex:
     - until_accepted: 239
       brief: "Live tests key the simulator: the IC-7300 emulator (SIM-IC7300) and the band simulator. The real IC-7300 is keyed once the operator has decided so in wsjtx-rust#239."
   # The station tester's MCP servers: the band simulator only; each station run starts and stops
-  # its own IC-7300 emulator on COM5 with harness/project/deploy/emulator.ps1 (one owner of the port).
+  # its own IC-7300 emulator on COM5 with tools/test/powershell/emulator.ps1 (one owner of the port).
   launcher: {command: claude, permission_mode: auto, model: claude-opus-5-5, mcp: {station: harness/project/mcp/station.json}}
   # Install: the one deploy command (Project-Specifics.md, Deployment authority), given the
   # commit the merge queue pushed; Git Bash by its full path (a bare bash finds WSL). Exit 3: the
