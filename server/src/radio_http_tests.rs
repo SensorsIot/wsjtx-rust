@@ -121,7 +121,7 @@ impl Transport for Port {
             (_, [6, 1, 1] | [0x1a, 6, 1, 1]) => vec![0xfb],
             (_, [5, a, b, c, d, e]) => {
                 let value = [*a, *b, *c, *d, *e];
-                // Four literal independent dial vectors from FSD4.7.5/Icom BCD.
+                // Four literal dial vectors in Icom BCD, written independently of the encoder.
                 if ![
                     [0, 0x40, 7, 7, 0],
                     [0, 0x75, 4, 7, 0],

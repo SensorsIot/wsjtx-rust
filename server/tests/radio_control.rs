@@ -547,7 +547,7 @@ fn configuration_and_catalogue_cannot_admit_raw_or_transmit_operations() {
             .is_err()
     );
     let mut doc: serde_json::Value =
-        serde_json::from_slice(include_bytes!("../../fixtures/radio/ic7300-catalogue.json"))
+        serde_json::from_slice(include_bytes!("../src/radio_control/ic7300-catalogue.json"))
             .unwrap();
     doc["commands"][0]["request_prefix"] = serde_json::json!([28, 0, 1]);
     assert!(Catalogue::parse(&serde_json::to_vec(&doc).unwrap()).is_err());
@@ -1017,7 +1017,7 @@ fn polling_has_one_cycle_per_second_and_fragmentation_never_renews_deadline() {
 #[test]
 fn an_operation_the_radio_has_not_is_unsupported_and_sends_nothing() {
     let mut doc: serde_json::Value =
-        serde_json::from_slice(include_bytes!("../../fixtures/radio/ic7300-catalogue.json"))
+        serde_json::from_slice(include_bytes!("../src/radio_control/ic7300-catalogue.json"))
             .unwrap();
     doc["models"][0]["commands"]
         .as_array_mut()

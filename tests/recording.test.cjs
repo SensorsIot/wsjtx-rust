@@ -1,5 +1,5 @@
 'use strict';
-// Original FSD 4.4/6.4/12.6 oracles; cost 2 on Windows PC with actual server/Chromium, no hardware.
+// Cost 2 on Windows PC with actual server/Chromium, no hardware.
 const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');

@@ -28,7 +28,7 @@ jobs:
           persist-credentials: false
 
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+        run: rustup toolchain install
 
       - name: Report compiler and build environment
         run: |

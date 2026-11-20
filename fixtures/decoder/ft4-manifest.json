@@ -21,18 +21,6 @@
       "url": "https://wsjt.sourceforge.io/FT4_Protocol.pdf",
       "bytes": 383466,
       "sha256": "f5176676431f1de861414ed83ae64c7dcd96f9c17d8564d17acf343d3501b8a3"
-    },
-    {
-      "file": "ce3tsk-project-COPYING.txt",
-      "url": "https://raw.githubusercontent.com/ce3tsk/jtdx_contest/796c25e44762a596eadb277932dbf30073db9602/COPYING",
-      "bytes": 32490,
-      "sha256": "20f3aff83f0714aa25359e07e0c19f682aa0654f2692e7927b49bfc883f734ee"
-    },
-    {
-      "file": "ce3tsk-project-README.md",
-      "url": "https://raw.githubusercontent.com/ce3tsk/jtdx_contest/796c25e44762a596eadb277932dbf30073db9602/README.md",
-      "bytes": 25815,
-      "sha256": "7befcd4867a9ffb612222ad71b677d6b02f8a012f6c3d4708e328a9e84ad9e79"
     }
   ],
   "files": [
@@ -162,22 +150,5 @@
       "pinned_official_git_blob_sha1": "e5cdc88040b477cad842d51c4dd8e5fb6fdbe803",
       "pinned_official_byte_identity_verified": true
     }
-  ],
-  "unacquired_modern_corpus": {
-    "publisher": "Tihomir Sokcevic, CE3TSK",
-    "benchmark_readme_url": "https://www.ce3tsk.com/download/wav/README.md",
-    "license_claim": "Publisher benchmark README explicitly states recordings and code GPL v3.",
-    "download_status": "blocked: direct audio and publisher-standard ZIP requests returned HTTP 406; no audio bytes acquired",
-    "attempted_standard_zip_urls": [
-      "https://www.ce3tsk.com/download/wav/crowded_band.zip",
-      "https://www.ce3tsk.com/download/wav/ft4_onair_1h.zip"
-    ],
-    "public_mirror_check": {
-      "repository": "https://github.com/ce3tsk/jtdx_contest",
-      "tree_commit": "796c25e44762a596eadb277932dbf30073db9602",
-      "result": "No FT4 WAV/TSV/ZIP found in full repository tree or assets from ten most recent releases."
-    },
-    "ground_truth_status": "Publisher describes synthetic FT4 manifest truth and off-air hour without ground truth; neither independently verified."
-  },
-  "reference_observation_manifest": "reference-manifest.json"
+  ]
 }

@@ -2248,7 +2248,7 @@ test('TC-022-001 review regression: Refresh cannot reopen a pending save', {time
 test('TC-022-002 review regression: admit the complete worst-case response budget', {timeout: 30000}, async t => {
   const {profiles, apps} = await fixture(t); const selected = profiles[0]; await selected.app.close();
   const file = path.join(selected.dir, 'profile.json'), port = new URL(selected.origin).port;
-  // Independently authored from FSD12.5; never read from the candidate admission helper.
+  // The worst case of ProfileLimits::profileHttpMaxBytes, written independently; never read from the candidate admission helper.
   const maximum = {display_name: '\\'.repeat(64), callsign: 'A12345678901', locator: 'RR99XX99', audio: {input_device: '\\'.repeat(256), output_device: '\\'.repeat(256)}, control: {mode: 'cat', endpoint: '\\'.repeat(256), ptt: 'disabled'}};
   const oracle = {profile_id: uuid(1), boot_id: uuid(2), revision: Number.MAX_SAFE_INTEGER, endpoint: '', connection_type: 'standard', settings: maximum};
   const emptyOriginBytes = 2018, httpMax = profileValue('profileHttpMaxBytes');

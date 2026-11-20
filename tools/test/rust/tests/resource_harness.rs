@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::process::Command;
 use wstx_test_tools::resource_harness::{
     ResourcePeer, resource_bind_monitor, resource_emit, resource_hash, resource_line,
-    resource_metrics_source_identity, resource_qualify_round, resource_source,
+    resource_qualify_round, resource_source,
 };
 
 /// The worker of the cleanup test, its own binary started again: it prints the ready line
@@ -35,7 +35,6 @@ fn resource_owned_worker_failure_cleanup_uses_process_object_not_pid_reopen() {
         return cleanup_worker();
     }
     assert!(cfg!(windows) && usize::BITS == 64);
-    resource_metrics_source_identity();
     let executable = std::env::current_exe().unwrap();
     let config = serde_json::json!({"worker_id":format!("cleanup-control-{}",std::process::id()),
         "source_sha":resource_source(),"executable_sha256":resource_hash(&executable)});

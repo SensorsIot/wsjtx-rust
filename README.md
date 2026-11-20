@@ -11,10 +11,9 @@ station ([StationLink.sysml](docs/sysml/interfaces/internal/StationLink.sysml),
 [Listener.sysml](docs/sysml/backend/web/Listener.sysml)). This README gives orientation,
 setup and licensing.
 
-Of the station's 24 functional requirements, 7 are built and tested, 16 are built in part
-and one is not built yet; `python tools/sysml.py status` lists each requirement with its
-clauses. Where the code does not yet do what the model states, the model says so in the
-clause's status or in a `CodeDiffers` marker (`python tools/sysml.py markers CodeDiffers`).
+`python tools/sysml.py status` lists each functional requirement with its clauses and
+how far each is built. Where the code does not do what the model states, the model says so
+in the clause's status or in a `CodeDiffers` marker (`python tools/sysml.py markers CodeDiffers`).
 The first release targets Windows desktop.
 
 ## Repository layout
@@ -23,25 +22,28 @@ The first release targets Windows desktop.
 | --- | --- |
 | `server/` | Rust station server. |
 | `client/` | Browser client, embedded into the server executable. |
-| `docs/sysml/` | The model: requirements, parts, interfaces, behaviour and verification. |
-| `tools/` | The model tool (`tools/sysml.py`, [its contract](tools/sysml/README.md)) and other tools. |
+| `tests/` | The product's Node protocol, browser and recording tests. |
+| `fixtures/` | Test data and fixture generators. |
+| `docs/` | The model in `docs/sysml/`: requirements, parts, interfaces, behaviour and verification. |
+| `tools/` | The model tool (`tools/sysml.py`, [its contract](tools/sysml/README.md)), the deployment tools (`tools/deploy/`), the test tools (`tools/test/`) and the recording fixture tool (`tools/recording-fixtures.cjs`). |
 | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | Shared Rust workspace, dependency lock file, and compiler selection. |
+| `deny.toml` | The cargo-deny policy. |
+| `package.json`, `package-lock.json` | The Node test dependencies. |
+| `.github/` | The workflows. |
 | `harness/` | The development harness: the pinned general harness (`harness/general/`) and the project harness (`harness/project/`) with its development instructions. |
+| `.claude/`, `AGENTS.md`, `CLAUDE.md` | The agent setup. |
+| `.gitignore`, `.gitattributes`, `.gitmodules` | The Git settings. |
 
 Build, test and packaging instructions are in the [project-specific harness](harness/project/docs/Project-Specifics.md).
 
-## Branches
-
-- `master`: the Rust implementation and its model.
-
-The upstream WSJT-X source (Fortran, C, C++, Qt, CMake) is master's history up to commit
-`967c85a61`; read a file of it with `git show 967c85a61:<path>`.
+The upstream WSJT-X source (Fortran, C, C++, Qt, CMake) is this repository's history up to
+commit `967c85a61`; read a file of it with `git show 967c85a61:<path>`.
 
 ## License and attribution
 
-The Rust port will be distributed under GPLv3. See [COPYING](COPYING), [AUTHORS](AUTHORS), [THANKS](THANKS), and the retained notices below.
+The Rust port is distributed under GPLv3. See [COPYING](COPYING), [AUTHORS](AUTHORS), [THANKS](THANKS), and the retained notices below.
 
-WSJT-X, MAP65, QMAP, and their program icons are subject to the upstream [trademark policy](TRADEMARK.md). This is an independent project and does not claim endorsement by the WSJT Development Team. Relevant third-party notices must be retained as components are ported or reused.
+WSJT-X, MAP65, QMAP, and their program icons are subject to the upstream [trademark policy](TRADEMARK.md). This is an independent project and does not claim endorsement by the WSJT Development Team. Relevant third-party notices are retained for components that are ported or reused.
 
 ### Retained upstream credits
 
@@ -72,7 +74,7 @@ The reference to `about.cpp` in the retained `AUTHORS` file refers to the origin
 - [MAP65 credits](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/map65/about.cpp)
 - [QMAP credits](https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/qmap/about.cpp)
 
-These summary credits are not an exhaustive inventory of file-level copyrights or third-party licenses. Record component provenance and carry forward the applicable notices as implementation proceeds.
+These summary credits are not an exhaustive inventory of file-level copyrights or third-party licenses. Component provenance is recorded and the applicable notices are carried with each component.
 
 Translation into Rust does not remove applicable copyright or license obligations.
 Distributed binaries must provide access to complete corresponding source under the
@@ -80,7 +82,7 @@ applicable GPL requirements. Bundled components and assets may have separate ter
 record their provenance and retain applicable notices. The license check of this
 repository is not a complete dependency audit. Licensing and trademarks remain separate.
 
-### Candidate recording notices
+### Bundled component notices
 
 The shared FFT provider is [RustFFT 6.4.1](https://crates.io/crates/rustfft/6.4.1),
 by Allen Welkie and Elliott Mahler, under MIT OR Apache-2.0. Its complete notices are
@@ -91,5 +93,5 @@ modem synchronization, metrics and subtraction routines adapt WSJT-X revision
 notices in the adapted files. The project retains its [COPYING](COPYING) and
 [AUTHORS](AUTHORS) attribution.
 
-- Obtain candidate fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
+- Obtain recording fixtures directly from the pinned ft8_lib revision and keep its MIT license and attribution with any imported material. The root license names copyright 2018 Karlis Goba; no separate sample-specific license was found in the reviewed tree.
 - [ft8_lib MIT license](https://github.com/kgoba/ft8_lib/blob/9fec6ca39886edbf96f4f5e71edc76da5074e871/LICENSE)
