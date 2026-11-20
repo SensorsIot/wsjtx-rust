@@ -98,10 +98,11 @@ test('authenticated reconnect accepts only current connected operating snapshots
     await p.evaluate(()=>new Promise(resolve=>{addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
     await p.waitForFunction(()=>socket!==window.__operatingWitness.socket&&connection.dataset.state==='connected');
     old.release.resolve();await old.delivered.promise;await current.entered.promise;
-    // The replacement socket's own first selection.state may already have cleared it; the old reply never does.
-    const {kept,own}=await p.evaluate(()=>({kept:operatingState===window.__operatingWitness.state,own:operatingState===operatingHeld&&operatingHeldSocket===socket}));
+    // kept, own and status are read in one task of the page, so no event falls between them.
+    // The replacement socket's own first selection.state may already have been accepted and cleared stale; the old reply never does.
+    const {kept,own,status}=await p.evaluate(()=>({kept:operatingState===window.__operatingWitness.state,own:operatingState===operatingHeld&&operatingHeldSocket===socket,status:operatingStatus.textContent}));
     assert.ok(kept||own,'old-socket reply cannot replace accepted operating state');
-    if(kept)assert.equal(await p.locator('#operating-selection-status').textContent(),'Disconnected · operating data stale','Connected header alone cannot clear operating staleness');
+    if(kept)assert.equal(status,'Disconnected · operating data stale','Connected header alone cannot clear operating staleness');
     current.release.resolve();await current.delivered.promise;await p.waitForFunction(()=>!operatingReadPending);
     assert.equal(await p.evaluate(()=>operatingFailure),'');assert.doesNotMatch(await p.locator('#operating-selection-status').textContent(),/Disconnected|stale/);
     assert.equal(await p.evaluate(()=>operatingSupported),true);assert.deepEqual(mutations,[],'reconnection performs no command replay or device mutation');
