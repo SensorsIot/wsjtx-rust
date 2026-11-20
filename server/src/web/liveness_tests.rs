@@ -12,12 +12,16 @@ use tokio::{
 };
 use wstx_test_tools::ws_frame::{client_frame, parse_frame};
 
-/// The listener of the transports the test holds.
-pub(crate) struct Held(pub(crate) mpsc::UnboundedReceiver<DuplexStream>);
-impl axum::serve::Listener for Held {
-    type Io = DuplexStream;
+/// The listener of the transports the test holds (in-process duplex streams unless a test
+/// wraps them).
+pub(crate) struct Held<Io = DuplexStream>(pub(crate) mpsc::UnboundedReceiver<Io>);
+impl<Io> axum::serve::Listener for Held<Io>
+where
+    Io: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    type Io = Io;
     type Addr = ();
-    async fn accept(&mut self) -> (DuplexStream, ()) {
+    async fn accept(&mut self) -> (Io, ()) {
         match self.0.recv().await {
             Some(io) => (io, ()),
             None => std::future::pending().await,

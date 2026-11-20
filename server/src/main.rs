@@ -59,6 +59,9 @@ mod selection;
 mod selection_http;
 #[cfg(all(test, not(debug_assertions)))]
 mod selection_http_tests;
+#[cfg(test)]
+#[path = "web/socket_bounds_tests.rs"]
+mod socket_bounds_tests;
 use wstx_rust::{audio, decoder, source};
 mod contest;
 mod most_wanted;
@@ -507,7 +510,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         profile,
         profile_id,
         token,
-        connections: Arc::new(Semaphore::new(16)),
+        connections: Arc::new(Semaphore::new(SOCKET_BOUND)),
         login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
     };
     let app = router(state);
@@ -524,6 +527,9 @@ pub(crate) mod limits {
     pub const RECORD_BYTES: usize = 8192;
     pub const SETTINGS_BYTES: usize = 32_768;
 }
+/// The most sockets the station holds open at once; one more is refused with 503
+/// (WstxListener::BoundsRule).
+const SOCKET_BOUND: usize = 16;
 /// The heartbeat of a socket and the pace of its events (WstxStationLink::SocketProtocol).
 mod socket_protocol {
     pub const HEARTBEAT_MS: u64 = 5000;
