@@ -16,9 +16,7 @@ use std::{
     time::{Duration, Instant},
 };
 // The test-only model-value reader (Project-Specifics, "Model values read by tests").
-#[allow(dead_code)]
-#[path = "../src/model_values.rs"]
-mod model_values;
+use wstx_test_tools::model_values;
 
 /// WstxCatControl::RadioConnection::closeMaxMs, read from the model.
 fn close_max() -> Duration {

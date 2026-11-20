@@ -11,8 +11,9 @@ const net=require('node:net');
 const {once}=require('node:events');
 const crypto=require('node:crypto');
 const {chromium}=require('playwright');
-const {server,browserPort}=require('./support.cjs');
-const {openModel}=require('./model-values.cjs');
+const {server,browserPort}=require('../tools/test/node/support.cjs');
+const {openModel}=require('../tools/test/node/model-values.cjs');
+const {quietPress}=require('../tools/test/node/quiet-press.cjs');
 let browser,root;
 before(async()=>{root=await fs.mkdtemp(path.join(os.tmpdir(),'wstx-operating-'));await fs.mkdir('test-results/ui-operating',{recursive:true});browser=await chromium.launch();});
 after(async()=>{await browser?.close();await fs.rm(root,{recursive:true,force:true});});
@@ -5188,8 +5189,8 @@ const fullScreenVariants={
 // A routed prepared contact (abortable), the contact commands recorded, every request's path recorded and,
 // with rows, one decoded CQ row in Band Activity (for its row menu); init is a further init script.
 async function fullScreenFixture(t,viewport,variant,{rows=false,init=null}={}){
-  const commands=[],requests=[];
-  let lookupDone;const lookupFinished=new Promise(r=>{lookupDone=r;});
+  const commands=[];
+  let watch;
   const f=await fixture(t,viewport,{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     await p.addInitScript(fullScreenVariants[variant]);
@@ -5207,18 +5208,15 @@ async function fullScreenFixture(t,viewport,variant,{rows=false,init=null}={}){
       await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor);
         await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:1,available_count:1,next:cursor+batch.length,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
     }
-    p.on('request',r=>requests.push(`${r.method()} ${new URL(r.url()).pathname}`));
     // The prepared state's own request: render of the replying contact looks the partner up (GET /dxcc?call=K1ABC).
-    const lookup=r=>{const u=new URL(r.url());return u.pathname==='/dxcc'&&u.searchParams.get('call')==='K1ABC';};
-    for(const event of ['requestfinished','requestfailed'])p.on(event,r=>{if(lookup(r))lookupDone();});
+    watch=quietPress(p,{lookup:r=>{const u=new URL(r.url());return u.pathname==='/dxcc'&&u.searchParams.get('call')==='K1ABC';}});
   }});
   const {page}=f;
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact?.state==='replying',null,{timeout:45000});
-  // The window of quiet opens only after that lookup has reached the test and finished.
-  let timer;await Promise.race([lookupFinished,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('the partner DXCC lookup did not finish')),15000);})]).finally(()=>clearTimeout(timer));
+  await watch.opened();
   if(rows)await page.locator('#band-activity tr[data-sequence="0"]').waitFor({timeout:25000});
   const button=page.locator('#full-screen');
-  return {...f,commands,requests,button,
+  return {...f,commands,requests:watch.requests,button,
     aborts:()=>commands.filter(c=>c.action==='abort').length,
     full:()=>page.evaluate(()=>document.fullscreenElement===document.documentElement),
     // A change of state is complete once the browser's state has changed and the fullscreenchange event has
@@ -5229,8 +5227,7 @@ async function fullScreenFixture(t,viewport,variant,{rows=false,init=null}={}){
     look:()=>button.evaluate(b=>({label:b.getAttribute('aria-label'),pressed:b.getAttribute('aria-pressed'),title:b.title,icon:b.dataset.icon,svg:b.querySelectorAll('svg').length,text:b.textContent.trim()})),
     locks:()=>page.evaluate(()=>window.__keyboardLock),
     // The button's press causes no station request and no WebSocket frame.
-    quiet:async(action,label)=>{const r=requests.length,s=f.sent.length;await action();await page.waitForTimeout(300);
-      assert.deepEqual(requests.slice(r),[],`${label}: no station request`);assert.deepEqual(f.sent.slice(s),[],`${label}: no WebSocket frame`);},
+    quiet:watch.quiet,
     order:()=>page.locator('#station-bar .op-header-actions > button').evaluateAll(list=>list.map(b=>b.id||b.dataset.region)),
     overflow:()=>page.evaluate(()=>{const bar=document.querySelector('#station-bar');return {page:document.documentElement.scrollWidth>innerWidth,bar:bar.scrollWidth>bar.clientWidth,scroll:document.documentElement.scrollHeight>innerHeight};}),
   };
@@ -5328,26 +5325,6 @@ test('a refused full-screen request changes nothing and reports no error',{timeo
   assert.equal(await page.evaluate(()=>document.fullscreenElement),null);assert.deepEqual(await x.look(),fullScreenOff);
   await page.evaluate(()=>window.wstxChipsShow?.());assert.deepEqual(await entries(),before,'no error-field entry');
   assert.deepEqual(errors,[],'no page error');
-});
-// The window of quiet opens only after the requests of the prepared state, the partner's DXCC lookup
-// among them, have reached the test and finished; a request or frame inside the window still fails.
-const lateLookup=()=>{const send=window.fetch;
-  window.fetch=(input,...rest)=>/\/dxcc\?/.test(String(input?.url??input))?new Promise(r=>setTimeout(r,200)).then(()=>send(input,...rest)):send(input,...rest);};
-test('a partner DXCC lookup the page sends 200 ms late does not count as the full-screen press',{timeout:60000},async t=>{
-  const x=await fullScreenFixture(t,{width:1366,height:768},'noKeyboard',{init:lateLookup}),{errors,button}=x;
-  await x.quiet(async()=>{await button.click();await x.entered();},'enter');
-  assert.deepEqual(x.requests.filter(r=>r==='GET /dxcc'),['GET /dxcc'],'the lookup was sent once, before the press');
-  assert.deepEqual(errors,[]);
-});
-test('Negative: a press that sends GET /dxcc?call=K1ABC fails quiet with no station request',{timeout:60000},async t=>{
-  const x=await fullScreenFixture(t,{width:1366,height:768},'rejects'),{button}=x;
-  await button.evaluate(b=>b.addEventListener('click',()=>{fetch('/dxcc?call=K1ABC',{cache:'no-store'}).catch(()=>{});}));
-  await assert.rejects(x.quiet(()=>button.click(),'press'),{message:/^press: no station request\n/});
-});
-test('Negative: a press that sends a WebSocket frame fails quiet with no WebSocket frame',{timeout:60000},async t=>{
-  const x=await fullScreenFixture(t,{width:1366,height:768},'rejects'),{button}=x;
-  await button.evaluate(b=>b.addEventListener('click',()=>socket.send(JSON.stringify({v:1,type:'station.get',id:0}))));
-  await assert.rejects(x.quiet(()=>button.click(),'press'),{message:/^press: no WebSocket frame\n/});
 });
 
 // ---------------------------------------------------------------- saved Auto Seq and Call 1st

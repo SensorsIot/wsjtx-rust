@@ -11,9 +11,9 @@ const crypto=require('node:crypto');
 const {chromium}=require('playwright');
 const selfsigned=require('selfsigned');
 const WebSocket=require('ws');
-const {receive}=require('./peer.cjs');
-const {server,loginPage,browserPort}=require('./support.cjs');
-const {openModel}=require('./model-values.cjs');
+const {receive}=require('../tools/test/node/peer.cjs');
+const {server,loginPage,browserPort}=require('../tools/test/node/support.cjs');
+const {openModel}=require('../tools/test/node/model-values.cjs');
 // A bound of the profile's recordings, WstxRecordingTransfer::RecordingLimits, read from the model.
 const recordingLimit=feature=>openModel().numberWithUnit(`WstxRecordingTransfer::RecordingLimits::${feature}`);
 // Selected HTTPS profile: each browser context enrolls its own key through the

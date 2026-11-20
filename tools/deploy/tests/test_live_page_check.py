@@ -4,7 +4,8 @@ and before the restart makes one band selection of the band the station receives
 Everything that reaches the system is mocked: the agent client, the station process, the Ctrl+C
 helper, the scheduled task. The page check is a stand-in that asks for the restart, reports the
 lines it was handed (their keys only), writes <control>/rows once a selection is reported and
-ends NOT-EXERCISED when it was told the selection was not made or did not take.
+ends NOT-EXERCISED when it was told the selection was not made or did not take. The real
+checker is the test tool tools/test/node/live-page-check.cjs.
 """
 import json
 import os
@@ -223,7 +224,7 @@ class LivePageCheckTests(unittest.TestCase):
 
     def test_the_wait_for_rows_is_bounded_from_the_202_and_the_restart_follows_it(self):
         """The page check waits at most the ms it is handed, -WaitSeconds counted from the 202; its
-        verdict on rows that never came is tests/frontend/receive-page.test.cjs's."""
+        verdict on rows that never came is tools/test/node/live-page-check.test.cjs's."""
         rc, out, log = self.run_check(FREE, rows_after="wait")
         self.assertEqual(log, ["select", "rows", "ctrlc", "start-locked"], out)
         ms = int(out.split("CHECK SELECTED generation 1 ms ")[1].split()[0])
@@ -310,8 +311,8 @@ class LivePageCheckTests(unittest.TestCase):
         os.makedirs(package)
         script = os.path.join(package, "live-page-check.ps1")
         shutil.copyfile(SCRIPT, script)
-        os.makedirs(os.path.join(self.repo, "tests"))
-        checker = os.path.join(self.repo, "tests", "live-page-check.cjs")
+        os.makedirs(os.path.join(self.repo, "tools", "test", "node"))
+        checker = os.path.join(self.repo, "tools", "test", "node", "live-page-check.cjs")
         shutil.copyfile(self.check, checker)
         rc, out, log = self.run_check(FREE, script=script, check=False)
         self.assertEqual(rc, 0, out)

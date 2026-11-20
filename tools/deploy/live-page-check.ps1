@@ -1,10 +1,10 @@
-# Runs tests/live-page-check.cjs against the
+# Runs tools/test/node/live-page-check.cjs against the
 # station installed on this PC, and gives it the one real restart it asks for, after it has
 # watched the page for several periods. It keys nothing.
 #   live-page-check.ps1 -Repo <repository root> -Shared <git common dir>\harness-parallel
 #                       -AgentClient <agent-client.ps1> [-WaitSeconds 300] [-Station <folder>]
 # It derives no path from its own location, so it runs from a station package as well: the check
-# is <Repo>\tests\live-page-check.cjs (with the repository's node_modules), the radio lease is
+# is <Repo>\tools\test\node\live-page-check.cjs (with the repository's node_modules), the radio lease is
 # <Shared>\radio\lease.json.
 # The restart happens only while /transmit is disarmed, not transmitting and PTT released, /contact
 # has no running contact, /automation has no active run, no update runs and nobody holds the radio
@@ -26,7 +26,7 @@
 # but a live trigger (restart generation, worked-before tip) was not on screen (the PAGE CHECK
 # line says which).
 param([Parameter(Mandatory)][string]$Repo, [Parameter(Mandatory)][string]$Shared, [Parameter(Mandatory)][string]$AgentClient,
-      [int]$WaitSeconds = 300, [string]$Station, [string]$Check = 'tests/live-page-check.cjs',
+      [int]$WaitSeconds = 300, [string]$Station, [string]$Check = 'tools/test/node/live-page-check.cjs',
       [string]$TaskName = 'WSTX Rust Station HB9BLA')
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
 

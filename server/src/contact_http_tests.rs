@@ -1442,7 +1442,7 @@ async fn contact_browser_operating_flow() {
 #[cfg(not(debug_assertions))]
 async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     let filter: Vec<String> = filter.iter().map(|f| f.to_string()).collect();
-    let listener = crate::test_ports::browser_listener();
+    let listener = wstx_test_tools::ports::browser_listener();
     let address = listener.local_addr().unwrap();
     let origin = format!("http://{address}");
     let f = Arc::new(fixture(&origin, true));
@@ -1468,7 +1468,7 @@ async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
         })
     };
     // Test-only control peer: publishes hand-authored periods on request.
-    let control = crate::test_ports::browser_listener();
+    let control = wstx_test_tools::ports::browser_listener();
     let control_origin = format!("http://{}", control.local_addr().unwrap());
     let publisher = f.clone();
     let tuner = f.clone();

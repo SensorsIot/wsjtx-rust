@@ -25,7 +25,7 @@ hooks:
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
 <!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
 <!-- source harness/general/lang/javascript/standard.md sha256=018b21f4d1ed383044ccc31e6c7fc66e8c9cb07b6f3c8d54cee8c17f5b796265 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9724cb1402cd010b50fcd115c5a06c3de2a024a88cea736c20ddb19c15bf4486 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=fe7509db8903a1aa47a0b0ff12dc8666df5390073314defa74d0ad6fffd28413 -->
 <!-- harness-role-policy {"commands": ["gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "gh issue comment {issue} --body 'Ready: (PASS|not yet) \u2014 [0-9a-f]{7,40}( \\(renewed from [0-9a-f]{7,40}\\))?(\\n[^']*)?'", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "git (log|show|diff|rev-parse|merge-base|ls-tree|cat-file)(?!.*--output)( .*)?"], "writes": [], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{session}/**"]} -->
 
 You did not write this issue. Do [Check](../../harness/general/core/docs/CR-Process.md#check), or its renewal
@@ -96,4 +96,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{session}/**`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=f0edb1707db30216638e9a490c522cb16400732471011593eca5eadc362f5121 -->
+<!-- harness-agent-v1 sha256=5fbf6d4933dc1675c1cae979d0e245e05e7421081c864bdf418b3bd09023b7e4 -->

@@ -2,8 +2,8 @@
   "name": "wstx-rust-integration-tests",
   "private": true,
   "scripts": {
-    "test": "node --test --test-concurrency=1 tests/communication.test.cjs tests/profiles.test.cjs",
-    "test:recording": "node --test --test-concurrency=1 tests/profile/recording-fixtures.test.cjs tests/recording.test.cjs"
+    "test": "node --test --test-concurrency=1 tests/communication.test.cjs tests/profiles.test.cjs tools/test/node/support.test.cjs tools/test/node/peer.test.cjs tools/test/node/audio-endpoints-route.test.cjs",
+    "test:recording": "node --test --test-concurrency=1 tests/profile/recording-fixtures.test.cjs tools/recording-fixtures.test.cjs tests/recording.test.cjs"
   },
   "devDependencies": {
     "playwright": "1.64.1",

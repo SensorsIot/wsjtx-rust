@@ -64,8 +64,6 @@ mod contest;
 mod most_wanted;
 mod spectrum;
 mod strategy;
-#[cfg(test)]
-mod test_ports;
 mod transmit_http;
 #[path = "operating/qso/udp.rs"]
 mod udp;

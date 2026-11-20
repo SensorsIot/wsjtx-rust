@@ -26,8 +26,6 @@ mod payload;
 mod physical_ft4;
 #[path = "../modes/decoder/physical_sync.rs"]
 mod physical_sync;
-#[cfg(test)]
-mod resource_observer;
 mod search;
 #[path = "../modes/decoder/snr.rs"]
 mod snr;

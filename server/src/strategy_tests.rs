@@ -7896,7 +7896,8 @@ fn ft4(e: i64, index: i64) -> i64 {
 }
 
 /// The reference vector of TC-039-050 (a): server/tests/vectors/freeslot/roll_off_ft4.json, the
-/// independent numpy fit and choice of roll_off_ft4.py next to it (its source and tolerance in it).
+/// independent numpy fit and choice of fixtures/freeslot/roll_off_ft4.py (its source and
+/// tolerance in it).
 fn roll_off_vector() -> Value {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/vectors/freeslot/roll_off_ft4.json");
@@ -7938,8 +7939,9 @@ async fn in_open(f: &Mcp, hz: u64) -> bool {
 const K1ABC_2400: (&str, f64, Option<f64>) = ("CQ K1ABC FN42", 2400.0, Some(-5.0));
 
 /// `with_aa3b` with an undecoded FT4 station 18 dB above it at 1500.5..1590.5 Hz (bins 513..542),
-/// on the current Tx (level and position as roll_off_ft4.py's: every deciding candidate 0.1 dB from
-/// a half dB, and the same choice under the rule of the rise over each slot's usual level).
+/// on the current Tx (level and position as fixtures/freeslot/roll_off_ft4.py's: every deciding
+/// candidate 0.1 dB from a half dB, and the same choice under the rule of the rise over each
+/// slot's usual level).
 fn with_station(hz: f64) -> f64 {
     with_aa3b(hz)
         + if (1500.5..1590.5).contains(&hz) {
@@ -7954,7 +7956,8 @@ fn with_station(hz: f64) -> f64 {
 // slots read about 2 dB below it), AA3B 12 dB above it at 2621..2711 Hz, not decoded, in my 4
 // counted Rx periods (my Tx-parity periods without him); the selection of KC8ZPI (513 Hz) from Tx
 // 1500, twice. Oracle: the reference vector, an independent numpy fit of each run's floor and the
-// choice it implies (roll_off_ft4.py), whose tables are the test's; and the rule by hand: at or
+// choice it implies (fixtures/freeslot/roll_off_ft4.py), whose tables are the test's; and the
+// rule by hand: at or
 // under the floor a slot is free, 0 ("At or under floor = free"), so the roll-off slots are no
 // quieter than the free mid-band. Tx 1500 on the flat floor: kept, power_db 0. Tx 1500 on a station
 // 18 dB above the floor at 1500.5..1590.5: to the free slot nearest it, the vector's (a slot holding

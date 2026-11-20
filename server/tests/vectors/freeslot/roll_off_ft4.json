@@ -1,6 +1,6 @@
 {
  "case": "tc_039_050_a_ft4_roll_off",
- "source": "server/tests/vectors/freeslot/roll_off_ft4.py, numpy 2.4.2 numpy.polynomial.Polynomial.fit (least squares, degree 4), Python 3.12.10; floor within tolerance_db, choice exact",
+ "source": "fixtures/freeslot/roll_off_ft4.py, numpy 2.4.2 numpy.polynomial.Polynomial.fit (least squares, degree 4), Python 3.12.10; floor within tolerance_db, choice exact",
  "tolerance_db": 1e-06,
  "first_bin": 103,
  "runs": [

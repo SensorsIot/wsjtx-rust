@@ -46,7 +46,6 @@ fn exact_registry_portname_fallback_never_uses_friendly_names_or_disagreement() 
         Ok(true)
     );
 }
-#[test]
 fn identity_lease_child_probe() {
     if let Some(path) = std::env::var_os("WSTX_TEST_CAT_LOCK_ROOT") {
         assert!(matches!(
@@ -57,6 +56,9 @@ fn identity_lease_child_probe() {
 }
 #[test]
 fn physical_identity_lease_conflicts_across_processes_and_case_aliases() {
+    if std::env::var_os("WSTX_TEST_CAT_LOCK_ROOT").is_some() {
+        return identity_lease_child_probe();
+    }
     let root = std::env::temp_dir().join(format!(
         "wstx-cat-lock-{}-{}",
         std::process::id(),
@@ -64,7 +66,10 @@ fn physical_identity_lease_conflicts_across_processes_and_case_aliases() {
     ));
     let lease = claim_identity("USB\\VID_10C4&PID_EA60\\FIXTURE", &root).unwrap();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "identity_lease_child_probe"])
+        .args([
+            "--exact",
+            "physical_identity_lease_conflicts_across_processes_and_case_aliases",
+        ])
         .env("WSTX_TEST_CAT_LOCK_ROOT", &root)
         .status()
         .unwrap();

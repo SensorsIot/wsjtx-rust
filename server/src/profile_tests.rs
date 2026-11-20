@@ -1,9 +1,7 @@
 use super::*;
 use std::cell::Cell;
-// Each test module of the station executable includes the test-only reader itself.
-#[allow(dead_code, clippy::duplicate_mod)]
-#[path = "model_values.rs"]
-mod model_values;
+// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+use wstx_test_tools::model_values;
 
 /// A launch refusal the model lists: the name is checked against the members of
 /// `WstxStartup::StartupOutcome`, written as `WstxStationLink::WireNames` says, so a test

@@ -11,13 +11,14 @@ const http = require('node:http');
 const https = require('node:https');
 const {spawn, execFileSync} = require('node:child_process');
 const {once} = require('node:events');
-const {listenBrowser, stationEnv} = require('./support.cjs');
+const {listenBrowser, stationEnv} = require('../tools/test/node/support.cjs');
 const crypto = require('node:crypto');
 const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
 const WebSocket = require('ws');
-const {receive} = require('./peer.cjs');
-const {openModel} = require('./model-values.cjs');
+const {receive} = require('../tools/test/node/peer.cjs');
+const {openModel} = require('../tools/test/node/model-values.cjs');
+const {routeAudioEndpoints} = require('../tools/test/node/audio-endpoints-route.cjs');
 let root, browser, tls, retainFixtureRoot = false;
 // The bounds of a saved profile (WstxProfileAccess::ProfileLimits), read where a test uses them.
 const profileValue = name => openModel().numberWithUnit(`WstxProfileAccess::ProfileLimits::${name}`);
@@ -150,14 +151,8 @@ async function browserWindows(t, profiles) {
   const context = await browser.newContext({ignoreHTTPSErrors: true}); t.after(() => context.close());
   // CL-044-08: the audio selects offer only listed endpoints; the fixture endpoints are listed by a
   // route (no audio device is read for them), in place of the station's own listing.
-  await context.route('**/audio/endpoints', async route => {
-    // A station stopped with its window open (mid-test or at teardown) refuses, as it really would.
-    try {
-      const origin = new URL(route.request().url()).origin, profile = await (await route.fetch({url: origin + '/profile', method: 'GET'})).json();
-      const entry = (id, label) => ({id, name: label, label, present: true, radio: null});
-      await route.fulfill({json: {v: 1, profile_id: profile.profile_id, boot_id: profile.boot_id, inputs: [entry(captureId(91), 'Fixture input 91')], outputs: [entry(renderId(97), 'Fixture output 97')]}});
-    } catch {await route.abort('connectionrefused').catch(() => {});}
-  });
+  const entry = (id, label) => ({id, name: label, label, present: true, radio: null});
+  await routeAudioEndpoints(context, [entry(captureId(91), 'Fixture input 91')], [entry(renderId(97), 'Fixture output 97')]);
   const launcher = await context.newPage(), pages = [];
   for (const p of profiles) {const opened = context.waitForEvent('page'); await launcher.evaluate(({url, name}) => {window.open(url, name, 'popup,width=1100,height=850');}, {url: p.origin, name: p.document.profile_id}); pages.push(await opened);}
   await launcher.close(); return {context, pages};
@@ -2377,40 +2372,6 @@ test('status readiness survives held settings HTTP with bounded refresh', {timeo
   await failed.goto(profiles[0].origin);
   await failed.locator('#connection').filter({hasText: 'could not load saved settings.'}).waitFor();
   assert.notEqual(await failed.locator('#connection').getAttribute('data-state'), 'connected');
-});
-
-// Proves the suite's route for /audio/endpoints: a station stopped with its window open refuses,
-// mid-test or at teardown, and is no unhandled rejection after the test ended.
-test('suite audio endpoint route refuses for a stopped station', {timeout: 30000}, async t => {
-  const {profiles} = await fixture(t), {pages} = await browserWindows(t, profiles);
-  await profiles[0].app.close();
-  const outcome = await pages[0].evaluate(() => fetch('/audio/endpoints').then(() => 'answered', () => 'refused'));
-  assert.equal(outcome, 'refused');
-});
-
-// Test isolation: a station a suite starts claims its profile
-// UUID in the run's own account-local data, never in the account's shared one: the same
-// UUID held there by a concurrent run (another checkout's suite or gate, started with the
-// account's environment) does not refuse it with profile_in_use.
-test('suite stations own profile UUIDs in per-run station data', {timeout: 30000}, async t => {
-  const base = await fs.mkdtemp(path.join(root, 'isolation-')), [heldPort, ownPort] = await ports(2), id = crypto.randomUUID();
-  const profile = async (name, port) => {
-    const dir = path.join(base, name), origin = `http://127.0.0.1:${port}`;
-    await fs.mkdir(dir); await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify({schema_version: 1, profile_id: id, revision: 0, ...settings(1), endpoint: {bind: `127.0.0.1:${port}`, origin: null}, connection_type: 'standard'}));
-    return {dir, origin};
-  };
-  const account = {...process.env}; for (const key of Object.keys(account)) if (key.startsWith('WSTX_')) delete account[key];
-  const held = await profile('held', heldPort), heldLock = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'wstx-rust-profile-locks', `${id}.lock`);
-  const other = spawn(exe, ['--profile', held.dir], {env: {...account, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', WSTX_PSKR: 'off', WSTX_RADIO_DISCOVERY: 'off'}, windowsHide: true});
-  let otherOutput = ''; other.stdout.on('data', b => {otherOutput += b;}); other.stderr.on('data', b => {otherOutput += b;});
-  t.after(async () => {if (other.exitCode === null && other.signalCode === null) {other.kill(); await once(other, 'exit');} await fs.rm(heldLock, {force: true});});
-  const deadline = Date.now() + 10000;
-  while (!otherOutput.includes(`WSTX listening ${held.origin}`)) {
-    assert.ok(other.exitCode === null && Date.now() < deadline, 'concurrent run readiness failed: ' + otherOutput);
-    await new Promise(r => setTimeout(r, 20));
-  }
-  const app = await start(await profile('own', ownPort)); t.after(() => app.close());
-  assert.equal((await request(`http://127.0.0.1:${ownPort}`)).body.profile_id, id);
 });
 
 // A constructed freeze: an open page

@@ -499,15 +499,14 @@ fn payload_layout_witnesses() -> Vec<(String, &'static str, Decode)> {
 }
 
 // Direct library capacity evidence. Never invoked by an ordinary test selection.
-#[test]
-#[ignore = "requires reviewed retained-handle parent and pinned inputs"]
 #[cfg(not(debug_assertions))]
 fn resource_capacity_owned_child() {
-    use crate::decoder::{history, resource_observer as observer};
+    use crate::decoder::history;
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     };
+    use wstx_test_tools::resource_observer as observer;
     let nonce = std::env::var("WSTX_RESOURCE_CAPACITY_NONCE").expect("owned parent required");
     assert!(nonce.len() == 32 && nonce.bytes().all(|c| c.is_ascii_hexdigit()));
     let handshake = |state: &str, reply: &str| {
@@ -650,7 +649,7 @@ fn resource_capacity_owned_child() {
                 seen.capacity()*std::mem::size_of::<(String,u64)>()+seen.iter().map(|s|s.0.capacity()).sum::<usize>(),
             "is_decoded_success":false,"internal_search_heap_maximum_exercised":false})
         );
-        let base = observer::pinned_samples_no_probe(mode);
+        let base = observer::pinned_samples_no_probe(if mode == Mode::Ft8 { "ft8" } else { "ft4" });
         let samples = base
             .iter()
             .copied()
@@ -907,13 +906,17 @@ fn resource_candidate_and_sic_reserved_storage_ledger() {
 #[test]
 #[cfg(not(debug_assertions))]
 fn resource_phase_detection_observes_work_without_publishing() {
-    use crate::decoder::resource_observer::{self, Phase};
+    if std::env::var_os("WSTX_RESOURCE_CAPACITY_NONCE").is_some() {
+        return resource_capacity_owned_child();
+    }
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     };
+    use wstx_test_tools::resource_observer::{self, Phase};
     for mode in [Mode::Ft8, Mode::Ft4] {
-        let samples = resource_observer::pinned_samples(mode);
+        let samples =
+            resource_observer::pinned_samples(if mode == Mode::Ft8 { "ft8" } else { "ft4" });
         for scalar in [false, true] {
             let decoder = if scalar {
                 Decoder::with_scalar_transform()

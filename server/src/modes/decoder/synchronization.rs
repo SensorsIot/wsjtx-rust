@@ -235,7 +235,9 @@ impl Spectrum {
             budget.checkpoint().await?;
             row?;
             #[cfg(test)]
-            super::resource_observer::hit(super::resource_observer::Phase::DetectionRow);
+            wstx_test_tools::resource_observer::hit(
+                wstx_test_tools::resource_observer::Phase::DetectionRow,
+            );
         }
         budget.checkpoint().await?;
         let sync = mode.sync();

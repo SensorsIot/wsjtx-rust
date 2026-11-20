@@ -7,9 +7,7 @@ mod native_fixture;
 use native_fixture::{NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES};
 // The test-only model-value reader (Project-Specifics, "Model values read by tests").
 #[cfg(all(windows, not(debug_assertions)))]
-#[allow(dead_code, clippy::duplicate_mod)]
-#[path = "model_values.rs"]
-mod model_values;
+use wstx_test_tools::model_values;
 
 /// A value of WstxDecode::DecodeBudgets, read from the model.
 #[cfg(all(windows, not(debug_assertions)))]
@@ -224,7 +222,7 @@ async fn live_native_browser_mode(mode: &str) {
         profile::new_uuid().unwrap()
     ));
     std::fs::create_dir(&dir).unwrap();
-    let listener = crate::test_ports::browser_listener();
+    let listener = wstx_test_tools::ports::browser_listener();
     let address = listener.local_addr().unwrap();
     let origin = format!("http://{address}");
     let profile_id = profile::new_uuid().unwrap();
@@ -539,7 +537,7 @@ impl KeptPageBoot {
 fn live_native_page_kept_across_restart() {
     let dir = std::env::temp_dir().join(format!("wstx-page-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
-    let listener = crate::test_ports::first_allowed(
+    let listener = wstx_test_tools::ports::first_allowed(
         || std::net::TcpListener::bind("127.0.0.1:0").unwrap(),
         |l| l.local_addr().unwrap().port(),
     );
@@ -627,7 +625,7 @@ async fn live_native_busy_period_rows_promptly() {
     let input = BusyPeriodInput::load(period.clone());
     let dir = std::env::temp_dir().join(format!("wstx-busy-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
-    let listener = crate::test_ports::browser_listener();
+    let listener = wstx_test_tools::ports::browser_listener();
     let address = listener.local_addr().unwrap();
     let origin = format!("http://{address}");
     let profile_id = profile::new_uuid().unwrap();
@@ -875,7 +873,7 @@ impl StationMetrics {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
-            .join("tools/windows_process_metrics.py")
+            .join("tools/test/python/windows_process_metrics.py")
     }
     /// The existing metrics helper binds this waiting test process by its creation time.
     fn bind_self() -> Self {
