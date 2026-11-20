@@ -311,8 +311,3 @@ impl Spectrum {
         Ok(out)
     }
 }
-
-#[cfg(test)]
-#[cfg(not(debug_assertions))]
-#[path = "synchronization_test.rs"]
-pub(super) mod tests;

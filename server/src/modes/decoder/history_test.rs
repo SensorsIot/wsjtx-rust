@@ -2,13 +2,13 @@ use super::*;
 
 /// Real fixed-table graphs plus the `old_inline` array of one lists() reallocation.
 /// MaybeUninit slots represent moved String headers, never duplicate String owners.
-pub(in super::super) struct UnpackTableReserve {
+struct UnpackTableReserve {
     sections: Vec<String>,
     states: Vec<String>,
     old_inline: Vec<std::mem::MaybeUninit<String>>,
 }
 impl UnpackTableReserve {
-    pub(in super::super) fn new() -> Self {
+    fn new() -> Self {
         let sections: Vec<String> = serde_json::from_str(include_str!(
             "../../../../fixtures/decoder/protocol-data/arrl_rac_sections.json"
         ))
@@ -48,13 +48,13 @@ impl UnpackTableReserve {
             old_inline,
         }
     }
-    pub(in super::super) fn retain(&self) {
+    fn retain(&self) {
         std::hint::black_box((&self.sections, &self.states, &self.old_inline));
     }
 }
 
 /// Inspect only real unpack-created String owners; inline enums are not heap owners.
-pub(in super::super) fn record_string_paths(record: &Decode) -> Vec<(&'static str, &String)> {
+fn record_string_paths(record: &Decode) -> Vec<(&'static str, &String)> {
     use super::super::{Call, Exchange, Fields};
     fn call<'a>(out: &mut Vec<(&'static str, &'a String)>, path: &'static str, call: &'a Call) {
         if let Some(s) = &call.text {
@@ -137,11 +137,7 @@ pub(in super::super) fn record_string_paths(record: &Decode) -> Vec<(&'static st
     out
 }
 
-pub(in super::super) fn string_layout_ledger(
-    label: &str,
-    variant: &str,
-    record: &Decode,
-) -> serde_json::Value {
+fn string_layout_ledger(label: &str, variant: &str, record: &Decode) -> serde_json::Value {
     let strings = record_string_paths(record);
     let reserved = strings.iter().map(|(_, s)| s.capacity()).sum::<usize>();
     assert_eq!(reserved, retained_record_bytes(record));
@@ -161,7 +157,7 @@ pub(in super::super) fn string_layout_ledger(
 }
 
 /// Actual heap capacities, not serialized byte charges or decoded observations.
-pub(in super::super) fn retained_record_bytes(record: &Decode) -> usize {
+fn retained_record_bytes(record: &Decode) -> usize {
     use super::super::{Call, Exchange, Fields};
     fn call(c: &Call) -> usize {
         c.text.as_ref().map_or(0, String::capacity)
@@ -212,9 +208,7 @@ pub(in super::super) fn retained_record_bytes(record: &Decode) -> usize {
         })
 }
 
-pub(in super::super) fn capacity_state(
-    mode: Mode,
-) -> (DecodeState, Vec<Decode>, serde_json::Value) {
+fn capacity_state(mode: Mode) -> (DecodeState, Vec<Decode>, serde_json::Value) {
     let mut state = DecodeState::new_live(mode);
     let mut records = Vec::new();
     let mut setup_callbacks = 0;

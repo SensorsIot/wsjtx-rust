@@ -200,7 +200,7 @@ pub fn pinned_samples(name: &str) -> Vec<f32> {
     pinned_samples_no_probe(name)
 }
 
-/// The capacity child's parent verifies the immutable WAV hash before launch.
+/// Reads the pinned WAV without checking its hash; `pinned_samples` checks it first.
 /// This reader deliberately never starts a verifier/probe descendant.
 #[cfg(not(debug_assertions))]
 pub fn pinned_samples_no_probe(name: &str) -> Vec<f32> {
