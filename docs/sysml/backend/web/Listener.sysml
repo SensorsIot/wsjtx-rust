@@ -152,7 +152,7 @@ package WstxListener {
         subject web : WebAdapter;
         doc /* web MUST bound its sockets and their output and close a silent socket as
              BoundsRule says. */
-        @Status { build = ImplementationState::partial; }
+        @Status { build = ImplementationState::implemented; }
     }
     #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-003-06'; }
 
@@ -217,12 +217,24 @@ package WstxListener {
         }
     }
     verification 'TC-021-008' {
-        doc /* A silent socket is closed. */
+        doc /*
+    A socket beyond the bound is refused; a silent or stalled socket is closed and delays no other.
+        */
         subject web : WebAdapter;
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-06'; }
-        @TestedBy { test = "server/src/web/liveness_tests.rs"; }
+        @TestedBy {
+            test = "server/src/web/liveness_tests.rs; "
+                + "server/src/web/socket_bounds_tests.rs::"
+                + "a_socket_beyond_16_is_refused_with_503_and_the_16_keep_answering; "
+                + "server/src/web/socket_bounds_tests.rs::"
+                + "a_socket_that_takes_no_output_for_2_s_is_closed_and_delays_no_other; "
+                + "server/src/web/socket_bounds_tests.rs::"
+                + "a_socket_whose_event_stays_unflushed_for_2_s_is_closed; "
+                + "server/src/protocol_tests.rs::"
+                + "optional_readiness_skips_without_waiting_and_retains_at_most_one_frame";
+        }
     }
     verification 'TC-007-005' {
         doc /* The views as events, without reads on a timer. */

@@ -2,7 +2,7 @@ use super::reply;
 use serde_json::{Value, json};
 
 // Controlled transport readiness, independent of OS socket buffering.
-// Proves: TC-010-002
+// Proves: TC-010-002, TC-021-008
 #[test]
 fn optional_readiness_skips_without_waiting_and_retains_at_most_one_frame() {
     use super::{Message, optional_flush, optional_write};
