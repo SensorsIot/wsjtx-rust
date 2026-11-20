@@ -1,50 +1,55 @@
-//! Test-thread-local observation of real work; only the caller's cancel token may change.
+//! Observation of real work through the decoder's own cancel callback, its port for
+//! cancellation: a cancel point answers `false` for its first `n` calls and `true` after.
 use std::{
-    cell::RefCell,
-    marker::PhantomData,
-    rc::Rc,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Phase {
-    DetectionRow,
-    FecCheck,
-    FecRow,
-    FecIteration,
-    RecoveryRank,
-    RecoveryCheck,
-    RecoveryTrial,
-    SubtractionForward,
-    SubtractionCommit,
+#[derive(Default)]
+struct Answers {
+    calls: usize,
+    last_false: Option<Instant>,
+    first_true: Option<Instant>,
 }
-#[derive(Clone, Default)]
-pub struct Report {
-    pub counts: [usize; 9],
-    pub first_fec_word: Option<[u8; 174]>,
-    pub cancelled_at: Option<Instant>,
+/// A cancel callback of plain values: `false` for its first `n` calls, `true` from call
+/// n + 1 on, counting calls from every thread.
+pub struct CancelPoint {
+    n: usize,
+    answers: Mutex<Answers>,
 }
-struct Observer {
-    cancel: Arc<AtomicBool>,
-    cancel_on: Option<Phase>,
-    report: Arc<Mutex<Report>>,
-}
-thread_local! {
-    static CURRENT: RefCell<Option<Observer>> = const { RefCell::new(None) };
-}
-pub struct Guard {
-    previous: Option<Observer>,
-    report: Arc<Mutex<Report>>,
-    _thread: PhantomData<Rc<()>>,
-}
-impl Guard {
-    pub fn report(&self) -> Report {
-        self.report.lock().unwrap().clone()
+impl CancelPoint {
+    pub fn after(n: usize) -> Self {
+        Self {
+            n,
+            answers: Mutex::new(Answers::default()),
+        }
     }
+    /// The callback: one call of the decoder's `cancel()`.
+    pub fn cancelled(&self) -> bool {
+        let now = Instant::now();
+        let mut answers = self.answers.lock().unwrap();
+        answers.calls += 1;
+        let call = answers.calls;
+        if call == self.n.max(1) {
+            answers.last_false = Some(now);
+        }
+        let cancelled = call > self.n;
+        if cancelled {
+            answers.first_true.get_or_insert(now);
+        }
+        cancelled
+    }
+    pub fn calls(&self) -> usize {
+        self.answers.lock().unwrap().calls
+    }
+    /// The instant of call n, its last `false` answer; for `after(0)`, the instant of call 1.
+    pub fn last_false_at(&self) -> Option<Instant> {
+        self.answers.lock().unwrap().last_false
+    }
+    pub fn first_true_at(&self) -> Option<Instant> {
+        self.answers.lock().unwrap().first_true
+    }
+    /// Bounds the decoder's work from its last unanswered check (call n) to its return.
     pub fn record_return(
         &self,
         context: &serde_json::Value,
@@ -52,15 +57,13 @@ impl Guard {
         returned: Instant,
         kind: &str,
     ) {
-        let report = self.report();
-        let latency = report
-            .cancelled_at
-            .and_then(|accepted| returned.checked_duration_since(accepted));
+        let accepted = self.first_true_at().and(self.last_false_at());
+        let latency = accepted.and_then(|accepted| returned.checked_duration_since(accepted));
         eprintln!(
             "RESOURCE_PHASE_RETURN {}",
             serde_json::json!({"context":context,"invocation_kind":kind,
             "invocation_wall_seconds":returned.duration_since(started).as_secs_f64(),
-            "original_token_cancel_observed":report.cancelled_at.is_some(),
+            "original_token_cancel_observed":self.first_true_at().is_some(),
             "cancel_to_kernel_return_seconds":latency.map(|duration|duration.as_secs_f64()),
             "kernel_return_within250ms":latency.map(|duration|duration<=Duration::from_millis(250)),
             "cpu_time_measured":false,"manager_ack_release_or_terminal_proved":false})
@@ -74,38 +77,6 @@ impl Guard {
             "kernel cancellation-return exceeds necessary250ms sub-bound; this is not manager acceptance evidence"
         );
     }
-}
-impl Drop for Guard {
-    fn drop(&mut self) {
-        CURRENT.with(|slot| *slot.borrow_mut() = self.previous.take());
-    }
-}
-pub fn install(cancel: Arc<AtomicBool>, cancel_on: Option<Phase>) -> Guard {
-    let report = Arc::new(Mutex::new(Report::default()));
-    let previous = CURRENT.with(|slot| {
-        slot.replace(Some(Observer {
-            cancel,
-            cancel_on,
-            report: report.clone(),
-        }))
-    });
-    Guard {
-        previous,
-        report,
-        _thread: PhantomData,
-    }
-}
-pub fn hit(phase: Phase) {
-    CURRENT.with(|slot| {
-        if let Some(observer) = slot.borrow().as_ref() {
-            let mut report = observer.report.lock().unwrap();
-            report.counts[phase as usize] += 1;
-            if observer.cancel_on == Some(phase) {
-                report.cancelled_at.get_or_insert_with(Instant::now);
-                observer.cancel.store(true, Ordering::SeqCst);
-            }
-        }
-    });
 }
 
 #[cfg(not(debug_assertions))]
@@ -161,38 +132,42 @@ pub fn poll_to_completion<F: std::future::Future>(
         }
     }
 }
-pub fn fec_word(hard: [u8; 174]) {
-    hit(Phase::FecIteration);
-    CURRENT.with(|slot| {
-        if let Some(observer) = slot.borrow().as_ref() {
-            observer
-                .report
-                .lock()
-                .unwrap()
-                .first_fec_word
-                .get_or_insert(hard);
-        }
-    });
-}
-
 #[test]
-fn observer_is_thread_local_and_restores_nested_original_token() {
-    let original = Arc::new(AtomicBool::new(false));
-    let outer = install(original.clone(), Some(Phase::DetectionRow));
-    std::thread::spawn(|| hit(Phase::DetectionRow))
-        .join()
-        .unwrap();
-    assert!(!original.load(Ordering::SeqCst));
-    let nested = Arc::new(AtomicBool::new(false));
-    {
-        let _inner = install(nested.clone(), Some(Phase::DetectionRow));
-        hit(Phase::DetectionRow);
-        assert!(nested.load(Ordering::SeqCst));
-        assert!(!original.load(Ordering::SeqCst));
-    }
-    hit(Phase::DetectionRow);
-    assert!(original.load(Ordering::SeqCst));
-    assert_eq!(outer.report().counts[Phase::DetectionRow as usize], 1);
+fn cancel_point_answers_true_from_the_call_after_n() {
+    fn shared<T: Sync>(_: &T) {}
+    let point = CancelPoint::after(2);
+    shared(&point);
+    assert!(!point.cancelled());
+    assert_eq!(point.last_false_at(), None);
+    assert!(!point.cancelled());
+    let call_n = point
+        .last_false_at()
+        .expect("the instant of call n is set at call n");
+    assert_eq!(point.first_true_at(), None);
+    assert!(point.cancelled());
+    let first_true = point.first_true_at().expect("set at call n + 1");
+    assert!(first_true >= call_n);
+    assert!(point.cancelled());
+    assert_eq!(point.calls(), 4);
+    assert_eq!(point.last_false_at(), Some(call_n));
+    assert_eq!(point.first_true_at(), Some(first_true));
+
+    // Calls from two threads count together.
+    let point = CancelPoint::after(2);
+    std::thread::scope(|scope| {
+        scope.spawn(|| assert!(!point.cancelled()));
+    });
+    assert!(!point.cancelled());
+    std::thread::scope(|scope| {
+        scope.spawn(|| assert!(point.cancelled()));
+    });
+    assert_eq!(point.calls(), 3);
+
+    // after(0): call 1 answers true and is the instant the bound runs from.
+    let point = CancelPoint::after(0);
+    assert!(point.cancelled());
+    assert_eq!(point.last_false_at(), point.first_true_at());
+    assert!(point.last_false_at().is_some());
 }
 
 pub fn cases() -> serde_json::Value {

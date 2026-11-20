@@ -165,10 +165,6 @@ impl Spectrum {
         for row in transformed {
             budget.checkpoint().await?;
             row?;
-            #[cfg(test)]
-            wstx_test_tools::resource_observer::hit(
-                wstx_test_tools::resource_observer::Phase::DetectionRow,
-            );
         }
         budget.checkpoint().await?;
         let sync = mode.sync();

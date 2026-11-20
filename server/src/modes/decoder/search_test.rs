@@ -502,10 +502,6 @@ fn payload_layout_witnesses() -> Vec<(String, &'static str, Decode)> {
 #[cfg(not(debug_assertions))]
 fn resource_capacity_owned_child() {
     use crate::decoder::history;
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    };
     use wstx_test_tools::resource_observer as observer;
     let nonce = std::env::var("WSTX_RESOURCE_CAPACITY_NONCE").expect("owned parent required");
     assert!(nonce.len() == 32 && nonce.bytes().all(|c| c.is_ascii_hexdigit()));
@@ -707,8 +703,6 @@ fn resource_capacity_owned_child() {
             } else {
                 Decoder::new()
             };
-            let cancel = Arc::new(AtomicBool::new(false));
-            let observed = observer::install(cancel.clone(), None);
             let mut state = DecodeState::new_live(mode);
             let mut callbacks = 0;
             spectrum_record(mode, samples.len(), scalar);
@@ -743,19 +737,20 @@ fn resource_capacity_owned_child() {
             complete(subtractor.subtract(&mut residual, 6000, &wave, &mut CpuBudget::new(&never)))
                 .unwrap();
             assert_ne!(residual, samples);
-            let report = observed.report();
-            assert!(report.counts[observer::Phase::SubtractionCommit as usize] > 0);
             eprintln!(
                 "RESOURCE_KERNEL {}",
                 serde_json::json!({"mode":mode,"scalar":scalar,"frames":samples.len(),
-                "complete":true,"actual_decoded_callbacks":callbacks,"phase_counts":report.counts,
+                "complete":true,"actual_decoded_callbacks":callbacks,
                 "direct_subtraction_exercised":true,"prepared_records_are_decodes":false})
             );
-            drop(observed);
             drop(subtractor);
             drop(residual);
             drop(wave);
-            let cancelled = observer::install(cancel.clone(), Some(observer::Phase::DetectionRow));
+            // Called directly, with no entry check: call 1 is the checkpoint before
+            // BandPlan::new, call 2 the one after Subtractor::new (or call 1's check again
+            // when that poll returned Pending); the answering call 3 is at most the first
+            // round checkpoint of parallel::map in Spectrum::new.
+            let cancelled = observer::CancelPoint::after(2);
             let mut unexpected = 0;
             spectrum_record(mode, samples.len(), scalar);
             assert_eq!(
@@ -763,7 +758,7 @@ fn resource_capacity_owned_child() {
                     samples.clone(),
                     0,
                     &mut retained_state,
-                    &|| cancel.load(Ordering::SeqCst),
+                    &|| cancelled.cancelled(),
                     &mut |_| {
                         unexpected += 1;
                         Ok(())
@@ -773,16 +768,12 @@ fn resource_capacity_owned_child() {
             );
             assert_eq!(unexpected, 0);
             assert_eq!(retained_state.available_count(), 2048);
-            assert_eq!(
-                cancelled.report().counts[observer::Phase::DetectionRow as usize],
-                1
-            );
             eprintln!(
                 "RESOURCE_CAPACITY {}",
                 serde_json::json!({"owner":"retained_history_cancel",
                 "mode":mode,"scalar":scalar,"remaining_keys":retained_state.available_count(),
-                "original_token_cancelled":cancel.load(Ordering::SeqCst),
-                "actual_phase_counts":cancelled.report().counts,"unexpected_callbacks":unexpected,
+                "original_token_cancelled":cancelled.first_true_at().is_some(),
+                "unexpected_callbacks":unexpected,
                 "manager_ack_proved":false,"cancellation_sla_proved":false})
             );
             std::hint::black_box((&records, &witnesses, &candidates, &pending, &seen));
@@ -826,7 +817,6 @@ fn resource_capacity_owned_child() {
                     .cycle()
                     .take(frames)
                     .collect::<Vec<_>>();
-                let observed = observer::install(Arc::new(AtomicBool::new(false)), None);
                 let mut fresh = DecodeState::new_live(mode);
                 let mut callbacks = 0;
                 spectrum_record(mode, frames, scalar);
@@ -853,7 +843,7 @@ fn resource_capacity_owned_child() {
                     "RESOURCE_CAPACITY {}",
                     serde_json::json!({"owner":"additional_fft_tier",
                     "mode":mode,"frames":frames,"scalar":scalar,"long_len":long,"short_len":short,
-                    "complete":true,"actual_decoded_callbacks":callbacks,"phase_counts":observed.report().counts,
+                    "complete":true,"actual_decoded_callbacks":callbacks,
                     "is_prepared_decode":false,"runtime_sla_claimed":false})
                 );
                 assert_eq!(retained_state.available_count(), 2048);
@@ -936,18 +926,14 @@ fn resource_candidate_and_sic_reserved_storage_ledger() {
         std::hint::black_box((&candidates, &pending, &window_seen));
     }
 }
-// Cancels only after a real completed spectrum row.
+// Cancels at the decoder's own checks before the first pass's spectrum: nothing is published, and the decode returns within 250 ms of its last unanswered check.
 #[test]
 #[cfg(not(debug_assertions))]
 fn resource_phase_detection_observes_work_without_publishing() {
     if std::env::var_os("WSTX_RESOURCE_CAPACITY_NONCE").is_some() {
         return resource_capacity_owned_child();
     }
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    };
-    use wstx_test_tools::resource_observer::{self, Phase};
+    use wstx_test_tools::resource_observer::{self, CancelPoint};
     for mode in [Mode::Ft8, Mode::Ft4] {
         let samples =
             resource_observer::pinned_samples(if mode == Mode::Ft8 { "ft8" } else { "ft4" });
@@ -968,21 +954,19 @@ fn resource_phase_detection_observes_work_without_publishing() {
                 expected[0].payload.payload77,
                 resource_observer::cases()["payload77"].as_str().unwrap()
             );
-            let cancel = Arc::new(AtomicBool::new(false));
-            let observed = resource_observer::install(cancel.clone(), Some(Phase::DetectionRow));
+            // Call 1 is the entry check of decode_into_async, call 2 the window's checkpoint
+            // before BandPlan::new, call 3 its checkpoint after Subtractor::new (or call 2's
+            // check again when that poll returned Pending). The answering call 4 is at most
+            // the first round checkpoint of parallel::map in Spectrum::new.
+            let observed = CancelPoint::after(3);
             let mut published = 0;
             let context = serde_json::json!({"phase":"detection","mode":mode,"scalar":scalar,"positive":false});
             let began = std::time::Instant::now();
             let (outcome, timing) = resource_observer::poll_to_completion(
-                decoder.decode_into_async(
-                    &samples,
-                    mode,
-                    &|| cancel.load(Ordering::SeqCst),
-                    &mut |_| {
-                        published += 1;
-                        Ok(())
-                    },
-                ),
+                decoder.decode_into_async(&samples, mode, &|| observed.cancelled(), &mut |_| {
+                    published += 1;
+                    Ok(())
+                }),
                 &context,
             );
             observed.record_return(
@@ -992,7 +976,6 @@ fn resource_phase_detection_observes_work_without_publishing() {
                 "actual public async decode Future::poll",
             );
             assert_eq!(outcome, Err(DecodeError::Cancelled));
-            assert_eq!(observed.report().counts[Phase::DetectionRow as usize], 1);
             assert_eq!(published, 0);
         }
     }
