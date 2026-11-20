@@ -4310,14 +4310,30 @@ test('an open page reloads after the station restarts with another client build 
 // An update held by a QSO, a rejected snapshot and the reload chip.
 // Proves: TC-051-002
 test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot shows an error chip instead of a frozen screen',{timeout:60000},async t=>{
-  let contact=partner('calling'),reject=false,receiving;const bad={selection:false,results:false};
+  let contact=partner('calling'),reject=false,receiving,booted=Promise.resolve();const bad={selection:false,results:false};
+  // Every station read of the test is bounded below the page's 10 s and fails the test by name.
+  const failed=deferred(),readFailed=failed.promise.then(e=>{throw e;}),checked=p=>Promise.race([p,readFailed]);readFailed.catch(()=>{});
+  const readError=(method,path,e)=>new Error(`station read ${method} ${path} failed: ${e.message}${e.cause?.message?` (${e.cause.message})`:''}`);
+  async function stationRead(origin,path){
+    try{const response=await fetch(origin+path,{cache:'no-store',signal:AbortSignal.timeout(5000)});if(!response.ok)throw new Error(`HTTP ${response.status}`);return await response.json();}
+    catch(e){throw readError('GET',path,e);}
+  }
   const {page,app,errors,dir}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
     // A live FT8 job (no audio is opened) so result pages and waterfall frames apply.
-    await p.route('**/receive',async route=>{const json=await (await route.fetch()).json();if(!receiving||receiving.boot_id!==json.boot_id)receiving=liveFixture(json);await route.fulfill({json:reject?{...receiving,dxcc:null}:receiving});});
+    // The test reads the station itself, so no page request waits on a forward the driver makes to the station.
+    receiving=liveFixture(await stationRead(app.origin,'/receive'));
+    // The page's GET /recording of the real station names no live job and clears a live job taken before it.
+    await p.route('**/receive',async route=>{await booted;await p.waitForFunction(()=>typeof snapshot!=='undefined'&&snapshot&&!syncPending,null,{timeout:5000}).catch(()=>{});await route.fulfill({json:reject?{...receiving,dxcc:null}:receiving});});
     await p.route('**/receive/results?*',route=>route.fulfill({json:bad.results?{...emptyResults(receiving),dxcc:null}:emptyResults(receiving)}));
-    await p.route('**/receive/selection',async route=>{const json=await (await route.fetch()).json();await route.fulfill({json:bad.selection?{...json,dxcc:null}:json});});
+    await p.route('**/receive/selection',async route=>{
+      if(!bad.selection)return route.continue();
+      let json;
+      try{json=await (await route.fetch({timeout:5000})).json();}
+      catch(e){failed.resolve(readError(route.request().method(),new URL(route.request().url()).pathname,e));return route.abort().catch(()=>{});}
+      await route.fulfill({json:{...json,dxcc:null}});
+    });
   }});
   await page.waitForFunction(()=>typeof live!=='undefined'&&live?.job?.mode==='ft8'&&live.source);
   await page.waitForFunction(()=>window.wstxContact?.snapshot()?.contact?.state==='calling');
@@ -4329,7 +4345,7 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   reject=false;await page.evaluate(()=>receiveSync());await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
   // A result page and an operating selection snapshot of an unknown shape are named the same way.
   for(const [kind,read] of [['selection','operatingSync(true)'],['results','(lastResultStart=-Infinity,receiveResults())']]){
-    bad[kind]=true;await page.evaluate(read);await notice.filter({hasText:`(${kind})`}).waitFor();
+    bad[kind]=true;await checked(page.evaluate(read));await checked(notice.filter({hasText:`(${kind})`}).waitFor());
     bad[kind]=false;await page.evaluate(read);await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
   }
   // A waterfall frame of an unknown shape for the current job.
@@ -4345,7 +4361,9 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   await page.evaluate(()=>window.wstxContact.load());await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
   // The station is updated while calling CQ: no reload, the chip; its click reloads.
   const {state,restart}=await updatedStation(page,app,dir,t);
-  await restart('fedcba9876543210');
+  // A page read during the restart is answered with the new boot only, once the test has read it.
+  const boot=deferred();booted=boot.promise;
+  const {next}=await restart('fedcba9876543210');receiving=liveFixture(await stationRead(next.origin,'/receive'));boot.resolve();
   await notice.filter({hasText:'Station updated · reload'}).waitFor({timeout:30000});
   await page.waitForTimeout(1500);assert.equal(state.navigations,0,'a QSO in progress holds the reload');
   assert.equal(await notice.getAttribute('data-severity'),'warn');
