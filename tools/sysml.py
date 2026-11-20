@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import bisect
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import contextlib
@@ -1435,13 +1436,74 @@ class Side:
                 continue
             if b"\0" in data[:8192]:
                 continue
-            for number, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+            lines = data.decode("utf-8", "replace").splitlines(keepends=True)
+            # Each line with one "\n" as its end: the offsets of the string reader are line offsets.
+            lines = [line.rstrip("\r\n\v\f\x1c\x1d\x1e\x85  ") + "\n" for line in lines]
+            starts = [0]
+            for line in lines:
+                starts.append(starts[-1] + len(line))
+            strings = string_lookups(path, "".join(lines), tops) if strings_read(path) else None
+            spans = strings[0] if strings else []
+            for number, line in enumerate(lines, 1):
                 for match in QNAME.finditer(line):
-                    if match[0].split("::", 1)[0] in tops:
+                    at = starts[number - 1] + match.start()
+                    if match[0].split("::", 1)[0] in tops and not any(begin <= at < end for begin, end in spans):
                         found.add((path, number, "name", match[0]))
                 for match in MODEL_PATH.finditer(line):
                     found.add((path, number, "path", match[0].rstrip(".")))
+            if strings:
+                for kind, cited in (("lookup", strings[1]), ("joined", strings[2])):
+                    for at, name in cited:
+                        number = bisect.bisect_right(starts, at)
+                        if (path, number, "lookup", name) not in found:
+                            found.add((path, number, kind, name))
         return sorted(found)
+
+
+# P6 in test and tool strings: a lookup prefix (a qualified name ending in `::`), a name or a
+# relative qualified name, and the characters that open or close a string.
+LOOKUP_PREFIX = re.compile(r"(?<![\w':])(?:[A-Za-z_]\w*|'[^'\r\n]+')(?:::(?:[A-Za-z_]\w*|'[^'\r\n]+'))*::")
+RELATIVE_NAME = re.compile(r"(?:[A-Za-z_]\w*|'[^'\r\n]+')(?:::(?:[A-Za-z_]\w*|'[^'\r\n]+'))*")
+STRING_QUOTES = "'\"`“”„‘’‚‛"
+
+
+def string_lookups(path: str, source: str, tops: set[str]):
+    """P6 (TR-21) in the strings of the test or tool code `source` ("\\n" line ends):
+    ([(start, end)] of its string contents, [(offset, whole name)], [(offset, joined name)]), or
+    None when its strings cannot be read. A whole name is a qualified name starting with one of
+    `tops` inside a string's contents. A lookup prefix is a qualified name ending in `::` whose first segment is
+    in `tops`, followed by a `${` or `{` placeholder (`{{` is none) or by the end of its string;
+    each string literal whose whole text is a name or a relative qualified name not starting
+    with one of `tops` is joined to each prefix of the file, at the literal's offset."""
+    try:
+        spans = [(begin, end) for kind, begin, end in source_segments(path, source)[0] if kind == "string"]
+    except (SourceUnreadable, RecursionError):
+        return None
+    prefixes, literals, whole = set(), [], []
+    for begin, end in spans:
+        content = source[begin:end]
+        whole.extend((begin + match.start(), match[0]) for match in QNAME.finditer(content)
+                     if match[0].split("::", 1)[0] in tops)
+        for match in LOOKUP_PREFIX.finditer(content):
+            if match[0].split("::", 1)[0] not in tops:
+                continue
+            after = begin + match.end()
+            brace = source[after:after + 1] == "{" and source[after + 1:after + 2] != "{"
+            if brace or after == end and (source.startswith("${", after) or source[after:after + 1] in STRING_QUOTES):
+                prefixes.add(match[0])
+        if RELATIVE_NAME.fullmatch(content) and content.split("::", 1)[0] not in tops \
+                and begin > 0 and source[begin - 1] in STRING_QUOTES and source[end:end + 1] in STRING_QUOTES:
+            literals.append((begin, content))
+    return spans, whole, [(at, prefix + literal) for at, literal in literals for prefix in sorted(prefixes)]
+
+
+def declared(side: Side, citation: str) -> bool:
+    """Whether `citation` names an element declared on an exported side under that qualified
+    name: an entry of its export. A quoted segment names the element whose name it quotes."""
+    segments = re.findall(r"[A-Za-z_]\w*|'[^'\r\n]+'", citation)
+    key = "::".join(segment[1:-1] if segment.startswith("'") and re.fullmatch(r"[A-Za-z_]\w*", segment[1:-1])
+                    else segment for segment in segments)
+    return key in side.export["entries"]
 
 
 def run_export(side: Side, names: list[str], cache: Path, folder: Path) -> dict:
@@ -1705,7 +1767,7 @@ def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, 
                 exempt_counts[path] = exempt_counts.get(path, 0) + 1
             else:
                 differences.append(f"stale-by-change {path}:{line} {citation}")
-        elif not on_b and not on_h:
+        elif not on_b and not on_h and kind != "joined":
             info.append(f"unresolved {path}:{line} {citation}")
     lines = differences + moves + [f"pair {files[0]} -> {files[1]}: {count}" for files, count in sorted(pairs.items())] + info
     lines.append((f"{len(differences)} differences; {len(pair)} entries paired, {len(moves)} moved"
@@ -1716,9 +1778,13 @@ def compare(base: Side, head: Side, citations: list, exempt=None) -> tuple[int, 
 
 
 def on_side(side: Side, kind: str, citation: str) -> bool:
-    """Whether a citation resolves on an exported side: a name in its export, a path in its tree."""
+    """Whether a citation resolves on an exported side: a written name by the Pilot's
+    resolution, a lookup name of test or tool code (`lookup`, `joined`) by declaration, a path
+    in its tree."""
     if kind == "name":
         return side.export["resolved"].get(citation) is not None
+    if kind in ("lookup", "joined"):
+        return declared(side, citation)
     return (side.root / citation).exists()
 
 
@@ -1729,7 +1795,7 @@ def exemptions(pairs: list, citations: list) -> list[dict]:
     for (base, head), cited in zip(pairs, citations):
         marks = {}
         for path, line, kind, citation in cited:
-            if kind != "name" or not path.startswith(READERS) or not on_side(base, kind, citation) or on_side(head, kind, citation):
+            if kind == "path" or not path.startswith(READERS) or not on_side(base, kind, citation) or on_side(head, kind, citation):
                 continue
             if (id(head), path) not in readers:
                 try:

@@ -227,8 +227,17 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
 - **TR-21 Equivalence and identities.** `equivalence` exports each side with the Pilot and
   compares every named element by meaning; a citation of the model in the tracked files
   that resolved on the base and not on the head is a difference, except a name citation of
-  a fixture reader below `tools/sysml/tests/` of its own fixture package. Exit 0 equivalent,
-  1 differences, 2 cannot compare. `identities` lists each FR, CL and TC identity of two
+  a fixture reader below `tools/sysml/tests/` of its own fixture package. A name written in a
+  comment, in Markdown or in product code resolves as the Pilot resolves it (imports, aliases
+  and re-exports followed). In the string literals of test and tool code (as TR-22 reads
+  them) a name is a lookup citation and resolves on a side only where that side declares the
+  element under that qualified name: a whole qualified name in a string, and a composed name,
+  each string literal that is a name or a relative qualified name (not starting with a top
+  package) joined to each lookup prefix of the file. A lookup prefix is a qualified name
+  ending in `::` whose first segment is a top package, followed by a `${` or `{` placeholder
+  (`{{` is none) or by the end of its string. A composed name is cited at the literal's line
+  only when the base declares it. A file whose strings cannot be read adds no lookup
+  citation. Exit 0 equivalent, 1 differences, 2 cannot compare. `identities` lists each FR, CL and TC identity of two
   revisions as unchanged, moved, changed, added or removed.
 - **TR-22 History in comments.** `traces` reads every tracked `.rs`, `.js`, `.cjs`, `.mjs`,
   `.css`, `.html`, `.py`, `.ps1`, `.java`, `.sysml`, `.toml`, `.yml` and `.md` file below
@@ -526,3 +535,15 @@ run them are those of `harness/project/suites.yaml`.
 | TV-200 | TR-02 | `test_sysml.py` ValidatorRunTests.test_export_run_unchanged | the Pilot export keeps its 900 s limit and its 1 GB heap and prints no duration line. |
 | TV-201 | TR-02 | `test_real_model_structure.py` RealModelStructureTests.test_check_on_this_tree_prints_one_validator_duration | `check` on this tree passes and prints exactly one validator duration line with the limit 600 s, on stderr only. |
 | TV-202 | TR-02 | `test_sysml.py` ValidatorRunTests.test_traces_prints_no_duration_line | `traces` starts no Pilot and prints no duration line. |
+| TV-203 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_l1_javascript_template_prefix | L1: a JavaScript template prefix joined to a literal cites the moved element. |
+| TV-204 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_l2_rust_format_prefix | L2: a Rust format prefix joined to a literal, below server/tests/ and in a *_tests.rs module. |
+| TV-205 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_l3_python_prefix_and_joined_string | L3: a Python f-string prefix and a prefix ending its string, each joined to a literal. |
+| TV-206 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_l4_deeper_prefix_and_relative_name | L4: a deeper prefix and a relative qualified name give the composed line. |
+| TV-207 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_l5_declared_not_imported | L5: a lookup name is judged by declaration, a comment by resolution. |
+| TV-208 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n1_updated_reader | N1: readers rewritten to the new package cite nothing stale. |
+| TV-209 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n2_nothing_declared | N2: a joined name declared on neither side is no citation. |
+| TV-210 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n3_not_a_prefix | N3: other text after `::`, a comment and an escaped brace are no prefix. |
+| TV-211 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n4_not_test_or_tool_code | N4: the strings of product code hold no lookup prefix. |
+| TV-212 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n5_fixture_reader | N5: a lookup of a fixture reader's own package is exempt, of another package not. |
+| TV-213 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n6_whole_name_not_joined | N6: a literal that is a whole qualified name is not joined to a prefix. |
+| TV-214 | TR-21 | `test_equivalence.py` ReaderRecognitionTests.test_r_lookup_readers_of_this_repository | R-lookup: the composed names of the profile tests are lookup citations that resolve on HEAD by declaration, and HEAD against itself has no stale citation. |
