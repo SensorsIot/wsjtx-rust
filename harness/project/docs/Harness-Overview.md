@@ -80,8 +80,8 @@ instructions are in [Project specifics](Project-Specifics.md).
   connected. Live tests key the simulator; the real IC-7300 once the operator has decided
   #239 ([simulator live tests](Project-Specifics.md#simulator-live-tests)). Cost 4 and 5 then
   run without asking under the standing consent at 1 %
-  ([deployment authority](Project-Specifics.md#deployment-authority)); QSO tests are not
-  covered by it.
+  ([deployment authority](Project-Specifics.md#deployment-authority)); QSO tests keep the
+  bounds of [QSO tests](Project-Specifics.md#qso-tests).
 
 ## Harness paths
 
