@@ -4,11 +4,11 @@
 //! profile directory, flushed and atomically replaced. The in-memory view changes only
 //! after a successful replace. Field order and spelling follow WSJT-X
 //! logbook/AdifQso.cpp so WSJT-X and other logging programs can import the file.
+use crate::profile::Open;
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
-    fs::{self, OpenOptions},
-    io::Write,
+    fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -959,8 +959,6 @@ struct Inner {
     receipts: VecDeque<Receipt>,
     /// Counts every change of `records` (the worked-set cache key).
     revision: u64,
-    #[cfg(test)]
-    fault: Option<&'static str>,
 }
 /// (records revision, country table, worked set of that log and table).
 /// Worked-before index of the log: (effective band, effective mode) per call and
@@ -1035,6 +1033,8 @@ type WorkedCache = (
 pub struct Logbook {
     directory: PathBuf,
     inner: Mutex<Inner>,
+    /// The file port the log and the country table are written through.
+    files: Arc<dyn crate::profile::Files>,
     /// The country table of this profile (WSJT-X keeps AD1CCty in WorkedBefore).
     dxcc: Mutex<DxccState>,
     /// The worked set of the log for (records revision, country table), rebuilt only
@@ -1162,7 +1162,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 impl Logbook {
     /// Loads `<profile dir>/contacts.adi`. A missing file is an empty log; an unreadable
     /// or invalid file leaves the log unavailable and is never overwritten.
-    pub fn open(directory: &Path) -> Self {
+    pub fn open(directory: &Path, files: Arc<dyn crate::profile::Files>) -> Self {
         let path = directory.join(FILE_NAME);
         let (available, records, created) = match fs::read(&path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -1201,9 +1201,8 @@ impl Logbook {
                 import: None,
                 receipts: VecDeque::new(),
                 revision: 0,
-                #[cfg(test)]
-                fault: None,
             }),
+            files,
             dxcc: Mutex::new(load_dxcc(&directory.join(crate::dxcc::FILE_NAME))),
             worked_set: Mutex::new(None),
             worked_windows: Mutex::new(Vec::new()),
@@ -1219,10 +1218,6 @@ impl Logbook {
             Err(StoreError::Unavailable)
         }
     }
-    #[cfg(test)]
-    pub fn inject_fault(&self, stage: Option<&'static str>) {
-        self.inner.lock().unwrap().fault = stage;
-    }
     /// Writes the complete next file beside the log, flushes it and replaces
     /// contacts.adi through the gate. A failure removes the temporary file and leaves
     /// both the file and the in-memory log unchanged.
@@ -1231,35 +1226,16 @@ impl Logbook {
             ".contacts-{}.tmp",
             crate::profile::new_uuid().map_err(|_| StoreError::Unavailable)?
         ));
-        #[cfg(test)]
-        let fault = inner.fault;
-        #[cfg(not(test))]
-        let _ = inner;
-        let checkpoint = |_stage: &str| -> std::io::Result<()> {
-            #[cfg(test)]
-            if fault == Some(_stage) {
-                return Err(std::io::Error::other("injected storage failure"));
-            }
-            Ok(())
-        };
         let written = (|| {
-            let mut file = OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&temporary)?;
-            checkpoint("write")?;
-            file.write_all(&document(&inner.created, next))?;
-            checkpoint("flush")?;
-            file.sync_all()
+            let mut file = self.files.create(&temporary, Open::New)?;
+            file.write(&document(&inner.created, next))?;
+            file.flush()
         })();
         let result = match written {
             Err(_) => Err(StoreError::Unavailable),
             Ok(()) => {
                 let target = self.directory.join(FILE_NAME);
-                let mut replace = || {
-                    checkpoint("replace")?;
-                    fs::rename(&temporary, &target)
-                };
+                let mut replace = || self.files.replace(&temporary, &target);
                 match gate(&mut replace) {
                     Ok(Ok(())) => Ok(()),
                     Ok(Err(_)) => Err(StoreError::Unavailable),
@@ -1268,7 +1244,7 @@ impl Logbook {
             }
         };
         if result.is_err() {
-            let _ = fs::remove_file(&temporary);
+            let _ = self.files.remove(&temporary);
         }
         result
     }
@@ -1594,22 +1570,19 @@ impl Logbook {
                         .map_err(|_| DxccError::Store(StoreError::Unavailable))?
                 ));
                 let written = (|| {
-                    let mut file = OpenOptions::new()
-                        .create_new(true)
-                        .write(true)
-                        .open(&temporary)?;
-                    file.write_all(t.as_bytes())?;
-                    file.sync_all()
+                    let mut file = self.files.create(&temporary, Open::New)?;
+                    file.write(t.as_bytes())?;
+                    file.flush()
                 })();
                 let result = written
                     .map_err(|_| StoreError::Unavailable)
-                    .and_then(|()| gated_io(gate, &mut || fs::rename(&temporary, &target)));
+                    .and_then(|()| gated_io(gate, &mut || self.files.replace(&temporary, &target)));
                 if result.is_err() {
-                    let _ = fs::remove_file(&temporary);
+                    let _ = self.files.remove(&temporary);
                 }
                 result
             }
-            None => gated_io(gate, &mut || match fs::remove_file(&target) {
+            None => gated_io(gate, &mut || match self.files.remove(&target) {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 other => other,
             }),

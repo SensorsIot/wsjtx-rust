@@ -141,10 +141,16 @@ pub(crate) fn plaintext_station(name: &str) -> (App, std::path::PathBuf) {
     )
     .unwrap();
     let origin = "http://127.0.0.1:18001".to_owned();
-    let (mut store, _) = profile::Store::open(&root).unwrap();
+    let (mut store, _) =
+        profile::Store::open(&root, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let authorization = authorization_http::Service::initialize(&mut store, &origin).unwrap();
     assert!(authorization.is_none(), "plaintext has no grant authority");
-    let recording = recording::Recording::open(&root, id.clone(), boot.clone());
+    let recording = recording::Recording::open(
+        &root,
+        id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     recording.initialize_profile_revision(0);
     let app = App {
         origin,
@@ -153,7 +159,10 @@ pub(crate) fn plaintext_station(name: &str) -> (App, std::path::PathBuf) {
             authorization: Mutex::new(authorization),
             boot,
             recording,
-            logbook: Arc::new(crate::logbook::Logbook::open(&root)),
+            logbook: Arc::new(crate::logbook::Logbook::open(
+                &root,
+                std::sync::Arc::new(crate::profile::Disk),
+            )),
         })),
         profile_id: Some(id),
         token: None,

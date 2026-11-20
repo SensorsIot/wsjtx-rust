@@ -5,6 +5,7 @@ use std::{
     io::{Read, Write},
     net::SocketAddr,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 #[cfg(test)]
@@ -350,6 +351,85 @@ pub fn new_uuid() -> std::io::Result<String> {
         &hex[20..]
     ))
 }
+
+/// How [`Files::create`] opens a file for writing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Open {
+    /// A new file; an existing one is an error.
+    New,
+    /// A created or truncated file.
+    Truncate,
+    /// A file opened for append, created when absent if `create` is set.
+    Append { create: bool },
+}
+/// One entry of a directory listing: its name and whether it is a file.
+#[derive(Clone, Debug)]
+pub struct Entry {
+    pub name: std::ffi::OsString,
+    pub is_file: bool,
+}
+/// A file opened by [`Files::create`]; dropping it closes the file.
+pub trait Writer: Send {
+    /// Writes all the bytes.
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<()>;
+    /// Flushes the file to the disk.
+    fn flush(&mut self) -> std::io::Result<()>;
+}
+/// The file port of the station: every write, replacement, removal and listing of the
+/// saved files and the source ids of the live receive. The entry point fills it with
+/// [`Disk`].
+pub trait Files: Send + Sync {
+    /// Opens a file for writing.
+    fn create(&self, path: &Path, open: Open) -> std::io::Result<Box<dyn Writer>>;
+    /// Renames `from` to `to`, replacing `to`.
+    fn replace(&self, from: &Path, to: &Path) -> std::io::Result<()>;
+    /// Removes a file.
+    fn remove(&self, path: &Path) -> std::io::Result<()>;
+    /// The entries of a directory, one result per entry, in the order the system gives.
+    fn list(&self, directory: &Path) -> std::io::Result<Vec<std::io::Result<Entry>>>;
+    /// A new UUID v4 text.
+    fn id(&self) -> std::io::Result<String>;
+}
+/// The real file adapter: the `std::fs` call of each step.
+pub struct Disk;
+impl Writer for File {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        self.write_all(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.sync_all()
+    }
+}
+impl Files for Disk {
+    fn create(&self, path: &Path, open: Open) -> std::io::Result<Box<dyn Writer>> {
+        let file = match open {
+            Open::New => OpenOptions::new().create_new(true).write(true).open(path)?,
+            Open::Truncate => File::create(path)?,
+            Open::Append { create } => OpenOptions::new().create(create).append(true).open(path)?,
+        };
+        Ok(Box::new(file))
+    }
+    fn replace(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        fs::rename(from, to)
+    }
+    fn remove(&self, path: &Path) -> std::io::Result<()> {
+        fs::remove_file(path)
+    }
+    fn list(&self, directory: &Path) -> std::io::Result<Vec<std::io::Result<Entry>>> {
+        Ok(fs::read_dir(directory)?
+            .map(|entry| {
+                let entry = entry?;
+                Ok(Entry {
+                    name: entry.file_name(),
+                    is_file: entry.file_type()?.is_file(),
+                })
+            })
+            .collect())
+    }
+    fn id(&self) -> std::io::Result<String> {
+        new_uuid()
+    }
+}
 impl ProfileDocument {
     pub const SCHEMA_VERSION: i64 = 1;
     fn defaults() -> std::io::Result<Self> {
@@ -488,6 +568,7 @@ pub fn parse_origin(origin: &str) -> Option<axum::http::Uri> {
 pub struct Store {
     pub document: ProfileDocument,
     directory: PathBuf,
+    files: Arc<dyn Files>,
     // Retained handles are the OS ownership claims. Never delete lock files: unlinking
     // them would let another process lock a different inode for the same profile.
     _directory_lock: File,
@@ -524,6 +605,7 @@ impl Store {
             .map_err(|_| std::io::Error::other("invalid authorization scope"))?;
         // Marker first: interruption cannot turn an expected record into a new profile.
         atomic_json(
+            &*self.files,
             &self.directory,
             ".authorization-initialized.json",
             &AuthorizationMarker {
@@ -531,7 +613,12 @@ impl Store {
                 profile_id: self.document.profile_id.clone(),
             },
         )?;
-        atomic_json(&self.directory, "authorization.json", &initial)?;
+        atomic_json(
+            &*self.files,
+            &self.directory,
+            "authorization.json",
+            &initial,
+        )?;
         Ok(initial)
     }
     pub fn save_authorization(
@@ -546,18 +633,19 @@ impl Store {
                 "authorization initialization missing",
             ));
         }
-        atomic_json(&self.directory, "authorization.json", record)
+        atomic_json(&*self.files, &self.directory, "authorization.json", record)
     }
-    pub fn create(directory: &Path) -> Result<(), &'static str> {
+    pub fn create(directory: &Path, files: Arc<dyn Files>) -> Result<(), &'static str> {
         fs::create_dir(directory).map_err(|_| "resource_unavailable")?;
         let document = ProfileDocument::defaults().map_err(|_| "resource_unavailable")?;
-        atomic_write(directory, &document).map_err(|_| "resource_unavailable")
+        atomic_write(&*files, directory, &document).map_err(|_| "resource_unavailable")
     }
     /// FR-023: the connection type is chosen once, when the profile is created.
     pub fn create_native(
         directory: &Path,
         rx_antenna: &str,
         radio_address: Option<&str>,
+        files: Arc<dyn Files>,
     ) -> Result<(), &'static str> {
         let mut document = ProfileDocument::defaults().map_err(|_| "resource_unavailable")?;
         document.schema_version = 2;
@@ -571,9 +659,12 @@ impl Store {
             .validate()
             .map_err(|_| "invalid_runtime_configuration")?;
         fs::create_dir(directory).map_err(|_| "resource_unavailable")?;
-        atomic_write(directory, &document).map_err(|_| "resource_unavailable")
+        atomic_write(&*files, directory, &document).map_err(|_| "resource_unavailable")
     }
-    pub fn open(directory: &Path) -> Result<(Self, SocketAddr), &'static str> {
+    pub fn open(
+        directory: &Path,
+        files: Arc<dyn Files>,
+    ) -> Result<(Self, SocketAddr), &'static str> {
         let directory = directory
             .canonicalize()
             .map_err(|_| "resource_unavailable")?;
@@ -598,6 +689,7 @@ impl Store {
             Self {
                 document,
                 directory,
+                files,
                 _directory_lock: directory_lock,
                 _identity_lock: identity_lock,
             },
@@ -630,7 +722,7 @@ impl Store {
         filename: &str,
         document: &impl Serialize,
     ) -> std::io::Result<()> {
-        atomic_json(&self.directory, filename, document)
+        atomic_json(&*self.files, &self.directory, filename, document)
     }
     /// Appends one line to a log file of this profile directory (the caller holds this
     /// Store); at `rotate_bytes` the file first moves to `<stem>.1.<ext>`, replacing the
@@ -647,14 +739,14 @@ impl Store {
                 Some((stem, ext)) => format!("{stem}.1.{ext}"),
                 None => format!("{filename}.1"),
             };
-            fs::rename(&path, self.directory.join(older))?;
+            self.files.replace(&path, &self.directory.join(older))?;
         }
-        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-        file.write_all(format!("{line}\n").as_bytes())
+        let mut file = self.files.create(&path, Open::Append { create: true })?;
+        file.write(format!("{line}\n").as_bytes())
     }
     /// Removes another document of this profile directory; absent is success.
     pub fn remove_document_file(&mut self, filename: &str) -> std::io::Result<()> {
-        match fs::remove_file(self.directory.join(filename)) {
+        match self.files.remove(&self.directory.join(filename)) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),
         }
@@ -671,7 +763,7 @@ impl Store {
             .filter(|n| *n <= MAX_REVISION)
             .ok_or_else(|| std::io::Error::other("revision exhausted"))?;
         next.set_settings(settings);
-        atomic_write(&self.directory, &next)?;
+        atomic_write(&*self.files, &self.directory, &next)?;
         self.document = next;
         Ok(())
     }
@@ -731,38 +823,37 @@ fn read_document(directory: &Path) -> Result<(ProfileDocument, SocketAddr), &'st
     let address = document.validate()?;
     Ok((document, address))
 }
-fn write_document(path: &Path, document: &impl Serialize) -> std::io::Result<()> {
-    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
-    #[cfg(test)]
-    tests::checkpoint("write")?;
-    serde_json::to_writer(&mut file, document)?;
-    file.write_all(b"\n")?;
-    #[cfg(test)]
-    tests::checkpoint("flush")?;
-    file.sync_all()
+fn write_document(
+    files: &dyn Files,
+    path: &Path,
+    document: &impl Serialize,
+) -> std::io::Result<()> {
+    let mut file = files.create(path, Open::New)?;
+    let mut bytes = serde_json::to_vec(document)?;
+    bytes.push(b'\n');
+    file.write(&bytes)?;
+    file.flush()
 }
-fn atomic_write(directory: &Path, document: &ProfileDocument) -> std::io::Result<()> {
-    atomic_json(directory, "profile.json", document)
+fn atomic_write(
+    files: &dyn Files,
+    directory: &Path,
+    document: &ProfileDocument,
+) -> std::io::Result<()> {
+    atomic_json(files, directory, "profile.json", document)
 }
 pub(crate) fn atomic_json(
+    files: &dyn Files,
     directory: &Path,
     filename: &str,
     document: &impl Serialize,
 ) -> std::io::Result<()> {
     let temporary = directory.join(format!(".{}.tmp", new_uuid()?));
     let result = (|| {
-        write_document(&temporary, document)?;
-        #[cfg(test)]
-        tests::checkpoint("before_replace")?;
-        #[cfg(test)]
-        tests::checkpoint("replace")?;
-        fs::rename(&temporary, directory.join(filename))?;
-        #[cfg(test)]
-        tests::checkpoint("after_replace")?;
-        Ok(())
+        write_document(files, &temporary, document)?;
+        files.replace(&temporary, &directory.join(filename))
     })();
     if result.is_err() {
-        let _ = fs::remove_file(temporary);
+        let _ = files.remove(&temporary);
     }
     result
 }

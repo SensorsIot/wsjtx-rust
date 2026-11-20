@@ -1,5 +1,4 @@
 use super::*;
-use std::cell::Cell;
 // The test-only model-value reader (Project-Specifics, "Model values read by tests").
 use wstx_test_tools::model_values;
 
@@ -28,31 +27,191 @@ fn outcome(name: &'static str) -> &'static str {
     name
 }
 
-thread_local! { static FAULT: Cell<Option<&'static str>> = const { Cell::new(None) }; }
-
-pub(crate) fn with_fault<T>(stage: &'static str, action: impl FnOnce() -> T) -> T {
-    struct Restore(Option<&'static str>);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            FAULT.set(self.0);
+/// A step of the file port (`profile::Files`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Step {
+    Create,
+    Write,
+    Flush,
+    Replace,
+    Remove,
+    List,
+    Id,
+}
+/// What an armed fault does at its step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Kind {
+    /// An `io::Error` before the step.
+    Fail,
+    /// A panic before the step: the process is interrupted there.
+    InterruptBefore,
+    /// The real step, then a panic.
+    InterruptAfter,
+}
+/// Whose calls an armed fault meets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FaultScope {
+    /// Only the calls of the thread that armed it.
+    ArmingThread,
+    /// The calls of every thread.
+    EveryThread,
+}
+/// A fault of [`FaultyFiles`]: its step, how many calls of that step in scope pass first,
+/// its kind and its scope.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Fault {
+    pub(crate) step: Step,
+    pub(crate) passes: usize,
+    pub(crate) kind: Kind,
+    pub(crate) scope: FaultScope,
+}
+impl Fault {
+    pub(crate) fn fail(step: Step, scope: FaultScope) -> Self {
+        Self {
+            step,
+            passes: 0,
+            kind: Kind::Fail,
+            scope,
         }
     }
-    let _restore = Restore(FAULT.replace(Some(stage)));
-    action()
-}
-
-// Test-only I/O/crash seam: no configuration or fault switch exists in the binary.
-pub(super) fn checkpoint(stage: &'static str) -> std::io::Result<()> {
-    if FAULT.get() == Some(stage) {
-        assert!(
-            !matches!(stage, "before_replace" | "after_replace"),
-            "simulated process interruption"
-        );
-        return Err(std::io::Error::other("injected storage failure"));
+    pub(crate) fn interrupt_before(step: Step, scope: FaultScope) -> Self {
+        Self {
+            kind: Kind::InterruptBefore,
+            ..Self::fail(step, scope)
+        }
     }
-    Ok(())
+    pub(crate) fn interrupt_after(step: Step, scope: FaultScope) -> Self {
+        Self {
+            kind: Kind::InterruptAfter,
+            ..Self::fail(step, scope)
+        }
+    }
+    /// The same fault after `passes` calls of its step in scope have gone through.
+    pub(crate) fn after(self, passes: usize) -> Self {
+        Self { passes, ..self }
+    }
 }
-
+struct Armed {
+    fault: Fault,
+    thread: std::thread::ThreadId,
+    passed: usize,
+}
+#[derive(Default)]
+struct Switch(std::sync::Mutex<Option<Armed>>);
+impl Switch {
+    /// The kind of the armed fault when this call of `step` meets it.
+    fn meets(&self, step: Step) -> Option<Kind> {
+        let mut armed = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let armed = armed.as_mut()?;
+        if armed.fault.step != step
+            || (armed.fault.scope == FaultScope::ArmingThread
+                && armed.thread != std::thread::current().id())
+        {
+            return None;
+        }
+        if armed.passed < armed.fault.passes {
+            armed.passed += 1;
+            return None;
+        }
+        Some(armed.fault.kind)
+    }
+    fn run<T>(&self, step: Step, real: impl FnOnce() -> std::io::Result<T>) -> std::io::Result<T> {
+        match self.meets(step) {
+            None => real(),
+            Some(Kind::Fail) => Err(std::io::Error::other("file fake: armed fault")),
+            Some(Kind::InterruptBefore) => panic!("simulated process interruption before {step:?}"),
+            Some(Kind::InterruptAfter) => {
+                let _ = real();
+                panic!("simulated process interruption after {step:?}")
+            }
+        }
+    }
+}
+/// The test fake of the file port: the disk, until a test arms a fault; then the fault acts
+/// at its step until the test disarms it.
+#[derive(Default)]
+pub(crate) struct FaultyFiles {
+    switch: Arc<Switch>,
+}
+impl FaultyFiles {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::default()
+    }
+    pub(crate) fn arm(&self, fault: Fault) {
+        *self.switch.0.lock().unwrap_or_else(|p| p.into_inner()) = Some(Armed {
+            fault,
+            thread: std::thread::current().id(),
+            passed: 0,
+        });
+    }
+    pub(crate) fn disarm(&self) {
+        *self.switch.0.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+    /// Runs `action` with `fault` armed, and disarms it after, also when `action` panics.
+    pub(crate) fn during<T>(&self, fault: Fault, action: impl FnOnce() -> T) -> T {
+        struct Disarm<'a>(&'a FaultyFiles);
+        impl Drop for Disarm<'_> {
+            fn drop(&mut self) {
+                self.0.disarm();
+            }
+        }
+        self.arm(fault);
+        let _disarm = Disarm(self);
+        action()
+    }
+}
+/// The separate file fakes of a station fixture: a fault armed on one never reaches the
+/// files of another.
+#[derive(Clone)]
+pub(crate) struct StationFiles {
+    pub(crate) store: Arc<FaultyFiles>,
+    pub(crate) logbook: Arc<FaultyFiles>,
+    pub(crate) recording: Arc<FaultyFiles>,
+}
+impl StationFiles {
+    pub(crate) fn new() -> Self {
+        Self {
+            store: FaultyFiles::new(),
+            logbook: FaultyFiles::new(),
+            recording: FaultyFiles::new(),
+        }
+    }
+}
+struct FaultyWriter {
+    file: Box<dyn Writer>,
+    switch: Arc<Switch>,
+}
+impl Writer for FaultyWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        let file = &mut self.file;
+        self.switch.run(Step::Write, || file.write(bytes))
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        let file = &mut self.file;
+        self.switch.run(Step::Flush, || file.flush())
+    }
+}
+impl Files for FaultyFiles {
+    fn create(&self, path: &Path, open: Open) -> std::io::Result<Box<dyn Writer>> {
+        let file = self.switch.run(Step::Create, || Disk.create(path, open))?;
+        Ok(Box::new(FaultyWriter {
+            file,
+            switch: self.switch.clone(),
+        }))
+    }
+    fn replace(&self, from: &Path, to: &Path) -> std::io::Result<()> {
+        self.switch.run(Step::Replace, || Disk.replace(from, to))
+    }
+    fn remove(&self, path: &Path) -> std::io::Result<()> {
+        self.switch.run(Step::Remove, || Disk.remove(path))
+    }
+    fn list(&self, directory: &Path) -> std::io::Result<Vec<std::io::Result<Entry>>> {
+        self.switch.run(Step::List, || Disk.list(directory))
+    }
+    fn id(&self) -> std::io::Result<String> {
+        self.switch.run(Step::Id, || Disk.id())
+    }
+}
 fn independent_document() -> ProfileDocument {
     serde_json::from_str(r#"{"schema_version":1,"profile_id":"00000000-0000-4000-8000-000000000001","revision":0,"display_name":"Station 1","callsign":"TEST1","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":"fixture-input-1","output_device":"fixture-output-1"},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}}"#).unwrap()
 }
@@ -63,8 +222,9 @@ fn expected_authorization_corruption_blocks_profile_startup_without_rewriting_fi
     for record in [None, Some(b"{corrupt".as_slice())] {
         let directory =
             std::env::temp_dir().join(format!("wstx-auth-startup-{}", new_uuid().unwrap()));
-        Store::create(&directory).unwrap();
-        let (store, _) = Store::open(&directory).unwrap();
+        Store::create(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+        let (store, _) =
+            Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
         let profile_id = store.document.profile_id.clone();
         drop(store);
         let original = fs::read(directory.join("profile.json")).unwrap();
@@ -73,7 +233,7 @@ fn expected_authorization_corruption_blocks_profile_startup_without_rewriting_fi
         if let Some(bytes) = record {
             fs::write(directory.join("authorization.json"), bytes).unwrap();
         }
-        let attempted = Store::open(&directory);
+        let attempted = Store::open(&directory, std::sync::Arc::new(crate::profile::Disk));
         let rejected = matches!(attempted, Err(e) if e == outcome("resource_unavailable"));
         drop(attempted);
         assert_eq!(fs::read(directory.join("profile.json")).unwrap(), original);
@@ -156,18 +316,22 @@ fn settings_validation_uses_utf8_bytes_and_independent_audio_control_domains() {
 #[test]
 fn storage_commit_point_and_os_ownership_survive_reopen() {
     let directory = std::env::temp_dir().join(format!("wstx-profile-unit-{}", new_uuid().unwrap()));
-    Store::create(&directory).unwrap();
-    let (mut store, _) = Store::open(&directory).unwrap();
-    assert!(matches!(Store::open(&directory), Err(e) if e == outcome("profile_in_use")));
+    Store::create(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+    let (mut store, _) =
+        Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+    assert!(
+        matches!(Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)), Err(e) if e == outcome("profile_in_use"))
+    );
     let old = fs::read(directory.join("profile.json")).unwrap();
     // Stop at the actual production write/flush boundary, before replacement.
     // A complete, synced candidate temp MUST NOT be promoted on restart.
     let mut candidate = store.document.clone();
     candidate.revision = 1;
     candidate.display_name = "Uncommitted".into();
-    write_document(&directory.join(".interrupted.tmp"), &candidate).unwrap();
+    write_document(&Disk, &directory.join(".interrupted.tmp"), &candidate).unwrap();
     drop(store);
-    let (recovered, _) = Store::open(&directory).unwrap();
+    let (recovered, _) =
+        Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     assert_eq!(recovered.document.revision, 0);
     assert_eq!(fs::read(directory.join("profile.json")).unwrap(), old);
     store = recovered;
@@ -175,7 +339,7 @@ fn storage_commit_point_and_os_ownership_survive_reopen() {
     edited.display_name = "Committed".into();
     store.save(edited.clone()).unwrap();
     drop(store);
-    let (restored, _) = Store::open(&directory).unwrap();
+    let (restored, _) = Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     assert_eq!(restored.document.revision, 1);
     assert_eq!(restored.document.settings(), edited);
     assert_ne!(fs::read(directory.join("profile.json")).unwrap(), old);
@@ -195,16 +359,24 @@ fn save_failures_and_interruptions_preserve_the_defined_commit_point() {
     ] {
         let directory =
             std::env::temp_dir().join(format!("wstx-profile-fault-{}", new_uuid().unwrap()));
-        Store::create(&directory).unwrap();
-        let (mut store, _) = Store::open(&directory).unwrap();
+        let files = FaultyFiles::new();
+        Store::create(&directory, files.clone()).unwrap();
+        let (mut store, _) = Store::open(&directory, files.clone()).unwrap();
         let original = fs::read(directory.join("profile.json")).unwrap();
         let original_settings = store.document.settings();
         let mut edit = original_settings.clone();
         edit.display_name = "Committed after replacement".into();
-        FAULT.set(Some(stage));
+        let scope = FaultScope::ArmingThread;
+        files.arm(match stage {
+            "write" => Fault::fail(Step::Write, scope),
+            "flush" => Fault::fail(Step::Flush, scope),
+            "replace" => Fault::fail(Step::Replace, scope),
+            "before_replace" => Fault::interrupt_before(Step::Replace, scope),
+            _ => Fault::interrupt_after(Step::Replace, scope),
+        });
         let result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| store.save(edit.clone())));
-        FAULT.set(None);
+        files.disarm();
         if matches!(stage, "before_replace" | "after_replace") {
             assert!(result.is_err());
         } else {
@@ -216,7 +388,8 @@ fn save_failures_and_interruptions_preserve_the_defined_commit_point() {
         );
         assert_eq!(store.document.settings(), original_settings);
         drop(store);
-        let (recovered, _) = Store::open(&directory).unwrap();
+        let (recovered, _) =
+            Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
         if stage == "after_replace" {
             assert_eq!(recovered.document.revision, 1);
             assert_eq!(recovered.document.settings(), edit);
@@ -351,17 +524,34 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
 fn native_profile_creation_persists_intent_without_runtime_handles() {
     let directory = std::env::temp_dir().join(format!("wstx-native-{}", new_uuid().unwrap()));
     assert_eq!(
-        Store::create_native(&directory, "ant 1", None),
+        Store::create_native(
+            &directory,
+            "ant 1",
+            None,
+            std::sync::Arc::new(crate::profile::Disk)
+        ),
         Err(outcome("invalid_runtime_configuration"))
     );
     assert!(!directory.exists());
     assert_eq!(
-        Store::create_native(&directory, "ANT1", Some("radio.local:4992")),
+        Store::create_native(
+            &directory,
+            "ANT1",
+            Some("radio.local:4992"),
+            std::sync::Arc::new(crate::profile::Disk)
+        ),
         Err(outcome("invalid_runtime_configuration"))
     );
-    Store::create_native(&directory, "ANT1", None).unwrap();
+    Store::create_native(
+        &directory,
+        "ANT1",
+        None,
+        std::sync::Arc::new(crate::profile::Disk),
+    )
+    .unwrap();
     let text = fs::read_to_string(directory.join("profile.json")).unwrap();
-    let (mut store, _) = Store::open(&directory).unwrap();
+    let (mut store, _) =
+        Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let native = store.document.native.clone().unwrap();
     assert_eq!(native.rx_antenna, "ANT1");
     assert!(valid_uuid(&native.client_id));
@@ -378,8 +568,14 @@ fn native_profile_creation_persists_intent_without_runtime_handles() {
     drop(store);
     fs::remove_dir_all(&directory).unwrap();
     // The one supported way to set the address reaches the session's intent.
-    Store::create_native(&directory, "ANT1", Some("192.0.2.10:4992")).unwrap();
-    let (store, _) = Store::open(&directory).unwrap();
+    Store::create_native(
+        &directory,
+        "ANT1",
+        Some("192.0.2.10:4992"),
+        std::sync::Arc::new(crate::profile::Disk),
+    )
+    .unwrap();
+    let (store, _) = Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let located = store.document.native.clone().unwrap();
     assert_eq!(located.radio_address.as_deref(), Some("192.0.2.10:4992"));
     assert_eq!(
@@ -398,7 +594,9 @@ fn native_profile_creation_persists_intent_without_runtime_handles() {
 fn an_open_it_cannot_carry_out_is_refused_and_changes_no_file() {
     let missing =
         std::env::temp_dir().join(format!("wstx-profile-missing-{}", new_uuid().unwrap()));
-    assert!(matches!(Store::open(&missing), Err(e) if e == outcome("resource_unavailable")));
+    assert!(
+        matches!(Store::open(&missing, std::sync::Arc::new(crate::profile::Disk)), Err(e) if e == outcome("resource_unavailable"))
+    );
     assert!(!missing.exists(), "an open makes no folder");
     let directory =
         std::env::temp_dir().join(format!("wstx-profile-refused-{}", new_uuid().unwrap()));
@@ -408,21 +606,25 @@ fn an_open_it_cannot_carry_out_is_refused_and_changes_no_file() {
     nameless["display_name"] = "".into();
     let bytes = serde_json::to_vec(&nameless).unwrap();
     fs::write(&file, &bytes).unwrap();
-    assert!(matches!(Store::open(&directory), Err(e) if e == outcome("invalid_profile")));
+    assert!(
+        matches!(Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)), Err(e) if e == outcome("invalid_profile"))
+    );
     assert_eq!(fs::read(&file).unwrap(), bytes);
     let mut managed = serde_json::to_value(independent_document()).unwrap();
     managed["control"] = serde_json::json!({"mode":"cat","endpoint":"COM3","ptt":"cat"});
     let bytes = serde_json::to_vec(&managed).unwrap();
     fs::write(&file, &bytes).unwrap();
     assert!(
-        matches!(Store::open(&directory), Err(e) if e == outcome("invalid_profile")),
+        matches!(Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)), Err(e) if e == outcome("invalid_profile")),
         "a managed radio without radio"
     );
     assert_eq!(fs::read(&file).unwrap(), bytes);
     let valid = serde_json::to_vec(&independent_document()).unwrap();
     fs::write(&file, &valid).unwrap();
     fs::create_dir(directory.join(".profile.lock")).unwrap();
-    assert!(matches!(Store::open(&directory), Err(e) if e == outcome("resource_unavailable")));
+    assert!(
+        matches!(Store::open(&directory, std::sync::Arc::new(crate::profile::Disk)), Err(e) if e == outcome("resource_unavailable"))
+    );
     assert_eq!(fs::read(&file).unwrap(), valid);
     fs::remove_dir_all(directory).unwrap();
     // The same document with control disabled opens without radio.
@@ -430,7 +632,7 @@ fn an_open_it_cannot_carry_out_is_refused_and_changes_no_file() {
         std::env::temp_dir().join(format!("wstx-profile-unmanaged-{}", new_uuid().unwrap()));
     fs::create_dir(&unmanaged).unwrap();
     fs::write(unmanaged.join("profile.json"), &valid).unwrap();
-    let (store, _) = Store::open(&unmanaged).unwrap();
+    let (store, _) = Store::open(&unmanaged, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     assert!(store.document.radio.is_none());
     drop(store);
     assert_eq!(fs::read(unmanaged.join("profile.json")).unwrap(), valid);
@@ -445,11 +647,12 @@ fn a_creation_whose_file_cannot_be_written_is_resource_unavailable() {
     for native in [false, true] {
         let directory =
             std::env::temp_dir().join(format!("wstx-profile-unwritten-{}", new_uuid().unwrap()));
-        let created = with_fault("write", || {
+        let files = FaultyFiles::new();
+        let created = files.during(Fault::fail(Step::Write, FaultScope::ArmingThread), || {
             if native {
-                Store::create_native(&directory, "ANT1", None)
+                Store::create_native(&directory, "ANT1", None, files.clone())
             } else {
-                Store::create(&directory)
+                Store::create(&directory, files.clone())
             }
         });
         assert_eq!(

@@ -61,9 +61,15 @@ pub(crate) async fn station_prepared(
         doc["control"] = json!({"mode":"cat","endpoint":"icom7300://COM250","ptt":"cat"});
     }
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let (mut store, _) = profile::Store::open(&dir).unwrap();
+    let (mut store, _) =
+        profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let authority = authorization_http::Service::initialize(&mut store, &origin).unwrap();
-    let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
+    let recording = recording::Recording::open(
+        &dir,
+        id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     recording.initialize_profile_revision(store.document.revision);
     let bench = Bench::default();
     bench.unsupported.store(!transmit, Ordering::SeqCst);
@@ -76,7 +82,10 @@ pub(crate) async fn station_prepared(
         authorization: Mutex::new(authority),
         boot: boot.clone(),
         recording,
-        logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
+        logbook: Arc::new(crate::logbook::Logbook::open(
+            &dir,
+            std::sync::Arc::new(crate::profile::Disk),
+        )),
     });
     let app = App {
         origin,

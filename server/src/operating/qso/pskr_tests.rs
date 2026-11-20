@@ -449,7 +449,14 @@ fn session_against_a_local_peer() {
             }
         }
     });
-    let feed = Feed::start(&dir.0, "p", "b00t", Some(local_connector(port)), FAST);
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b00t",
+        Some(local_connector(port)),
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     assert_eq!(
         feed.view()["state"],
         "off",
@@ -533,7 +540,15 @@ fn session_against_a_local_peer() {
     peer.join().unwrap();
     // The choice is kept for the next start.
     assert_eq!(
-        Feed::start(&dir.0, "p", "b00t", None, FAST).view()["enabled"],
+        Feed::start(
+            &dir.0,
+            "p",
+            "b00t",
+            None,
+            FAST,
+            std::sync::Arc::new(crate::profile::Disk)
+        )
+        .view()["enabled"],
         false
     );
 }
@@ -563,7 +578,14 @@ fn reconnect_backs_off_against_a_failing_peer_and_recovers() {
             return;
         }
     });
-    let feed = Feed::start(&dir.0, "p", "b00t", Some(local_connector(port)), FAST);
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b00t",
+        Some(local_connector(port)),
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     feed.observe(Some("HB9BLA"), None);
     let mut errors = 0;
     until("recovered", || {
@@ -620,7 +642,14 @@ fn the_status_follows_the_switch() {
         backoff_max: Duration::from_millis(600),
         ..FAST
     };
-    let feed = Feed::start(&dir.0, "p", "b", Some(local_connector(port)), slow);
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b",
+        Some(local_connector(port)),
+        slow,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     feed.observe(Some("HB9BLA"), None);
     until("connected", || feed.view()["state"] == "connected");
     assert_eq!(accepted.recv_timeout(Duration::from_secs(5)), Ok(0));
@@ -637,7 +666,14 @@ fn the_status_follows_the_switch() {
     assert_eq!(accepted.recv_timeout(Duration::from_secs(5)), Ok(1));
     // Without a connector nothing can connect: the switch on still shows off.
     let dir = Dir::new();
-    let none = Feed::start(&dir.0, "p", "b", None, FAST);
+    let none = Feed::start(
+        &dir.0,
+        "p",
+        "b",
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     none.set_enabled("p", "b", false).unwrap();
     assert_eq!(none.set_enabled("p", "b", true).unwrap()["state"], "off");
 }
@@ -662,7 +698,14 @@ fn a_refusing_or_broken_peer_is_a_named_error() {
             let _ = stream.write_all(&script);
             std::thread::sleep(Duration::from_millis(500));
         });
-        let feed = Feed::start(&dir.0, "p", "b00t", Some(local_connector(port)), FAST);
+        let feed = Feed::start(
+            &dir.0,
+            "p",
+            "b00t",
+            Some(local_connector(port)),
+            FAST,
+            std::sync::Arc::new(crate::profile::Disk),
+        );
         feed.observe(Some("HB9BLA"), None);
         until(code, || feed.view()["error"] == code);
     }
@@ -674,21 +717,52 @@ fn a_refusing_or_broken_peer_is_a_named_error() {
 #[test]
 fn the_setting_defaults_on_and_survives() {
     let dir = Dir::new();
-    let feed = Feed::start(&dir.0, "p", "b", None, FAST);
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b",
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     assert_eq!(feed.view()["enabled"], true);
     assert_eq!(feed.view()["state"], "off", "no connector: no connection");
     feed.set_enabled("p", "b", false).unwrap();
     drop(feed);
     assert_eq!(
-        Feed::start(&dir.0, "p", "b", None, FAST).view()["enabled"],
+        Feed::start(
+            &dir.0,
+            "p",
+            "b",
+            None,
+            FAST,
+            std::sync::Arc::new(crate::profile::Disk)
+        )
+        .view()["enabled"],
         false
     );
-    let foreign = Feed::start(&dir.0, "q", "b", None, FAST).view();
+    let foreign = Feed::start(
+        &dir.0,
+        "q",
+        "b",
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    )
+    .view();
     assert_eq!(foreign["enabled"], true);
     assert_eq!(foreign["storage_error"], "invalid_pskr");
     std::fs::write(dir.0.join(FILE), b"{").unwrap();
     assert_eq!(
-        Feed::start(&dir.0, "p", "b", None, FAST).view()["storage_error"],
+        Feed::start(
+            &dir.0,
+            "p",
+            "b",
+            None,
+            FAST,
+            std::sync::Arc::new(crate::profile::Disk)
+        )
+        .view()["storage_error"],
         "invalid_pskr"
     );
 }
@@ -771,7 +845,14 @@ async fn http_routes_read_and_switch_the_feed() {
         "no feed in an in-process station"
     );
     let dir = Dir::new();
-    let feed = Feed::start(&dir.0, &f.id, &f.boot, None, FAST);
+    let feed = Feed::start(
+        &dir.0,
+        &f.id,
+        &f.boot,
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
     let (status, view, _, _) = f.call("GET", "/pskr", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -867,7 +948,14 @@ fn tc_039_048_decoded_offsets_are_kept_per_parity() {
         "newest first, the same offset once per parity"
     );
     let dir = Dir::new();
-    let feed = Feed::start(&dir.0, "p", "b", None, FAST);
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b",
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     feed.observe(Some("HB9BLA"), Some("K1ABC"));
     let now = utc_s();
     let odd_now = if now.div_euclid(15) % 2 == 1 {
@@ -894,7 +982,14 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         br#"{"schema_version":2,"profile_id":"p","enabled":false,"use":true}"#,
     )
     .unwrap();
-    let feed = Feed::start(&dir.0, "p", "b", None, FAST);
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b",
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     let v = feed.view();
     assert_eq!(
         (
@@ -911,13 +1006,28 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         json!({"schema_version":2,"profile_id":"p","enabled":false,"use":false})
     );
     drop(feed);
-    let v = Feed::start(&dir.0, "p", "b", None, FAST).view();
+    let v = Feed::start(
+        &dir.0,
+        "p",
+        "b",
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    )
+    .view();
     assert_eq!(
         (v["enabled"].clone(), v["use"].clone()),
         (json!(false), json!(false))
     );
     // The Settings switch writes schema 2 too and keeps use.
-    let feed = Feed::start(&dir.0, "p", "b", None, FAST);
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b",
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     feed.switch(true);
     let saved: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
     assert_eq!(
@@ -935,7 +1045,15 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         br#"{"schema_version":3,"profile_id":"p","enabled":true,"use":false}"#,
     ] {
         std::fs::write(&file, broken).unwrap();
-        let v = Feed::start(&dir.0, "p", "b", None, FAST).view();
+        let v = Feed::start(
+            &dir.0,
+            "p",
+            "b",
+            None,
+            FAST,
+            std::sync::Arc::new(crate::profile::Disk),
+        )
+        .view();
         assert_eq!(
             (
                 v["enabled"].clone(),
@@ -954,7 +1072,14 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_048_post_pskr_use_saves_and_refuses() {
     let f = crate::mcp_tests::station(false).await;
-    let feed = Feed::start(&f.dir, &f.id, &f.boot, None, FAST);
+    let feed = Feed::start(
+        &f.dir,
+        &f.id,
+        &f.boot,
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
     let g = f.browser("GET", "/pskr", None).await;
     assert_eq!(
@@ -1056,7 +1181,14 @@ fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
             }
         }
     });
-    let feed = Feed::start(&dir.0, "p", "b00t", Some(local_connector(port)), FAST);
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b00t",
+        Some(local_connector(port)),
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     // Not connected yet: unknown.
     feed.observe(Some("HB9BLA"), Some("K1ABC"));
     assert_eq!(feed.hearing("K1ABC", "FT8", "20m"), HearingState::Unknown);
@@ -1137,7 +1269,14 @@ async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use()
     );
     assert_eq!(target_offsets(r, mode, Parity::Odd), None, "no feed");
     assert!(!use_on(r));
-    let feed = Feed::start(&f.dir, &f.id, &f.boot, None, FAST);
+    let feed = Feed::start(
+        &f.dir,
+        &f.id,
+        &f.boot,
+        None,
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     r.pskr.set(feed.clone()).ok().unwrap();
     feed.observe(Some("HB9BLA"), Some("K1ABC"));
     let now = utc_s();

@@ -233,11 +233,17 @@ async fn live_native_selection_tls_thin_and_off() {
         serde_json::to_vec(&document).unwrap(),
     )
     .unwrap();
-    let (mut store, _) = profile::Store::open(&dir).unwrap();
+    let (mut store, _) =
+        profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     // Selected HTTPS profile: browsers enroll real grants through the token form.
     let authorization =
         crate::authorization_http::Service::initialize(&mut store, &origin).unwrap();
-    let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
+    let recording = recording::Recording::open(
+        &dir,
+        id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     recording.initialize_profile_revision(0);
     recording.fixture_inputs(inputs);
     let (actor, rig) = radio_http_tests::actor(id.clone(), boot.clone(), 0, true);
@@ -249,7 +255,10 @@ async fn live_native_selection_tls_thin_and_off() {
             authorization: Mutex::new(authorization),
             boot,
             recording: recording.clone(),
-            logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
+            logbook: Arc::new(crate::logbook::Logbook::open(
+                &dir,
+                std::sync::Arc::new(crate::profile::Disk),
+            )),
         })),
         profile_id: Some(id),
         token: Some(token),

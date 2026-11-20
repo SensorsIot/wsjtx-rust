@@ -2882,8 +2882,14 @@ async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Fee
     browser_watchdog(&f, limit).await;
     let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
-    let feed =
-        crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::FeedSession::BROKER);
+    let feed = crate::pskr::Feed::start(
+        &dir,
+        &f.id,
+        &f.boot,
+        None,
+        crate::pskr::FeedSession::BROKER,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
     let mut c = config(Some("Test calls"));
     set_repetitions(&mut c, calls);
@@ -2974,8 +2980,14 @@ async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
     let e = at_even(&f);
     let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
-    let feed =
-        crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::FeedSession::BROKER);
+    let feed = crate::pskr::Feed::start(
+        &dir,
+        &f.id,
+        &f.boot,
+        None,
+        crate::pskr::FeedSession::BROKER,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
     assert_eq!(pounce(&f, "K1ABC", 20).await.status, StatusCode::ACCEPTED);
     publish(&f, e, &[("CQ K1ABC FN42", 1800.0, Some(-10.0))]);
@@ -5978,8 +5990,14 @@ async fn tc_039_042_a_browser_auto_on_ends_a_watchdog_stop_and_arms() {
 fn attach_feed(f: &Mcp) -> Arc<crate::pskr::Feed> {
     let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
-    let feed =
-        crate::pskr::Feed::start(&dir, &f.id, &f.boot, None, crate::pskr::FeedSession::BROKER);
+    let feed = crate::pskr::Feed::start(
+        &dir,
+        &f.id,
+        &f.boot,
+        None,
+        crate::pskr::FeedSession::BROKER,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
     *feed.dial.lock().unwrap() = Some(14_074_000);
     feed

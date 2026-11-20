@@ -34,8 +34,13 @@ fn station(dir: std::path::PathBuf, ntp: Arc<Monitor>) -> Station {
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard",
         "audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let (store, _) = profile::Store::open(&dir).unwrap();
-    let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
+    let (store, _) = profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+    let recording = recording::Recording::open(
+        &dir,
+        id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     let clock = clock_http::Clock::new(ntp);
     clock
         .station
@@ -51,7 +56,10 @@ fn station(dir: std::path::PathBuf, ntp: Arc<Monitor>) -> Station {
             authorization: Mutex::new(None),
             boot,
             recording: recording.clone(),
-            logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
+            logbook: Arc::new(crate::logbook::Logbook::open(
+                &dir,
+                std::sync::Arc::new(crate::profile::Disk),
+            )),
         })),
         profile_id: Some(id.clone()),
         token: None,

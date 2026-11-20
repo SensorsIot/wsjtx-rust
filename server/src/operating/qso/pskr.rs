@@ -618,6 +618,8 @@ fn read_record(path: &Path, profile: &str) -> Option<(bool, bool)> {
 pub(crate) struct Feed {
     shared: Arc<Shared>,
     directory: PathBuf,
+    /// The file port the setting is saved through.
+    files: Arc<dyn profile::Files>,
     profile: String,
     boot: String,
     /// Test seam: the dial when the fixture has no CAT actor.
@@ -639,6 +641,7 @@ impl Feed {
         boot: &str,
         connector: Option<Connector>,
         timing: FeedSession,
+        files: Arc<dyn profile::Files>,
     ) -> Arc<Self> {
         let path = directory.join(FILE);
         let unsaved = (spots_config::ENABLED, spots_config::USE);
@@ -679,6 +682,7 @@ impl Feed {
         Arc::new(Self {
             shared,
             directory: directory.to_path_buf(),
+            files,
             profile: profile.to_owned(),
             boot: boot.to_owned(),
             #[cfg(test)]
@@ -804,7 +808,7 @@ impl Feed {
             enabled,
             use_: self.shared.lock().use_,
         };
-        let saved = profile::atomic_json(&self.directory, FILE, &record);
+        let saved = profile::atomic_json(&*self.files, &self.directory, FILE, &record);
         {
             let mut i = self.shared.lock();
             i.storage_error = saved.is_err().then_some("storage_unavailable");
@@ -842,7 +846,7 @@ impl Feed {
             enabled: self.shared.lock().enabled,
             use_,
         };
-        let saved = profile::atomic_json(&self.directory, FILE, &record);
+        let saved = profile::atomic_json(&*self.files, &self.directory, FILE, &record);
         {
             let mut i = self.shared.lock();
             i.storage_error = saved.is_err().then_some("storage_unavailable");

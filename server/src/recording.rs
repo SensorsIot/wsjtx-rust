@@ -8,7 +8,7 @@ use source::{SampleSource, SourcePoll};
 use std::collections::VecDeque;
 use std::{
     fs::{self, File},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -24,14 +24,6 @@ pub(crate) mod startup;
 #[cfg(test)]
 #[path = "recording_tests.rs"]
 mod tests;
-
-fn checkpoint(stage: &'static str) -> Result<()> {
-    #[cfg(test)]
-    tests::checkpoint(stage)?;
-    #[cfg(not(test))]
-    let _ = stage;
-    Ok(())
-}
 
 /// WstxRecordingTransfer::RecordingLimits: the one sample rate of a recording, the largest
 /// recording file, its most samples and chunks, and the times of an import.
@@ -323,6 +315,8 @@ pub struct Recording {
     diagnostics: Mutex<diagnostics::Diagnostics>,
     /// A failed background window dump, reported in the diagnostics view.
     diagnostics_error: Arc<AtomicBool>,
+    /// The file port the recordings are written, listed and removed through.
+    files: Arc<dyn profile::Files>,
     #[cfg(test)]
     cat_transport: Mutex<Option<CatTransport>>,
     #[cfg(test)]
@@ -1081,11 +1075,7 @@ impl Recording {
         }
     }
     fn live_source_uuid(&self) -> Result<String> {
-        #[cfg(test)]
-        if std::mem::take(&mut self.resources.lock().unwrap().fail_source_uuid) {
-            return Err("storage_unavailable");
-        }
-        profile::new_uuid().map_err(|_| "storage_unavailable")
+        self.files.id().map_err(|_| "storage_unavailable")
     }
     pub fn receive_stop(
         &self,
@@ -3352,18 +3342,17 @@ struct Resources {
     live_input: Option<Box<dyn LiveInput>>,
     live_inputs: VecDeque<Box<dyn LiveInput>>,
     fail_live_spawn: bool,
-    fail_source_uuid: bool,
     /// Refusals the startup resume sees instead of its next selection admission.
     resume_refusals: VecDeque<&'static str>,
 }
 fn io<T>(value: std::io::Result<T>) -> Result<T> {
     value.map_err(|_| "storage_unavailable")
 }
-fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
+fn write_json(files: &dyn profile::Files, path: &Path, value: &impl Serialize) -> Result<()> {
     let bytes = serde_json::to_vec(value).map_err(|_| "storage_unavailable")?;
-    let mut f = io(File::create(path))?;
-    io(f.write_all(&bytes))?;
-    io(f.sync_all())
+    let mut f = io(files.create(path, profile::Open::Truncate))?;
+    io(f.write(&bytes))?;
+    io(f.flush())
 }
 pub(crate) fn bounded_json<T: serde::de::DeserializeOwned>(path: &Path, cap: u64) -> Result<T> {
     let mut bytes = Vec::new();
@@ -3377,10 +3366,19 @@ pub(crate) fn bounded_json<T: serde::de::DeserializeOwned>(path: &Path, cap: u64
     serde_json::from_slice(&bytes).map_err(|_| "recording_unavailable")
 }
 impl Recording {
-    pub fn open(base: &Path, profile: String, boot: String) -> Arc<Self> {
+    pub fn open(
+        base: &Path,
+        profile: String,
+        boot: String,
+        files: Arc<dyn profile::Files>,
+    ) -> Arc<Self> {
         let dir = base.join("recordings");
-        let startup = Mutex::new(startup::Startup::load(base, &profile));
-        let diagnostics = Mutex::new(diagnostics::Diagnostics::load(base, &profile));
+        let startup = Mutex::new(startup::Startup::load(base, &profile, files.clone()));
+        let diagnostics = Mutex::new(diagnostics::Diagnostics::load(
+            base,
+            &profile,
+            files.clone(),
+        ));
         let mut state = State {
             generation: 0,
             recording: None,
@@ -3434,6 +3432,7 @@ impl Recording {
                 startup,
                 diagnostics,
                 diagnostics_error: Arc::new(AtomicBool::new(false)),
+                files,
                 #[cfg(test)]
                 cat_transport: Mutex::new(None),
                 #[cfg(test)]
@@ -3513,6 +3512,7 @@ impl Recording {
             startup,
             diagnostics,
             diagnostics_error: Arc::new(AtomicBool::new(false)),
+            files,
             #[cfg(test)]
             cat_transport: Mutex::new(None),
             #[cfg(test)]
@@ -3527,7 +3527,6 @@ impl Recording {
         self.dir.join(format!("{id}.{extension}"))
     }
     fn cleanup(&self, pending: Option<&str>) -> Result<()> {
-        checkpoint("cleanup")?;
         let (committed, unknown_commit, rejected) = {
             let s = self.state.lock().unwrap();
             (
@@ -3540,10 +3539,9 @@ impl Recording {
             )
         };
         // An unreadable manifest provides no authority to delete a possible committed original.
-        for entry in io(fs::read_dir(&self.dir))? {
+        for entry in io(self.files.list(&self.dir))? {
             let entry = io(entry)?;
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
+            let name = entry.name.to_string_lossy();
             if name == "current.json"
                 || (unknown_commit
                     && name.rsplit_once('.').is_some_and(|(id, ext)| {
@@ -3559,12 +3557,8 @@ impl Recording {
             {
                 continue;
             }
-            if entry
-                .file_type()
-                .map_err(|_| "storage_unavailable")?
-                .is_file()
-            {
-                io(fs::remove_file(entry.path()))?;
+            if entry.is_file {
+                io(self.files.remove(&self.dir.join(&entry.name)))?;
             } else {
                 return Err("storage_unavailable");
             }
@@ -3816,12 +3810,10 @@ impl Recording {
     }
     fn write_chunk(&self, id: &str, start: u64, total: u64, body: &[u8]) -> Result<Value> {
         let path = self.path(id, "wav");
-        let mut file = io(fs::OpenOptions::new()
-            .create(start == 0)
-            .append(true)
-            .open(&path))?;
-        io(file.write_all(body))?;
-        checkpoint("append")?;
+        let mut file = io(self
+            .files
+            .create(&path, profile::Open::Append { create: start == 0 }))?;
+        io(file.write(body))?;
         let received = start + body.len() as u64;
         {
             let mut s = self.state.lock().unwrap();
@@ -3836,8 +3828,7 @@ impl Recording {
             }
             i.state = "validating";
         }
-        checkpoint("original_flush")?;
-        io(file.sync_all())?;
+        io(file.flush())?;
         drop(file);
         let wave = validate(&mut io(File::open(&path))?)?;
         let metadata = Metadata {
@@ -3847,10 +3838,9 @@ impl Recording {
             frames: wave.frames,
             rate_hz: RATE_HZ,
         };
-        checkpoint("metadata")?;
-        write_json(&self.path(id, "json"), &metadata)?;
-        checkpoint("manifest")?;
+        write_json(&*self.files, &self.path(id, "json"), &metadata)?;
         write_json(
+            &*self.files,
             &self.dir.join("manifest.tmp"),
             &Manifest {
                 schema_version: 1,
@@ -3865,10 +3855,9 @@ impl Recording {
             }
             i.state = "committing";
         }
-        checkpoint("replace")?;
-        io(fs::rename(
-            self.dir.join("manifest.tmp"),
-            self.dir.join("current.json"),
+        io(self.files.replace(
+            &self.dir.join("manifest.tmp"),
+            &self.dir.join("current.json"),
         ))?;
         let generation;
         {
@@ -3880,7 +3869,6 @@ impl Recording {
             s.import.as_mut().unwrap().recording_id = Some(id.to_owned());
             generation = s.generation;
         }
-        checkpoint("after_replace")?;
         // Keep the slot occupied until obsolete files are really removed.
         self.cleanup(None)?;
         {

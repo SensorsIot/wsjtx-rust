@@ -5,6 +5,7 @@
 // datagrams are read back with the independent big-endian reader below, not the encoder.
 use super::*;
 use crate::contact_http::tests::{Fixture, fixture, now_ms, period_text, record};
+use crate::profile::tests::{Fault, FaultScope, Step};
 use axum::body::Body;
 use std::sync::atomic::Ordering;
 use tower::ServiceExt;
@@ -684,9 +685,9 @@ async fn tc_012_004_refusal_order_and_a_failed_write() {
     let socket = station_socket(&owner, 0);
     let mut changed = good.clone();
     changed[0]["messages"] = json!(["heartbeat"]);
-    owner
-        .fail_write
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+    f.files
+        .store
+        .arm(Fault::fail(Step::Write, FaultScope::EveryThread));
     let (s, v) = put(config_body(&f, 0, changed.clone())).await;
     assert_eq!(
         (s, v["error"]["code"].as_str()),
@@ -708,9 +709,7 @@ async fn tc_012_004_refusal_order_and_a_failed_write() {
     );
     assert_eq!(station_socket(&owner, 0), socket, "the socket is kept");
     assert!(drain(&a).is_empty(), "no Close, nothing sent");
-    owner
-        .fail_write
-        .store(false, std::sync::atomic::Ordering::SeqCst);
+    f.files.store.disarm();
     let (s, v) = put(config_body(&f, 0, changed)).await;
     assert_eq!(
         (s, v["revision"].clone()),
@@ -1088,7 +1087,9 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     );
 
     // Storage failure at completion: unsaved and visible, retried only after the backoff.
-    f.state.logbook.inject_fault(Some("write"));
+    f.files
+        .logbook
+        .arm(Fault::fail(Step::Write, FaultScope::EveryThread));
     f.bench.frozen.store(P1101 + 140_000, Ordering::SeqCst);
     enter(&f, "K1ABC", None);
     partner(&f, P1101 + 150_000, "HB9BLA K1ABC R-03");
@@ -1099,7 +1100,7 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
         log_view(&f),
         json!({"contact_id":third,"call":"K1ABC","outcome":"unsaved","error":"storage_unavailable"})
     );
-    f.state.logbook.inject_fault(None);
+    f.files.logbook.disarm();
     f.tick();
     assert_eq!(stored(&f).len(), 2, "no retry before the backoff");
     assert!(drain(&a).is_empty());
@@ -1116,10 +1117,17 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     assert_eq!(kinds(&drain(&a)), [5, 12]);
     assert_eq!(log_view(&f)["outcome"], "saved");
     // Records survive a restart (a fresh station starts no contact, so logs nothing again).
-    assert_eq!(crate::logbook::Logbook::open(&f.dir).total().unwrap(), 3);
+    assert_eq!(
+        crate::logbook::Logbook::open(&f.dir, std::sync::Arc::new(crate::profile::Disk))
+            .total()
+            .unwrap(),
+        3
+    );
 
     // While storage fails at most LOG_PENDING_MAX records wait; the oldest is dropped.
-    f.state.logbook.inject_fault(Some("write"));
+    f.files
+        .logbook
+        .arm(Fault::fail(Step::Write, FaultScope::EveryThread));
     for i in 0..=contact_http::LOG_PENDING_MAX {
         let suffix: String = [b'A' + (i / 26) as u8, b'A' + (i % 26) as u8]
             .iter()
@@ -1136,7 +1144,7 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
         (Some("DL1AA"), Some("log_queue_full")),
         "the dropped record stays shown"
     );
-    f.state.logbook.inject_fault(None);
+    f.files.logbook.disarm();
     f.contact().retry_logs_now();
     f.tick();
     assert_eq!(

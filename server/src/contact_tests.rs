@@ -5819,7 +5819,8 @@ fn station_started_with_saved(auto_seq: bool, call_first: bool) -> Station {
         r#"{{"schema_version":1,"profile_id":"{id}","auto_seq":{auto_seq},"call_first":{call_first}}}"#
     );
     std::fs::write(dir.join("qso-settings.json"), saved).unwrap();
-    let (store, _) = crate::profile::Store::open(&dir).unwrap();
+    let (store, _) =
+        crate::profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let mut s = station();
     s.engine = crate::contact_http::start_engine(&store);
     drop(store);

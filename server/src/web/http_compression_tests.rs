@@ -396,11 +396,17 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
     )
     .unwrap();
     // Plaintext selected profile: the runtime-token cookie below is its operating contract.
-    let (mut store, _) = profile::Store::open(&root).unwrap();
+    let (mut store, _) =
+        profile::Store::open(&root, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let authorization =
         crate::authorization_http::Service::initialize(&mut store, "http://localhost:18001")
             .unwrap();
-    let r = recording::Recording::open(&root, id.clone(), boot.clone());
+    let r = recording::Recording::open(
+        &root,
+        id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     r.initialize_profile_revision(0);
     let app = App {
         origin: "http://localhost:18001".into(),
@@ -409,7 +415,10 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
             authorization: Mutex::new(authorization),
             boot: boot.clone(),
             recording: r.clone(),
-            logbook: Arc::new(crate::logbook::Logbook::open(&root)),
+            logbook: Arc::new(crate::logbook::Logbook::open(
+                &root,
+                std::sync::Arc::new(crate::profile::Disk),
+            )),
         })),
         profile_id: Some(id.clone()),
         token: Some("IsolatedH1FixtureToken012345678901".into()),

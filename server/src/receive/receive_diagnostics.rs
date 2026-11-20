@@ -32,13 +32,14 @@ struct Record {
 }
 pub(crate) struct Diagnostics {
     directory: PathBuf,
+    files: Arc<dyn profile::Files>,
     record: Record,
     storage_error: Option<&'static str>,
     dumped_windows: u64,
     windows: VecDeque<Value>,
 }
 impl Diagnostics {
-    pub(crate) fn load(directory: &Path, profile: &str) -> Self {
+    pub(crate) fn load(directory: &Path, profile: &str, files: Arc<dyn profile::Files>) -> Self {
         let defaults = Record {
             schema_version: 1,
             profile_id: profile.into(),
@@ -56,6 +57,7 @@ impl Diagnostics {
         };
         Self {
             directory: directory.to_path_buf(),
+            files,
             record,
             storage_error,
             dumped_windows: 0,
@@ -160,7 +162,7 @@ impl Recording {
                 ..d.record.clone()
             };
             if next != d.record || d.storage_error.is_some() {
-                match profile::atomic_json(&d.directory, FILE, &next) {
+                match profile::atomic_json(&*d.files, &d.directory, FILE, &next) {
                     Ok(()) => {
                         d.record = next;
                         d.storage_error = None;

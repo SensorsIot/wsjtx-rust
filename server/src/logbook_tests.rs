@@ -1,6 +1,7 @@
 // Cost 2: isolated disposable profile directories; hand-authored ADIF 3.1.8 ADI
 // fixtures and hand-written expected bytes/values (independent of the writer).
 use super::*;
+use crate::profile::tests::{Fault, FaultScope, FaultyFiles, Step};
 
 fn open_gate(
     publish: &mut dyn FnMut() -> std::io::Result<()>,
@@ -9,7 +10,8 @@ fn open_gate(
 }
 const GATE: Gate = &open_gate;
 
-pub(crate) struct Dir(pub(crate) PathBuf);
+/// A disposable profile directory and the file fake its logbooks are opened on.
+pub(crate) struct Dir(pub(crate) PathBuf, pub(crate) Arc<FaultyFiles>);
 impl Dir {
     pub(crate) fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
@@ -17,7 +19,7 @@ impl Dir {
             crate::profile::new_uuid().unwrap()
         ));
         fs::create_dir(&path).unwrap();
-        Self(path)
+        Self(path, FaultyFiles::new())
     }
     fn file(&self) -> Option<Vec<u8>> {
         fs::read(self.0.join(FILE_NAME)).ok()
@@ -315,7 +317,7 @@ fn adi_limits_admit_exact_maximum_and_refuse_one_over() {
 #[test]
 fn import_of_exactly_sixty_four_mebibytes_is_admitted_and_published() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let record = "<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <mode:3>FT8 <eor>\n";
     let mut bytes = record.as_bytes().to_vec();
     bytes.resize(IMPORT_BYTES_MAX as usize, b' ');
@@ -348,7 +350,7 @@ const LOG4OM_SSB: &str = "<CALL:5>W1XYZ <BAND:3>40m <MODE:3>SSB <SUBMODE:3>LSB <
 #[test]
 fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_source() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let file = format!("{LOG4OM_HEADER}{LOG4OM_FT8}{LOG4OM_FT4}{LOG4OM_SSB}");
     let (result, view) = import(&log, file.as_bytes());
     let result = result.unwrap();
@@ -396,7 +398,7 @@ fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_sourc
         0
     );
     assert_eq!(
-        Logbook::open(&dir.0).total().unwrap(),
+        Logbook::open(&dir.0, dir.1.clone()).total().unwrap(),
         3,
         "the stored log reloads"
     );
@@ -445,7 +447,7 @@ fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_sourc
 #[test]
 fn update_consolidates_within_two_minutes_and_existing_records_win_and_repeat_adds_nothing() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     // Station record: K1ABC 20m FT8 2026-10-31 12:30:15 (reviewed()).
     assert_eq!(
         log.save(reviewed(ID1, "K1ABC"), GATE).unwrap(),
@@ -503,7 +505,7 @@ fn update_consolidates_within_two_minutes_and_existing_records_win_and_repeat_ad
 #[test]
 fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let file = "<qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n\
         <call:5>N1AAA <qso_date:8>20261032 <time_on:4>1300 <mode:3>FT8 <eor>\n\
         <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <name:3>Bob <eor>\n\
@@ -616,7 +618,7 @@ fn update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file()
 #[test]
 fn update_refuses_a_broken_tag_a_header_without_eoh_and_a_long_name_whole() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let good = "<call:5>N6FFF <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n";
     for (broken, code) in [
         (format!("{good}<call:x>K1ABC <eor>"), "malformed"),
@@ -641,18 +643,18 @@ fn update_refuses_a_broken_tag_a_header_without_eoh_and_a_long_name_whole() {
 #[test]
 fn an_update_whose_write_fails_stores_none_of_its_records() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     assert_eq!(
         log.save(reviewed(ID1, "K1ABC"), GATE).unwrap(),
         SaveOutcome::Saved
     );
     let before = dir.file().unwrap();
-    log.inject_fault(Some("write"));
+    dir.1.arm(Fault::fail(Step::Write, FaultScope::EveryThread));
     let file = "<call:5>N6FFF <qso_date:8>20261031 <time_on:4>1300 <mode:3>FT8 <eor>\n\
         <call:5>N7GGG <qso_date:8>20261031 <time_on:4>1301 <mode:3>FT8 <eor>\n";
     let (result, _) = import(&log, file.as_bytes());
     assert!(result.is_err(), "{result:?}");
-    log.inject_fault(None);
+    dir.1.disarm();
     assert_eq!(dir.file().unwrap(), before);
     assert_eq!(log.total().unwrap(), 1);
 }
@@ -664,7 +666,7 @@ fn an_update_whose_write_fails_stores_none_of_its_records() {
 #[test]
 fn update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_the_index() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let mut file = String::from(LOG4OM_HEADER);
     let padding = format!("<NOTES:800>{}", "n".repeat(800));
     for i in 0..27_000u32 {
@@ -705,7 +707,10 @@ fn update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_t
             .all(|s| *s == "worked_this_band_and_mode")
     );
     let started = Instant::now();
-    assert_eq!(Logbook::open(&dir.0).total().unwrap(), 27_000);
+    assert_eq!(
+        Logbook::open(&dir.0, dir.1.clone()).total().unwrap(),
+        27_000
+    );
     eprintln!("reopen {:?}", started.elapsed());
     // The rerun of the export with every QSO confirmed in LoTW upgrades all of them
     // in one replace, and the worked set includes the confirmation.
@@ -736,7 +741,7 @@ fn update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_t
 #[test]
 fn import_retry_by_id_and_sha256_has_no_second_effect_and_mismatch_is_refused() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let bytes = b"<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <mode:3>FT8 <eor>";
     let sha = sha256_hex(bytes);
     let id = "33333333-3333-4333-8333-333333333333";
@@ -803,14 +808,18 @@ fn import_retry_by_id_and_sha256_has_no_second_effect_and_mismatch_is_refused() 
 #[test]
 fn save_is_exactly_once_and_injected_failures_leave_no_torn_file() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     assert_eq!(
         log.save(reviewed(ID1, "K1ABC"), GATE).unwrap(),
         SaveOutcome::Saved
     );
     let first = dir.file().unwrap();
-    for stage in ["write", "flush", "replace"] {
-        log.inject_fault(Some(stage));
+    for (stage, step) in [
+        ("write", Step::Write),
+        ("flush", Step::Flush),
+        ("replace", Step::Replace),
+    ] {
+        dir.1.arm(Fault::fail(step, FaultScope::EveryThread));
         assert_eq!(
             log.save(reviewed(ID2, "W1XYZ"), GATE),
             Err(StoreError::Unavailable),
@@ -827,7 +836,7 @@ fn save_is_exactly_once_and_injected_failures_leave_no_torn_file() {
         );
         assert_eq!(log.total().unwrap(), 1);
     }
-    log.inject_fault(None);
+    dir.1.disarm();
     assert_eq!(
         log.save(reviewed(ID2, "W1XYZ"), GATE).unwrap(),
         SaveOutcome::Saved,
@@ -871,7 +880,7 @@ fn save_is_exactly_once_and_injected_failures_leave_no_torn_file() {
     );
     assert!(dir.leftovers().is_empty());
     drop(log);
-    let reopened = Logbook::open(&dir.0);
+    let reopened = Logbook::open(&dir.0, dir.1.clone());
     assert_eq!(
         reopened.total().unwrap(),
         3,
@@ -884,7 +893,7 @@ fn save_is_exactly_once_and_injected_failures_leave_no_torn_file() {
 fn invalid_stored_log_is_unavailable_and_never_rewritten() {
     let dir = Dir::new();
     fs::write(dir.0.join(FILE_NAME), b"<call:3>K1ABC <eor>").unwrap();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     assert_eq!(
         log.save(reviewed(ID1, "K1ABC"), GATE),
         Err(StoreError::Unavailable)
@@ -898,7 +907,7 @@ fn invalid_stored_log_is_unavailable_and_never_rewritten() {
 #[test]
 fn history_pages_have_stable_indexes_and_stay_within_the_byte_bound() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     for i in 0..12 {
         let mut record = reviewed(&format!("{i:08x}-0000-4000-8000-000000000000"), "K1ABC");
         record.values[15] = Some("\"".repeat(1023) + "\\");
@@ -968,7 +977,7 @@ fn history_pages_have_stable_indexes_and_stay_within_the_byte_bound() {
 #[test]
 fn worked_before_matches_call_case_insensitively_and_band_with_mode() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let text = "<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor>\n\
         <call:5>W1XYZ <qso_date:8>20261031 <time_on:4>1231 <band:3>40m <mode:3>FT8 <eor>\n\
         <call:6>DL1ABC <qso_date:8>20261031 <time_on:4>1232 <freq:6>14.080 <mode:4>MFSK <submode:3>FT4 <eor>\n";
@@ -1077,7 +1086,7 @@ fn unreadable_stored_log_is_unavailable_and_left_untouched() {
     let path = dir.0.join(FILE_NAME);
     fs::create_dir(&path).unwrap();
     fs::write(path.join("marker"), b"kept").unwrap();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     assert_eq!(
         log.save(reviewed(ID1, "K1ABC"), GATE),
         Err(StoreError::Unavailable)
@@ -1126,7 +1135,7 @@ fn contest_fields_and_rtty_rst_are_validated() {
 #[test]
 fn update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let at32 = "A".repeat(32);
     let at33 = "B".repeat(33);
     let file = format!(
@@ -1178,7 +1187,7 @@ fn update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones(
         n.clone()
     ]));
     // Every kept record passes the SaveContact contest rule on reload.
-    let reopened = Logbook::open(&dir.0);
+    let reopened = Logbook::open(&dir.0, dir.1.clone());
     assert_eq!(reopened.history(ID1, 0, 2).unwrap()["records"], records);
 }
 
@@ -1191,7 +1200,7 @@ fn update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones(
 #[test]
 fn export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let mut file = String::new();
     for i in 0..300 {
         file.push_str(&format!(
@@ -1282,7 +1291,7 @@ const CONFIRM_HEADER: &str = "Log4OM 2 test export\n<ADIF_VER:5>3.1.0 <PROGRAMID
 #[test]
 fn update_keeps_each_confirmation_field_and_the_export_round_trips_them() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let file = format!(
         "{CONFIRM_HEADER}<CALL:5>K1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250218 <TIME_ON:6>225630 \
          <LOTW_QSL_RCVD:1>Y <LOTW_QSLRDATE:8>20250301 <QSL_RCVD:1>V <QSLRDATE:8>20250402 \
@@ -1323,7 +1332,7 @@ fn update_keeps_each_confirmation_field_and_the_export_round_trips_them() {
     let history = log.history(ID1, 0, 1).unwrap();
     assert!(history["records"][0].get("lotw_qsl_rcvd").is_none());
     assert_eq!(
-        Logbook::open(&dir.0).total().unwrap(),
+        Logbook::open(&dir.0, dir.1.clone()).total().unwrap(),
         2,
         "the stored log reloads"
     );
@@ -1347,7 +1356,7 @@ fn update_keeps_each_confirmation_field_and_the_export_round_trips_them() {
 #[test]
 fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     // The station's own record K1ABC 20m FT8 2026-10-31 12:30:15 (grid FN42).
     assert_eq!(
         log.save(reviewed(ID1, "K1ABC"), GATE).unwrap(),
@@ -1441,7 +1450,7 @@ fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one(
 #[test]
 fn worked_latest_returns_the_last_set_and_builds_off_the_caller() {
     let dir = Dir::new();
-    let log = std::sync::Arc::new(Logbook::open(&dir.0));
+    let log = std::sync::Arc::new(Logbook::open(&dir.0, dir.1.clone()));
     let add = |call: &str| {
         let file = format!(
             "{CONFIRM_HEADER}<CALL:6>{call} <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1000 <eor>\n"
@@ -1485,7 +1494,7 @@ fn worked_latest_returns_the_last_set_and_builds_off_the_caller() {
 #[test]
 fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let file = format!(
         "{CONFIRM_HEADER}<CALL:6>DL1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1000 <eor>\n\
          <CALL:5>F1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250103 <TIME_ON:4>1000 <eor>\n"
@@ -1528,7 +1537,7 @@ fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {
 fn worked_set_reports_worked_and_confirmed_per_entity_band_and_mode() {
     use crate::dxcc::{Category, Standing};
     let dir = Dir::new();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     let file = format!(
         "{CONFIRM_HEADER}<CALL:6>DL1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250101 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>Y <eor>\n\
          <CALL:6>DL2XYZ <BAND:3>40m <MODE:3>FT8 <QSO_DATE:8>20250102 <TIME_ON:4>1000 <LOTW_QSL_RCVD:1>N <eor>\n\
@@ -1677,7 +1686,7 @@ fn stored_log_with_former_verbatim_qsl_fields_stays_readable() {
         "header\n<eoh>\n<call:5>K1ABC <mode:3>FT8 <qso_date:8>20250101 <time_on:4>1000 <app_wstxrust_contact_id:36>{ID1} <QSL_RCVD:1>Y <QSL_RCVD:1>N <LOTW_QSL_RCVD:3>yes <eor>\n"
     );
     fs::write(dir.0.join(FILE_NAME), &text).unwrap();
-    let log = Logbook::open(&dir.0);
+    let log = Logbook::open(&dir.0, dir.1.clone());
     assert_eq!(log.total().unwrap(), 1);
     let records = parse_records(text.as_bytes(), &limits()).unwrap();
     assert_eq!(records[0].get("qsl_rcvd"), Some("Y"));

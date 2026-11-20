@@ -1,7 +1,6 @@
 //! Canonical SysML recording/display independent byte/math/state oracles. Cost 2, Windows PC; no hardware.
 use super::*;
-use std::cell::Cell;
-thread_local! { static FAULT: Cell<Option<&'static str>> = const { Cell::new(None) }; }
+use profile::tests::{Fault, FaultScope, FaultyFiles, Step};
 #[path = "transmit/recording_tx_tests.rs"]
 mod tx;
 
@@ -432,7 +431,10 @@ fn live_second_epoch_source_uuid_failure_releases_original_admission() {
     }
     let first = r.receive_snapshot();
     assert!(!first["source"].is_null());
-    r.resources.lock().unwrap().fail_source_uuid = true;
+    // The live worker mints the source id: the fault meets every thread.
+    fixture
+        .1
+        .arm(Fault::fail(Step::Id, FaultScope::EveryThread));
     assert!(!queue.push(&[], 8193, 1024, 0, audio::SILENT));
     assert!(queue.push(&[], 1024, 1024, 0, audio::SILENT));
     let deadline = Instant::now() + Duration::from_secs(1);
@@ -450,14 +452,8 @@ fn live_second_epoch_source_uuid_failure_releases_original_admission() {
             .is_ok()
     );
 }
-pub(super) fn checkpoint(stage: &'static str) -> Result<()> {
-    if FAULT.get() == Some(stage) {
-        Err("storage_unavailable")
-    } else {
-        Ok(())
-    }
-}
-struct Fixture(PathBuf);
+/// A disposable profile directory and the file fake every recording opened on it uses.
+struct Fixture(PathBuf, Arc<FaultyFiles>);
 
 // Deterministically hold the operation in
 // restarting while the real PacketQueue/LiveSource rotates its continuing worker.
@@ -616,13 +612,14 @@ impl Fixture {
         let path =
             std::env::temp_dir().join(format!("wstx-recording-{}", profile::new_uuid().unwrap()));
         fs::create_dir(&path).unwrap();
-        Self(path)
+        Self(path, FaultyFiles::new())
     }
     fn recording(&self) -> Arc<Recording> {
         Recording::open(
             &self.0,
             "00000000-0000-4000-8000-000000000001".into(),
             profile::new_uuid().unwrap(),
+            self.1.clone(),
         )
     }
     fn wave(&self, bytes: &[u8]) -> File {
@@ -906,6 +903,7 @@ fn selection_profile_fixture() -> (
         &fixture.0,
         profile::new_uuid().unwrap(),
         profile::new_uuid().unwrap(),
+        std::sync::Arc::new(crate::profile::Disk),
     );
     let document = json!({"schema_version":1,"profile_id":r.profile,"revision":0,"display_name":"Before edit","callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     fs::write(
@@ -913,7 +911,8 @@ fn selection_profile_fixture() -> (
         serde_json::to_vec(&document).unwrap(),
     )
     .unwrap();
-    let (store, _) = profile::Store::open(&fixture.0).unwrap();
+    let (store, _) =
+        profile::Store::open(&fixture.0, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let mut settings = store.document.settings();
     settings.display_name = "After edit".into();
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -950,7 +949,10 @@ fn selection_profile_fixture() -> (
             authorization: Mutex::new(None),
             boot: r.boot.clone(),
             recording: r.clone(),
-            logbook: Arc::new(crate::logbook::Logbook::open(&fixture.0)),
+            logbook: Arc::new(crate::logbook::Logbook::open(
+                &fixture.0,
+                std::sync::Arc::new(crate::profile::Disk),
+            )),
         })),
         profile_id: Some(r.profile.clone()),
         token: None,
@@ -1247,19 +1249,21 @@ fn import_failures_keep_old_source_and_quarantine_until_real_release() {
     let r = f.recording();
     let bytes = wav(&[1, 2, 3]);
     let old = import(&r, &bytes).unwrap();
-    for stage in [
-        "append",
-        "original_flush",
-        "metadata",
-        "manifest",
-        "replace",
+    let scope = FaultScope::ArmingThread;
+    for (_stage, fault) in [
+        ("append", Fault::fail(Step::Write, scope)),
+        ("original_flush", Fault::fail(Step::Flush, scope)),
+        // The metadata file is the second create of the import, after the append open.
+        ("metadata", Fault::fail(Step::Create, scope).after(1)),
+        ("manifest", Fault::fail(Step::Create, scope).after(2)),
+        ("replace", Fault::fail(Step::Replace, scope)),
     ] {
-        FAULT.set(Some(stage));
+        f.1.arm(fault);
         assert_eq!(
             import(&r, &wav(&[4, 5, 6])).unwrap_err(),
             "storage_unavailable"
         );
-        FAULT.set(None);
+        f.1.disarm();
         assert_eq!(r.snapshot()["recording"]["id"], old);
         assert_eq!(fs::read(r.path(&old, "wav")).unwrap(), bytes);
         assert_eq!(f.recording().snapshot()["recording"]["id"], old);
@@ -1348,9 +1352,10 @@ fn post_commit_failure_never_reverts_new_original_on_restart() {
     let f = Fixture::new();
     let r = f.recording();
     let old = import(&r, &wav(&[1])).unwrap();
-    FAULT.set(Some("after_replace"));
+    // The first listing of the import is the cleanup after the manifest replace.
+    f.1.arm(Fault::fail(Step::List, FaultScope::ArmingThread));
     assert_eq!(import(&r, &wav(&[2])).unwrap_err(), "storage_unavailable");
-    FAULT.set(None);
+    f.1.disarm();
     let committed = r.snapshot()["recording"]["id"].as_str().unwrap().to_owned();
     assert_ne!(committed, old);
     assert_eq!(fs::read(r.path(&committed, "wav")).unwrap(), wav(&[2]));
@@ -1405,7 +1410,7 @@ fn deadlines_release_only_after_cleanup_and_startup_reconciles_quarantine() {
         i.error = Some("cancelled");
         i.worker = true;
     }
-    FAULT.set(Some("cleanup"));
+    f.1.arm(Fault::fail(Step::List, FaultScope::ArmingThread));
     r.finish_cleanup(id.to_owned());
     assert_eq!(r.snapshot()["storage_error"], "storage_unavailable");
     assert!(r.path(id, "wav").exists());
@@ -1414,7 +1419,7 @@ fn deadlines_release_only_after_cleanup_and_startup_reconciles_quarantine() {
         f.recording().snapshot()["storage_error"],
         "storage_unavailable"
     );
-    FAULT.set(None);
+    f.1.disarm();
     let restarted = f.recording();
     assert_eq!(restarted.snapshot()["storage_error"], Value::Null);
     assert_eq!(restarted.snapshot()["recording"]["id"], old);
@@ -1565,6 +1570,7 @@ fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
     let bytes = wav(&[1]);
     fs::write(empty.path(&id, "wav"), &bytes).unwrap();
     write_json(
+        &profile::Disk,
         &empty.path(&id, "json"),
         &Metadata {
             schema_version: 1,

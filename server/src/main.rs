@@ -116,14 +116,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
+    // The station's one file port: the disk.
+    let files: Arc<dyn profile::Files> = Arc::new(profile::Disk);
     let args: Vec<_> = env::args_os().skip(1).collect();
     let selected = match args.as_slice() {
         [] => None,
         [command, directory] if command == "--create-profile" || command == "--profile" => {
             let directory = PathBuf::from(directory);
             if command == "--create-profile" {
-                let target = directory.clone();
-                tokio::task::spawn_blocking(move || profile::Store::create(&target)).await?
+                let (target, files) = (directory.clone(), files.clone());
+                tokio::task::spawn_blocking(move || profile::Store::create(&target, files)).await?
                     .map_err(|code| startup_error(code, &directory))?;
                 return Ok(());
             }
@@ -142,9 +144,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let Some(antenna) = antenna.to_str() else {
                 return Err(startup_error("invalid_runtime_configuration", &directory).into());
             };
-            let (target, antenna) = (directory.clone(), antenna.to_owned());
+            let (target, antenna, files) = (directory.clone(), antenna.to_owned(), files.clone());
             tokio::task::spawn_blocking(move || {
-                profile::Store::create_native(&target, &antenna, address.as_deref())
+                profile::Store::create_native(&target, &antenna, address.as_deref(), files)
             })
                 .await?
                 .map_err(|code| startup_error(code, &directory))?;
@@ -165,9 +167,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(error("invalid_runtime_configuration", ""));
     }
     let loaded = if let Some(path) = &selected {
-        let path = path.clone();
+        let (path, files) = (path.clone(), files.clone());
         Some(
-            tokio::task::spawn_blocking(move || profile::Store::open(&path))
+            tokio::task::spawn_blocking(move || profile::Store::open(&path, files))
                 .await?
                 .map_err(|code| error(code, ""))?,
         )
@@ -305,9 +307,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let boot = profile::new_uuid().map_err(|_| error("resource_unavailable", ""))?;
             let base = selected.clone().ok_or("profile directory absent")?;
             let id = store.document.profile_id.clone();
-            let recording_boot = boot.clone();
+            let (recording_boot, recording_files) = (boot.clone(), files.clone());
             let recording = tokio::task::spawn_blocking(move || {
-                recording::Recording::open(&base, id, recording_boot)
+                recording::Recording::open(&base, id, recording_boot, recording_files)
             })
             .await?;
             recording.initialize_profile_revision(store.document.revision);
@@ -373,8 +375,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = recording.flex.set(session);
             }
             let log_base = selected.clone().ok_or("profile directory absent")?;
+            let log_files = files.clone();
             let logbook = Arc::new(
-                tokio::task::spawn_blocking(move || logbook::Logbook::open(&log_base)).await?,
+                tokio::task::spawn_blocking(move || logbook::Logbook::open(&log_base, log_files))
+                    .await?,
             );
             let watched = recording.clone();
             tokio::spawn(async move {
@@ -443,6 +447,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &state.recording.boot,
                 pskr::station_connector(feed_setting.as_deref()),
                 pskr::FeedSession::BROKER,
+                files.clone(),
             );
             let _ = state.recording.pskr.set(feed);
             let interface = state.clone();

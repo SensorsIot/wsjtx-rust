@@ -395,9 +395,6 @@ pub(crate) struct Owner {
     lock_root: std::path::PathBuf,
     /// The lock of the claimed instance name, held while the owner (the process) lives.
     held: Mutex<Option<std::fs::File>>,
-    /// Test seam: the next udp.json writes fail.
-    #[cfg(test)]
-    pub(crate) fail_write: std::sync::atomic::AtomicBool,
 }
 
 fn wall_ms() -> i64 {
@@ -671,8 +668,6 @@ impl Owner {
             disabled,
             lock_root: lock_root.to_owned(),
             held: Mutex::new(None),
-            #[cfg(test)]
-            fail_write: std::sync::atomic::AtomicBool::new(false),
         };
         if state.recording.flex.get().is_none() {
             inner.name = Some(owner.claim(&base));
@@ -810,10 +805,6 @@ impl Owner {
                 .store
                 .lock()
                 .map_err(|_| ("storage_unavailable", None))?;
-            #[cfg(test)]
-            if self.fail_write.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err(("storage_unavailable", None));
-            }
             store
                 .write_document_file(FILE_NAME, &document)
                 .map_err(|_| ("storage_unavailable", None))?;

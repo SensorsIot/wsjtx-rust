@@ -1,5 +1,6 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use profile::tests::{Fault, FaultScope, StationFiles, Step};
 use ring::{
     rand::SecureRandom,
     signature::{self, KeyPair},
@@ -39,6 +40,8 @@ fn profile_credentials_require_one_selected_cookie_across_all_header_fields() {
 struct HttpFixture {
     app: Option<App>,
     directory: PathBuf,
+    /// The file fakes of the profile store, the logbook and the recording owner.
+    files: StationFiles,
 }
 struct HttpReply {
     status: StatusCode,
@@ -70,19 +73,31 @@ impl HttpFixture {
     fn new(origin: &str) -> Self {
         let directory =
             std::env::temp_dir().join(format!("wstx-auth-http-{}", profile::new_uuid().unwrap()));
-        profile::Store::create(&directory).unwrap();
-        let (store, _) = profile::Store::open(&directory).unwrap();
-        let app = Self::app_from_store(store, &directory, origin);
+        let files = StationFiles::new();
+        profile::Store::create(&directory, files.store.clone()).unwrap();
+        let (store, _) = profile::Store::open(&directory, files.store.clone()).unwrap();
+        let app = Self::app_from_store(store, &directory, origin, &files);
         Self {
             app: Some(app),
             directory,
+            files,
         }
     }
-    fn app_from_store(mut store: profile::Store, directory: &std::path::Path, origin: &str) -> App {
+    fn app_from_store(
+        mut store: profile::Store,
+        directory: &std::path::Path,
+        origin: &str,
+        files: &StationFiles,
+    ) -> App {
         let id = store.document.profile_id.clone();
         let boot = profile::new_uuid().unwrap();
         let authority = authorization_http::Service::initialize(&mut store, origin).unwrap();
-        let recording = recording::Recording::open(directory, id.clone(), boot.clone());
+        let recording = recording::Recording::open(
+            directory,
+            id.clone(),
+            boot.clone(),
+            files.recording.clone(),
+        );
         recording.initialize_profile_revision(store.document.revision);
         App {
             origin: origin.into(),
@@ -91,7 +106,10 @@ impl HttpFixture {
                 authorization: Mutex::new(authority),
                 boot,
                 recording,
-                logbook: Arc::new(crate::logbook::Logbook::open(directory)),
+                logbook: Arc::new(crate::logbook::Logbook::open(
+                    directory,
+                    files.logbook.clone(),
+                )),
             })),
             profile_id: Some(id),
             token: origin
@@ -105,8 +123,13 @@ impl HttpFixture {
         let old = self.app.take().unwrap();
         let origin = old.origin.clone();
         drop(old); // Release the existing Store/UUID locks before opening again.
-        let (store, _) = profile::Store::open(&self.directory).unwrap();
-        self.app = Some(Self::app_from_store(store, &self.directory, &origin));
+        let (store, _) = profile::Store::open(&self.directory, self.files.store.clone()).unwrap();
+        self.app = Some(Self::app_from_store(
+            store,
+            &self.directory,
+            &origin,
+            &self.files,
+        ));
     }
     fn app(&self) -> &App {
         self.app.as_ref().unwrap()
@@ -1303,14 +1326,19 @@ async fn commission_http_commits_exact_disabled_configuration_and_retained_dupli
         bytes
     );
     // A write checkpoint remains armed: a duplicate must bypass persistence entirely.
-    let duplicate = authorization_http::commission_with_fault(
-        f.app().clone(),
-        f.headers(Some(&g.cookie)),
-        Bytes::from(serde_json::to_vec(&commission_body(&g, &operation)).unwrap()),
-        "write",
-    )
-    .await;
-    assert_eq!(duplicate.status(), StatusCode::OK);
+    f.files
+        .store
+        .arm(Fault::fail(Step::Write, FaultScope::EveryThread));
+    let duplicate = f
+        .request(
+            axum::http::Method::POST,
+            "/authorization/v1/commission",
+            serde_json::to_vec(&commission_body(&g, &operation)).unwrap(),
+            f.headers(Some(&g.cookie)),
+        )
+        .await;
+    f.files.store.disarm();
+    assert_eq!(duplicate.status, StatusCode::OK);
     assert_eq!(
         std::fs::read(f.directory.join("authorization.json")).unwrap(),
         bytes
@@ -1740,7 +1768,7 @@ async fn commission_http_corrupt_acknowledgement_watermark_is_rejected_on_save_a
         f.app.take();
         std::fs::write(f.directory.join("authorization.json"), &corrupt).unwrap();
         assert!(matches!(
-            profile::Store::open(&f.directory),
+            profile::Store::open(&f.directory, f.files.store.clone()),
             Err("resource_unavailable")
         ));
         assert_eq!(
@@ -1838,8 +1866,8 @@ async fn commission_http_read_only_receipt_survives_logout_without_mutation_repl
     );
 }
 
-// The test drives the transaction and the SAME production completion mapping, not Router
-// admission.
+// The test posts through the commission route, so the transaction runs with the SAME
+// production completion mapping; the fault comes from the profile store's file fake.
 #[tokio::test]
 async fn commission_http_transaction_faults_never_ack_and_store_reopen_reads_only_committed_outcome()
  {
@@ -1855,15 +1883,25 @@ async fn commission_http_transaction_faults_never_ack_and_store_reopen_reads_onl
         let operation = profile::new_uuid().unwrap();
         let public = std::fs::read(f.directory.join("profile.json")).unwrap();
         let private = std::fs::read(f.directory.join("authorization.json")).unwrap();
-        let failed = authorization_http::commission_with_fault(
-            f.app().clone(),
-            f.headers(Some(&g.cookie)),
-            Bytes::from(serde_json::to_vec(&commission_body(&g, &operation)).unwrap()),
-            stage,
-        )
-        .await;
-        assert_eq!(failed.status(), StatusCode::SERVICE_UNAVAILABLE, "{stage}");
-        assert!(!failed.headers().contains_key(header::SET_COOKIE));
+        let scope = FaultScope::EveryThread;
+        f.files.store.arm(match stage {
+            "write" => Fault::fail(Step::Write, scope),
+            "flush" => Fault::fail(Step::Flush, scope),
+            "replace" => Fault::fail(Step::Replace, scope),
+            "before_replace" => Fault::interrupt_before(Step::Replace, scope),
+            _ => Fault::interrupt_after(Step::Replace, scope),
+        });
+        let failed = f
+            .request(
+                axum::http::Method::POST,
+                "/authorization/v1/commission",
+                serde_json::to_vec(&commission_body(&g, &operation)).unwrap(),
+                f.headers(Some(&g.cookie)),
+            )
+            .await;
+        f.files.store.disarm();
+        assert_eq!(failed.status, StatusCode::SERVICE_UNAVAILABLE, "{stage}");
+        assert!(!failed.headers.contains_key(header::SET_COOKIE));
         assert_eq!(
             std::fs::read(f.directory.join("profile.json")).unwrap(),
             public
@@ -2261,7 +2299,11 @@ mod automatic_cat {
     // Proves: TC-022-009
     #[tokio::test]
     async fn failed_store_write_quarantines_and_releases_cat_with_zero_reopen() {
-        for stage in ["write", "flush", "replace"] {
+        for (stage, step) in [
+            ("write", Step::Write),
+            ("flush", Step::Flush),
+            ("replace", Step::Replace),
+        ] {
             let f = HttpFixture::new("https://localhost:8080");
             let state = f.app().profile.as_ref().unwrap().clone();
             let peer = attach_peer(&state.recording, Device::Present);
@@ -2279,14 +2321,16 @@ mod automatic_cat {
                 let mut store = state.store.lock().unwrap();
                 let mut owner = state.authorization.lock().unwrap();
                 let service = owner.as_mut().unwrap();
-                profile::tests::with_fault(stage, || {
-                    service.authority.revoke(
-                        &mut store,
-                        &g.id,
-                        &profile::new_uuid().unwrap(),
-                        false,
-                    )
-                })
+                f.files
+                    .store
+                    .during(Fault::fail(step, FaultScope::ArmingThread), || {
+                        service.authority.revoke(
+                            &mut store,
+                            &g.id,
+                            &profile::new_uuid().unwrap(),
+                            false,
+                        )
+                    })
             };
             assert_eq!(
                 failed.map(|_| ()),
