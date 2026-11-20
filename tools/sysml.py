@@ -10,6 +10,10 @@ WstxModelNotes markers; equivalence compares two revisions by meaning and identi
 their identity diff; oracle writes the architecture oracle file; paths rewrites the code
 paths of a rename list in the model. Only oracle and paths write a file. None executes
 modelled behaviour.
+
+The code proof reads one revision and never the working tree: tests <rev> prints the test
+inventory, check <rev> checks the model of the revision, and traces <rev> checks its traces
+and prints the trace listing. Without a revision, check and traces read the working tree.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ import argparse
 import ast
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+import contextlib
 import hashlib
 import io
 import json
@@ -1053,15 +1058,15 @@ def end_resolver(root: str, refs: dict):
     return resolved
 
 
-def architecture_integrity(output: str) -> dict[str, int]:
+def architecture_integrity(output: str, path: Path | None = None) -> dict[str, int]:
     """TR-09: the deployment against the oracle file.
 
     Input is the pinned Pilot's resolved semantic inventory, not SysML source or a
-    viewer graph. The oracle is the file `ORACLE`, which only `oracle` writes; the
-    inventory and the file must agree exactly. The fixed rules hold whatever the file
-    lists. Only the first difference is reported.
+    viewer graph. The oracle is the file `path`, by default `ORACLE`, which only `oracle`
+    writes; the inventory and the file must agree exactly. The fixed rules hold whatever
+    the file lists. Only the first difference is reported.
     """
-    oracle = architecture_oracle(ORACLE)
+    oracle = architecture_oracle(path or ORACLE)
     records = inventory_records(output)
     fixed_rules(records, oracle["root"])
     refs = {row[0]: row[1:] for row in records.get("REF", [])}
@@ -1276,7 +1281,8 @@ def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subproc
         raise ValueError("Semantic validation requires existing model files")
     # Cap the heap: the JVM default (a quarter of RAM) let parallel checks take
     # gigabytes next to the real-time station; 512 MB with the serial collector passes.
-    result = subprocess.run([str(java), "-Xmx512m", "-XX:+UseSerialGC", "-classpath", str(jar), str(ROOT / "tools/sysml/Validate.java"), str(library), *(["--inventory"] if inventory else []), *map(str, paths)], text=True, capture_output=True, timeout=120)
+    # Without performance data the JVM leaves no folder in the temporary folder (TR-23).
+    result = subprocess.run([str(java), "-Xmx512m", "-XX:+UseSerialGC", "-XX:-UsePerfData", "-classpath", str(jar), str(Path(__file__).with_name("sysml") / "Validate.java"), str(library), *(["--inventory"] if inventory else []), *map(str, paths)], text=True, capture_output=True, timeout=120)
     if result.returncode == 0 and "OMG Pilot 0.62.0 syntax/name/semantic validation passed; behavior not executed." not in result.stdout:
         raise ValueError("Validator returned no semantic completion marker")
     return result
@@ -2327,10 +2333,11 @@ def case_form(key: str, element: Element, identity: str, faults: list):
         faults.append(("TR-11", key, element.line, f"{identity} has a title of {len(docs[0].strip().splitlines())} lines"))
 
 
-def code_links(model: Model, entries: dict) -> tuple[dict, list[tuple]]:
+def code_links(model: Model, entries: dict, origins: dict | None = None) -> tuple[dict, list[tuple]]:
     """TR-13 (M6.6): `@ImplementedIn` stands on a part definition or a clause; a clause's code
     link is its own, else its subject's part definition's. Returns (the modules of each
-    clause, the faults)."""
+    clause, the faults); `origins` receives the name of the part definition of each link taken
+    from one."""
     faults, links = [], {}
     for key in model.trees:
         for element in model.elements(key):
@@ -2359,6 +2366,8 @@ def code_links(model: Model, entries: dict) -> tuple[dict, list[tuple]]:
                            + ", ".join(found.name for found, _modules in candidates)))
         elif candidates:
             links[identity] = candidates[0][1]
+            if origins is not None:
+                origins[identity] = candidates[0][0].name
         elif entry["state"] in ("partial", "implemented"):
             faults.append(("TR-13", entry["file"], entry["line"], f"{identity} is delivered and has no code link"))
     return links, faults
@@ -2749,13 +2758,13 @@ def repository_git(root: Path, *args: str) -> str:
     return result.stdout
 
 
-def identity_history(root: Path) -> tuple[set[str], set[str]]:
+def identity_history(root: Path, head: str = "HEAD") -> tuple[set[str], set[str]]:
     """(used, present): the identities whose declarations were added to model files in the
-    history of `git merge-base HEAD master`, and those declared in that commit's model.
+    history of `git merge-base <head> master`, and those declared in that commit's model.
     Refused as `Identity history unavailable: <reason>` without a repository, a `master` or
     a working git."""
     try:
-        base = repository_git(root, "merge-base", "HEAD", MAIN_BRANCH).strip()
+        base = repository_git(root, "merge-base", head, MAIN_BRANCH).strip()
         log = repository_git(root, "log", "-p", "--format=", "-U0", base, "--", "docs/sysml")
         listing = repository_git(root, "ls-tree", "-r", "--name-only", base, "--", "docs/sysml")
         declared = []
@@ -3427,10 +3436,11 @@ def rust_test_names(source: str, found: list[tuple[str, int, int]]) -> list[tupl
     return [(match[2], match.start(2)) for match in RUST_TEST_ATTRIBUTE.finditer("".join(code))]
 
 
-def javascript_segments(source: str, start: int = 0, nested: bool = False) -> tuple[list, int]:
+def javascript_segments(source: str, start: int = 0, nested: bool = False, regexes: list | None = None) -> tuple[list, int]:
     """(segments, end) of JavaScript from `start`: to the end of the text, or with `nested` (a
     template's `${`) to the brace that closes it. A regular expression literal is one token,
-    neither string nor comment; a `/` that opens none the line closes is unreadable."""
+    neither string nor comment, whose (start, end) `regexes` receives; a `/` that opens none
+    the line closes is unreadable."""
     found, index, significant, parens, braces, closed = [], start, [], [], [], None
     while index < len(source):
         character = source[index]
@@ -3453,10 +3463,12 @@ def javascript_segments(source: str, start: int = 0, nested: bool = False) -> tu
             found.append(("string", index + 1, end - 1))
             significant.append((character, "literal"))
         elif character == "`":
-            end = javascript_template(source, index, found)
+            end = javascript_template(source, index, found, regexes)
             significant.append((character, "literal"))
         elif character == "/" and javascript_regex_here(significant, closed):
             end = javascript_regex_end(source, index)
+            if regexes is not None:
+                regexes.append((index, end))
             significant.append((character, "literal"))
         elif word := SOURCE_WORD.match(source, index):
             end = word.end()
@@ -3511,7 +3523,7 @@ def javascript_block_here(significant: list) -> bool:
     return token in (";", "{", "}", ")") or (token == ">" and len(significant) >= 2 and significant[-2][0] == "=")
 
 
-def javascript_template(source: str, start: int, found: list) -> int:
+def javascript_template(source: str, start: int, found: list, regexes: list | None = None) -> int:
     """The end of the template string at `start`; its text parts are strings, its `${}` code."""
     index, part = start + 1, start + 1
     while index < len(source):
@@ -3522,7 +3534,7 @@ def javascript_template(source: str, start: int, found: list) -> int:
             return index + 1
         elif source.startswith("${", index):
             found.append(("string", part, index))
-            inner, index = javascript_segments(source, index + 2, nested=True)
+            inner, index = javascript_segments(source, index + 2, nested=True, regexes=regexes)
             found.extend(inner)
             part = index
         else:
@@ -3827,9 +3839,13 @@ def harness_paths(root: Path) -> tuple[str, ...]:
     return tuple(listed)
 
 
-def history_files(root: Path) -> list[str]:
-    """The tracked files TR-22 reads, by repository path, sorted."""
-    tracked = repository_git(root, "-c", "core.quotepath=off", "ls-files", "-z").split("\0")
+def history_files(root: Path, commit: str | None = None) -> list[str]:
+    """The tracked files TR-22 reads, by repository path, sorted. With `commit`, `root` holds
+    that commit's tree and the files are those of the commit in the repository `ROOT`."""
+    if commit:
+        tracked = git("-c", "core.quotepath=off", "ls-tree", "-r", "--name-only", "-z", commit).split("\0")
+    else:
+        tracked = repository_git(root, "-c", "core.quotepath=off", "ls-files", "-z").split("\0")
     harness = harness_paths(root)
     read = []
     for key in tracked:
@@ -3926,13 +3942,13 @@ def comment_exceptions(root: Path) -> tuple[list[tuple[int, str, str]], list[tup
     return entries, faults
 
 
-def history_faults(root: Path) -> tuple[list[tuple], int, int]:
+def history_faults(root: Path, commit: str | None = None) -> tuple[list[tuple], int, int]:
     """TR-22: (faults, files read, comment exceptions used). Comments, docstrings and Markdown
     prose hold no issue pointer, date or change story; test and tool strings, Markdown code
     and test function names hold no issue pointer; an exception holds its own text in its own
-    file."""
+    file. With `commit`, `root` holds that commit's tree (`history_files`)."""
     entries, faults = comment_exceptions(root)
-    used, keys = set(), history_files(root)
+    used, keys = set(), history_files(root, commit)
     for key in keys:
         try:
             source = (root / key).read_bytes().decode("utf-8")
@@ -3966,10 +3982,10 @@ def model_keys(directory: Path) -> tuple[list[str], list[Path]]:
     return keys, [files[key] for key in keys if key in files]
 
 
-def trace_faults(entries: dict, model: Model, root: Path) -> tuple[dict, list[tuple]]:
+def trace_faults(entries: dict, model: Model, root: Path, origins: dict | None = None) -> tuple[dict, list[tuple]]:
     """The checks of `traces` after the catalog and the tags: code links (TR-13), model and
-    code (TR-16) and the code structure (TR-17)."""
-    links, faults = code_links(model, entries)
+    code (TR-16) and the code structure (TR-17). `origins` as `code_links` fills it."""
+    links, faults = code_links(model, entries, origins)
     faults += value_faults(model, entries, links, root)
     faults += structure_faults(model, links, root)
     return links, faults
@@ -3981,14 +3997,234 @@ def refuse(lines: list[str]) -> None:
         raise ValueError(f"{len(lines)} faults")
 
 
-def checked_entries() -> dict:
+class Tree:
+    """The files the checks read: the working tree (`commit` None) or the tree of `commit`
+    extracted below `root`. The tool's own code and the toolchain are never taken from it."""
+
+    def __init__(self, root: Path, models: Path, fsd: Path, oracle: Path, commit: str | None):
+        self.root, self.models, self.fsd, self.oracle, self.commit = root, models, fsd, oracle, commit
+
+
+@contextlib.contextmanager
+def revision_tree(revision: str | None):
+    """The working tree for no revision; else the tree of the commit `revision` names,
+    written into a temporary folder that is gone when the block ends. The repository, its
+    index and its working tree are not written."""
+    if revision is None:
+        yield Tree(ROOT, MODELS, FSD, ORACLE, None)
+        return
+    commit = commit_of(revision)
+    with tempfile.TemporaryDirectory(prefix="sysml-revision-") as folder:
+        root = Path(folder) / "tree"
+        extract(commit, root)
+        yield Tree(root, root / "docs/sysml", root / "docs/WSTX Rust FSD.md",
+                   root / "tools/sysml/architecture-oracle.json", commit)
+
+
+def checked_entries(tree: Tree | None = None) -> dict:
     """The authority, the catalog, the tags and the tag bindings, as `traces` and `check`
-    begin."""
-    authority(MODELS, FSD)
-    entries = canonical_catalog(MODELS, ROOT)
-    refuse(tag_faults(entries, ROOT))
-    binding_agreement(entries, ROOT)
+    begin; on the working tree without `tree`."""
+    tree = tree or Tree(ROOT, MODELS, FSD, ORACLE, None)
+    authority(tree.models, tree.fsd)
+    entries = canonical_catalog(tree.models, tree.root)
+    refuse(tag_faults(entries, tree.root))
+    binding_agreement(entries, tree.root)
     return entries
+
+
+# ---- The code proof listings (TR-23) ----
+
+NODE_TEST_FILE = re.compile(r"[^/]+\.test\.(?:js|cjs|mjs)")
+# A Node test call: `test(`, `it(`, `test.skip(`, `test.only(`, `test.todo(`, and `.test(` (a
+# subtest, or a RegExp test when its first argument is no literal).
+JS_TEST_CALL = re.compile(r"(\.)\s*test\s*\(|(?<![\w$.])(?:test|it)(?:\s*\.\s*(?:skip|only|todo))?\s*\(")
+JS_FUNCTION_HEAD = re.compile(r"\bfunction\s*\*?\s*$")
+TEST_KINDS = {".rs": "rust", ".js": "node", ".cjs": "node", ".mjs": "node", ".py": "python"}
+IDENTITY_ORDER = {"FR": 0, "CL": 1, "TC": 2}
+
+
+def source_text(key: str, path: Path) -> str:
+    """The text of a source file, without its byte order mark; refused when it is no UTF-8."""
+    try:
+        source = path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(f"source not readable: {key}:1: source not UTF-8") from None
+    return source[1:] if source.startswith("﻿") else source
+
+
+def not_readable(key: str, source: str, error: SourceUnreadable) -> ValueError:
+    return ValueError(f"source not readable: {key}:{source.count(chr(10), 0, error.offset) + 1}: {error.reason}")
+
+
+def rust_tests(key: str, source: str) -> list[str]:
+    """The names of the functions under `#[test]` or `#[tokio::test…]` of Rust source."""
+    try:
+        return [name for name, _offset in rust_test_names(source, rust_segments(source))]
+    except SourceUnreadable as error:
+        raise not_readable(key, source, error) from None
+
+
+def node_tests(key: str, source: str) -> list[str]:
+    """The titles of the Node tests of `source` (TR-23): the first argument of each `test(`,
+    `it(`, `test.skip(`, `test.only(`, `test.todo(` and `.test(` call outside comments,
+    strings and regular expressions. A quoted title with its escapes resolved, a template
+    title as written with a line break written `\\n`. A `test(` or `it(` whose title is no
+    literal is refused; a `.test(` without a literal is a RegExp test and not listed."""
+    regexes = []
+    try:
+        found, _end = javascript_segments(source, regexes=regexes)
+    except SourceUnreadable as error:
+        raise not_readable(key, source, error) from None
+    code = list(source)
+    for begin, end in [(begin, end) for _kind, begin, end in found] + regexes:
+        code[begin:end] = re.sub(r"[^\n]", " ", source[begin:end])
+    if source.startswith("#!"):
+        end = line_end(source, 0)
+        code[0:end] = " " * end
+    code = "".join(code)
+    strings = {begin: end for kind, begin, end in found if kind == "string"}
+    titles = []
+    for match in JS_TEST_CALL.finditer(code):
+        if not match[1] and JS_FUNCTION_HEAD.search(code, max(0, match.start() - 40), match.start()):
+            continue
+        index = match.end()
+        while index < len(code) and code[index].isspace():
+            index += 1
+        opening = source[index] if index < len(source) else ""
+        if opening in ("'", '"') and index + 1 in strings:
+            titles.append(re.sub(r"\\(.)", r"\1", source[index + 1:strings[index + 1]]))
+        elif opening == "`":
+            end = javascript_template(source, index, [])
+            titles.append(source[index + 1:end - 1].replace("\r\n", "\n").replace("\n", "\\n"))
+        elif not match[1]:
+            raise ValueError(f"unreadable test name: {key}:{source.count(chr(10), 0, match.start()) + 1}")
+    return titles
+
+
+def python_tests(key: str, source: str) -> list[str]:
+    """`<Class>.<name>` of each `def test_…` directly in a class body and `<name>` of each at
+    module level."""
+    try:
+        module = ast.parse(source)
+    except (SyntaxError, ValueError) as error:
+        line = getattr(error, "lineno", None) or 1
+        raise ValueError(f"source not readable: {key}:{line}: Python that does not parse ({error.__class__.__name__})") from None
+    names = []
+
+    def scan(body: list, owner: str | None):
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
+                names.append(f"{owner}.{node.name}" if owner else node.name)
+            elif isinstance(node, ast.ClassDef):
+                scan(node.body, node.name)
+
+    scan(module.body, None)
+    return names
+
+
+def tracked_files(tree: Tree) -> list[str]:
+    """The files of the tree's commit, by repository path, sorted."""
+    listing = git("-c", "core.quotepath=off", "ls-tree", "-r", "--name-only", "-z", tree.commit)
+    return sorted(key for key in listing.split("\0") if key and (tree.root / key).is_file())
+
+
+def inventory_lines(tree: Tree) -> list[str]:
+    """TR-23: one line per product test of the tree's commit, sorted; no line holds a path."""
+    harness = harness_paths(tree.root)
+    lines = []
+    for key in tracked_files(tree):
+        name, below = posixpath.basename(key), key.split("/", 1)[0] in SOURCE_BINDING_ROOTS and "/" in key
+        if below and key.endswith(".rs"):
+            lines += ["rust " + test for test in rust_tests(key, source_text(key, tree.root / key))]
+        elif below and NODE_TEST_FILE.fullmatch(name):
+            lines += ["node " + test for test in node_tests(key, source_text(key, tree.root / key))]
+        elif name.startswith("test_") and name.endswith(".py") and not key.startswith("tools/sysml/") \
+                and not any(key == path or key.startswith(path.rstrip("/") + "/") for path in harness):
+            lines += ["python " + test for test in python_tests(key, source_text(key, tree.root / key))]
+    return sorted(lines)
+
+
+def bound_tests(identity: str, bindings: list[str], root: Path) -> list[str]:
+    """The inventory lines of the tests bound to a case: for `path::symbol` the test
+    `symbol`, for a whole file each of its tests that names the case by its `Proves:` tag or
+    its title."""
+    found = set()
+    for binding in bindings:
+        path, separator, symbol = binding.partition("::")
+        kind = TEST_KINDS.get(posixpath.splitext(path)[1], "node")
+        if separator:
+            found.add(f"{kind} {symbol}")
+            continue
+        source = source_text(path, root / path)
+        found.update(f"{kind} {name}" for name, cases in naming_tests(source) if identity in cases)
+        if kind == "node" and NODE_TEST_FILE.fullmatch(posixpath.basename(path)):
+            found.update("node " + title for title in node_tests(path, source)
+                         if re.search(r"\b" + re.escape(identity) + r"\b", title))
+    return sorted(found)
+
+
+def trace_lines(entries: dict, origins: dict, root: Path) -> list[str]:
+    """TR-23: the trace listing, one line per identity, FR then CL then TC, each in identity
+    order; no line holds a path or a model file key."""
+    def listed(items) -> str:
+        return ",".join(items) or "-"
+
+    lines = []
+    for identity in sorted(entries, key=lambda name: (IDENTITY_ORDER[name[:2]], name)):
+        entry = entries[identity]
+        if identity.startswith("FR-"):
+            lines.append(f"{identity} {entry['status']} clauses {listed(entry['clauses'])}")
+        elif identity.startswith("CL-"):
+            own = sorted({posixpath.basename(module) for module in entry["own"] if module})
+            link = "own " + ",".join(own) if own else "part " + origins[identity] if identity in origins else "none"
+            lines.append(f"{identity} {entry['state']} from {listed(entry['frs'])} cases {listed(entry['cases'])} link {link}")
+        else:
+            tests = "; ".join(bound_tests(identity, [binding for binding in entry["bindings"] if binding], root)) or "-"
+            lines.append(f"{identity} {entry['state']} {'manual' if entry['manual'] else 'automated'} "
+                         f"verifies {listed(sorted(entry['refs']))} tests {tests}")
+    return lines
+
+
+def print_lines(lines: list[str]) -> None:
+    """`lines` on stdout as UTF-8, whatever the console's code page: a test title may hold
+    any character."""
+    text = "".join(line + "\n" for line in lines)
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout.flush()
+        sys.stdout.buffer.write(text.encode("utf-8"))
+        sys.stdout.buffer.flush()
+    else:
+        sys.stdout.write(text)
+
+
+def model_check(tree: Tree, cache: Path) -> int:
+    """`check` on `tree`: the traces, the Pilot validation, the oracle and every rule."""
+    entries = checked_entries(tree)
+    model = Model(tree.models)
+    _links, faults = trace_faults(entries, model, tree.root)
+    faults += history_faults(tree.root, tree.commit)[0]
+    used, present = identity_history(ROOT, tree.commit or "HEAD")
+    keys, paths = model_keys(tree.models)
+    result = validate(paths, cache, inventory=True)
+    print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
+    for line in result.stdout.splitlines():
+        if not line.startswith(("Reading ", "AST\t")):
+            print(line)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="")
+    if result.returncode:
+        return result.returncode
+    counts = architecture_integrity(result.stdout, tree.oracle)
+    print("Architecture integrity passed: " + ", ".join(f"{count} {kind}" for kind, count in counts.items()) + "; runtime behavior not proved.")
+    deployment = Deployment(inventory_records(result.stdout), keys)
+    served, ends = served_and_ends(deployment, model)
+    faults += tree_faults(tree.models, model) + layer_faults(model) + content_faults(model)
+    faults += clause_faults(model, entries, served, ends) + role_faults(deployment) + agent_faults(model)
+    faults += context_faults(deployment) + connection_faults(deployment) + reuse_faults(entries, used, present)
+    faults += writing_faults(model)
+    refuse(fault_lines(faults))
+    print(f"Model rules passed: {len(model.files)} model files.")
+    return 0
 
 
 def main(argv=None):
@@ -3997,8 +4233,14 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Download and verify pinned portable tools; no global installation")
     commands.add_parser("fingerprints", help="Print canonical model fingerprints for review; never updates models")
-    commands.add_parser("check", help="Check the model whole: traces, the Pilot validation, the oracle and every rule")
-    commands.add_parser("traces", help="Check the catalog, tags, code links, model values and code structure; no Pilot")
+    whole = commands.add_parser("check", help="Check the model whole: traces, the Pilot validation, the oracle and every rule "
+                                "(revision omitted: the working tree)")
+    whole.add_argument("revision", nargs="?")
+    traced = commands.add_parser("traces", help="Check the catalog, tags, code links, model values and code structure; no Pilot. "
+                                 "With a revision, print its trace listing")
+    traced.add_argument("revision", nargs="?")
+    inventory = commands.add_parser("tests", help="Print the test inventory of a revision; writes nothing")
+    inventory.add_argument("revision", nargs="?")
     listing = commands.add_parser("markers", help="List the WstxModelNotes markers of the model by file key and line; checks and writes nothing")
     listing.add_argument("kinds", nargs="*", metavar="Kind")
     commands.add_parser("status", help="Check the catalog, then print each FR's status computed from its clauses; writes nothing")
@@ -4033,11 +4275,25 @@ def main(argv=None):
                 code, lines = results[0]
             print("\n".join(lines))
             return code
+        if args.command == "tests":
+            if not args.revision:
+                raise Unreadable("unknown revision: none given")
+            with revision_tree(args.revision) as tree:
+                lines = inventory_lines(tree)
+            print_lines(lines)
+            return 0
         if args.command == "traces":
-            entries = checked_entries()
-            _links, faults = trace_faults(entries, Model(MODELS), ROOT)
-            history, read, used = history_faults(ROOT)
-            refuse(fault_lines(faults + history))
+            with revision_tree(args.revision) as tree:
+                entries = checked_entries(tree)
+                origins = {}
+                _links, faults = trace_faults(entries, Model(tree.models), tree.root, origins)
+                history, read, used = history_faults(tree.root, tree.commit)
+                refuse(fault_lines(faults + history))
+                if tree.commit:
+                    lines = trace_lines(entries, origins, tree.root)
+            if tree.commit:
+                print_lines(lines)
+                return 0
             print(f"Canonical source/model trace checks passed: {len(entries)} identities; {read} files read for history, "
                   f"{used} comment exceptions used; no semantic validation or behavior execution.")
             return 0
@@ -4071,32 +4327,8 @@ def main(argv=None):
             if result.stderr:
                 print(result.stderr, file=sys.stderr, end="")
             return result.returncode
-        entries = checked_entries()
-        model = Model(MODELS)
-        _links, faults = trace_faults(entries, model, ROOT)
-        faults += history_faults(ROOT)[0]
-        used, present = identity_history(ROOT)
-        keys, paths = model_keys(MODELS)
-        result = validate(paths, args.cache_dir, inventory=True)
-        print(f"Canonical SysML catalog/trace checks passed: {len(entries)} identities; behavioral correspondence remains independently reviewed.")
-        for line in result.stdout.splitlines():
-            if not line.startswith(("Reading ", "AST\t")):
-                print(line)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr, end="")
-        if result.returncode:
-            return result.returncode
-        counts = architecture_integrity(result.stdout)
-        print("Architecture integrity passed: " + ", ".join(f"{count} {kind}" for kind, count in counts.items()) + "; runtime behavior not proved.")
-        deployment = Deployment(inventory_records(result.stdout), keys)
-        served, ends = served_and_ends(deployment, model)
-        faults += tree_faults(MODELS, model) + layer_faults(model) + content_faults(model)
-        faults += clause_faults(model, entries, served, ends) + role_faults(deployment) + agent_faults(model)
-        faults += context_faults(deployment) + connection_faults(deployment) + reuse_faults(entries, used, present)
-        faults += writing_faults(model)
-        refuse(fault_lines(faults))
-        print(f"Model rules passed: {len(model.files)} model files.")
-        return 0
+        with revision_tree(args.revision) as tree:
+            return model_check(tree, args.cache_dir)
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"SysML check failed: {error}", file=sys.stderr)
         return 2
