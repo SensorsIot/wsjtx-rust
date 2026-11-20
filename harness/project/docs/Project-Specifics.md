@@ -388,8 +388,10 @@ package's own copy,
 which refuses to run from anywhere else, and exits with its exit. It verifies the package, checks the pins, waits for
 an idle station, stops it gracefully, switches `active.json`, starts the task, switches
 back on failure, runs the probe and the live page check from the package, returns to the
-previous version when either fails and posts the install record. Exit 0: installed (or the
-dry run passed); 1: refused, failed or returned; 3: the station stayed busy, nothing
+previous version when either fails and posts the install record (a stop it has to force:
+[Standing deploy policy](#standing-deploy-policy) item 5). Exit 0: installed (or the
+dry run passed); 1: refused, failed or returned, or a forced stop whose PTT release was not
+confirmed; 3: the station stayed busy, nothing
 changed; 6: the radio did not answer, nothing changed. A parameter the script does not
 declare stops the call at binding, before any step.
 `station-update.ps1 -Rollback` returns to the previous version and never asks. The
@@ -463,6 +465,21 @@ under it needs no OK per install.
    to step 2. Page check `BUSY` or `NOT-EXERCISED`: no return, and the result is recorded;
    before the live acceptance of the CRs of that install the page check runs again, and
    acceptance needs its `PASS`.
+   **A forced stop.** Every stop (the switch, a switch-back, a return, `-Rollback`) sends
+   Ctrl+C, then Ctrl+Break after 8 s, and logs whether each signal was delivered; a signal
+   that was not names the helper's failed call and its Windows error
+   (`AttachConsole error <n>` or `GenerateConsoleCtrlEvent error <n>`, or `error unknown`). A
+   station still running 8 s later is force-stopped, after one line with the transmit state
+   one GET /transmit reads just before it (`-Rollback` reads none). The next start that
+   becomes ready reads GET /transmit every 2 s for at most 30 s until `startup_release` is no
+   longer `pending`: PTT is confirmed when it is `not_needed` or `released`, `ptt` is
+   `released` and `transmitting` false; anything else, and every forced stop under
+   `-Rollback`, is not confirmed and logged with `check the radio`. A forced stop without that
+   confirmation ends the update with exit 1 and starts no further stop: no switch-back and no
+   return; a failed probe or page check then gives the record `not returned`, not a return,
+   and the record goes to the issues a return's record would go to. The install record has
+   one `Station stop:` line per stop (`graceful`, or `forced` with the Ctrl+C delivery and
+   the PTT result after it).
 6. **Install record.** Every install posts its record on each CR issue it moves to
    installed (`cr_state.py installed <commit> --since <previous>` finds them); after a
    return, on each issue the subjects of `<previous>..<commit>` name that is open and carries
@@ -486,7 +503,7 @@ CR (policy item 4). Suite `deploy-tooling`
 (`test_deploy_pins.py`) recomputes every pin from git.
 
 ```text
-a94d76c1026236c279b9f7260ebdf65cb4524bcef5b2c1b4d3ade6f4723a8a39  tools/deploy/station-update/station-update.ps1
+ef106effe4e5b85a9c02a21dd8808d04281b239feecc5f54a5fe932eb2827c09  tools/deploy/station-update/station-update.ps1
 b611766f68a987b450c15d38233c3c9eab5eb2eef58d9cc93db56fdce62fef07  tools/deploy/station-update/make_package.py
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1

@@ -5,7 +5,9 @@ The station is simulated by mocks that let the stop and the start succeed: the s
 the station process, its receipt, the network, git, GitHub, cr_state.py and the two checks the
 deploy starts (station-probe.ps1 and live-page-check.ps1, as powershell.exe). Each mock writes
 what reached it to a log, with the holder of update.lock at that moment, so the order of the
-steps and the lock are the oracle. The package and the pins are the drill's sandbox.
+steps and the lock are the oracle. The package and the pins are the drill's sandbox. The
+Ctrl+C helper and the station's GET /transmit can also be scripted (FlowCase.deploy); the stop
+path's own tests are in test_deploy_stop.py.
 """
 import glob
 import hashlib
@@ -27,16 +29,34 @@ function Station-File($name) { Join-Path "$env:LOCALAPPDATA\WstxRust\station" $n
 function Lock-State { try { ([IO.File]::Open((Station-File 'logs\update.lock'), 'OpenOrCreate', 'ReadWrite', 'None')).Dispose(); 'free' } catch { 'held' } }
 function Launcher-Id { (Get-FileHash -LiteralPath (Station-File 'launcher.ps1') -Algorithm SHA256).Hash.ToLowerInvariant().Substring(0, 12) }
 $global:Up = $true; $global:RunVer = 'ccccccccc'
+# FlowBoot counts the starts; FlowStop the stops (one Ctrl+C each); FlowBreak is set from a
+# Ctrl+Break until the next start; FlowReadIdx is the next GET /transmit reading per boot.
+$global:FlowBoot = 0; $global:FlowStop = 0; $global:FlowBreak = $false; $global:FlowReadIdx = @{}
 function Get-ScheduledTask { param($TaskName)
   [pscustomobject]@{ Actions = @([pscustomobject]@{ Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$env:LOCALAPPDATA\WstxRust\station\launcher.ps1`"" }); State = 'Ready' } }
 function Register-ScheduledTask { Flow 'TASK CHANGED' }
 function Set-ScheduledTask { Flow 'TASK CHANGED' }
 function Stop-ScheduledTask { param($TaskName, $ErrorAction) }
+# The Ctrl+C helper: FLOW_STOPS gives, per stop, the helper's exit and Windows error for Ctrl+C
+# (c) and Ctrl+Break (b), and whether the station stays after a delivered signal (stay). The
+# error goes to the file the helper's code names, as the helper writes it.
 function Start-Process { param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru, [switch]$Wait)
-  Flow "stop $global:RunVer lock=$(Lock-State)"; $global:Up = $false; [pscustomobject]@{ ExitCode = 0 } }
-function Stop-Process { Flow 'FORCED STOP' }
+  $code = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([string]$ArgumentList[-1]))
+  $ctrl = if ($code -match '\[W\.C\]::Raise\(([0-9]+)\)') { [int]$Matches[1] } else { -1 }
+  $file = if ($code -match '\$f=''([^'']*)''') { $Matches[1] } else { $null }
+  if ($ctrl -eq 0) { $global:FlowStop++; $global:FlowBreak = $false; Flow "stop $global:RunVer lock=$(Lock-State)" }
+  else { $global:FlowBreak = $true; Flow "break $global:RunVer" }
+  $stops = @(($env:FLOW_STOPS | ConvertFrom-Json) | ForEach-Object { $_ })
+  $cfg = if ($global:FlowStop -le $stops.Count) { $stops[$global:FlowStop - 1] } else { [pscustomobject]@{ c = @(0, $null); b = @(0, $null); stay = $false } }
+  $sig = if ($ctrl -eq 0) { @($cfg.c) } else { @($cfg.b) }
+  $rc = [int]$sig[0]
+  if ($rc -ne 0 -and $null -ne $sig[1] -and $file) { [IO.File]::WriteAllText($file, [string]$sig[1]) }
+  if ($rc -eq 0 -and -not $cfg.stay) { $global:Up = $false }
+  [pscustomobject]@{ ExitCode = $rc } }
+function Stop-Process { Flow 'FORCED STOP'; $global:Up = $false }
 function Start-ScheduledTask { param($TaskName)
   $a = [IO.File]::ReadAllText((Station-File 'active.json')) | ConvertFrom-Json
+  $global:FlowBoot++; $global:FlowBreak = $false
   $global:RunVer = $a.version; $global:Up = $true
   Flow "start $($a.version) lock=$(Lock-State) launcher=$(Launcher-Id)"
   [IO.File]::WriteAllText((Station-File 'station-running.json'), (@{ source_commit = $a.source_commit; process_id = 4242; launcher = 'active.json' } | ConvertTo-Json)) }
@@ -78,7 +98,39 @@ function powershell.exe {
   throw "unexpected powershell.exe $joined" }
 """
 
-SUBJECTS = ["Deploy without the operator (#171)", "Unrelated fix (#23)"]
+# The package's agent client of the flow: the drill's, whose GET /transmit is logged with the boot
+# and the clock (seconds past 12:00:00). FLOW_READS gives, per boot after the first start, the
+# readings in order ('<ptt>,<transmitting>,<startup_release>' or 'throw'), the last one repeated;
+# FLOW_BEFORE_THROW makes the reading after a Ctrl+Break (the one before a forced stop) throw.
+FLOW_AGENT_CLIENT = station_drill.FAKE_AGENT_CLIENT.replace("function Agent-Get(", "function Drill-AgentGet(") + r"""
+function Agent-Get($c, [string]$Route) {
+  if ($Route -ne '/transmit') { return Drill-AgentGet $c $Route }
+  $seconds = [int](($global:DrillClock - $global:DrillT0).TotalSeconds)
+  Add-Content -LiteralPath $env:FLOW_LOG -Value "transmit boot=$global:FlowBoot t=$seconds"
+  if ($global:FlowBreak -and $env:FLOW_BEFORE_THROW) { throw [Net.WebException]::new('flow: transmit unreadable') }
+  $p = $null; if ($env:FLOW_READS) { $p = ($env:FLOW_READS | ConvertFrom-Json).PSObject.Properties["$global:FlowBoot"] }
+  if (-not $p) { return Drill-AgentGet $c $Route }
+  $list = @($p.Value | ForEach-Object { $_ }); $k = "$global:FlowBoot"
+  $i = 0; if ($global:FlowReadIdx.ContainsKey($k)) { $i = $global:FlowReadIdx[$k] }
+  $global:FlowReadIdx[$k] = $i + 1
+  $r = [string]$list[[Math]::Min($i, $list.Count - 1)]
+  if ($r -eq 'throw') { throw [Net.WebException]::new('flow: transmit unreadable') }
+  $v = $r -split ','
+  [pscustomobject]@{ ptt = $v[0]; transmitting = ($v[1] -eq 'true'); startup_release = $v[2]; transmit = [pscustomobject]@{ arm_state = 'disarmed' } }
+}
+"""
+
+
+class FlowSandbox(Sandbox):
+    """The drill's sandbox whose package carries the flow's agent client (pinned as built)."""
+
+    def mechanism(self):
+        files = super().mechanism()
+        files[MECHANISM[3]] = FLOW_AGENT_CLIENT.encode("utf-8")
+        return files
+
+
+SUBJECTS =["Deploy without the operator (#171)", "Unrelated fix (#23)"]
 ISSUES = {"171": ("OPEN", ["cr:landed"]), "23": ("OPEN", ["cr:implementing"])}
 OK_LINE_START = "Operator " + "OK comment"
 PROBE_PASS = ("PROBE PASS 123456789 PID 4242", "0")
@@ -94,10 +146,12 @@ def read(path):
         return f.read()
 
 
-class DeployFlowTests(unittest.TestCase):
+class FlowCase(unittest.TestCase):
+    """The flow's sandbox and its run; the tests are in the subclasses."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.s = Sandbox(os.path.join(self.tmp.name, "sandbox"), station_drill.SCRIPT)
+        self.s = FlowSandbox(os.path.join(self.tmp.name, "sandbox"), station_drill.SCRIPT)
         self.log = os.path.join(self.tmp.name, "flow.log")
         self.posts = os.path.join(self.tmp.name, "posts")
         os.makedirs(self.posts)
@@ -119,16 +173,25 @@ class DeployFlowTests(unittest.TestCase):
         station_drill.write(path, "# drill: cr_state.py\n")
         return f"python {path} installed {COMMIT} --since {CURRENT}"
 
-    def deploy(self, probe=PROBE_PASS, page=PAGE_PASS, subjects=SUBJECTS, issues=ISSUES):
+    def deploy(self, probe=PROBE_PASS, page=PAGE_PASS, subjects=SUBJECTS, issues=ISSUES, stops=(), reads=None,
+               before_throw=False, rollback=False):
+        """Run the package's script. `stops`: per stop {"c": [rc, error], "b": [rc, error], "stay": bool};
+        `reads`: {boot: [reading, ...]}. The steps leave out the Ctrl+Break and GET /transmit lines,
+        which self.flow keeps with every other line."""
         open(self.log, "w").close()
         env = {"FLOW_LOG": self.log, "FLOW_POSTS": self.posts, "FLOW_PROBE_LINE": probe[0], "FLOW_PROBE_RC": probe[1],
                "FLOW_PAGE_LINE": page[0], "FLOW_PAGE_RC": page[1], "FLOW_SUBJECTS": "|".join(subjects),
-               "FLOW_ISSUES": json.dumps({n: {"state": st, "labels": labels} for n, (st, labels) in issues.items()})}
-        rc, out, _ = self.s.run(env=env, prelude=FLOW)
+               "FLOW_ISSUES": json.dumps({n: {"state": st, "labels": labels} for n, (st, labels) in issues.items()}),
+               "FLOW_STOPS": json.dumps([dict({"c": [0, None], "b": [0, None], "stay": False}, **s) for s in stops]),
+               "FLOW_READS": json.dumps({str(k): v for k, v in (reads or {}).items()})}
+        if before_throw:
+            env["FLOW_BEFORE_THROW"] = "1"
+        rc, out, _ = self.s.run(env=env, prelude=FLOW, rollback=rollback)
         with open(self.log, encoding="utf-8") as f:
-            # A check's line ends with the lock holder; its arguments are read separately.
-            steps = [line.split(" -")[0] if line.startswith(("probe", "page-check")) else line
-                     for line in f.read().splitlines()]
+            self.flow = f.read().splitlines()
+        # A check's line ends with the lock holder; its arguments are read separately.
+        steps = [line.split(" -")[0] if line.startswith(("probe", "page-check")) else line
+                 for line in self.flow if not line.startswith(("break ", "transmit "))]
         return rc, out, steps
 
     def active(self):
@@ -154,6 +217,8 @@ class DeployFlowTests(unittest.TestCase):
         for ch in "'\"$`":
             self.assertNotIn(ch, record)
 
+
+class DeployFlowTests(FlowCase):
     def test_probe_and_page_check_pass_install_with_the_new_launcher_and_post_the_record(self):
         """TC-196-03 (a) and (c): launcher written without an OK; TC-171-03 order and lock; TC-171-04 record."""
         self.with_old_launcher()
