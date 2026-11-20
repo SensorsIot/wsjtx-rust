@@ -11,12 +11,12 @@ import tempfile
 import unittest
 
 # The one copy of the PowerShell runner is tools/deploy/tests/pwsh.py.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "tools", "deploy", "tests"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "deploy", "tests"))
 import pwsh  # noqa: E402
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(HERE, "radio-preflight.ps1")
-# The checkout: three folders above harness/project/deploy/.
+# The checkout: three folders above tools/test/powershell/.
 REPO = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
 
 
@@ -101,7 +101,7 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         return pwsh.run(TOOL, [*args, "-StateDir", self.state, "-Station", self.station, "-AgentClient", self.client],
                         prelude(self.log, **radio), env={"FAKE_STATION": self.station})
 
-    def preflight(self, holder="cr44-a", power="0003", **radio):
+    def preflight(self, holder="run44-a", power="0003", **radio):
         return self.run_tool("-Holder", holder, "-PowerBcd", power, **radio)
 
     def writes(self):
@@ -134,8 +134,8 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         record = self.records()[-1]
         self.assertEqual((record["rf_power_old_bcd"], record["rf_power_target_bcd"], record["rf_power_read_bcd"],
                           record["written"], record["verdict"], record["holder"]),
-                         (26, 3, 3, True, "PASS", "cr44-a"))
-        self.assertIn("held by cr44-a", self.lease())
+                         (26, 3, 3, True, "PASS", "run44-a"))
+        self.assertIn("held by run44-a", self.lease())
 
     def test_a_test_that_makes_qsos_sets_30_w_and_power_above_it_is_no_refusal(self):
         for raw in ("00 03", "02 55"):
@@ -153,7 +153,7 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
 
     def test_the_level_is_required_and_nothing_is_touched_without_it(self):
         for args in ((), ("-PowerBcd", "77"), ("-PowerBcd", "0256"), ("-PowerBcd", "00x7"), ("-PowerBcd", "30W")):
-            rc, out = self.run_tool("-Holder", "cr44-a", *args, raw="00 26")
+            rc, out = self.run_tool("-Holder", "run44-a", *args, raw="00 26")
             self.assertEqual(rc, 2, f"{args}: {out}")
             self.assertIn("need -PowerBcd", out)
             self.assertEqual(self.system(), [], args)
@@ -200,7 +200,7 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
     def test_restore_writes_the_old_value_and_ends_the_lease(self):
         self.assertEqual(self.preflight(power="0077", raw="00 26")[0], 0)
         os.unlink(self.log)
-        rc, out = self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77")
+        rc, out = self.run_tool("-Restore", "-Holder", "run44-a", raw="00 77")
         self.assertEqual(rc, 0, out)
         self.assertIn("RF power restored", out)
         self.assertEqual(self.writes(), [self.READ, "write FE FE 94 E0 14 0A 00 26 FD", self.READ])
@@ -210,27 +210,27 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
 
     def test_a_restore_that_fails_keeps_the_lease_for_another_try(self):
         self.assertEqual(self.preflight(power="0077", raw="00 26")[0], 0)
-        rc, out = self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77", write="ignored")
+        rc, out = self.run_tool("-Restore", "-Holder", "run44-a", raw="00 77", write="ignored")
         self.assertEqual(rc, 2, out)
-        self.assertIn("held by cr44-a", self.lease())
+        self.assertIn("held by run44-a", self.lease())
         self.assertEqual(self.old_in_lease(), 26)
-        self.assertEqual(self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77")[0], 0)
+        self.assertEqual(self.run_tool("-Restore", "-Holder", "run44-a", raw="00 77")[0], 0)
 
     def test_release_says_the_old_value_it_gives_up(self):
         self.assertEqual(self.preflight(power="0090", raw="00 26")[0], 0)
-        rc, out = self.run_tool("-Release", "-Holder", "cr44-a")
+        rc, out = self.run_tool("-Release", "-Holder", "run44-a")
         self.assertEqual(rc, 0, out)
         self.assertIn("old RF power 0026 was not restored", out)
         self.assertEqual(self.lease(), "lease: free")
 
     def test_no_write_reads_and_passes_when_the_level_is_already_there(self):
-        rc, out = self.run_tool("-Holder", "cr44-a", "-PowerBcd", "0133", "-NoWrite", raw="01 33")
+        rc, out = self.run_tool("-Holder", "run44-a", "-PowerBcd", "0133", "-NoWrite", raw="01 33")
         self.assertEqual(rc, 0, out)
         self.assertEqual(self.writes(), [self.READ])
-        self.assertIn("held by cr44-a", self.lease())
+        self.assertIn("held by run44-a", self.lease())
 
     def test_no_write_refuses_another_level_and_writes_nothing(self):
-        rc, out = self.run_tool("-Holder", "cr44-a", "-PowerBcd", "0133", "-NoWrite", raw="00 26")
+        rc, out = self.run_tool("-Holder", "run44-a", "-PowerBcd", "0133", "-NoWrite", raw="00 26")
         self.assertEqual(rc, 2, out)
         self.assertIn("reads 0026, not 0133", out)
         self.assertEqual(self.writes(), [self.READ])
@@ -239,16 +239,16 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual(self.lease(), "lease: free")
 
     def test_restore_needs_the_holders_own_lease(self):
-        rc, out = self.run_tool("-Restore", "-Holder", "cr44-a", raw="00 77")
+        rc, out = self.run_tool("-Restore", "-Holder", "run44-a", raw="00 77")
         self.assertEqual(rc, 2, out)
         self.assertIn("preflight.jsonl", out)
         self.assertEqual(self.system(), [])
-        self.assertEqual(self.preflight("cr44-a", power="0077", raw="00 26")[0], 0)
+        self.assertEqual(self.preflight("run44-a", power="0077", raw="00 26")[0], 0)
         os.unlink(self.log)
-        rc, out = self.run_tool("-Restore", "-Holder", "cr55-b", raw="00 77")
+        rc, out = self.run_tool("-Restore", "-Holder", "run55-b", raw="00 77")
         self.assertEqual(rc, 3, out)
         self.assertEqual(self.system(), [])
-        self.assertIn("held by cr44-a", self.lease())
+        self.assertIn("held by run44-a", self.lease())
 
     def test_the_station_is_stopped_read_and_started_again_in_that_order(self):
         self.preflight(raw="00 26")
@@ -312,39 +312,39 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertEqual(self.system(), [])
 
     def test_a_second_live_writer_is_refused_before_it_touches_the_station(self):
-        self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
+        self.assertEqual(self.preflight("run44-a", raw="00 03")[0], 0)
         os.unlink(self.log)
-        rc, out = self.preflight("cr55-b", raw="00 03")
+        rc, out = self.preflight("run55-b", raw="00 03")
         self.assertEqual(rc, 3, out)
-        self.assertIn("cr44-a", out)
+        self.assertIn("run44-a", out)
         self.assertEqual(self.system(), [], "a refused writer never stops the station")
 
     def test_the_holder_renews_and_releases_and_only_the_holder(self):
-        self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
-        self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0, "the holder runs it again")
-        self.assertEqual(self.run_tool("-Release", "-Holder", "cr55-b")[0], 3)
-        self.assertEqual(self.run_tool("-Release", "-Holder", "cr44-a")[0], 0)
+        self.assertEqual(self.preflight("run44-a", raw="00 03")[0], 0)
+        self.assertEqual(self.preflight("run44-a", raw="00 03")[0], 0, "the holder runs it again")
+        self.assertEqual(self.run_tool("-Release", "-Holder", "run55-b")[0], 3)
+        self.assertEqual(self.run_tool("-Release", "-Holder", "run44-a")[0], 0)
         self.assertEqual(self.lease(), "lease: free")
-        self.assertEqual(self.preflight("cr55-b", raw="00 03")[0], 0)
+        self.assertEqual(self.preflight("run55-b", raw="00 03")[0], 0)
 
     def test_a_holder_refused_as_busy_keeps_its_lease_as_it_was(self):
-        self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
+        self.assertEqual(self.preflight("run44-a", raw="00 03")[0], 0)
         before = self.lease()
         self.set_client(contact="report")
-        rc, out = self.run_tool("-Holder", "cr44-a", "-PowerBcd", "0003", "-Minutes", "240", raw="00 03")
+        rc, out = self.run_tool("-Holder", "run44-a", "-PowerBcd", "0003", "-Minutes", "240", raw="00 03")
         self.assertEqual(rc, 3, out)
         self.assertEqual(self.lease(), before, "its own contact runs: neither dropped nor extended")
-        self.assertEqual(self.preflight("cr55-b", raw="00 03")[0], 3, "a second writer stays out")
+        self.assertEqual(self.preflight("run55-b", raw="00 03")[0], 3, "a second writer stays out")
 
     def test_a_new_writer_refused_as_busy_holds_no_lease(self):
         self.set_client(contact="report")
-        self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 3)
+        self.assertEqual(self.preflight("run44-a", raw="00 03")[0], 3)
         self.assertEqual(self.lease(), "lease: free")
 
     def test_a_holder_whose_renewal_cannot_be_confirmed_loses_its_lease(self):
         for radio in ({"raw": "00 26", "write": "ignored"}, {"raw": None}):
-            self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
-            self.assertEqual(self.preflight("cr44-a", **radio)[0], 2)
+            self.assertEqual(self.preflight("run44-a", raw="00 03")[0], 0)
+            self.assertEqual(self.preflight("run44-a", **radio)[0], 2)
             self.assertEqual(self.lease(), "lease: free", radio)
 
     def test_without_agent_client_the_checkouts_own_client_is_used(self):
@@ -366,7 +366,7 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         with open(os.path.join(self.state, "lease.json"), "w", encoding="utf-8") as f:
             json.dump({"holder": "gone", "acquired": "2026-01-01T00:00:00Z", "expires": "2026-01-01T00:30:00Z"}, f)
         self.assertEqual(self.lease(), "lease: free")
-        self.assertEqual(self.preflight("cr44-a", raw="00 03")[0], 0)
+        self.assertEqual(self.preflight("run44-a", raw="00 03")[0], 0)
 
 
 if __name__ == "__main__":

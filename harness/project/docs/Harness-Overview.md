@@ -39,11 +39,8 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   - `config.yaml`: the harness configuration (packs, gate, queue, machines, Alex);
   - `suites.yaml`: the test registry;
   - `model_bindings.py`: the gate's model bindings (`gate.model_bindings`);
-  - `deploy/`: the radio preflight (`radio-preflight.ps1`, `radio-port.json`), the station
-    switch and the IC-7300 emulator's start and stop for simulator tests (`station-switch.ps1`,
-    `emulator.ps1`), the shared station control (`station-control.ps1`) and their tests
-    (`deploy/tests/`);
-  - `tests/`: the tests of the project's role additions (`test_role_context.py`), run with
+  - `tests/`: the tests of the project's role additions (`test_role_context.py`,
+    `test_station_switch_guard.py`), run with
     `python -m unittest discover -s harness/project/tests`;
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
@@ -105,8 +102,9 @@ these paths is a harness change: no review and no gate (harness Harness-Changes.
 Maintained with the harness but inputs of product suites, so a change to them is gated
 as a CR: `.github/workflows/windows-rust.yml` (the CI build), `tools/sysml.py` and
 `tools/sysml/` (authority/trace checks, semantic validation and product contract oracles
-such as coverage tables and property tests), and `tools/deploy/` (the deploy mechanism, its
-drill and tests, suite `deploy-tooling`).
+such as coverage tables and property tests), `tools/deploy/` (the deploy mechanism, its
+drill and tests, suite `deploy-tooling`), and `tools/test/powershell/` (the test bench, suite
+`test-bench`).
 `.github/workflows/fortran-stage-diagnostics.yml` is product diagnostic tooling. A reviewer of a `deny.toml` change runs `cargo deny --locked --workspace check bans
 licenses sources`, since the gate does not. The `rust-supply-chain` pack's
 advisories sensor is `.github/workflows/rust-advisories.yml`: weekly and on demand, read-only,

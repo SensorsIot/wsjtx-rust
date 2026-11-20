@@ -74,9 +74,10 @@ the versions both crates use stand once in `[workspace.dependencies]`. Run Cargo
 
 The test-tool folders of the [harness testing standard](../../general/core/docs/standards/testing.md#test-tools):
 `tools/test/rust/` (the crate `wstx-test-tools`, its tests in its modules and its `tests/`),
-`tools/test/node/` (CommonJS tool modules, each with its `<tool>.test.cjs` beside it) and
+`tools/test/node/` (CommonJS tool modules, each with its `<tool>.test.cjs` beside it),
 `tools/test/python/` (the Python test tools, each with its `test_<tool>.py`, and
-`WSJTX-REFERENCE.md`); files several tools use stand in `tools/test/` (`blocked-ports.json`,
+`WSJTX-REFERENCE.md`) and `tools/test/powershell/` (the test bench's PowerShell scripts with
+their Python tests, suite `test-bench`); files several tools use stand in `tools/test/` (`blocked-ports.json`,
 `fixtures/model-values/`). A test tool depends on no product package: `wstx-test-tools` has no
 `wstx-rust` dependency, and a Node tool module requires no file below `client/` or `server/`.
 Product code names a tool only in a test file (`use wstx_test_tools::…`, `require` in a
@@ -500,7 +501,7 @@ power, except QSO tests." It covers the real IC-7300 once the operator has decid
 until then live tests key the simulator ([Simulator live tests](#simulator-live-tests)).
 Cost 4 and 5 live tests run without asking when all of these hold:
 
-- `harness/project/deploy/radio-preflight.ps1` has taken the radio lease and set RF power to
+- `tools/test/powershell/radio-preflight.ps1` has taken the radio lease and set RF power to
   `0003` (1 %, 1.2 % of the control) with read-back before anything keys;
 - the test transmits only on 10, 15, 20 or 40 m;
 - afterwards it restores the power found and every setting it changed.
@@ -521,7 +522,7 @@ says.
   its first Tx; short keying without a QSO may use `0003`. CI-V reads first and writes only
   on a difference.
 - **Preflight.** Before keying, an agent runs
-  `harness/project/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>` and keys only
+  `tools/test/powershell/radio-preflight.ps1 -Holder <run> -PowerBcd <value>` and keys only
   on exit 0, under its lease (`-Status`, `-Release`). It stops an idle station gracefully,
   because the station holds COM3, reads the power, writes it only if different, reads it
   back, starts the station again and records the old value. It refuses to key only when the
@@ -555,7 +556,7 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   operator profile `ic7300` and its logbook are never touched; their hashes are taken before
   and compared after.
 - **Switch.** The real IC-7300 may be on or off: with `WSTX_RADIO_DISCOVERY=off` the station
-  opens only COM4. `harness/project/deploy/station-switch.ps1 -To simulator` (the tester or
+  opens only COM4. `tools/test/powershell/station-switch.ps1 -To simulator` (the tester or
   the coordinator) backs up `station\launcher.ps1` once, points its profile line at `profiles\SIM-IC7300` and sets
   `WSTX_RADIO_DISCOVERY=off` and `WSTX_PSKR=off` (without discovery off, a silent COM4 makes
   the station adopt the real radio on COM3), and `WSTX_UDP=off` unless every target of the
@@ -571,7 +572,7 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
   receive-only confirmation in the browser (Settings, "CAT receive-only confirmation");
   until then CAT stays closed. Agents never change the CAT endpoint during a simulator run.
 - **Emulator.** Each run starts its own IC-7300 emulator on COM5 at 115200 baud and stops it:
-  `harness/project/deploy/emulator.ps1 -Start` refuses while any process runs the emulator on
+  `tools/test/powershell/emulator.ps1 -Start` refuses while any process runs the emulator on
   COM5 or its record names a live one, starts `simulator.py --serial COM5 --baud 115200` of
   `D:/Github/IC-7300 simulator` as its own hidden process with stdin held open, waits until its
   new run folder starts the serial transport and records it (pid, creation time, command) in

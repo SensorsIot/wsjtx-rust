@@ -12,15 +12,19 @@ import sys
 import unittest
 from unittest import mock
 
-ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "harness", "general", "core", "tools"))
 import install_skills  # noqa: E402
 
-RUN = "powershell -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch.ps1"
-EMU = "powershell -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/emulator.ps1"
-UP = "powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/1/../../../Github/wsjtx-rust/harness/project/deploy/"
-ALLOWED = (RUN + " -To simulator", RUN + " -To back", EMU + " -Start", EMU + " -Stop", EMU + " -Status")
+RUN = "powershell -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/station-switch.ps1"
+EMU = "powershell -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/emulator.ps1"
+UP = "powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/1/../../../Github/wsjtx-rust/tools/test/powershell/"
+PREFLIGHT = "powershell -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/radio-preflight.ps1 -Status"
+ALLOWED = (RUN + " -To simulator", RUN + " -To back", EMU + " -Start", EMU + " -Stop", EMU + " -Status", PREFLIGHT)
 REFUSED = (
+    "powershell -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/radio-preflight.ps1 -Status",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch.ps1 -To back",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/emulator.ps1 -Start",
     RUN,
     RUN + " -To simulator -DryRun",
     RUN + " -To back -DryRun",
@@ -51,8 +55,10 @@ def roles():
 
 
 class GuardTests(unittest.TestCase):
-    def judge(self, role, command, tool="Bash"):
-        with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": ROOT}):
+    def judge(self, role, command, tool="Bash", scoped=True):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("HARNESS_ROLE_")}
+        env.update(CLAUDE_PROJECT_DIR=ROOT, **({"HARNESS_ROLE_ISSUE": "1"} if scoped else {}))
+        with mock.patch.dict(os.environ, env, clear=True):
             return install_skills.guard(role, {"tool_name": tool, "tool_input": {"command": command}, "cwd": ROOT})
 
     def test_the_tester_may_switch_and_run_the_emulator(self):
@@ -77,6 +83,11 @@ class GuardTests(unittest.TestCase):
             text = f.read()
         self.assertIn("station-switch\\\\.ps1 -To (simulator|back)", text, "the installed policy carries the pattern")
         self.assertIn("emulator\\\\.ps1 -(Start|Stop|Status)", text, "the installed policy carries the pattern")
+        self.assertIn("tools/test/powershell/", text, "the installed policy names the scripts' place")
+        self.assertNotIn("harness/project/deploy", text, "the installed policy names no old place")
+
+    def test_the_preflight_needs_the_runs_scope(self):
+        self.assertIsNotNone(self.judge("tester", PREFLIGHT, scoped=False), PREFLIGHT)
 
 
 if __name__ == "__main__":

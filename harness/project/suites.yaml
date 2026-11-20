@@ -506,6 +506,19 @@
   - tools/deploy/
   needs: "Python 3.12 with pip (the deploy command's tests build their fake cargo and rustc from pip's launcher), Windows PowerShell 5.1, Git Bash and git with the checkout's history. Windows PC; every station, scheduled task, firewall, process, network, git remote and GitHub call is a mock in a temporary sandbox. No station, radio or network service."
 
+- suite: test-bench
+  cost: 2
+  run: python -m unittest discover -s tools/test/powershell -v
+  paths:
+  - tools/test/powershell/
+  - tools/deploy/tests/pwsh.py
+  - tools/deploy/agent-client.ps1
+  - tools/deploy/station-update/launcher.ps1
+  select:
+  - tools/test/powershell/
+  - tools/deploy/tests/pwsh.py
+  needs: "Python 3.12, Windows PowerShell 5.1 and git with the checkout. Windows PC. Every serial port, station process, scheduled task, station HTTP call and emulator process is a mock function in a temporary sandbox. No station, radio, emulator or network service."
+
 - suite: fortran-reference-tools
   cost: 2
   run: python -m unittest discover -s tools/test/python -p "test_wsjtx*reference.py" -v && python -m unittest discover -s tools/test/python -p test_analyze_fortran_trace.py -v

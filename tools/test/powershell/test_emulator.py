@@ -14,10 +14,10 @@ import tempfile
 import unittest
 
 # The one copy of the PowerShell runner is tools/deploy/tests/pwsh.py.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "tools", "deploy", "tests"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "deploy", "tests"))
 import pwsh  # noqa: E402
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(HERE, "emulator.ps1")
 T0 = "2026-11-19T10:00:00Z"
 T1 = "2026-11-19T10:00:01Z"
