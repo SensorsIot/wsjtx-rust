@@ -35,6 +35,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import tokenize
 import urllib.request
 import urllib.parse
@@ -1275,14 +1276,29 @@ def write_architecture_oracle(cache: Path) -> list[str]:
 
 
 
+# The time limit of one Pilot validation run, in seconds (TR-02).
+VALIDATOR_SECONDS = 600
+
+
 def validate(paths: list[Path], cache: Path, inventory: bool = False) -> subprocess.CompletedProcess:
     java, jar, library = tool_paths(cache)
     if not paths or any(not path.is_file() for path in paths):
         raise ValueError("Semantic validation requires existing model files")
+    limit = VALIDATOR_SECONDS
+    started = time.monotonic()
+
+    def duration() -> None:
+        print(f"validator: {time.monotonic() - started:.1f} s (limit {limit:g} s)", file=sys.stderr, flush=True)
+
     # Cap the heap: the JVM default (a quarter of RAM) let parallel checks take
     # gigabytes next to the real-time station; 512 MB with the serial collector passes.
     # Without performance data the JVM leaves no folder in the temporary folder (TR-23).
-    result = subprocess.run([str(java), "-Xmx512m", "-XX:+UseSerialGC", "-XX:-UsePerfData", "-classpath", str(jar), str(Path(__file__).with_name("sysml") / "Validate.java"), str(library), *(["--inventory"] if inventory else []), *map(str, paths)], text=True, capture_output=True, timeout=120)
+    try:
+        result = subprocess.run([str(java), "-Xmx512m", "-XX:+UseSerialGC", "-XX:-UsePerfData", "-classpath", str(jar), str(Path(__file__).with_name("sysml") / "Validate.java"), str(library), *(["--inventory"] if inventory else []), *map(str, paths)], text=True, capture_output=True, timeout=limit)
+    except subprocess.TimeoutExpired:
+        duration()
+        raise ValueError(f"validator timed out after {limit:g} s") from None
+    duration()
     if result.returncode == 0 and "OMG Pilot 0.62.0 syntax/name/semantic validation passed; behavior not executed." not in result.stdout:
         raise ValueError("Validator returned no semantic completion marker")
     return result

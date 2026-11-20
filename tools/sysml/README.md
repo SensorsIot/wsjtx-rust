@@ -82,7 +82,10 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   it and declare canonical SysML`).
 - **TR-02 Validation.** The pinned Pilot parses, resolves and validates the model files as
   one graph, `Requirements.sysml` first. A syntax error, an unresolved name or a missing
-  Java, JAR (hash) or library fails; there is no lightweight fallback.
+  Java, JAR (hash) or library fails; there is no lightweight fallback. The Pilot run allows
+  600 s; each run prints `validator: <s> s (limit 600 s)` to stderr, and a run past the
+  limit fails with `SysML check failed: validator timed out after 600 s`, exit 2, never as a
+  model fault.
 - **TR-03 Tree (M2.1).** The model files are exactly the files of M2.1 (`MODEL_TREE`).
   Refused: a model file outside the tree (`model file outside the tree`), a file of the
   tree missing (`model file of the tree missing`), and a file in `docs/sysml/` that is no
@@ -511,3 +514,15 @@ run them are those of `harness/project/suites.yaml`.
 | TV-188 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv188_refusals | an unknown revision is refused by `tests`, `check` and `traces`, `tests` without a revision is refused, and a raw string without its end is a source `tests` cannot read. |
 | TV-189 | TR-23 | `test_code_proof.py` ThisRepositoryTests.test_tv189_this_repository; `test_revision_check.py` RevisionCheckTests.test_tv189_check_head | on this repository `tests HEAD` lists every test attribute and every `tests/*.test.cjs`, `traces HEAD` every FR, CL and TC; both pass at `HEAD^`; `check HEAD` passes. |
 | TV-190 | TR-23 | `test_code_proof.py` ThisRepositoryTests.test_tv190_traces_without_a_revision; `test_real_model_structure.py` RealModelStructureTests.test_check_on_this_tree_passes_every_model_rule (TV-113) | `traces` and `check` without a revision print their summary lines on this repository. |
+| TV-191 | TR-02 | `test_sysml.py` ValidatorRunTests.test_limit_is_600_seconds | the Pilot run is started with a time limit of 600 s. |
+| TV-192 | TR-02 | `test_sysml.py` ValidatorRunTests.test_command_line_and_pass_unchanged | the Pilot's command line is unchanged, and stdout and the exit code are the process's pass. |
+| TV-193 | TR-02 | `test_sysml.py` ValidatorRunTests.test_duration_line_after_a_pass | after a pass, stderr holds exactly one duration line whose value is the run's duration; stdout holds none. |
+| TV-194 | TR-02 | `test_sysml.py` ValidatorRunTests.test_duration_line_after_a_validation_error | after a validation error the duration line is printed once, the error line on stdout, and the exit code is 1. |
+| TV-195 | TR-02 | `test_sysml.py` ValidatorRunTests.test_duration_line_without_the_completion_marker | a pass without the completion marker prints the duration line, then the missing marker, and exits 2. |
+| TV-196 | TR-02 | `test_sysml.py` ValidatorRunTests.test_no_duration_line_when_the_validator_does_not_start | a missing tool and a missing model file print no duration line and exit 2 with their message. |
+| TV-197 | TR-02 | `test_sysml.py` ValidatorRunTests.test_timeout_is_no_model_fault | a run past the limit prints the duration line, then `validator timed out after 600 s` as the last line, exits 2 and reports no model fault. |
+| TV-198 | TR-02 | `test_sysml.py` ValidatorRunTests.test_timeout_names_the_limit_in_force | a lowered limit is the limit the duration line and the timeout message name. |
+| TV-199 | TR-02 | `test_sysml.py` ValidatorRunTests.test_timeout_in_oracle_keeps_the_oracle_file | `oracle` with the Pilot run timing out exits 2 with the timeout message and leaves the oracle file byte for byte. |
+| TV-200 | TR-02 | `test_sysml.py` ValidatorRunTests.test_export_run_unchanged | the Pilot export keeps its 900 s limit and its 1 GB heap and prints no duration line. |
+| TV-201 | TR-02 | `test_real_model_structure.py` RealModelStructureTests.test_check_on_this_tree_prints_one_validator_duration | `check` on this tree passes and prints exactly one validator duration line with the limit 600 s, on stderr only. |
+| TV-202 | TR-02 | `test_sysml.py` ValidatorRunTests.test_traces_prints_no_duration_line | `traces` starts no Pilot and prints no duration line. |
