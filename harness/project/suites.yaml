@@ -387,7 +387,7 @@
   - tools/sysml/tests/test_a_
   needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; TR-06 to TR-09 (TV-003 to TV-032): `oracle`, the architecture comparison and the deployment rules on fixture trees in the finished form, one full Pilot validation per model state in a bounded pool. Selected by the tool that judges the model, the validator Validate.java, its library pin toolchain.json and its own test files (which hold the fixtures), not by a model edit or the oracle file: the working model is judged by sysml-architecture-context and sysml-documentation (check). Model and source edits change its fingerprint only. No radio or live service."
 
-# TR-21 (TV-050 to TV-074): the tests of `equivalence` and `identities`, apart from
+# TR-21: the tests of `equivalence` and `identities`, apart from
 # sysml-tools so that only the tool, the validator and their test file select them; about
 # 9 minutes (some 30 Pilot exports, 2 at a time).
 - suite: sysml-equivalence-tests
