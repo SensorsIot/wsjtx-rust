@@ -1,4 +1,4 @@
-# RustSec advisories sensor of the harness rust-supply-chain pack (#23). Advisories are
+# RustSec advisories sensor of the harness rust-supply-chain pack. Advisories are
 # published without a commit of ours, so the push gate cannot notice them; this scheduled,
 # read-only run does. A red names the crate and the advisory; the fix is a CR.
 name: Rust advisories

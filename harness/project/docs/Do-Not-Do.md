@@ -30,7 +30,7 @@ rule. If a line ever conflicts with that document, the document wins.
 
 ## Rust
 
-- **MUST NOT** use `unsafe` without listing the crate in these bindings. → [Rust standard](../../general/lang/rust/standard.md)
+- **MUST NOT** use `unsafe` outside the crates and modules listed in [Crates that need `unsafe`](Project-Specifics.md#crates-that-need-unsafe). → [Rust standard](../../general/lang/rust/standard.md#security)
 - **MUST NOT** `unwrap()` or `expect()` on external input (audio, files, network, arguments). → [Rust standard](../../general/lang/rust/standard.md)
 - **MUST NOT** add a dependency without naming it and its purpose in the commit body. → [Rust standard](../../general/lang/rust/standard.md)
 - **MUST NOT** adapt upstream code outside the approved scope or without preserving its declared provenance and licensing obligations. → [License and attribution](../../../README.md#license-and-attribution)

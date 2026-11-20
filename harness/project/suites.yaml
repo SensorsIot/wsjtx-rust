@@ -167,7 +167,7 @@
   - package.json
   - package-lock.json
   build: cargo build --workspace --locked
-  needs: Node 24, npm ci, Playwright Chromium. Windows PC; four disposable station profiles and real browser windows.
+  needs: Node 24, npm ci, Playwright Chromium. Windows PC; disposable station profiles and real browser windows.
 
 - suite: recording-storage
   cost: 2
@@ -335,7 +335,7 @@
   select:
   - tools/sysml.py
   - tools/sysml/
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the tool's tests test_[!adre]*.py, every test file not run by another sysml suite: TV-033 to TV-048, TV-075 to TV-110 and TV-115 to TV-155 and TV-163 to TV-176, the rules on isolated models, five of them also on the real model (TV-077, TV-088, TV-110, TV-143, TV-155). Selected only when the tool changes. No radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the tool's tests test_[!adre]*.py, every test file not run by another sysml suite: TV-033 to TV-048, TV-075 to TV-110 and TV-115 to TV-155 and TV-163 to TV-176, the rules on isolated models, some also on the real model (TV-077, TV-088, TV-110, TV-143, TV-155). Selected only when the tool changes. No radio or live service."
 
 # TR-07 on the working model: test_architecture_context.py reads Context.sysml and the
 # packages of interfaces/external/ with the tool's parser, without the Pilot.
@@ -492,14 +492,14 @@
   - tools/test_analyze_fortran_trace.py
   - tools/wsjtx_simulator_components.py
   - fixtures/decoder/simulator-cases.json
-  needs: Python 3.12 standard library. Windows PC; 25 reference protocol, comparison, identity and trace-analyzer unit tests. No compiler, downloads, network, radio or hosted run.
+  needs: Python 3.12 standard library. Windows PC; the reference protocol, comparison, identity and trace-analyzer unit tests. No compiler, downloads, network, radio or hosted run.
 
 - suite: decoder-correctness
   cost: 2
   # The decode correctness, thread-parity and jt9-parity passes of decoder_signal: the
   # ordinary named passes minus the two that assert a wall-clock bound (the 50 ms
   # cooperative quantum, with its partial-cancellation case, and the busy-period latency).
-  # decoder-quality runs all seventeen, bound to its artifact, and the resource matrix when
+  # decoder-quality runs all of them, bound to its artifact, and the resource matrix when
   # a timing input changes (every production decoder source).
   run: >-
     cargo test --release --locked --test decoder_signal -- --test-threads=1
@@ -615,7 +615,7 @@
   build: cargo test --release --locked --test decoder_signal --no-run
   exclusive: ["*"]
   timing_classes: [compute, signal]
-  needs: Pinned Rust and Python, 64-bit Windows. Preserve all original13 quality cases plus cleanup/concurrency controls; one release Cargo producer binds all17 ordinary named passes (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job with16 configurations/40 workers/160 rounds/400 completions. API-free guardian/metrics tests precede execution. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
+  needs: Pinned Rust and Python, 64-bit Windows. Preserve every original quality case plus cleanup/concurrency controls; one release Cargo producer binds every ordinary named pass (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job over the complete resource matrix that tools/windows_resource_job.py checks. API-free guardian/metrics tests precede execution. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
 
 - suite: live-receive-integration
   cost: 2
@@ -651,7 +651,7 @@
   - rust-toolchain.toml
   - server/Cargo.toml
   build: cargo test --release --locked --test audio_receive --no-run
-  needs: Pinned Rust and Python. Windows PC; safe library APIs, deterministic injected native packets through the actual live source, shared receive window and pure FT8 decoder. WSTX_DECODER_VECTORS must name the verified 38-case frozen fixture cache. No transceiver, audio device, unsafe test import or network download; cheap provider boundary cases stay in the ordinary debug Rust group.
+  needs: Pinned Rust and Python. Windows PC; safe library APIs, deterministic injected native packets through the actual live source, shared receive window and pure FT8 decoder. WSTX_DECODER_VECTORS must name the verified frozen fixture cache. No transceiver, audio device, unsafe test import or network download; cheap provider boundary cases stay in the ordinary debug Rust group.
 
 - suite: live-station-browser
   cost: 2
@@ -713,7 +713,7 @@
   - package.json
   - package-lock.json
   build: cargo test --release --locked --bin wstx-rust --no-run
-  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned 38-case frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. WSTX_SAMPLE_DIR names the busy recording of the page kept across a restart and periods (tests/frontend/receive-page.test.cjs, its own loopback server, no transmit). Cheap seeded manager/epoch/ring cases remain in debug. The busy-period latency case runs in live-station-latency."
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. WSTX_SAMPLE_DIR names the busy recording of the page kept across a restart and periods (tests/frontend/receive-page.test.cjs, its own loopback server, no transmit). Cheap seeded manager/epoch/ring cases remain in debug. The busy-period latency case runs in live-station-latency."
 
 - suite: live-station-latency
   cost: 2
@@ -902,14 +902,15 @@
   - fixtures/decoder/independent-vector-tool/
   - fixtures/decoder/protocol-data/
   needs: >-
-    Python 3.12 standard library and the immutable CR18 portable fixture store,
-    provisioned before the gate from the release fixtures-cr18-v2 (its zip extracted
-    under the common Git directory's migration-data, the archive SHA-256 checked). Set WSTX_SIMULATOR_SAMPLE_DIR to its ft4 directory;
+    Python 3.12 standard library and the immutable portable simulator fixture store
+    CR18-simulated-samples-v2-03aef7cde-toold06cee63463b, provisioned before the gate from
+    the release fixtures-cr18-v2 (its zip extracted under the common Git directory's
+    migration-data, the archive SHA-256 checked). Set WSTX_SIMULATOR_SAMPLE_DIR to its ft4 directory;
     its sibling ft8 directory is required. Set WSTX_SIMULATOR_ORACLE_DIR to
     fixtures/decoder for repository tests (portable tests default to sibling oracle).
     Preserve delivery-catalog.json and both mode manifests with the frozen store;
     missing files fail. Windows PC, isolated integrity/refusal tests and explicit
-    verification of all eight WAVs; no download, compiler, decoder run or radio.
+    verification of every WAV of both manifests; no download, compiler, decoder run or radio.
 
 - suite: radio-selection
   cost: 2
@@ -992,7 +993,7 @@
   exclusive: [radio-selection-evidence]
   shared: [link-measurement]
   timing_classes: [display]
-  needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite: actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on an unshaped TLS connection. Thin and Off windows as long as their gestures need, all five known-answer contexts and pending seen through an event or a read; no physical radio, device or production fault switch. Runs only when the router, compression, the selection, CAT, receive or spectrum code, the status and receive/selection clients (app.js, index.html, recording.js), its Rust and browser test files and helpers, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
+  needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite: actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on an unshaped TLS connection. Thin and Off windows as long as their gestures need, every known-answer context and pending seen through an event or a read; no physical radio, device or production fault switch. Runs only when the router, compression, the selection, CAT, receive or spectrum code, the status and receive/selection clients (app.js, index.html, recording.js), its Rust and browser test files and helpers, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."
 
 - suite: mcp
   cost: 2

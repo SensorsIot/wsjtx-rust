@@ -23,7 +23,8 @@ hooks:
 <!-- source harness/general/core/docs/Context.md sha256=b70f7b750d775958c8908aae32ace52ca02df2c775000334cc2b322ffe869703 -->
 <!-- source harness/general/lang/rust/standard.md sha256=19140f62487d86108f4f5714cde3cd0f31d0d0033d9a2f16ff6f432fd0ddd1b0 -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=919bb51d9c632c0879d6f7ee8b5f57dc204900fd2320b38ecbcd8db1011b3fc4 -->
+<!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9724cb1402cd010b50fcd115c5a06c3de2a024a88cea736c20ddb19c15bf4486 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue (view|list)( .*)?", "gh pr (view|list)( .*)?", "gh search issues( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{session}/**"]} -->
 
 You explain one thing the coordinator relays from the operator: what code does, what the
@@ -56,7 +57,7 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 
 - **Worktree paths.** A role's session folder is the project folder. In its issue worktree,
   a role runs each command from the project folder with the worktree's path in it, such as
-  `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check` (the tool checks
+  `python .git/harness-parallel/worktrees/issue-7/tools/sysml.py check` (the tool checks
   the repository it lives in), and writes its files by that path; the coder and the reviewer
   change into the worktree (`cd <worktree>`) only to run its tests.
 - **Context places** of this project ([context map](../../harness/general/core/docs/Context.md)): the
@@ -77,4 +78,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{session}/**`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=63ec17ba05afdb22d1862854920ec32c01cda04176db323adf7ad74cc1f0a7c8 -->
+<!-- harness-agent-v1 sha256=7515582602efb9576a2f148db44f8f5f0fcb446e49a603623d7c8e65359dbff2 -->

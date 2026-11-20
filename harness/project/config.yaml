@@ -2,7 +2,7 @@
 # https://github.com/SensorsIot/harness, branch main, the submodule at harness/general/).
 # Read by harness/general/core/tools/project.py.
 project: wsjtx-rust
-packs: [rust, rust-supply-chain]
+packs: [rust, rust-supply-chain, python]
 main: master
 remote: origin
 override_env: HARNESS_GATE_OVERRIDE
@@ -91,8 +91,8 @@ skill_additions:
   test-design: [harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests]
   conformance-review: [harness/project/docs/Finished-Model.md]
 # The merge queue (harness/general/core/docs/Merge-Queue.md) runs on HB9BLA. Its worker gates
-# in its own worktree with the inputs of harness/project/docs/MEMORY.md ("Inputs and unfinished
-# work"). CARGO_BUILD_JOBS is left unbounded on purpose: the gate runs ABOVE_NORMAL and outranks
+# in its own worktree with the inputs of harness/project/docs/Project-Specifics.md ("Inputs").
+# CARGO_BUILD_JOBS is left unbounded on purpose: the gate runs ABOVE_NORMAL and outranks
 # only development work, the station runs above it (harness/project/docs/Project-Specifics.md).
 queue:
   batch: 4
@@ -188,9 +188,9 @@ alex:
   install:
     dry_run: ["C:/Program Files/Git/bin/bash.exe", "-c", "set -o pipefail; git -C D:/Github/wsjtx-rust show {commit}:tools/deploy/station-update/make_package.py | python - {commit} --dry-run"]
     deploy: ["C:/Program Files/Git/bin/bash.exe", "-c", "set -o pipefail; git -C D:/Github/wsjtx-rust show {commit}:tools/deploy/station-update/make_package.py | python - {commit}"]
-    policy: "the standing deploy policy of Project-Specifics.md (#171), approved 2026-11-12"
+    policy: "the standing deploy policy of Project-Specifics.md, approved 2026-11-12"
     wait_exits: [3, 6]
     timeout_minutes: 45
   accept:
-    consent: {levels: [4, 5], policy: "the standing consent at 1 % of Project-Specifics.md (#171): radio preflight at 1 %, 10/15/20/40 m, settings restored; approved 2026-11-12"}
+    consent: {levels: [4, 5], policy: "the standing consent at 1 % of Project-Specifics.md; approved 2026-11-12"}
   poll: 120

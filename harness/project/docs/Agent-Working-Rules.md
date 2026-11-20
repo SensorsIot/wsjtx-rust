@@ -90,6 +90,10 @@ rules around it. Agent memory only points here.
 This project's layer of the [agent roles](../../general/core/agents/roles.md), the coordinator
 included, installed with `python harness/general/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --skill test-audit --skill architecture-review --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer --agent issue-coordinator`.
 
+### Role: coordinator
+
+The coordinator reads the [project memory](MEMORY.md) first.
+
 ### Role: definer
 
 The model is under `docs/sysml/`; its checks are the `sysml.py` commands of
@@ -130,7 +134,7 @@ guard:
 ```
 
 - **Builds and tests** use the build and temp folders of
-  [Inputs](MEMORY.md#inputs) and run beside the gate
+  [Inputs](Project-Specifics.md#inputs) and run beside the gate
   as [heavy runs yield to the gate](Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
   In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
   TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
@@ -201,10 +205,8 @@ guard:
   reads: ["D:/wstx-tmp/live/{issue}/**"]
 ```
 
-The live-test binding is [Preserve the runtime](MEMORY.md#preserve-the-runtime):
-the radio preflight and its lease before keying, the power the test sets, the bands, no
-abort at or after RR73 or 73, a contact you did not start, and the settings a cost-4/5
-test sets back. A run writes under `D:/wstx-tmp/live/<issue>/`
+The live-test binding is [Keying the radio](Project-Specifics.md#keying-the-radio) and the
+[standing consent at 1 %](Project-Specifics.md#standing-consent-at-1-). A run writes under `D:/wstx-tmp/live/<issue>/`
 ([limits for experiments](Project-Specifics.md#limits-for-experiments)): its log, and its
 scripts, which act on the station only through the station client
 `tools/deploy/agent-client.ps1` (dot-sourced:
@@ -253,7 +255,7 @@ The [agent working rules](Agent-Working-Rules.md) hold for every role.
 
 - **Worktree paths.** A role's session folder is the project folder. In its issue worktree,
   a role runs each command from the project folder with the worktree's path in it, such as
-  `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check` (the tool checks
+  `python .git/harness-parallel/worktrees/issue-7/tools/sysml.py check` (the tool checks
   the repository it lives in), and writes its files by that path; the coder and the reviewer
   change into the worktree (`cd <worktree>`) only to run its tests.
 - **Context places** of this project ([context map](../../general/core/docs/Context.md)): the

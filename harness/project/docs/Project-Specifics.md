@@ -17,6 +17,27 @@ are not in the repository, the timing baseline, the gate and the merge queue are
 only there. Heavy builds and gates share it with the live station: do not operate the radio
 during a heavy gate.
 
+On HB9BLA:
+
+- **Station:** `https://192.168.0.37:18081`, scheduled task `WSTX Rust Station HB9BLA`,
+  receipt `%LOCALAPPDATA%\WstxRust\station\station-running.json`. The deployed source is the
+  one the issue checkpoint and this receipt name.
+- **Station log:** `%LOCALAPPDATA%\WstxRust\station\profiles\ic7300\contacts.adi`, imported
+  from the operator's Log4OM export; a rerun of Update logbook with the same export adds
+  nothing.
+- **IC-7300:** COM3 and the USB Audio CODEC. The operator runs it on 20 m FT8
+  (14.074 MHz USB-D) with AGC SLOW for FT8 and FT4 (it removes the AGC line between periods).
+  Agents key it as [Keying the radio](#keying-the-radio) says. The camera microphone belongs
+  to Dictate, not the radio.
+- **Comparison:** the official WSJT-X 3.3.0-beta4 runs alongside as `WSTX-Comparison`,
+  Rig=None, no CAT/PTT, Fast/AP-off. A connected Edge frontend runs here too.
+- **Credentials:** `%LOCALAPPDATA%\WstxMigration\credential-tools\PRIVATE-CREDENTIAL-HANDOFF.md`;
+  readiness is checked without reading a value. Scoped Infisical authentication and secret
+  reading work with normal TLS validation; native CLI use needs standard Windows CA trust.
+  TLS is never bypassed.
+- **Model toolchain:** the JDK and the Pilot are in `%USERPROFILE%\.cache\wsjtx-rust\sysml-tools`.
+- **Fortran** is never installed on HB9BLA.
+
 The `windows-rust.yml` artifact (`wstx-rust-windows-x64`) is build evidence only. It shows
 that the build and tests pass on a clean Windows runner and is never installed on the
 station.
@@ -24,6 +45,26 @@ station.
 ## Windows build and packaging
 
 The Rust executable serves the embedded browser, versioned station interfaces and implemented receive services. Native Windows audio, typed CAT adapters and the pure FT4/FT8 decoder are separate modules. Their presence does not establish complete mode parity or live acceptance; current implementation and verification declarations belong to the functional model and issue evidence.
+
+### Crates that need `unsafe`
+
+The [Rust standard](../../general/lang/rust/standard.md#security) forbids `unsafe` in a crate
+the project harness does not list. The listed crate is `wstx-rust` (`server/`): its library
+calls the Windows API in the modules below, and only these allow `unsafe`, each by
+`#[allow(unsafe_code)]` on its module declaration under the library root's
+`#![deny(unsafe_code)]` (`server/src/lib.rs`):
+
+- `server/src/audio/windows.rs`: WASAPI capture, declared in `server/src/audio.rs`;
+- `server/src/modes/playback/windows.rs`: WASAPI render, declared in `server/src/transmit/playback.rs`;
+- `server/src/radioControl/windows.rs`: the CAT port's serial I/O, declared in `server/src/radio_control/mod.rs`;
+- `server/src/transmit/windows_time.rs`: the read-only Windows Time service query, declared in
+  `server/src/modes/transmit/mod.rs`.
+
+The binary root `server/src/main.rs` keeps `#![forbid(unsafe_code)]`. Each `unsafe` block of
+these modules carries a `// SAFETY:` comment and is covered by a test, as the Rust standard
+requires; Miri is not wired, since the blocks call the Windows API.
+
+### Workspace
 
 The root Cargo workspace contains the station-server package in `server/`. Run Cargo commands from the repository root; the shared lock file and toolchain stay there, and Windows build artifacts remain under `target/x86_64-pc-windows-msvc/`. The `client/` files are embedded at Rust compile time, without a frontend build step.
 
@@ -34,7 +75,7 @@ is a manual alternative, started explicitly from the Actions page. Pushes and pu
 requests do not trigger it. Normal development, the full test suite and release packaging
 run on HB9BLA; a local pass is not automatically repeated on GitHub.
 
-The workflow uses a GitHub-hosted Windows Server 2022 x64 runner with the MSVC build tools. It installs Rust 1.99.0, matching `rust-toolchain.toml`, and checks formatting, Clippy warnings, tests, release compilation, and execution of the built program. The executable is uploaded as the `wstx-rust-windows-x64` artifact with a 14-day retention period.
+The workflow uses a GitHub-hosted Windows Server 2022 x64 runner with the MSVC build tools. It installs the pinned Rust toolchain (`rust-toolchain.toml`) and checks formatting, Clippy warnings, tests, release compilation, and execution of the built program. The executable is uploaded as the `wstx-rust-windows-x64` artifact with a 14-day retention period.
 
 No radio, sound device, third-party decoder or repository secrets are required. Rust dependencies implement HTTP/WebSockets, asynchronous networking, JSON and TLS. Node 24 test dependencies provide a real Chromium browser, independent WebSocket peer and disposable TLS certificates. The workflow runs browser tests against the compiled release executable. The selected suites state which communication, receive and modem promises they exercise; an unexecuted hardware case is not a passed check.
 
@@ -65,108 +106,47 @@ Release packaging also runs on this PC; start the packaged candidate for the dry
 
 `paths` lists a group's complete inputs for evidence fingerprints and dirty-input
 checks. `select` lists the files whose edits directly select it; only `select` decides
-selection. No group declares `depends_on`: the harness follows those edges
-transitively, so one server edit fanned out over every browser group. A group instead
-names in its own `select` the files whose behaviour its test cases prove.
+selection. No group declares `depends_on`, which the harness follows transitively: a group
+names in its own `select` the files whose behaviour its test cases prove, not every file its
+fixture merely loads, and Cargo and Node dependency inputs select every group that compiles
+or runs them. A group's coverage is its `needs` and its change owners are its `select` in
+`harness/project/suites.yaml`; `gate.py --plan` (below) prints the groups a change selects
+and why. The selector does not infer changed functions from a file or guess dependencies
+from an agent's description. Unmapped inputs select every group that declares them;
+entirely unknown paths and selection-policy changes cause a full fallback.
 
-| Group | Functional coverage | Direct change owners |
-|---|---|---|
-| `wstx-rust` | Rust unit and integration tests, except the library's `decoder::` unit tests (`wstx-rust-decoder`) | Native sources, the transmit and decoder fixtures the tests include, the model (`docs/sysml/`), whose values its tests read, the model-value fixture tree, Cargo inputs and Rust toolchain |
-| `wstx-rust-decoder` | The library's `decoder::` unit tests, optimized with debug assertions and overflow checks | Decoder sources, the transmit packer (`transmit/pack.rs`, its module root `modes/transmit/mod.rs`), the library root, the decoder fixtures they include, the model (`docs/sysml/`), whose values its tests read, the Rust model-value reader, Cargo inputs and Rust toolchain |
-| `protocol` | Status messages, sessions, reconnect and TLS login | Router (`main.rs`), status page client (`app.js`, `index.html`, `style.css`), protocol tests/helpers, runtime dependencies |
-| `protocol-thin` | Timing: TC-021-007 silence bounds, TC-021-008 32 kbit/s link and 60-second idle budget, stalled-reader liveness, link simulator | Timing inputs: router/websocket, HTTP compression, status page client, protocol tests and link simulator helpers |
-| `profiles` | Saved settings, independent stations, authorization and pending-status behavior | Router, profile and authorization owners, page and recording client (shared controls container), profile tests, the model file whose values its tests read (`docs/sysml/backend/profile/Profile.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader |
-| `recording-storage` | Import, validation, storage, jobs, cancellation and source provenance | Router, recording owners, recording client, recording test file, fixture tool and recording manifests, the model file whose values its tests read (`docs/sysml/backend/profile/Recordings.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader |
-| `recording-display` | Spectrum, waterfall, calibrated bins, palette, sliders, readouts and geometry | Router, recording and spectrum owners, recording client, recording test file and manifests |
-| `recording-thin` | Timing: display pacing, bounded subscribers, the full 32 kbit/s display/status regression and the TC-010-005 Detailed peer cadence | Timing inputs: router, recording/spectrum owners, HTTP compression, status and recording clients (loaded cold over the link), recording test file and link helpers, the model-value reader and the Recordings and Units model files |
-| `operating-layout` | Operating screen, settings drawer, receive races, logbook, strategy, UDP editor, transmit status | Router and the HTTP owners the operating page calls; page, recording, contact and logbook clients; its test file |
-| `contact-browser` | Contact engine, QSO sequencing, logging and halt through the browser | Router, contact/logbook/transmit owners, contact/logbook/recording clients, contact test |
-| `radio-selection` | H1 compression negotiation, commissioning, browser selection cases | Router, compression, selection/radio/CAT/receive/source owners, status and recording clients, selection test, the model (`docs/sysml/`), whose values its tests read, the JavaScript model-value reader |
-| `radio-selection-thin` | Timing: the native/CAT selection workload on an unshaped TLS connection (no 32 kbit/s link) and its 4230-5000 ms native setup bound | Timing inputs: router, compression, selection/CAT/receive/spectrum owners, status and recording clients, its Rust and browser test files and link helpers |
-| `native-flex` | FR-023 native FlexRadio against the loopback emulator: route isolation, reconciliation, capacity, mixed profiles, push-only status | Native session and status (`flex/`, `flex_http.rs`), router, authorization, profile, radio setup, recording, receive, selection and startup owners, page, recording and contact clients, its test and emulator |
-| `mcp` | MCP client grant and refusals | Router, MCP/automation/authorization owners, authorization client, MCP test and credential helper |
-| `recording-fixtures` | Offline fixture planning, integrity and refusal paths | Fixture tool, plans and tests, the model file whose values its provenance sweep reads (`docs/sysml/backend/profile/Recordings.sysml`), `docs/sysml/shared/Units.sysml` and the JavaScript model-value reader, plus Node package metadata |
-| `model-values` | TR-20 (TV-158, TV-159): the JavaScript model-value reader on its fixture tree | The JavaScript model-value reader, its test file, the model-value fixture tree, plus Node package metadata |
-| `sysml-documentation` | `sysml.py check` (catalog/trace checks, one full semantic validation, the oracle, the identity history and the model rules) and the `test_[dr]*.py` tests (TV-049, TV-111 to TV-114) | Model and tooling changes; bound source remains a complete fingerprint/dirty-guard input |
-| `sysml-tools` | The SysML tool's tests `test_[!adre]*.py` (TV-033 to TV-048, TV-075 to TV-110, TV-115 to TV-155), on isolated models and five on the real model | The SysML tool and its tests |
-| `sysml-equivalence-tests` | TR-21 (TV-050 to TV-074): `equivalence` and `identities` on temporary repositories and the repository's history, `test_e*.py` | `tools/sysml.py`, `Validate.java` and the test file |
-| `sysml-equivalence` | TR-21: `equivalence --marked` on each commit of `master..HEAD` marked `Model-Move: pure` | The model, the SysML tool and the files whose model citations it reads |
-| `sysml-architecture-context` | TR-07 (TV-001, TV-002) on the working model: `test_architecture_context.py` compares the outside things of `ShackContext` in `Context.sysml` with its owner table, without the Pilot | `Context.sysml`, `interfaces/external/`, the SysML tool and its test file |
-| `sysml-architecture` | TR-06 to TR-09 (TV-003 to TV-032), the validator tests: every `test_a*.py` but `test_architecture_context.py` (`-p "test_a*[!x]?.py"`), `oracle`, the architecture comparison and the deployment rules on fixture trees, one Pilot validation per model state | The SysML tool, `Validate.java`, the toolchain pin and its own test files (the fixtures); not a model edit or the oracle file. The model and the client/server/test source are fingerprint inputs only |
-| `decoder-correctness` | The release `decoder_signal` correctness, thread-parity and jt9-parity passes (all ordinary passes but the 50 ms quantum and busy-period latency) | Decoder fixtures, the library root and the model files whose values its passes read (`docs/sysml/backend/modes/Decode.sysml`, `MessagePayload.sysml`, `docs/sysml/shared/Units.sysml`) (a production decoder source selects `decoder-quality`, which runs the same passes) |
-| `decoder-quality` | Timing: all seventeen release decoder passes bound to the artifact, and the owned-Job resource matrix (runs alone) | Timing inputs: the production decoder sources (not its `*_test.rs` or the test-only resource observer), `decoder_signal.rs`, the fixtures and vector tool the timed passes decode, its resource-job tools, the model files holding the budgets the matrix reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and the Rust toolchain/dependency pins |
-| `live-station-browser` | Native fixture through the actual Router, receive owner and browser (callsign rows) | Router, profile/recording/receive/source/audio/decoder owners, client, its test files |
-| `live-station-latency` | Timing: the busy-period browser latency case | Timing inputs: router, receive/source/audio/decoder pipeline, recording client, its test files, the model files holding the budgets the station process case reads and their unit suffixes (`docs/sysml/backend/modes/Decode.sysml`, `docs/sysml/shared/Units.sysml`) and toolchain |
-| `source-model-traces` | Fast canonical source/model identity and binding checks; no Java or model mutation suite | Client, server and test source, plus model/tool changes |
+Every test file is registered in a group. A test file that several groups share is
+partitioned by the test-name patterns of their `run` commands; each complement includes
+future names instead of silently omitting them. No test assertion, budget or test case is
+removed by selection.
 
-All existing test files remain registered. The recording test file is partitioned by
-names: `^TC-018-` goes to storage, except its two 250 ms cancellation bounds;
-those, `^TC-010-002` and the TC-010-005 Detailed peer cadence go to thin-link checks,
-and the complement to display. The communication test file sends `^TC-021-007`
-(silence detection and recovery bounds) to `protocol-thin`, the complement to `protocol`;
-TC-021-008 (dead peer removal on a driven clock) and TC-080-001 (the link byte log) are Rust tests in `wstx-rust`. The radio selection Rust fixture `live_native_selection_tls_thin_and_off`
-runs in `radio-selection-thin`, the other selection tests in `radio-selection`. Each
-complement includes future names instead of silently omitting them. No test assertion,
-budget or test case is removed by selection.
+Runtime oracles are selected by changed implementation and executable tests. Source edits
+also select the fast binding check `source-model-traces`, without a dependency that runs the
+full Pilot suites on every code edit. A source edit or deletion invalidates the trace,
+full-model and validator-test evidence whose `paths` hold it, even when only the fast suite
+is selected. Independent contract comparison still checks that tests prove the changed
+promises.
 
-A group that holds a test reading a model value (`### Model values read by tests`) names, in
+### Model values read by tests
+
+A group that holds a test reading a model value names, in
 `paths` and `select`, every model file those readers read: each file holding a value they
 read, and `docs/sysml/shared/Units.sysml` when they read a value by its unit. `docs/sysml/`
 covers them all. The change that adds the first such test to another functional group adds
 these files there, as additive wiring of its new coverage. A timing test that reads
 its bound from the model has the same files in its suite's `timing_inputs` and `paths`.
 
-The resource matrix of `decoder-quality` re-measures a configuration whose 50 ms CPU quantum
-stayed unmeasured, at most three attempts, and the runtime (including the four-worker 2x
-bound), cold-start and 64 MiB budgets of `WstxModemDecode::DecodeBudgets` bind every attempt:
-any exceedance in any attempt is a failure.
-
-The **live page check** (`tools/deploy/live-page-check.ps1`) is in no
-suite: it needs the installed station and one real restart. It runs on HB9BLA after every
-deploy under the [standing deploy policy](#standing-deploy-policy) and at live
-acceptance (CR step 6) of a change to `client/`, the receive, recording or logbook owners or
-`tests/page-watch.cjs`. It keys nothing and restarts the station only while nothing is armed,
-keyed, in a contact or an automation run. Before the restart it makes one band selection of the
-band the station receives on, keeping its mode, so that the old boot's receive job stands at
-generation 2 or more (the #22 trigger): only while receive runs FT8 or FT4 on a selected band,
-Monitor off at startup is not set and the saved receive choice is that mode and band, so that the
-selection tunes the radio as the resume after the restart does and saves the same choice.
-Otherwise, or when the selection is refused or does not take, the result is NOT-EXERCISED naming
-why. `live-station-browser` gates the same oracle in-process.
+### Timing suites
 
 Measurements run only when the change touches time-critical code. Every
-timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`:
-`protocol-thin`, `recording-thin`, `radio-selection-thin`, `live-station-latency`,
-`decoder-quality`). A timing suite has no `select`; its `timing_inputs` name the code that
-sets the measured time, and nothing else selects it: no functional owner, unmapped-input
-or unowned-path fallback, `harness/project/` edit or dependency
+timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`
+in `harness/project/suites.yaml`). A timing suite has no `select`; its `timing_inputs` name
+the code that sets the measured time, its own test files and helpers, and the toolchain and
+dependency pins, and nothing else selects it: no functional owner, unmapped-input or
+unowned-path fallback, `harness/project/` edit or dependency
 ([harness testing standard](../../general/core/docs/standards/testing.md#timing-suites)).
-The gate lists a timing suite the change reads but does not time as `TIMING ... not run`.
-
-The timing inputs are, per suite: the router `main.rs` (status websocket, thin anchors
-and detail cadence) and HTTP compression for the link suites `protocol-thin` and `recording-thin` and for `radio-selection-thin`; the status client
-(`app.js`, `index.html`, `style.css`) for `protocol-thin`, and the status and receive
-clients (`app.js`, `index.html`, `recording.js`) for the two others, because those clients
-read over the 32 kbit/s link and cross it cold; the recording/spectrum producers for
-`recording-thin`; the selection, CAT, receive and spectrum owners for `radio-selection-thin`,
-but not capture, whose bounds rerun on request;
-the receive/source/audio/decoder pipeline and the recording client that polls and paints
-the rows for `live-station-latency`; the production decoder sources (every one sets the
-checkpoint spacing, per-item work or budgets the quantum, latency and matrix measure),
-`decoder_signal.rs`, the fixtures and vector tool its timed passes decode, the protocol tables compiled into it and the
-resource-job tools for `decoder-quality`. A decoder fixture change that none of them
-times (the jt9 parity corpus, baselines, vectors) runs only the functional
-`decoder-correctness`, beside other groups: the same passes except the 50 ms quantum and
-the busy-period latency. Each suite's own test files
-and the link simulator (`tests/support.cjs`, `tests/peer.cjs`) are timing inputs, and so
-are the Rust toolchain and dependency pins (and the Node pins for the browser suites);
-for `recording-thin` and `radio-selection-thin` only `tests/support.cjs`,
-`rust-toolchain.toml`, `Cargo.lock` and `package-lock.json` of these, their own test files, and
-`tests/peer.cjs` for `recording-thin`. `recording-thin` also names the model-value reader
-`tests/model-values.cjs` and the model files whose values its TC-018 tests read
-(`backend/profile/Recordings.sysml`, `shared/Units.sysml`), because nothing else selects it.
-The contact, logbook, authorization, MCP, strategy, profile and UDP code, the rest of the
-SysML model and the other groups' tests are not: their changes run functional groups only.
+A change to files that no timing suite names runs functional groups only. The gate lists a
+timing suite the change reads but does not time as `TIMING ... not run`.
 
 A CR that changes the measured behaviour through another path (a client timer or poll
 cadence outside those files, a heavier asset, a new background task) asks for the
@@ -177,6 +157,26 @@ residual liveness deadline in a functional case (for example the 2 s status refr
 10 s recovery bounds of the profile tests) is a known follow-up, not a measurement
 promise: a mixed group would declare `timing_inputs` and guard those assertions with
 `HARNESS_TIMING` (`0` skips them).
+
+The resource matrix of `decoder-quality` re-measures a configuration whose 50 ms CPU quantum
+stayed unmeasured, at most three attempts, and the runtime (including the four-worker 2x
+bound), cold-start and 64 MiB budgets of `WstxModemDecode::DecodeBudgets` bind every attempt:
+any exceedance in any attempt is a failure.
+
+### Live page check
+
+The **live page check** (`tools/deploy/live-page-check.ps1`) is in no
+suite: it needs the installed station and one real restart. It runs on HB9BLA after every
+deploy under the [standing deploy policy](#standing-deploy-policy) and at live
+acceptance (CR step 6) of a change to `client/`, the receive, recording or logbook owners or
+`tests/page-watch.cjs`. It keys nothing and restarts the station only while nothing is armed,
+keyed, in a contact or an automation run. Before the restart it makes one band selection of the
+band the station receives on, keeping its mode, so that the old boot's receive job stands at
+generation 2 or more: only while receive runs FT8 or FT4 on a selected band,
+Monitor off at startup is not set and the saved receive choice is that mode and band, so that the
+selection tunes the radio as the resume after the restart does and saves the same choice.
+Otherwise, or when the selection is refused or does not take, the result is NOT-EXERCISED naming
+why. `live-station-browser` gates the same oracle in-process.
 
 ### Parallel groups and shared resources
 
@@ -214,37 +214,7 @@ still repeats its build, which is then up to date. Ports are chosen free per tes
 (`stationEnv`), so the profile and radio-ownership locks of concurrent groups do not
 meet.
 
-The model has an explicit documentation owner. Its edits select the catalog/trace check,
-one full semantic validation and the tests that read the model (`sysml-documentation`, about
-30 s); the tool's own unit tests (`sysml-tools`, about 50 s) run only when the tool changes.
-An edit to `Context.sysml` or an external interface (`interfaces/external/`) also selects
-the context check
-(`sysml-architecture-context`, TR-07, no Pilot); `sysml-documentation` judges the model and
-the oracle file with `check`. The architecture validator tests (`sysml-architecture`, one
-Pilot JVM per fixture state) judge fixture trees only, so they run only when the tool,
-`Validate.java`, the toolchain pin or their own test files change.
-Runtime oracles are selected by changed implementation and executable tests. Source
-edits also select the fast binding check, without a dependency that runs the full Pilot
-suites on every code edit. `sysml-documentation` and `sysml-architecture`
-fingerprint the model, tool and complete client/server/test source inputs. A
-source edit or deletion invalidates old trace evidence, full-model evidence and the
-validator tests' evidence, even when only the fast suite is selected.
-Independent contract comparison still checks that tests prove the changed promises.
-
-A file selects the groups whose test cases prove its promises, not every group whose
-fixture merely loads it. The router `main.rs` (routes, authentication, websocket and
-profile HTTP) selects every browser group. The operating page client files select
-`operating-layout`, the operating-page regression, besides their owning groups. The
-status client (`app.js`, `index.html`, `authorization.js`) also selects every group
-whose page boots from it, since `station-ready` starts the recording client. A
-contact engine edit therefore selects `wstx-rust`, `contact-browser` and
-`source-model-traces`; its HTTP surface adds `operating-layout`. An edit to the shared
-recording test file selects all three recording groups. Cargo and Node dependency
-inputs select every group that compiles or runs them. The selector does not infer
-changed functions from a file or guess dependencies from an agent's description.
-Unmapped inputs select every group that declares them; entirely unknown paths and
-selection-policy changes cause a full fallback. The workflow is a shared unmapped
-input of every group, so workflow edits also select them all.
+### Gate preview and manual runs
 
 Preview the selected commands and reasons without running checks or recording a pass:
 
@@ -258,9 +228,6 @@ is required:
 ```powershell
 python harness/general/core/tools/gate.py --full
 ```
-
-Test networking remains isolated cost 2; this selection
-does not authorize hardware or external-service tests.
 
 From the repository root:
 
@@ -294,11 +261,44 @@ remains an alternative execution location for this full recipe when explicitly c
 `WSTX_TEST_EXE` optionally selects an exact packaged executable. Otherwise tests use
 the debug executable under `CARGO_TARGET_DIR` when set, or `target/`.
 Screenshots and the thin-link measurement report are written to ignored `test-results/`.
-The portable link simulator uses modelled network overhead, not packet capture. The link
-budget is `WstxStationLink::ThinLinkBudget`
+Isolated tests may start disposable loopback servers, browsers, TLS endpoints and link
+simulators: test networking is cost 2. Live station or external-service access is cost 3–5;
+the test selection authorizes no hardware or external-service test. The link simulator
+counts the actual encrypted-stream bytes plus modelled transport overhead; it is no on-wire
+packet capture or physical-network certification. It disconnects a peer whose pending
+delivery bytes plus destination write buffer exceed 128 KiB and emulates no other
+congestion queue. The link budget is `WstxStationLink::ThinLinkBudget`
 ([StationLink.sysml](../../../docs/sysml/interfaces/internal/StationLink.sysml)), the
 counted overhead `WstxListener::LinkTrafficLog`
 ([Listener.sysml](../../../docs/sysml/backend/web/Listener.sysml)).
+
+### Inputs
+
+The test inputs are in `.git\migration-data\`; configure each development shell:
+
+```powershell
+$data = Join-Path (git rev-parse --path-format=absolute --git-common-dir) 'migration-data'
+$env:WSTX_SAMPLE_DIR = Join-Path $data 'recordings'
+$env:WSTX_DECODER_CACHE = Join-Path $data 'quality'
+$env:WSTX_DECODER_VECTORS = Join-Path $data 'frozen'
+$env:WSTX_DECODER_SYNCHRONIZATION = Join-Path $data 'synchronization'
+$env:WSTX_DECODER_OFFICIAL_FT8 = Join-Path $data 'official-ft8\210703_133430.wav'
+$env:WSTX_SIMULATOR_SAMPLE_DIR = Join-Path $data 'CR18-simulated-samples-v2-03aef7cde-toold06cee63463b\ft4'
+$env:WSTX_SIMULATOR_ORACLE_DIR = Join-Path (git rev-parse --show-toplevel) 'fixtures\decoder'
+$env:CARGO_BUILD_JOBS = '2'
+```
+
+Without these, a push that selects any suite whose `needs` in `harness/project/suites.yaml`
+names a WSTX_* input is refused red. The merge-queue worker reads the same inputs from
+`queue.env` in `harness/project/config.yaml`.
+
+Agent builds use their own `CARGO_TARGET_DIR=D:/wstx-build/<worktree>` (`gate.agent_build_root`)
+and `TEMP`/`TMP` set to that same folder, never inside a worktree and never shared: Cargo
+creates it before the linker needs it (link.exe fails with LNK1104 on a missing temp
+folder). Gate builds go to `D:/harness-cargo-target/wsjtx-rust/<checkout>`
+(`gate.cargo_target_root`) and are pruned by the gate itself; agent build folders are pruned
+with `python harness/general/core/tools/build_prune.py agent-dirs --root DIR --apply`
+([Rust standard, Build folders](../../general/lang/rust/standard.md#build-folders)).
 
 ## Merge queue
 
@@ -309,15 +309,19 @@ whose worker runs on HB9BLA ([machine](#machine)): the coordinator hands in the 
 itself. The queue's records are local to HB9BLA.
 The `queue:` section of `harness/project/config.yaml` names the tools the gate needs (Node 24
 or later, npm, Cargo, rustc, `gh`, the MSVC linker), 20 GB free on every drive the gate uses, the
-input environment of [Inputs](MEMORY.md#inputs) and the `npm ci` setup of
-the queue's worktree. A long build or test run outside the gate does not wait for `busy`;
-it runs beside the gate under the priorities below and reruns a timing-sensitive failure once.
+input environment of [Inputs](#inputs) and the `npm ci` setup of
+the queue's worktree. The worker runs as a background job from the main checkout
+`D:\Github\wsjtx-rust`, with the pinned harness:
 
-Priorities on HB9BLA: the
+```bash
+python harness/general/core/tools/merge_queue.py worker
+```
+
+Priorities on HB9BLA ([heavy runs](Agent-Working-Rules.md#who-changes-what)): the
 station task `WSTX Rust Station HB9BLA` runs at High, above the gate; the gate runs at
 ABOVE_NORMAL with unbounded build parallelism; agent builds and tests outside the gate
 run at BelowNormal with a bounded `CARGO_BUILD_JOBS` (2, as
-[Inputs](MEMORY.md#inputs) sets it).
+[Inputs](#inputs) sets it).
 
 ## Same-machine development
 
@@ -350,6 +354,9 @@ A deploy is one line in Git Bash on HB9BLA, given only the commit, which runs
 set -o pipefail; git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-update/make_package.py | python - <commit> [--dry-run]
 ```
 
+The commit is the one the merge queue pushed; Alex runs the same line (`alex.install` in
+`harness/project/config.yaml`).
+
 It refuses (exit 1, before any step) any other argument list, a commit not on GitHub master,
 and a commit for which not exactly one merge-queue log under `.git\harness-parallel\queue\logs\`
 shows a green gate and the push of that commit to master (the commit the queue pushed when
@@ -376,7 +383,7 @@ evidence only: that artifact is never installed on the station.
 
 ### Standing deploy policy
 
-Approved by the operator (#171): "The operator is kept out of the loop, with one exception:
+The operator's policy, verbatim: "The operator is kept out of the loop, with one exception:
 when a decision is needed." It binds the deploy part of the harness rule
 [standing deploy and consent policies](../../general/core/docs/CR-Process.md#standing-deploy-and-consent-policies). A deploy
 under it needs no OK per install.
@@ -399,7 +406,7 @@ under it needs no OK per install.
      the deploy prints `WAITING FOR THE RADIO: the radio did not answer for 300 s, nothing
      changed (state <state>)` and exits 6: it stages and stops nothing, runs no probe and
      no page check, makes no return and posts no record; the same command run again later
-     repeats the whole check. `-DryRun`, `-Rollback` and the switch-back after a failed
+     repeats the whole check, and exit 6 is reported to the operator. `-DryRun`, `-Rollback` and the switch-back after a failed
      probe or page check do not read the radio. A station that is down is not idle. A contact
      the agents did not start is never aborted by them; a deploy it blocks past the wait is
      reported to the operator;
@@ -471,7 +478,7 @@ b611766f68a987b450c15d38233c3c9eab5eb2eef58d9cc93db56fdce62fef07  tools/deploy/s
 
 ### Standing consent at 1 %
 
-Approved by the operator (#171): "Transmitting is not a concern: tests transmit at 1 % RF
+The operator's consent, verbatim: "Transmitting is not a concern: tests transmit at 1 % RF
 power, except QSO tests." It covers the real IC-7300 once the operator has decided #239;
 until then live tests key the simulator ([Simulator live tests](#simulator-live-tests)).
 Cost 4 and 5 live tests run without asking when all of these hold:
@@ -481,7 +488,41 @@ Cost 4 and 5 live tests run without asking when all of these hold:
 - the test transmits only on 10, 15, 20 or 40 m;
 - afterwards it restores the power found and every setting it changed.
 
-QSO tests, their power and their bounds are not covered by this consent (#192).
+QSO tests, their power and their bounds are not covered by this consent; they are open work
+in #192.
+
+### Keying the radio
+
+How an agent keys the real IC-7300; when it may, the [standing consent](#standing-consent-at-1-)
+says.
+
+- **RF power** is whatever the radio reads: each test sets the level it needs, and nothing
+  keys at an assumed one. The value of CI-V `14 0A` is the radio's RF POWER control from
+  `0000` to `0255`, not watts, and Po also follows the Tx level and the profile's limit.
+  Measured on 20 m at -12 dB, without a wattmeter: `0077` gave Po 24-26 %, `0090` gave Po
+  30-31 %, `0003` showed Po 0 %. A test that makes QSOs uses `0090` or more and checks Po on
+  its first Tx; short keying without a QSO may use `0003`. CI-V reads first and writes only
+  on a difference.
+- **Preflight.** Before keying, an agent runs
+  `harness/project/deploy/radio-preflight.ps1 -Holder <run> -PowerBcd <value>` and keys only
+  on exit 0, under its lease (`-Status`, `-Release`). It stops an idle station gracefully,
+  because the station holds COM3, reads the power, writes it only if different, reads it
+  back, starts the station again and records the old value. It refuses to key only when the
+  power cannot be read, written or confirmed by the read-back: exit 2, nothing keys, and the
+  agent reports it to the coordinator. Afterwards `radio-preflight.ps1 -Restore -Holder <run>`
+  puts the old value back and ends the lease; when that fails the lease stays for another
+  try. With no live lease (it expired, a renewal failed, or `-Release` gave up the old value,
+  which it prints), run `-PowerBcd <old value from preflight.jsonl>`, then `-Release`.
+  Because it restarts the station, it does not run while the operator is operating, unless
+  agreed: it sees only PTT and a contact, not someone watching Band Activity.
+- **Contacts.** A contact you did not start, seen while another run's lease is live, is that
+  run's; the station itself does not check this. A stop a test triggers never aborts a
+  contact at or after RR73 or 73: that contact ends on its own.
+- **Set back.** A cost-4/5 live test sets back what it changed
+  ([testing](../../general/core/docs/standards/testing.md#cost-levels)): band, frequency,
+  mode, strategy, Auto, Hold Tx, Tx/Rx, theme and power. A CAT setting change resets the
+  receive-only setup confirmation ([CAT confirmation](#simulator-live-tests)), which the
+  operator then gives again.
 
 ### Simulator live tests
 
@@ -622,7 +663,7 @@ copy of the script is refused (only the package's copy runs); a package file edi
 the build, a commit without pins and pins in another order each refuse with exit 1 and
 their reason before any write; new pins that differ from the running pins, a running commit
 without pins and a station launcher that differs from its pin log `deploy mechanism changed:`
-and reach the stop; a call naming the removed OK parameter stops at binding before any
+and reach the stop; a call naming an operator's-OK parameter stops at binding before any
 step. No case prints a `Deploy OK` line or reads a comment. `-Rollback` with differing pins
 or with the radio closed reaches the stop without asking, and `-DryRun` does not read the radio.
 
@@ -714,6 +755,6 @@ The limits the [CR process](../../general/core/docs/CR-Process.md) leaves to the
   hold radio addresses.
 - Live runs log under `D:/wstx-tmp/live/<issue>/`, removed when the issue closes.
 - The radio is keyed as in any agent test: the radio preflight and its lease first
-  ([handoff](MEMORY.md#preserve-the-runtime)), and short test transmissions only.
+  ([Keying the radio](#keying-the-radio)), and short test transmissions only.
 - Anything that needs the operator (the Flex switched on) is prepared and dry-run first.
 - Three real runs without an answer mean stop and report to the operator.

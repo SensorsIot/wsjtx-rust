@@ -25,7 +25,8 @@ hooks:
 <!-- source harness/general/core/docs/Context.md sha256=b70f7b750d775958c8908aae32ace52ca02df2c775000334cc2b322ffe869703 -->
 <!-- source harness/general/lang/rust/standard.md sha256=19140f62487d86108f4f5714cde3cd0f31d0d0033d9a2f16ff6f432fd0ddd1b0 -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=919bb51d9c632c0879d6f7ee8b5f57dc204900fd2320b38ecbcd8db1011b3fc4 -->
+<!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9724cb1402cd010b50fcd115c5a06c3de2a024a88cea736c20ddb19c15bf4486 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view {issues}( .*)?", "gh api repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/{issues}/comments( --paginate)?( (--jq|-q) '[^']*')?", "gh issue comment {issue} --body '(Coordinator|Scope): [^']*'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py set {issue} (deciding|defining|checking|ready|implementing|in-review) --note '[^']*'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py body {issue} (--from-definition|--moved)", "(python3?|py)(\\.exe)? \\S*(cr_state|merge_queue)\\.py status( --json)?", "gh issue create --title '[^']*' --body '[^']*'( --label [A-Za-z0-9:,_-]+)*", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": [], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{session}/**"]} -->
 
 You are the coordinator agent of one issue, started by [Alex](../../harness/general/core/docs/Alex.md#the-middle-level)
@@ -83,7 +84,7 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 
 - **Worktree paths.** A role's session folder is the project folder. In its issue worktree,
   a role runs each command from the project folder with the worktree's path in it, such as
-  `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check` (the tool checks
+  `python .git/harness-parallel/worktrees/issue-7/tools/sysml.py check` (the tool checks
   the repository it lives in), and writes its files by that path; the coder and the reviewer
   change into the worktree (`cd <worktree>`) only to run its tests.
 - **Context places** of this project ([context map](../../harness/general/core/docs/Context.md)): the
@@ -104,4 +105,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{session}/**`
 - Files you may write, relative to the project unless absolute: none
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=8e6151358c14210e835835041f9e7f7628f06199dbad59af931812f3373500ff -->
+<!-- harness-agent-v1 sha256=6e89bfefe69d502cffe83d137919bc684aba21e458d8f2517d87334a82371cc7 -->

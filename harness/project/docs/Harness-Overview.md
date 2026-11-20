@@ -1,5 +1,7 @@
 # Harness reference index
 
+**Status:** present-state. **Layer:** HOW. **Scope:** WSTX Rust bindings.
+
 The build procedure is the [CR process](../../general/core/docs/CR-Process.md); method changes
 follow [Harness changes](../../general/core/docs/Harness-Changes.md). The declared canonical functional artifact is the product
 contract; the references below are the constraints a change must respect.
@@ -13,7 +15,7 @@ contract; the references below are the constraints a change must respect.
 | Behavior baseline and provenance | [Functional model](../../../docs/sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../../README.md#license-and-attribution) |
 | The machine (HB9BLA, with the transceiver) | [Machine](Project-Specifics.md#machine) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
-| Language rules | [Rust standard](../../general/lang/rust/standard.md) |
+| Language rules | the packs in `harness/project/config.yaml`: [Rust](../../general/lang/rust/standard.md), [Rust supply chain](../../general/lang/rust-supply-chain/standard.md), [Python](../../general/lang/python/standard.md); [crates that need `unsafe`](Project-Specifics.md#crates-that-need-unsafe) |
 | Security | [principles](../../general/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
 | Testing | [testing](../../general/core/docs/standards/testing.md); suites in `harness/project/suites.yaml` |
 | Change and harness-improvement reports; restart checkpoints | [Reporting](../../general/core/docs/CR-Reporting.md); shared harness overview: `python harness/general/core/tools/report_cr.py --harness --root harness/general` |
@@ -22,7 +24,7 @@ contract; the references below are the constraints a change must respect.
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
 | Escapes | the escape log, `../../general/core/tools/escapes.py list` ([self-measurement](../../general/core/docs/standards/testing.md#self-measurement)) |
-| Project memory and the HB9BLA handover | [MEMORY](MEMORY.md) |
+| The coordinator's handoff (pointers) | [MEMORY](MEMORY.md) |
 | Backlog | [GitHub issues](https://github.com/SensorsIot/wsjtx-rust/issues); rules in [Backlog](#backlog) |
 
 ## Layout
@@ -40,13 +42,16 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   - `deploy/`: the radio preflight (`radio-preflight.ps1`, `radio-port.json`), the station
     switch and the IC-7300 emulator's start and stop for simulator tests (`station-switch.ps1`,
     `emulator.ps1`), the shared station control (`station-control.ps1`) and their tests
-    (`tests/`);
+    (`deploy/tests/`);
+  - `tests/`: the tests of the project's role additions (`test_role_context.py`), run with
+    `python -m unittest discover -s harness/project/tests`;
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
     [Finished model](Finished-Model.md), this overview,
     [MEMORY](MEMORY.md) and [Project specifics](Project-Specifics.md).
 
-The machine's notifier secrets are outside the repository, in `~/.harness/wsjtx-rust/secrets.md`.
+The machine's notifier secrets are outside the repository, in `~/.harness/wsjtx-rust/secrets.md`
+(`python harness/general/core/tools/notify.py check` names a missing key, never a value).
 
 The generated anchors `AGENTS.md`, `CLAUDE.md` and `.claude/` stay at the repository root,
 where the hosts look for them. Project-specific environment, build and model-maintenance
@@ -82,15 +87,6 @@ instructions are in [Project specifics](Project-Specifics.md).
   covered by it.
 
 ## Harness paths
-
-Isolated tests may start disposable loopback servers, browsers, TLS endpoints and link
-simulators at level 2. This project binding distinguishes test networking from live
-station or external-service access, which remains level 3–5. Communication tests run
-with `npm test` after `npm ci`, `npx playwright install chromium` and `cargo build --locked`.
-The link simulator accounts for actual encrypted-stream bytes plus modelled transport
-overhead; it is not an on-wire packet capture or a physical-network certification.
-The simulator disconnects a peer whose pending delivery bytes plus destination write
-buffer exceed 128 KiB; it does not emulate arbitrary congestion queues.
 
 The paths a harness change may touch; everything else is product:
 

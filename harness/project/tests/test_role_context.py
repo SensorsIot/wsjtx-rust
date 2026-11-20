@@ -12,7 +12,8 @@ import sys
 import unittest
 from unittest import mock
 
-ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
+# The checkout: three folders above harness/project/tests/.
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "harness", "general", "core", "tools"))
 import install_skills  # noqa: E402
 

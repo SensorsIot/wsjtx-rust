@@ -27,7 +27,8 @@ hooks:
 <!-- source harness/general/core/docs/Context.md sha256=b70f7b750d775958c8908aae32ace52ca02df2c775000334cc2b322ffe869703 -->
 <!-- source harness/general/lang/rust/standard.md sha256=19140f62487d86108f4f5714cde3cd0f31d0d0033d9a2f16ff6f432fd0ddd1b0 -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=919bb51d9c632c0879d6f7ee8b5f57dc204900fd2320b38ecbcd8db1011b3fc4 -->
+<!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9724cb1402cd010b50fcd115c5a06c3de2a024a88cea736c20ddb19c15bf4486 -->
 <!-- source harness/project/mcp/station.json sha256=67279a1fa8de19d052d2df10e4f9f8491f967d58bcc8639dbb7650f4ee0cb898 -->
 <!-- harness-role-policy {"commands": ["gh issue view {issues}( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment {issue} --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/{issue}/[A-Za-z0-9_-]+|harness/project/deploy/radio-preflight|tools/deploy/live-page-check)\\.ps1( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/station-switch\\.ps1 -To (simulator|back)", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File harness/project/deploy/emulator\\.ps1 -(Start|Stop|Status)", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/live/{issue}/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{worktree}/**", "{session}/**", "D:/wstx-tmp/live/{issue}/**"]} -->
 
@@ -65,10 +66,8 @@ operator's consent or under the project's standing consent policy, which the bri
 
 ## Added by the project (harness/project/docs/Agent-Working-Rules.md)
 
-The live-test binding is [Preserve the runtime](../../harness/project/docs/MEMORY.md#preserve-the-runtime):
-the radio preflight and its lease before keying, the power the test sets, the bands, no
-abort at or after RR73 or 73, a contact you did not start, and the settings a cost-4/5
-test sets back. A run writes under `D:/wstx-tmp/live/<issue>/`
+The live-test binding is [Keying the radio](../../harness/project/docs/Project-Specifics.md#keying-the-radio) and the
+[standing consent at 1 %](../../harness/project/docs/Project-Specifics.md#standing-consent-at-1-). A run writes under `D:/wstx-tmp/live/<issue>/`
 ([limits for experiments](../../harness/project/docs/Project-Specifics.md#limits-for-experiments)): its log, and its
 scripts, which act on the station only through the station client
 `tools/deploy/agent-client.ps1` (dot-sourced:
@@ -90,7 +89,7 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 
 - **Worktree paths.** A role's session folder is the project folder. In its issue worktree,
   a role runs each command from the project folder with the worktree's path in it, such as
-  `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check` (the tool checks
+  `python .git/harness-parallel/worktrees/issue-7/tools/sysml.py check` (the tool checks
   the repository it lives in), and writes its files by that path; the coder and the reviewer
   change into the worktree (`cd <worktree>`) only to run its tests.
 - **Context places** of this project ([context map](../../harness/general/core/docs/Context.md)): the
@@ -111,4 +110,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{worktree}/**`, `{session}/**`, `D:/wstx-tmp/live/{issue}/**`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/live/{issue}/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=d6ae7cd0dfa496734694fa7c2e10b4fa7693e179e7b5aac3aee34e83fb222431 -->
+<!-- harness-agent-v1 sha256=87c938bab2a5cc61a1d5f19871dedcdf21882df325a724ac2f5bad080c28bd2f -->

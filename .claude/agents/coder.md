@@ -28,7 +28,8 @@ hooks:
 <!-- source harness/general/core/docs/Context.md sha256=b70f7b750d775958c8908aae32ace52ca02df2c775000334cc2b322ffe869703 -->
 <!-- source harness/general/lang/rust/standard.md sha256=19140f62487d86108f4f5714cde3cd0f31d0d0033d9a2f16ff6f432fd0ddd1b0 -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=919bb51d9c632c0879d6f7ee8b5f57dc204900fd2320b38ecbcd8db1011b3fc4 -->
+<!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9724cb1402cd010b50fcd115c5a06c3de2a024a88cea736c20ddb19c15bf4486 -->
 <!-- harness-role-policy {"commands": ["git -C {worktree}/? \\S.*", "gh issue view {issues}( .*)?", "(python3?|py)(\\.exe)? \\S*merge_queue\\.py status( --json)?", "(python3?|py)(\\.exe)? {worktree}/((?!\\.\\.?/)[A-Za-z0-9._-]+/)*install_skills\\.py --project {worktree}/?( --(host (claude|codex)|skill [a-z-]+|agent [a-z-]+|check))+", "(python3?|py)(\\.exe)? \\.git/harness-parallel/resources/issue-{issue}/scripts/[A-Za-z0-9_-]+\\.py( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "cargo (build|check|test|clippy|fmt)(?=.* --manifest-path {worktree}/((?!\\.\\.)[A-Za-z0-9_.-]+/)*Cargo\\.toml(\\s|$)).*", "node --test( --test-concurrency=1| --test-name-pattern=([\\[\\]A-Za-z0-9_.,:^+=/-]+|'[^']+')){0,2}( {worktree}(/(?!\\.\\.?(?=[/\\s]|$))[A-Za-z0-9_.@+-]+)+)+", "python {worktree}/fixtures/transmit/generate\\.py( --(bin|compare-bin|ft4sim) C:/WSJT/[A-Za-z0-9._/-]+)+", "python {worktree}/tools/sysml\\.py oracle", "python {worktree}/tools/sysml\\.py paths \\S+", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "cd {worktree}/?", "(python3?|py)(\\.exe)? {worktree}/harness/general/core/tools/gate\\.py --plan( --base [0-9a-f]{7,40}| --full| --timing)*( {worktree}(/(?!\\.\\.)[A-Za-z0-9_.-]+)+/?)*", "(python3?|py)(\\.exe)? {worktree}/harness/general/core/tools/layout_check\\.py", "(python3?|py)(\\.exe)? {worktree}/harness/general/core/tools/red_on_parent\\.py --worktree {worktree}/? .+", "(python3?|py)(\\.exe)? -m unittest discover -s {worktree}(/(?!\\.\\.)[A-Za-z0-9_.-]+)+/?( -t {worktree}/?)?( -p [A-Za-z0-9_*.]+)?( -v)?"], "writes": ["{worktree}/**", ".git/harness-parallel/resources/issue-{issue}/scripts/*.py"], "deny": ["(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py", "^(?!(python3?|py)(\\.exe)? \\S*red_on_parent\\.py )(?!(NODE_PATH=D:/Github/wsjtx-rust/node_modules )?(WSTX_TEST_EXE=D:/wstx-build/(?P<wt>(cr|issue-)(?=[A-Za-z0-9_-])[A-Za-z0-9_-]*(\\.[A-Za-z0-9_-]+)*)/debug/wstx-rust\\.exe (?!.*worktrees/(?!(?P=wt)/)))?node ).*\\bnode\\s+--test"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{worktree}/**", ".git/harness-parallel/resources/issue-{issue}/**", "{session}/**"]} -->
 
 You implement one issue that carries `Ready: PASS`. The method is
@@ -105,7 +106,7 @@ checks. Cargo runs on your worktree by its path (`--manifest-path <worktree>/Car
 ## Added by the project (harness/project/docs/Agent-Working-Rules.md)
 
 - **Builds and tests** use the build and temp folders of
-  [Inputs](../../harness/project/docs/MEMORY.md#inputs) and run beside the gate
+  [Inputs](../../harness/project/docs/Project-Specifics.md#inputs) and run beside the gate
   as [heavy runs yield to the gate](../../harness/project/docs/Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
   In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
   TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
@@ -140,7 +141,7 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 
 - **Worktree paths.** A role's session folder is the project folder. In its issue worktree,
   a role runs each command from the project folder with the worktree's path in it, such as
-  `python .git/harness-parallel/worktrees/cr39-holdtx/tools/sysml.py check` (the tool checks
+  `python .git/harness-parallel/worktrees/issue-7/tools/sysml.py check` (the tool checks
   the repository it lives in), and writes its files by that path; the coder and the reviewer
   change into the worktree (`cd <worktree>`) only to run its tests.
 - **Context places** of this project ([context map](../../harness/general/core/docs/Context.md)): the
@@ -161,4 +162,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{worktree}/**`, `.git/harness-parallel/resources/issue-{issue}/**`, `{session}/**`
 - Files you may write, relative to the project unless absolute: `{worktree}/**`, `.git/harness-parallel/resources/issue-{issue}/scripts/*.py`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=09ab1f74a288f5523511bfc1d3c55d0b6fb3cf7327057fc81aeaef111d68b681 -->
+<!-- harness-agent-v1 sha256=b7501de0efe9b7abe8ad10126b078ecca458c601f7088a2aca677b1f0d22b8b2 -->

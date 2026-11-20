@@ -11,7 +11,8 @@ description: 'coordinator: the main session of a project with harness/project/. 
 <!-- source harness/general/core/agents/roles.md sha256=0861006185cba6dc11a420f8dea301df2a35fb4017cc0b7c18b3616ebcd62374 -->
 <!-- source harness/general/lang/rust/standard.md sha256=19140f62487d86108f4f5714cde3cd0f31d0d0033d9a2f16ff6f432fd0ddd1b0 -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=919bb51d9c632c0879d6f7ee8b5f57dc204900fd2320b38ecbcd8db1011b3fc4 -->
+<!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=9724cb1402cd010b50fcd115c5a06c3de2a024a88cea736c20ddb19c15bf4486 -->
 
 # Coordinator
 
@@ -210,4 +211,8 @@ holds the rules, before a handover and for an issue another machine owns.
 - At a pause, a handoff or a context restart, write the
   [checkpoint](../../../harness/general/core/docs/CR-Reporting.md#restart-and-handoff-checkpoint), and release a file's
   ownership before another agent writes it.
-<!-- harness-forwarder-v1 sha256=f0483eb78b12ddc989950b123c7bb329308d611811ec20ba5144fa6187d5ea49 -->
+
+## Added by the project (harness/project/docs/Agent-Working-Rules.md)
+
+The coordinator reads the [project memory](../../../harness/project/docs/MEMORY.md) first.
+<!-- harness-forwarder-v1 sha256=505cdd88132b646986f3116a9e97a2021e3e38f7e7b005addade3197c021687d -->
