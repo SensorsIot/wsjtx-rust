@@ -665,6 +665,31 @@ fn a_creation_whose_file_cannot_be_written_is_resource_unavailable() {
     }
 }
 
+// A document whose write fails leaves no temporary file beside it and no document.
+#[test]
+fn a_failed_write_of_a_document_leaves_no_temporary_file() {
+    let directory = std::env::temp_dir().join(format!("wstx-profile-tmp-{}", new_uuid().unwrap()));
+    fs::create_dir(&directory).unwrap();
+    let files = FaultyFiles::new();
+    let written = files.during(Fault::fail(Step::Write, FaultScope::ArmingThread), || {
+        atomic_json(
+            &*files,
+            &directory,
+            "document.json",
+            &serde_json::json!({"v":1}),
+        )
+    });
+    assert!(written.is_err());
+    let temporary: Vec<String> = fs::read_dir(&directory)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".tmp"))
+        .collect();
+    assert!(temporary.is_empty(), "temporary files left: {temporary:?}");
+    assert!(!directory.join("document.json").exists());
+    fs::remove_dir_all(&directory).unwrap();
+}
+
 // A save of a native profile is refused with the first device or radio control value it holds.
 // Proves: TC-023-007
 #[test]
