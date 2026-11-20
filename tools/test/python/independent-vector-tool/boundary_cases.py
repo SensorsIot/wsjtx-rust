@@ -5,7 +5,7 @@ PACK77_ARRL_SECTIONS (86) and PACK77_RTTY_MULTIPLIERS (171) tables
 import json
 from pathlib import Path
 
-root = Path(__file__).resolve().parent.parent
+root = Path(__file__).resolve().parents[4] / 'fixtures' / 'decoder'
 manifest = json.loads((root/'independent-vectors/manifest.json').read_text())
 base = {x['id']: x for x in manifest['vectors'] if x['mode'] == 'ft8'}
 cases = []

@@ -313,7 +313,8 @@ class ArtifactTests(ApiFreeCase):
                          "tools/test/python/windows_process_metrics.py",
                          "tools/test/python/test_windows_process_metrics.py",
                          "server/src/decoder/payload.rs", "fixtures/decoder/independent.json",
-                         "tools/test/rust/src/resource_harness.rs"):
+                         "tools/test/rust/src/resource_harness.rs",
+                         "tools/test/python/independent-vector-tool/cache.py"):
             path = self.root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("fixed input\n", encoding="utf-8")
@@ -462,7 +463,8 @@ class ArtifactTests(ApiFreeCase):
                     self.mutate()
                 return line
 
-        for path in (self.executable, self.root / "server/src/decoder/payload.rs"):
+        for path in (self.executable, self.root / "server/src/decoder/payload.rs",
+                     self.root / "tools/test/python/independent-vector-tool/cache.py"):
             with self.subTest(path=path):
                 original = path.read_bytes()
                 stream = ChangedAtEof(owner.producer(), lambda: path.write_bytes(b"changed input"))

@@ -3,8 +3,9 @@
 // exercised by audio_contract/audio_hardware; this target needs no FFI exception.
 pub use wstx_rust::{decoder, source};
 #[cfg(not(debug_assertions))]
-#[path = "../../fixtures/radio/native_ft8_fixture.rs"]
-mod native_ft8_fixture;
+use wstx_test_tools::native_ft8_fixture::{
+    NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES,
+};
 #[path = "../src/receive.rs"]
 mod receive;
 
@@ -265,7 +266,6 @@ fn live_provider_unknown_loss_requires_ack_and_rejects_old_window_context() {
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "current_thread")]
 async fn live_native_provider_decodes_independent_ft8_callsign() {
-    use native_ft8_fixture::{NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES};
     let fixture = NativeFt8Fixture::load();
     let vector = &fixture.expected;
     let mut provider = Provider::new();

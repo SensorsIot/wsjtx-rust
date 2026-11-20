@@ -14,22 +14,22 @@ Numerics: 12000 Hz; symbol lengths 1920/576; Gaussian BT 2/1; pulse support ±2T
 
 Noise uses the source's exact unsigned 64-bit SplitMix64 transitions, top53 midpoint uniforms and two fresh uniforms per Box-Muller sample. No library RNG defaults/cache. Python/libm may differ at final rounding; allow at most 1 PCM LSB between independently computed mathematical waveforms, record runtime/source hashes, and use pinned generated data hashes for byte identity. SNR2500 uses steady signal power A²/2 and one-sided noise PSD 2*variance/12000.
 
-`../independent-vectors/manifest.json` contains 38 frozen channel/waveform vectors, 19 per mode. `../payload-boundary-cases.json` contains 109 fixed field-boundary cases for both modes. `../protocol-data/provenance.json` pins these inputs, the composer and all published tables with their source terms. No external runtime log or machine-specific path defines an expected decoder result.
+`../../../../fixtures/decoder/independent-vectors/manifest.json` contains 38 frozen channel/waveform vectors, 19 per mode. `../../../../fixtures/decoder/payload-boundary-cases.json` contains 109 fixed field-boundary cases for both modes. `../../../../fixtures/decoder/protocol-data/provenance.json` pins these inputs, the composer and all published tables with their source terms. No external runtime log or machine-specific path defines an expected decoder result.
 
-`../quality-cases.json` specifies 2286 cases: 2000 noise-only, 160 AWGN, 80 overlap, 40 offset, and six silence/wrong-mode/CRC cases. Modes, payloads, seeds, timing, amplitude/noise and aggregate acceptance counts are fixed. These are expected inputs, not successful candidate outcomes. Generated audio belongs in an ignored cache, never beside the frozen corpus; the utility opens no audio device or transmitter.
+`../../../../fixtures/decoder/quality-cases.json` specifies 2286 cases: 2000 noise-only, 160 AWGN, 80 overlap, 40 offset, and six silence/wrong-mode/CRC cases. Modes, payloads, seeds, timing, amplitude/noise and aggregate acceptance counts are fixed. These are expected inputs, not successful candidate outcomes. Generated audio belongs in an ignored cache, never beside the frozen corpus; the utility opens no audio device or transmitter.
 
 For a fixed vector, create a case with its waveform `frames`, `start_frame`, `frequency_hz`, `amplitude`, `phase_radians` and zero noise, using that payload/mode as its sole `signals` entry. The generated WAV matches the pinned SHA-256 on the reference math runtime. Another libm may differ by at most one PCM LSB and records its own hash; discrete payload/CRC/parity/tone values must match exactly on every platform. Invoke `generate.py --case CASE.json --out OUTPUT --protocol-data fixtures/decoder/protocol-data` without network access.
 
 `cache.py --kind quality --output CACHE` composes and verifies all2286cases with bounded
 workers; `--kind frozen` prepares the38fixedwaveforms. `--verify-only` checks every
 recipe, actual WAV SHA256, composer SHA256 and header without generating replacements.
-The tracked `../quality-audio-hashes.json` pins all2286independent WAV digests; changing
+The tracked `../../../../fixtures/decoder/quality-audio-hashes.json` pins all2286independent WAV digests; changing
 a PCM file and its adjacent generated hash together is refused. `test_cache.py` proves
 that refusal, along with changed-recipe/composer refusal, against a positive fixture.
 Generated audio is published from per-case temporary directories into an external cache.
 An existing changed input fails instead of being accepted as new truth.
 
-`../synchronization-cases.json` specifies14additional fixed phase/drift/dynamic-range
+`../../../../fixtures/decoder/synchronization-cases.json` specifies14additional fixed phase/drift/dynamic-range
 and quantization-residual cases. `regressions.py --output CACHE` composes mono12kHz
 little-endian canonical floats and refuses a changed source/composer/sample hash.
 The independent base composer supplies channel tones and real/90degree quadratures;

@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[4] / 'fixtures' / 'decoder'
 BASE = Path(__file__).with_name('generate.py')
 
 

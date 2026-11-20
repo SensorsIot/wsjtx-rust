@@ -241,7 +241,8 @@ def source_snapshot(root):
         "tools/test/python/windows_process_metrics.py",
         "tools/test/python/test_windows_process_metrics.py",
     }
-    for directory in ("server/src", "fixtures/decoder", "tools/test/rust"):
+    for directory in ("server/src", "fixtures/decoder", "tools/test/rust",
+                      "tools/test/python/independent-vector-tool"):
         paths.update(path.relative_to(root).as_posix() for path in (root / directory).rglob("*")
                      if path.is_file() and "__pycache__" not in path.parts and
                      path.suffix not in (".pyc", ".pyo"))

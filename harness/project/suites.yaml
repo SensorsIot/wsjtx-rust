@@ -25,6 +25,7 @@
   - fixtures/flex/
   - tests/
   - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
   - tools/test/blocked-ports.json
   - tools/test/fixtures/model-values/
   - Cargo.toml
@@ -39,6 +40,7 @@
   - fixtures/decoder/
   - fixtures/flex/
   - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
   - tools/test/blocked-ports.json
   - tools/test/fixtures/model-values/
   - Cargo.toml
@@ -565,13 +567,14 @@
     --skip cooperative_quanta_and_partial_cancellation
     --skip live_busy_period_publishes_every_decode_promptly &&
     cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1 &&
-    python fixtures/decoder/independent-vector-tool/test_cache.py
+    python tools/test/python/independent-vector-tool/test_cache.py
   paths:
   - server/src/decoder/
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/decoder_signal.rs
   - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/
   - server/Cargo.toml
   - Cargo.toml
@@ -591,6 +594,7 @@
   - fixtures/decoder/
   - server/src/lib.rs
   - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/backend/modes/MessagePayload.sysml
   - docs/sysml/shared/Units.sysml
@@ -598,7 +602,7 @@
   # CPU-heavy (12-thread busy-period decode): kept apart from the timing suites that run
   # beside other groups (gate.timing_alone: false).
   exclusive: [link-measurement]
-  needs: "Pinned Rust, 64-bit Windows. The decoder_signal correctness passes: the original quality cases, independent waveforms, gain invariance, unmodulated and wrong-mode sources, CRC/payload retention, forged-cache refusal, phase-drift/dynamic-range regressions, official recording baselines, the jt9 deep-decode parity corpus, same-frequency frames, physical noise, the thread parity on 1/4/12 threads (its speed-up is only printed), owned-worker cleanup and the concurrency-qualification logic. WSTX_SAMPLE_DIR, WSTX_DECODER_OFFICIAL_FT8, WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION name the verified inputs; missing inputs fail closed. Not a measurement: it runs beside other groups."
+  needs: "Pinned Rust, 64-bit Windows. The decoder_signal correctness passes: the original quality cases, independent waveforms, gain invariance, unmodulated and wrong-mode sources, CRC/payload retention, forged-cache refusal, phase-drift/dynamic-range regressions, official recording baselines, the jt9 deep-decode parity corpus, same-frequency frames, physical noise, the thread parity on 1/4/12 threads (its speed-up is only printed), owned-worker cleanup and the concurrency-qualification logic. WSTX_SAMPLE_DIR, WSTX_DECODER_OFFICIAL_FT8, WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION name the verified inputs; WSTX_DECODER_SYNCHRONIZATION names the root of the synchronization inputs, one folder per generator_sha256 of synchronization-cases.json, composed on first use and verified afterwards; missing inputs fail closed. Not a measurement: it runs beside other groups."
 
 - suite: decoder-quality
   cost: 2
@@ -609,7 +613,7 @@
     python -m unittest discover -s tools/test/python -p test_windows_resource_job.py -q
     python -m unittest discover -s tools/test/python -p test_windows_process_metrics.py -q
     cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1
-    python fixtures/decoder/independent-vector-tool/test_cache.py
+    python tools/test/python/independent-vector-tool/test_cache.py
     cargo test --release --locked --test decoder_signal --message-format=json -- --test-threads=1 --skip release_runtime_and_overlapping_window_history | python tools/test/python/windows_resource_job.py resolve --stream-log "$run_dir/ordinary.log" --receipt "$run_dir/artifact.json"
     python tools/test/python/windows_resource_job.py run --case matrix --ordinary-gate --artifact-receipt "$run_dir/artifact.json"
   # Reachability (harness reachability.py): the ordinary passes and the matrix case are
@@ -623,6 +627,7 @@
   - server/src/lib.rs
   - server/tests/decoder_signal.rs
   - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/
   - server/Cargo.toml
   - Cargo.toml
@@ -667,7 +672,7 @@
   - fixtures/decoder/manifest.json
   - fixtures/decoder/resource-cases.json
   - fixtures/decoder/quality-audio-hashes.json
-  - fixtures/decoder/independent-vector-tool/
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/protocol-data/
   - tools/test/rust/
   - tools/test/python/windows_resource_job.py
@@ -681,7 +686,7 @@
   build: cargo test --release --locked --test decoder_signal --no-run
   exclusive: ["*"]
   timing_classes: [compute, signal]
-  needs: Pinned Rust and Python, 64-bit Windows. Preserve every original quality case plus cleanup/concurrency controls; one release Cargo producer binds every ordinary named pass (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job over the complete resource matrix that tools/test/python/windows_resource_job.py checks. API-free guardian/metrics tests, the resource harness's own tests (owned-worker cleanup, concurrency qualification) and the fixture cache's forged-observation refusal (test_cache.py) precede execution; the 14 ordinary passes then run in decoder_signal. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
+  needs: Pinned Rust and Python, 64-bit Windows. Preserve every original quality case plus cleanup/concurrency controls; one release Cargo producer binds every ordinary named pass (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job over the complete resource matrix that tools/test/python/windows_resource_job.py checks. API-free guardian/metrics tests, the resource harness's own tests (owned-worker cleanup, concurrency qualification) and the fixture cache's forged-observation refusal (test_cache.py) precede execution; the 14 ordinary passes then run in decoder_signal. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION; WSTX_DECODER_SYNCHRONIZATION names the root of the synchronization inputs, one folder per generator_sha256 of synchronization-cases.json, composed on first use and verified afterwards. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
 
 - suite: live-receive-integration
   cost: 2
@@ -695,7 +700,10 @@
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/audio_receive.rs
-  - fixtures/radio/native_ft8_fixture.rs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/
   - server/Cargo.toml
   - Cargo.toml
@@ -710,7 +718,10 @@
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/audio_receive.rs
-  - fixtures/radio/native_ft8_fixture.rs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/
   - Cargo.toml
   - Cargo.lock
@@ -742,7 +753,10 @@
   - tests/frontend/receive-page.test.cjs
   - tools/test/node/page-watch.cjs
   - tools/test/node/live-page-check.cjs
-  - fixtures/radio/native_ft8_fixture.rs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/
   - server/Cargo.toml
   - Cargo.toml
@@ -770,7 +784,10 @@
   - tests/frontend/receive-page.test.cjs
   - tools/test/node/page-watch.cjs
   - tools/test/node/live-page-check.cjs
-  - fixtures/radio/native_ft8_fixture.rs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/
   - server/Cargo.toml
   - Cargo.toml
@@ -831,7 +848,10 @@
   - client/
   - tests/receive-integration.test.cjs
   - tests/frontend/receive-latency.test.cjs
-  - fixtures/radio/native_ft8_fixture.rs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/
   - server/Cargo.toml
   - Cargo.toml
@@ -960,14 +980,14 @@
   - fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py
   - fixtures/decoder/simulator-tool/test_wsjtx_simulated_samples.py
   - fixtures/decoder/simulator-cases.json
-  - fixtures/decoder/independent-vector-tool/
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/protocol-data/
   - docs/sysml/
   select:
   - fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py
   - fixtures/decoder/simulator-tool/test_wsjtx_simulated_samples.py
   - fixtures/decoder/simulator-cases.json
-  - fixtures/decoder/independent-vector-tool/
+  - tools/test/python/independent-vector-tool/
   - fixtures/decoder/protocol-data/
   needs: >-
     Python 3.12 standard library and the immutable portable simulator fixture store
