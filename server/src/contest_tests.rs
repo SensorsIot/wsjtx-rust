@@ -480,7 +480,7 @@ fn rows(list: &[(&str, f64)]) -> Vec<Value> {
         .enumerate()
         .map(|(i, (text, snr))| {
             let mut r =
-                crate::contact_http_tests::record(text, 1000.0 + i as f64 * 100.0, Some(*snr));
+                crate::contact_http::tests::record(text, 1000.0 + i as f64 * 100.0, Some(*snr));
             r["sequence"] = json!(i);
             r
         })

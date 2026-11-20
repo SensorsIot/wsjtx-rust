@@ -6,7 +6,7 @@
 // floor, clear of the stations decoded in them). A flat floor F is its own lowest tenth in every
 // segment, so its fit is F exactly and the floor F + 0.65 dB.
 use super::*;
-use crate::automation_tests::due_at;
+use crate::automation::tests::due_at;
 
 /// A value table: `floor` everywhere, the listed candidates at their own value.
 fn table(floor: f64, levels: &[(u32, f64)]) -> impl Fn(u32) -> Option<f64> {

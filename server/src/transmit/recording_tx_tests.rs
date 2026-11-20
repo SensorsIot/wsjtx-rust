@@ -89,7 +89,7 @@ impl Recording {
         relative_clock(
             self,
             "ft8",
-            &crate::contact_http_tests::period_text(anchor_ms),
+            &crate::contact_http::tests::period_text(anchor_ms),
             0,
         );
         let (job, context) = {
@@ -269,7 +269,7 @@ fn tx_period_measures_no_level_and_marks_its_waterfall_rows() {
         .unwrap()
         .periods(
             (&identity.0, identity.1),
-            crate::automation_tests::due_at(ms("2026-10-27T12:01:00.0000000Z"), None),
+            crate::automation::tests::due_at(ms("2026-10-27T12:01:00.0000000Z"), None),
         )
         .iter()
         .map(|p| p.start_ms - tx)
@@ -304,7 +304,7 @@ fn transmit_owner_on_the_air_records_the_tx_period_and_suspends_the_level() {
         let (job, _) = live_ring(&r);
         relative_clock(&r, mode, "2026-10-27T12:00:00.0000000Z", 0);
         r.state.lock().unwrap().operating_mode = mode;
-        let bench = crate::contact_http_tests::Bench::default();
+        let bench = crate::contact_http::tests::Bench::default();
         bench.frozen.store(ms(now), Ordering::SeqCst);
         let station = crate::transmit_http::Station::start_with(Box::new(bench)).unwrap();
         let _ = r.transmit.set(station.clone());

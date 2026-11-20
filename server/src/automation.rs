@@ -13,6 +13,9 @@ use selection_http::empty;
 use std::collections::VecDeque;
 use strategy::Leave;
 use wstx_rust::transmit::service::DisarmCause;
+#[cfg(test)]
+#[path = "automation_tests.rs"]
+pub(crate) mod tests;
 
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 /// Run commands are the station's own automation: never an operator action.
@@ -48,10 +51,6 @@ impl Clients {
     pub(crate) fn mcp_request(&self) {
         self.request
             .store(true, std::sync::atomic::Ordering::Release);
-    }
-    #[cfg(test)]
-    pub(crate) fn sessions_open(&self) -> usize {
-        self.sessions.load(std::sync::atomic::Ordering::Acquire)
     }
     /// A client is here now: a session is open, or a request came since the last call.
     fn present(&self) -> bool {

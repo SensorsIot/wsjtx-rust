@@ -519,3 +519,17 @@ fn the_meter_call_of_the_transmit_step_reaches_the_sink() {
     station.service.with(|c| c.hardware_mut().meter_due());
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
+
+impl Station {
+    pub(crate) fn meter_sink(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
+        self.inputs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .meter_sink
+            .clone()
+    }
+    /// The call hash table the transmit owner feeds, if attached.
+    pub(crate) fn hash_table(&self) -> Option<Arc<Mutex<wstx_rust::decoder::HashTable>>> {
+        self.service.with(|c| c.hash_table().cloned())
+    }
+}

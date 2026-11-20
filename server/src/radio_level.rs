@@ -217,26 +217,6 @@ impl Owner {
     pub(crate) fn set_read_bound(&self, bound: Duration) {
         self.lock().read_bound = Some(bound);
     }
-    #[cfg(test)]
-    pub(crate) fn result(&self) -> Option<&'static str> {
-        self.lock().result
-    }
-    #[cfg(test)]
-    pub(crate) fn assistant_running(&self) -> bool {
-        self.lock().assistant
-    }
-    #[cfg(test)]
-    pub(crate) fn warnings(&self) -> Vec<&'static str> {
-        self.lock().warnings.clone()
-    }
-    #[cfg(test)]
-    pub(crate) fn swr_fault(&self) -> bool {
-        self.lock().swr_fault
-    }
-    #[cfg(test)]
-    pub(crate) fn alc(&self) -> Alc {
-        self.lock().alc
-    }
     pub(crate) fn set_keying_confirmed(&self) {
         self.update(|i| i.keying_confirmed = true);
     }

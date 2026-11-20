@@ -6,7 +6,7 @@
 // hardware double (virtual UTC; no audio, PTT or radio) through the MCP test client.
 use super::*;
 use crate::automation::{Config, Ranking, candidates, parse_config};
-use crate::contact_http_tests::{now_ms, period_text, record};
+use crate::contact_http::tests::{now_ms, period_text, record};
 use crate::mcp_tests::{Mcp, station};
 use std::sync::atomic::Ordering;
 use wstx_rust::transmit::service::Hardware;
@@ -1195,4 +1195,10 @@ async fn tc_020_003_refused_selection_or_arming_stops_without_a_contact_left_beh
         "{c}"
     );
     assert!(f.bench.keys.lock().unwrap().is_empty());
+}
+
+impl Clients {
+    pub(crate) fn sessions_open(&self) -> usize {
+        self.sessions.load(std::sync::atomic::Ordering::Acquire)
+    }
 }

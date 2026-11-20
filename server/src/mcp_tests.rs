@@ -5,7 +5,7 @@
 // messages of MCP 2026-07-28 and 2025-11-25. Expected values come from the hand-authored
 // fixture rows, the fixture's own identities and the WstxMcp tables, not from MCP output.
 use super::*;
-use crate::contact_http_tests::{Bench, now_ms, period_text, record};
+use crate::contact_http::tests::{Bench, now_ms, period_text, record};
 use axum::body::Body;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::{rand::SecureRandom, signature::KeyPair};
@@ -689,7 +689,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         StatusCode::UNAUTHORIZED
     );
     // A plaintext profile has no grant authority: no MCP at all.
-    let plain = crate::contact_http_tests::fixture("http://127.0.0.1:18690", true);
+    let plain = crate::contact_http::tests::fixture("http://127.0.0.1:18690", true);
     let request = axum::http::Request::builder()
         .method("POST")
         .uri("/mcp")
@@ -991,7 +991,7 @@ async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_
         (409, "not_configured".into(), json!("configuration")),
         "unconfigured never starts"
     );
-    let mut cfg = crate::automation_tests::config_json();
+    let mut cfg = crate::automation::tests::config_json();
     cfg["max_contacts"] = json!(0);
     let v = f.tool("wstx_automation_command", json!({"command":auto("configure",json!({"expected_policy_revision":0,"configuration":cfg}))})).await;
     assert_eq!(
@@ -1358,7 +1358,7 @@ async fn tc_020_004_the_mcp_client_token_is_separate_from_the_browser_credential
 async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
-    let e = crate::automation_tests::at_even(&f);
+    let e = crate::automation::tests::at_even(&f);
     let service = &f.state.recording.transmit.get().unwrap().service;
     let spent = || service.with(|c| c.watchdog_spent());
     let internal = internal_transport(&f, &f.mcp);
@@ -1404,8 +1404,8 @@ async fn tc_020_004_mcp_never_resets_the_tx_watchdog_on_any_route() {
         )
         .await;
     assert_eq!(v["status"], 202, "{v}");
-    crate::automation_tests::transmit_own_period(&f, e + 15_000).await;
-    crate::automation_tests::not_keyed_in(&f, e + 45_000).await;
+    crate::automation::tests::transmit_own_period(&f, e + 15_000).await;
+    crate::automation::tests::not_keyed_in(&f, e + 45_000).await;
     assert!(spent());
     // MCP-principal commands, through the tool and straight to the browser route, are
     // accepted but never reset it.

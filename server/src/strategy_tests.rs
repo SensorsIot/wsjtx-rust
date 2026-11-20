@@ -5,8 +5,8 @@
 // Integration cases use the actual station router, contact engine and transmit owner
 // on the recording hardware double (virtual UTC; no audio, PTT or radio).
 use super::*;
-use crate::automation_tests::{at_even, not_keyed_in, publish, run_state, transmit_own_period};
-use crate::contact_http_tests::{period_text, record};
+use crate::automation::tests::{at_even, not_keyed_in, publish, run_state, transmit_own_period};
+use crate::contact_http::tests::{period_text, record};
 use crate::dxcc::Logged;
 use crate::mcp_tests::{Mcp, station};
 use std::sync::Arc;
@@ -582,7 +582,7 @@ fn tc_039_030_worked_window_from_dated_records() {
         log("F1ABC", Some(20_261_106)),
         log("K2ABC", None),
     ];
-    let s = |w: &Worked, c: &str| w.call_standing(c).worked;
+    let s = |w: &Worked, c: &str| w.call_scoped(c, None, None).worked;
     let all = Worked::from_log(&table, &logged);
     assert!(
         s(&all, "DL1ABC") && s(&all, "F1ABC") && s(&all, "K2ABC"),
@@ -1573,7 +1573,7 @@ async fn tc_039_004_a_strategy_stays_selected_across_receive_and_without_a_grant
         )
     );
     // An MCP client cannot select one: strategy true is refused, PUT has no tool (401 guard).
-    let mut cfg = crate::automation_tests::config_json();
+    let mut cfg = crate::automation::tests::config_json();
     cfg["strategy"] = json!(true);
     let body = json!({"command":{"v":1,"profile_id":f.id,"boot_id":f.boot,
         "command_id":profile::new_uuid().unwrap(),"action":"configure",
@@ -1680,7 +1680,7 @@ async fn tc_039_004_an_mcp_client_cannot_restart_a_stopped_strategy() {
     assert_eq!(r.json["error"]["code"], "operator_required", "{}", r.json);
     // An MCP client's own policy replaces the stored one and starts as ever.
     let a = f.read("automation").await;
-    let cfg = crate::automation_tests::config_json();
+    let cfg = crate::automation::tests::config_json();
     let c = f
         .tool(
             "wstx_automation_command",
@@ -2896,7 +2896,7 @@ async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Fee
     (f, e)
 }
 fn spot(sender: &str, hz: u64, band: &str, age_s: i64) -> String {
-    let t = crate::contact_http_tests::now_ms() / 1000 - age_s;
+    let t = crate::contact_http::tests::now_ms() / 1000 - age_s;
     json!({"f":hz,"md":"FT8","t":t,"sc":sender,"rc":"K1ABC","b":band}).to_string()
 }
 // The unattended bounds hold for a target that hears us: with no
@@ -2986,7 +2986,7 @@ async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
 #[test]
 fn tc_039_005_core_watchdog_needs_an_operator_and_keeps_the_count_for_automation() {
     use wstx_rust::transmit::service::{ArmState, Core};
-    let bench = crate::contact_http_tests::Bench::default();
+    let bench = crate::contact_http::tests::Bench::default();
     bench.unsupported.store(false, Ordering::SeqCst);
     let mut core = Core::new(Box::new(bench.clone()) as Box<dyn Hardware>);
     let revision = core.hardware().context().safety_revision.unwrap();
@@ -3086,7 +3086,7 @@ async fn tc_039_005_only_a_browser_action_counts_for_the_watchdog() {
     };
     let _ = mcp_contact(&f, "cancel", json!({})).await;
     let a = f.read("automation").await;
-    let cfg = crate::automation_tests::config_json();
+    let cfg = crate::automation::tests::config_json();
     let c = f
         .tool(
             "wstx_automation_command",
@@ -3874,7 +3874,7 @@ fn pounce_json(call: Value, unanswered: u64) -> Value {
 }
 /// Configure and start a plain policy run from the browser.
 async fn plain_run(f: &Mcp) -> crate::mcp_tests::Reply {
-    let c = configure_run(f, crate::automation_tests::config_json()).await;
+    let c = configure_run(f, crate::automation::tests::config_json()).await;
     assert_eq!(c.status, StatusCode::ACCEPTED, "{}", c.json);
     start_run(f).await
 }
@@ -5188,7 +5188,7 @@ async fn tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller() {
     assert_eq!(run_state(&f).await.0, "calling_cq");
     assert_eq!(contact(&f).await.2, json!("armed"));
     // The end of the period, by the station clock: the same, and it stays.
-    crate::automation_tests::jump_and_tick(&f, 3 * 3_600_000);
+    crate::automation::tests::jump_and_tick(&f, 3 * 3_600_000);
     assert_eq!(
         run_state(&f).await,
         ("waiting".into(), json!("outside_period"))
@@ -5996,7 +5996,7 @@ fn heard_spot(age_s: i64) -> String {
         "K1ABC",
         14_075_500,
         "20m",
-        crate::contact_http_tests::now_ms() / 1000 - age_s,
+        crate::contact_http::tests::now_ms() / 1000 - age_s,
     )
 }
 /// The run snapshot.
@@ -6637,7 +6637,7 @@ async fn tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet() {
 async fn tc_039_044_period_end_and_deselect_end_the_contact_at_once() {
     let t = contest_calling(|_| {}).await;
     let f = &t.f;
-    crate::automation_tests::jump_and_tick(f, 3 * 3_600_000);
+    crate::automation::tests::jump_and_tick(f, 3 * 3_600_000);
     assert_eq!(
         contact(f).await,
         (Value::Null, json!("cancelled"), json!("disarmed"))
@@ -7095,7 +7095,7 @@ async fn tc_039_022_the_slot_check_at_every_repetition() {
         (
             "40 m",
             |feed| {
-                let t = crate::contact_http_tests::now_ms() / 1000 - 60;
+                let t = crate::contact_http::tests::now_ms() / 1000 - 60;
                 feed.inject(&spot_of("HB9BLA", "K1ABC", 7_075_500, "40m", t));
             },
             false,
@@ -7249,7 +7249,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
         run_of(f).await["hearing"],
         json!({"state":"unknown","reports":false,"spot_utc_s":null,"snr_db":null})
     );
-    let now = crate::contact_http_tests::now_ms() / 1000;
+    let now = crate::contact_http::tests::now_ms() / 1000;
     t.feed
         .inject(&spot_of("HB9BLA", "K1ABC", 14_075_500, "20m", now - 60));
     f.tick();
@@ -7913,11 +7913,11 @@ fn roll_off_vector() -> Value {
 fn decoded_in(f: &Mcp, period: i64, hz: &[f64]) {
     let records = hz
         .iter()
-        .map(|hz| crate::contact_http_tests::record("G4AAA W1XYZ -10", *hz, Some(-10.0)))
+        .map(|hz| crate::contact_http::tests::record("G4AAA W1XYZ -10", *hz, Some(-10.0)))
         .collect();
     f.state
         .recording
-        .fixture_publish_period(&crate::contact_http_tests::period_text(period), records);
+        .fixture_publish_period(&crate::contact_http::tests::period_text(period), records);
 }
 /// The open ranges of the station's latest build, as [lo, hi) pairs.
 async fn open_ranges(f: &Mcp) -> Vec<(u64, u64)> {
@@ -9243,7 +9243,7 @@ enum Late {
 /// The received periods counted after my transmissions, the bench clock moved forward only to
 /// fixed targets of each Tx period, with the test thread late at `late`.
 async fn received_periods_count(late: Late) {
-    use crate::automation_tests::{advance_to, keyed_late, planned_audio_start};
+    use crate::automation::tests::{advance_to, keyed_late, planned_audio_start};
     use std::time::{Duration, Instant};
     use wstx_rust::transmit::service::PttState;
     let f = station(true).await;
@@ -9266,7 +9266,7 @@ async fn received_periods_count(late: Late) {
         let (rx, own) = (rep(e, k - 1), rep(e, k - 1) + 15_000);
         // My Rx period received up to my Tx period, then PTT keyed at its start.
         capture.until(own);
-        crate::automation_tests::assert_bound(&f, own);
+        crate::automation::tests::assert_bound(&f, own);
         if late == Late::PastTheKey {
             keyed_late(&f, own).await;
         }
@@ -9340,13 +9340,24 @@ async fn received_periods_count(late: Late) {
         .unwrap()
         .periods(
             (&job, generation),
-            crate::automation_tests::due_at(f.bench.now_utc_ms(), None),
+            crate::automation::tests::due_at(f.bench.now_utc_ms(), None),
         )
         .iter()
         .map(|p| p.start_ms - e)
         .collect();
     assert_eq!(kept, [-30_000, -15_000, 0, 30_000], "periods kept, from e");
     for own in [e + 15_000, rep(e, 1) + 15_000] {
-        crate::automation_tests::assert_completed(&f, own);
+        crate::automation::tests::assert_completed(&f, own);
+    }
+}
+
+impl Owner {
+    /// Test seam: how many QSOs the ContestLog last built holds, starting no build.
+    fn contest_log_built_qsos(&self) -> Option<u64> {
+        self.contest_log
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .map(|(_, l)| l.qsos)
     }
 }

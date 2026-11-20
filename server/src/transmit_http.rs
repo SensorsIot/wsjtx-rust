@@ -14,6 +14,9 @@ use wstx_rust::transmit::service::{
     self as tx, AudioError, AudioPoll, Capability, Context, HaltState, Hardware, Outcome, Program,
     PttError, Service, View,
 };
+#[cfg(test)]
+#[path = "transmit/transmit_http_tests.rs"]
+mod tests;
 
 /// WstxTransmitState::Failures: how long transmit waits for radio control to confirm a key or
 /// a release.
@@ -244,22 +247,9 @@ impl Station {
             .unwrap_or_else(|p| p.into_inner())
             .meter_sink = Some(sink);
     }
-    #[cfg(test)]
-    pub(crate) fn meter_sink(&self) -> Option<Arc<dyn Fn() + Send + Sync>> {
-        self.inputs
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .meter_sink
-            .clone()
-    }
     /// Shares the station's call hash table with the transmit owner (CL-024-01).
     pub(crate) fn attach_hashes(&self, hashes: Arc<Mutex<wstx_rust::decoder::HashTable>>) {
         self.service.with(|c| c.attach_hashes(hashes));
-    }
-    /// The call hash table the transmit owner feeds, if attached.
-    #[cfg(test)]
-    pub(crate) fn hash_table(&self) -> Option<Arc<Mutex<wstx_rust::decoder::HashTable>>> {
-        self.service.with(|c| c.hash_table().cloned())
     }
     /// Test seam: the same station with injected hardware (virtual devices, no radio).
     #[cfg(test)]

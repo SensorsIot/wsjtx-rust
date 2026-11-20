@@ -3,7 +3,7 @@
 // the station's CAT owner, a detection hardware double of ports and audio endpoints.
 // Expected bytes are hand-written from the IC-7300 Full Manual section 19 command table.
 use super::*;
-use crate::contact_http_tests::{Fixture, fixture};
+use crate::contact_http::tests::{Fixture, fixture};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::AtomicBool;
 use wstx_rust::radio_control::{

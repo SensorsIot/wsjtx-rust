@@ -263,7 +263,7 @@ fn startup_resume_cat_unavailable_falls_back_to_plain_receive() {
 // station's refusal codes and no change on a refused request.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn startup_http_view_and_monitor_off_update() {
-    let f = crate::contact_http_tests::fixture("http://127.0.0.1:18451", false);
+    let f = crate::contact_http::tests::fixture("http://127.0.0.1:18451", false);
     let (status, view, _, _) = f.call("GET", "/receive/startup", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["monitor_off_at_startup"], false);
@@ -323,7 +323,7 @@ async fn startup_http_view_and_monitor_off_update() {
 fn startup_resume_never_arms_or_keys() {
     // The manual band path (a selection) and the configured-CAT fallback path.
     for (port, cat, state) in [(18452, false, "started"), (18453, true, "started_untuned")] {
-        let f = crate::contact_http_tests::fixture(&format!("http://127.0.0.1:{port}"), true);
+        let f = crate::contact_http::tests::fixture(&format!("http://127.0.0.1:{port}"), true);
         let r = f.state.recording.clone();
         let t = r.transmit.get().unwrap().clone();
         let observed = || {

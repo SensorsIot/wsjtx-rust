@@ -1516,7 +1516,7 @@ fn worked_latest_returns_the_last_set_and_builds_off_the_caller() {
         loop {
             if log
                 .worked_latest(window)
-                .is_some_and(|w| w.call_standing(call).worked)
+                .is_some_and(|w| w.call_scoped(call, None, None).worked)
             {
                 return;
             }
@@ -1554,7 +1554,7 @@ fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {
          <CALL:5>F1ABC <BAND:3>20m <MODE:3>FT8 <QSO_DATE:8>20250103 <TIME_ON:4>1000 <eor>\n"
     );
     import(&log, file.as_bytes()).0.unwrap();
-    let worked = |w: &crate::dxcc::Worked, c: &str| w.call_standing(c).worked;
+    let worked = |w: &crate::dxcc::Worked, c: &str| w.call_scoped(c, None, None).worked;
     let first = log.worked_window(20250101, 20250102).unwrap();
     assert!(worked(&first, "DL1ABC") && !worked(&first, "F1ABC"));
     let second = log.worked_window(20250103, 20250103).unwrap();

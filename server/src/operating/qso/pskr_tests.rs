@@ -120,23 +120,32 @@ fn reports_counts_up_to_600_s_and_no_longer() {
 fn hears_us_expires_and_ignores_other_band_and_mode() {
     let mut h = Hearing::default();
     h.record("HB9BLA", None, spot("HB9BLA", "K1ABC", 7075512, 1000), 1000);
-    assert!(h.hears_us("K1ABC", "FT8", "40m", 1000));
-    assert!(h.hears_us("K1ABC", "FT8", "40m", 1000 + HEARD_WINDOW_S));
-    assert!(!h.hears_us("K1ABC", "FT8", "40m", 1001 + HEARD_WINDOW_S));
-    assert!(!h.hears_us("K1ABC", "FT8", "20m", 1000));
-    assert!(!h.hears_us("K1ABC", "FT4", "40m", 1000));
-    assert!(!h.hears_us("W1AW", "FT8", "40m", 1000));
+    assert!(h.heard_by("K1ABC", "FT8", "40m", 1000).is_some());
+    assert!(
+        h.heard_by("K1ABC", "FT8", "40m", 1000 + HEARD_WINDOW_S)
+            .is_some()
+    );
+    assert!(
+        !h.heard_by("K1ABC", "FT8", "40m", 1001 + HEARD_WINDOW_S)
+            .is_some()
+    );
+    assert!(!h.heard_by("K1ABC", "FT8", "20m", 1000).is_some());
+    assert!(!h.heard_by("K1ABC", "FT4", "40m", 1000).is_some());
+    assert!(!h.heard_by("W1AW", "FT8", "40m", 1000).is_some());
     // Already too old on arrival; a clock ahead of ours does not stretch the window.
     let mut h = Hearing::default();
     h.record("HB9BLA", None, spot("HB9BLA", "K1ABC", 7075512, 0), 601);
-    assert!(!h.hears_us("K1ABC", "FT8", "40m", 601));
+    assert!(!h.heard_by("K1ABC", "FT8", "40m", 601).is_some());
     h.record(
         "HB9BLA",
         None,
         spot("HB9BLA", "K1ABC", 7075512, 90_000),
         1000,
     );
-    assert!(!h.hears_us("K1ABC", "FT8", "40m", 1001 + HEARD_WINDOW_S));
+    assert!(
+        !h.heard_by("K1ABC", "FT8", "40m", 1001 + HEARD_WINDOW_S)
+            .is_some()
+    );
     // Any time the broker sends is only a time: no overflow, too old or counted as now.
     let mut h = Hearing::default();
     h.record(
@@ -145,14 +154,14 @@ fn hears_us_expires_and_ignores_other_band_and_mode() {
         spot("HB9BLA", "K1ABC", 7075512, i64::MIN),
         1000,
     );
-    assert!(!h.hears_us("K1ABC", "FT8", "40m", 1000));
+    assert!(!h.heard_by("K1ABC", "FT8", "40m", 1000).is_some());
     h.record(
         "HB9BLA",
         None,
         spot("HB9BLA", "K1ABC", 7075512, i64::MAX),
         1000,
     );
-    assert!(h.hears_us("K1ABC", "FT8", "40m", 1000));
+    assert!(h.heard_by("K1ABC", "FT8", "40m", 1000).is_some());
     // A spot of someone else to the target is no hearing of me.
     let mut h = Hearing::default();
     h.record(
@@ -161,7 +170,7 @@ fn hears_us_expires_and_ignores_other_band_and_mode() {
         spot("DL1XYZ", "K1ABC", 7075512, 1000),
         1000,
     );
-    assert!(!h.hears_us("K1ABC", "FT8", "40m", 1000));
+    assert!(!h.heard_by("K1ABC", "FT8", "40m", 1000).is_some());
 }
 
 // RF to audio from the dial, newest first, distinct, inside the
@@ -231,15 +240,21 @@ fn the_model_is_bounded() {
         );
     }
     assert_eq!(h.heard.len(), HEARD_MAX);
-    assert!(h.hears_us(&format!("R{}", HEARD_MAX + 49), "FT8", "40m", 1400));
-    assert!(!h.hears_us("R0", "FT8", "40m", 1400));
+    assert!(
+        h.heard_by(&format!("R{}", HEARD_MAX + 49), "FT8", "40m", 1400)
+            .is_some()
+    );
+    assert!(!h.heard_by("R0", "FT8", "40m", 1400).is_some());
     // Repeats of one receiver take one entry and keep the newest time.
     let mut h = Hearing::default();
     h.record("HB9BLA", None, spot("HB9BLA", "K1ABC", 7075000, 1000), 1000);
     h.record("HB9BLA", None, spot("HB9BLA", "K1ABC", 7075000, 1100), 1100);
     h.record("HB9BLA", None, spot("HB9BLA", "K1ABC", 7075000, 1050), 1100);
     assert_eq!(h.heard.len(), 1);
-    assert!(h.hears_us("K1ABC", "FT8", "40m", 1100 + HEARD_WINDOW_S));
+    assert!(
+        h.heard_by("K1ABC", "FT8", "40m", 1100 + HEARD_WINDOW_S)
+            .is_some()
+    );
     let mut h = Hearing::default();
     for n in 0..(DECODED_MAX as u64 + 50) {
         h.record(
@@ -482,12 +497,12 @@ fn session_against_a_local_peer() {
     say_tx
         .send((topic.clone(), fresh_spot("DL1XYZ", "W1AW")))
         .unwrap();
-    until("the spot", || feed.hears_us("W1AW", "FT8", "40m"));
+    until("the spot", || feed.hearing("W1AW", "FT8", "40m").hears_us());
     until("the frequency", || {
         feed.decoded_offsets("FT8", "40m", 7_074_000, (300, 2650)) == vec![1512]
     });
     assert!(!feed.view()["last_spot_utc_s"].is_null());
-    assert!(!feed.hears_us("F5AAA", "FT8", "40m"));
+    assert!(!feed.hearing("F5AAA", "FT8", "40m").hears_us());
 
     // Keep-alive: a ping goes out and the link stays up.
     assert_eq!(next_ping(&log), (0xc0, vec![]));
@@ -502,7 +517,7 @@ fn session_against_a_local_peer() {
     let view = feed.set_enabled("p", "b00t", false).unwrap();
     assert_eq!(view["state"], "off");
     assert_eq!(view["enabled"], false);
-    assert!(!feed.hears_us("W1AW", "FT8", "40m"));
+    assert!(!feed.hearing("W1AW", "FT8", "40m").hears_us());
     assert!(
         feed.decoded_offsets("FT8", "40m", 7_074_000, (300, 2650))
             .is_empty()
@@ -748,7 +763,7 @@ fn a_peer_without_tls_is_refused() {
 // GET and POST /pskr through the station router; the push event.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn http_routes_read_and_switch_the_feed() {
-    let f = crate::contact_http_tests::fixture("http://127.0.0.1:18453", false);
+    let f = crate::contact_http::tests::fixture("http://127.0.0.1:18453", false);
     let (status, _, _, _) = f.call("GET", "/pskr", None).await;
     assert_eq!(
         status,
@@ -1098,10 +1113,10 @@ fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
     feed.switch_use(false);
     assert_eq!(filter_of(&next(0xa2), 0), target);
     assert_eq!(feed.hearing("K1ABC", "FT8", "20m"), HearingState::Unknown);
-    assert!(!feed.hears_us("K1ABC", "FT8", "20m"));
+    assert!(!feed.hearing("K1ABC", "FT8", "20m").hears_us());
     feed.switch_use(true);
     assert_eq!(filter_of(&next(0x82), 1), target);
-    assert!(feed.hears_us("K1ABC", "FT8", "20m"));
+    assert!(feed.hearing("K1ABC", "FT8", "20m").hears_us());
     drop(feed);
     drop(say_tx);
     drop(log);
@@ -1172,4 +1187,50 @@ async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use()
     feed.switch_use(true);
     feed.switch(false);
     assert!(!use_on(r));
+}
+
+impl Hearing {
+    /// The distinct offsets of `decoded`, of any parity.
+    fn decoded_offsets(
+        &self,
+        mode: &str,
+        band: &str,
+        dial_hz: u64,
+        range: (u32, u32),
+        now_s: i64,
+    ) -> Vec<u32> {
+        let mut out: Vec<u32> = Vec::new();
+        for (o, _) in self.decoded(mode, band, dial_hz, range, now_s) {
+            if !out.contains(&o) {
+                out.push(o);
+            }
+        }
+        out
+    }
+}
+
+impl Feed {
+    pub(crate) fn switch(&self, enabled: bool) {
+        let (profile, boot) = (self.profile.clone(), self.boot.clone());
+        self.set_enabled(&profile, &boot, enabled).unwrap();
+    }
+    /// The audio offsets the current target decodes (any parity); none with Use off.
+    fn decoded_offsets(&self, mode: &str, band: &str, dial_hz: u64, range: (u32, u32)) -> Vec<u32> {
+        let i = self.shared.lock();
+        if !(i.enabled && i.use_) {
+            return Vec::new();
+        }
+        i.hearing
+            .decoded_offsets(mode, band, dial_hz, range, utc_s())
+    }
+    pub(crate) fn switch_use(&self, use_: bool) {
+        let (profile, boot) = (self.profile.clone(), self.boot.clone());
+        self.set_use(&profile, &boot, use_).unwrap();
+    }
+}
+
+/// WstxHearingFeed::FeedSwitches in effect (the toggle and the Settings switch on); false without a
+/// feed.
+fn use_on(r: &recording::Recording) -> bool {
+    r.pskr.get().is_some_and(|f| f.use_on())
 }

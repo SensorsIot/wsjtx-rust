@@ -2513,3 +2513,19 @@ async fn status_strict_request_bounds_have_zero_effects() {
     );
     assert!(!reply.headers.contains_key(header::SET_COOKIE));
 }
+
+impl ConnectionAuthority {
+    // Test-only synchronous observation; production uses current_async below.
+    fn current(&self) -> bool {
+        self.state
+            .authorization
+            .lock()
+            .ok()
+            .and_then(|owner| {
+                owner
+                    .as_ref()
+                    .map(|s| s.authority.current_grant(&self.access).is_ok())
+            })
+            .unwrap_or(false)
+    }
+}

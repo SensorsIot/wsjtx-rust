@@ -217,7 +217,7 @@ fn window_dump_rotation_keeps_the_byte_cap() {
 // Proves: TC-052-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn diagnostics_http_view_and_dump_update() {
-    let f = crate::contact_http_tests::fixture("http://127.0.0.1:18461", false);
+    let f = crate::contact_http::tests::fixture("http://127.0.0.1:18461", false);
     let (status, view, _, _) = f.call("GET", "/receive/diagnostics", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(

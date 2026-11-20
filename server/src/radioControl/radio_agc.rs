@@ -51,10 +51,6 @@ impl Owner {
     pub(crate) fn revision(&self) -> u64 {
         self.lock().revision
     }
-    #[cfg(test)]
-    pub(crate) fn status(&self) -> Option<Status> {
-        self.lock().status
-    }
     pub(crate) fn target(&self) -> Option<Agc> {
         self.lock().target
     }
