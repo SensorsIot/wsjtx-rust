@@ -134,14 +134,14 @@ def build(commit, ver, out, gate_log):
     src = os.path.join(BUILD_ROOT, ver, "src")
     target = os.path.join(BUILD_ROOT, ver, "target")
     export(REPO, commit, src)
-    # The station reports this commit itself (x-wstx-source-commit on GET /, #33).
+    # The station reports this commit itself (x-wstx-source-commit on GET /).
     env = dict(os.environ, CARGO_TARGET_DIR=target, CARGO_BUILD_JOBS="2", WSTX_SOURCE_COMMIT=commit)
     result = subprocess.run(["cargo", "build", "--release", "--locked", "-p", "wstx-rust"], cwd=src, env=env,
                             capture_output=True, encoding="utf-8", errors="replace")
     log = result.stdout + result.stderr
     if result.returncode != 0:
         # The run's own output is the failure's evidence: the last 10 lines of cargo, then the
-        # failure line last, all on stdout (#246 F3).
+        # failure line last, all on stdout.
         sys.stdout.reconfigure(errors="replace")
         for line in log.splitlines()[-10:]:
             print(line)
@@ -154,7 +154,7 @@ def build(commit, ver, out, gate_log):
 
     package = os.path.join(out, "package")
     # The licence files come from the exported commit itself: COPYING and every file under
-    # server/third-party (notices travel with the copies, e.g. cty/LICENSE for cty.dat, #55).
+    # server/third-party (notices travel with the copies, e.g. cty/LICENSE for cty.dat).
     sources = [("wstx-rust.exe", exe), ("COPYING", os.path.join(src, "COPYING"))]
     third = os.path.join(src, "server", "third-party")
     for root, _, names in os.walk(third):
@@ -229,7 +229,7 @@ def main(argv):
         try:
             build(commit, ver, out, logs[0])
         except BaseException:
-            # A build that ends without its manifest leaves neither folder behind (#246 F3).
+            # A build that ends without its manifest leaves neither folder behind.
             shutil.rmtree(out, ignore_errors=True)
             shutil.rmtree(build_dir, ignore_errors=True)
             raise

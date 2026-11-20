@@ -343,7 +343,7 @@ async fn live_native_selection_tls_thin_and_off() {
         .map(|record| format!("WSTX_STATION_SOCKET {record}"))
         .collect();
     println!(
-        "{}\n{}\nNative receipt: {}\nStation socket records (UTC ms; judged by #102), {} ended:\n{}",
+        "{}\n{}\nNative receipt: {}\nStation socket records (UTC ms), {} ended:\n{}",
         outcome.1,
         String::from_utf8_lossy(&outcome.0.stderr),
         receipt,

@@ -462,11 +462,11 @@ CR (policy item 4). Suite `deploy-tooling`
 
 ```text
 a94d76c1026236c279b9f7260ebdf65cb4524bcef5b2c1b4d3ade6f4723a8a39  tools/deploy/station-update/station-update.ps1
-b31910b497fdc05b5fb6d1e2db9028772abeb7ca9407612f362111b57ff88088  tools/deploy/station-update/make_package.py
+b611766f68a987b450c15d38233c3c9eab5eb2eef58d9cc93db56fdce62fef07  tools/deploy/station-update/make_package.py
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
-b74735120afa989117183f4a2e1f3cafbd5f733fe95da38a7b5557bf4c3acdb0  tools/deploy/station-probe.ps1
-dd08b9615147396c3e3c3f96caa07f8096c13d07e235a8338366c32c0dcf3a94  tools/deploy/live-page-check.ps1
+506cc03746fb8bce42cd20bbafbe83715cf21bf502acb7ab558a5513a9b1f770  tools/deploy/station-probe.ps1
+00eaa648f97fe6c68f932558ce7d8f9cebac0a3c892a63f90b7338471d47729d  tools/deploy/live-page-check.ps1
 ```
 
 ### Standing consent at 1 %

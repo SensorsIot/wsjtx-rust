@@ -56,7 +56,7 @@ class FixtureArithmetic(unittest.TestCase):
                 mix_pcm(a,b,out,[.25,.125])
 
 
-"""Proves CL-007-03/04: mutation tests on the actual frozen CR18 FT4 sample set."""
+"""Proves CL-007-03/04: mutation tests on the actual frozen FT4 sample set."""
 import copy, json, os, pathlib, shutil, tempfile, unittest
 from wsjtx_simulated_samples import verify_manifest
 
@@ -106,7 +106,7 @@ class LiteralFilenameAdmission(unittest.TestCase):
     def check_filename(self, mode, variant):
         from unittest import mock
         import wsjtx_simulated_samples as simulator
-        with tempfile.TemporaryDirectory(prefix="cr18-filename-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="simulated-filename-") as tmp:
             root = pathlib.Path(tmp)
             dataset = root / mode
             shutil.copytree(STORE.parent / mode, dataset)

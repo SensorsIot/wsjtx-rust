@@ -580,7 +580,7 @@ fn other_stations_wrong_period_and_previous_partner_rows_change_nothing() {
         replace: true,
     })
     .unwrap();
-    assert!(s.armed(), "ChangeContact keeps Enable Tx (#50)");
+    assert!(s.armed(), "ChangeContact keeps Enable Tx");
     assert_eq!(
         s.engine.contact.as_ref().unwrap().dx_call.as_deref(),
         Some("DL1ABC")
@@ -2937,10 +2937,7 @@ fn call_first_answers_the_first_caller_of_my_cq_in_the_next_own_period() {
 // Proves: TC-010-010
 #[test]
 fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
-    assert!(
-        Settings::default().call_first,
-        "Call 1st is on by default (#10)"
-    );
+    assert!(Settings::default().call_first, "Call 1st is on by default");
     for case in 0..4 {
         let mut s = station();
         match case {

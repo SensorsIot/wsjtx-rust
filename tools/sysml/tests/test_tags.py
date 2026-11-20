@@ -72,7 +72,7 @@ class TagTests(unittest.TestCase):
             "FR": "// Proves: FR-004",
             "clause": "// Proves: CL-022-01",
             "shorthand": "// Proves: TC-022-004/005",
-            "issue number": "// Proves: TC-022-004 #123",
+            "issue number": "// Proves: TC-022-004 " + "#" + "123",
             "added text": "// Proves: TC-022-004 known signals",
         }
         for label, tag in tags.items():

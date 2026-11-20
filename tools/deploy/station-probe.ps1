@@ -1,4 +1,4 @@
-# Independent post-install probe of the HB9BLA station (#33). Read-only: it never stops,
+# Independent post-install probe of the HB9BLA station. Read-only: it never stops,
 # starts or changes the station.
 #   station-probe.ps1 -Manifest <package manifest.json>
 #   station-probe.ps1 -Commit <40 hex> -ArtifactSha256 <64 hex>
@@ -8,7 +8,7 @@
 # package's own wstx-rust.exe, recomputed here, not the manifest's field). It then requires
 # HTTP 200 over TLS verified by Windows from the station URL, and finally that the launcher
 # receipt agrees with what it observed. The same response's x-wstx-source-commit header is
-# the commit the service itself reports (#33); it must be there once and equal the candidate.
+# the commit the service itself reports; it must be there once and equal the candidate.
 # Exit 0: PROBE PASS. Exit 1: PROBE FAIL <reason> (run station-update.ps1 -Rollback).
 # Exit 2: the probe could not run (bad arguments).
 param([string]$Manifest, [string]$Commit, [string]$ArtifactSha256,

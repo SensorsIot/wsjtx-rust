@@ -443,8 +443,8 @@ test('TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level
   for(const p of [desktop,mobile])await p.waitForFunction(()=>Number(document.querySelector('#waterfall').dataset.rows)>=45,{timeout:15000});
   await fs.mkdir('test-results',{recursive:true});
   for(const p of [desktop,mobile]){await p.locator('#display-sensitivity').fill('6');await p.locator('#display-sensitivity').dispatchEvent('input');await p.locator('#display-sensitivity').fill('0');await p.locator('#display-sensitivity').dispatchEvent('input');await p.locator('#display-speed').fill('2');await p.locator('#display-speed').dispatchEvent('input');}
-  await desktop.screenshot({path:'test-results/cr6-sliders-ft8-desktop.png',fullPage:true});
-  await mobile.screenshot({path:'test-results/cr6-sliders-ft8-mobile-dpr2.png',fullPage:true});
+  await desktop.screenshot({path:'test-results/display-sliders-ft8-desktop.png',fullPage:true});
+  await mobile.screenshot({path:'test-results/display-sliders-ft8-mobile-dpr2.png',fullPage:true});
   for(const p of [desktop,mobile]){
     assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     for(const key of ['Home','End']){await p.getByRole('separator').focus();await p.keyboard.press(key);await p.waitForTimeout(30);const g=await p.evaluate(()=>{const a=document.querySelector('#spectrum').getBoundingClientRect(),b=waterfall.getBoundingClientRect();return {ratio:b.height-5*a.height,pixels:waterfall.height,expected:Math.round(b.height*devicePixelRatio)};});assert.ok(Math.abs(g.ratio)<=2,JSON.stringify(g));assert.equal(g.pixels,g.expected);}

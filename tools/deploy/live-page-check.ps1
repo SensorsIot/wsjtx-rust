@@ -1,4 +1,4 @@
-# Harness retrospective item 3 (SensorsIot/harness#38): runs tests/live-page-check.cjs against the
+# Runs tests/live-page-check.cjs against the
 # station installed on this PC, and gives it the one real restart it asks for, after it has
 # watched the page for several periods. It keys nothing.
 #   live-page-check.ps1 -Repo <repository root> -Shared <git common dir>\harness-parallel
@@ -9,7 +9,7 @@
 # The restart happens only while /transmit is disarmed, not transmitting and PTT released, /contact
 # has no running contact, /automation has no active run, no update runs and nobody holds the radio
 # lease; otherwise it waits up to -WaitSeconds and gives up with the station untouched.
-# Before the restart (#247) it makes one band selection (POST /receive/select, action band) of the
+# Before the restart it makes one band selection (POST /receive/select, action band) of the
 # band the station receives on, naming no mode, so that the old boot's receive job stands at
 # generation 2 or more. It does so only while receive runs FT8 or FT4 on a selected band of that
 # mode, Monitor off at startup is not set and the saved receive choice is that mode and band: the
@@ -23,7 +23,8 @@
 # station-update.ps1 and radio-preflight.ps1 refuse to start in that window.
 # Exit 0: PASS. 1: RED. 2: ERROR, it could not run or the station did not come back (it says which).
 # 3: BUSY, the station was in use and was not restarted. 4: NOT-EXERCISED, nothing was shown wrong
-# but a live trigger of #22 or #50 was not on screen (the PAGE CHECK line says which).
+# but a live trigger (restart generation, worked-before tip) was not on screen (the PAGE CHECK
+# line says which).
 param([Parameter(Mandatory)][string]$Repo, [Parameter(Mandatory)][string]$Shared, [Parameter(Mandatory)][string]$AgentClient,
       [int]$WaitSeconds = 300, [string]$Station, [string]$Check = 'tests/live-page-check.cjs',
       [string]$TaskName = 'WSTX Rust Station HB9BLA')

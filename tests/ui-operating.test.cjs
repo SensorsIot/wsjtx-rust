@@ -288,7 +288,7 @@ test('pointer resize and stale link preserve read-only authority',{timeout:20000
 // Proves: TC-050-001
 test('agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activity and the QSO pane with truthful state',{timeout:30000},async t=>{
  const {page,errors,sent}=await fixture(t,{width:1200,height:1200});
- assert.equal(Math.round((await page.locator('#signal').boundingBox()).height),330,'#54: a sufficiently tall desktop starts with the taller signal height (about 2 FT8 periods at 10 px/s)');
+ assert.equal(Math.round((await page.locator('#signal').boundingBox()).height),330,'a sufficiently tall desktop starts with the taller signal height (about 2 FT8 periods at 10 px/s)');
  await page.setViewportSize({width:1200,height:800});
  const shortSignal=await page.locator('#signal').evaluate(signal=>({height:signal.getBoundingClientRect().height,minimum:Number(document.querySelector('#splitter').getAttribute('aria-valuemin')),maximum:Number(document.querySelector('#splitter').getAttribute('aria-valuemax')),current:Number(document.querySelector('#splitter').getAttribute('aria-valuenow'))}));
  assert.ok(shortSignal.height>=160,'short viewport preserves the signal minimum');
@@ -297,7 +297,7 @@ test('agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activit
  assert.equal(await page.getByRole('separator').getAttribute('tabindex'),'0','short viewport retains keyboard resizing');
  // The strategy element and the chips come with the contact client (loaded after the first snapshots).
  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
- assert.match(await page.locator('#help-keys').textContent(),/Waterfall click \/ double-click\s*Set Tx \/ Rx and Tx/,'#50 help names the pointer mapping');
+ assert.match(await page.locator('#help-keys').textContent(),/Waterfall click \/ double-click\s*Set Tx \/ Rx and Tx/,'the help names the pointer mapping');
  assert.doesNotMatch(await page.locator('#help-keys').textContent(),/Shift\+click|Ctrl\+click/);
  for(const id of ['radio-toolbar','rxtx-strip','strategy-element','band-activity','rx-focus'])assert.equal(await page.locator('#'+id).count(),1,`${id} is part of the operating screen`);
  for(const id of ['band-strip','strategy-panel','workspace-statusbar','rx-frequency'])assert.equal(await page.locator('#'+id).count(),0,`${id} is not on the operating screen`);
@@ -915,7 +915,7 @@ test('the Settings drawer has four sections holding every control moved off the 
     assert.equal(await inViewport(page,'#waterfall'),true,'the waterfall keeps running beside the drawer');
     assert.equal(await inViewport(page,'#halt-tx'),true,'HALT stays reachable');
   }
-  assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw #9 transmit panel is an Expert section');
+  assert.equal(await page.locator('#settings-drawer #transmit-details #transmit-panel').count(),1,'the raw transmit panel is an Expert section');
   // CL-044-08: opening the drawer lists the endpoints by name; listing is not an Apply.
   assert.ok(requests.includes('GET /audio/endpoints'));assert.equal(requests.includes('GET /audio/devices'),false);assert.equal(requests.includes('PUT /profile'),false,'listing inputs is not an Apply');
   await page.keyboard.press('Escape');assert.equal(await page.locator('#settings-drawer').isVisible(),true,'Esc closes no panel');
@@ -1717,7 +1717,7 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   const order=await page.locator('#band-activity tbody tr').evaluateAll(rows=>rows.map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:r.children[4].textContent));
   assert.deepEqual(order,['HB9BLA K1ABC -05','|FT8 period 12:00:00 UTC','CQ K1ABC FN42','CQ W1XYZ FN42']);
   assert.equal(await page.locator('tr[data-period=latest]').getAttribute('class'),'ba-tome','a call to my callsign is highlighted');
-  assert.equal(await page.locator('tr[data-period=latest] td').first().evaluate(td=>getComputedStyle(td).backgroundColor),'rgba(255, 102, 102, 0.32)','#50: WSJT-X My call colour');
+  assert.equal(await page.locator('tr[data-period=latest] td').first().evaluate(td=>getComputedStyle(td).backgroundColor),'rgba(255, 102, 102, 0.32)','WSJT-X My call colour');
 
   // Right-click menu: Select prepares, Set Rx sets only Rx; neither transmits.
   const k1abc=page.locator('tr[data-period=history]').filter({hasText:'CQ K1ABC FN42'});
@@ -2396,7 +2396,7 @@ test('Band Activity shows the worked_status of each record with no query',{timeo
  await clickSort(page,'frequency');await page.waitForTimeout(300);
  await refreshStatus(page);await page.waitForTimeout(500);
  assert.deepEqual(queries,[],'the status comes with the record');
- assert.deepEqual(await page.locator('tr[data-worked=worked_this_band_and_mode]').evaluate(r=>[r.dataset.tip??null,r.title]),[null,''],'an uncoloured row has no reason tip (#50 CL-050-08 BandActivityHover)');
+ assert.deepEqual(await page.locator('tr[data-worked=worked_this_band_and_mode]').evaluate(r=>[r.dataset.tip??null,r.title]),[null,''],'an uncoloured row has no reason tip (CL-050-08 BandActivityHover)');
  assert.deepEqual(errors,[]);
 });
 
@@ -2532,7 +2532,7 @@ test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:3
  t.diagnostic(`row ${dense.height}px, ${dense.visible} rows visible, font ${dense.font}`);
  assert.ok(dense.height<=24,`a desktop row is at most 24 px high (${dense.height})`);
  assert.equal(dense.font,'16px','the font size is unchanged (the 16 px operating font, TC-007-002)');
- assert.ok(dense.visible>=8,`at least 8 rows visible at 1366x768, 5 before #55 (${dense.visible})`);
+ assert.ok(dense.visible>=8,`at least 8 rows visible at 1366x768 (${dense.visible})`);
  // Touch: a coarse pointer keeps taller rows (CSS rule under pointer:coarse).
  assert.ok(await page.evaluate(()=>[...document.styleSheets].some(sheet=>{try{return [...sheet.cssRules].some(r=>r.media&&/pointer:\s*coarse/.test(r.media.mediaText)&&[...r.cssRules].some(c=>c.selectorText==='#band-activity td'&&parseFloat(c.style.paddingTop)>=8));}catch{return false;}})),'a coarse pointer keeps tappable rows');
  assert.deepEqual(errors,[]);
@@ -2566,7 +2566,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
   ['HB9BLA K1AA R-05','worked_this_band_and_mode','mycall','rgba(255, 102, 102, 0.32)'],
   ['CQ K2BB FN42','worked_other_band_or_mode','new_call_band','rgba(153, 255, 255, 0.2)'],
   ['CQ K3CC FN42','not_worked','new_call new_call_band','rgba(0, 255, 255, 0.24)'],
-  ['CQ K1AA FN42','worked_this_band_and_mode',null,'rgba(0, 0, 0, 0)']],'only interesting stations are coloured; My call still applies; rows in value order (#55)');
+  ['CQ K1AA FN42','worked_this_band_and_mode',null,'rgba(0, 0, 0, 0)']],'only interesting stations are coloured; My call still applies; rows in value order');
  assert.deepEqual(queries,[]);
  assert.deepEqual(errors,[]);
 });
@@ -4324,7 +4324,7 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   reject=true;await page.evaluate(()=>receiveSync());
   const notice=page.locator('#station-notice:not([hidden])');
   await notice.filter({hasText:'Station data not understood (receive) · reload'}).waitFor();
-  assert.equal(await notice.getAttribute('data-severity'),'error');assert.equal(await notice.evaluate(n=>!!n.closest('#error-field')),true,'the notice is an error field entry (#37)');
+  assert.equal(await notice.getAttribute('data-severity'),'error');assert.equal(await notice.evaluate(n=>!!n.closest('#error-field')),true,'the notice is an error field entry');
   reject=false;await page.evaluate(()=>receiveSync());await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
   // A result page and an operating selection snapshot of an unknown shape are named the same way.
   for(const [kind,read] of [['selection','operatingSync(true)'],['results','(lastResultStart=-Infinity,receiveResults())']]){
@@ -4388,7 +4388,7 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
   const {page,errors,newJob}=await liveDisplayFixture(t);
   // Independent palette anchors (CL-006-03): t=0.1 -> (0,0,57), t=0.9 -> (255,105,0), t=0.3 -> (0,60,185), t=0.5 -> (0,220,240).
   const noise=40,carrier=80,levels=Array.from({length:1024},(_,k)=>k>=498&&k<=502?carrier:noise);
-  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.abs(Math.round(document.querySelector('#signal').getBoundingClientRect().height)-Math.min(330,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))-290))<=8]),['0','50','1','10 px/s',true,true],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px or the available height less 490 px (#37 LowerPanel, 2026-11-04)');
+  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#display-sensitivity').value,document.querySelector('#display-range').value,document.querySelector('#display-speed').value,document.querySelector('#speed-value').textContent,document.querySelector('#spectrum').hidden,Math.abs(Math.round(document.querySelector('#signal').getBoundingClientRect().height)-Math.min(330,Number(document.querySelector('#splitter').getAttribute('aria-valuemax'))-290))<=8]),['0','50','1','10 px/s',true,true],'defaults: Zero 0, Gain 50 dB, 10 px/s, no spectrum line, 330 px or the available height less 490 px (LowerPanel)');
   await liveFrames(page,[{sequence:0,levels},{sequence:1,levels}]);
   assert.deepEqual([await cell(page,100),await cell(page,500)],[[0,0,57],[255,105,0]],'noise -80 dBFS and a -40 dBFS carrier on the fixed -85..-35 dBFS scale');
   assert.match(await page.locator('#level-legend').textContent(),/WF -85 to -35 dBFS/);

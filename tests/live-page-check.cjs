@@ -44,13 +44,13 @@ function allowed(method,at,origin){
 // worked-before tip on a kept row. Without them nothing was shown wrong, but nothing was proven.
 function missingTriggers(oldGeneration,newGeneration,workedKept){
   const missing=[];
-  if(!(Number.isInteger(oldGeneration)&&(newGeneration===null||newGeneration<oldGeneration)))missing.push('#22: the new boot had a job at a generation not below the old one');
-  if(!workedKept)missing.push('#50: no worked-before tip on a kept row');
+  if(!(Number.isInteger(oldGeneration)&&(newGeneration===null||newGeneration<oldGeneration)))missing.push('restart generation: the new boot had a job at a generation not below the old one');
+  if(!workedKept)missing.push('worked-before tip: no worked-before tip on a kept row');
   return missing;
 }
 // The same, after why the band selection did not raise the old boot's generation: never green then.
 function exerciseMissing(unexercised,oldGeneration,newGeneration,workedKept){
-  return [...unexercised.map(why=>`#22: ${why}`),...missingTriggers(oldGeneration,newGeneration,workedKept)];
+  return [...unexercised.map(why=>`restart generation: ${why}`),...missingTriggers(oldGeneration,newGeneration,workedKept)];
 }
 // What the page must show after the band selection made at `generation`: a higher generation,
 // with a row of a decoded period that was not on screen when the selection was reported.

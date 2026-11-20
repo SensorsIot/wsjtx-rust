@@ -105,7 +105,7 @@ fn protocol_returns_specified_response_and_errors() {
             && build
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
-        "#51 client build is 16 lower-case hex digits: {build}"
+        "client build is 16 lower-case hex digits: {build}"
     );
     assert_eq!(
         status,
@@ -266,7 +266,7 @@ async fn served_page_reports_the_source_commit_of_the_build() {
             .iter()
             .collect::<Vec<_>>(),
         [expected],
-        "#33 GET / carries exactly one source-commit header"
+        "GET / carries exactly one source-commit header"
     );
 }
 

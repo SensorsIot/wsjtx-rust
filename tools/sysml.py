@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tokenize
 import urllib.request
 import urllib.parse
 import zipfile
@@ -3301,6 +3302,663 @@ def held_in(path: Path, qualified: str, definition: str, name: str) -> bool:
     return qualified in text or definition in text and re.search(r"(?<![\w'])" + re.escape(name.strip("'")) + r"(?![\w'])", text) is not None
 
 
+# ---- History in comments, names and test strings (TR-22) ----
+
+HISTORY_SUFFIXES = (".rs", ".js", ".cjs", ".mjs", ".css", ".html", ".py", ".ps1", ".java", ".sysml", ".toml", ".yml", ".md")
+HISTORY_ROOTS = ("server/", "client/", "tests/", "tools/", "fixtures/")
+HISTORY_FILES = ("README.md", "Cargo.toml", "server/Cargo.toml", "rust-toolchain.toml")
+HISTORY_OUTSIDE = ("server/third-party/",)
+WORKFLOWS = ".github/workflows/"
+HARNESS_CONFIG = "harness/project/config.yaml"
+# The places whose string literals are test or tool code.
+STRING_PLACES = ("tests/", "server/tests/", "tools/", "fixtures/")
+TEST_MODULE = re.compile(r"server/(?:.*/)?[^/]*_tests?\.rs")
+STRING_SUFFIXES = (".rs", ".js", ".cjs", ".mjs", ".py", ".ps1")
+COMMENT_EXCEPTIONS = "tools/sysml/comment-exceptions.json"
+EXCEPTION_KINDS = ("D1", "D2", "D3", "M", "S", "I")
+POINTER_FORMS = (
+    re.compile(r"(?:(?:[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+)?(?<![&#])#\d+(?![A-Za-z0-9])"),
+    re.compile(r"(?<![A-Za-z0-9])(?:issue|cr|pr)[ _#-]?\d+(?![A-Za-z0-9])", re.I),
+    re.compile(r"(?<![A-Za-z0-9])review \d{6,}(?![A-Za-z0-9])", re.I),
+)
+DATE_FORM = re.compile(r"(?<![A-Za-z0-9])(?:19|20)\d\d-[01]\d-[0-3]\d(?![0-9])")
+STORY_FORM = re.compile(r"\b(?:formerly|previously|no[ \t]+longer|any[ \t]+more|anymore|as[ \t]+before|used[ \t]+to"
+                        r"|originally|retired|legacy|was[ \t]+changed|were[ \t]+changed|red[ \t]+on[ \t]+the[ \t]+parent"
+                        r"|review[ \t]+finding|finding[ \t]+\d+|round[ \t]+\d+|operator[ \t]+grill|operator[ \t]+decision"
+                        r"|coordinator(?:['’]s)?[ \t]+decision|live[ \t]+defect|live[ \t]+finding)\b", re.I)
+URL_TEXT = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>\"'`)\]]*")
+MARKDOWN_TARGET = re.compile(r"\]\(\s*<?([^)\s>]*)")
+TEST_NAME_POINTER = re.compile(r"(?:^|_)(?:issue|cr|pr)_?\d+(?=_|$)", re.I)
+RUST_TEST_ATTRIBUTE = re.compile(r"#\[(?:tokio::)?test\b[^\]]*\]((?:\s*#\[[^\]]*\])*)\s*(?:pub(?:\([^)]*\))?\s+)?"
+                                 r"(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)")
+RUST_CHARACTER = re.compile(r"""'(?:[^'\\\n\r\t]|\\(?:[nrt\\0'"]|x[0-9a-fA-F]{2}|u\{[0-9a-fA-F_]{1,8}\}))'""")
+RUST_LIFETIME = re.compile(r"'(?:r#)?[^\W\d]\w*")
+RUST_RAW_STRING = re.compile(r'(?:br|cr|r)(#*)"')
+SOURCE_WORD = re.compile(r"[\w$]+")
+# The JavaScript words after which a `/` opens a regular expression, the control heads, and the
+# words after which a `{` opens a block.
+JS_BEFORE_EXPRESSION = {"return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case",
+                        "do", "else", "yield", "await"}
+JS_CONTROL = {"if", "while", "for", "with"}
+JS_BLOCK_AFTER = {"else", "do", "try", "finally"}
+
+
+class SourceUnreadable(ValueError):
+    """A text the reader of its language cannot read: the reason and the offset."""
+
+    def __init__(self, reason: str, offset: int):
+        super().__init__(reason)
+        self.reason, self.offset = reason, offset
+
+
+def quoted_end(source: str, start: int, quote: str, escape: str | None = "\\", multiline: bool = True) -> int:
+    """The end, after the closing quote, of the string that opens at `start` with `quote`."""
+    index = start + len(quote)
+    while index < len(source):
+        if escape and source[index] == escape:
+            index += 2
+        elif source.startswith(quote, index):
+            return index + len(quote)
+        elif source[index] == "\n" and not multiline:
+            break
+        else:
+            index += 1
+    raise SourceUnreadable("a string without its end", start)
+
+
+def block_end(source: str, start: int, opener: str, closer: str, nested: bool = False) -> int:
+    """The end of the block comment that opens at `start`."""
+    depth, index = 1, start + len(opener)
+    while depth:
+        if index >= len(source):
+            raise SourceUnreadable("a block comment without its end", start)
+        if source.startswith(closer, index):
+            depth, index = depth - 1, index + len(closer)
+        elif nested and source.startswith(opener, index):
+            depth, index = depth + 1, index + len(opener)
+        else:
+            index += 1
+    return index
+
+
+def line_end(source: str, start: int) -> int:
+    end = source.find("\n", start)
+    return len(source) if end < 0 else end
+
+
+def rust_segments(source: str) -> list[tuple[str, int, int]]:
+    """(kind, start, end) of the comments and the string contents of Rust source."""
+    found, index = [], 0
+    while index < len(source):
+        character = source[index]
+        if source.startswith("//", index):
+            end = line_end(source, index)
+            found.append(("comment", index, end))
+        elif source.startswith("/*", index):
+            end = block_end(source, index, "/*", "*/", nested=True)
+            found.append(("comment", index, end))
+        elif character == '"':
+            end = quoted_end(source, index, '"')
+            found.append(("string", index + 1, end - 1))
+        elif character == "'":
+            literal = RUST_CHARACTER.match(source, index) or RUST_LIFETIME.match(source, index)
+            if not literal:
+                raise SourceUnreadable("a ' that opens neither a char literal nor a lifetime", index)
+            end = literal.end()
+        elif raw := RUST_RAW_STRING.match(source, index):
+            close = source.find('"' + raw[1], raw.end())
+            if close < 0:
+                raise SourceUnreadable("a raw string without its end", index)
+            found.append(("string", raw.end(), close))
+            end = close + 1 + len(raw[1])
+        elif word := SOURCE_WORD.match(source, index):
+            end = word.end()
+        else:
+            end = index + 1
+        index = end
+    return found
+
+
+def rust_test_names(source: str, found: list[tuple[str, int, int]]) -> list[tuple[str, int]]:
+    """(name, offset) of every function under `#[test]` or `#[tokio::test]`."""
+    code = list(source)
+    for _kind, start, end in found:
+        code[start:end] = re.sub(r"[^\n]", " ", source[start:end])
+    return [(match[2], match.start(2)) for match in RUST_TEST_ATTRIBUTE.finditer("".join(code))]
+
+
+def javascript_segments(source: str, start: int = 0, nested: bool = False) -> tuple[list, int]:
+    """(segments, end) of JavaScript from `start`: to the end of the text, or with `nested` (a
+    template's `${`) to the brace that closes it. A regular expression literal is one token,
+    neither string nor comment; a `/` that opens none the line closes is unreadable."""
+    found, index, significant, parens, braces, closed = [], start, [], [], [], None
+    while index < len(source):
+        character = source[index]
+        if character.isspace():
+            index += 1
+            continue
+        if index == 0 and source.startswith("#!"):
+            end = line_end(source, index)
+        elif source.startswith("//", index):
+            end = line_end(source, index)
+            found.append(("comment", index, end))
+        elif source.startswith("/*", index):
+            end = block_end(source, index, "/*", "*/")
+            found.append(("comment", index, end))
+        elif source.startswith("<!--", index) or (source.startswith("-->", index)
+                                                   and not source[source.rfind("\n", 0, index) + 1:index].strip()):
+            raise SourceUnreadable("an HTML-like comment in JavaScript", index)
+        elif character in "'\"":
+            end = quoted_end(source, index, character, multiline=False)
+            found.append(("string", index + 1, end - 1))
+            significant.append((character, "literal"))
+        elif character == "`":
+            end = javascript_template(source, index, found)
+            significant.append((character, "literal"))
+        elif character == "/" and javascript_regex_here(significant, closed):
+            end = javascript_regex_end(source, index)
+            significant.append((character, "literal"))
+        elif word := SOURCE_WORD.match(source, index):
+            end = word.end()
+            significant.append((word.group(), "word"))
+        else:
+            if character == "(":
+                parens.append(bool(significant) and significant[-1][0] in JS_CONTROL)
+            elif character == ")":
+                closed = ("paren", parens.pop() if parens else False)
+            elif character == "{":
+                braces.append(javascript_block_here(significant))
+            elif character == "}":
+                if not braces and nested:
+                    return found, index + 1
+                closed = ("brace", braces.pop() if braces else True)
+            end = index + 1
+            significant.append((character, "punct", index))
+        index = end
+    if nested:
+        raise SourceUnreadable("a template string's ${ without its }", start)
+    return found, index
+
+
+def javascript_regex_here(significant: list, closed) -> bool:
+    """Does a `/` here open a regular expression? After an operand it divides."""
+    if not significant:
+        return True
+    token, kind = significant[-1][:2]
+    if kind == "literal":
+        return False
+    if kind == "word":
+        return token in JS_BEFORE_EXPRESSION
+    if token == "]":
+        return False
+    if token in ")}":
+        return bool(closed and closed[1])
+    if token in "+-" and len(significant) >= 3 and significant[-2][0] == token and significant[-2][1] == "punct" \
+            and significant[-1][2] == significant[-2][2] + 1:
+        before = significant[-3]
+        return not (before[1] == "literal" or before[0] in (")", "]")
+                    or (before[1] == "word" and before[0] not in JS_BEFORE_EXPRESSION))
+    return True
+
+
+def javascript_block_here(significant: list) -> bool:
+    """Does a `{` here open a block, not an object?"""
+    if not significant:
+        return True
+    token, kind = significant[-1][:2]
+    if kind == "word":
+        return token in JS_BLOCK_AFTER
+    return token in (";", "{", "}", ")") or (token == ">" and len(significant) >= 2 and significant[-2][0] == "=")
+
+
+def javascript_template(source: str, start: int, found: list) -> int:
+    """The end of the template string at `start`; its text parts are strings, its `${}` code."""
+    index, part = start + 1, start + 1
+    while index < len(source):
+        if source[index] == "\\":
+            index += 2
+        elif source[index] == "`":
+            found.append(("string", part, index))
+            return index + 1
+        elif source.startswith("${", index):
+            found.append(("string", part, index))
+            inner, index = javascript_segments(source, index + 2, nested=True)
+            found.extend(inner)
+            part = index
+        else:
+            index += 1
+    raise SourceUnreadable("a template string without its end", start)
+
+
+def javascript_regex_end(source: str, start: int) -> int:
+    """The end of the regular expression literal at `start`, its flags included."""
+    index, in_class = start + 1, False
+    while index < len(source) and source[index] not in "\n\r  ":
+        if source[index] == "\\":
+            index += 2
+            continue
+        if source[index] == "[":
+            in_class = True
+        elif source[index] == "]":
+            in_class = False
+        elif source[index] == "/" and not in_class:
+            index += 1
+            while index < len(source) and (source[index].isalnum() or source[index] in "_$"):
+                index += 1
+            return index
+        index += 1
+    raise SourceUnreadable("a / that opens no regular expression the line closes", start)
+
+
+def c_like_segments(source: str, text_blocks: bool = False, names: bool = False) -> list[tuple[str, int, int]]:
+    """Comments and string contents of CSS, Java (`text_blocks`) and SysML (`names`: a quoted
+    name is code)."""
+    found, index = [], 0
+    while index < len(source):
+        character = source[index]
+        if source.startswith("/*", index):
+            end = block_end(source, index, "/*", "*/")
+            found.append(("comment", index, end))
+        elif source.startswith("//", index) and (text_blocks or names):
+            end = line_end(source, index)
+            found.append(("comment", index, end))
+        elif text_blocks and source.startswith('"""', index):
+            end = quoted_end(source, index, '"""')
+            found.append(("string", index + 3, end - 3))
+        elif character in "'\"":
+            end = quoted_end(source, index, character, multiline=names)
+            if not (names and character == "'"):
+                found.append(("string", index + 1, end - 1))
+        elif word := SOURCE_WORD.match(source, index):
+            end = word.end()
+        else:
+            end = index + 1
+        index = end
+    return found
+
+
+def html_segments(source: str) -> list[tuple[str, int, int]]:
+    """The `<!-- -->` comments of HTML, outside script and style elements."""
+    found, index = [], 0
+    while index < len(source):
+        if source.startswith("<!--", index):
+            close = source.find("-->", index + 4)
+            if close < 0:
+                raise SourceUnreadable("a <!-- without its -->", index)
+            found.append(("comment", index, close + 3))
+            index = close + 3
+        elif raw := re.compile(r"<(script|style)\b", re.I).match(source, index):
+            close = re.compile(rf"</{raw[1]}\s*>", re.I).search(source, raw.end())
+            if not close:
+                raise SourceUnreadable(f"a <{raw[1]}> without its end tag", index)
+            index = close.end()
+        else:
+            index += 1
+    return found
+
+
+def python_segments(source: str) -> tuple[list[tuple[str, int, int]], list[tuple[str, int]]]:
+    """The comments, docstrings (comments) and string contents of Python, and (name, offset) of
+    every function whose name starts with `test`."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError) as error:
+        raise SourceUnreadable(f"Python that does not parse ({error.__class__.__name__})", 0) from None
+    lines = io.StringIO(source).readlines()
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+
+    def offset(line: int, column: int, byte: bool = False) -> int:
+        if byte:
+            column = len(lines[line - 1].encode("utf-8")[:column].decode("utf-8", "replace"))
+        return starts[line - 1] + column
+
+    documents, names = set(), []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                documents.add(offset(first.lineno, first.col_offset, byte=True))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
+            name_line = lines[node.lineno - 1]
+            column = name_line.find(node.name)
+            names.append((node.name, starts[node.lineno - 1] + max(column, 0)))
+    found = []
+    middle = getattr(tokenize, "FSTRING_MIDDLE", None)
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            begin, end = offset(*token.start), offset(*token.end)
+            if token.type == tokenize.COMMENT:
+                found.append(("comment", begin, end))
+            elif token.type == tokenize.STRING:
+                if begin in documents:
+                    found.append(("comment", begin, end))
+                else:
+                    quote = re.match(r"[A-Za-z]*('''|\"\"\"|'|\")", token.string)
+                    found.append(("string", begin + quote.end(), end - len(quote[1])))
+            elif middle is not None and token.type == middle:
+                found.append(("string", begin, end))
+    except (tokenize.TokenError, SyntaxError) as error:
+        raise SourceUnreadable(f"Python that does not tokenize ({error})", 0) from None
+    return found, names
+
+
+POWERSHELL_DOUBLE, POWERSHELL_SINGLE = '"“”„', "'‘’‚‛"
+POWERSHELL_HERE = re.compile(r"@([\"“”„'‘’‚‛])[ \t]*\r?\n")
+
+
+def powershell_segments(source: str) -> list[tuple[str, int, int]]:
+    """The `#` and `<# #>` comments and the string contents of PowerShell. A `#` or `<#` right
+    after a word belongs to the word."""
+    found, index, open_ = [], 0, True
+    while index < len(source):
+        character = source[index]
+        if character.isspace():
+            index, open_ = index + 1, True
+            continue
+        if open_ and source.startswith("<#", index):
+            end = block_end(source, index, "<#", "#>")
+            found.append(("comment", index, end))
+        elif open_ and character == "#":
+            end = line_end(source, index)
+            found.append(("comment", index, end))
+        elif character == "`":
+            index, open_ = min(index + 2, len(source)), False
+            continue
+        elif here := POWERSHELL_HERE.match(source, index):
+            quotes = POWERSHELL_DOUBLE if here[1] in POWERSHELL_DOUBLE else POWERSHELL_SINGLE
+            close = re.compile(rf"\n[{quotes}]@").search(source, here.end() - 1)
+            if not close:
+                raise SourceUnreadable("a here-string without its end", index)
+            found.append(("string", here.end(), close.start()))
+            end = close.end()
+        elif character in POWERSHELL_SINGLE or character in POWERSHELL_DOUBLE:
+            end = powershell_string_end(source, index)
+            found.append(("string", index + 1, end - 1))
+        elif word := SOURCE_WORD.match(source, index):
+            index, open_ = word.end(), False
+            continue
+        else:
+            index, open_ = index + 1, character in ";(){}|,"
+            continue
+        index, open_ = end, True
+    return found
+
+
+def powershell_string_end(source: str, start: int) -> int:
+    quotes = POWERSHELL_SINGLE if source[start] in POWERSHELL_SINGLE else POWERSHELL_DOUBLE
+    index, depth = start + 1, 0
+    while index < len(source):
+        character = source[index]
+        if character == "`" and quotes is POWERSHELL_DOUBLE:
+            index += 2
+            continue
+        if quotes is POWERSHELL_DOUBLE and source.startswith("$(", index):
+            depth, index = depth + 1, index + 2
+            continue
+        if depth and character == ")":
+            depth -= 1
+        elif not depth and character in quotes:
+            if index + 1 < len(source) and source[index + 1] in quotes:
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    raise SourceUnreadable("a string without its end", start)
+
+
+def hash_segments(source: str, yaml: bool = False) -> list[tuple[str, int, int]]:
+    """The `#` comments of TOML, and of YAML outside its block scalars, outside strings."""
+    found, offset, block = [], 0, None
+    for line in source.splitlines(keepends=True):
+        body = line.rstrip("\r\n")
+        indent = len(body) - len(body.lstrip(" "))
+        if block is not None and (not body.strip() or indent > block):
+            offset += len(line)
+            continue
+        block, quote, index = None, None, 0
+        while index < len(body):
+            character = body[index]
+            if quote:
+                if character == "\\" and quote == '"':
+                    index += 1
+                elif character == quote:
+                    quote = None
+            elif character in "'\"" and (not yaml or index == 0 or body[index - 1] in " \t[{,"):
+                quote = character
+            elif character == "#" and (index == 0 or body[index - 1] in " \t" or not yaml):
+                found.append(("comment", offset + index, offset + len(body)))
+                body = body[:index]
+                break
+            index += 1
+        if yaml and re.search(r"(?:^|:|-)\s*[|>][-+0-9]*\s*$", body):
+            block = indent
+        offset += len(line)
+    return found
+
+
+MARKDOWN_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def markdown_segments(source: str) -> list[tuple[str, int, int]]:
+    """Markdown: fenced code blocks and code spans as `code`, the prose between as `comment`."""
+    found, offset, fence, prose = [], 0, None, []
+    for line in source.splitlines(keepends=True):
+        opening = MARKDOWN_FENCE.match(line)
+        if fence is None and opening:
+            fence = opening[1]
+            found.append(("code", offset, offset + len(line)))
+        elif fence is not None:
+            found.append(("code", offset, offset + len(line)))
+            if opening and opening[1][0] == fence[0] and len(opening[1]) >= len(fence) and not line[opening.end():].strip():
+                fence = None
+        else:
+            prose.append((offset, offset + len(line)))
+        offset += len(line)
+    for begin, end in merged(prose):
+        index = part = begin
+        while index < end:
+            if source[index] == "`":
+                run = re.compile(r"`+").match(source, index).group()
+                close = re.compile(r"(?<!`)" + run + r"(?!`)").search(source, index + len(run), end)
+                if close:
+                    found.append(("comment", part, index))
+                    found.append(("code", index, close.end()))
+                    index = part = close.end()
+                    continue
+                index += len(run)
+            elif source[index] == "\\":
+                index += 2
+            else:
+                index += 1
+        found.append(("comment", part, end))
+    return found
+
+
+def merged(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Adjacent spans joined into one."""
+    joined = []
+    for begin, end in spans:
+        if joined and joined[-1][1] == begin:
+            joined[-1] = (joined[-1][0], end)
+        else:
+            joined.append((begin, end))
+    return joined
+
+
+def source_segments(key: str, source: str) -> tuple[list[tuple[str, int, int]], list[tuple[str, int]]]:
+    """The segments of a file by its kind, and its test function names."""
+    suffix = Path(key).suffix
+    if suffix == ".rs":
+        found = rust_segments(source)
+        return found, rust_test_names(source, found)
+    if suffix in (".js", ".cjs", ".mjs"):
+        return javascript_segments(source)[0], []
+    if suffix == ".py":
+        return python_segments(source)
+    if suffix == ".ps1":
+        return powershell_segments(source), []
+    if suffix == ".css":
+        return c_like_segments(source), []
+    if suffix == ".java":
+        return c_like_segments(source, text_blocks=True), []
+    if suffix == ".sysml":
+        return c_like_segments(source, names=True), []
+    if suffix == ".html":
+        return html_segments(source), []
+    if suffix in (".toml", ".yml"):
+        return hash_segments(source, yaml=suffix == ".yml"), []
+    return markdown_segments(source), []
+
+
+def harness_paths(root: Path) -> tuple[str, ...]:
+    """The `harness_paths:` list of the project's harness configuration."""
+    path, listed, inside = root / HARNESS_CONFIG, [], False
+    if not path.is_file():
+        return ()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if re.match(r"harness_paths:\s*$", line):
+            inside = True
+        elif inside and (item := re.match(r"\s+-\s+(\S+)\s*$", line)):
+            listed.append(item[1])
+        elif inside and line.strip() and not line.lstrip().startswith("#"):
+            inside = False
+    return tuple(listed)
+
+
+def history_files(root: Path) -> list[str]:
+    """The tracked files TR-22 reads, by repository path, sorted."""
+    tracked = repository_git(root, "-c", "core.quotepath=off", "ls-files", "-z").split("\0")
+    harness = harness_paths(root)
+    read = []
+    for key in tracked:
+        if not key.endswith(HISTORY_SUFFIXES) or not (root / key).is_file():
+            continue
+        if key.startswith(HISTORY_ROOTS) and not key.startswith(HISTORY_OUTSIDE) or key in HISTORY_FILES:
+            read.append(key)
+        elif key.startswith(WORKFLOWS) and not any(key == path or key.startswith(path.rstrip("/") + "/")
+                                                   for path in harness):
+            read.append(key)
+    return sorted(read)
+
+
+def strings_read(key: str) -> bool:
+    """Are the string literals of `key` test or tool code?"""
+    return key.endswith(STRING_SUFFIXES) and (key.startswith(STRING_PLACES) or TEST_MODULE.fullmatch(key) is not None)
+
+
+def unread_urls(text: str, markdown: bool) -> str:
+    """`text` with the text of every URL, and in Markdown of every link target, blanked."""
+    text = URL_TEXT.sub(lambda match: " " * len(match.group()), text)
+    if markdown:
+        text = MARKDOWN_TARGET.sub(lambda match: match.group()[:match.start(1) - match.start()]
+                                   + " " * len(match[1]), text)
+    return text
+
+
+def pointers(text: str) -> list[tuple[int, int]]:
+    """The spans of the issue pointers of `text`; of two that overlap, the longer."""
+    spans = {match.span() for form in POINTER_FORMS for match in form.finditer(text)}
+    kept = []
+    for begin, end in sorted(spans, key=lambda span: (span[0] - span[1], span[0])):
+        if not any(begin < other_end and other_begin < end for other_begin, other_end in kept):
+            kept.append((begin, end))
+    return sorted(kept)
+
+
+def file_findings(key: str, source: str) -> list[tuple[int, int, str]]:
+    """(start, end, message) of every history TR-22 finds in one file."""
+    found, names = source_segments(key, source)
+    markdown, strings, findings = key.endswith(".md"), strings_read(key), []
+    for kind, begin, end in found:
+        if kind == "string" and not strings:
+            continue
+        text = unread_urls(source[begin:end], markdown)
+        for start, stop in pointers(text):
+            what = {"comment": "history in a comment: issue pointer ", "string": "issue pointer in a string: ",
+                    "code": "issue pointer in Markdown code: "}[kind]
+            findings.append((begin + start, begin + stop, what + text[start:stop]))
+        if kind == "comment":
+            for form, what in ((DATE_FORM, "date "), (STORY_FORM, "change story ")):
+                for match in form.finditer(text):
+                    findings.append((begin + match.start(), begin + match.end(),
+                                     "history in a comment: " + what + match.group()))
+    for name, offset in names:
+        if TEST_NAME_POINTER.search(name):
+            findings.append((offset, offset + len(name), "issue pointer in a test name: " + name))
+    return findings
+
+
+def comment_exceptions(root: Path) -> tuple[list[tuple[int, str, str]], list[tuple]]:
+    """(line, path, text) of each entry of the exception list, and its faults."""
+    path, faults, entries = root / COMMENT_EXCEPTIONS, [], []
+    if not path.is_file():
+        return entries, faults
+    text = path.read_text(encoding="utf-8")
+    try:
+        listed = json.loads(text)
+    except json.JSONDecodeError:
+        listed = None
+    if not isinstance(listed, list):
+        return entries, [("TR-22", COMMENT_EXCEPTIONS, 1, "comment exception malformed: not a JSON array")]
+    decoder, space = json.JSONDecoder(), re.compile(r"[\s,]*")
+    index = space.match(text, text.index("[") + 1).end()
+    for _ in listed:
+        line = text.count("\n", 0, index) + 1
+        entry, index = decoder.raw_decode(text, index)
+        index = space.match(text, index).end()
+        reason = None
+        if not isinstance(entry, dict):
+            reason = "an entry that is no object"
+        elif not isinstance(entry.get("path"), str) or not entry["path"]:
+            reason = "no path"
+        elif not isinstance(entry.get("text"), str) or not entry["text"]:
+            reason = "no text"
+        elif entry.get("kind") not in EXCEPTION_KINDS:
+            reason = f"kind {entry.get('kind')} is not one of {', '.join(EXCEPTION_KINDS)}"
+        elif set(entry) != {"path", "text", "kind"}:
+            reason = "a field other than path, text and kind"
+        if reason:
+            faults.append(("TR-22", COMMENT_EXCEPTIONS, line, "comment exception malformed: " + reason))
+        else:
+            entries.append((line, entry["path"], entry["text"]))
+    return entries, faults
+
+
+def history_faults(root: Path) -> tuple[list[tuple], int, int]:
+    """TR-22: (faults, files read, comment exceptions used). Comments, docstrings and Markdown
+    prose hold no issue pointer, date or change story; test and tool strings, Markdown code
+    and test function names hold no issue pointer; an exception holds its own text in its own
+    file."""
+    entries, faults = comment_exceptions(root)
+    used, keys = set(), history_files(root)
+    for key in keys:
+        try:
+            source = (root / key).read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            faults.append(("TR-22", key, None, "source not UTF-8"))
+            continue
+        source = source[1:] if source.startswith("﻿") else source
+        try:
+            findings = file_findings(key, source)
+        except SourceUnreadable as error:
+            faults.append(("TR-22", key, source.count("\n", 0, error.offset) + 1, f"source not readable: {error.reason}"))
+            continue
+        exempt = [(entry, match.start(), match.end()) for entry in entries if entry[1] == key
+                  for match in re.finditer(re.escape(entry[2]), source)]
+        for start, end, what in findings:
+            covering = [entry for entry, begin, stop in exempt if begin <= start and end <= stop]
+            if covering:
+                used.update(covering)
+            else:
+                faults.append(("TR-22", key, source.count("\n", 0, start) + 1, what))
+    for entry in entries:
+        if entry not in used:
+            faults.append(("TR-22", COMMENT_EXCEPTIONS, entry[0], f"comment exception unused: {entry[1]} {entry[2]}"))
+    return faults, len(keys), len(used)
+
+
 def model_keys(directory: Path) -> tuple[list[str], list[Path]]:
     """The model file keys and paths in the order the Pilot reads them: Requirements first."""
     files = model_files(directory)
@@ -3378,8 +4036,10 @@ def main(argv=None):
         if args.command == "traces":
             entries = checked_entries()
             _links, faults = trace_faults(entries, Model(MODELS), ROOT)
-            refuse(fault_lines(faults))
-            print(f"Canonical source/model trace checks passed: {len(entries)} identities; no semantic validation or behavior execution.")
+            history, read, used = history_faults(ROOT)
+            refuse(fault_lines(faults + history))
+            print(f"Canonical source/model trace checks passed: {len(entries)} identities; {read} files read for history, "
+                  f"{used} comment exceptions used; no semantic validation or behavior execution.")
             return 0
         if args.command == "markers":
             authority(MODELS, FSD)
@@ -3414,6 +4074,7 @@ def main(argv=None):
         entries = checked_entries()
         model = Model(MODELS)
         _links, faults = trace_faults(entries, model, ROOT)
+        faults += history_faults(ROOT)[0]
         used, present = identity_history(ROOT)
         keys, paths = model_keys(MODELS)
         result = validate(paths, args.cache_dir, inventory=True)
