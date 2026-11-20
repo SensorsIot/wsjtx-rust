@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -42,6 +43,12 @@ def run(root: Path, *argv: str, temporary=None) -> tuple[int, list[str], str]:
                             capture_output=True, env=environment(temporary), timeout=1200)
     return (result.returncode, result.stdout.decode("utf-8", "replace").splitlines(),
             result.stderr.decode("utf-8", "replace").replace("\r\n", "\n"))
+
+
+def timeless(result: tuple[int, list[str], str]) -> tuple[int, list[str], str]:
+    """`result` with the measured seconds of the validator's duration line left out (TR-02)."""
+    code, lines, errors = result
+    return code, lines, re.sub(r"(?m)^validator: \d+\.\d s ", "validator: <s> s ", errors)
 
 
 class RevisionCheckTests(unittest.TestCase):
@@ -174,7 +181,7 @@ class RevisionCheckTests(unittest.TestCase):
         status, the stash list and the temporary folder are unchanged."""
         self.assertNotEqual(self.changed, self.status)
         self.passed(self.results["clean"])
-        self.assertEqual(self.results["changed clean"], self.results["clean"])
+        self.assertEqual(timeless(self.results["changed clean"]), timeless(self.results["clean"]))
         self.assertEqual(self.after, (self.changed, self.stashes, []))
         self.assertEqual(self.git("status", "--porcelain"), self.status)
 
