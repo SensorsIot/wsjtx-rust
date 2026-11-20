@@ -528,8 +528,4 @@ impl Station {
             .meter_sink
             .clone()
     }
-    /// The call hash table the transmit owner feeds, if attached.
-    pub(crate) fn hash_table(&self) -> Option<Arc<Mutex<wstx_rust::decoder::HashTable>>> {
-        self.service.with(|c| c.hash_table().cloned())
-    }
 }
