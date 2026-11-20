@@ -95,7 +95,8 @@ test('authenticated reconnect accepts only current connected operating snapshots
   await t.test('replacement waits for its own genuine snapshot before clearing stale',async()=>{
     await p.waitForFunction(()=>connection.dataset.state==='connected'&&operatingState&&!operatingReadPending);
     const old=hold(),current=hold();await p.evaluate(()=>{window.__operatingWitness={state:operatingState,socket};void operatingSync(true);});await old.entered.promise;
-    await p.evaluate(()=>new Promise(resolve=>{addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
+    // The witnessed state is the one accepted when the socket closes, taken in the closing task: the socket's own selection.state may still arrive after the read started.
+    await p.evaluate(()=>new Promise(resolve=>{window.__operatingWitness.state=operatingState;addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
     await p.waitForFunction(()=>socket!==window.__operatingWitness.socket&&connection.dataset.state==='connected');
     old.release.resolve();await old.delivered.promise;await current.entered.promise;
     // kept, own and status are read in one task of the page, so no event falls between them.
