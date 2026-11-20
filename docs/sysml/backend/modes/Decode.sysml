@@ -357,7 +357,7 @@ package WstxDecode {
         @TestedBy {
             test = "server/tests/decoder_signal.rs::"
                 + "busy_period_decode_is_identical_and_faster_on_more_threads; "
-                + "server/src/modes/decoder/parallel.rs";
+                + "server/src/modes/decoder/parallel_test.rs";
         }
     }
 }

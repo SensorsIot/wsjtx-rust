@@ -178,7 +178,7 @@ package WstxCatControl {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-09'; }
         @TestedBy {
-            test = "server/tests/radio_control.rs; server/src/radio_control/executor.rs";
+            test = "server/tests/radio_control.rs; server/src/radio_control/executor_tests.rs";
         }
     }
 

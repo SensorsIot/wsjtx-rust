@@ -44,7 +44,7 @@ package WstxMostWanted {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-10'; }
         @TestedBy {
-            test = "server/src/most_wanted.rs::"
+            test = "server/src/most_wanted_tests.rs::"
                 + "tc_039_031_every_bundled_entity_has_its_adif_number";
         }
     }

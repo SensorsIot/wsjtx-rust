@@ -125,7 +125,7 @@ package WstxRadioSetup {
         @TestedBy {
             test = "server/src/radio_control/setup_tests.rs; "
                 + "server/src/radio_setup_tests.rs; "
-                + "server/src/radioControl/windows.rs::"
+                + "server/src/radioControl/windows_tests.rs::"
                 + "opened_ports_hold_dtr_and_rts_disabled";
         }
     }

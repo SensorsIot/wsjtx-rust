@@ -295,7 +295,7 @@ fn payload_layout_witnesses() -> Vec<(String, &'static str, Decode)> {
             Some(expected.as_str()),
             "{label}"
         );
-        let paths = crate::decoder::history::record_string_paths(&record);
+        let paths = crate::decoder::history::tests::record_string_paths(&record);
         assert_eq!(paths.len(), owners, "{label}");
         assert!(
             paths
@@ -519,6 +519,37 @@ fn resource_capacity_owned_child() {
         assert!(line.len() <= 256);
         assert_eq!(line.trim_end(), format!("{reply} {nonce}"));
     };
+    // The spectrum storage of one decode call, sized as Spectrum::new sizes it for the
+    // samples that call decodes: FT8 is padded when the padded window fits.
+    let spectrum_record = |mode: Mode, frames: usize, scalar: bool| {
+        let samples = if mode == Mode::Ft8 && frames + PAD_BEFORE + PAD_AFTER <= 360000 {
+            frames + PAD_BEFORE + PAD_AFTER
+        } else {
+            frames
+        };
+        let n = mode.symbol_frames();
+        let rows = (samples - n) / (n / 4) + 1;
+        let regular = ((DECODE_BAND_HIGH_HZ - DECODE_BAND_LOW_HZ) / (mode.spacing() / 2.)).floor()
+            as usize
+            + 1;
+        let width = regular + 15 + mode.tone_count();
+        let scratch = if scalar {
+            rustfft::FftPlannerScalar::<f32>::new()
+                .plan_fft_forward(n)
+                .get_inplace_scratch_len()
+        } else {
+            rustfft::FftPlanner::<f32>::new()
+                .plan_fft_forward(n)
+                .get_inplace_scratch_len()
+        };
+        eprintln!(
+            "RESOURCE_STORAGE {}",
+            serde_json::json!({"owner":"spectrum","mode":mode,"frames":frames,"scalar":scalar,
+            "rows":rows,"width":width,"values_complex32_capacity":rows * width,
+            "buffer_complex32_capacity":n,"scratch_complex32_capacity":scratch,
+            "direct_private_field_observation":false})
+        );
+    };
     handshake("READY", "START");
     {
         // Mode-independent unpack allocation witnesses are measured once, then dropped.
@@ -533,14 +564,14 @@ fn resource_capacity_owned_child() {
         assert_eq!(
             layouts
                 .iter()
-                .map(|(_, _, r)| history::record_string_paths(r).len())
+                .map(|(_, _, r)| history::tests::record_string_paths(r).len())
                 .max(),
             Some(6)
         );
         assert_eq!(
             layouts
                 .iter()
-                .map(|(_, _, r)| history::record_string_paths(r)
+                .map(|(_, _, r)| history::tests::record_string_paths(r)
                     .iter()
                     .map(|(_, s)| s.len())
                     .sum::<usize>())
@@ -552,11 +583,11 @@ fn resource_capacity_owned_child() {
             let rows = chunk
                 .iter()
                 .map(|(label, variant, record)| {
-                    let bytes = history::retained_record_bytes(record);
+                    let bytes = history::tests::retained_record_bytes(record);
                     if largest.as_ref().is_none_or(|(_, max)| bytes > *max) {
                         largest = Some((label.clone(), bytes));
                     }
-                    history::string_layout_ledger(label, variant, record)
+                    history::tests::string_layout_ledger(label, variant, record)
                 })
                 .collect::<Vec<_>>();
             let event = serde_json::json!({"owner":"receive_payload_string_paths","witnesses":rows,
@@ -574,11 +605,11 @@ fn resource_capacity_owned_child() {
         );
         drop(layouts);
     }
-    let table_reserve = history::UnpackTableReserve::new();
+    let table_reserve = history::tests::UnpackTableReserve::new();
     let mut additional_tiers = vec![];
     for mode in [Mode::Ft8, Mode::Ft4] {
         let peak_reserve = if mode == Mode::Ft8 {
-            Some(crate::decoder::synchronization::PeakCapacityReserve::new())
+            Some(crate::decoder::synchronization::tests::PeakCapacityReserve::new())
         } else {
             None
         };
@@ -587,7 +618,7 @@ fn resource_capacity_owned_child() {
         } else {
             None
         };
-        let (mut retained_state, records, history_ledger) = history::capacity_state(mode);
+        let (mut retained_state, records, history_ledger) = history::tests::capacity_state(mode);
         eprintln!("RESOURCE_CAPACITY {}", history_ledger);
         // Retain actual nested variant witnesses, never arbitrary padded buffers.
         let manifest: serde_json::Value = serde_json::from_str(include_str!(
@@ -620,7 +651,7 @@ fn resource_capacity_owned_child() {
             "RESOURCE_CAPACITY {}",
             serde_json::json!({"owner":"variant_witnesses",
             "records":witnesses.len(),"inline_reserved_bytes":witnesses.capacity()*std::mem::size_of::<Decode>(),
-            "nested_reserved_bytes":witnesses.iter().map(history::retained_record_bytes).sum::<usize>(),
+            "nested_reserved_bytes":witnesses.iter().map(history::tests::retained_record_bytes).sum::<usize>(),
             "is_decoded_success":false,"all_legal_graph_maxima_proved":false})
         );
         let candidates = (0..256)
@@ -680,6 +711,7 @@ fn resource_capacity_owned_child() {
             let observed = observer::install(cancel.clone(), None);
             let mut state = DecodeState::new_live(mode);
             let mut callbacks = 0;
+            spectrum_record(mode, samples.len(), scalar);
             complete(decoder.decode_window_into_async(
                 samples.clone(),
                 0,
@@ -725,6 +757,7 @@ fn resource_capacity_owned_child() {
             drop(wave);
             let cancelled = observer::install(cancel.clone(), Some(observer::Phase::DetectionRow));
             let mut unexpected = 0;
+            spectrum_record(mode, samples.len(), scalar);
             assert_eq!(
                 complete(decoder.decode_window_into_async(
                     samples.clone(),
@@ -796,6 +829,7 @@ fn resource_capacity_owned_child() {
                 let observed = observer::install(Arc::new(AtomicBool::new(false)), None);
                 let mut fresh = DecodeState::new_live(mode);
                 let mut callbacks = 0;
+                spectrum_record(mode, frames, scalar);
                 complete(decoder.decode_window_into_async(
                     input,
                     0,
@@ -1710,4 +1744,115 @@ fn ft4_a_priori_recovers_weak_cq_and_qso_words() {
         6,
         |_| true,
     );
+}
+
+/// The unpruned three-stage search: every grid point at full rate (test oracle).
+async fn refine_exhaustive(
+    samples: &[f32],
+    mode: Mode,
+    tones: &[u8],
+    c: Candidate,
+    cancel: &impl Fn() -> bool,
+    budget: &mut CpuBudget<'_>,
+) -> Result<Candidate, DecodeError> {
+    let wave = quadratures(mode, tones, 0.).unwrap();
+    let n = mode.symbol_frames();
+    let ranges = [(n / 2, wave.len() - n / 2)];
+    let step = 6000. / wave.len() as f64;
+    let count = mode.symbol_count() as i32;
+    let lower = (c.frequency - mode.spacing() / 2.).max(DECODE_BAND_LOW_HZ);
+    let upper = (c.frequency + mode.spacing() / 2.).min(DECODE_BAND_HIGH_HZ);
+    let mut frequencies = (-count..=count)
+        .map(|df| c.frequency + df as f64 * step)
+        .filter(|&f| f >= lower && f <= upper)
+        .chain([lower, upper])
+        .collect::<Vec<_>>();
+    frequencies.sort_by(f64::total_cmp);
+    frequencies.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+    let mut best = Candidate { score: -1., ..c };
+    for dt in -4isize..=4 {
+        let start = c.start as isize + dt * (n / 16) as isize;
+        if start < 0 || start as usize + wave.len() > samples.len() {
+            continue;
+        }
+        for &frequency in &frequencies {
+            budget.checkpoint().await?;
+            if cancel() {
+                return Err(DecodeError::Cancelled);
+            }
+            if !(DECODE_BAND_LOW_HZ - 1e-7..=DECODE_BAND_HIGH_HZ + 1e-7).contains(&frequency) {
+                continue;
+            }
+            let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);
+            if score > best.score
+                || score == best.score
+                    && (frequency < best.frequency
+                        || frequency == best.frequency && (start as usize) < best.start)
+            {
+                best = Candidate {
+                    start: start as usize,
+                    frequency,
+                    score,
+                };
+            }
+        }
+    }
+    let coarse = best;
+    for dt in -(n as isize / 16)..=n as isize / 16 {
+        if dt % (n as isize / 128).max(1) != 0 {
+            continue;
+        }
+        let start = coarse.start as isize + dt;
+        if start < 0 || start as usize + wave.len() > samples.len() {
+            continue;
+        }
+        for df in -4..=4 {
+            budget.checkpoint().await?;
+            if cancel() {
+                return Err(DecodeError::Cancelled);
+            }
+            let frequency = coarse.frequency + df as f64 * step / 8.;
+            if !(DECODE_BAND_LOW_HZ - 1e-7..=DECODE_BAND_HIGH_HZ + 1e-7).contains(&frequency) {
+                continue;
+            }
+            let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);
+            if score > best.score
+                || score == best.score
+                    && (frequency < best.frequency
+                        || frequency == best.frequency && (start as usize) < best.start)
+            {
+                best = Candidate {
+                    start: start as usize,
+                    frequency,
+                    score,
+                };
+            }
+        }
+    }
+    let fine = best;
+    let radius = (n as isize / 128).max(1);
+    for dt in -radius..=radius {
+        let start = fine.start as isize + dt;
+        if start < 0 || start as usize + wave.len() > samples.len() {
+            continue;
+        }
+        budget.checkpoint().await?;
+        if cancel() {
+            return Err(DecodeError::Cancelled);
+        }
+        let frequency = fine.frequency;
+        let score = coherent(samples, start as usize, &wave, &ranges, frequency, 1);
+        if score > best.score
+            || score == best.score
+                && (frequency < best.frequency
+                    || frequency == best.frequency && (start as usize) < best.start)
+        {
+            best = Candidate {
+                start: start as usize,
+                frequency: fine.frequency,
+                score,
+            };
+        }
+    }
+    Ok(best)
 }

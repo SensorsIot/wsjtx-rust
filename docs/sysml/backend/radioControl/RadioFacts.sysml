@@ -51,7 +51,7 @@ package WstxRadioFacts {
         @TestedBy {
             test = "server/tests/radio_control.rs::"
             + "query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_targets; "
-                + "server/src/radio_control/executor.rs::"
+                + "server/src/radio_control/executor_tests.rs::"
                 + "closing_publication_survives_late_attach_and_query; "
                 + "server/src/radioControl/cat_lifecycle_tests.rs::"
             + "station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_only; "
