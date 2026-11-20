@@ -1,13 +1,14 @@
 ---
 name: Change request (CR)
 about: A change to what users or the running system get
-labels: cr
 ---
 
 <!-- Apply CR-Process.md, Intake and authorization, before creating an issue.
      It may start with the problem only; the rest is completed before Check.
-     Class (CR-Process.md, Classes of change): a product CR has no class label; a
-     restructuring or tool change is proposed at Record and confirmed by the operator.
+     Class (CR-Process.md, Classes of change): a product CR has no class label; any other
+     class is recognised by `cr_state.py class` at Record and confirmed at the end of Define,
+     from the `Scope:` line the definer writes, the Blast line and, for a refactor, a line
+     `Behaviour: unchanged`.
      The body follows the issue body rule (core/agents/roles.md, Role: definer). -->
 
 **Duplicate check**
@@ -32,7 +33,7 @@ labels: cr
 **Sequence**
 <what must land first, and the related issues; filled by Check>
 
-**Acceptance** (product CR only; checked live after the deploy; each item names what is observed and how; at least one observes the value)
+**Acceptance** (a class whose Accept is full: a product CR, a minor change; checked live after the deploy; each item names what is observed and how; at least one observes the value)
 - [ ] 1. <observation, and how it is made>
 
 **Decisions:** <link to the decision comments>
@@ -40,7 +41,7 @@ labels: cr
 **Approval**
 <the operator's OK, or the standing approval it falls under>
 
-**Blast:** <high | medium | low>, because <what the change touches>
+Blast: <high | medium | low> — <what the change touches>
 
 <details><summary>Technical details</summary>
 

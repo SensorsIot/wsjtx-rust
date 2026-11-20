@@ -14,5 +14,5 @@ Filesystem path relative to this entrypoint: `../../../harness/general/core/skil
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=2fbb6b7b5303478a27f94a23bf3e8999a21a405b4d74f6aa2c072571bea64dac -->
-<!-- harness-forwarder-v1 sha256=d98119db524e49fb4bb01b7f88d3b73a1be097e53e8117ee2f0d99eb6dd601d9 -->
+<!-- canonical-source-sha256=0627ad163d94e8f406b561ac4860b217f978e9025447eb3a7a2cc3391b68e19b -->
+<!-- harness-forwarder-v1 sha256=dc227d8f3f88daa498224001afd47b5da82c5e491f2036f549da41c5691697a5 -->

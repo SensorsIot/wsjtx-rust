@@ -12,9 +12,9 @@ direction.
 Where these rules differ from the general [SysML authoring skill](../../general/core/skills/sysml-authoring/SKILL.md)
 and the [SysML standard](../../general/core/docs/standards/sysml-v2.md), these rules win: the
 skill lets the project harness fix a form. The differences are named in the rules: an FR
-names no subject (M6.1); nothing satisfies a clause (M6.2); a test case is a skeleton and a
-title, and a clause may have none (M6.5); a code link stands on the part (M6.6); a tag names
-test cases only (M6.7); there is no `dependency` (M7.1); no retired identity is listed (M6.12).
+names no subject (M6.1); nothing satisfies a clause (M6.2); a test case is written only when
+its test exists, and a clause may have none (M6.5); a code link stands on the part (M6.6);
+there is no `dependency` (M7.1).
 
 ## M0. What the model is for
 

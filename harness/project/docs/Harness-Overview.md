@@ -21,7 +21,7 @@ contract; the references below are the constraints a change must respect.
 | Writing functional SysML models | [SysML v2 authoring](../../general/core/docs/standards/sysml-v2.md) |
 | How an agent session works with the operator | [Agent working rules](Agent-Working-Rules.md) |
 | Prohibitions (index) | [Do-Not-Do](Do-Not-Do.md) |
-| Escapes | [Escapes ledger](Escapes-Ledger.md) |
+| Escapes | the escape log, `../../general/core/tools/escapes.py list` ([self-measurement](../../general/core/docs/standards/testing.md#self-measurement)) |
 | Project memory and the HB9BLA handover | [MEMORY](MEMORY.md) |
 | Backlog | [GitHub issues](https://github.com/SensorsIot/wsjtx-rust/issues); rules in [Backlog](#backlog) |
 
@@ -43,7 +43,7 @@ Everything under `harness/` is the harness (HOW); everything else is product.
     (`tests/`);
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
-    [Escapes ledger](Escapes-Ledger.md), [Finished model](Finished-Model.md), this overview,
+    [Finished model](Finished-Model.md), this overview,
     [MEMORY](MEMORY.md) and [Project specifics](Project-Specifics.md).
 
 The machine's notifier secrets are outside the repository, in `~/.harness/wsjtx-rust/secrets.md`.
@@ -152,11 +152,14 @@ Open work and review/execution evidence live in GitHub issues; history is `git l
 
 GitHub issues of `SensorsIot/wsjtx-rust` are the project's one to-do list.
 
-- **Labels say how:** `cr`, `efficiency` or `operator-task`; `waiting`
-  is added to any of them. Harness issues are not here: they live in
+- **Labels of a product issue:** one `cr:<state>` ([lifecycle states](../../general/core/docs/CR-Process.md#lifecycle-states)),
+  at most one class label ([classes of change](../../general/core/docs/CR-Process.md#classes-of-change)),
+  and an owner label only where several machines work. Nothing else: the class is the route,
+  the blast is a line of the body, and there are no issue types and no priority labels.
+  Harness issues are not here: they live in
   [SensorsIot/harness](https://github.com/SensorsIot/harness/issues).
-- **Types say what:** `Bug`, `Feature`, `Task`.
-- **Ageing:** an open issue is overdue 30 days after it was created; a `waiting` issue
-  never ages and names what it waits for.
-- **Priority:** harness issues first ([intake](../../general/core/docs/CR-Process.md#intake-and-authorization)), then prerequisites, then `Bug`, then `Task`, then `Feature`; within
-  a type, the oldest first.
+- **Order:** the [pull order](../../general/core/docs/CR-Process.md#pull-order): the `After:` predecessors
+  first, then `alex.first`, then an issue a later step put back, then the longest wait.
+- **Ageing:** an open issue is overdue 30 days after it was created; the only ways out are
+  to start it or to close it as not planned. An issue whose `After:` predecessors have not
+  landed never ages.

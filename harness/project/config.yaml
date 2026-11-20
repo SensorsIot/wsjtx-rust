@@ -146,6 +146,8 @@ classes:
   # A text change (comments, tags, bindings) is proven by text_proof.py; a changed file under
   # these paths keeps a short Review.
   text: {label: text, paths: [docs/sysml/]}
+  # A test change touches only test files (the packs' patterns) and the test tools.
+  test: {label: test, paths: [tools/test/]}
 
 # The meter (report_cr.py --meter, harness core/docs/CR-Reporting.md "The meter").
 # List prices, USD per million tokens (Anthropic first-party rates, 2026-11);
@@ -173,7 +175,6 @@ alex:
   # The operator's work order; with only_first, Alex takes no other issue.
   first: []
   only_first: true
-  priority_labels: [P1, P2, P3]
   skip_labels: []
   restrictions:
     - until_accepted: 239

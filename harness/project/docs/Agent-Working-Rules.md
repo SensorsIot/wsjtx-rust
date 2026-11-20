@@ -88,7 +88,7 @@ rules around it. Agent memory only points here.
 ## Agent role additions
 
 This project's layer of the [agent roles](../../general/core/agents/roles.md), the coordinator
-included, installed with `python harness/general/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer --agent issue-coordinator`.
+included, installed with `python harness/general/core/tools/install_skills.py --project . --host claude --skill harness --skill documentation --skill domain-modeling --skill coordinator --skill grill-me --skill sysml-authoring --skill test-design --skill conformance-review --skill improvement --skill fsd-from-model --skill restructuring --skill test-audit --skill architecture-review --agent definer --agent checker --agent coder --agent reviewer --agent harness-improver --agent tester --agent prober --agent explainer --agent issue-coordinator`.
 
 ### Role: definer
 

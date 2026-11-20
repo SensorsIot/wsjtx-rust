@@ -15,8 +15,8 @@ Filesystem path relative to this entrypoint: `../../../harness/general/core/skil
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=499b4f47d898bd4b89c481e544fcd5b9c35ae0698075eebff41c51a23dd44b9d -->
-<!-- source harness/project/docs/Finished-Model.md sha256=ff1310cf3fc18e930e1a68155b984d856dd3267d49a14992c08fc8eb509c06b4 -->
+<!-- canonical-source-sha256=0cc5f508f8842ab916801151d4975f800b1aba4a03c158307f6302d0414629b0 -->
+<!-- source harness/project/docs/Finished-Model.md sha256=e75191b61a3c478903bac2e471994199991cf5078994d694cd1f477bc7cadcd5 -->
 
 ## This project
 
@@ -34,9 +34,9 @@ direction.
 Where these rules differ from the general [SysML authoring skill](../../../harness/general/core/skills/sysml-authoring/SKILL.md)
 and the [SysML standard](../../../harness/general/core/docs/standards/sysml-v2.md), these rules win: the
 skill lets the project harness fix a form. The differences are named in the rules: an FR
-names no subject (M6.1); nothing satisfies a clause (M6.2); a test case is a skeleton and a
-title, and a clause may have none (M6.5); a code link stands on the part (M6.6); a tag names
-test cases only (M6.7); there is no `dependency` (M7.1); no retired identity is listed (M6.12).
+names no subject (M6.1); nothing satisfies a clause (M6.2); a test case is written only when
+its test exists, and a clause may have none (M6.5); a code link stands on the part (M6.6);
+there is no `dependency` (M7.1).
 
 ## M0. What the model is for
 
@@ -303,4 +303,4 @@ How a statement gets into the model. These rules apply wherever the model is wri
 - **A9 Names.** A name that no longer says what the thing is, is renamed, and what cites it
   is changed in the same change.
 
-<!-- harness-forwarder-v1 sha256=7305f6e12ccf263e58705d1b5400e23b57eeec21fb3cc881c449b308f3e57a93 -->
+<!-- harness-forwarder-v1 sha256=6529fb14eceb76936e28008ad4a91a5bd1cbcf8709029c23cb80080d29cf1d8e -->

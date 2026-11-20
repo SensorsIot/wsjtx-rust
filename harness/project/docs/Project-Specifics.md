@@ -451,7 +451,7 @@ under it needs no OK per install.
    accidents and shortcuts, not against a deliberate swap by a session running under my
    account."
 
-   The rules of the table under [rules not met yet](#rules-not-met-yet) stay not met.
+   The rules of the table under [rules not met](#rules-not-met) stay not met.
 
 ### Deploy pins
 
@@ -626,10 +626,13 @@ and reach the stop; a call naming the removed OK parameter stops at binding befo
 step. No case prints a `Deploy OK` line or reads a comment. `-Rollback` with differing pins
 or with the radio closed reaches the stop without asking, and `-DryRun` does not read the radio.
 
-### Rules not met yet
+### Rules not met
 
-The [standing deploy policy](#standing-deploy-policy) authorizes this mechanism in place of an
-OK per install. These rules of the harness's deployment authority stay not met:
+These rules of the harness's deployment authority stay not met, by the operator's decision:
+the deploy authority stays off, and the gate, the package checks, the
+idle check, the probe, the automatic return and the pinned, versioned deploy scripts take its
+place. The [standing deploy policy](#standing-deploy-policy) authorizes this mechanism in place
+of an OK per install:
 
 | Rule | State |
 |---|---|

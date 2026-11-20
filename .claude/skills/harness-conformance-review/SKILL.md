@@ -12,8 +12,8 @@ Filesystem path relative to this entrypoint: `../../../harness/general/core/skil
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=39b9d78ab668404c339a58e9c868a428abbdded675af5a8f7d6031452be9683f -->
-<!-- source harness/project/docs/Finished-Model.md sha256=ff1310cf3fc18e930e1a68155b984d856dd3267d49a14992c08fc8eb509c06b4 -->
+<!-- canonical-source-sha256=64071f592eb70da19c178b0c9832280e54564a3c5978d371008fa2a34c9ba34a -->
+<!-- source harness/project/docs/Finished-Model.md sha256=e75191b61a3c478903bac2e471994199991cf5078994d694cd1f477bc7cadcd5 -->
 
 ## This project
 
@@ -31,9 +31,9 @@ direction.
 Where these rules differ from the general [SysML authoring skill](../../../harness/general/core/skills/sysml-authoring/SKILL.md)
 and the [SysML standard](../../../harness/general/core/docs/standards/sysml-v2.md), these rules win: the
 skill lets the project harness fix a form. The differences are named in the rules: an FR
-names no subject (M6.1); nothing satisfies a clause (M6.2); a test case is a skeleton and a
-title, and a clause may have none (M6.5); a code link stands on the part (M6.6); a tag names
-test cases only (M6.7); there is no `dependency` (M7.1); no retired identity is listed (M6.12).
+names no subject (M6.1); nothing satisfies a clause (M6.2); a test case is written only when
+its test exists, and a clause may have none (M6.5); a code link stands on the part (M6.6);
+there is no `dependency` (M7.1).
 
 ## M0. What the model is for
 
@@ -300,4 +300,4 @@ How a statement gets into the model. These rules apply wherever the model is wri
 - **A9 Names.** A name that no longer says what the thing is, is renamed, and what cites it
   is changed in the same change.
 
-<!-- harness-forwarder-v1 sha256=dc34045175d90f97bd0764f4d43ec6fe407b24b5e65237b44688d4859835148d -->
+<!-- harness-forwarder-v1 sha256=4af624f01cd30acc24d75c54000b44e0fb3674eb5d328ac120d65efc6a007282 -->

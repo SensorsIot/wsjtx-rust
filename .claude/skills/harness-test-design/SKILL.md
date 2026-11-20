@@ -3,9 +3,9 @@ name: harness-test-design
 description: "Design the tests of a CR or a bug before implementing it \u2014 from\
   \ the issue's goal, acceptance items and blast to a test plan of promise, test,\
   \ cost level, cases, oracle and suite, written on the issue \u2014 then implement\
-  \ them, each contract test tagged with the promise it proves, proven red on the\
-  \ parent. Use at the Define and Implement steps of a CR, when asked \"which tests\
-  \ does this issue need\", \"write the tests for"
+  \ them, each contract test tagged with the verification cases it belongs to, proven\
+  \ red on the parent. Use at the Define and Implement steps of a CR, when asked \"\
+  which tests does this issue need\", \"write the tests for"
 ---
 
 Read [the canonical test-design skill](../../../harness/general/core/skills/test-design/SKILL.md) in full BEFORE following this skill.
@@ -13,7 +13,7 @@ Filesystem path relative to this entrypoint: `../../../harness/general/core/skil
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=e5419686fb4d7dbd1b9792fcda1ef6c5518fcd9e19dcd8e307145432936f55c8 -->
+<!-- canonical-source-sha256=2e39deb512cc502989dba6641e34a12b230fbd2429ddec2f3eb74218dfa29052 -->
 <!-- source harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests sha256=e50146b2b979540e767db7d86450406f1636d49064ed8b9feb9337a96e5f4e5c -->
 
 ## This project
@@ -69,4 +69,4 @@ If the source is missing, stop and report it; do not substitute another checkout
   enumeration literal below the clauses, by `@CodeDiffers` on the element, saying what the
   code does today. Where the code matches, there is no `@CodeDiffers`.
 
-<!-- harness-forwarder-v1 sha256=9f0ec5a2fbf80dd12551ae91e99cfd69dd2a33138b0ce0ea506780062377c641 -->
+<!-- harness-forwarder-v1 sha256=8187a048bc858195db75b649e1ca5100d8a36bbed7ed7270b11fb2410f174f41 -->
