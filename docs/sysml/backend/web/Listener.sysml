@@ -27,16 +27,24 @@ package WstxListener {
 
     attribute def ListenRule {
         doc /* On Listen web listens on the address and port of WebContext::endpoint.
+             The endpoint alone gives the address and the origin: a start whose
+             environment holds WSTX_BIND or WSTX_ORIGIN, also with an empty value, ends
+             with invalidRuntimeConfiguration (WstxStartup::StartupOutcome) before the
+             profile is opened. A creation (WstxStartup::LaunchRule) reads none of the
+             variables of this rule.
              The environment variables WSTX_TLS_CERT and WSTX_TLS_KEY name the TLS
              certificate chain and its private key; with both, web listens with TLS
-             only. A listener on an address other than loopback needs TLS and a stored
-             origin. The station's origin is the stored origin, whose scheme is the
-             listener's, else the scheme, address and port of the listener.
-             ListenRefused: invalidRuntimeConfiguration for one of the two variables
-             without the other, a listener beyond loopback without TLS or without origin,
-             and an origin of the other scheme; resourceUnavailable for a file that
-             cannot be read and a listener that cannot be opened; endpointInUse for a
-             port another process listens on.
+             only. WSTX_TOKEN gives the access token of the station's browsers: 32 to 128
+             characters, each an ASCII letter or digit. TLS needs the token, and the
+             token needs TLS. A listener on an address other than loopback needs TLS and
+             a stored origin. The station's origin is the stored origin, whose scheme is
+             the listener's, else the scheme, address and port of the listener.
+             ListenRefused: invalidRuntimeConfiguration for one of the two TLS variables
+             without the other, a WSTX_TOKEN of another form (also empty), TLS without the
+             token or the token without TLS, a listener beyond loopback without TLS or
+             without origin, and an origin of the other scheme; resourceUnavailable for a
+             file that cannot be read and a listener that cannot be opened; endpointInUse
+             for a port another process listens on.
              Listening: web writes the lines WSTX address, the scheme, :// and the address
              and port, and WSTX listening and the origin, to the output of the process. On
              ProcessEnds web closes its sockets. */

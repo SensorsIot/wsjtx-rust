@@ -38,8 +38,8 @@ package WstxWebControl {
     enum def ListenRefusal {
         doc /* Why web cannot listen; the start ends with the same outcome
              (WstxStartup::StartupOutcome).
-             invalidRuntimeConfiguration: the TLS files or the origin are not as
-             ListenRule asks.
+             invalidRuntimeConfiguration: the TLS files, the token or the origin are not
+             as ListenRule asks.
              resourceUnavailable: a TLS file cannot be read, or the listener cannot be
              opened.
              endpointInUse: another process listens on the port. */
