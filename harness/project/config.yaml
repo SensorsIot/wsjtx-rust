@@ -2,7 +2,7 @@
 # https://github.com/SensorsIot/harness, branch main, the submodule at harness/general/).
 # Read by harness/general/core/tools/project.py.
 project: wsjtx-rust
-packs: [rust, rust-supply-chain, python]
+packs: [rust, rust-supply-chain, python, javascript]
 main: master
 remote: origin
 override_env: HARNESS_GATE_OVERRIDE
@@ -188,9 +188,9 @@ alex:
   install:
     dry_run: ["C:/Program Files/Git/bin/bash.exe", "-c", "set -o pipefail; git -C D:/Github/wsjtx-rust show {commit}:tools/deploy/station-update/make_package.py | python - {commit} --dry-run"]
     deploy: ["C:/Program Files/Git/bin/bash.exe", "-c", "set -o pipefail; git -C D:/Github/wsjtx-rust show {commit}:tools/deploy/station-update/make_package.py | python - {commit}"]
-    policy: "the standing deploy policy of Project-Specifics.md, approved 2026-11-12"
+    policy: "the standing deploy policy of Project-Specifics.md"
     wait_exits: [3, 6]
     timeout_minutes: 45
   accept:
-    consent: {levels: [4, 5], policy: "the standing consent at 1 % of Project-Specifics.md; approved 2026-11-12"}
+    consent: {levels: [4, 5], policy: "the standing consent at 1 % of Project-Specifics.md"}
   poll: 120

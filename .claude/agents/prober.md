@@ -29,6 +29,7 @@ hooks:
 <!-- source harness/general/lang/rust/standard.md sha256=19140f62487d86108f4f5714cde3cd0f31d0d0033d9a2f16ff6f432fd0ddd1b0 -->
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
 <!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
+<!-- source harness/general/lang/javascript/standard.md sha256=018b21f4d1ed383044ccc31e6c7fc66e8c9cb07b6f3c8d54cee8c17f5b796265 -->
 <!-- source harness/project/docs/Agent-Working-Rules.md sha256=9724cb1402cd010b50fcd115c5a06c3de2a024a88cea736c20ddb19c15bf4486 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view {issues}( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "(python|py)(\\.exe)? D:/wstx-tmp/experiments/{issue}/[A-Za-z0-9_-]+\\.py( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/{issue}/[A-Za-z0-9_-]+\\.ps1( .*)?", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/experiments/{issue}/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{session}/**", "D:/wstx-tmp/experiments/{issue}/**", ".git/migration-data/recordings/**"]} -->
 
@@ -96,4 +97,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{session}/**`, `D:/wstx-tmp/experiments/{issue}/**`, `.git/migration-data/recordings/**`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/experiments/{issue}/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=74393021d8596b8cd58bd77b77d82b11bc2f06ad2136fda9d1d3f1668c8b2611 -->
+<!-- harness-agent-v1 sha256=91a76c6781cd623909333e9aafa8dbbb12b0ad744269ec2c35b67dfddea86d08 -->
