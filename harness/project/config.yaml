@@ -136,10 +136,15 @@ queue:
 # skips Install and Accept.
 classes:
   # A model restructuring (commits touching only docs/sysml/) is proven by `equivalence`
-  # (TR-21, tools/sysml/README.md) and needs no Review.
+  # (TR-21, tools/sysml/README.md) and needs no Review. A code restructuring and a refactor
+  # are proven by the code proof (TR-23): the test inventory, the model check at the head
+  # and the trace listing, each read at a revision.
   restructuring:
     label: restructuring
     proof:
+      inventory: python tools/sysml.py tests {rev}
+      model: python tools/sysml.py check {rev}
+      traces: python tools/sysml.py traces {rev}
       equivalence: python tools/sysml.py equivalence {base} {head}
       model_paths: [docs/sysml/]
   tool: {label: tool, paths: [tools/sysml.py, tools/sysml/, docs/sysml/shared/ModelBindings.sysml]}
