@@ -55,9 +55,10 @@ timing_classes:
     timer:   {clocks: [injected],        isolation: any,   red: never}
 # Select the authoritative execution location; the workflow has no automatic trigger.
 execution_mode: local
-# Three issue workspaces: two for Alex's coders (alex.machines.implement), one for the
-# coordinator; no build in the coordinator's workspace while a gate runs.
-parallel_workers: 3
+# Six issue workspaces: a workspace is held until its CR lands, so finished CRs waiting for the
+# one-at-a-time merge queue do not block new work; Alex's coders (alex.machines.implement) take
+# their share of them; no build in the coordinator's workspace while a gate runs.
+parallel_workers: 6
 # The push gate runs up to three selected suites at a time; the suites' exclusive/shared
 # tags keep conflicting ones apart (harness/project/docs/Project-Specifics.md).
 gate:
