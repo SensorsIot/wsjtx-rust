@@ -1,0 +1,1 @@
+# The ratchet product-knows-no-test: the product files that `python tools/sysml.py test-hooks` lists (TR-24).

@@ -8,8 +8,9 @@ validation, the architecture oracle, the identity history and the structure and 
 rules. status prints each FR's status computed from its clauses; markers lists the
 WstxModelNotes markers; equivalence compares two revisions by meaning and identities lists
 their identity diff; oracle writes the architecture oracle file; paths rewrites the code
-paths of a rename list in the model. Only oracle and paths write a file. None executes
-modelled behaviour.
+paths of a rename list in the model; test-hooks lists the product files that hold a test
+item, test switch or hook. Only oracle and paths write a file. None executes modelled
+behaviour.
 
 The code proof reads one revision and never the working tree: tests <rev> prints the test
 inventory, check <rev> checks the model of the revision, and traces <rev> checks its traces
@@ -3744,8 +3745,9 @@ def line_end(source: str, start: int) -> int:
     return len(source) if end < 0 else end
 
 
-def rust_segments(source: str) -> list[tuple[str, int, int]]:
-    """(kind, start, end) of the comments and the string contents of Rust source."""
+def rust_segments(source: str, characters: list | None = None) -> list[tuple[str, int, int]]:
+    """(kind, start, end) of the comments and the string contents of Rust source; the
+    (start, end) of each char literal goes to `characters`."""
     found, index = [], 0
     while index < len(source):
         character = source[index]
@@ -3763,6 +3765,8 @@ def rust_segments(source: str) -> list[tuple[str, int, int]]:
             if not literal:
                 raise SourceUnreadable("a ' that opens neither a char literal nor a lifetime", index)
             end = literal.end()
+            if characters is not None and source[end - 1] == "'":
+                characters.append((index, end))
         elif raw := RUST_RAW_STRING.match(source, index):
             close = source.find('"' + raw[1], raw.end())
             if close < 0:
@@ -4552,6 +4556,296 @@ def print_lines(lines: list[str]) -> None:
         sys.stdout.write(text)
 
 
+# ---- The product knows no test (TR-24) ----
+
+TEST_FILE = re.compile(r"(?:tests|.*_tests?)\.rs")
+SPACES = re.compile(r"\s*")
+TEST_WORD = re.compile(r"(?<![\w$])test(?![\w$])")
+DEBUG_WORD = re.compile(r"(?<![\w$])debug_assertions(?![\w$])")
+HIDDEN_WORD = re.compile(r"(?<![\w$])hidden(?![\w$])")
+RUST_ATTRIBUTE_HEAD = re.compile(r"#\s*(!?)\s*\[")
+RUST_CFG_MACRO = re.compile(r"(?<![\w$])cfg\s*!\s*\(")
+RUST_MOD_ITEM = re.compile(r"(?<![\w$])(?:pub\s*(?:\(\s*[^()]*\))?\s*)?mod\s+(?:r#)?(\w+)\s*;")
+RUST_USE = re.compile(r"(?<![\w$])use\s+[^;]*;")
+ENV_FUNCTION = re.compile(r"(?<![\w$])((?:::\s*)?(?:(?:r#)?\w+\s*::\s*)*)env\s*::\s*(var_os|vars_os|vars|var)(?![\w$])")
+ENV_MACRO = re.compile(r"(?<![\w$])(?:::\s*)?(?:(?:r#)?\w+\s*::\s*)*(option_env|env)\s*!\s*\(")
+ENV_IMPORT = re.compile(r"env::(?:\{[^}]*(?<![\w$])(?:var_os|vars_os|vars|var)(?![\w$])|(?:var_os|vars_os|vars|var)(?![\w$]))")
+JS_EXPORT = re.compile(r"(?<![\w$.])(?:module\s*\.\s*exports(?![\w$])|exports\s*\.\s*[\w$]+\s*=(?![=>])"
+                       r"|typeof\s+(?:module|exports)(?![\w$]))")
+JS_PROCESS_ENV = re.compile(r"(?<![\w$.])process\s*\.\s*env(?![\w$])")
+JS_GLOBAL = re.compile(r"(?<![\w$.])(window|globalThis)\s*(\?\.|\.)\s*([\w$]+)")
+JS_ASSIGNED = re.compile(r"\s*=(?![=>])")
+JS_MEMBER_READ = re.compile(r"(?<![\w$.])(?:window|globalThis)\s*\??\.\s*([\w$]+)\s*\??\.\s*([\w$]+)")
+JS_FREEZE = re.compile(r"Object\s*\.\s*freeze\s*\(\s*\{")
+JS_MEMBER_KEY = re.compile(r"\s*(?:(?:async|get|set|static)\s+(?=[\w$\"'*]))*\*?\s*([\w$]+|\"[^\"]*\"|'[^']*')")
+
+
+def bracket_end(code: str, opening: int) -> int:
+    """The end, after the closing bracket, of the bracket at `opening` in blanked code."""
+    depth = 0
+    for index in range(opening, len(code)):
+        if code[index] in "([{":
+            depth += 1
+        elif code[index] in ")]}":
+            depth -= 1
+            if not depth:
+                return index + 1
+    raise SourceUnreadable("a bracket without its end", opening)
+
+
+def top_level(code: str, start: int, end: int) -> list[tuple[int, int]]:
+    """(start, end) of the non-blank parts of `code[start:end]` between its top-level commas."""
+    parts, depth, begin = [], 0, start
+    for index in range(start, end + 1):
+        character = code[index] if index < end else ","
+        if character in "([{":
+            depth += 1
+        elif character in ")]}":
+            depth -= 1
+        elif character == "," and not depth:
+            if code[begin:index].strip():
+                parts.append((begin, index))
+            begin = index + 1
+    return parts
+
+
+def shown(text: str) -> str:
+    """A form's text on one line: white space as one space, none inside its brackets."""
+    return re.sub(r"(?<=[(\[]) | (?=[)\]])", "", re.sub(r"\s+", " ", text).strip())
+
+
+def blank_spans(source: str, spans) -> str:
+    code = list(source)
+    for start, end in spans:
+        code[start:end] = re.sub(r"[^\n]", " ", source[start:end])
+    return "".join(code)
+
+
+def line_of(source: str, offset: int) -> int:
+    return source.count("\n", 0, offset) + 1
+
+
+def model_word(name: str, model_text: str, known: dict) -> bool:
+    """Does `name` stand as a whole word in the model text?"""
+    if name not in known:
+        known[name] = bool(name) and re.search(r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])",
+                                               model_text) is not None
+    return known[name]
+
+
+def cfg_predicate(inner: str) -> str | None:
+    """The cfg predicate of an attribute's inner code: of `cfg(…)` all of it, of `cfg_attr(…)`
+    its first argument; None for another attribute."""
+    found = re.fullmatch(r"(cfg|cfg_attr)\s*\((.*)\)\s*", inner, re.S)
+    if not found:
+        return None
+    if found[1] == "cfg":
+        return found[2]
+    parts = top_level(found[2], 0, len(found[2]))
+    return found[2][parts[0][0]:parts[0][1]] if parts else ""
+
+
+def hidden_doc(inner: str) -> bool:
+    """Is the attribute a `doc(…)` holding `hidden`, directly or inside a `cfg_attr`?"""
+    found = re.fullmatch(r"(cfg_attr|doc)\s*\((.*)\)\s*", inner, re.S)
+    if not found:
+        return False
+    if found[1] == "doc":
+        return HIDDEN_WORD.search(found[2]) is not None
+    parts = top_level(found[2], 0, len(found[2]))[1:]
+    return any(hidden_doc(found[2][start:end].strip()) for start, end in parts)
+
+
+def test_gate(inner: str) -> bool:
+    """`cfg(test)`, or `cfg(all(…))` with `test` as a direct argument."""
+    found = re.fullmatch(r"cfg\s*\((.*)\)\s*", inner, re.S)
+    if not found:
+        return False
+    if found[1].strip() == "test":
+        return True
+    whole = re.fullmatch(r"\s*all\s*\((.*)\)\s*", found[1], re.S)
+    return bool(whole) and any(whole[1][start:end].strip() == "test" for start, end in top_level(whole[1], 0, len(whole[1])))
+
+
+def literal_argument(code: str, text: str, opening: int) -> tuple[str | None, int]:
+    """(the value of a first argument that is a plain string literal or None, the end of the
+    call) of the call whose `(` stands at `opening`."""
+    end = bracket_end(code, opening)
+    parts = top_level(code, opening + 1, end - 1)
+    if parts:
+        start, stop = parts[0]
+        literal = code[start:stop].strip()
+        first = start + len(code[start:stop]) - len(code[start:stop].lstrip())
+        if len(literal) >= 2 and literal[0] == '"' and literal[-1] == '"' and '"' not in literal[1:-1]:
+            return text[first + 1:first + len(literal) - 1], end
+    return None, end
+
+
+def rust_hooks(key: str, path: Path, source: str, model_text: str, known: dict) -> list[tuple[int, str, str]]:
+    """TR-24: (line, form, text) of the test forms of one Rust product file."""
+    characters = []
+    try:
+        segments = rust_segments(source, characters)
+        text = blank_spans(source, [(start, end) for kind, start, end in segments if kind == "comment"])
+        code = blank_spans(text, [(start, end) for kind, start, end in segments if kind == "string"] + characters)
+        attributes = []
+        for head in RUST_ATTRIBUTE_HEAD.finditer(code):
+            end = bracket_end(code, head.end() - 1)
+            attributes.append((head.start(), end, code[head.end():end - 1].strip(), not head[1],
+                               text[head.end():end - 1].strip()))
+        macros = [(found.start(), bracket_end(code, found.end() - 1), found.end() - 1) for found in RUST_CFG_MACRO.finditer(code)]
+        found, exempt = [], set()
+        ends = {attribute[1]: index for index, attribute in enumerate(attributes)}
+        for item in RUST_MOD_ITEM.finditer(code):
+            own, position = [], item.start()
+            while True:
+                while position and code[position - 1].isspace():
+                    position -= 1
+                index = ends.get(position)
+                if index is None or not attributes[index][3]:
+                    break
+                own.append(index)
+                position = attributes[index][0]
+            explicit = [re.fullmatch(r'path\s*=\s*"([^"]*)"', attributes[index][4]) for index in own]
+            explicit = [match[1] for match in explicit if match]
+            if explicit:
+                target = path.parent / explicit[0]
+            else:
+                folder = path.parent if path.name in ("mod.rs", "lib.rs", "main.rs") else path.parent / path.stem
+                target = folder / (item[1] + ".rs")
+                if not target.is_file() and (folder / item[1] / "mod.rs").is_file():
+                    target = folder / item[1] / "mod.rs"
+            if not TEST_FILE.fullmatch(target.name):
+                continue
+            if any(test_gate(attributes[index][2]) for index in own):
+                exempt.update(own)
+            elif not any(TEST_WORD.search(cfg_predicate(attributes[index][2]) or "") for index in own):
+                found.append((line_of(source, item.start()), "test file declared", shown(text[item.start():item.end()])))
+        for index, (start, end, inner, _outer, _text) in enumerate(attributes):
+            if index in exempt:
+                continue
+            predicate, shown_text = cfg_predicate(inner), shown(text[start:end])
+            if predicate is not None and TEST_WORD.search(predicate):
+                found.append((line_of(source, start), "cfg test", shown_text))
+            if predicate is not None and DEBUG_WORD.search(predicate):
+                found.append((line_of(source, start), "debug_assertions", shown_text))
+            if hidden_doc(inner):
+                found.append((line_of(source, start), "doc(hidden)", shown_text))
+        for start, end, opening in macros:
+            predicate = code[opening + 1:end - 1]
+            if TEST_WORD.search(predicate):
+                found.append((line_of(source, start), "cfg test", shown(text[start:end])))
+            if DEBUG_WORD.search(predicate):
+                found.append((line_of(source, start), "debug_assertions", shown(text[start:end])))
+        uses = []
+        for use in RUST_USE.finditer(code):
+            uses.append((use.start(), use.end()))
+            compact = re.sub(r"\s+", "", use.group())
+            if "std" in compact and ENV_IMPORT.search(compact):
+                found.append((line_of(source, use.start()), "environment", shown(text[use.start():use.end()])))
+        for read in ENV_FUNCTION.finditer(code):
+            if any(start <= read.start() < end for start, end in uses):
+                continue
+            opening = SPACES.match(code, read.end()).end()
+            name, end = (None, read.end())
+            if opening < len(code) and code[opening] == "(":
+                name, end = literal_argument(code, text, opening)
+            if read[2] in ("var", "var_os") and name is not None and model_word(name, model_text, known):
+                continue
+            found.append((line_of(source, read.start()), "environment", shown(text[read.start():end])))
+        for read in ENV_MACRO.finditer(code):
+            name, end = literal_argument(code, text, read.end() - 1)
+            if name is not None and (model_word(name, model_text, known) or name.startswith("CARGO_PKG_")):
+                continue
+            found.append((line_of(source, read.start()), "environment", shown(text[read.start():end])))
+    except SourceUnreadable as error:
+        raise not_readable(key, source, error) from None
+    return found
+
+
+def javascript_code(key: str, source: str) -> tuple[str, str]:
+    """(text without comments and regular expressions, code without strings too) of a client file."""
+    regexes = []
+    try:
+        segments, _end = javascript_segments(source, regexes=regexes)
+    except SourceUnreadable as error:
+        raise not_readable(key, source, error) from None
+    removed = [(start, end) for kind, start, end in segments if kind == "comment"] + regexes
+    if source.startswith("#!"):
+        removed.append((0, line_end(source, 0)))
+    text = blank_spans(source, removed)
+    return text, blank_spans(text, [(start, end) for kind, start, end in segments if kind == "string"])
+
+
+def object_members(code: str, text: str, opening: int) -> list[tuple[str, int]]:
+    """(key, offset) of each member of the object literal whose `{` stands at `opening`."""
+    members = []
+    for start, end in top_level(code, opening + 1, bracket_end(code, opening) - 1):
+        if code[start:end].lstrip().startswith("..."):
+            continue
+        key = JS_MEMBER_KEY.match(code, start)
+        if key and key.end() <= end:
+            value = text[key.start(1):key.end(1)]
+            members.append((value.strip("\"'"), key.start(1)))
+    return members
+
+
+def javascript_hooks(files: dict) -> dict[str, list[tuple[int, str, str]]]:
+    """TR-24: per client file (key: its source) the (line, form, text) of its test forms."""
+    found, reads, member_reads, assigned = {}, set(), set(), []
+    for key, source in files.items():
+        text, code = javascript_code(key, source)
+        own = found.setdefault(key, [])
+        for form, pattern in (("CommonJS export", JS_EXPORT), ("process.env", JS_PROCESS_ENV)):
+            for match in pattern.finditer(code):
+                own.append((line_of(source, match.start()), form, shown(text[match.start():match.end()]).rstrip(" =")))
+        for match in JS_GLOBAL.finditer(code):
+            target = match[2] == "." and JS_ASSIGNED.match(code, match.end())
+            if not target:
+                reads.add(match[3])
+                continue
+            value = SPACES.match(code, target.end()).end()
+            freeze = JS_FREEZE.match(code, value)
+            opening = freeze.end() - 1 if freeze else value if value < len(code) and code[value] == "{" else None
+            try:
+                members = object_members(code, text, opening) if opening is not None else []
+            except SourceUnreadable as error:
+                raise not_readable(key, source, error) from None
+            assigned.append((key, match, members))
+        member_reads.update((match[1], match[2]) for match in JS_MEMBER_READ.finditer(code))
+    for key, match, members in assigned:
+        source = files[key]
+        if match[3] not in reads:
+            found[key].append((line_of(source, match.start()), "unread global", f"{match[1]}.{match[3]}"))
+        for member, offset in members:
+            if (match[3], member) not in member_reads:
+                found[key].append((line_of(source, offset), "unread member", f"{match[3]}.{member}"))
+    return found
+
+
+def test_hooks(root: Path) -> list[tuple[str, int, str, str]]:
+    """TR-24: (path, line, form, text) of every test form in the product files of the working
+    tree at `root`, sorted."""
+    top = repository_git(root, "rev-parse", "--show-toplevel").strip()
+    if os.path.normcase(str(Path(top).resolve())) != os.path.normcase(str(root.resolve())):
+        raise Unreadable(f"no git work tree: {root}")
+    listing = repository_git(root, "-c", "core.quotepath=off", "ls-files", "-z")
+    present = {key for key in listing.split("\0") if key and (root / key).is_file()}
+    for key in sorted(key for key in present if key.startswith("server/src/") and key.endswith(".rs")):
+        source_text(key, root / key)
+    products = [key for key in code_modules(root) if key in present and not key.endswith("_test.rs")]
+    model_text = "\n".join(path.read_text(encoding="utf-8") for path in model_files(root / "docs/sysml").values())
+    found, known, scripts = [], {}, {}
+    for key in products:
+        source = source_text(key, root / key)
+        if key.endswith(".rs"):
+            found += [(key, *form) for form in rust_hooks(key, root / key, source, model_text, known)]
+        else:
+            scripts[key] = source
+    found += [(key, *form) for key, forms in javascript_hooks(scripts).items() for form in forms]
+    return sorted(set(found))
+
+
 def model_check(tree: Tree, cache: Path) -> int:
     """`check` on `tree`: the traces, the Pilot validation, the oracle and every rule."""
     entries = checked_entries(tree)
@@ -4611,8 +4905,18 @@ def main(argv=None):
     listed.add_argument("head", nargs="?")
     renames = commands.add_parser("paths", help="Rewrite the code paths the model names from a rename list, after the files were moved")
     renames.add_argument("list", type=Path)
+    hooks = commands.add_parser("test-hooks", help="Print the product files that hold a test item, test switch or hook (TR-24); "
+                                "writes nothing")
+    hooks.add_argument("--lines", action="store_true", help="one line per form found: <path>:<line>: <form>: <text>")
     args = parser.parse_args(argv)
     try:
+        if args.command == "test-hooks":
+            found = test_hooks(ROOT)
+            if args.lines:
+                print_lines([f"{key}:{line}: {form}: {text}" for key, line, form, text in found])
+            else:
+                print_lines(sorted({key for key, _line, _form, _text in found}))
+            return 0
         if args.command == "setup":
             setup(args.cache_dir)
             return 0
