@@ -19,13 +19,6 @@ pub(super) struct Subtractor {
     prefix: [Vec<Complex64>; 3],
 }
 impl Subtractor {
-    #[cfg(all(test, not(debug_assertions)))]
-    pub(super) fn capacity_ledger(&self) -> serde_json::Value {
-        serde_json::json!({"phasor_complex64_capacity":self.phasors.capacity(),
-            "correction_f64_capacity":self.correction.capacity(),
-            "prefix_complex64_capacity":self.prefix.iter().map(Vec::capacity).sum::<usize>(),
-            "frame":self.frame})
-    }
     pub fn new(mode: Mode, _scalar: bool) -> Result<Self, DecodeError> {
         let radius = if mode == Mode::Ft8 {
             2000usize

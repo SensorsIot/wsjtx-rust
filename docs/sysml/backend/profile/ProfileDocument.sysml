@@ -443,9 +443,9 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-30'; }
         @TestedBy {
-            test = "server/src/most_wanted.rs::"
+            test = "server/src/most_wanted_tests.rs::"
                 + "tc_039_031_parser_refuses_all_but_the_exact_list; "
-                + "server/src/most_wanted.rs::tc_039_031_response_body";
+                + "server/src/most_wanted_tests.rs::tc_039_031_response_body";
         }
     }
 
