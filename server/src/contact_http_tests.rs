@@ -31,10 +31,15 @@ pub(crate) struct Bench {
     /// When armed, the next device poll holds the transmit owner between its poll and its
     /// release deadline read.
     gate: Arc<PollGate>,
-    /// The station UTC of the current PTT key; 0 while released.
-    key_at: Arc<AtomicI64>,
-    /// Set when the transmit owner, keyed, read a station UTC before its key.
-    pub(crate) stepped_back: Arc<AtomicBool>,
+    /// The step-back record; its lock is the innermost of the bench.
+    record: Arc<Mutex<StepBack>>,
+}
+/// The station UTC of the current PTT key (none while released), and whether a read of the
+/// station UTC on any thread returned a time below it.
+#[derive(Default)]
+struct StepBack {
+    key_at: Option<i64>,
+    stepped_back: bool,
 }
 /// A test's hold of the transmit owner inside one device poll: the poll computes its answer,
 /// sets `entered` and returns it only at `release`.
@@ -61,32 +66,44 @@ impl Bench {
     pub(crate) fn release_poll(&self) {
         self.gate.release.store(true, Ordering::SeqCst);
     }
+    fn record(&self) -> std::sync::MutexGuard<'_, StepBack> {
+        self.record.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    /// Whether a read of the station UTC, while keyed, returned a time below the key.
+    pub(crate) fn stepped_back(&self) -> bool {
+        self.record().stepped_back
+    }
+    /// Starts a new span of the step-back record; a noted key stays noted.
+    pub(crate) fn clear_stepped_back(&self) {
+        self.record().stepped_back = false;
+    }
+    /// The station UTC as the calling thread reads it.
+    fn utc_ms(&self) -> i64 {
+        let frozen = self.frozen.load(Ordering::SeqCst);
+        if frozen != 0 {
+            return frozen;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+            + self.offset.load(Ordering::SeqCst);
+        let hold = self.owner_hold.load(Ordering::SeqCst);
+        if hold != 0 && std::thread::current().name() == Some("transmit") {
+            return now.min(hold);
+        }
+        now
+    }
 }
 impl Hardware for Bench {
     fn set_level_db(&mut self, level_db: i32) {
         self.levels.lock().unwrap().push(level_db);
     }
     fn now_utc_ms(&self) -> i64 {
-        let owner = std::thread::current().name() == Some("transmit");
-        let frozen = self.frozen.load(Ordering::SeqCst);
-        let now = if frozen != 0 {
-            frozen
-        } else {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64
-                + self.offset.load(Ordering::SeqCst);
-            let hold = self.owner_hold.load(Ordering::SeqCst);
-            if hold != 0 && owner {
-                now.min(hold)
-            } else {
-                now
-            }
-        };
-        let key = self.key_at.load(Ordering::SeqCst);
-        if owner && key != 0 && now < key {
-            self.stepped_back.store(true, Ordering::SeqCst);
+        let mut record = self.record();
+        let now = self.utc_ms();
+        if record.key_at.is_some_and(|key| now < key) {
+            record.stepped_back = true;
         }
         now
     }
@@ -108,9 +125,13 @@ impl Hardware for Bench {
         }
     }
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
-        let at = self.now_utc_ms();
+        let at = {
+            let mut record = self.record();
+            let at = self.utc_ms();
+            record.key_at = on.then_some(at);
+            at
+        };
         self.keys.lock().unwrap().push((at, on));
-        self.key_at.store(if on { at } else { 0 }, Ordering::SeqCst);
         Ok(())
     }
     fn open_audio(&mut self) -> Result<(), AudioError> {

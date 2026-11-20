@@ -9247,6 +9247,7 @@ async fn received_periods_count(late: Late) {
     use std::time::{Duration, Instant};
     use wstx_rust::transmit::service::PttState;
     let f = station(true).await;
+    f.bench.clear_stepped_back();
     f.state.recording.fixture_band("20m");
     let (_, job, generation) = f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);

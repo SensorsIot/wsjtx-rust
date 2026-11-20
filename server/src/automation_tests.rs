@@ -360,12 +360,12 @@ pub(crate) fn planned_audio_start(f: &Mcp, own: i64) -> i64 {
     .unwrap()
     .audio_start_ms
 }
-/// No transmission stalled, and the transmit owner never read, while keyed, a station time
-/// before its key.
+/// No transmission stalled, and no read of the station time since the span's start returned,
+/// while keyed, a time before the key.
 pub(crate) fn assert_on_a_forward_clock(f: &Mcp) {
     let view = f.state.recording.transmit.get().unwrap().service.view();
     assert!(
-        !f.bench.stepped_back.load(Ordering::SeqCst),
+        !f.bench.stepped_back(),
         "the station time went back across the key: {view:?}"
     );
     assert!(
@@ -408,6 +408,7 @@ pub(crate) async fn keyed_late(f: &Mcp, own: i64) {
 /// period the pending request is bound to. Each step waits on the transmit owner's event; the
 /// 5 s deadline is a hang guard only.
 pub(crate) async fn transmit_own_period(f: &Mcp, own: i64) {
+    f.bench.clear_stepped_back();
     assert_bound(f, own);
     let service = &f.state.recording.transmit.get().unwrap().service;
     let audio_start = planned_audio_start(f, own);

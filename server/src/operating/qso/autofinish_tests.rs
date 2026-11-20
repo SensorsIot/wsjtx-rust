@@ -80,6 +80,7 @@ async fn finished(f: &Mcp, e: i64, beside: &[(&str, f64, Option<f64>)]) {
 /// Into the own period `own` until its transmission is on the air, then 2 s into its planned audio
 /// with one station step; the key-on time.
 async fn on_the_air(f: &Mcp, own: i64) -> i64 {
+    f.bench.clear_stepped_back();
     crate::automation_tests::assert_bound(f, own);
     let service = &f.state.recording.transmit.get().unwrap().service;
     advance_to(f, own - 30);
@@ -104,8 +105,10 @@ async fn to_its_end(f: &Mcp, own: i64) {
     released(f, own).await;
 }
 /// The move that ends the transmission of the own period `own`: the clock 13 s past its planned
-/// audio start, after the audio end and before the release deadline. It reads no transmit owner.
+/// audio start, after the audio end and before the release deadline. It starts the step-back span
+/// of `to_its_end` and reads no transmit owner.
 fn end_move(f: &Mcp, own: i64) {
+    f.bench.clear_stepped_back();
     advance_to(f, planned_audio_start(f, own) + 13_000);
 }
 /// The wait for the release of the transmission of `own`, and its end at or after the audio end.
