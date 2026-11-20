@@ -845,7 +845,7 @@
 
 - suite: contact-browser
   cost: 2
-  run: cargo test --release --locked --bin wstx-rust contact_http_tests::contact_browser_ -- --nocapture
+  run: cargo test --release --locked --bin wstx-rust contact_http::tests::contact_browser_ -- --nocapture
   paths:
   - server/
   - client/
