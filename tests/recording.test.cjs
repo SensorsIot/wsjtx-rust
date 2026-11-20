@@ -86,7 +86,8 @@ test('authenticated reconnect accepts only current connected operating snapshots
   const mutations=[];p.on('request',request=>{if(request.method()!=='GET')mutations.push(new URL(request.url()).pathname);});
   await t.test('closed original socket cannot accept a held real response before replacement',async()=>{
     const old=hold();await p.evaluate(()=>{window.__operatingWitness={state:operatingState,socket};void operatingSync(true);});await old.entered.promise;
-    await p.evaluate(()=>new Promise(resolve=>{addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
+    // The witnessed state is the one accepted when the socket closes, taken in the closing task: the socket's own selection.state may still arrive after the read started.
+    await p.evaluate(()=>new Promise(resolve=>{window.__operatingWitness.state=operatingState;addEventListener('station-stale',()=>resolve(),{once:true});socket.close();}));
     assert.equal(await p.evaluate(()=>socket===window.__operatingWitness.socket&&socket.readyState!==WebSocket.OPEN&&connection.dataset.state==='stale'),true,'release occurs in the actual closed-original-socket window');
     old.release.resolve();await old.delivered.promise;await p.waitForFunction(()=>!operatingReadPending);
     const result=await p.evaluate(()=>({sameSocket:socket===window.__operatingWitness.socket,closed:socket.readyState!==WebSocket.OPEN,stale:connection.dataset.state==='stale',sameState:operatingState===window.__operatingWitness.state}));
