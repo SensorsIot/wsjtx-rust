@@ -1,4 +1,5 @@
 use super::*;
+use crate::profile::tests::{Fault, FaultScope, FaultyFiles, Step};
 use std::{fs, path::PathBuf};
 
 const PUBLIC: &str =
@@ -99,6 +100,8 @@ fn verifier(scope: Scope) -> Verifier {
 
 struct Fixture {
     directory: PathBuf,
+    /// The file fake of the profile store.
+    files: std::sync::Arc<FaultyFiles>,
     store: Option<profile::Store>,
     authority: Option<Authority>,
 }
@@ -106,12 +109,14 @@ impl Fixture {
     fn new() -> Self {
         let directory =
             std::env::temp_dir().join(format!("wstx-auth-core-{}", profile::new_uuid().unwrap()));
-        profile::Store::create(&directory).unwrap();
-        let (mut store, _) = profile::Store::open(&directory).unwrap();
+        let files = FaultyFiles::new();
+        profile::Store::create(&directory, files.clone()).unwrap();
+        let (mut store, _) = profile::Store::open(&directory, files.clone()).unwrap();
         let initial = scope(&store.document.profile_id);
         let authority = Authority::load(&mut store, initial).unwrap();
         Self {
             directory,
+            files,
             store: Some(store),
             authority: Some(authority),
         }
@@ -125,8 +130,8 @@ impl Fixture {
     fn reopen(&mut self) -> Result<(), Error> {
         self.authority.take();
         self.store.take();
-        let (mut store, _) =
-            profile::Store::open(&self.directory).map_err(|_| Error::PersistenceFailed)?;
+        let (mut store, _) = profile::Store::open(&self.directory, self.files.clone())
+            .map_err(|_| Error::PersistenceFailed)?;
         let initial = scope(&store.document.profile_id);
         let result = Authority::load(&mut store, initial);
         self.store = Some(store);
@@ -370,14 +375,15 @@ fn expected_missing_corrupt_and_cross_profile_records_never_reset_grants() {
 
 #[test]
 fn failed_revocation_keeps_committed_bytes_but_quarantines_current_process() {
-    for stage in ["write", "flush", "replace"] {
+    for step in [Step::Write, Step::Flush, Step::Replace] {
         let mut f = Fixture::new();
         let (store, a) = f.parts();
         a.enroll(store, verifier(a.record.current_scope.clone().unwrap()))
             .unwrap();
         let old = fs::read(f.directory.join("authorization.json")).unwrap();
+        let files = f.files.clone();
         let (store, a) = f.parts();
-        let result = profile::tests::with_fault(stage, || {
+        let result = files.during(Fault::fail(step, FaultScope::ArmingThread), || {
             a.revoke(store, GRANT, "00000000-0000-4000-8000-000000000004", false)
         });
         assert_eq!(result, Err(Error::PersistenceFailed));
@@ -774,6 +780,7 @@ fn repair_valid_same_radio_older_verifier_and_receipt_remain_valid() {
 #[test]
 fn safety_watermark_reconciles_public_private_commit_gap_once_after_failed_private_write() {
     let mut f = Fixture::new();
+    let files = f.files.clone();
     let (store, a) = f.parts();
     let grant = verifier(a.record.current_scope.clone().unwrap());
     a.enroll(store, grant.clone()).unwrap();
@@ -785,7 +792,9 @@ fn safety_watermark_reconciles_public_private_commit_gap_once_after_failed_priva
         ptt: "disabled".into(),
     };
     store.save(settings).unwrap();
-    let result = profile::tests::with_fault("write", || a.reconcile_control(store));
+    let result = files.during(Fault::fail(Step::Write, FaultScope::ArmingThread), || {
+        a.reconcile_control(store)
+    });
     assert_eq!(result, Err(Error::PersistenceFailed));
     assert_eq!(
         a.challenge(&grant.grant_id, ORIGIN, None, Instant::now()),

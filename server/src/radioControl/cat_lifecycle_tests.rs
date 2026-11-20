@@ -359,6 +359,7 @@ impl Station {
             &directory,
             crate::profile::new_uuid().unwrap(),
             crate::profile::new_uuid().unwrap(),
+            std::sync::Arc::new(crate::profile::Disk),
         );
         let peer = attach_peer(&recording, device);
         Self {

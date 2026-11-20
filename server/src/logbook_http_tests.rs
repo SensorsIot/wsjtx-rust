@@ -493,8 +493,9 @@ async fn save_contact_refusals_byte_cap_and_command_receipts() {
         "exactly one record per contact id"
     );
     // Storage failure leaves the review unsaved and a retry of the same identity succeeds.
-    let state = f.app().profile.as_ref().unwrap();
-    state.logbook.inject_fault(Some("replace"));
+    f.files
+        .logbook
+        .arm(Fault::fail(Step::Replace, FaultScope::EveryThread));
     let retry = save_body(&f, record("99999999-9999-4999-8999-999999999999"));
     assert_eq!(
         code(&post(retry.clone()).await),
@@ -504,7 +505,7 @@ async fn save_contact_refusals_byte_cap_and_command_receipts() {
             Value::Null
         )
     );
-    state.logbook.inject_fault(None);
+    f.files.logbook.disarm();
     let mut retry = retry;
     retry["command_id"] = json!(profile::new_uuid().unwrap());
     assert_eq!(post(retry).await.status, StatusCode::CREATED);

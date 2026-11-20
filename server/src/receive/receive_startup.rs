@@ -31,6 +31,7 @@ struct Record {
 }
 pub(crate) struct Startup {
     directory: PathBuf,
+    files: Arc<dyn profile::Files>,
     record: Record,
     storage_error: Option<&'static str>,
     resume: &'static str,
@@ -56,7 +57,7 @@ impl Record {
     }
 }
 impl Startup {
-    pub(crate) fn load(directory: &Path, profile: &str) -> Self {
+    pub(crate) fn load(directory: &Path, profile: &str, files: Arc<dyn profile::Files>) -> Self {
         let defaults = Record {
             schema_version: 1,
             profile_id: profile.into(),
@@ -75,6 +76,7 @@ impl Startup {
         };
         Self {
             directory: directory.to_path_buf(),
+            files,
             record,
             storage_error,
             resume: "idle",
@@ -85,7 +87,7 @@ impl Startup {
         if next == self.record && self.storage_error.is_none() {
             return Ok(());
         }
-        match profile::atomic_json(&self.directory, FILE, &next) {
+        match profile::atomic_json(&*self.files, &self.directory, FILE, &next) {
             Ok(()) => {
                 self.record = next;
                 self.storage_error = None;

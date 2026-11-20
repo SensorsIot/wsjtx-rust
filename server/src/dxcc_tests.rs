@@ -633,7 +633,7 @@ fn tc_055_002_worked_set_follows_each_uploaded_table() {
     let dir =
         std::env::temp_dir().join(format!("wstx-dxcc-{}", crate::profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
-    let log = crate::logbook::Logbook::open(&dir);
+    let log = crate::logbook::Logbook::open(&dir, std::sync::Arc::new(crate::profile::Disk));
     let open = |publish: &mut dyn FnMut() -> std::io::Result<()>| -> Result<std::io::Result<()>, crate::authorization::Error> { Ok(publish()) };
     let adi = "<call:4>TT1A <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor>\n";
     let id = crate::profile::new_uuid().unwrap();

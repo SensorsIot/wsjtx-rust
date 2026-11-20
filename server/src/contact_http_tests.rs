@@ -4,6 +4,7 @@
 // codec.
 use super::*;
 use axum::body::Body;
+use profile::tests::{Fault, FaultScope, StationFiles, Step};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use tower::ServiceExt;
 use wstx_rust::transmit::service::{
@@ -209,6 +210,8 @@ pub(crate) struct Fixture {
     pub(crate) boot: String,
     pub(crate) dir: std::path::PathBuf,
     pub(crate) bench: Bench,
+    /// The file fakes of the store, the logbook and the recording; a restart keeps them.
+    pub(crate) files: StationFiles,
 }
 pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
     let (dir, _) = profile_directory(origin, transmit, "JN47AA");
@@ -241,10 +244,20 @@ pub(crate) fn profile_directory(
 /// A station start on the profile directory `dir`: a new station owner with a new boot id
 /// (the store, the recording, the transmit owner on a new bench, the contact station).
 pub(crate) fn start_station(dir: std::path::PathBuf, origin: &str, transmit: bool) -> Fixture {
+    start_station_on(dir, origin, transmit, StationFiles::new())
+}
+/// A station start on `dir` whose owners write through `files`.
+fn start_station_on(
+    dir: std::path::PathBuf,
+    origin: &str,
+    transmit: bool,
+    files: StationFiles,
+) -> Fixture {
     let boot = profile::new_uuid().unwrap();
-    let (store, _) = profile::Store::open(&dir).unwrap();
+    let (store, _) = profile::Store::open(&dir, files.store.clone()).unwrap();
     let id = store.document.profile_id.clone();
-    let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
+    let recording =
+        recording::Recording::open(&dir, id.clone(), boot.clone(), files.recording.clone());
     let bench = Bench::default();
     bench.unsupported.store(!transmit, Ordering::SeqCst);
     let _ = recording
@@ -256,7 +269,7 @@ pub(crate) fn start_station(dir: std::path::PathBuf, origin: &str, transmit: boo
         authorization: Mutex::new(None),
         boot: boot.clone(),
         recording,
-        logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
+        logbook: Arc::new(crate::logbook::Logbook::open(&dir, files.logbook.clone())),
     });
     let app = App {
         origin: origin.to_string(),
@@ -274,6 +287,7 @@ pub(crate) fn start_station(dir: std::path::PathBuf, origin: &str, transmit: boo
         boot,
         dir,
         bench,
+        files,
     }
 }
 impl Fixture {
@@ -283,8 +297,9 @@ impl Fixture {
         let dir = std::mem::take(&mut self.dir);
         let origin = self.origin.clone();
         let transmit = !self.bench.unsupported.load(Ordering::SeqCst);
+        let files = self.files.clone();
         drop(self);
-        start_station(dir, &origin, transmit)
+        start_station_on(dir, &origin, transmit, files)
     }
     pub(crate) fn contact(&self) -> Arc<contact_http::Station> {
         self.state.recording.contact.get().unwrap().clone()
@@ -2581,10 +2596,11 @@ fn directory_content(dir: &std::path::Path) -> Vec<(String, Option<Vec<u8>>)> {
     entries
 }
 
-// The fault is the profile store's test seam at the
-// replace of the file (profile::tests::with_fault "replace"); the command runs through
-// Station::operate, the browser's validation and execution, on the test's own thread, which
-// is where the seam acts. A refused save leaves the values as they were.
+// The fault is the profile store's file fake failing the
+// replace of the file (profile::tests::FaultyFiles, fail replace on the arming thread); the
+// command runs through Station::operate, the browser's validation and execution, on the
+// test's own thread, which is where the fault acts. A refused save leaves the values as they
+// were.
 #[tokio::test]
 async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
     let f = fixture("http://127.0.0.1:18113", true);
@@ -2596,8 +2612,12 @@ async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
     let on_disk = directory_content(&f.dir);
     // (a) The replace fails: refused storage_unavailable, field null, nothing changed.
     let body = f.body(revision, "set_call_first", json!({"enabled":false}));
-    let refused =
-        profile::tests::with_fault("replace", || f.contact().operate(&f.state, body, false));
+    let refused = f
+        .files
+        .store
+        .during(Fault::fail(Step::Replace, FaultScope::ArmingThread), || {
+            f.contact().operate(&f.state, body, false)
+        });
     assert_eq!(refused, Err(("storage_unavailable", None)));
     let after = f.snapshot().await;
     assert_eq!(after["settings"], before["settings"]);
@@ -2610,8 +2630,12 @@ async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
     );
     // (c) Guard of existing behaviour: a setting that is not saved does not need storage.
     let body = f.body(revision, "set_hold_tx", json!({"enabled":false}));
-    let accepted =
-        profile::tests::with_fault("replace", || f.contact().operate(&f.state, body, false));
+    let accepted = f
+        .files
+        .store
+        .during(Fault::fail(Step::Replace, FaultScope::ArmingThread), || {
+            f.contact().operate(&f.state, body, false)
+        });
     assert_eq!(accepted.map(|(status, _)| status), Ok(StatusCode::ACCEPTED));
     assert_eq!(directory_content(&f.dir), on_disk);
     // (b) Storage is back: the same action with a new command_id is saved.
@@ -3174,12 +3198,14 @@ async fn tc_085_001_log_qso_pending_records_and_restart() {
 
     // TC-085-003 (b) The first record of W1AW is pending after a failed write; a second QSO
     // with W1AW completes meanwhile and is refused. The retry stores one record, one pair.
-    f.state.logbook.inject_fault(Some("write"));
+    f.files
+        .logbook
+        .arm(Fault::fail(Step::Write, FaultScope::EveryThread));
     entered_qso_85(&f, P85 + 300_000, "W1AW");
     assert_eq!(log_view_85(&f)["error"], "storage_unavailable");
     entered_qso_85(&f, P85 + 390_000, "W1AW");
     assert_eq!(log_view_85(&f), refused_85(&f, "W1AW"));
-    f.state.logbook.inject_fault(None);
+    f.files.logbook.disarm();
     f.contact().retry_logs_now();
     f.tick();
     assert_eq!(calls_85(&f), ["K1ABC", "W1AW"]);
@@ -3506,6 +3532,7 @@ fn on_station_clock(
         &dir,
         profile::new_uuid().unwrap(),
         profile::new_uuid().unwrap(),
+        std::sync::Arc::new(crate::profile::Disk),
     );
     let clock = clock_http::Clock::new(ntp);
     let _ = r.clock.set(clock.clone());

@@ -801,7 +801,8 @@ fn startup_migration_replaces_unique_friendly_names_only() {
     // Unique render name migrates; the friendly name loads without failing first.
     write(json!(CAPTURE), json!("Speakers (USB Audio CODEC )"));
     {
-        let (mut store, _) = profile::Store::open(&dir).unwrap();
+        let (mut store, _) =
+            profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
         assert!(radio_setup::needs_migration(&store.document));
         let log = radio_setup::migrate_devices(&mut store, &endpoints);
         assert_eq!(
@@ -826,7 +827,8 @@ fn startup_migration_replaces_unique_friendly_names_only() {
         json!("Microphone (USB Audio CODEC )"),
         json!("Speakers (Gone)"),
     );
-    let (mut store, _) = profile::Store::open(&dir).unwrap();
+    let (mut store, _) =
+        profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let log = radio_setup::migrate_devices(&mut store, &duplicated);
     assert_eq!(
         log,

@@ -12,7 +12,12 @@ impl Dir {
         Self(path)
     }
     fn open(&self) -> Arc<Recording> {
-        Recording::open(&self.0, PROFILE.into(), profile::new_uuid().unwrap())
+        Recording::open(
+            &self.0,
+            PROFILE.into(),
+            profile::new_uuid().unwrap(),
+            std::sync::Arc::new(crate::profile::Disk),
+        )
     }
 }
 impl Drop for Dir {

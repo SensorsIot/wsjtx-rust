@@ -231,8 +231,13 @@ async fn live_native_browser_mode(mode: &str) {
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":address.to_string(),"origin":null},"connection_type":"standard",
         "audio":{"input_device":"explicit-test-native-input","output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let (store, _) = profile::Store::open(&dir).unwrap();
-    let recording = recording::Recording::open(&dir, profile_id.clone(), boot.clone());
+    let (store, _) = profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+    let recording = recording::Recording::open(
+        &dir,
+        profile_id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     if mode == "ft8" {
         recording.fixture_input(Box::new(Input::new(fixture)));
     } else {
@@ -251,7 +256,10 @@ async fn live_native_browser_mode(mode: &str) {
             authorization: Mutex::new(None),
             boot,
             recording: recording.clone(),
-            logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
+            logbook: Arc::new(crate::logbook::Logbook::open(
+                &dir,
+                std::sync::Arc::new(crate::profile::Disk),
+            )),
         })),
         profile_id: Some(profile_id),
         token: None,
@@ -467,8 +475,14 @@ impl KeptPageBoot {
         profile_id: &str,
     ) -> Self {
         let boot = profile::new_uuid().unwrap();
-        let (store, _) = profile::Store::open(dir).unwrap();
-        let recording = recording::Recording::open(dir, profile_id.to_owned(), boot.clone());
+        let (store, _) =
+            profile::Store::open(dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+        let recording = recording::Recording::open(
+            dir,
+            profile_id.to_owned(),
+            boot.clone(),
+            std::sync::Arc::new(crate::profile::Disk),
+        );
         // The busy recording in every FT8 period: each period's rows move to the kept period.
         // Two, because the page starts receive twice: the second start raises the generation
         // above the new boot's 0, as any band change on the running station does.
@@ -488,7 +502,10 @@ impl KeptPageBoot {
                 authorization: Mutex::new(None),
                 boot,
                 recording: recording.clone(),
-                logbook: Arc::new(crate::logbook::Logbook::open(dir)),
+                logbook: Arc::new(crate::logbook::Logbook::open(
+                    dir,
+                    std::sync::Arc::new(crate::profile::Disk),
+                )),
             })),
             profile_id: Some(profile_id.to_owned()),
             token: None,
@@ -634,8 +651,13 @@ async fn live_native_busy_period_rows_promptly() {
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":address.to_string(),"origin":null},"connection_type":"standard",
         "audio":{"input_device":"explicit-test-native-input","output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let (store, _) = profile::Store::open(&dir).unwrap();
-    let recording = recording::Recording::open(&dir, profile_id.clone(), boot.clone());
+    let (store, _) = profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+    let recording = recording::Recording::open(
+        &dir,
+        profile_id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     recording.fixture_input(Box::new(input));
     let app = App {
         origin: origin.clone(),
@@ -644,7 +666,10 @@ async fn live_native_busy_period_rows_promptly() {
             authorization: Mutex::new(None),
             boot,
             recording: recording.clone(),
-            logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
+            logbook: Arc::new(crate::logbook::Logbook::open(
+                &dir,
+                std::sync::Arc::new(crate::profile::Disk),
+            )),
         })),
         profile_id: Some(profile_id),
         token: None,
@@ -947,7 +972,12 @@ fn resource_station_process_delta_and_owner_release() {
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:0","origin":null},"connection_type":"standard",
         "audio":{"input_device":"explicit-test-native-input","output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let recording = recording::Recording::open(&dir, profile_id.clone(), boot.clone());
+    let recording = recording::Recording::open(
+        &dir,
+        profile_id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     let mut metrics = StationMetrics::bind_self();
     let idle = metrics.sample();
     let mut phases = Vec::new();

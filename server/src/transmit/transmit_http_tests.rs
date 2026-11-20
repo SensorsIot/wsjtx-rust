@@ -46,8 +46,12 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
         std::env::temp_dir().join(format!("wstx-transmit-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir_all(&directory).unwrap();
     let id = profile::new_uuid().unwrap();
-    let recording =
-        recording::Recording::open(&directory, id.clone(), profile::new_uuid().unwrap());
+    let recording = recording::Recording::open(
+        &directory,
+        id.clone(),
+        profile::new_uuid().unwrap(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     let peer = attach_peer(&recording, Device::Present);
     let station =
         transmit_http::Station::start(ntp_clock(wstx_rust::transmit::clock::Monitor::new()))
@@ -151,8 +155,13 @@ async fn app_with(
         "callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard",
         "audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let (store, _) = profile::Store::open(&dir).unwrap();
-    let recording = recording::Recording::open(&dir, id.clone(), boot.clone());
+    let (store, _) = profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+    let recording = recording::Recording::open(
+        &dir,
+        id.clone(),
+        boot.clone(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     // As main wires it: one station clock for the clock view and the transmit owner.
     let clock = crate::clock_http::Clock::new(clock);
     let _ = recording.clock.set(clock.clone());
@@ -167,7 +176,10 @@ async fn app_with(
             authorization: Mutex::new(None),
             boot: boot.clone(),
             recording,
-            logbook: Arc::new(crate::logbook::Logbook::open(&dir)),
+            logbook: Arc::new(crate::logbook::Logbook::open(
+                &dir,
+                std::sync::Arc::new(crate::profile::Disk),
+            )),
         })),
         profile_id: Some(id.clone()),
         token: None,
@@ -417,8 +429,12 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
     ));
     std::fs::create_dir_all(&directory).unwrap();
     let id = profile::new_uuid().unwrap();
-    let recording =
-        recording::Recording::open(&directory, id.clone(), profile::new_uuid().unwrap());
+    let recording = recording::Recording::open(
+        &directory,
+        id.clone(),
+        profile::new_uuid().unwrap(),
+        std::sync::Arc::new(crate::profile::Disk),
+    );
     let peer = attach_peer(&recording, Device::Present);
     peer.lock().unwrap().transmitting = true;
     let station =

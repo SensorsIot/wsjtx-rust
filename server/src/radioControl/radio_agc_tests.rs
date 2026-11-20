@@ -459,7 +459,7 @@ fn profile_radio_settings_default_and_validate() {
         "audio":{"input_device":null,"output_device":null},"control":&off});
     let bytes = serde_json::to_vec(&doc).unwrap();
     std::fs::write(dir.join("profile.json"), &bytes).unwrap();
-    let (store, _) = profile::Store::open(&dir).unwrap();
+    let (store, _) = profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let settings = serde_json::to_value(store.document.settings()).unwrap();
     assert_eq!(settings.get("radio"), None, "{settings}");
     assert_eq!(store.document.revision, 4);

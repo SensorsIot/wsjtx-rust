@@ -470,20 +470,6 @@ async fn finish_operation(job: tokio::task::JoinHandle<Result<Response, Error>>)
     }
 }
 
-// Transaction/HTTP-completion fault seam only; Router admission is tested separately.
-#[cfg(test)]
-pub(crate) async fn commission_with_fault(
-    app: App,
-    headers: HeaderMap,
-    body: Bytes,
-    stage: &'static str,
-) -> Response {
-    finish_operation(tokio::task::spawn_blocking(move || {
-        profile::tests::with_fault(stage, || operate(Operation::Commission, app, headers, body))
-    }))
-    .await
-}
-
 macro_rules! handler {
     ($name:ident, $kind:ident) => {
         pub(crate) async fn $name(
