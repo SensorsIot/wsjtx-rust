@@ -1,7 +1,7 @@
 # Model tools
 
 The contract of the model tools (`tools/sysml.py`, `tools/sysml/Validate.java`): the pinned
-toolchain, the commands, the rules `TR-01` to `TR-22` they check and the tests `TV-nnn`
+toolchain, the commands, the rules `TR-01` to `TR-23` they check and the tests `TV-nnn`
 that prove them. The rules of the model itself are the
 [finished model](../../harness/project/docs/Finished-Model.md); each rule below names the
 rule of the finished model it checks. `TR` and `TV` are identities of the tool: no
@@ -34,6 +34,9 @@ and [Temurin archive guidance](https://adoptium.net/installation/archives/).
 ```powershell
 python tools/sysml.py check
 python tools/sysml.py traces
+python tools/sysml.py tests <rev>
+python tools/sysml.py check <rev>
+python tools/sysml.py traces <rev>
 python tools/sysml.py status
 python tools/sysml.py markers
 python tools/sysml.py oracle
@@ -52,6 +55,9 @@ python -m unittest discover -s tools/sysml/tests -q
   `<message>: <key>:<line>` (a deployment fault: `<message>: <path>`); then
   `SysML check failed: <n> faults`, exit 2. A pass ends with `Model rules passed: <n>
   model files.`
+- `tests <rev>`, `check <rev>`, `traces <rev>`: the code proof at the commit `<rev>` names
+  (TR-23): its test inventory, its model check and its trace listing; they read that
+  revision only and write nothing.
 - `status`: each FR's status computed from its clauses (TR-12); no Java, writes nothing.
 - `markers [<Kind> ...]`: the `WstxModelNotes` markers of the model (TR-20).
 - `fingerprints`: one hash per model file by key, after the catalog; writes nothing.
@@ -258,6 +264,47 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   <text>`) and a malformed entry (`comment exception malformed: <reason>`), at line 1 a list
   that is no JSON array; refused by path, a file that is not UTF-8 (`source not UTF-8`), and
   at its line a text its reader cannot read (`source not readable: <reason>`).
+- **TR-23 Code proof listings.** The three commands of the code proof read one revision:
+  - `tests <rev>` prints one line per product test of the commit `<rev>` names, sorted,
+    and exits 0; a test that occurs twice is printed twice, and no line holds a path. A
+    Rust line is `rust <function name>`, for every function under `#[test]` or
+    `#[tokio::test…]` (`#[ignore]` included) in every `.rs` file below `client/`, `server/`
+    and `tests/`. A Node line is `node <title>`, for every call of `test`, `it`,
+    `test.skip`, `test.only`, `test.todo` or `.test` (a subtest) whose first argument is a
+    string or template literal, in the files named `*.test.js`, `*.test.cjs` or
+    `*.test.mjs` below those roots; a quoted title is its value with its escapes resolved,
+    a template title is written as between the backticks, `${…}` unexpanded and a line
+    break written `\n`. A `.test(` call whose first argument is no literal is a RegExp test
+    and not listed. A Python line is `python <Class>.<name>` for a `def test_…` or `async
+    def test_…` directly in a class body and `python <name>` for one at module level, in
+    the tracked `test_*.py` files outside `tools/sysml/` and outside the `harness_paths`
+    of that revision's `harness/project/config.yaml`. Comments, strings and JavaScript
+    regular-expression literals are not read.
+  - `check <rev>` runs every check of `check` on the revision's files: the revision's
+    model, sources, `tools/sysml/architecture-oracle.json` and
+    `tools/sysml/comment-exceptions.json`, the identity history (TR-15) against `git
+    merge-base <rev> master`, and for TR-22 the revision's tracked files and its
+    `harness_paths`. Its output and exit codes are those of `check`. Only the running
+    tool's own code and the toolchain cache are not taken from the revision.
+  - `traces <rev>` runs every check of `traces` on the revision's files, as `check <rev>`
+    reads them. When they pass it prints the trace listing and exits 0: one line per
+    identity, FR then CL then TC, each in identity order, with no path and no model file
+    key. `FR-nnn <status> clauses <CL,…>`; `CL-nnn-nn <state> from <FR,…> cases <TC,… or
+    -> link <L>`, `<L>` being `own <file names>` (the sorted, comma-joined file names of
+    the clause's own `@ImplementedIn` modules), `part <part definition name>` or `none`;
+    `TC-nnn-nnn <state> <automated|manual> verifies <CL,…> tests <T>`, `<T>` the sorted,
+    `; `-joined inventory lines of the tests bound to the case (for `path::symbol` the test
+    `symbol`, for a whole file each of its tests that names the case by its `Proves:` tag
+    or its title) or `-`. On a fault it prints the fault lines and exits 2, with no
+    listing.
+  - They read the revision with git into a temporary folder that is gone when the command
+    ends, never a working-tree file, staged or untracked, and write nothing into the
+    repository: no checkout, no index change. Without a revision, `check` and `traces`
+    read the working tree as above; `tests` without a revision is refused.
+  - Refused with exit 2, `SysML check failed: <message>` and nothing on stdout: an unknown
+    revision (`unknown revision: <rev>`), a Node `test(` or `it(` whose title is no
+    literal (`unreadable test name: <path>:<line>`), and a source its reader cannot read
+    (`source not readable: <path>:<line>: <reason>`).
 
 ## Meaning and limits of semantic validation
 
@@ -450,3 +497,17 @@ run them are those of `harness/project/suites.yaml`.
 | TV-174 | TR-22 | `test_comments.py` CommentRuleTest.test_malformed_exception | an entry without path or text or with a kind outside D1, D2, D3, M, S, I, and a list that is no JSON array, are refused. |
 | TV-175 | TR-22 | `test_comments.py` CommentRuleTest.test_source_not_utf8 | a read file that is not UTF-8 is refused by its path; so is a text its reader cannot read. |
 | TV-176 | TR-22 | `test_comments.py` CommentRuleTest.test_each_place_read | `#N` in a comment is refused at each place read. |
+| TV-177 | TR-23 | `test_code_proof.py` InventoryTests.test_tv177_rust_lines | `#[test]`, both `#[tokio::test(...)]` forms, an ignored test, a `pub async fn` test and two `parses` in two modules give exactly their `rust` lines; a test attribute in a comment, a string or a raw string, a plain fn and a file outside the roots give none. |
+| TV-178 | TR-23 | `test_code_proof.py` InventoryTests.test_tv178_node_lines | each Node call form gives its title, a template as written; a two-line template is written with `\n`; comments, strings, regular expressions, `describe`, a file not named `*.test.*` and a file outside the roots give none. |
+| TV-179 | TR-23 | `test_code_proof.py` InventoryTests.test_tv179_unreadable_node_title | a `test(` or `it(` whose title is a variable is refused with its line and prints nothing; `x.test(name)` is not refused. |
+| TV-180 | TR-23 | `test_code_proof.py` InventoryTests.test_tv180_python_lines | module-level and class-body Python tests give their lines; a nested def, a helper, the model tool's tests, a harness path, a file not named `test_*.py` and an untracked file give none. |
+| TV-181 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv181_working_tree_is_not_read; `test_revision_check.py` RevisionCheckTests.test_tv181_check_does_not_read_the_working_tree | after tests are added and removed, a clause's state edited and an untracked test and model file added, `tests`, `traces` and `check` at the revision print what they printed; the status, the stash list and the temporary folder are unchanged. |
+| TV-182 | TR-23 | `test_code_proof.py` InventoryTests.test_tv182_move_keeps_the_inventory | moving a Rust, a Node and a Python test to other files keeps the inventory; a rename drops the base line, a removal leaves a base line out, a duplicate adds one. |
+| TV-183 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv183_trace_listing | two FRs, three clauses (own link, link through a part definition, none) and three cases (`path::symbol`, whole file by tag and title, manual) print exactly their eight lines. |
+| TV-184 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv184_move_keeps_the_listing | a linked module, a bound test file and a bound test moved, the model's paths updated: the listing is the same. |
+| TV-185 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv185_each_change_differs | each change of a trace (state, verified clause, test name, `Proves:` tag, own link file, part link, FR clauses, automated or manual) leaves a base line out. |
+| TV-186 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv186_trace_faults_at_a_revision | a TR-13 or TR-14 fault at the revision prints its fault line and no listing while the working tree passes; a clean revision passes while the working tree holds the fault. |
+| TV-187 | TR-23 | `test_revision_check.py` RevisionCheckTests.test_tv187_model_check_at_a_revision | `check <rev>` passes on a clean revision while the working tree has a writing-rule fault, fails on the revision with it, and judges an identity declared again against `merge-base <rev> master`. |
+| TV-188 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv188_refusals | an unknown revision is refused by `tests`, `check` and `traces`, `tests` without a revision is refused, and a raw string without its end is a source `tests` cannot read. |
+| TV-189 | TR-23 | `test_code_proof.py` ThisRepositoryTests.test_tv189_this_repository; `test_revision_check.py` RevisionCheckTests.test_tv189_check_head | on this repository `tests HEAD` lists every test attribute and every `tests/*.test.cjs`, `traces HEAD` every FR, CL and TC; both pass at `HEAD^`; `check HEAD` passes. |
+| TV-190 | TR-23 | `test_code_proof.py` ThisRepositoryTests.test_tv190_traces_without_a_revision; `test_real_model_structure.py` RealModelStructureTests.test_check_on_this_tree_passes_every_model_rule (TV-113) | `traces` and `check` without a revision print their summary lines on this repository. |
