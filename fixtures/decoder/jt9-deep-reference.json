@@ -1,7 +1,7 @@
 {
  "reference": "WSJT-X 3.3.0-beta5 jt9.exe -8 -d 3 (FT8) / -5 -d 3 (FT4), WAV input, default calls K1ABC/W9XYZ, AP on (CQ AP only effective); text with R -NN folded to R-NN",
  "jt9_sha256": "70a205f577f6d60bbb1ec6c36f43ae4b3ae09dbf2061f30737818d46fd0aaf33",
- "purpose": "Lower bound for the station decoder on the recorded corpus (#56). Not exhaustive truth (CL-007-03). 'complete' marks frames whose 12.64 s (FT8) or 5.04 s (FT4) lie inside the recording; only those are counted.",
+ "purpose": "Lower bound for the station decoder on the recorded corpus. Not exhaustive truth (CL-007-03). 'complete' marks frames whose 12.64 s (FT8) or 5.04 s (FT4) lie inside the recording; only those are counted.",
  "cases": [
   {
    "input": "191111_110115.wav",

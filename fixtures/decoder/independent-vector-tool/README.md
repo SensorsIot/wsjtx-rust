@@ -10,7 +10,7 @@ Example, using absolute paths:
 python generate.py --case CASE.json --out OUTPUT --protocol-data PROTOCOL_DATA
 ```
 
-Numerics: 12000 Hz; symbol lengths 1920/576; Gaussian BT 2/1; pulse support ±2T; sample-center evaluation; pulse centers j*N+N/2. Phase increments by instantaneous frequency per sample with explicit initial phase. FT8 taper length 240, FT4 576: rise[i]=(1-cos(pi*i/ramp))/2 for i=0..ramp-1; trailing taper reverses these exact values. Outside waveform is zero. PCM uses ties-to-even round(real*32767), signed16 LE, and clipping fails. CR6 maps imported PCM/32768; that distinction is explicit.
+Numerics: 12000 Hz; symbol lengths 1920/576; Gaussian BT 2/1; pulse support ±2T; sample-center evaluation; pulse centers j*N+N/2. Phase increments by instantaneous frequency per sample with explicit initial phase. FT8 taper length 240, FT4 576: rise[i]=(1-cos(pi*i/ramp))/2 for i=0..ramp-1; trailing taper reverses these exact values. Outside waveform is zero. PCM uses ties-to-even round(real*32767), signed16 LE, and clipping fails. Imported PCM maps to PCM/32768; that distinction is explicit.
 
 Noise uses the source's exact unsigned 64-bit SplitMix64 transitions, top53 midpoint uniforms and two fresh uniforms per Box-Muller sample. No library RNG defaults/cache. Python/libm may differ at final rounding; allow at most 1 PCM LSB between independently computed mathematical waveforms, record runtime/source hashes, and use pinned generated data hashes for byte identity. SNR2500 uses steady signal power A²/2 and one-sided noise PSD 2*variance/12000.
 

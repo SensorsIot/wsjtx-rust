@@ -2,7 +2,7 @@
 
 `cty.dat` is the DXCC country and prefix file of Jim Reisert, AD1C
 (<https://www.country-files.com/>), in the form WSJT-X ships it. The station embeds it as the
-default country table (issue #55); Settings > General can replace it with an uploaded file.
+default country table; Settings > General can replace it with an uploaded file.
 
 | Item | Value |
 |---|---|

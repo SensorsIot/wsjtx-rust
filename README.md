@@ -77,8 +77,8 @@ These summary credits are not an exhaustive inventory of file-level copyrights o
 Translation into Rust does not remove applicable copyright or license obligations.
 Distributed binaries must provide access to complete corresponding source under the
 applicable GPL requirements. Bundled components and assets may have separate terms;
-record their provenance and retain applicable notices. The initial license check
-was not a complete dependency audit. Licensing and trademarks remain separate.
+record their provenance and retain applicable notices. The license check of this
+repository is not a complete dependency audit. Licensing and trademarks remain separate.
 
 ### Candidate recording notices
 
