@@ -46,9 +46,7 @@ pub struct Catalogue {
 }
 impl Catalogue {
     pub fn builtin() -> Result<Self> {
-        Self::parse(include_bytes!(
-            "../../../fixtures/radio/ic7300-catalogue.json"
-        ))
+        Self::parse(include_bytes!("ic7300-catalogue.json"))
     }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         if bytes.len() > 262_144 {

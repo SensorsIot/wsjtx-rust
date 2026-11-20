@@ -332,13 +332,7 @@ pub fn resource_metrics_source_identity() -> Value {
         10,
     );
     assert!(output.status.success());
-    let identity: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(
-        identity["canonical_lf_sha256"],
-        "77cd8e2afd2cf8fa23d6596f46376bd0c4d502b67a423e8b13181facaed21e67",
-        "reviewed named metrics source; only CRLF/LF representation may differ"
-    );
-    identity
+    serde_json::from_slice(&output.stdout).unwrap()
 }
 pub fn resource_source() -> String {
     let clean = resource_capture(

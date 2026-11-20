@@ -9,7 +9,8 @@ pub(crate) const LEASE_WAIT: std::time::Duration = std::time::Duration::from_sec
 pub const BANDS: [&str; 12] = [
     "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "4m",
 ];
-// Independent source facts pinned in FSD4.7.5, not a translated lookup algorithm.
+// The FT8 and FT4 dial frequency of each band from WSJT-X's default frequency list
+// (WstxOperatingSelection::BandFrequency); not a translated lookup algorithm.
 pub const FREQUENCIES: [(u64, u64); 12] = [
     (1840000, 0),
     (3573000, 3575000),

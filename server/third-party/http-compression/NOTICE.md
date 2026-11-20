@@ -1,6 +1,6 @@
 # HTTP response compression dependency notices
 
-Pinned direct additions: tower-http0.7.1 (compression-gzip only) and existing tower0.5.3 util. Exact resolved additions and original license texts are retained below; feature-tree evidence distinguishes active Rust gzip backend from optional lock entries. No runtime body/shared cache/algorithm change is authorized by these notices.
+Pinned direct additions: tower-http0.7.1 (compression-gzip only) and existing tower0.5.3 util. Exact resolved additions and original license texts are retained below. No runtime body/shared cache/algorithm change is authorized by these notices.
 
 | Crate | Version | Upstream license expression | Source |
 |---|---|---|---|
@@ -18,4 +18,4 @@ Pinned direct additions: tower-http0.7.1 (compression-gzip only) and existing to
 
 The accompanying files are original upstream license/notice texts for these versions. Existing tower0.5.3 remains under its upstream MIT license; its license is retained as well. For dual/multiple licensing, no upstream choice is removed from the retained texts. These notices do not claim all transitive source code is unsafe-free.
 
-Repository formatting removes trailing whitespace and an extra blank final line in two upstream files; all license and copyright wording is retained. Original-source and retained hashes are recorded in the dependency review evidence.
+Repository formatting removes trailing whitespace and an extra blank final line in two upstream files; all license and copyright wording is retained.
