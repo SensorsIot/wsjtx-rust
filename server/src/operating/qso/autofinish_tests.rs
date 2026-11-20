@@ -7,7 +7,10 @@
 // the recording hardware double (virtual UTC; no audio, PTT or radio) with the scripted IC-7300 dial
 // on 14.074 MHz (the log's band); hand-authored decodes packed with the real codec.
 use super::*;
-use crate::automation_tests::{automation, run};
+use crate::automation_tests::{
+    advance_to, assert_completed, assert_on_a_forward_clock, automation, keyed_late,
+    planned_audio_start, run,
+};
 
 /// A station on 20 m FT8: the scripted dial on 14.074 MHz (the band of the log entry), an empty log,
 /// a status client present, the Tx watchdog at `limit` set by the browser (None: the default 6).
@@ -74,32 +77,43 @@ async fn finished(f: &Mcp, e: i64, beside: &[(&str, f64, Option<f64>)]) {
     );
     assert_eq!(logged(f, e), vec![qso("K1ABC", "FN42")]);
 }
-/// Into the own period `own` until its transmission is on the air, then 2 s into it with one station
-/// step; the key-on time.
+/// Into the own period `own` until its transmission is on the air, then 2 s into its planned audio
+/// with one station step; the key-on time.
 async fn on_the_air(f: &Mcp, own: i64) -> i64 {
+    f.bench.clear_stepped_back();
     crate::automation_tests::assert_bound(f, own);
     let service = &f.state.recording.transmit.get().unwrap().service;
-    f.bench
-        .offset
-        .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
+    advance_to(f, own - 30);
     let deadline = Instant::now() + Duration::from_secs(5);
     while !service.view().transmitting {
         assert!(Instant::now() < deadline, "{:?}", service.view());
         f.tick();
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    f.bench.offset.fetch_add(2_000, Ordering::SeqCst);
+    advance_to(f, planned_audio_start(f, own) + 2_000);
     f.tick();
     let (at, on) = *f.bench.keys.lock().unwrap().last().unwrap();
     assert!(on);
+    assert_on_a_forward_clock(f);
     at
 }
-/// The transmission keyed at `on` runs on to its normal end: PTT released 12.64 s (the FT8
-/// transmission) or more after the key-on, never at the request that came 2 s into it.
-async fn to_its_end(f: &Mcp, on: i64) {
+/// The transmission of the own period `own` runs on to its normal end: PTT released at or after
+/// the end of its planned audio (12.64 s, the FT8 transmission), never at the request that came
+/// 2 s into it.
+async fn to_its_end(f: &Mcp, own: i64) {
+    end_move(f, own);
+    released(f, own).await;
+}
+/// The move that ends the transmission of the own period `own`: the clock 13 s past its planned
+/// audio start, after the audio end and before the release deadline. It starts the step-back span
+/// of `to_its_end` and reads no transmit owner.
+fn end_move(f: &Mcp, own: i64) {
+    f.bench.clear_stepped_back();
+    advance_to(f, planned_audio_start(f, own) + 13_000);
+}
+/// The wait for the release of the transmission of `own`, and its end at or after the audio end.
+async fn released(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
-    assert!(service.view().transmitting, "still on the air");
-    f.bench.offset.fetch_add(11_000, Ordering::SeqCst);
     let deadline = Instant::now() + Duration::from_secs(5);
     while service.view().transmitting {
         assert!(Instant::now() < deadline, "{:?}", service.view());
@@ -108,20 +122,20 @@ async fn to_its_end(f: &Mcp, on: i64) {
     f.tick();
     let (off, keyed) = *f.bench.keys.lock().unwrap().last().unwrap();
     assert!(!keyed);
+    let audio_end = planned_audio_start(f, own) + 12_640;
     assert!(
-        off - on >= 12_640,
-        "released {} ms after the key-on",
-        off - on
+        off >= audio_end,
+        "released {} ms before the audio end",
+        audio_end - off
     );
+    assert_completed(f, own);
 }
 /// The station steps through the own period `own` in 100 ms steps to 2 s into it and on past its end:
 /// nothing is keyed.
 async fn silent_through(f: &Mcp, own: i64) {
     let service = &f.state.recording.transmit.get().unwrap().service;
     let keys = f.keys();
-    f.bench
-        .offset
-        .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
+    advance_to(f, own - 30);
     for _ in 0..21 {
         f.tick();
         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -131,6 +145,48 @@ async fn silent_through(f: &Mcp, own: i64) {
     f.bench.offset.fetch_add(11_000, Ordering::SeqCst);
     f.tick();
     assert_eq!(f.keys(), keys, "nothing keyed in {own}");
+}
+/// The run calling K1ABC's CQ of e, its Tx1 pending for e + 15 s.
+async fn calling(t: &Station81) {
+    select(&t.f, config(Some("New calls"))).await;
+    publish(&t.f, t.e, &[K1ABC]);
+    assert_eq!(
+        contact(&t.f).await,
+        (json!("K1ABC"), json!("replying"), json!("armed"))
+    );
+}
+
+// A Tx1 keyed in its own period before `on_the_air` runs, as a late test thread meets it: the
+// transmission runs to its end and the clock never goes back across the key.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_transmission_keyed_before_on_the_air_completes_on_a_forward_clock() {
+    let t = station81(None).await;
+    calling(&t).await;
+    let (f, own) = (&t.f, t.e + 15_000);
+    keyed_late(f, own).await;
+    on_the_air(f, own).await;
+    to_its_end(f, own).await;
+    assert_completed(f, own);
+}
+
+// The end move made 800 ms late while the transmit owner is held between its device poll and its
+// release deadline read: the transmission ends normally at the audio end and Tx stays armed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_end_move_late_in_the_owners_poll_ends_the_transmission_normally() {
+    let t = station81(None).await;
+    calling(&t).await;
+    let (f, own) = (&t.f, t.e + 15_000);
+    on_the_air(f, own).await;
+    f.bench.hold_poll().await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    end_move(f, own);
+    f.bench.release_poll();
+    released(f, own).await;
+    let service = &f.state.recording.transmit.get().unwrap().service;
+    assert_eq!(
+        service.view().arm_state,
+        wstx_rust::transmit::service::ArmState::Armed
+    );
 }
 async fn auto_off(f: &Mcp) {
     let r = auto(f, false, None).await;
@@ -229,7 +285,7 @@ async fn tc_081_002_a_reply_on_the_air_is_a_started_qso() {
     let (f, e) = (&t.f, t.e);
     w1aw_answered(f, e).await;
     let halt_state = f.read("contact").await["transmit"]["halt_state"].clone();
-    let on = on_the_air(f, e + 45_000).await;
+    on_the_air(f, e + 45_000).await;
     assert_eq!(last_text(f).as_deref(), Some("W1AW HB9BLA -10"));
     auto_off(f).await;
     assert_eq!(run_state(f).await, ("stopped".into(), json!("stopped")));
@@ -237,7 +293,7 @@ async fn tc_081_002_a_reply_on_the_air_is_a_started_qso() {
         contact(f).await,
         (json!("W1AW"), json!("report"), json!("armed"))
     );
-    to_its_end(f, on).await;
+    to_its_end(f, e + 45_000).await;
     publish(f, e + 60_000, &[("HB9BLA W1AW R-05", 905.0, Some(-8.0))]);
     transmit_own_period(f, e + 75_000).await;
     assert_eq!(last_text(f).as_deref(), Some("W1AW HB9BLA RRR"));
@@ -297,10 +353,10 @@ async fn tc_081_002_b_c_d_no_started_qso_ends_at_once_and_its_period_on_the_air_
     publish(f, e, &[K1ABC]);
     transmit_own_period(f, e + 15_000).await;
     publish(f, e + 30_000, &[]);
-    let on = on_the_air(f, e + 45_000).await;
+    on_the_air(f, e + 45_000).await;
     assert_eq!(last_text(f).as_deref(), Some("K1ABC HB9BLA JN47"));
     auto_off(f).await;
-    to_its_end(f, on).await;
+    to_its_end(f, e + 45_000).await;
     assert_eq!(
         contact(f).await,
         (Value::Null, json!("cancelled"), json!("disarmed"))
@@ -313,10 +369,10 @@ async fn tc_081_002_b_c_d_no_started_qso_ends_at_once_and_its_period_on_the_air_
     // (d)
     let t = casual_cq().await;
     let (f, e) = (&t.f, t.e);
-    let on = on_the_air(f, e + 15_000).await;
+    on_the_air(f, e + 15_000).await;
     assert_eq!(last_text(f).as_deref(), Some("CQ HB9BLA JN47"));
     auto_off(f).await;
-    to_its_end(f, on).await;
+    to_its_end(f, e + 15_000).await;
     silent_through(f, e + 45_000).await;
     assert_eq!(
         contact(f).await,

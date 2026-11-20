@@ -9219,8 +9219,35 @@ async fn tc_066_002_the_cqs_caller_move_skips_a_decoded_station() {
 // in the per-period power, the received ones are (e - 30, e - 15, e and e + 30 s).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_066_002_received_periods_count_after_my_transmissions() {
+    received_periods_count(Late::No).await;
+}
+// The same, each move that ends a transmission made 800 ms late while the transmit owner is held
+// between its device poll and its release deadline read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_066_002_received_periods_count_with_each_end_move_late_in_the_owners_poll() {
+    received_periods_count(Late::InTheOwnersPoll).await;
+}
+// The same, each Tx period keyed 100 ms in before the first move, as a test thread late past the
+// period start meets it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_066_002_received_periods_count_with_each_key_before_the_first_move() {
+    received_periods_count(Late::PastTheKey).await;
+}
+/// Where the test thread of `received_periods_count` is late.
+#[derive(Clone, Copy, PartialEq)]
+enum Late {
+    No,
+    InTheOwnersPoll,
+    PastTheKey,
+}
+/// The received periods counted after my transmissions, the bench clock moved forward only to
+/// fixed targets of each Tx period, with the test thread late at `late`.
+async fn received_periods_count(late: Late) {
+    use crate::automation_tests::{advance_to, keyed_late, planned_audio_start};
     use std::time::{Duration, Instant};
+    use wstx_rust::transmit::service::PttState;
     let f = station(true).await;
+    f.bench.clear_stepped_back();
     f.state.recording.fixture_band("20m");
     let (_, job, generation) = f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
@@ -9240,15 +9267,29 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
         // My Rx period received up to my Tx period, then PTT keyed at its start.
         capture.until(own);
         crate::automation_tests::assert_bound(&f, own);
-        f.bench
-            .offset
-            .fetch_add(own - 30 - f.bench.now_utc_ms(), Ordering::SeqCst);
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !service.view().transmitting {
-            assert!(Instant::now() < deadline, "{:?}", service.view());
-            f.tick();
-            tokio::time::sleep(Duration::from_millis(5)).await;
+        if late == Late::PastTheKey {
+            keyed_late(&f, own).await;
         }
+        let audio_start = planned_audio_start(&f, own);
+        let wait = async |done: &dyn Fn(&wstx_rust::transmit::service::View) -> bool,
+                          tick: bool| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let view = service.view();
+                if done(&view) {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "{view:?}");
+                if tick {
+                    f.tick();
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        };
+        advance_to(&f, own - 30);
+        wait(&|v| v.ptt == PttState::Keyed, true).await;
+        advance_to(&f, audio_start);
+        wait(&|v| v.transmitting, true).await;
         let on_air: Vec<(i64, bool)> = capture
             .until(own + 13_000)
             .into_iter()
@@ -9259,21 +9300,29 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
             [(own - 400, true), (own - 200, true)],
             "repetition {k}: the Rx period's rows completed on the air"
         );
-        f.bench.offset.fetch_add(13_000, Ordering::SeqCst);
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while service.view().transmitting {
-            assert!(Instant::now() < deadline, "{:?}", service.view());
-            tokio::time::sleep(Duration::from_millis(5)).await;
+        // Past the end of the FT8 waveform, before its release deadline.
+        if late == Late::InTheOwnersPoll {
+            f.bench.hold_poll().await;
+            tokio::time::sleep(Duration::from_millis(800)).await;
+            advance_to(&f, audio_start + 13_000);
+            f.bench.release_poll();
+        } else {
+            advance_to(&f, audio_start + 13_000);
         }
+        wait(&|v| !v.transmitting && v.ptt == PttState::Released, false).await;
         f.tick();
         // The next Rx period received up to its decode 13 s in; K1ABC silent: the slot check.
         capture.until(rep(e, k) + 13_000);
         ended(&f, rep(e, k) + 13_000);
         publish(&f, rep(e, k), &[]);
+        let run = run_of(&f).await;
         assert_eq!(
-            run_of(&f).await["slot_check"]["repetitions"],
+            run["slot_check"]["repetitions"],
             json!(k),
-            "repetition {k}"
+            "repetition {k}: run {} {}, transmit {:?}",
+            run["state"],
+            run["reason"],
+            service.view()
         );
         assert_eq!(
             free_tx_slots(&f).await["periods"],
@@ -9297,4 +9346,7 @@ async fn tc_066_002_received_periods_count_after_my_transmissions() {
         .map(|p| p.start_ms - e)
         .collect();
     assert_eq!(kept, [-30_000, -15_000, 0, 30_000], "periods kept, from e");
+    for own in [e + 15_000, rep(e, 1) + 15_000] {
+        crate::automation_tests::assert_completed(&f, own);
+    }
 }

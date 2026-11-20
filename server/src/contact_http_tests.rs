@@ -28,12 +28,57 @@ pub(crate) struct Bench {
     /// When nonzero, the transmit owner's thread reads its UTC at most this value while the
     /// test thread reads the moved clock: a jump the engine sees first.
     pub(crate) owner_hold: Arc<AtomicI64>,
+    /// When armed, the next device poll holds the transmit owner between its poll and its
+    /// release deadline read.
+    gate: Arc<PollGate>,
+    /// The step-back record; its lock is the innermost of the bench.
+    record: Arc<Mutex<StepBack>>,
 }
-impl Hardware for Bench {
-    fn set_level_db(&mut self, level_db: i32) {
-        self.levels.lock().unwrap().push(level_db);
+/// The station UTC of the current PTT key (none while released), and whether a read of the
+/// station UTC on any thread returned a time below it.
+#[derive(Default)]
+struct StepBack {
+    key_at: Option<i64>,
+    stepped_back: bool,
+}
+/// A test's hold of the transmit owner inside one device poll: the poll computes its answer,
+/// sets `entered` and returns it only at `release`.
+#[derive(Default)]
+struct PollGate {
+    armed: AtomicBool,
+    entered: AtomicBool,
+    release: AtomicBool,
+}
+impl Bench {
+    /// Arms the poll gate and waits until the transmit owner is held in its next device poll,
+    /// holding the core: until `release_poll`, a read of the transmit owner waits.
+    pub(crate) async fn hold_poll(&self) {
+        self.gate.entered.store(false, Ordering::SeqCst);
+        self.gate.release.store(false, Ordering::SeqCst);
+        self.gate.armed.store(true, Ordering::SeqCst);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !self.gate.entered.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "the transmit owner never polled");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
     }
-    fn now_utc_ms(&self) -> i64 {
+    /// Lets the held device poll return.
+    pub(crate) fn release_poll(&self) {
+        self.gate.release.store(true, Ordering::SeqCst);
+    }
+    fn record(&self) -> std::sync::MutexGuard<'_, StepBack> {
+        self.record.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    /// Whether a read of the station UTC, while keyed, returned a time below the key.
+    pub(crate) fn stepped_back(&self) -> bool {
+        self.record().stepped_back
+    }
+    /// Starts a new span of the step-back record; a noted key stays noted.
+    pub(crate) fn clear_stepped_back(&self) {
+        self.record().stepped_back = false;
+    }
+    /// The station UTC as the calling thread reads it.
+    fn utc_ms(&self) -> i64 {
         let frozen = self.frozen.load(Ordering::SeqCst);
         if frozen != 0 {
             return frozen;
@@ -46,6 +91,19 @@ impl Hardware for Bench {
         let hold = self.owner_hold.load(Ordering::SeqCst);
         if hold != 0 && std::thread::current().name() == Some("transmit") {
             return now.min(hold);
+        }
+        now
+    }
+}
+impl Hardware for Bench {
+    fn set_level_db(&mut self, level_db: i32) {
+        self.levels.lock().unwrap().push(level_db);
+    }
+    fn now_utc_ms(&self) -> i64 {
+        let mut record = self.record();
+        let now = self.utc_ms();
+        if record.key_at.is_some_and(|key| now < key) {
+            record.stepped_back = true;
         }
         now
     }
@@ -67,7 +125,12 @@ impl Hardware for Bench {
         }
     }
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
-        let at = self.now_utc_ms();
+        let at = {
+            let mut record = self.record();
+            let at = self.utc_ms();
+            record.key_at = on.then_some(at);
+            at
+        };
         self.keys.lock().unwrap().push((at, on));
         Ok(())
     }
@@ -83,11 +146,20 @@ impl Hardware for Bench {
         Ok(())
     }
     fn poll_audio(&mut self) -> AudioPoll {
-        match *self.playing.lock().unwrap() {
+        let answer = match *self.playing.lock().unwrap() {
             Some((at, n)) if (self.now_utc_ms() - at) * 48 >= n as i64 => AudioPoll::Finished,
             Some(_) => AudioPoll::Playing,
             None => AudioPoll::Idle,
+        };
+        if self.gate.armed.swap(false, Ordering::SeqCst) {
+            self.gate.entered.store(true, Ordering::SeqCst);
+            // A hang guard only: the test releases the poll within its own steps.
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !self.gate.release.load(Ordering::SeqCst) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
+        answer
     }
     fn stop_audio(&mut self) {
         *self.playing.lock().unwrap() = None;
