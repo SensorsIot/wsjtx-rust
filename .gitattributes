@@ -2,6 +2,7 @@
 *.md text eol=lf
 *.rs text eol=lf
 *.toml text eol=lf
+tools/test/python/independent-vector-tool/*.py text eol=lf
 # The deploy mechanism files keep their exact bytes in git, in every checkout and in the
 # station package, so that each pin (harness/project/docs/Project-Specifics.md, Deploy pins) is the
 # SHA-256 of the file that runs.

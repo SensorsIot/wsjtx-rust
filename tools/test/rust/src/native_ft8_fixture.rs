@@ -21,7 +21,7 @@ impl NativeFt8Fixture {
             std::env::var_os("WSTX_DECODER_VECTORS").expect("explicit verified vector cache"),
         );
         let tool = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/decoder/independent-vector-tool/cache.py");
+            .join("../python/independent-vector-tool/cache.py");
         // Existing independent fixture authority verifies pinned original hashes.
         // No network, candidate encoder, waveform reconstruction or new golden.
         let verified = Command::new(if cfg!(windows) { "python" } else { "python3" })
@@ -36,9 +36,10 @@ impl NativeFt8Fixture {
             "{}",
             String::from_utf8_lossy(&verified.stderr)
         );
-        let manifest: serde_json::Value =
-            serde_json::from_str(include_str!("../decoder/independent-vectors/manifest.json"))
-                .unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../fixtures/decoder/independent-vectors/manifest.json"
+        ))
+        .unwrap();
         let expected = manifest["vectors"]
             .as_array()
             .unwrap()

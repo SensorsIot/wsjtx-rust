@@ -87,7 +87,7 @@ fn prepared(kind: &str) -> PathBuf {
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::temp_dir().join("wstx-independent-decoder-inputs"));
         let tool = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/decoder/independent-vector-tool/cache.py");
+            .join("../tools/test/python/independent-vector-tool/cache.py");
         let mut command =
             std::process::Command::new(if cfg!(windows) { "python" } else { "python3" });
         command
@@ -541,8 +541,8 @@ fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
     ));
     fs::create_dir(&temporary).unwrap();
     let tool = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../fixtures/decoder/independent-vector-tool/generate.py");
-    let protocol = tool.parent().unwrap().join("../protocol-data");
+        .join("../tools/test/python/independent-vector-tool/generate.py");
+    let protocol = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/decoder/protocol-data");
     for mode in [Mode::Ft4, Mode::Ft8] {
         for name in [
             "free-71-3-6",
@@ -628,13 +628,10 @@ fn phase_drift_dynamic_range_and_residual_regressions() {
     .unwrap();
     let root = std::env::var_os("WSTX_DECODER_SYNCHRONIZATION")
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            std::env::temp_dir()
-                .join("wstx-decoder-synchronization")
-                .join(fixtures["generator_sha256"].as_str().unwrap())
-        });
+        .unwrap_or_else(|| std::env::temp_dir().join("wstx-decoder-synchronization"))
+        .join(fixtures["generator_sha256"].as_str().unwrap());
     let tool = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../fixtures/decoder/independent-vector-tool/regressions.py");
+        .join("../tools/test/python/independent-vector-tool/regressions.py");
     let output = std::process::Command::new(if cfg!(windows) { "python" } else { "python3" })
         .arg(tool)
         .arg("--output")

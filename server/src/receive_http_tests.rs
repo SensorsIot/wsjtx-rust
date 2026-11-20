@@ -1,10 +1,9 @@
 #![forbid(unsafe_code)]
 use super::*;
-#[path = "../../fixtures/radio/native_ft8_fixture.rs"]
 #[cfg(not(debug_assertions))]
-mod native_fixture;
-#[cfg(not(debug_assertions))]
-use native_fixture::{NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES};
+use wstx_test_tools::native_ft8_fixture::{
+    NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES,
+};
 // The test-only model-value reader (Project-Specifics, "Model values read by tests").
 #[cfg(all(windows, not(debug_assertions)))]
 use wstx_test_tools::model_values;

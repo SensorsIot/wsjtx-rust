@@ -2,7 +2,7 @@
   "schema_version": 1,
   "purpose": "Independent additive phase, drift, dynamic-range and residual oracles; all2286qualitycases remain unchanged",
   "protocol_source": "https://wsjt.sourceforge.io/FT4_FT8_QEX.pdf",
-  "generator": "independent-vector-tool/regressions.py",
+  "generator": "tools/test/python/independent-vector-tool/regressions.py",
   "base_composer_sha256": "6564cc8f5c1c87f767f0c0003efb3aff0d1a8ea88633f68edb5b64b6086eae79",
   "cases": [
     {
@@ -820,5 +820,5 @@
       "samples_sha256": "4b26c52cc6e1a74a7cc524724ade55a05990504f6ec55b60b969618263d7209d"
     }
   ],
-  "generator_sha256": "4eb7e85528035066da754680a55e06bb1199a9445c4434da34cb983d4902b563"
+  "generator_sha256": "36f8e307b93b6bf92c5edf31883415c3ca595fd7a11427ea88722ebdd19d009a"
 }

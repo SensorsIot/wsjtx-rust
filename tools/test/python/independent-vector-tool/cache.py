@@ -13,7 +13,7 @@ import tempfile
 import time
 import wave
 
-FIXTURES = Path(__file__).resolve().parents[1]
+FIXTURES = Path(__file__).resolve().parents[4] / 'fixtures' / 'decoder'
 COMPOSER = Path(__file__).with_name('generate.py')
 
 

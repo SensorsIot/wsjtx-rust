@@ -59,16 +59,16 @@
   ],
   "fixture_files": [
     {
-      "path": "independent-vector-tool/boundary_cases.py",
-      "sha256": "b90a7462911a46397e74eed45d295e7e661c5c83be4833e7e5d36c504aac1293"
+      "path": "../../tools/test/python/independent-vector-tool/boundary_cases.py",
+      "sha256": "b68b1d6dc3afb7cc081f69e941eb56bef4bfa14a861c7cbed4c4c1579347e00c"
     },
     {
-      "path": "independent-vector-tool/generate.py",
+      "path": "../../tools/test/python/independent-vector-tool/generate.py",
       "sha256": "6564cc8f5c1c87f767f0c0003efb3aff0d1a8ea88633f68edb5b64b6086eae79"
     },
     {
-      "path": "independent-vector-tool/README.md",
-      "sha256": "aa475892701877ae5910655101b112980fc37d5d688206cca53347af73dd42c5"
+      "path": "../../tools/test/python/independent-vector-tool/README.md",
+      "sha256": "800f59e8cf3fea3fd75dd19e49ad6ba7beb1d3aaf2ec48585e7c13a77d8a4621"
     },
     {
       "path": "independent-vectors/manifest.json",

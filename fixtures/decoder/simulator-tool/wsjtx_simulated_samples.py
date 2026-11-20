@@ -14,6 +14,15 @@ def sha(path):
     return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
 
 
+def oracle_composer(directory):
+    """The composer of an oracle directory: the repository's fixtures/decoder takes the vector
+    tool at tools/test/python/; any other directory (a portable store's oracle/) holds its own."""
+    directory = pathlib.Path(directory)
+    if directory.resolve() == (ROOT.parents[2]/"fixtures/decoder").resolve():
+        return ROOT.parents[2]/"tools/test/python/independent-vector-tool/generate.py"
+    return directory/"independent-vector-tool/generate.py"
+
+
 def write_json(path, value):
     pathlib.Path(path).write_text(json.dumps(value, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
@@ -110,10 +119,13 @@ def verify_manifest(path, fixture_directory=None):
                     if c["mode"] == mode}
     if fixture_directory is None:
         fixture_directory = path.parent.parent/"oracle"
-        if not (fixture_directory/"independent-vector-tool/generate.py").exists():
+        if not fixture_directory.is_dir():
             fixture_directory = ROOT.parents[2]/"fixtures/decoder"
     fixture_directory = pathlib.Path(fixture_directory)
-    if manifest.get("independent_oracle_sha256") != sha(fixture_directory/"independent-vector-tool/generate.py"):
+    composer = oracle_composer(fixture_directory)
+    if not composer.is_file():
+        raise ValueError("independent oracle composer missing")
+    if manifest.get("independent_oracle_sha256") != sha(composer):
         raise ValueError("independent oracle identity changed")
     oracle, matrices = load_oracle(fixture_directory)
     seen = set()
@@ -177,7 +189,7 @@ def mix_pcm(first, second, output, gains):
 
 
 def load_oracle(directory):
-    spec = importlib.util.spec_from_file_location("channel_oracle", directory / "independent-vector-tool/generate.py")
+    spec = importlib.util.spec_from_file_location("channel_oracle", oracle_composer(directory))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     matrices = module.tables(directory / "protocol-data")
@@ -230,7 +242,7 @@ def generate(mode, exe, output, fixture_directory, expected_exe_hash):
                         "fullscale_interpretation": "clean source normalizes to32766.9 before nearest rounding; fullscale integer alone is not clipping"})
     manifest = {"schema": 1, "source_revision": REVISION, "mode": mode, "simulator_sha256": sha(exe),
                 "generator_script_sha256": sha(__file__), "cases_declaration_sha256": sha(DECLARATIONS),
-                "independent_oracle_sha256": sha(fixture_directory/"independent-vector-tool/generate.py"),
+                "independent_oracle_sha256": sha(oracle_composer(fixture_directory)),
                 "cases": records}
     write_json(output / "manifest.json", manifest)
     return manifest
@@ -296,7 +308,7 @@ def admit_hosted_ft8(raw, simulator, output, fixture_directory):
     manifest = {"schema": 1, "mode": "ft8", "source_revision": REVISION,
                 "simulator_sha256": sha(simulator), "generator_script_sha256": sha(__file__),
                 "cases_declaration_sha256": sha(DECLARATIONS),
-                "independent_oracle_sha256": sha(fixture_directory/"independent-vector-tool/generate.py"),
+                "independent_oracle_sha256": sha(oracle_composer(fixture_directory)),
                 "hosted_raw_manifest_sha256": sha(raw/"raw-manifest.json"),
                 "hosted_declaration_sha256": host["case_declaration_sha256"],
                 "hosted_declaration_difference": "CRLF/LF normalization only",

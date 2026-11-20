@@ -7,6 +7,7 @@ pub mod link_estimate;
 pub mod listening;
 pub mod lock_holder;
 pub mod model_values;
+pub mod native_ft8_fixture;
 pub mod ports;
 pub mod receive_authority;
 pub mod resource_harness;

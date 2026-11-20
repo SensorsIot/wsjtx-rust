@@ -1,13 +1,13 @@
 #![forbid(unsafe_code)]
 use super::*;
-#[path = "../../fixtures/radio/native_ft8_fixture.rs"]
-mod native_fixture;
-use native_fixture::{NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES};
 use source::{SampleSource, SourceDescriptor, SourceError, SourcePoll, SourceTiming};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     process::{Command, Stdio},
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
+};
+use wstx_test_tools::native_ft8_fixture::{
+    NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES,
 };
 
 #[derive(Default)]
