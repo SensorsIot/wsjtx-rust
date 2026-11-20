@@ -10,12 +10,66 @@ use wstx_test_tools::native_ft8_fixture::{
     NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES,
 };
 
+/// The workload's capture contexts, in workload order.
+const CONTEXT_MODES: [&str; 5] = ["ft8", "ft4", "ft4", "ft8", "ft8"];
+
+/// One context's refused pushes: their count and the first native frame of the first one.
+#[derive(Default)]
+struct ContextRefusals {
+    count: AtomicU64,
+    first_frame: std::sync::Mutex<Option<u64>>,
+}
 #[derive(Default)]
 struct CaptureCounts {
     started: AtomicU64,
     released: AtomicU64,
     packets: AtomicU64,
     lost: AtomicU64,
+    refusals: [ContextRefusals; CONTEXT_MODES.len()],
+}
+impl CaptureCounts {
+    fn refuse(&self, context: usize, frame: u64) {
+        self.lost.fetch_add(1, Ordering::AcqRel);
+        let refusals = &self.refusals[context];
+        if refusals.count.fetch_add(1, Ordering::AcqRel) == 0 {
+            *refusals.first_frame.lock().unwrap() = Some(frame);
+        }
+    }
+    fn by_context(&self) -> Vec<Value> {
+        self.refusals
+            .iter()
+            .map(|refusals| {
+                json!({
+                    "count": refusals.count.load(Ordering::Acquire),
+                    "first_frame": *refusals.first_frame.lock().unwrap(),
+                })
+            })
+            .collect()
+    }
+}
+/// Names each context with a refused push, its count and its first refused frame, or says
+/// that no context had one.
+fn refusal_summary(by_context: &[Value]) -> String {
+    let named: Vec<String> = by_context
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| entry["count"].as_u64().unwrap_or(0) > 0)
+        .map(|(index, entry)| {
+            format!(
+                "context {} of {} ({}) had {} refused push(es), the first at native frame {}",
+                index + 1,
+                by_context.len(),
+                CONTEXT_MODES[index],
+                entry["count"],
+                entry["first_frame"]
+            )
+        })
+        .collect();
+    if named.is_empty() {
+        "native queue refusals: no context had a refused push".into()
+    } else {
+        format!("native queue refusals: {}", named.join("; "))
+    }
 }
 struct Input {
     source: audio::LiveSource,
@@ -24,10 +78,11 @@ struct Input {
     producer: Option<std::thread::JoinHandle<()>>,
     stop: Arc<AtomicBool>,
     running: bool,
+    context: usize,
     counts: Arc<CaptureCounts>,
 }
 impl Input {
-    fn new(mode: &str, counts: Arc<CaptureCounts>) -> (Self, Value) {
+    fn new(mode: &str, context: usize, counts: Arc<CaptureCounts>) -> (Self, Value) {
         let fixture = if mode == "ft8" {
             NativeFt8Fixture::load()
         } else {
@@ -48,6 +103,7 @@ impl Input {
                 producer: None,
                 stop: Arc::new(AtomicBool::new(false)),
                 running: false,
+                context,
                 counts,
             },
             expected,
@@ -76,6 +132,7 @@ impl recording::LiveInput for Input {
         let queue = self.queue.clone();
         let stop = self.stop.clone();
         let counts = self.counts.clone();
+        let context = self.context;
         self.producer = Some(
             std::thread::Builder::new()
                 .name("independent-native-fixture".into())
@@ -119,7 +176,7 @@ impl recording::LiveInput for Input {
                                 0
                             },
                         ) {
-                            counts.lost.fetch_add(1, Ordering::AcqRel);
+                            counts.refuse(context, first as u64);
                         }
                         counts.packets.fetch_add(1, Ordering::AcqRel);
                         first = end;
@@ -170,8 +227,8 @@ async fn live_native_selection_tls_thin_and_off() {
     let counts = Arc::new(CaptureCounts::default());
     let mut inputs: Vec<Box<dyn recording::LiveInput>> = Vec::new();
     let mut expected = json!({});
-    for mode in ["ft8", "ft4", "ft4", "ft8", "ft8"] {
-        let (input, oracle) = Input::new(mode, counts.clone());
+    for (context, mode) in CONTEXT_MODES.into_iter().enumerate() {
+        let (input, oracle) = Input::new(mode, context, counts.clone());
         expected[mode] = oracle;
         inputs.push(Box::new(input));
     }
@@ -339,7 +396,7 @@ async fn live_native_selection_tls_thin_and_off() {
         .iter()
         .map(|(first, end)| end.map(|last| last.duration_since(*first).as_secs_f64() * 1000.0))
         .collect();
-    let receipt = json!({"native_started":counts.started.load(Ordering::Acquire),"native_released":counts.released.load(Ordering::Acquire),"native_packets":counts.packets.load(Ordering::Acquire),"native_queue_refusals":counts.lost.load(Ordering::Acquire),"setup_ms":setup_ms,"exchanges":rig.exchanges.len(),"released":released,"cat_closed":rig.closed});
+    let receipt = json!({"native_started":counts.started.load(Ordering::Acquire),"native_released":counts.released.load(Ordering::Acquire),"native_packets":counts.packets.load(Ordering::Acquire),"native_queue_refusals":counts.lost.load(Ordering::Acquire),"native_queue_refusals_by_context":counts.by_context(),"setup_ms":setup_ms,"exchanges":rig.exchanges.len(),"released":released,"cat_closed":rig.closed});
     drop(rig);
     std::fs::create_dir_all("test-results/radio-selection").unwrap();
     std::fs::write(
@@ -362,14 +419,27 @@ async fn live_native_selection_tls_thin_and_off() {
     drop(actor);
     drop(recording);
     std::fs::remove_dir_all(dir).unwrap();
-    assert!(!outcome.2, "controlled browser child deadline");
+    let by_context = receipt["native_queue_refusals_by_context"]
+        .as_array()
+        .unwrap();
+    let refusals = refusal_summary(by_context);
+    assert!(!outcome.2, "controlled browser child deadline; {refusals}");
     assert!(
         outcome.0.status.success(),
-        "controlled browser child failed"
+        "controlled browser child failed; {refusals}"
     );
     assert!(
         outcome.1.contains("WSTX_SELECTION_COMPLETED 2 5 2"),
-        "both real browser/profile windows and five CQ contexts must actually complete"
+        "both real browser/profile windows and five CQ contexts must actually complete; {refusals}"
+    );
+    assert_eq!(by_context.len(), CONTEXT_MODES.len());
+    assert_eq!(
+        by_context
+            .iter()
+            .map(|entry| entry["count"].as_u64().unwrap())
+            .sum::<u64>(),
+        receipt["native_queue_refusals"].as_u64().unwrap(),
+        "the refusals by context sum to native_queue_refusals"
     );
     assert_eq!(receipt["native_started"], 5);
     assert_eq!(receipt["native_released"], 5);
