@@ -88,11 +88,7 @@ fn envelope_cancellation_matches_scalar_convolution_and_edges() {
 #[test]
 #[cfg(not(debug_assertions))]
 fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    };
-    use wstx_test_tools::resource_observer::{self, Phase};
+    use wstx_test_tools::resource_observer::{self, CancelPoint};
     for mode in [Mode::Ft8, Mode::Ft4] {
         let frame = mode.symbol_frames() * mode.symbol_count();
         let wave = (0..frame)
@@ -113,10 +109,9 @@ fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
         for scalar in [false, true] {
             let mut subtractor = Subtractor::new(mode, scalar).unwrap();
             let mut actual = original.clone();
-            let cancel = Arc::new(AtomicBool::new(false));
-            let observed =
-                resource_observer::install(cancel.clone(), Some(Phase::SubtractionForward));
-            let is_cancelled = || cancel.load(Ordering::SeqCst);
+            // Call 1, the checkpoint before the sweep, answers true.
+            let point = CancelPoint::after(0);
+            let is_cancelled = || point.cancelled();
             let mut budget = CpuBudget::new(&is_cancelled);
             let context = serde_json::json!({"phase":"subtraction","mode":mode,"scalar":scalar,"positive":false});
             let began = std::time::Instant::now();
@@ -124,23 +119,15 @@ fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
                 subtractor.subtract(&mut actual, start, &wave, &mut budget),
                 &context,
             );
-            observed.record_return(
+            point.record_return(
                 &context,
                 began,
                 timing.returned_at,
                 "actual private asynchronous subtraction Future::poll",
             );
             assert_eq!(outcome, Err(DecodeError::Cancelled));
-            assert_eq!(
-                observed.report().counts[Phase::SubtractionForward as usize],
-                1
-            );
-            assert_eq!(
-                observed.report().counts[Phase::SubtractionCommit as usize],
-                0
-            );
+            assert_eq!(point.calls(), 1);
             assert_eq!(actual, original);
-            drop(observed);
             let never = || false;
             let mut positive_budget = CpuBudget::new(&never);
             let context = serde_json::json!({"phase":"subtraction","mode":mode,"scalar":scalar,"positive":true});

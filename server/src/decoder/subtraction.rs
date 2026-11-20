@@ -77,10 +77,6 @@ impl Subtractor {
         {
             return Err(DecodeError::InvalidSamples);
         }
-        #[cfg(test)]
-        wstx_test_tools::resource_observer::hit(
-            wstx_test_tools::resource_observer::Phase::SubtractionForward,
-        );
         // Cancellation is checked before the sweep, so a cancelled subtraction leaves the
         // residual unchanged.
         budget.checkpoint().await?;
@@ -140,10 +136,6 @@ impl Subtractor {
             let value = 2. * (q[0] as f64 * envelope.re - q[1] as f64 * envelope.im);
             samples[start + k] -= value as f32;
         }
-        #[cfg(test)]
-        wstx_test_tools::resource_observer::hit(
-            wstx_test_tools::resource_observer::Phase::SubtractionCommit,
-        );
         budget.checkpoint().await?;
         Ok(())
     }
