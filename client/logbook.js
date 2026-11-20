@@ -121,7 +121,7 @@ function annotate(body,records){
 // Observe the rendered rows instead of changing recording.js (its served source is pinned).
 const activity=document.querySelector('#band-activity tbody');
 if(activity)new MutationObserver(()=>annotate(activity,resultRows)).observe(activity,{childList:true});
-window.wstxLogbook=Object.freeze({annotate,loadHistory});
+window.wstxLogbook=Object.freeze({loadHistory});
 
 // ---------------------------------------------------------------- country file
 // WstxLogControl::CountryFile in Settings: the cty.dat in use, an upload replaces it
