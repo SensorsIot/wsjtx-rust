@@ -335,7 +335,7 @@
   select:
   - tools/sysml.py
   - tools/sysml/
-  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the tool's tests test_[!adre]*.py, every test file not run by another sysml suite: TV-033 to TV-048, TV-075 to TV-110 and TV-115 to TV-155, the rules on isolated models, five of them also on the real model (TV-077, TV-088, TV-110, TV-143, TV-155). Selected only when the tool changes. No radio or live service."
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the tool's tests test_[!adre]*.py, every test file not run by another sysml suite: TV-033 to TV-048, TV-075 to TV-110 and TV-115 to TV-155 and TV-163 to TV-176, the rules on isolated models, five of them also on the real model (TV-077, TV-088, TV-110, TV-143, TV-155). Selected only when the tool changes. No radio or live service."
 
 # TR-07 on the working model: test_architecture_context.py reads Context.sysml and the
 # packages of interfaces/external/ with the tool's parser, without the Pilot.
@@ -431,16 +431,26 @@
   - server/
   - tests/
   - docs/sysml/
-  - tools/sysml.py
-  - tools/sysml/
+  - tools/
+  - fixtures/
+  - README.md
+  - Cargo.toml
+  - rust-toolchain.toml
+  - .github/workflows/fortran-stage-diagnostics.yml
+  - .github/workflows/windows-rust.yml
   select:
   - client/
   - server/
   - tests/
   - docs/sysml/
-  - tools/sysml.py
-  - tools/sysml/
-  needs: Python 3.12. Windows PC; canonical source/model identity and binding checks only. No Java, model mutation suite, compilation, radio or behavior proof.
+  - tools/
+  - fixtures/
+  - README.md
+  - Cargo.toml
+  - rust-toolchain.toml
+  - .github/workflows/fortran-stage-diagnostics.yml
+  - .github/workflows/windows-rust.yml
+  needs: Python 3.12. Windows PC; canonical source/model identity and binding checks and the history check of comments, test names, test strings and Markdown (TR-22) over every file it reads. No Java, model mutation suite, compilation, radio or behavior proof.
 
 # The deploy mechanism (Project-Specifics.md, Deployment authority): its pins, the station drill
 # and the mocked install flow. -v names every test and every skip in the gate log.
