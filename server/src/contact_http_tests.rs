@@ -413,7 +413,7 @@ async fn contact_snapshot_is_exact_identity_coded_and_bounded() {
         (&Value::Null, &json!(0))
     );
     assert_eq!(v["contact"], Value::Null);
-    assert_eq!(v["log"], Value::Null, "#41: no review; nothing logged yet");
+    assert_eq!(v["log"], Value::Null, "no review; nothing logged yet");
     assert_eq!(
         v["settings"],
         json!({"auto_seq":true,"call_first":true,"tx1_skip":false,"tx_calls":6,"tune_seconds":90,"rx_hz":1500,"tx_hz":1500,"hold_tx":true,"parity":"odd","report":-15,"activity":"none","exchange":null,"serial":1})
@@ -768,11 +768,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
             "dialogue"
         ])
     );
-    assert_eq!(
-        c["dialogue"],
-        json!([]),
-        "a new contact has no dialogue (#37)"
-    );
+    assert_eq!(c["dialogue"], json!([]), "a new contact has no dialogue");
     assert!(profile::valid_uuid(c["id"].as_str().unwrap()));
     assert_eq!(
         (

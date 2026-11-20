@@ -526,8 +526,8 @@ CASES = [
     ("wrong destination: firewall scope", nothing, {"DRILL_REMOTE": "192.168.0.99"}, "Firewall rule scope is", "refused"),
     ("wrong destination: task not on the launcher", nothing, {"DRILL_TASK_ARGS": r"-File C:\elsewhere\run.ps1"}, "setup-once.ps1 has not been run", "refused"),
     ("staged version differs from the package", staged_differs, {}, "differs from the package", "refused"),
-    ("consistent rewrite of artifact and records (#32)", consistent_rewrite, {}, "dry run: nothing changed", "LIMIT accepted"),
-    ("older commit on master (stale, #31)", older_commit, {}, "dry run: nothing changed", "LIMIT accepted"),
+    ("consistent rewrite of artifact and records", consistent_rewrite, {}, "dry run: nothing changed", "LIMIT accepted"),
+    ("older commit on master (stale)", older_commit, {}, "dry run: nothing changed", "LIMIT accepted"),
 ]
 
 # TC-171-01: the deploy refuses a station that is not idle before it stops anything, and waits

@@ -82,7 +82,7 @@ test('TC-007-003 QSO pane candidates selection without transmit',{timeout:90000}
   assert.equal(await page.locator('#contact-hold').isChecked(),true);
   assert.equal(await page.locator('#contact-rx').inputValue(),'1235');assert.equal(await page.locator('#contact-tx').inputValue(),'1500');
   assert.equal(await page.locator('#contact-parity').inputValue(),'odd');
-  assert.deepEqual(await page.locator('#waterfall-wrap .ct-marker').evaluateAll(ms=>ms.map(m=>[m.dataset.key,m.getAttribute('aria-valuenow'),m.textContent])),[['rx','1235',''],['tx','1500','']],'#50: unlabelled lines; Tx held at its slot');
+  assert.deepEqual(await page.locator('#waterfall-wrap .ct-marker').evaluateAll(ms=>ms.map(m=>[m.dataset.key,m.getAttribute('aria-valuenow'),m.textContent])),[['rx','1235',''],['tx','1500','']],'unlabelled lines; Tx held at its slot');
   assert.equal((await snapshot()).transmit.arm_state,'disarmed','selection alone never arms');
   assert.equal(requests.some(r=>r.method==='POST'&&r.path.startsWith('/transmit')),false,'no transmit request from selection');
   assert.equal(commands().some(c=>c.action==='enable_tx'),false);
@@ -263,7 +263,7 @@ test('manual DX entry and Log QSO log the contact at once without hiding Halt Tx
   assert.deepEqual([records[0].call,records[0].gridsquare,records[0].mode,records[0].station_callsign],['DL1ABC','JO62','FT8','HB9BLA']);
   assert.equal(await page.locator('#log-review').count(),0,'no review form');
   assert.equal(await page.locator('#operating-workspace').isVisible(),true,'the operating screen stays');
-  assert.equal(await page.getByRole('button',{name:'HALT',exact:true}).isVisible(),true,'the QSO pane HALT, the one HALT of the operating view (#37)');
+  assert.equal(await page.getByRole('button',{name:'HALT',exact:true}).isVisible(),true,'the QSO pane HALT, the one HALT of the operating view');
   assert.equal(mutations().some(r=>r.path==='/contacts'),false,'the server logs; the browser never saves');
   assert.deepEqual(page.errors,[]);
 });
@@ -295,7 +295,7 @@ test('a pointer action outside the Settings drawer returns to operation',{timeou
   assert.equal(await page.locator('#settings-drawer').isVisible(),true);
   await page.locator('#band-activity > header').click({timeout:5000});
   await page.locator('#settings-drawer').waitFor({state:'hidden'});
-  assert.equal(await page.getByRole('button',{name:'HALT',exact:true}).isVisible(),true,'the QSO pane HALT, the one HALT of the operating view (#37)');
+  assert.equal(await page.getByRole('button',{name:'HALT',exact:true}).isVisible(),true,'the QSO pane HALT, the one HALT of the operating view');
 });
 
 // The keyboard halt does not wait for contact.js (loaded after the first

@@ -82,7 +82,7 @@ jobs:
           python3 tools/wsjtx_simulator_components.py \
             --exe reference-build/ft8sim \
             --cases fixtures/decoder/simulator-cases.json \
-            --output reference-output/cr18-ft8-components
+            --output reference-output/ft8-components
           ldd reference-build/wsjt-codec > reference-output/runtime-libraries.txt
           cp reference-build/CMakeCache.txt reference-output/CMakeCache.txt
           python3 tools/wsjtx_reference.py acquire --inputs reference-output/inputs

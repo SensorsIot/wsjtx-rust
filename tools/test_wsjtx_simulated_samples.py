@@ -106,7 +106,7 @@ class LiteralFilenameAdmission(unittest.TestCase):
     def check_filename(self, mode, variant):
         from unittest import mock
         import wsjtx_simulated_samples as simulator
-        with tempfile.TemporaryDirectory(prefix="cr18-filename-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="simulated-filename-") as tmp:
             root = pathlib.Path(tmp)
             dataset = root / mode
             shutil.copytree(STORE.parent / mode, dataset)

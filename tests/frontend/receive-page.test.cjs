@@ -70,7 +70,7 @@ test('TC-050-008 a page kept across a restart and periods shows no accident and 
 test('the page watch fails on undefined and on a changing tip, and passes what may change',{timeout:60000},async()=>{
   const n='New on 20m',w=`${n} (worked on another band or mode)`;
   assert.equal(tipChange(n,w),null,'the worked-before status joins once');
-  assert.ok(tipChange(w,n),'#50: it must not go again');
+  assert.ok(tipChange(w,n),'the worked-before status must not go again');
   assert.ok(tipChange(null,n),'a reason must not appear');
   assert.equal(tipChange(`New call · Strategy New calls: #2`,`New call · Strategy New calls: #4`),null,'the rank moves with the rows on screen');
   assert.equal(tipChange(null,'Strategy New calls: #1'),null,'the verdict joins after the evaluation');
@@ -101,9 +101,9 @@ test('the live page check lets the page send only reads and is green only with b
   assert.equal(allowed('GET',at('/authorization.js'),origin),'stub');
   assert.deepEqual(missingTriggers(2,null,true),[],'no job yet on the new boot');
   assert.deepEqual(missingTriggers(2,1,true),[],'below the old generation');
-  assert.equal(missingTriggers(1,1,true).length,1,'an equal generation is not the #22 window');
+  assert.equal(missingTriggers(1,1,true).length,1,'an equal generation is not the restart-generation window');
   assert.equal(missingTriggers(null,null,true).length,1,'no old generation seen');
-  assert.equal(missingTriggers(2,null,false).length,1,'#50 needs a worked-before kept row');
+  assert.equal(missingTriggers(2,null,false).length,1,'the worked-before tip needs a worked-before kept row');
 });
 
 // The live check's wait between its band selection and the stop, on a scripted page.
@@ -152,7 +152,7 @@ test('the live page check without rows of the raised generation within the wait:
   assert.deepEqual(done.message,{stopping:true},'the restart is made');
   assert.deepEqual(done.unexercised,['no rows of a generation above 1 on the page within 1 s of the band selection']);
   const {exerciseMissing}=require('../live-page-check.cjs');
-  assert.match(exerciseMissing(done.unexercised,2,1,true).join('\n'),/^#22: no rows of a generation above 1/,'never green');
+  assert.match(exerciseMissing(done.unexercised,2,1,true).join('\n'),/^restart generation: no rows of a generation above 1/,'never green');
 });
 
 test('the live page check is never green after a band selection not made or not taken',async()=>{
@@ -163,6 +163,6 @@ test('the live page check is never green after a band selection not made or not 
   assert.deepEqual(done.unexercised,[why]);
   assert.equal(done.rows,false,'no wait for rows without a selection');
   // The new boot without a job is the restart-generation window by the generations alone, but nothing was selected.
-  assert.deepEqual(exerciseMissing([why],1,null,true),[`#22: ${why}`]);
+  assert.deepEqual(exerciseMissing([why],1,null,true),[`restart generation: ${why}`]);
   assert.deepEqual(exerciseMissing([],2,1,true),[],'a selection that took, generations old 2 and new 1');
 });

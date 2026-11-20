@@ -50,7 +50,7 @@ test('network lifetime and correlated Off oracle reject true violations',()=>{
 // Evidence (no promise): the failure output of a Thin or Off window, from fixed
 // sockets, stale records and frames. Each record appears exactly once, on the one UTC-ms clock.
 test('Failure evidence of a Thin or Off window lists each socket, stale and close once in UTC ms',async()=>{
-  const parse=lines=>{assert.match(lines[0],/judged on issue #102/);assert.equal(lines.filter(l=>l.includes('#102')).length,1,'one #102 line');return lines.slice(1).map(l=>{assert.match(l,/^WSTX_EVIDENCE \{/);return JSON.parse(l.slice('WSTX_EVIDENCE '.length));});};
+  const parse=lines=>{assert.equal(lines[0],'WSTX_EVIDENCE a Thin or Off window failed: from the lines below and the WSTX_STATION_SOCKET lines');assert.equal(lines.filter(l=>l.includes('a Thin or Off window failed')).length,1,'one header line');return lines.slice(1).map(l=>{assert.match(l,/^WSTX_EVIDENCE \{/);return JSON.parse(l.slice('WSTX_EVIDENCE '.length));});};
   // Hand calculation: origin 1800000000000.5 ms; Node 1000 -> 1800000001000.5, 61000.25 -> 1800000061000.75.
   const timeOrigin=1800000000000.5,windows=[{profile:'thin',start:1000,end:61000.25}];
   // (a) No socket ended in the window: the output states none.
@@ -573,7 +573,7 @@ const clientSilenceMs=12000;
 function evidenceUtc(timeOrigin,t){return t===null||t===undefined?null:Math.round((timeOrigin+t)*1000)/1000;}
 function evidenceWindow(timeOrigin,w,now){return {kind:'window',profile:w.profile,startUtc:evidenceUtc(timeOrigin,w.start),endUtc:evidenceUtc(timeOrigin,w.end??now)};}
 function failureEvidence({timeOrigin,now,windows,browsers}){
-  const lines=['WSTX_EVIDENCE a Thin or Off window failed: judged on issue #102 by its table, from the lines below and the WSTX_STATION_SOCKET lines'];
+  const lines=['WSTX_EVIDENCE a Thin or Off window failed: from the lines below and the WSTX_STATION_SOCKET lines'];
   const out=value=>lines.push('WSTX_EVIDENCE '+JSON.stringify(value)),utc=t=>evidenceUtc(timeOrigin,t);
   const bounds=windows.map(w=>evidenceWindow(timeOrigin,w,now));for(const w of bounds)out(w);
   const inWindow=t=>t!==null&&bounds.some(w=>w.startUtc!==null&&t>=w.startUtc&&t<=w.endUtc);

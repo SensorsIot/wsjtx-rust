@@ -177,7 +177,7 @@ def mix_pcm(first, second, output, gains):
 
 
 def load_oracle(directory):
-    spec = importlib.util.spec_from_file_location("cr18_channel_oracle", directory / "independent-vector-tool/generate.py")
+    spec = importlib.util.spec_from_file_location("channel_oracle", directory / "independent-vector-tool/generate.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     matrices = module.tables(directory / "protocol-data")
@@ -280,7 +280,7 @@ def admit_hosted_ft8(raw, simulator, output, fixture_directory):
             for name in entry["hashes"]:
                 shutil.copyfile(source/name, folder/name)
             components.append({**truth, **checks, "command": entry["command"],
-                               "working_directory": f"reference-output/cr18-ft8-components/{case['id']}/component-{index}",
+                               "working_directory": f"reference-output/ft8-components/{case['id']}/component-{index}",
                                "working_directory_basis": "relative to hosted workspace, prescribed by generation command",
                                "path": str((folder/"000000_000001.wav").resolve()),
                                "stdout_sha256": sha(folder/"stdout.txt"), "stderr_sha256": sha(folder/"stderr.txt")})
