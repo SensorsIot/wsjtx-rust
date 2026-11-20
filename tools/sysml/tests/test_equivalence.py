@@ -261,6 +261,51 @@ def reader_cases() -> dict:
     }
 
 
+# Lookup readers: a prefix in one string, the rest of the name in another literal.
+JS_READER = "const find=n=>model.resolve(`{prefix}::${{n}}`);\nfind('{name}');\n"
+RUST_READER = 'fn find(name: &str) -> String {{ format!("{prefix}::{{name}}") }}\nfn main() {{ find("{name}"); }}\n'
+FSTRING_READER = "find = lambda n: f\"{prefix}::{{n}}\"\nfind('{name}')\n"
+JOINED_READER = "find = lambda n: '{prefix}::' + n\nfind('{name}')\n"
+LOOKUP_PROBE = "tools/sysml/tests/test_lookup_probe.py"
+FIXTURE_READER = 'STATION = "package Core {{"\nfind = lambda n: f"{prefix}::{{n}}"\nfind(\'{name}\')\n'
+
+
+def reader(form: str, prefix: str = "Core", name: str = "Run") -> str:
+    return form.format(prefix=prefix, name=name)
+
+
+def lookup_cases() -> dict:
+    """L1 to L5 and N1 to N6: (base files, head files); the head moves Run unless named."""
+    run_moved = moved(BASE, ticket=False)
+    imported = edit(RUN_ONLY, CORE_PATH, "    private import Meta::*;\n", "    private import Meta::*;\n    public import Ops::Run;\n")
+    gauge_moved = edit(edit(BASE, "docs/sysml/Extra.sysml", GAUGE, ""), CORE_PATH, RUN,
+                       RUN + GAUGE.replace(": Limits", ": Extra::Limits"))
+    return {
+        "L1": (BASE, {**run_moved, "tests/lookup.cjs": reader(JS_READER)}),
+        "L2 tests": (BASE, {**run_moved, "server/tests/lookup.rs": reader(RUST_READER)}),
+        "L2 module": (BASE, {**run_moved, "server/src/lookup_tests.rs": reader(RUST_READER)}),
+        "L3 format": (BASE, {**run_moved, "tools/probe_lookup.py": reader(FSTRING_READER)}),
+        "L3 joined": (BASE, {**run_moved, "tools/probe_joined.py": reader(JOINED_READER)}),
+        "L4 prefix": (BASE, {**limits_moved(BASE), "tests/lookup.cjs": reader(JS_READER, "Core::Limits", "bufferBytes")}),
+        "L4 relative": (BASE, {**limits_moved(BASE), "tests/lookup.cjs": reader(JS_READER, name="Limits::bufferBytes")}),
+        "L5 composed": (CITED, {**imported, "tests/lookup.cjs": reader(JS_READER)}),
+        "L5 whole": (CITED, {**imported, "tests/lookup_whole.cjs": "const name = 'Core::Run';\n"}),
+        "N1": (BASE, {**run_moved, "tests/lookup.cjs": reader(JS_READER, "Ops"),
+                      "tests/lookup_whole.cjs": reader(JS_READER, name="Ops::Run"),
+                      "server/tests/lookup.rs": reader(RUST_READER, "Ops"),
+                      "tools/probe_lookup.py": reader(FSTRING_READER, "Ops"),
+                      "tools/probe_joined.py": reader(JOINED_READER, "Ops")}),
+        "N2": (BASE, {**run_moved, "tests/lookup.cjs": reader(JS_READER, name="Nothing")}),
+        "N3": (BASE, {**run_moved, "tests/lookup_text.cjs": "const text = 'see Core:: docs';\nconst name = 'Run';\n",
+                      "tests/lookup_comment.cjs": "// Core::${n}\nconst name = 'Run';\n",
+                      "server/tests/lookup_brace.rs": 'const TEXT: &str = "Core::{{n}}";\nconst NAME: &str = "Run";\n'}),
+        "N4": (BASE, {**run_moved, "server/src/lookup.rs": reader(RUST_READER)}),
+        "N5 own": (BASE, {**run_moved, LOOKUP_PROBE: reader(FIXTURE_READER)}),
+        "N5 other": (BASE, {**gauge_moved, LOOKUP_PROBE: reader(FIXTURE_READER, "Extra", "Gauge")}),
+        "N6": (BASE, {**run_moved, "tests/lookup.cjs": reader(JS_READER, name="Core::Run")}),
+    }
+
+
 # The assignment table of 5da7aab02: part file -> moved identities.
 TABLE = {
     "backend/modes/ModesCatalog.sysml": "CL-007-03 CL-007-04 CL-009-01 TC-005-001 TC-005-002 TC-004-001 TC-004-002 TC-004-003",
@@ -340,7 +385,7 @@ class SyntheticEquivalenceTests(unittest.TestCase):
                 commits[key] = repository.commit(files)
             return commits[key]
 
-        cases = {**CASES, **reader_cases()}
+        cases = {**CASES, **reader_cases(), **lookup_cases()}
         names = list(cases)
         pairs = [(sha(base), sha(head)) for base, head in cases.values()]
         cls.broken = sha(edit(BASE, CORE_PATH, "part def Base;", "part def Base :> Missing;"))
@@ -435,6 +480,72 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         """TV-058 (TR-21): E15 e: a file outside tools/sysml/tests/, or one declaring no package, keeps P6."""
         self.outcome("E15 e", 1, "stale-by-change tests/probe.cjs:2 Core::Run", f"stale-by-change {PLAIN_PROBE}:1 Core::Run")
         self.assertNoExemption("E15 e")
+
+    def assertNoStale(self, name: str):
+        """The case exits 0 with no stale-by-change line."""
+        lines = self.outcome(name, 0)
+        self.assertFalse([line for line in lines if line.startswith("stale-by-change")], lines)
+        return lines
+
+    def test_l1_javascript_template_prefix(self):
+        """TV-203 (TR-21): L1: a JavaScript template prefix joined to a literal cites the moved element."""
+        self.outcome("L1", 1, "stale-by-change tests/lookup.cjs:2 Core::Run")
+
+    def test_l2_rust_format_prefix(self):
+        """TV-204 (TR-21): L2: a Rust format prefix joined to a literal, below server/tests/ and in a *_tests.rs module."""
+        self.outcome("L2 tests", 1, "stale-by-change server/tests/lookup.rs:2 Core::Run")
+        self.outcome("L2 module", 1, "stale-by-change server/src/lookup_tests.rs:2 Core::Run")
+
+    def test_l3_python_prefix_and_joined_string(self):
+        """TV-205 (TR-21): L3: a Python f-string prefix and a prefix ending its string, each joined to a literal."""
+        self.outcome("L3 format", 1, "stale-by-change tools/probe_lookup.py:2 Core::Run")
+        self.outcome("L3 joined", 1, "stale-by-change tools/probe_joined.py:2 Core::Run")
+
+    def test_l4_deeper_prefix_and_relative_name(self):
+        """TV-206 (TR-21): L4: a deeper prefix and a relative qualified name give the composed line."""
+        self.outcome("L4 prefix", 1, "stale-by-change tests/lookup.cjs:1 Core::Limits",
+                     "stale-by-change tests/lookup.cjs:2 Core::Limits::bufferBytes")
+        self.outcome("L4 relative", 1, "stale-by-change tests/lookup.cjs:2 Core::Limits::bufferBytes")
+
+    def test_l5_declared_not_imported(self):
+        """TV-207 (TR-21): L5: a lookup name is judged by declaration, a comment by resolution."""
+        for name, line in (("L5 composed", "stale-by-change tests/lookup.cjs:2 Core::Run"),
+                           ("L5 whole", "stale-by-change tests/lookup_whole.cjs:1 Core::Run")):
+            with self.subTest(name):
+                lines = self.outcome(name, 1, line)
+                self.assertFalse([found for found in lines if found.startswith("stale-by-change server/main.rs")], lines)
+
+    def test_n1_updated_reader(self):
+        """TV-208 (TR-21): N1: readers rewritten to the new package cite nothing stale."""
+        self.assertNoStale("N1")
+
+    def test_n2_nothing_declared(self):
+        """TV-209 (TR-21): N2: a joined name declared on neither side is no citation."""
+        lines = self.assertNoStale("N2")
+        self.assertFalse([line for line in lines if "Core::Nothing" in line], lines)
+
+    def test_n3_not_a_prefix(self):
+        """TV-210 (TR-21): N3: other text after `::`, a comment and an escaped brace are no prefix."""
+        self.assertNoStale("N3")
+
+    def test_n4_not_test_or_tool_code(self):
+        """TV-211 (TR-21): N4: the strings of product code hold no lookup prefix."""
+        self.assertNoStale("N4")
+
+    def test_n5_fixture_reader(self):
+        """TV-212 (TR-21): N5: a lookup of a fixture reader's own package is exempt, of another package not."""
+        lines = self.assertNoStale("N5 own")
+        self.assertIn(f"exempt {LOOKUP_PROBE}:3 Core::Run (fixture)", lines)
+        self.assertTrue(lines[-1].endswith(f"; exempt: {LOOKUP_PROBE} 1"), lines)
+        self.outcome("N5 other", 1, f"stale-by-change {LOOKUP_PROBE}:3 Extra::Gauge")
+        self.assertNoExemption("N5 other")
+
+    def test_n6_whole_name_not_joined(self):
+        """TV-213 (TR-21): N6: a literal that is a whole qualified name is not joined to a prefix."""
+        lines = self.outcome("N6", 1)
+        self.assertEqual([line for line in lines if line.startswith("stale-by-change")],
+                         ["stale-by-change tests/lookup.cjs:2 Core::Run"])
+        self.assertFalse([line for line in lines if "Core::Core::Run" in line], lines)
 
     def test_e9_cannot_compare(self):
         """TV-059 (TR-21): E9: cannot compare."""
@@ -648,6 +759,35 @@ class ReaderRecognitionTests(unittest.TestCase):
             "WstxAutoPart", "WstxQsoPart", "WstxLogPart", "WstxSpotsPart", "WstxUdpPart", "WstxFlexAdapterPart"}))
         self.assertEqual(tool.citation_reader(oracle, texts[oracle]), ("fixture", shared))
         self.assertIsNone(tool.citation_reader("server/src/main.rs", texts["server/src/main.rs"]))
+
+    def test_r_lookup_readers_of_this_repository(self):
+        """TV-214 (TR-21): R-lookup: the composed names of the profile tests are lookup citations that
+        resolve on HEAD by declaration, and HEAD against itself has no stale citation."""
+        path = "tests/profiles.test.cjs"
+        text = subprocess.run(["git", "-C", str(ROOT), "show", f"HEAD:{path}"], capture_output=True, text=True,
+                              encoding="utf-8", check=True).stdout
+        expected = {}
+        for literal, name in (("access('ProfileDocument::schemaVersion')", "WstxProfileAccess::ProfileDocument::schemaVersion"),
+                              ("access(\"Endpoint::'bind'\")", "WstxProfileAccess::Endpoint::'bind'")):
+            numbers = [number for number, line in enumerate(text.splitlines(), 1) if literal in line]
+            self.assertEqual(len(numbers), 1, literal)
+            expected[(path, numbers[0], "joined", name)] = name
+        seen, original = [], tool.Side.citations
+
+        def citations(side, tops):
+            found = original(side, tops)
+            seen.append((side, found))
+            return found
+
+        with mock.patch.object(tool.Side, "citations", autospec=True, side_effect=citations):
+            (code, lines), = tool.compare_revisions([("HEAD", "HEAD")], CACHE)[0]
+        self.assertEqual(len(seen), 1)
+        side, found = seen[0]
+        for citation, name in expected.items():
+            self.assertIn(citation, found)
+            self.assertTrue(tool.on_side(side, "joined", name), name)
+        self.assertEqual(code, 0, "\n".join(line for line in lines if line.startswith("stale-by-change")))
+        self.assertFalse([line for line in lines if line.startswith("stale-by-change")])
 
 
 class MarkedCommitTests(unittest.TestCase):
