@@ -20,17 +20,28 @@
 #     releases PTT on it), writes the package launcher when it differs (the old one is saved),
 #     switches active.json, starts the task and checks the new version answers; otherwise it
 #     switches back, profile and launcher restored. The task itself is never changed.
+#     Each stop line says whether the signal was delivered (the helper's exit 3 is a failed
+#     AttachConsole, exit 4 a failed GenerateConsoleCtrlEvent, each with its Windows error). A
+#     station still running after Ctrl+C and Ctrl+Break is force-stopped; the line before it
+#     gives the transmit state one GET /transmit read (none under -Rollback). After a forced
+#     stop, the next start that becomes ready (new version, switch-back or return) reads
+#     GET /transmit every 2 s for at most 30 s while startup_release is pending: PTT
+#     is confirmed released, or not confirmed (logged, check the radio). After a release that
+#     was not confirmed the update never stops the station again.
 #  5. Proof: the probe runs inside the lock; then the lock is released and the live page check
 #     runs (it takes the lock itself for its restart). Probe not PASS, page check RED or ERROR:
-#     the previous version is put back without asking, under the lock again. Page check BUSY or
-#     NOT-EXERCISED: no return; the result is recorded.
+#     the previous version is put back without asking, under the lock again; after a forced
+#     stop whose PTT release was not confirmed there is no return (NO RETURN, record head
+#     not returned, the new version stays running). Page check BUSY or NOT-EXERCISED: no
+#     return; the result is recorded.
 #  6. Record: posted on each CR issue the install moves to installed (cr_state.py installed),
-#     or, after a return, on each issue the installed commits name that is open at cr:landed or
-#     cr:installed.
+#     or, after a return or NO RETURN, on each issue the installed commits name that is open at
+#     cr:landed or cr:installed. It has one Station stop line per stop.
 # -Rollback returns to the previous version and never asks. Every step is logged to
 # logs\update-<ts>.log in the station folder.
-# Exit 0: installed, or the dry run passed. 1: refused, failed or returned. 3: the station stayed
-# busy, nothing changed. 6: the radio did not answer for 300 s, nothing changed.
+# Exit 0: installed, or the dry run passed. 1: refused, failed or returned, or a forced stop
+# whose PTT release was not confirmed. 3: the station stayed busy, nothing changed. 6: the
+# radio did not answer for 300 s, nothing changed.
 [CmdletBinding()]
 param([string]$Manifest, [switch]$DryRun, [switch]$Rollback, [string]$Repo = 'D:\Github\wsjtx-rust')
 $ErrorActionPreference='Stop'; Set-StrictMode -Version Latest
@@ -53,6 +64,9 @@ $log=Join-Path $Station "logs\update-$stamp.log"
 $saved=Join-Path $Station "logs\update-$stamp-profile"
 $savedLauncher=Join-Path $Station "logs\update-$stamp-launcher.ps1"
 $script:Lock=$null; $script:Session=$null; $script:launcherWritten=$false
+# The stops of this run: one Station stop line each for the record; a forced stop waits for the
+# next ready start to read its PTT release; a release that was not confirmed ends all stopping.
+$script:StopLines=@(); $script:ForcedPending=$null; $script:Unconfirmed=$false
 function Step($t){ $line=((Now).ToString('HH:mm:ss'))+' '+$t; Write-Output $line; Add-Content -LiteralPath $log -Value $line }
 function Hash($p){ (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Safe-Child($Root,$Path) {
@@ -79,33 +93,112 @@ function Firewall-Scope {
 $ExpectedScope='True|Inbound|Allow|192.168.0.37|192.168.0.6|TCP|18081'
 function Send-CtrlC([int]$TargetPid,[int]$CtrlEvent=0) {
   # A separate process attaches to the station's console and raises Ctrl+C there; the
-  # station's exit guard stops audio and sends the off-only PTT release.
+  # station's exit guard stops audio and sends the off-only PTT release. Exit 3: AttachConsole
+  # failed; exit 4: GenerateConsoleCtrlEvent failed; the helper then writes the Windows error
+  # (GetLastError) of that call to $errFile.
+  $errFile=Join-Path $Station "logs\update-$stamp-ctrl.txt"
+  if (Test-Path -LiteralPath $errFile) { Remove-Item -LiteralPath $errFile -Force }
+  $errQ=$errFile -replace "'","''"
   $code=@"
-Add-Type -Namespace W -Name C -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool FreeConsole(); [DllImport("kernel32.dll")] public static extern bool AttachConsole(uint p); [DllImport("kernel32.dll")] public static extern bool SetConsoleCtrlHandler(System.IntPtr h, bool a); [DllImport("kernel32.dll")] public static extern bool GenerateConsoleCtrlEvent(uint e, uint g);'
+Add-Type -Namespace W -Name C -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool FreeConsole(); [DllImport("kernel32.dll", SetLastError=true)] static extern bool AttachConsole(uint p); [DllImport("kernel32.dll")] public static extern bool SetConsoleCtrlHandler(System.IntPtr h, bool a); [DllImport("kernel32.dll", SetLastError=true)] static extern bool GenerateConsoleCtrlEvent(uint e, uint g); public static int Attach(uint p) { return AttachConsole(p) ? -1 : System.Runtime.InteropServices.Marshal.GetLastWin32Error(); } public static int Raise(uint e) { return GenerateConsoleCtrlEvent(e, 0) ? -1 : System.Runtime.InteropServices.Marshal.GetLastWin32Error(); }'
+`$f='$errQ'
 [W.C]::FreeConsole() | Out-Null
-if (-not [W.C]::AttachConsole($TargetPid)) { exit 3 }
+`$e=[W.C]::Attach($TargetPid)
+if (`$e -ge 0) { [IO.File]::WriteAllText(`$f, [string]`$e); exit 3 }
 [W.C]::SetConsoleCtrlHandler([IntPtr]::Zero, `$true) | Out-Null
-if (-not [W.C]::GenerateConsoleCtrlEvent($CtrlEvent, 0)) { exit 4 }
+`$e=[W.C]::Raise($CtrlEvent)
+if (`$e -ge 0) { [IO.File]::WriteAllText(`$f, [string]`$e); exit 4 }
 Start-Sleep -Milliseconds 500
 exit 0
 "@
   $enc=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
   $p=Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$enc) -WindowStyle Hidden -PassThru -Wait
-  return $p.ExitCode
+  $rc=[int]$p.ExitCode
+  $n=$null
+  if (Test-Path -LiteralPath $errFile) {
+    $t=([IO.File]::ReadAllText($errFile)).Trim()
+    if ($t -match '^[0-9]+$') { $n=$t }
+    Remove-Item -LiteralPath $errFile -Force
+  }
+  $call=$null; if ($rc -eq 3) { $call='AttachConsole' } elseif ($rc -eq 4) { $call='GenerateConsoleCtrlEvent' }
+  $err=''
+  if ($rc -ne 0) { $err=$(if ($call) { "$call error " } else { 'error ' })+$(if ($call -and $n) { $n } else { 'unknown' }) }
+  return [pscustomobject]@{ Rc=$rc; Delivered=($rc -eq 0); Error=$err }
+}
+# The helper's result as a stop line names it: helper exit <rc>[, <call> error <n>].
+function Signal-Text($s) { "helper exit $($s.Rc)"+$(if ($s.Error) { ", $($s.Error)" } else { '' }) }
+function Delivery($s) { if ($s -and $s.Delivered) { 'delivered' } else { 'not delivered' } }
+# The transmit state just before a forced stop, from one GET /transmit; -Rollback has no agent client.
+function Transmit-Before {
+  if ($Rollback) { return 'before the forced stop: transmit state not read (-Rollback has no agent client)' }
+  try {
+    if (-not $script:Session) { $script:Session=Open-AgentSession }
+    $t=Agent-Get $script:Session '/transmit'
+    return "before the forced stop: ptt $($t.ptt), transmitting $(([string]$t.transmitting).ToLowerInvariant()), arm_state $($t.transmit.arm_state)"
+  } catch { return "before the forced stop: transmit state unreadable ($($_.Exception.GetType().Name))" }
+}
+# After a forced stop, the next start that became ready: GET /transmit every 2 s for at most
+# 30 s while startup_release is pending. Confirmed only for not_needed or released
+# with ptt released and not transmitting; anything else is not confirmed and ends all stopping.
+function Confirm-Release {
+  $f=$script:ForcedPending; $script:ForcedPending=$null
+  if ($Rollback) {
+    Step 'PTT after the forced stop not read (-Rollback has no agent client); check the radio'
+    $script:Unconfirmed=$true; $script:StopLines[$f.Index]="$($f.Text), PTT after it: NOT CONFIRMED (not read, -Rollback has no agent client)"
+    return
+  }
+  $start=Now; $why=$null; $sr=''; $ptt=''; $tx=$null
+  while ($true) {
+    try {
+      if (-not $script:Session) { $script:Session=Open-AgentSession }
+      $t=Agent-Get $script:Session '/transmit'
+      $sr=[string]$t.startup_release; $ptt=[string]$t.ptt; $tx=$t.transmitting
+    } catch { $why='transmit state unreadable'; break }
+    if ($sr -ne 'pending') { break }
+    if (((Now)-$start).TotalSeconds -ge 30) { $why='startup_release still pending after 30 s'; break }
+    Start-Sleep -Seconds 2
+  }
+  if (-not $why -and $sr -in @('not_needed','released') -and $ptt -eq 'released' -and $tx -is [bool] -and -not $tx) {
+    Step "PTT after the forced stop: confirmed released (startup_release $sr)"
+    $script:StopLines[$f.Index]="$($f.Text), PTT after it: confirmed released (startup_release $sr)"
+    return
+  }
+  if (-not $why) { $why="ptt $ptt, transmitting $(([string]$tx).ToLowerInvariant()), startup_release $sr" }
+  Step "PTT RELEASE NOT CONFIRMED after the forced stop: $why; check the radio"
+  $script:Unconfirmed=$true; $script:StopLines[$f.Index]="$($f.Text), PTT after it: NOT CONFIRMED ($why)"
 }
 function Stop-Station {
-  $procs=@(Station-Processes)
-  foreach ($q in $procs) {
-    $rc=Send-CtrlC $q.ProcessId
-    Step "graceful stop (Ctrl+C) sent to PID $($q.ProcessId): helper exit $rc"
+  $sent=@{}
+  foreach ($q in @(Station-Processes)) {
+    $id=[int]$q.ProcessId; $s=Send-CtrlC $id; $sent[$id]=$s
+    if ($s.Delivered) { Step "graceful stop (Ctrl+C) sent to PID ${id}: $(Signal-Text $s)" }
+    else { Step "graceful stop (Ctrl+C) NOT DELIVERED to PID ${id}: $(Signal-Text $s)" }
   }
   $deadline=(Now).AddSeconds(8)
   while (@(Station-Processes).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 300 }
-  foreach ($q in @(Station-Processes)) { $rc=Send-CtrlC $q.ProcessId 1; Step "Ctrl+C ignored; Ctrl+Break sent to PID $($q.ProcessId): helper exit $rc" }
+  $broke=@{}
+  foreach ($q in @(Station-Processes)) {
+    $id=[int]$q.ProcessId; $b=Send-CtrlC $id 1; $broke[$id]=$b
+    if ($sent.ContainsKey($id) -and $sent[$id].Delivered) { Step "Ctrl+C delivered, PID $id still runs after 8 s; Ctrl+Break sent: $(Signal-Text $b)" }
+    else { Step "Ctrl+Break sent to PID $id after an undelivered Ctrl+C: $(Signal-Text $b)" }
+  }
   $deadline=(Now).AddSeconds(8)
   while (@(Station-Processes).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 300 }
   $left=@(Station-Processes)
-  foreach ($q in $left) { Step "FORCED STOP of PID $($q.ProcessId): PTT release not confirmed (check the radio)"; Stop-Process -Id $q.ProcessId -Force -ErrorAction SilentlyContinue }
+  $forced=$null
+  foreach ($q in $left) {
+    $id=[int]$q.ProcessId
+    $c=$null; if ($sent.ContainsKey($id)) { $c=$sent[$id] }
+    $b=$null; if ($broke.ContainsKey($id)) { $b=$broke[$id] }
+    Step (Transmit-Before)
+    Step "FORCED STOP of PID ${id}: Ctrl+C $(Delivery $c), Ctrl+Break $(Delivery $b)"
+    if (-not $forced) { $forced="forced (Ctrl+C $(if ($c -and $c.Delivered) { 'delivered' } elseif ($c) { "not delivered, $($c.Error)" } else { 'not delivered, not sent' }))" }
+    Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+  }
+  if ($forced) {
+    $script:StopLines+="Station stop: $forced, PTT after it: not read (no start became ready)"
+    $script:ForcedPending=[pscustomobject]@{ Index=$script:StopLines.Count-1; Text="Station stop: $forced" }
+  } else { $script:StopLines+='Station stop: graceful' }
   if ($left.Count -gt 0) { Start-Sleep -Seconds 2 }
   if (@(Station-Processes).Count -ne 0) { throw 'station process did not exit' }
   try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop } catch { Step "note: Stop-ScheduledTask: $($_.Exception.Message)" }
@@ -123,7 +216,8 @@ function Start-Ready($commit) {
       $page=Invoke-WebRequest -UseBasicParsing -Uri "$Url/" -TimeoutSec 5
       $r=Get-Content -LiteralPath "$Station\station-running.json" -Raw | ConvertFrom-Json
       $live=Get-CimInstance Win32_Process -Filter "ProcessId=$($r.process_id)"
-      if ($page.StatusCode -eq 200 -and $r.source_commit -eq $commit -and $r.launcher -eq 'active.json' -and $live -and $live.ExecutablePath -eq $exe) { return $r }
+      # A new boot: the next read of its state opens a new session.
+      if ($page.StatusCode -eq 200 -and $r.source_commit -eq $commit -and $r.launcher -eq 'active.json' -and $live -and $live.ExecutablePath -eq $exe) { $script:Session=$null; return $r }
     } catch {}
   } while ((Now) -lt $deadline)
   throw "station $($commit.Substring(0,9)) did not become ready within 60 s"
@@ -137,6 +231,11 @@ function Save-Profile { $null=New-Item -ItemType Directory -Force -Path $saved; 
 function Restore-Profile { if (Test-Path -LiteralPath $saved) { Get-ChildItem -LiteralPath $saved -File | Copy-Item -Destination $profileDir -Force; Step 'profile json files restored to their state before the update (changes made by the failed version are undone)' } }
 function Restore-Launcher { if ($script:launcherWritten -and (Test-Path -LiteralPath $savedLauncher)) { Copy-Item -LiteralPath $savedLauncher -Destination $stationLauncher -Force; Step 'launcher restored to its state before the update' } }
 function Switch-Back($from,$to,[bool]$restoreProfile) {
+  # After a PTT release that was not confirmed the station is never stopped again.
+  if ($script:Unconfirmed) {
+    Step "NO SWITCH-BACK to $($to.Substring(0,9)) after a PTT release that was not confirmed; $($from.Substring(0,9)) stays running, check the radio and run station-update.ps1 -Rollback"
+    return
+  }
   try {
     Step "switching back to $($to.Substring(0,9))"
     Stop-Station
@@ -144,6 +243,7 @@ function Switch-Back($from,$to,[bool]$restoreProfile) {
     Write-Active $to $null
     $r=Start-Ready $to
     Step "restored: $($to.Substring(0,9)) running, PID $($r.process_id)"
+    if ($script:ForcedPending) { Confirm-Release }
   } catch {
     Step "STATION DOWN: switch-back to $($to.Substring(0,9)) failed: $($_.Exception.Message). active.json=$((Get-Content -LiteralPath $activePath -Raw) -replace '\s+',' ')"
     throw
@@ -264,6 +364,7 @@ if ($Rollback) {
   if (-not (Test-Path -LiteralPath (Join-Path (Join-Path $Station $target.Substring(0,9)) 'wstx-rust.exe'))) { throw 'Previous version is not staged.' }
   Step "rollback: $($current.Substring(0,9)) -> $($target.Substring(0,9))"
   Switch-Back $current $target $false
+  if ($script:Unconfirmed) { exit 1 }
   return
 }
 
@@ -381,6 +482,7 @@ try {
   Write-Active $commit $current
   $stepName='start new version'; Step $stepName
   $r=Start-Ready $commit
+  if ($script:ForcedPending) { Confirm-Release }
   if ((Firewall-Scope) -ne $ExpectedScope) { throw 'Firewall scope changed.' }
   Step "started: $ver running, PID $($r.process_id); previous $($current.Substring(0,9)) kept for -Rollback"
 } catch {
@@ -410,12 +512,21 @@ else {
   $pageLine=Last-Line $pageOut 'LIVE PAGE CHECK '
   if ($pageRc -notin @(0,3,4)) {
     $returned="page check exit $pageRc"
-    $deadline=(Now).AddSeconds($BusyWaitSeconds)
-    while (-not (Take-Lock) -and (Now) -lt $deadline) { Step 'waiting for update.lock to return to the previous version'; Start-Sleep -Seconds $BusyPollSeconds }
+    # No return follows a PTT release that was not confirmed, so no lock is needed for one.
+    if (-not $script:Unconfirmed) {
+      $deadline=(Now).AddSeconds($BusyWaitSeconds)
+      while (-not (Take-Lock) -and (Now) -lt $deadline) { Step 'waiting for update.lock to return to the previous version'; Start-Sleep -Seconds $BusyPollSeconds }
+    }
   }
 }
 $exit=0
-if ($returned) {
+$noReturn=$false
+if ($returned -and $script:Unconfirmed) {
+  # A return would stop the station again by the same route; the new version stays running.
+  $exit=1; $noReturn=$true
+  Step "NO RETURN: $returned after a PTT release that was not confirmed; $ver stays running, check the radio and run station-update.ps1 -Rollback"
+}
+elseif ($returned) {
   $exit=1
   if (-not $script:Lock) { Step "STATION NOT RETURNED: update.lock stayed held for $BusyWaitSeconds s ($returned); run station-update.ps1 -Rollback"; $returned="$returned, NOT RETURNED: update.lock held" }
   else {
@@ -423,15 +534,18 @@ if ($returned) {
     try { Switch-Back $commit $current $true } catch { $returned="$returned, RETURN FAILED: $($_.Exception.Message)" }
   }
 }
+# A forced stop whose PTT release was not confirmed ends the update with exit 1.
+if ($script:Unconfirmed) { $exit=1 }
 
-# The install record, on each CR issue the install moves (or, after a return, names).
-$lines=@("Install record: $commit $(if ($returned) { 'returned' } else { 'installed' })",
-  "Previous version: $current",
-  "Package executable SHA-256: $exeHash",
+# The install record, on each CR issue the install moves (or, after a return or NO RETURN, names).
+$lines=@("Install record: $commit $(if ($noReturn) { 'not returned' } elseif ($returned) { 'returned' } else { 'installed' })",
+  "Previous version: $current")
+$lines+=@($script:StopLines)
+$lines+=@("Package executable SHA-256: $exeHash",
   'Mechanism files (SHA-256 and path):')
 $lines+=@($computed | ForEach-Object { "$($_.sha256) $($_.path)" })
 $lines+=@("Probe: $probeLine", "Page check: $pageLine",
-  "Return to the previous version: $(if ($returned) { "to $current ($returned); each CR of this install goes back to step 2" } else { 'none' })")
+  "Return to the previous version: $(if ($noReturn) { "none ($returned, PTT release not confirmed, no second stop)" } elseif ($returned) { "to $current ($returned); each CR of this install goes back to step 2" } else { 'none' })")
 $record=Clean ($lines -join "`n")
 foreach ($l in ($record -split "`n")) { Step "record: $l" }
 if ($returned) {

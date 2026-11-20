@@ -66,7 +66,8 @@ LOCAL = {"Set-StrictMode", "Join-Path", "Split-Path", "Test-Path", "Get-Item", "
          "Safe-Child", "Station-Processes", "Assert-Setup", "Firewall-Scope", "Send-CtrlC", "Stop-Station",
          "Start-Ready", "Write-Active", "Save-Profile", "Restore-Profile", "Restore-Launcher", "Switch-Back", "Step",
          "Hash", "Now", "Specifics-Path", "Read-Pins", "Pins-Text", "Issue-Skip", "Take-Lock", "Read-State", "Station-Busy",
-         "Busy-Reason", "Clean", "Last-Line", "Move-Installed", "Issues-Named"}
+         "Busy-Reason", "Clean", "Last-Line", "Move-Installed", "Issues-Named", "Signal-Text", "Delivery",
+         "Transmit-Before", "Confirm-Release"}
 # .NET types the script may name; file and path methods act on the same sandbox paths.
 TYPES = {"[Convert]", "[DateTime]", "[IO.FileAttributes]", "[IO.File]", "[IO.Path]", "[NullString]", "[StringComparison]",
          "[Text.Encoding]", "[Text.UTF8Encoding]", "[bool]", "[int]", "[ordered]", "[string]", "[switch]",

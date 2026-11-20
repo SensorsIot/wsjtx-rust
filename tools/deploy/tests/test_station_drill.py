@@ -54,6 +54,16 @@ class ClassifyTests(unittest.TestCase):
                 "(path-\\\\server\\share\\x)", "(variable-ExecutionContext)", "(variable-env:USERPROFILE)", "Add-Type",
                 "Restart-Computer"])
 
+    # Proves: TC-178-09
+    def test_a_new_unclassified_command_in_the_real_script_is_refused(self):
+        self.assertEqual(station_drill.classify(real_script()), [])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "station-update.ps1")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(read(real_script()).replace("function Stop-Station {", "function Stop-Station {\n  Restart-Service x", 1))
+            self.assertEqual(station_drill.classify(path), ["Restart-Service"])
+            self.assertEqual(station_drill.main(["--script", path]), 2)
+
     def test_here_string_content_is_not_a_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "s.ps1")
