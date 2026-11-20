@@ -1,7 +1,7 @@
 # Model tools
 
 The contract of the model tools (`tools/sysml.py`, `tools/sysml/Validate.java`): the pinned
-toolchain, the commands, the rules `TR-01` to `TR-21` they check and the tests `TV-nnn`
+toolchain, the commands, the rules `TR-01` to `TR-22` they check and the tests `TV-nnn`
 that prove them. The rules of the model itself are the
 [finished model](../../harness/project/docs/Finished-Model.md); each rule below names the
 rule of the finished model it checks. `TR` and `TV` are identities of the tool: no
@@ -41,8 +41,10 @@ python -m unittest discover -s tools/sysml/tests -q
 ```
 
 - `traces`: the authority (TR-01), the catalog (TR-10, TR-12, TR-19), the tags and their
-  bindings (TR-14), the code links (TR-13), model and code (TR-16) and the code structure
-  (TR-17). No Java. It is the check a code change selects.
+  bindings (TR-14), the code links (TR-13), model and code (TR-16), the code structure
+  (TR-17) and the history in comments, names and test strings (TR-22). No Java. It is the
+  check a code change selects. A pass ends with `Canonical source/model trace checks passed:
+  <n> identities; <f> files read for history, <e> comment exceptions used; ...`.
 - `check`: everything `traces` checks, then the Pilot validation of every model file
   (TR-02), the architecture oracle (TR-09), the identity history (TR-15) and the rules of
   the model text and the deployment (TR-03 to TR-08, TR-11, TR-18). Every rule fault of a
@@ -219,6 +221,43 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   a fixture reader below `tools/sysml/tests/` of its own fixture package. Exit 0 equivalent,
   1 differences, 2 cannot compare. `identities` lists each FR, CL and TC identity of two
   revisions as unchanged, moved, changed, added or removed.
+- **TR-22 History in comments.** `traces` reads every tracked `.rs`, `.js`, `.cjs`, `.mjs`,
+  `.css`, `.html`, `.py`, `.ps1`, `.java`, `.sysml`, `.toml`, `.yml` and `.md` file below
+  `server/` (not `server/third-party/`), `client/`, `tests/`, `tools/` and `fixtures/`, the
+  workflows of `.github/workflows/` that are no `harness_paths` of
+  `harness/project/config.yaml`, and `README.md`, `Cargo.toml`, `server/Cargo.toml` and
+  `rust-toolchain.toml`. A comment (line, block and doc comments, Python comments and
+  docstrings, PowerShell `#` and `<# #>`, CSS and HTML comments, TOML and YAML `#`) and
+  Markdown prose hold no issue pointer, date or change story (`history in a comment: issue
+  pointer <text>`, `history in a comment: date <text>`, `history in a comment: change story
+  <text>`). The string literals of test and tool code (below `tests/`, `server/tests/`,
+  `tools/` and `fixtures/`, and the `*_tests.rs` and `*_test.rs` files below `server/`: Rust
+  strings and raw strings, JavaScript quoted and template strings, Python strings, PowerShell
+  strings and here-strings), Markdown code spans and fenced code blocks, and the names of Rust
+  and Python test functions hold no issue pointer (`issue pointer in a string: <text>`,
+  `issue pointer in Markdown code: <text>`, `issue pointer in a test name: <name>`). An issue
+  pointer is `#` and digits, not right after `&` or `#` and not followed by a letter or
+  digit; `<repo>#N` and `<owner>/<repo>#N`, a name of letters, digits, `.`, `_` and `-`;
+  `issue`, `cr` or `pr` in any letter case, then at most one of ` `, `-`, `_` and `#`, then
+  digits, neither right after nor followed by a letter or digit; `review`, a space and six or
+  more digits. Of two forms that match one text, the longer is the fault. A date is
+  `YYYY-MM-DD`. A change story is, in any letter case, `formerly`, `previously`, `no longer`,
+  `any more`, `anymore`, `as before`, `used to`, `originally`, `retired`, `legacy`, `was
+  changed`, `were changed`, `red on the parent`, `review finding`, `finding N`, `round N`,
+  `operator grill`, `operator decision`, `coordinator decision`, `coordinator's decision`,
+  `live defect` or `live finding`. A test name holds no `issue`, `cr` or `pr` joined to a
+  number directly or by `_`. Not read: the text of a URL and of a Markdown link target,
+  JavaScript regular-expression literals (one token each, quotes inside included), the other
+  strings, data files and `server/third-party/`. `tools/sysml/comment-exceptions.json` is a
+  JSON array of `{"path": ..., "text": ..., "kind": ...}`, kind `D1` (an epoch or calendar
+  constant the code computes with), `D2` (a version of an external specification or data
+  source), `D3` (a date of the test's own data), `M` (a model term), `S` (a data string
+  holding a pointer form) or `I` (a pointer whose rule depends on an open issue's state); an
+  entry exempts every occurrence of its exact text in its own file. Refused at the line of the
+  entry's opening brace: an entry that exempts nothing (`comment exception unused: <path>
+  <text>`) and a malformed entry (`comment exception malformed: <reason>`), at line 1 a list
+  that is no JSON array; refused by path, a file that is not UTF-8 (`source not UTF-8`), and
+  at its line a text its reader cannot read (`source not readable: <reason>`).
 
 ## Meaning and limits of semantic validation
 
@@ -397,3 +436,17 @@ run them are those of `harness/project/suites.yaml`.
 | TV-157 | TR-20 | `server/tests/model_values.rs` model_values_refuses_every_fixture_fault_naming_name_and_reason | the Rust reader refuses every fault of the fixture list, naming the name and the reason. |
 | TV-158 | TR-20 | `tests/model-values.test.cjs` model values: every fixture value is read, in LF and CRLF | the JavaScript reader accepts every value of the fixture list. |
 | TV-159 | TR-20 | `tests/model-values.test.cjs` model values: every fixture fault is refused naming the name and the reason | the JavaScript reader refuses every fault of the fixture list. |
+| TV-163 | TR-22 | `test_comments.py` CommentRuleTest.test_this_repository | `traces` on this repository passes and every exception entry is used. |
+| TV-164 | TR-22 | `test_comments.py` CommentRuleTest.test_accepted | one fixture per syntax with present-tense comments, tags, identities, a licence header, a WSJT-X reference, a URL, `#[test]`, a raw string, a regular expression, a CSS colour, callsigns, a timed test name, strings of product code, a third-party file, a harness workflow and one exception entry of each kind gives no fault. |
+| TV-165 | TR-22 | `test_comments.py` CommentRuleTest.test_pointer_in_each_comment_syntax | `#N` in a comment of each syntax is refused at its line. |
+| TV-166 | TR-22 | `test_comments.py` CommentRuleTest.test_each_pointer_form_in_a_comment | each further pointer form in a comment, in letter-case variants, is refused with its text; `PR #N` and `Issue #N` with the text `#N`. |
+| TV-167 | TR-22 | `test_comments.py` CommentRuleTest.test_pointer_in_a_test_or_tool_string | a pointer in each string syntax and at each place of test and tool code, and in a Markdown code span and fenced block, is refused. |
+| TV-168 | TR-22 | `test_comments.py` CommentRuleTest.test_pointer_in_a_test_name | a Rust or Python test function whose name joins issue, cr or pr to a number is refused with its name. |
+| TV-169 | TR-22 | `test_comments.py` CommentRuleTest.test_date_in_a_comment | a date in a comment of each reader, and a date with its time, is refused. |
+| TV-170 | TR-22 | `test_comments.py` CommentRuleTest.test_change_story_in_a_comment_and_in_prose | each word and phrase of the change-story list, in lower, upper and mixed case, at line start and mid-line, is refused in a comment and in Markdown prose. |
+| TV-171 | TR-22 | `test_comments.py` CommentRuleTest.test_pointer_after_a_url | a pointer after a URL on the same line is refused; the URL's digits are not. |
+| TV-172 | TR-22 | `test_comments.py` CommentRuleTest.test_exception_holds_only_its_file_and_text | a listed date in another file, and a second trigger on the listed line, are refused. |
+| TV-173 | TR-22 | `test_comments.py` CommentRuleTest.test_unused_exception | an exception entry that matches nothing is refused at its line. |
+| TV-174 | TR-22 | `test_comments.py` CommentRuleTest.test_malformed_exception | an entry without path or text or with a kind outside D1, D2, D3, M, S, I, and a list that is no JSON array, are refused. |
+| TV-175 | TR-22 | `test_comments.py` CommentRuleTest.test_source_not_utf8 | a read file that is not UTF-8 is refused by its path; so is a text its reader cannot read. |
+| TV-176 | TR-22 | `test_comments.py` CommentRuleTest.test_each_place_read | `#N` in a comment is refused at each place read. |
