@@ -10,18 +10,23 @@
   # dev-dependency features, which would replace the executable the browser groups run
   # (Windows refuses to replace a running executable). The decoder unit tests run in
   # wstx-rust-decoder.
-  # --bins --test '*' plus --lib is --all-targets of this workspace (no bench or example
-  # targets; --benches would also select the lib and bins). A new bench or example target
-  # needs its own --bench/--example here.
+  # --bins --examples --test '*' plus --lib is --all-targets of this workspace (no bench
+  # targets; --benches would also select the lib and bins). A new bench target needs its own
+  # --bench here. The workspace holds the test-tools crate wstx-test-tools: its unit tests and
+  # tests/ run here too.
   run: >-
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
-    cargo test --workspace --locked --bins --test '*' &&
+    cargo test --workspace --locked --bins --examples --test '*' &&
     cargo test --workspace --locked --lib -- --skip decoder::
   paths:
   - server/
   - fixtures/transmit/
   - fixtures/decoder/
+  - fixtures/flex/
   - tests/
+  - tools/test/rust/
+  - tools/test/blocked-ports.json
+  - tools/test/fixtures/model-values/
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -32,7 +37,10 @@
   - server/
   - fixtures/transmit/
   - fixtures/decoder/
-  - tests/fixtures/model-values/
+  - fixtures/flex/
+  - tools/test/rust/
+  - tools/test/blocked-ports.json
+  - tools/test/fixtures/model-values/
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -52,6 +60,7 @@
   paths:
   - server/
   - fixtures/decoder/
+  - tools/test/rust/
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -63,7 +72,8 @@
   - server/src/transmit/pack.rs
   - server/src/modes/transmit/mod.rs
   - server/src/lib.rs
-  - server/src/model_values.rs
+  - tools/test/rust/src/model_values.rs
+  - tools/test/rust/src/resource_observer.rs
   - server/Cargo.toml
   - fixtures/decoder/
   - Cargo.toml
@@ -84,6 +94,7 @@
   - server/
   - client/
   - tests/
+  - tools/test/
   - fixtures/decoder/
   - tools/recording-fixtures.cjs
   - docs/sysml/
@@ -100,8 +111,9 @@
   - client/index.html
   - client/style.css
   - tests/communication.test.cjs
-  - tests/support.cjs
-  - tests/peer.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -124,8 +136,9 @@
   - client/index.html
   - client/style.css
   - tests/communication.test.cjs
-  - tests/support.cjs
-  - tests/peer.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -153,13 +166,15 @@
   - client/recording.js
   - client/recording.css
   - tests/profiles.test.cjs
-  - tests/support.cjs
-  - tests/peer.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
+  - tools/test/node/audio-endpoints-route.cjs
   # The profile values and outcome names its tests read (Profile.sysml), the unit suffixes
   # (Units.sysml) and the JavaScript model-value reader.
   - docs/sysml/backend/profile/Profile.sysml
   - docs/sysml/shared/Units.sysml
-  - tests/model-values.cjs
+  - tools/test/node/model-values.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -183,13 +198,14 @@
   - tools/recording-fixtures.cjs
   - fixtures/decoder/manifest.json
   - fixtures/decoder/ft4-manifest.json
-  - tests/support.cjs
-  - tests/peer.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
   # The recording limits its tests read (Recordings.sysml), the unit suffixes (Units.sysml)
   # and the JavaScript model-value reader.
   - docs/sysml/backend/profile/Recordings.sysml
   - docs/sysml/shared/Units.sysml
-  - tests/model-values.cjs
+  - tools/test/node/model-values.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -216,8 +232,9 @@
   - tests/recording.test.cjs
   - fixtures/decoder/manifest.json
   - fixtures/decoder/ft4-manifest.json
-  - tests/support.cjs
-  - tests/peer.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -251,9 +268,10 @@
   - client/index.html
   - client/recording.js
   - tests/recording.test.cjs
-  - tests/support.cjs
-  - tests/peer.cjs
-  - tests/model-values.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
+  - tools/test/node/model-values.cjs
   - docs/sysml/backend/profile/Recordings.sysml
   - docs/sysml/shared/Units.sysml
   - Cargo.lock
@@ -266,10 +284,11 @@
 
 - suite: recording-fixtures
   cost: 2
-  run: node --test --test-concurrency=1 tests/profile/recording-fixtures.test.cjs
+  run: node --test --test-concurrency=1 tests/profile/recording-fixtures.test.cjs tools/recording-fixtures.test.cjs
   paths:
   - tests/profile/recording-fixtures.test.cjs
   - tools/recording-fixtures.cjs
+  - tools/recording-fixtures.test.cjs
   - fixtures/decoder/
   - package.json
   - package-lock.json
@@ -278,34 +297,58 @@
   # (Units.sysml) and the JavaScript model-value reader.
   - docs/sysml/backend/profile/Recordings.sysml
   - docs/sysml/shared/Units.sysml
-  - tests/model-values.cjs
+  - tools/test/node/model-values.cjs
   select:
   - tests/profile/recording-fixtures.test.cjs
   - tools/recording-fixtures.cjs
+  - tools/recording-fixtures.test.cjs
   - fixtures/decoder/
   - package.json
   - package-lock.json
   - docs/sysml/backend/profile/Recordings.sysml
   - docs/sysml/shared/Units.sysml
-  - tests/model-values.cjs
+  - tools/test/node/model-values.cjs
   needs: Node 24 and WSTX_SAMPLE_DIR with verified original recordings (TC-018-001 provenance sweep). Windows PC; offline pinned fixture setup/refusal tests. No download in the gate.
 
 - suite: model-values
   cost: 2
-  run: node --test --test-concurrency=1 tests/model-values.test.cjs
+  run: node --test --test-concurrency=1 tools/test/node/model-values.test.cjs
   paths:
-  - tests/model-values.cjs
-  - tests/model-values.test.cjs
-  - tests/fixtures/model-values/
+  - tools/test/node/model-values.cjs
+  - tools/test/node/model-values.test.cjs
+  - tools/test/fixtures/model-values/
   - package.json
   - package-lock.json
   select:
-  - tests/model-values.cjs
-  - tests/model-values.test.cjs
-  - tests/fixtures/model-values/
+  - tools/test/node/model-values.cjs
+  - tools/test/node/model-values.test.cjs
+  - tools/test/fixtures/model-values/
   - package.json
   - package-lock.json
-  needs: "Node 24. Windows PC; TR-20 (TV-158, TV-159): the JavaScript model-value reader on the fixture tree tests/fixtures/model-values/ and its list of expected values. No browser, radio or Rust build."
+  needs: "Node 24. Windows PC; TR-20 (TV-158, TV-159): the JavaScript model-value reader on the fixture tree tools/test/fixtures/model-values/ and its list of expected values. No browser, radio or Rust build."
+
+# The tests of the Node test tools (Project-Specifics, "Test tools"), each beside its tool in
+# tools/test/node/; the model-value reader's tests run in model-values. The Rust test tools'
+# tests run in wstx-rust (the workspace) and, release only, in decoder-correctness.
+- suite: test-tools
+  cost: 2
+  run: "cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern=\"^model values: \" \"tools/test/node/*.test.cjs\""
+  paths:
+  - tools/test/
+  - fixtures/flex/
+  - server/
+  - client/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - tools/test/node/
+  - tools/test/blocked-ports.json
+  - fixtures/flex/
+  build: cargo build --workspace --locked
+  needs: "Pinned Rust, Node 24 (npm ci) and Playwright Chromium. Windows PC; the test tools' own tests: suite ports and per-run station data, the peer helper, the audio endpoint route, the page watch and live page check, the selection evidence readers, the quiet press check, the FLEX emulator against a real FLEX-6600 packet and the FLEX live check against it with the verified WSTX_DECODER_VECTORS. Disposable stations, local fixture pages and loopback sockets only; no radio, audio device or network service."
 
 - suite: sysml-documentation
   cost: 2
@@ -465,32 +508,32 @@
 
 - suite: fortran-reference-tools
   cost: 2
-  run: python -m unittest discover -s tools -p "test_wsjtx*reference.py" -v && python -m unittest discover -s tools -p test_analyze_fortran_trace.py -v
+  run: python -m unittest discover -s tools/test/python -p "test_wsjtx*reference.py" -v && python -m unittest discover -s tools/test/python -p test_analyze_fortran_trace.py -v
   paths:
   - .github/workflows/fortran-stage-diagnostics.yml
   - fixtures/decoder/wsjtx-stage-logging.patch.gz
-  - tools/reference_decode.rs
-  - tools/wsjtx_reference.py
-  - tools/test_wsjtx_reference.py
-  - tools/WSJTX-REFERENCE.md
-  - tools/wsjtx_stage_reference.py
-  - tools/test_wsjtx_stage_reference.py
-  - tools/analyze_fortran_trace.py
-  - tools/test_analyze_fortran_trace.py
-  - tools/wsjtx_simulator_components.py
+  - server/examples/reference_decode.rs
+  - tools/test/python/wsjtx_reference.py
+  - tools/test/python/test_wsjtx_reference.py
+  - tools/test/python/WSJTX-REFERENCE.md
+  - tools/test/python/wsjtx_stage_reference.py
+  - tools/test/python/test_wsjtx_stage_reference.py
+  - tools/test/python/analyze_fortran_trace.py
+  - tools/test/python/test_analyze_fortran_trace.py
+  - fixtures/decoder/simulator-tool/wsjtx_simulator_components.py
   - fixtures/decoder/simulator-cases.json
   select:
   - .github/workflows/fortran-stage-diagnostics.yml
   - fixtures/decoder/wsjtx-stage-logging.patch.gz
-  - tools/reference_decode.rs
-  - tools/wsjtx_reference.py
-  - tools/test_wsjtx_reference.py
-  - tools/WSJTX-REFERENCE.md
-  - tools/wsjtx_stage_reference.py
-  - tools/test_wsjtx_stage_reference.py
-  - tools/analyze_fortran_trace.py
-  - tools/test_analyze_fortran_trace.py
-  - tools/wsjtx_simulator_components.py
+  - server/examples/reference_decode.rs
+  - tools/test/python/wsjtx_reference.py
+  - tools/test/python/test_wsjtx_reference.py
+  - tools/test/python/WSJTX-REFERENCE.md
+  - tools/test/python/wsjtx_stage_reference.py
+  - tools/test/python/test_wsjtx_stage_reference.py
+  - tools/test/python/analyze_fortran_trace.py
+  - tools/test/python/test_analyze_fortran_trace.py
+  - fixtures/decoder/simulator-tool/wsjtx_simulator_components.py
   - fixtures/decoder/simulator-cases.json
   needs: Python 3.12 standard library. Windows PC; the reference protocol, comparison, identity and trace-analyzer unit tests. No compiler, downloads, network, radio or hosted run.
 
@@ -501,16 +544,21 @@
   # cooperative quantum, with its partial-cancellation case, and the busy-period latency).
   # decoder-quality runs all of them, bound to its artifact, and the resource matrix when
   # a timing input changes (every production decoder source).
+  # The forged-cache refusal (test_cache.py) and the resource harness's own tests (owned-worker
+  # cleanup, concurrency qualification) are test-tool tests outside decoder_signal.
   run: >-
     cargo test --release --locked --test decoder_signal -- --test-threads=1
     --skip release_runtime_and_overlapping_window_history
     --skip cooperative_quanta_and_partial_cancellation
-    --skip live_busy_period_publishes_every_decode_promptly
+    --skip live_busy_period_publishes_every_decode_promptly &&
+    cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1 &&
+    python fixtures/decoder/independent-vector-tool/test_cache.py
   paths:
   - server/src/decoder/
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/decoder_signal.rs
+  - tools/test/rust/
   - fixtures/decoder/
   - server/Cargo.toml
   - Cargo.toml
@@ -529,6 +577,7 @@
   select:
   - fixtures/decoder/
   - server/src/lib.rs
+  - tools/test/rust/
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/backend/modes/MessagePayload.sysml
   - docs/sysml/shared/Units.sysml
@@ -544,12 +593,14 @@
     set -euo pipefail
     run_dir=$(mktemp -d "${HARNESS_LEDGER_DIR:?}/decoder-resource.XXXXXX")
     trap '[ -z "${HARNESS_REACH_DIR:-}" ] || cp "$run_dir"/*.json "$HARNESS_REACH_DIR"/ 2>/dev/null || true' EXIT
-    python -m unittest discover -s tools -p test_windows_resource_job.py -q
-    python -m unittest discover -s tools -p test_windows_process_metrics.py -q
-    cargo test --release --locked --test decoder_signal --message-format=json -- --test-threads=1 --skip release_runtime_and_overlapping_window_history | python tools/windows_resource_job.py resolve --stream-log "$run_dir/ordinary.log" --receipt "$run_dir/artifact.json"
-    python tools/windows_resource_job.py run --case matrix --ordinary-gate --artifact-receipt "$run_dir/artifact.json"
+    python -m unittest discover -s tools/test/python -p test_windows_resource_job.py -q
+    python -m unittest discover -s tools/test/python -p test_windows_process_metrics.py -q
+    cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1
+    python fixtures/decoder/independent-vector-tool/test_cache.py
+    cargo test --release --locked --test decoder_signal --message-format=json -- --test-threads=1 --skip release_runtime_and_overlapping_window_history | python tools/test/python/windows_resource_job.py resolve --stream-log "$run_dir/ordinary.log" --receipt "$run_dir/artifact.json"
+    python tools/test/python/windows_resource_job.py run --case matrix --ordinary-gate --artifact-receipt "$run_dir/artifact.json"
   # Reachability (harness reachability.py): the ordinary passes and the matrix case are
-  # named only in the JSON run records of tools/windows_resource_job.py (artifact.json,
+  # named only in the JSON run records of tools/test/python/windows_resource_job.py (artifact.json,
   # matrix.receipt.json), which the trap copies to HARNESS_REACH_DIR.
   reach:
     parsers: [text, json]
@@ -558,25 +609,26 @@
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/decoder_signal.rs
+  - tools/test/rust/
   - fixtures/decoder/
   - server/Cargo.toml
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
-  - tools/windows_resource_job.py
-  - tools/test_windows_resource_job.py
-  - tools/windows_process_metrics.py
-  - tools/test_windows_process_metrics.py
+  - tools/test/python/windows_resource_job.py
+  - tools/test/python/test_windows_resource_job.py
+  - tools/test/python/windows_process_metrics.py
+  - tools/test/python/test_windows_process_metrics.py
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/backend/modes/MessagePayload.sysml
   - docs/sysml/shared/Units.sysml
   timing: true
   # Every production decoder source sets the measured time (checkpoint spacing, per-item
-  # work, passes and budgets); the decoder's *_test.rs files and resource_observer.rs
-  # (cfg(test)) are not in the measured binary, so unit-test-only and parity-fixture-only
-  # changes run decoder-correctness alone. A new decoder module is declared in mod.rs,
-  # which is listed. Decode.sysml holds the DecodeBudgets the matrix case reads, Units.sysml
-  # the unit suffixes it reads them by.
+  # work, passes and budgets); the decoder's *_test.rs files are not in the measured binary,
+  # so unit-test-only and parity-fixture-only changes run decoder-correctness alone. The
+  # test-tools crate (tools/test/rust/, the resource harness and observer) is linked into the
+  # measured binary. A new decoder module is declared in mod.rs, which is listed. Decode.sysml
+  # holds the DecodeBudgets the matrix case reads, Units.sysml the unit suffixes it reads them by.
   timing_inputs:
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/shared/Units.sysml
@@ -604,10 +656,11 @@
   - fixtures/decoder/quality-audio-hashes.json
   - fixtures/decoder/independent-vector-tool/
   - fixtures/decoder/protocol-data/
-  - tools/windows_resource_job.py
-  - tools/test_windows_resource_job.py
-  - tools/windows_process_metrics.py
-  - tools/test_windows_process_metrics.py
+  - tools/test/rust/
+  - tools/test/python/windows_resource_job.py
+  - tools/test/python/test_windows_resource_job.py
+  - tools/test/python/windows_process_metrics.py
+  - tools/test/python/test_windows_process_metrics.py
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -615,7 +668,7 @@
   build: cargo test --release --locked --test decoder_signal --no-run
   exclusive: ["*"]
   timing_classes: [compute, signal]
-  needs: Pinned Rust and Python, 64-bit Windows. Preserve every original quality case plus cleanup/concurrency controls; one release Cargo producer binds every ordinary named pass (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job over the complete resource matrix that tools/windows_resource_job.py checks. API-free guardian/metrics tests precede execution. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
+  needs: Pinned Rust and Python, 64-bit Windows. Preserve every original quality case plus cleanup/concurrency controls; one release Cargo producer binds every ordinary named pass (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job over the complete resource matrix that tools/test/python/windows_resource_job.py checks. API-free guardian/metrics tests, the resource harness's own tests (owned-worker cleanup, concurrency qualification) and the fixture cache's forged-observation refusal (test_cache.py) precede execution; the 14 ordinary passes then run in decoder_signal. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
 
 - suite: live-receive-integration
   cost: 2
@@ -674,8 +727,8 @@
   - tests/receive-integration.test.cjs
   - tests/frontend/receive-latency.test.cjs
   - tests/frontend/receive-page.test.cjs
-  - tests/page-watch.cjs
-  - tests/live-page-check.cjs
+  - tools/test/node/page-watch.cjs
+  - tools/test/node/live-page-check.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
@@ -702,8 +755,8 @@
   - tests/receive-integration.test.cjs
   - tests/frontend/receive-latency.test.cjs
   - tests/frontend/receive-page.test.cjs
-  - tests/page-watch.cjs
-  - tests/live-page-check.cjs
+  - tools/test/node/page-watch.cjs
+  - tools/test/node/live-page-check.cjs
   - fixtures/radio/native_ft8_fixture.rs
   - fixtures/decoder/
   - server/Cargo.toml
@@ -736,7 +789,7 @@
   - server/Cargo.toml
   - package.json
   - package-lock.json
-  - tools/windows_process_metrics.py
+  - tools/test/python/windows_process_metrics.py
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/shared/Units.sysml
   exclusive: ["*"]
@@ -773,10 +826,10 @@
   - rust-toolchain.toml
   - package.json
   - package-lock.json
-  - tools/windows_process_metrics.py
+  - tools/test/python/windows_process_metrics.py
   - docs/sysml/backend/modes/Decode.sysml
   - docs/sysml/shared/Units.sysml
-  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; timing suite: the busy-period browser latency case through the actual isolated Router, receive owner and browser, and the station process case (CL-007-04 regression detector only, never its evidence: at most 96 MiB private-commit delta, at most 250 ms owner release) through tools/windows_process_metrics.py. WSTX_DECODER_VECTORS and WSTX_SAMPLE_DIR must name the verified fixtures; missing inputs fail closed. Runs only when the router, the receive/source/audio/decoder pipeline, the recording client that polls and paints the rows, its test files or the toolchain change, or on request (Harness-Timing: yes)."
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; timing suite: the busy-period browser latency case through the actual isolated Router, receive owner and browser, and the station process case (CL-007-04 regression detector only, never its evidence: at most 96 MiB private-commit delta, at most 250 ms owner release) through tools/test/python/windows_process_metrics.py. WSTX_DECODER_VECTORS and WSTX_SAMPLE_DIR must name the verified fixtures; missing inputs fail closed. Runs only when the router, the receive/source/audio/decoder pipeline, the recording client that polls and paints the rows, its test files or the toolchain change, or on request (Harness-Timing: yes)."
 
 - suite: native-flex
   cost: 2
@@ -800,8 +853,8 @@
   - client/contact.js
   - client/index.html
   - tests/flexAdapter/native-flex.test.cjs
-  - tests/flex-emulator.cjs
-  - tests/flex-live-check.cjs
+  - tools/test/node/flex-emulator.cjs
+  - tools/test/node/flex-live-check.cjs
   needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; real candidate stations with disposable HTTPS profiles against the independent loopback native-API emulator (TCP/UDP on 127.0.0.1 only, discovery on per-test loopback ports) and the verified WSTX_DECODER_VECTORS for one FT8 period. No FlexRadio, SmartSDR/CAT/DAX program, audio device, broadcast, LAN discovery or network service.
 
 - suite: operating-layout
@@ -833,7 +886,9 @@
   - client/contact.js
   - client/logbook.js
   - tests/ui-operating.test.cjs
-  - tests/support.cjs
+  - tools/test/node/quiet-press.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -885,19 +940,19 @@
 - suite: simulator-fixtures
   cost: 2
   run: >-
-    python -m unittest discover -s tools -p test_wsjtx_simulated_samples.py -v &&
-    python tools/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/manifest.json" --fixture-directory fixtures/decoder &&
-    python tools/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/../ft8/manifest.json" --fixture-directory fixtures/decoder
+    python -m unittest discover -s fixtures/decoder/simulator-tool -p test_wsjtx_simulated_samples.py -v &&
+    python fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/manifest.json" --fixture-directory fixtures/decoder &&
+    python fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/../ft8/manifest.json" --fixture-directory fixtures/decoder
   paths:
-  - tools/wsjtx_simulated_samples.py
-  - tools/test_wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-tool/test_wsjtx_simulated_samples.py
   - fixtures/decoder/simulator-cases.json
   - fixtures/decoder/independent-vector-tool/
   - fixtures/decoder/protocol-data/
   - docs/sysml/
   select:
-  - tools/wsjtx_simulated_samples.py
-  - tools/test_wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-tool/test_wsjtx_simulated_samples.py
   - fixtures/decoder/simulator-cases.json
   - fixtures/decoder/independent-vector-tool/
   - fixtures/decoder/protocol-data/
@@ -937,8 +992,10 @@
   - client/recording.js
   - client/recording.css
   - tests/radio-selection.test.cjs
-  - tests/support.cjs
-  - tests/model-values.cjs
+  - tools/test/node/selection-evidence.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/model-values.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -983,7 +1040,9 @@
   - client/index.html
   - client/recording.js
   - tests/radio-selection.test.cjs
-  - tests/support.cjs
+  - tools/test/node/selection-evidence.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
   - Cargo.lock
   - rust-toolchain.toml
   - package-lock.json
@@ -1002,7 +1061,8 @@
   - server/
   - client/
   - tests/mcp/mcp.test.cjs
-  - tests/support.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -1017,7 +1077,8 @@
   - server/src/authorization_http.rs
   - client/authorization.js
   - tests/mcp/mcp.test.cjs
-  - tests/support.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml

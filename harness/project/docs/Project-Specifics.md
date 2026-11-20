@@ -66,7 +66,24 @@ requires; Miri is not wired, since the blocks call the Windows API.
 
 ### Workspace
 
-The root Cargo workspace contains the station-server package in `server/`. Run Cargo commands from the repository root; the shared lock file and toolchain stay there, and Windows build artifacts remain under `target/x86_64-pc-windows-msvc/`. The `client/` files are embedded at Rust compile time, without a frontend build step.
+The root Cargo workspace contains the station-server package in `server/` and the test-tools
+crate `wstx-test-tools` in `tools/test/rust/`, a dev-dependency of the station server only;
+the versions both crates use stand once in `[workspace.dependencies]`. Run Cargo commands from the repository root; the shared lock file and toolchain stay there, and Windows build artifacts remain under `target/x86_64-pc-windows-msvc/`. The `client/` files are embedded at Rust compile time, without a frontend build step.
+
+### Test tools
+
+The test-tool folders of the [harness testing standard](../../general/core/docs/standards/testing.md#test-tools):
+`tools/test/rust/` (the crate `wstx-test-tools`, its tests in its modules and its `tests/`),
+`tools/test/node/` (CommonJS tool modules, each with its `<tool>.test.cjs` beside it) and
+`tools/test/python/` (the Python test tools, each with its `test_<tool>.py`, and
+`WSJTX-REFERENCE.md`); files several tools use stand in `tools/test/` (`blocked-ports.json`,
+`fixtures/model-values/`). A test tool depends on no product package: `wstx-test-tools` has no
+`wstx-rust` dependency, and a Node tool module requires no file below `client/` or `server/`.
+Product code names a tool only in a test file (`use wstx_test_tools::…`, `require` in a
+`*.test.cjs`); the decoder's test-only resource observer hooks, which name the observer by full
+path, are the one exception until a port replaces them. Fixture generators and their test data
+stand under `fixtures/<area>/` and write the reference vectors where the Rust tests read them.
+The suite `test-tools` runs the Node tools' tests; the Rust tools' tests run in `wstx-rust`.
 
 ## GitHub Actions
 
@@ -169,7 +186,7 @@ The **live page check** (`tools/deploy/live-page-check.ps1`) is in no
 suite: it needs the installed station and one real restart. It runs on HB9BLA after every
 deploy under the [standing deploy policy](#standing-deploy-policy) and at live
 acceptance (CR step 6) of a change to `client/`, the receive, recording or logbook owners or
-`tests/page-watch.cjs`. It keys nothing and restarts the station only while nothing is armed,
+`tools/test/node/page-watch.cjs`. It keys nothing and restarts the station only while nothing is armed,
 keyed, in a contact or an automation run. Before the restart it makes one band selection of the
 band the station receives on, keeping its mode, so that the old boot's receive job stands at
 generation 2 or more: only while receive runs FT8 or FT4 on a selected band,
@@ -210,7 +227,7 @@ Each group names its Cargo build (`build`); the gate runs each distinct build on
 serially, before the groups start, so that the groups share one up-to-date build in the
 checkout's own `CARGO_TARGET_DIR` instead of queuing on Cargo's lock. The groups' `run`
 still repeats its build, which is then up to date. Ports are chosen free per test
-(`tests/support.cjs`), and each browser test station gets its own `LOCALAPPDATA`
+(`tools/test/node/support.cjs`), and each browser test station gets its own `LOCALAPPDATA`
 (`stationEnv`), so the profile and radio-ownership locks of concurrent groups do not
 meet.
 
@@ -343,8 +360,8 @@ under `tools/deploy/station-update/` (`station-update.ps1`, `make_package.py`,
 and `tools/deploy/live-page-check.ps1`. Every step of the
 [standing deploy policy](#standing-deploy-policy) lives in those files. `.gitattributes`
 marks them `-text`, so their bytes in git, in a checkout and in a package are the same.
-The live page check's checker `tests/live-page-check.cjs` is product, gated by CRs, and is
-not pinned: the deploy runs it from the repository root it passes (`-Repo`, the main
+The live page check's checker `tools/test/node/live-page-check.cjs` is a test tool, gated by
+CRs, and is not pinned: the deploy runs it from the repository root it passes (`-Repo`, the main
 checkout `D:\Github\wsjtx-rust`) with that checkout's `node_modules`, not from the package.
 
 A deploy is one line in Git Bash on HB9BLA, given only the commit, which runs
@@ -473,7 +490,7 @@ b611766f68a987b450c15d38233c3c9eab5eb2eef58d9cc93db56fdce62fef07  tools/deploy/s
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
 506cc03746fb8bce42cd20bbafbe83715cf21bf502acb7ab558a5513a9b1f770  tools/deploy/station-probe.ps1
-00eaa648f97fe6c68f932558ce7d8f9cebac0a3c892a63f90b7338471d47729d  tools/deploy/live-page-check.ps1
+4116d80faf8f8112abf4e1a183b96ea86b4643f07d161158fe0c3456c62cf7e4  tools/deploy/live-page-check.ps1
 ```
 
 ### Standing consent at 1 %

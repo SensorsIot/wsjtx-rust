@@ -147,7 +147,7 @@ guard:
   optional, the two prefixes in that order and no other, the pattern bare (letters, digits,
   brackets and `_.,:^+=/-`) or in single quotes without a `'`. A test file may also be named
   from a session inside the worktree or by its absolute path. `WSTX_TEST_EXE` (read by
-  `tests/support.cjs`) runs the tests on the role's own build; its `<worktree>` is the one
+  `tools/test/node/support.cjs`) runs the tests on the role's own build; its `<worktree>` is the one
   every test file of the command lies in.
 - **Oracle generator and node red on the parent:** the coder runs the WSJT-X
   vector generator itself, from the project folder with the worktree path and only reference
