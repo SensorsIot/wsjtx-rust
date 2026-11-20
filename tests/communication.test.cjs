@@ -1,7 +1,7 @@
 'use strict';
 const {test, before, after} = require('node:test');
 const assert = require('node:assert/strict');
-const {once, EventEmitter} = require('node:events');
+const {once} = require('node:events');
 const {setTimeout: sleep} = require('node:timers/promises');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -10,8 +10,8 @@ const https = require('node:https');
 const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
 const WebSocket = require('ws');
-const {server, link, restrictedPorts, listenBrowser, browserPort} = require('./support.cjs');
-const {receive} = require('./peer.cjs');
+const {server, link, browserPort} = require('../tools/test/node/support.cjs');
+const {receive} = require('../tools/test/node/peer.cjs');
 let browser, temporary, tlsEnv;
 const token = 'TestOnlyRandomCredential0123456789ABCDEF';
 before(async () => {
@@ -41,54 +41,6 @@ async function connected(page, origin) {
 async function contextFor() {
   return browser.newContext({ignoreHTTPSErrors: true});
 }
-
-// Test-tool oracle: a protocol fixture proves heartbeat interleaving and a fixed deadline.
-// Chromium refuses its kRestrictedPorts with ERR_UNSAFE_PORT; Windows here hands out
-// dynamic ports from 1024, so a browser-facing listen(0) can land on one.
-test('port helper: browser- and fetch-facing ports are never Chromium restricted or fetch bad ports', async () => {
-  // Spot values of Chromium net/base/port_util.cc kRestrictedPorts, including the ones seen on HB9BLA.
-  for (const port of [1, 25, 1719, 1720, 1723, 2049, 5060, 5061, 6000, 6665, 6666, 6667, 6668, 6669, 6697, 10080]) assert.ok(restrictedPorts.has(port), String(port));
-  for (const port of [80, 443, 1024, 8080, 18001]) assert.equal(restrictedPorts.has(port), false, String(port));
-  // Node's fetch (undici) refuses the Fetch standard's bad ports with "bad port"; 4190 and
-  // 6679 are not on Chromium's list. Each one is restricted, and this Node refuses each.
-  for (const port of [1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]) {
-    assert.ok(restrictedPorts.has(port), String(port));
-    await assert.rejects(fetch(`http://127.0.0.1:${port}/`), error => error.cause?.message === 'bad port', String(port));
-  }
-  // A listener that the OS gives restricted ports first: the helper must skip all of them.
-  const offered = [1719, 4190, 1723, 6679, 6000, 10080, 40000];
-  let closed = 0;
-  const fake = Object.assign(new EventEmitter(), {
-    listen(port, host) { assert.equal(port, 0); assert.equal(host, '127.0.0.1'); setImmediate(() => this.emit('listening')); },
-    address() { return {port: offered[closed]}; },
-    close(done) { closed++; setImmediate(done); },
-  });
-  assert.equal(await listenBrowser(fake), 40000);
-  assert.equal(closed, 6, 'each restricted port is released');
-  // Only restricted ports: the helper fails instead of returning one.
-  const stuck = Object.assign(new EventEmitter(), {listen() { setImmediate(() => this.emit('listening')); }, address() { return {port: 1720}; }, close(done) { setImmediate(done); }});
-  await assert.rejects(listenBrowser(stuck), /No browser-accepted port/);
-  // Real allocations are free, distinct-enough ports outside the list.
-  for (let i = 0; i < 50; i++) {
-    const port = await browserPort();
-    assert.ok(Number.isInteger(port) && port > 0 && port < 65536 && !restrictedPorts.has(port), String(port));
-  }
-});
-test('peer helper: heartbeat interleaving preserves response and total deadline', {timeout: 2000}, async () => {
-  const fixture = new EventEmitter();
-  const result = receive(fixture);
-  fixture.emit('message', Buffer.from('{"v":1,"type":"heartbeat"}'));
-  fixture.emit('message', Buffer.from('{"v":1,"type":"station.status","id":7}'));
-  assert.deepEqual(await result, {v: 1, type: 'station.status', id: 7});
-  for (const message of [{v: 2, type: 'heartbeat'}, {v: 1, type: 'heartbeat', id: 7}, {v: 1, type: 'unexpected'}]) {
-    const unexpected = receive(fixture); fixture.emit('message', JSON.stringify(message));
-    assert.deepEqual(await unexpected, message, 'unexpected messages remain visible to the oracle');
-  }
-  const deadline = receive(fixture, 30);
-  const heartbeat = setInterval(() => fixture.emit('message', '{"v":1,"type":"heartbeat"}'), 2);
-  try {await assert.rejects(deadline, /Message timeout/);} finally {clearInterval(heartbeat);}
-  assert.equal(fixture.listenerCount('message'), 0);
-});
 
 // Cost level 2: Windows PC/CI, isolated local server.
 // Proves: TC-051-001

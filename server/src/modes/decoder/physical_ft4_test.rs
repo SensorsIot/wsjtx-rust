@@ -32,11 +32,11 @@ fn qualified_support_geometry_order_and_reset() {
 #[test]
 fn qualified_support_count_keeps_the_256_257_barrier() {
     // WstxDecode::DecodeBudgets::candidateCap, read from the model.
-    let cap = match crate::model_values::Model::load()
+    let cap = match wstx_test_tools::model_values::Model::load()
         .number("WstxDecode::DecodeBudgets::candidateCap")
         .unwrap_or_else(|e| panic!("model value {e}"))
     {
-        Some(crate::model_values::Number::Integer(cap)) => cap as usize,
+        Some(wstx_test_tools::model_values::Number::Integer(cap)) => cap as usize,
         other => panic!("model value candidateCap: not an integer: {other:?}"),
     };
     let prior = (0..cap)

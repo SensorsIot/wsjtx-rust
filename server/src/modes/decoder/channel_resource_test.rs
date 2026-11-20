@@ -1,9 +1,9 @@
 use super::*;
-use crate::decoder::resource_observer::{self, Phase};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use wstx_test_tools::resource_observer::{self, Phase};
 
 // The first hardword/syndrome comes from H alone.
 #[test]

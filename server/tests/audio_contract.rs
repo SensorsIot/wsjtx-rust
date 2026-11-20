@@ -8,9 +8,7 @@ use audio::*;
 use source::*;
 use std::sync::Arc;
 // The test-only model-value reader (Project-Specifics, "Model values read by tests").
-#[allow(dead_code)]
-#[path = "../src/model_values.rs"]
-mod model_values;
+use wstx_test_tools::model_values;
 
 /// A number of WstxCapture::CaptureStream, read from the model.
 fn stream_value(feature: &str) -> f64 {

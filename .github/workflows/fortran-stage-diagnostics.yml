@@ -30,8 +30,8 @@ jobs:
           persist-credentials: false
       - name: Check protocol and logging identity boundaries
         run: |
-          python3 -m unittest discover -s tools -p 'test_wsjtx*reference.py' -v
-          python3 -m unittest discover -s tools -p 'test_analyze_fortran_trace.py' -v
+          python3 -m unittest discover -s tools/test/python -p 'test_wsjtx*reference.py' -v
+          python3 -m unittest discover -s tools/test/python -p 'test_analyze_fortran_trace.py' -v
       - name: Install Fortran dependencies on hosted runner only
         timeout-minutes: 12
         shell: bash
@@ -79,14 +79,14 @@ jobs:
           cmake --build reference-build --target ft8sim --parallel 2 \
             2>&1 | tee reference-output/build-ft8sim.log
           cp reference-build/ft8sim reference-output/ft8sim
-          python3 tools/wsjtx_simulator_components.py \
+          python3 fixtures/decoder/simulator-tool/wsjtx_simulator_components.py \
             --exe reference-build/ft8sim \
             --cases fixtures/decoder/simulator-cases.json \
             --output reference-output/ft8-components
           ldd reference-build/wsjt-codec > reference-output/runtime-libraries.txt
           cp reference-build/CMakeCache.txt reference-output/CMakeCache.txt
-          python3 tools/wsjtx_reference.py acquire --inputs reference-output/inputs
-          python3 tools/wsjtx_stage_reference.py run \
+          python3 tools/test/python/wsjtx_reference.py acquire --inputs reference-output/inputs
+          python3 tools/test/python/wsjtx_stage_reference.py run \
             --exe reference-output/wsjt-codec-original \
             --expected-sha256 "$(sha256sum reference-output/wsjt-codec-original | cut -d' ' -f1)" \
             --source-revision 0f7d5928449ec747c3d1f6da1306f8c94404c3a9 \
@@ -109,12 +109,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          env -u WSJTX_STAGE_TRACE python3 tools/wsjtx_stage_reference.py run \
+          env -u WSJTX_STAGE_TRACE python3 tools/test/python/wsjtx_stage_reference.py run \
             --exe reference-output/wsjt-codec-instrumented \
             --expected-sha256 "$(sha256sum reference-output/wsjt-codec-instrumented | cut -d' ' -f1)" \
             --source-revision 0f7d5928449ec747c3d1f6da1306f8c94404c3a9 --instrumented \
             --inputs reference-output/inputs --output reference-output/instrumented-disabled
-          python3 tools/wsjtx_stage_reference.py identity \
+          python3 tools/test/python/wsjtx_stage_reference.py identity \
             --original reference-output/original/reference.json \
             --traced reference-output/instrumented-disabled/reference.json \
             --output reference-output/disabled-identity.json
@@ -124,17 +124,17 @@ jobs:
           WSJTX_STAGE_TRACE: '1'
         run: |
           set -euo pipefail
-          python3 tools/wsjtx_stage_reference.py run \
+          python3 tools/test/python/wsjtx_stage_reference.py run \
             --exe reference-output/wsjt-codec-instrumented \
             --expected-sha256 "$(sha256sum reference-output/wsjt-codec-instrumented | cut -d' ' -f1)" \
             --source-revision 0f7d5928449ec747c3d1f6da1306f8c94404c3a9 --instrumented \
             --inputs reference-output/inputs --output reference-output/instrumented-enabled
-          python3 tools/wsjtx_stage_reference.py identity \
+          python3 tools/test/python/wsjtx_stage_reference.py identity \
             --original reference-output/original/reference.json \
             --traced reference-output/instrumented-enabled/reference.json \
             --output reference-output/enabled-identity.json
           test "$(wc -c < reference-output/instrumented-enabled/ft8-official/stderr.txt)" -le 268435456
-          python3 tools/analyze_fortran_trace.py \
+          python3 tools/test/python/analyze_fortran_trace.py \
             reference-output/instrumented-enabled/ft8-official/stderr.txt \
             reference-output/trace-summary.json
           sha256sum reference-output/wsjt-codec-* reference-output/wsjtx-original-source.tar.gz \

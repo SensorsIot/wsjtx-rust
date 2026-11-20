@@ -8,6 +8,7 @@ use crate::contact_http::tests::{Fixture, fixture, now_ms, period_text, record};
 use axum::body::Body;
 use std::sync::atomic::Ordering;
 use tower::ServiceExt;
+use wstx_test_tools::lock_holder::{self, LOCK_HOLDER, LOCKED};
 
 fn peer() -> UdpSocket {
     let s = UdpSocket::bind("127.0.0.1:0").unwrap();
@@ -1519,29 +1520,6 @@ fn flex_ready(session: &wstx_rust::flex::Session, letter: &str) {
     });
 }
 
-/// The lock file a `lock_holder_child` process holds, and the line it prints once it holds it.
-const LOCK_HOLDER: &str = "WSTX_TEST_LOCK_HOLDER";
-const LOCKED: &str = "lock-holder: locked";
-/// Not a test of its own: the child process of TC-112-001 (c). It holds an exclusive lock on
-/// the file LOCK_HOLDER names until it is killed (as a live server holds its name).
-#[test]
-#[ignore = "child process of tc_112_001_instance_name"]
-fn lock_holder_child() {
-    let Some(path) = std::env::var_os(LOCK_HOLDER) else {
-        return;
-    };
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(path)
-        .unwrap();
-    file.lock().unwrap();
-    println!("{LOCKED}");
-    // Held until killed; a parent that ends without killing it closes this pipe.
-    let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut Vec::new());
-}
-
 // The instance name: base forms, numbering on a clash, a
 // released name taken again (dropped, and a killed process), an unusable lock folder, the name
 // on every datagram and in GET /udp, no change by a radio change while running, WSTX_UDP=off
@@ -1549,6 +1527,9 @@ fn lock_holder_child() {
 // Proves: TC-112-001
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_001_instance_name() {
+    if let Some(path) = std::env::var_os(LOCK_HOLDER) {
+        return lock_holder::hold(path);
+    }
     let f = fixture("http://127.0.0.1:18411", false);
     let root = locks(&f);
     // (a) and (b).
@@ -1597,8 +1578,7 @@ async fn tc_112_001_instance_name() {
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "udp::tests::lock_holder_child",
-            "--ignored",
+            "udp::tests::tc_112_001_instance_name",
             "--nocapture",
             "--test-threads=1",
         ])

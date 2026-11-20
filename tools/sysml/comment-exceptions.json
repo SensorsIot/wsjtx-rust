@@ -31,14 +31,9 @@
   {"path": "server/src/web/link_log_tests.rs", "text": "2027-01-15", "kind": "D3"},
   {"path": "server/tests/transmit_ft4_vectors.rs", "text": "2026-10-31", "kind": "D3"},
   {"path": "server/tests/transmit_vectors.rs", "text": "2026-10-31", "kind": "D3"},
-  {"path": "tests/flex-emulator.cjs", "text": "2026-11-06", "kind": "D3"},
-  {"path": "tests/frontend/receive-page.test.cjs", "text": "Strategy New calls: #1", "kind": "S"},
-  {"path": "tests/frontend/receive-page.test.cjs", "text": "Strategy New calls: #2", "kind": "S"},
-  {"path": "tests/frontend/receive-page.test.cjs", "text": "Strategy New calls: #4", "kind": "S"},
   {"path": "tests/mcp/mcp.test.cjs", "text": "legacy", "kind": "M"},
   {"path": "tests/profile/recording-fixtures.test.cjs", "text": "'issue-7'", "kind": "S"},
   {"path": "tests/recording.test.cjs", "text": "'issue-7'", "kind": "S"},
-  {"path": "tests/support.cjs", "text": "2026-10-31", "kind": "D2"},
   {"path": "tests/ui-operating.test.cjs", "text": "'#1','CQ DL1XYZ JO62'", "kind": "S"},
   {"path": "tests/ui-operating.test.cjs", "text": "'#2','CQ K1ABC FN42'", "kind": "S"},
   {"path": "tests/ui-operating.test.cjs", "text": "Most Wanted #3", "kind": "S"},
@@ -54,5 +49,10 @@
   {"path": "tools/deploy/tests/test_deploy_flow.py", "text": "record not posted on #23: at cr:implementing", "kind": "S"},
   {"path": "tools/deploy/tests/test_deploy_flow.py", "text": "record not posted on #23: no cr state", "kind": "S"},
   {"path": "tools/deploy/tests/test_deploy_flow.py", "text": "record not posted on #60: closed", "kind": "S"},
-  {"path": "tools/deploy/tests/test_deploy_flow.py", "text": "record not posted on #70: state cannot be read", "kind": "S"}
+  {"path": "tools/deploy/tests/test_deploy_flow.py", "text": "record not posted on #70: state cannot be read", "kind": "S"},
+  {"path": "tools/test/node/flex-emulator.cjs", "text": "2026-11-06", "kind": "D3"},
+  {"path": "tools/test/node/page-watch.test.cjs", "text": "Strategy New calls: #1", "kind": "S"},
+  {"path": "tools/test/node/page-watch.test.cjs", "text": "Strategy New calls: #2", "kind": "S"},
+  {"path": "tools/test/node/page-watch.test.cjs", "text": "Strategy New calls: #4", "kind": "S"},
+  {"path": "tools/test/node/support.cjs", "text": "2026-10-31", "kind": "D2"}
 ]

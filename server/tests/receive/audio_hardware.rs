@@ -11,6 +11,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use wstx_test_tools::capture_evidence::Evidence;
 
 const RADIO_INPUT: &str = "{0.0.1.00000000}.{fe449f9f-e759-4d7f-87e7-e6845d1bddfe}";
 
@@ -80,7 +81,9 @@ fn selected_radio_audio_capture_evidence() {
                         .acknowledge_epoch(proposal.proposal_counter, descriptor, timing)
                         .map_err(|error| format!("epoch ACK: {error:?}"))?;
                 }
-                SourcePoll::Block(block) => evidence.observe(&block)?,
+                SourcePoll::Block(block) => {
+                    evidence.observe(block.first_frame, &block.samples, block.discontinuity)?
+                }
                 SourcePoll::Failed(error) => return Err(format!("capture failed: {error:?}")),
                 SourcePoll::End => return Err("live input ended".into()),
             }
@@ -100,92 +103,4 @@ fn selected_radio_audio_capture_evidence() {
         evidence.samples >= 60_000,
         "less than five seconds of canonical audio captured"
     );
-}
-
-#[derive(Default)]
-struct Evidence {
-    blocks: u64,
-    samples: u64,
-    epochs: u64,
-    discontinuities: u64,
-    known_missing: u64,
-    unknown_loss_epochs: u64,
-    previous_end: Option<u64>,
-    squares: f64,
-    peak: f64,
-}
-impl Evidence {
-    fn observe(&mut self, block: &SampleBlock) -> Result<(), String> {
-        if block.samples.is_empty()
-            || block.samples.len() > 240
-            || !block.samples.iter().all(|v| v.is_finite())
-        {
-            return Err("invalid canonical block".into());
-        }
-        if let Some(previous) = self.previous_end {
-            if block.first_frame < previous {
-                return Err("canonical frame counter went backwards".into());
-            }
-            if block.first_frame > previous {
-                if !block.discontinuity {
-                    return Err("unmarked canonical gap".into());
-                }
-                self.known_missing += block.first_frame - previous;
-            }
-        }
-        self.previous_end = Some(block.first_frame + block.samples.len() as u64);
-        self.blocks += 1;
-        self.samples += block.samples.len() as u64;
-        self.discontinuities += u64::from(block.discontinuity);
-        for &v in block.samples.iter() {
-            let v = f64::from(v);
-            self.squares += v * v;
-            self.peak = self.peak.max(v.abs());
-        }
-        Ok(())
-    }
-    fn rms(&self) -> f64 {
-        if self.samples == 0 {
-            0.0
-        } else {
-            (self.squares / self.samples as f64).sqrt()
-        }
-    }
-}
-
-#[test]
-fn hardware_probe_evidence_rejects_bad_blocks_and_measures_samples() {
-    let descriptor = Arc::new(SourceDescriptor {
-        schema_version: 1,
-        profile_id: "p".into(),
-        boot_id: "b".into(),
-        source_id: "s".into(),
-        rate_hz: 12000,
-        channel: "mono_real",
-        total_frames: None,
-        utc_anchor: None,
-    });
-    let mut block = SampleBlock {
-        source: descriptor,
-        first_frame: 0,
-        samples: Arc::from([0.5_f32, -0.5]),
-        discontinuity: true,
-        end_of_stream: false,
-        timing: None,
-    };
-    let mut evidence = Evidence::default();
-    evidence.observe(&block).unwrap();
-    assert_eq!(evidence.rms(), 0.5);
-    assert_eq!(evidence.peak, 0.5);
-    block.first_frame = 4;
-    block.discontinuity = false;
-    assert!(evidence.observe(&block).is_err());
-    block.discontinuity = true;
-    evidence.observe(&block).unwrap();
-    assert_eq!(evidence.known_missing, 2);
-    block.first_frame = 0;
-    assert!(evidence.observe(&block).is_err());
-    block.first_frame = 6;
-    block.samples = Arc::from([f32::NAN]);
-    assert!(evidence.observe(&block).is_err());
 }

@@ -88,11 +88,11 @@ fn envelope_cancellation_matches_scalar_convolution_and_edges() {
 #[test]
 #[cfg(not(debug_assertions))]
 fn resource_phase_subtraction_cancels_after_actual_transform_before_mutation() {
-    use crate::decoder::resource_observer::{self, Phase};
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     };
+    use wstx_test_tools::resource_observer::{self, Phase};
     for mode in [Mode::Ft8, Mode::Ft4] {
         let frame = mode.symbol_frames() * mode.symbol_count();
         let wave = (0..frame)

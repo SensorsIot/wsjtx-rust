@@ -745,11 +745,8 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     assert_eq!(r.state.lock().unwrap().operating.profile_revision, 9);
 }
 
-// Each test module of the station executable includes the test-only reader itself.
-#[allow(dead_code, clippy::duplicate_mod)]
-#[path = "model_values.rs"]
-mod model_values;
-use model_values::{Model, Number};
+// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+use wstx_test_tools::model_values::{Model, Number};
 
 // The preferred FT8 and FT4 dial frequency of each band in WSJT-X's default
 // list of frequencies (WstxOperatingSelection::BandFrequency), copied by hand from

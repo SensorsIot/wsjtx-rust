@@ -215,8 +215,8 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   TestLocation::<developmentPc|station|simulator|flexRadio>; }`, each pair once; anything
   else, or `@TestLevel` on another element, is `Invalid test level: <identity>`.
 - **TR-20 Values read, markers, paths, status.** A contract test reads a model value by its
-  qualified name through the one reader of its language (`server/src/model_values.rs`,
-  `tests/model-values.cjs`); a missing, duplicate or unreadable value fails. `markers` lists
+  qualified name through the one reader of its language (`tools/test/rust/src/model_values.rs`,
+  `tools/test/node/model-values.cjs`); a missing, duplicate or unreadable value fails. `markers` lists
   `<key>:<line>: <Kind>[ about <targets>]: <text>` per marker of the `WstxModelNotes` kinds,
   then the counts. `paths` rewrites the paths of `@ImplementedIn`, `@TestedBy` and
   `@DetailTests` (a joined value read as one text), relative links and whole paths in text,
@@ -479,10 +479,10 @@ run them are those of `harness/project/suites.yaml`.
 | TV-153 | TR-18 | `test_writing_rules.py` WritingRulesTest.test_quoted_underscore_name_and_join_after_a_binding_separator_pass | an underscore stands in a quoted name ('rst_sent'), and a joined value may meet right after the `::` of a <path>::<test name> binding; the unquoted underscore stays refused. |
 | TV-154 | TR-18 | `test_writing_rules.py` WritingRulesTest.test_doc_line_names_no_element | a word that begins a wrapped doc line is no element of the file, so a clause naming only that word names no element of its file. |
 | TV-155 | TR-18 | `test_writing_rules.py` WritingRulesTest.test_real_model_writing | the real model `docs/sysml` meets the writing rules. |
-| TV-156 | TR-20 | `server/tests/model_values.rs` model_values_reads_every_fixture_value_in_lf_and_crlf | the Rust reader accepts every value of the fixture list, in LF and CRLF. |
-| TV-157 | TR-20 | `server/tests/model_values.rs` model_values_refuses_every_fixture_fault_naming_name_and_reason | the Rust reader refuses every fault of the fixture list, naming the name and the reason. |
-| TV-158 | TR-20 | `tests/model-values.test.cjs` model values: every fixture value is read, in LF and CRLF | the JavaScript reader accepts every value of the fixture list. |
-| TV-159 | TR-20 | `tests/model-values.test.cjs` model values: every fixture fault is refused naming the name and the reason | the JavaScript reader refuses every fault of the fixture list. |
+| TV-156 | TR-20 | `tools/test/rust/tests/model_values.rs` model_values_reads_every_fixture_value_in_lf_and_crlf | the Rust reader accepts every value of the fixture list, in LF and CRLF. |
+| TV-157 | TR-20 | `tools/test/rust/tests/model_values.rs` model_values_refuses_every_fixture_fault_naming_name_and_reason | the Rust reader refuses every fault of the fixture list, naming the name and the reason. |
+| TV-158 | TR-20 | `tools/test/node/model-values.test.cjs` model values: every fixture value is read, in LF and CRLF | the JavaScript reader accepts every value of the fixture list. |
+| TV-159 | TR-20 | `tools/test/node/model-values.test.cjs` model values: every fixture fault is refused naming the name and the reason | the JavaScript reader refuses every fault of the fixture list. |
 | TV-163 | TR-22 | `test_comments.py` CommentRuleTest.test_this_repository | `traces` on this repository passes and every exception entry is used. |
 | TV-164 | TR-22 | `test_comments.py` CommentRuleTest.test_accepted | one fixture per syntax with present-tense comments, tags, identities, a licence header, a WSJT-X reference, a URL, `#[test]`, a raw string, a regular expression, a CSS colour, callsigns, a timed test name, strings of product code, a third-party file, a harness workflow and one exception entry of each kind gives no fault. |
 | TV-165 | TR-22 | `test_comments.py` CommentRuleTest.test_pointer_in_each_comment_syntax | `#N` in a comment of each syntax is refused at its line. |

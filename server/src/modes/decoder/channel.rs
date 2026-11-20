@@ -188,7 +188,9 @@ impl Channel {
         let (mut stalled, mut last) = (0, 0);
         for iteration in 0..=ITERATIONS {
             #[cfg(test)]
-            super::resource_observer::hit(super::resource_observer::Phase::FecCheck);
+            wstx_test_tools::resource_observer::hit(
+                wstx_test_tools::resource_observer::Phase::FecCheck,
+            );
             if cancel() {
                 return (None, vec![]);
             }
@@ -207,7 +209,7 @@ impl Channel {
             }
             let hard: ChannelWord = std::array::from_fn(|i| u8::from(zn[i] < 0.));
             #[cfg(test)]
-            super::resource_observer::fec_word(hard);
+            wstx_test_tools::resource_observer::fec_word(hard);
             let unsatisfied = self
                 .checks
                 .iter()
@@ -245,7 +247,9 @@ impl Channel {
                 }
                 edge += row.len();
                 #[cfg(test)]
-                super::resource_observer::hit(super::resource_observer::Phase::FecRow);
+                wstx_test_tools::resource_observer::hit(
+                    wstx_test_tools::resource_observer::Phase::FecRow,
+                );
             }
         }
         (None, sums)
@@ -284,7 +288,9 @@ impl Channel {
             }
         }
         #[cfg(test)]
-        super::resource_observer::hit(super::resource_observer::Phase::RecoveryRank);
+        wstx_test_tools::resource_observer::hit(
+            wstx_test_tools::resource_observer::Phase::RecoveryRank,
+        );
         // Rows restricted to the information columns (identity after full elimination) and
         // to the 83 parity columns, as bit masks in reliability order.
         let mut information = [0u128; K];
@@ -326,7 +332,9 @@ impl Channel {
         let fixed: [bool; 174] = std::array::from_fn(|i| fixed[order[i]]);
         for first in (0..K).rev() {
             #[cfg(test)]
-            super::resource_observer::hit(super::resource_observer::Phase::RecoveryCheck);
+            wstx_test_tools::resource_observer::hit(
+                wstx_test_tools::resource_observer::Phase::RecoveryCheck,
+            );
             if cancel() {
                 return None;
             }
@@ -354,7 +362,9 @@ impl Channel {
                 }
             }
             #[cfg(test)]
-            super::resource_observer::hit(super::resource_observer::Phase::RecoveryTrial);
+            wstx_test_tools::resource_observer::hit(
+                wstx_test_tools::resource_observer::Phase::RecoveryTrial,
+            );
         }
         let selected = message ^ best.0;
         let (info, check) = (0..K)
