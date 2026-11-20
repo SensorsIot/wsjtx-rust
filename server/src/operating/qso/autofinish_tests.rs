@@ -7,7 +7,7 @@
 // the recording hardware double (virtual UTC; no audio, PTT or radio) with the scripted IC-7300 dial
 // on 14.074 MHz (the log's band); hand-authored decodes packed with the real codec.
 use super::*;
-use crate::automation_tests::{
+use crate::automation::tests::{
     advance_to, assert_completed, assert_on_a_forward_clock, automation, keyed_late,
     planned_audio_start, run,
 };
@@ -81,7 +81,7 @@ async fn finished(f: &Mcp, e: i64, beside: &[(&str, f64, Option<f64>)]) {
 /// with one station step; the key-on time.
 async fn on_the_air(f: &Mcp, own: i64) -> i64 {
     f.bench.clear_stepped_back();
-    crate::automation_tests::assert_bound(f, own);
+    crate::automation::tests::assert_bound(f, own);
     let service = &f.state.recording.transmit.get().unwrap().service;
     advance_to(f, own - 30);
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -516,7 +516,7 @@ async fn tc_081_003_a_contest_deselected_or_its_period_end_finishes_the_qso() {
     let (f, e) = (&t.f, t.e);
     // An hour later (the same period phase): past the period's end.
     let later = e + 3_600_000;
-    crate::automation_tests::jump_and_tick(f, later + 1_000 - f.bench.now_utc_ms());
+    crate::automation::tests::jump_and_tick(f, later + 1_000 - f.bench.now_utc_ms());
     assert_eq!(run_state(f).await, ("manual".into(), Value::Null));
     assert_eq!(contact(f).await.2, json!("armed"));
     contest_finished(f, later + 15_000, e).await;
@@ -561,7 +561,7 @@ async fn tc_081_003_an_mcp_stop_and_the_time_limit_finish_the_qso() {
     // (f)
     let t = station81(None).await;
     let (f, e) = (&t.f, t.e);
-    let (receipt, _) = run(f, crate::automation_tests::config_json(), "ft8").await;
+    let (receipt, _) = run(f, crate::automation::tests::config_json(), "ft8").await;
     let id = receipt["result"]["run_id"].clone();
     answered(f, e).await;
     let s = automation(f, "stop", json!({"run_id":id})).await;
@@ -574,7 +574,7 @@ async fn tc_081_003_an_mcp_stop_and_the_time_limit_finish_the_qso() {
     // (g)
     let t = station81(None).await;
     let (f, e) = (&t.f, t.e);
-    let mut c = crate::automation_tests::config_json();
+    let mut c = crate::automation::tests::config_json();
     c["max_run_minutes"] = json!(1);
     run(f, c, "ft8").await;
     answered(f, e).await;

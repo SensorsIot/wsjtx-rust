@@ -4,7 +4,7 @@
 // packed with the real codec and loopback UDP peers on ephemeral ports (never 2237). The
 // datagrams are read back with the independent big-endian reader below, not the encoder.
 use super::*;
-use crate::contact_http_tests::{Fixture, fixture, now_ms, period_text, record};
+use crate::contact_http::tests::{Fixture, fixture, now_ms, period_text, record};
 use axum::body::Body;
 use std::sync::atomic::Ordering;
 use tower::ServiceExt;
@@ -999,7 +999,7 @@ fn enter(f: &Fixture, call: &str, grid: Option<&str>) {
 async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_target() {
     let f = fixture("http://127.0.0.1:18408", true);
     // No radio: the dial is unconfirmed, so BAND and FREQ are absent (record_of with a
-    // confirmed dial: contact_http_tests::direct_log_record_fields_from_the_confirmed_dial).
+    // confirmed dial: contact_http::tests::direct_log_record_fields_from_the_confirmed_dial).
     f.state.recording.fixture_live_job("ft8");
     let (a, b) = (peer(), peer());
     let owner = install(

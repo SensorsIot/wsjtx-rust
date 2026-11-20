@@ -5,7 +5,7 @@
 // hand-written from the IC-7300 Full Manual section 19 command table ("15 11 Po":
 // 0143 = 50 %, 0213 = 100 %; "15 12 SWR": 0048 = 1.5, 0080 = 2.0, 0120 = 3.0; "15 13 ALC").
 use super::*;
-use crate::contact_http_tests::{Fixture, fixture};
+use crate::contact_http::tests::{Fixture, fixture};
 use axum::http::StatusCode;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
@@ -1095,4 +1095,22 @@ async fn a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing() {
     actor(&f)
         .ptt(false, Instant::now() + Duration::from_secs(1))
         .unwrap();
+}
+
+impl Owner {
+    fn result(&self) -> Option<&'static str> {
+        self.lock().result
+    }
+    fn assistant_running(&self) -> bool {
+        self.lock().assistant
+    }
+    fn warnings(&self) -> Vec<&'static str> {
+        self.lock().warnings.clone()
+    }
+    fn swr_fault(&self) -> bool {
+        self.lock().swr_fault
+    }
+    fn alc(&self) -> Alc {
+        self.lock().alc
+    }
 }

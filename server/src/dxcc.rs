@@ -588,21 +588,6 @@ impl Worked {
         }
         w
     }
-    /// The standing of a call, ever.
-    #[cfg(test)]
-    pub fn call_standing(&self, call: &str) -> Standing {
-        standing(self.ever.get(&(0, call.to_ascii_uppercase())))
-    }
-    /// The standing of a grid's 4-character square, ever.
-    #[cfg(test)]
-    pub fn grid_standing(&self, grid: &str) -> Standing {
-        standing(square(grid).and_then(|g| self.ever.get(&(1, g))))
-    }
-    /// The standing of a call's CQ WPX prefix, ever.
-    #[cfg(test)]
-    pub fn wpx_standing(&self, call: &str) -> Standing {
-        standing(self.wpx.get(&wpx_prefix(call)))
-    }
     /// The standing of a key of index `i` (0 call, 1 grid square, 6 WPX prefix) ever, on a
     /// band in any mode, or on a band and mode.
     fn scoped(&self, i: u8, key: String, band: Option<&str>, mode: Option<&str>) -> Standing {

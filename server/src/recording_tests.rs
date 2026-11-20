@@ -3639,3 +3639,220 @@ fn the_dial_is_not_taken_while_a_selection_pends_or_on_another_revision() {
         r.radio_actor().unwrap().request_close();
     }
 }
+
+impl Recording {
+    /// Test fixture: the operating selection band (no radio command).
+    pub(crate) fn fixture_band(&self, band: &'static str) {
+        self.state.lock().unwrap().operating.nominal.band = Some(band);
+    }
+    /// CL-044-07 test seam: the live receive's input endpoint.
+    pub(crate) fn fixture_live_device(&self, id: &str) {
+        if let Some(live) = self.state.lock().unwrap().live.as_mut() {
+            live.device_id = id.into();
+        }
+    }
+    /// Fixture: a complete manual operating selection (band with its nominal frequency, origin
+    /// manual) as the browser validates it; no radio command.
+    #[cfg(not(debug_assertions))]
+    pub(crate) fn fixture_manual_band(&self, band: &'static str, nominal_hz: u64) {
+        let mut s = self.state.lock().unwrap();
+        s.operating.nominal.band = Some(band);
+        s.operating.nominal.nominal_hz = Some(nominal_hz);
+        s.operating.nominal.origin = "manual";
+    }
+    /// Test seam: the live receive's capture epoch (None: none yet; Some(correlated))
+    /// and its measured drift (None: not measured; Some(None): rate not yet known).
+    pub(crate) fn fixture_capture_clock(&self, epoch: Option<bool>, drift: Option<Option<f64>>) {
+        let mut s = self.state.lock().unwrap();
+        if let Some(l) = s.live.as_mut() {
+            l.timing = epoch.map(|correlated| source::SourceTiming {
+                source_id: "fixture-capture".into(),
+                segment: 0,
+                native_rate: 48_000,
+                native_anchor_frame: 0.0,
+                canonical_anchor_frame: 0,
+                converter_delay_native_frames: 0.0,
+                qpc_anchor_100ns: None,
+                system_utc_anchor: correlated.then(|| "2026-11-09T12:00:00.0000000Z".into()),
+                uncertainty_ns: None,
+                correlated,
+                external_accuracy: source::ExternalAccuracy::Unknown,
+            });
+            l.capture_drift = drift.map(|ppm| (0, ppm));
+        }
+    }
+    /// Test seam: an injected running live job whose result records the test publishes
+    /// itself (hand-authored rows; no decoder). Returns (source, job, generation).
+    pub(crate) fn fixture_live_job(&self, mode: &'static str) -> (String, String, u64) {
+        let mut s = self.state.lock().unwrap();
+        s.generation += 1;
+        let generation = s.generation;
+        let id = profile::new_uuid().unwrap();
+        let source_id = profile::new_uuid().unwrap();
+        s.job = Some(Job {
+            id: id.clone(),
+            source_id: Some(source_id.clone()),
+            generation,
+            kind: "live",
+            state: "running",
+            processed_frames: 0,
+            error: None,
+            cancel: Arc::new(AtomicBool::new(false)),
+        });
+        s.latest_decode = None;
+        if matches!(mode, "ft4" | "ft8") {
+            s.operating_mode = mode;
+        }
+        s.live = Some(LiveState {
+            mode,
+            audio: audio::AudioStatus {
+                state: audio::AudioState::Running,
+                error: None,
+                retry_after_ms: None,
+            },
+            device_id: "fixture-contact-rows".into(),
+            source: Some(Arc::new(SourceDescriptor {
+                schema_version: 1,
+                profile_id: self.profile.clone(),
+                boot_id: self.boot.clone(),
+                source_id: source_id.clone(),
+                rate_hz: 12000,
+                channel: "mono_real",
+                total_frames: None,
+                utc_anchor: None,
+            })),
+            timing: None,
+            next_frame: 0,
+            records: VecDeque::new(),
+            record_bytes: 0,
+            first_sequence: 0,
+            next_sequence: 0,
+            search_limited: false,
+            last_overrun: None,
+            capture_drift: None,
+            clock_correction: 0,
+            publication_error: None,
+            level: (0.0, 0, None, Some(47)),
+            loss_epochs: 0,
+            last_loss: None,
+        });
+        drop(s);
+        self.sync_transmit_mode();
+        (source_id, id, generation)
+    }
+    /// Test seam: the operating selection's band and nominal dial as an origin sets them (no
+    /// radio command); a band None clears the selection.
+    pub(crate) fn fixture_operating(
+        &self,
+        band: Option<&'static str>,
+        nominal_hz: Option<u64>,
+        origin: &'static str,
+    ) {
+        let mut s = self.state.lock().unwrap();
+        s.operating.nominal.band = band;
+        s.operating.nominal.nominal_hz = nominal_hz;
+        s.operating.nominal.origin = origin;
+    }
+    /// Test seam: the current job's kind (a played recording is "recording").
+    pub(crate) fn fixture_job_kind(&self, kind: &'static str) {
+        if let Some(j) = self.state.lock().unwrap().job.as_mut() {
+            j.kind = kind;
+        }
+    }
+    /// Test seam: a published live record without a period start (uncorrelated).
+    pub(crate) fn fixture_uncorrelated(&self, sequence: u64) {
+        let mut s = self.state.lock().unwrap();
+        if let Some(l) = s.live.as_mut()
+            && let Some((record, _)) = l
+                .records
+                .iter_mut()
+                .find(|(r, _)| r["sequence"] == sequence)
+        {
+            record["period_start_utc"] = Value::Null;
+        }
+    }
+    /// Test seam: one loss-only source epoch of the live receive (same job and source).
+    pub(crate) fn fixture_loss_epoch(&self) {
+        if let Some(l) = self.state.lock().unwrap().live.as_mut() {
+            l.loss_epochs += 1;
+        }
+    }
+    /// Test seam: the live receive stops (no job, no live state), as after a receive stop.
+    pub(crate) fn fixture_stop_live_job(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.job = None;
+        s.live = None;
+    }
+    /// Test seam: one detailed waterfall row of the live job in the period starting at
+    /// `period_start_ms` (FT8 periods), with its levels per native bin, as the receive worker
+    /// feeds WstxHoldTx::SlotLevel.
+    pub(crate) fn fixture_detail_row(&self, period_start_ms: i64, levels: &[u8], tx: bool) {
+        let (job, generation, mode) = {
+            let s = self.state.lock().unwrap();
+            let j = s.job.as_ref().unwrap();
+            (
+                j.id.clone(),
+                j.generation,
+                s.live.as_ref().map_or("ft8", |l| l.mode),
+            )
+        };
+        let period_ms = if mode == "ft4" { 7500 } else { 15000 };
+        self.waterfall.lock().unwrap().row(
+            (&job, generation),
+            period_start_ms,
+            period_ms,
+            levels,
+            tx,
+        );
+    }
+    /// Test seam: publishes one period of fixture records (sequence assigned here) and
+    /// its latest-decode descriptor. Returns the assigned sequences.
+    pub(crate) fn fixture_publish_period(
+        &self,
+        period_start_utc: &str,
+        records: Vec<Value>,
+    ) -> Vec<u64> {
+        self.fixture_publish_view(period_start_utc, records, true)
+    }
+    /// Test seam: `fixture_publish_period` as a partial publication (complete false).
+    pub(crate) fn fixture_publish_partial(
+        &self,
+        period_start_utc: &str,
+        records: Vec<Value>,
+    ) -> Vec<u64> {
+        self.fixture_publish_view(period_start_utc, records, false)
+    }
+    fn fixture_publish_view(
+        &self,
+        period_start_utc: &str,
+        records: Vec<Value>,
+        complete: bool,
+    ) -> Vec<u64> {
+        let mut s = self.state.lock().unwrap();
+        let counter = s.decode_counter + 1;
+        let l = s.live.as_mut().unwrap();
+        let first = l.next_sequence;
+        let mut sequences = Vec::new();
+        for mut record in records {
+            record["sequence"] = json!(l.next_sequence);
+            record["period_start_utc"] = json!(period_start_utc);
+            sequences.push(l.next_sequence);
+            let size = serde_json::to_vec(&record).unwrap().len();
+            l.records.push_back((record, size));
+            l.record_bytes += size;
+            l.next_sequence += 1;
+        }
+        let next = l.next_sequence;
+        s.decode_counter = counter;
+        s.latest_decode = Some(LatestDecode {
+            id: counter,
+            first_sequence: first,
+            next_sequence: next,
+            period_start_utc: Some(period_start_utc.into()),
+            complete,
+            transmitted: false,
+        });
+        self.publication.send_modify(|n| *n = n.wrapping_add(1));
+        sequences
+    }
+}

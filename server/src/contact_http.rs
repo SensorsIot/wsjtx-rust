@@ -16,6 +16,9 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use wstx_rust::transmit::Parity;
 use wstx_rust::transmit::service::{Core, HaltState, Hardware, View};
+#[cfg(test)]
+#[path = "contact_http_tests.rs"]
+pub(crate) mod tests;
 
 pub const SNAPSHOT_BYTES_MAX: usize = 4096;
 pub const RECEIPTS: usize = 16;
@@ -457,18 +460,6 @@ impl Station {
             activity: e.settings.activity,
         }
     }
-    /// One ContactCommand body through exactly the browser's validation and execution
-    /// (WstxQsoControl::QsoControl) as a browser operator action; `granted` is the
-    /// caller's current CL-022 grant. Station code uses `operate_as` with its source.
-    #[cfg(test)]
-    pub(crate) fn operate(
-        &self,
-        state: &ProfileState,
-        body: Value,
-        granted: bool,
-    ) -> Result<(StatusCode, Value), Refusal> {
-        self.operate_as(state, body, granted, authorization::Principal::Browser)
-    }
     /// The ContactCommand path with the request's principal. Every principal that
     /// is not the browser (automation, MCP) is automatic: it never resets the Tx
     /// watchdog and arms only within the watchdog time of the last browser action.
@@ -620,11 +611,6 @@ impl Station {
         for record in &sent {
             crate::udp::logged(state, record);
         }
-    }
-    /// Test seam: a completed contact due for DirectLog at the next station step.
-    #[cfg(test)]
-    pub(crate) fn fixture_log(&self, c: contact::Contact) {
-        self.lock().engine.fixture_log(c);
     }
     /// Test seam: ends the retry backoff of failed log writes.
     #[cfg(test)]

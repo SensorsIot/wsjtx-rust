@@ -4,8 +4,6 @@ mod auth_tests;
 mod authorization;
 mod authorization_http;
 mod automation;
-#[cfg(test)]
-mod automation_tests;
 #[path = "radioControl/cat_lifecycle.rs"]
 mod cat_lifecycle;
 #[cfg(test)]
@@ -15,10 +13,6 @@ mod cat_lifecycle_tests;
 mod clock_http;
 mod contact;
 mod contact_http;
-#[cfg(test)]
-mod contact_http_tests;
-#[cfg(test)]
-mod contact_tests;
 mod dxcc;
 mod flex_http;
 #[path = "operating/qso/freeslot.rs"]
@@ -73,9 +67,6 @@ mod strategy;
 #[cfg(test)]
 mod test_ports;
 mod transmit_http;
-#[cfg(test)]
-#[path = "transmit/transmit_http_tests.rs"]
-mod transmit_http_tests;
 #[path = "operating/qso/udp.rs"]
 mod udp;
 use axum::{Json, body::Bytes};
@@ -1146,20 +1137,6 @@ struct ConnectionAuthority {
     access: authorization::Access,
 }
 impl ConnectionAuthority {
-    // Test-only synchronous observation; production uses current_async below.
-    #[cfg(test)]
-    fn current(&self) -> bool {
-        self.state
-            .authorization
-            .lock()
-            .ok()
-            .and_then(|owner| {
-                owner
-                    .as_ref()
-                    .map(|s| s.authority.current_grant(&self.access).is_ok())
-            })
-            .unwrap_or(false)
-    }
     async fn current_async(&self) -> Result<bool, authorization::Error> {
         let state = self.state.clone();
         let access = self.access.clone();

@@ -11,6 +11,9 @@ use wstx_rust::transmit::service::{
     ArmState, Capability, Core, DisarmCause, Hardware, OutcomeKind, Request, TransmitRefusal,
 };
 use wstx_rust::transmit::{self, ClockState, Family, Parity};
+#[cfg(test)]
+#[path = "contact_tests.rs"]
+pub(crate) mod tests;
 
 /// WstxMessageChoice::ReportRange.
 pub mod report_range {
@@ -1210,17 +1213,6 @@ impl Engine {
     fn is_hound(&self) -> bool {
         self.settings.activity == Activity::Hound
     }
-    /// The contacts due for the log since the last call (WstxLogbook::DirectLog), each
-    /// accepted (a log that refuses nothing).
-    #[cfg(test)]
-    pub fn take_logs(&mut self) -> Vec<(LogKind, Contact)> {
-        let mut taken = Vec::new();
-        self.hand_over(|kind, c| {
-            taken.push((kind, c.clone()));
-            LogAnswer::Accepted
-        });
-        taken
-    }
     /// WstxOperatingChain::CompletedContact: hands each contact due for the log to
     /// `log`, once, oldest first. The contest serial counts for a first hand-over only when
     /// the log answers accepted (CL-085-02, CL-085-03); a refusal changes nothing else.
@@ -1230,11 +1222,6 @@ impl Engine {
                 self.count_serial();
             }
         }
-    }
-    /// Test seam: a completed contact due for the log, as its completion queues it.
-    #[cfg(test)]
-    pub fn fixture_log(&mut self, c: Contact) {
-        self.to_log.push((LogKind::Completion, c, false));
     }
     /// The Tx offset domain: the transmitting contact's mode, else the station's.
     fn tx_max(&self, ctx: &Ctx) -> u32 {
@@ -3123,11 +3110,6 @@ impl Engine {
         let c = self.contact.as_ref()?;
         let (_, pause) = self.busy_kind();
         c.busy_with.as_deref().filter(|_| pause && c.state.active())
-    }
-    /// The latest own send whose stop point has passed: (its period, a paused call).
-    #[cfg(test)]
-    pub fn decided(&self) -> Option<(i64, bool)> {
-        self.decided
     }
     /// The stations decoded in the latest period of my Rx parity, except the partner.
     fn note_rx_decodes(&mut self, rows: &[Row]) {

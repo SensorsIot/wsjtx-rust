@@ -1,5 +1,5 @@
 'use strict';
-// Cost2: launched by contact_http_tests::contact_browser_operating_flow with the actual
+// Cost2: launched by contact_http::tests::contact_browser_operating_flow with the actual
 // candidate Router, contact engine and transmit owner on a recording hardware double
 // (no audio, PTT or radio). Decoded rows are hand-authored and published through the
 // test-only control peer; expected values below are the independent TC tables.
@@ -18,7 +18,7 @@ const mutations=()=>requests.filter(r=>r.method!=='GET');
 const snapshot=async()=>(await fetch(origin+'/contact')).json();
 async function waitFor(predicate,label,timeout=8000){const end=Date.now()+timeout;for(;;){const value=await predicate();if(value)return value;if(Date.now()>end)throw new Error('timeout: '+(typeof label==='function'?await label():label));await new Promise(r=>setTimeout(r,100));}}
 before(async()=>{
-  assert.ok(origin&&control,'run through contact_http_tests::contact_browser_operating_flow');
+  assert.ok(origin&&control,'run through contact_http::tests::contact_browser_operating_flow');
   browser=await chromium.launch();
   const context=await browser.newContext({viewport:{width:1440,height:1000}});
   page=await context.newPage();

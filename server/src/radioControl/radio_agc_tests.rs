@@ -4,7 +4,7 @@
 // are hand-written from the IC-7300 Full Manual section 19 command table ("16 12 AGC":
 // 01 FAST, 02 MID, 03 SLOW; the read is the command without data).
 use super::*;
-use crate::contact_http_tests::{Fixture, fixture};
+use crate::contact_http::tests::{Fixture, fixture};
 use crate::profile;
 use axum::http::StatusCode;
 use std::collections::VecDeque;
@@ -585,4 +585,10 @@ fn without_a_wanted_agc_nothing_is_read_or_set() {
     assert!(agc_frames(&radio).is_empty(), "no AGC frame");
     assert!(f.state.recording.agc.status().is_none());
     assert_eq!(radio.lock().unwrap().agc, 2);
+}
+
+impl Owner {
+    fn status(&self) -> Option<Status> {
+        self.lock().status
+    }
 }

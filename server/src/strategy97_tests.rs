@@ -1511,7 +1511,7 @@ fn reports_spot(age_s: i64) -> String {
         "K1ABC",
         14_075_000,
         "20m",
-        crate::contact_http_tests::now_ms() / 1000 - age_s,
+        crate::contact_http::tests::now_ms() / 1000 - age_s,
     )
 }
 fn moves_of(tx_move_every: Value) -> impl FnOnce(&mut Value) {

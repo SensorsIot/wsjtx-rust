@@ -5814,7 +5814,7 @@ fn tc_007_010_i_a_halted_73_keeps_signoff_and_enable_tx_sends_it_once() {
 /// values.
 fn station_started_with_saved(auto_seq: bool, call_first: bool) -> Station {
     let (dir, id) =
-        crate::contact_http_tests::profile_directory("http://127.0.0.1:18114", true, "JN47AA");
+        crate::contact_http::tests::profile_directory("http://127.0.0.1:18114", true, "JN47AA");
     let saved = format!(
         r#"{{"schema_version":1,"profile_id":"{id}","auto_seq":{auto_seq},"call_first":{call_first}}}"#
     );
@@ -5917,3 +5917,24 @@ fn tc_110_004_a_start_with_saved_values_transmits_nothing() {
 // The transmit state, its start actions and its stops, on this bench.
 #[path = "transmit_state_tests.rs"]
 mod transmit_state;
+
+impl Engine {
+    /// The contacts due for the log since the last call (WstxLogbook::DirectLog), each
+    /// accepted (a log that refuses nothing).
+    fn take_logs(&mut self) -> Vec<(LogKind, Contact)> {
+        let mut taken = Vec::new();
+        self.hand_over(|kind, c| {
+            taken.push((kind, c.clone()));
+            LogAnswer::Accepted
+        });
+        taken
+    }
+    /// Test seam: a completed contact due for the log, as its completion queues it.
+    pub(crate) fn fixture_log(&mut self, c: Contact) {
+        self.to_log.push((LogKind::Completion, c, false));
+    }
+    /// The latest own send whose stop point has passed: (its period, a paused call).
+    fn decided(&self) -> Option<(i64, bool)> {
+        self.decided
+    }
+}

@@ -272,11 +272,6 @@ impl Hearing {
             self.decoded.push_back(spot);
         }
     }
-    /// A spot of my call received by `target` on this band and mode, not older than the window.
-    #[cfg(test)]
-    pub(crate) fn hears_us(&self, target: &str, mode: &str, band: &str, now_s: i64) -> bool {
-        self.heard_by(target, mode, band, now_s).is_some()
-    }
     /// The newest spot of my call received by `target` on this band and mode, not older than
     /// the window: its time and rp.
     pub(crate) fn heard_by(
@@ -345,24 +340,6 @@ impl Hearing {
                 if out.len() == PREFERRED_MAX {
                     break;
                 }
-            }
-        }
-        out
-    }
-    /// The distinct offsets of `decoded`, of any parity.
-    #[cfg(test)]
-    pub(crate) fn decoded_offsets(
-        &self,
-        mode: &str,
-        band: &str,
-        dial_hz: u64,
-        range: (u32, u32),
-        now_s: i64,
-    ) -> Vec<u32> {
-        let mut out: Vec<u32> = Vec::new();
-        for (o, _) in self.decoded(mode, band, dial_hz, range, now_s) {
-            if !out.contains(&o) {
-                out.push(o);
             }
         }
         out
@@ -718,11 +695,6 @@ impl Feed {
         let my_call = self.shared.lock().my_call.clone().unwrap();
         accept(&self.shared, &my_call, payload.as_bytes());
     }
-    #[cfg(test)]
-    pub(crate) fn switch(&self, enabled: bool) {
-        let (profile, boot) = (self.profile.clone(), self.boot.clone());
-        self.set_enabled(&profile, &boot, enabled).unwrap();
-    }
     /// My call and the current target, from the station step. Changing the target replaces
     /// its subscription and forgets what the previous target decoded.
     pub(crate) fn observe(&self, my_call: Option<&str>, target: Option<&str>) {
@@ -745,11 +717,6 @@ impl Feed {
     pub(crate) fn use_on(&self) -> bool {
         let i = self.shared.lock();
         i.enabled && i.use_
-    }
-    /// Known to hear us; false means not known, also with the feed or Use off or unreachable.
-    #[cfg(test)]
-    pub(crate) fn hears_us(&self, target: &str, mode: &str, band: &str) -> bool {
-        self.hearing(target, mode, band).hears_us()
     }
     /// WstxHearing::HearingState: whether `target` hears us on this mode and band: heard (the
     /// newest spot of my call at it, at most 600 s old, with its rp); no (the feed connected,
@@ -783,22 +750,6 @@ impl Feed {
             return None;
         }
         Some(i.hearing.heard_calls(mode, band, utc_s()))
-    }
-    /// The audio offsets the current target decodes (any parity); none with Use off.
-    #[cfg(test)]
-    pub(crate) fn decoded_offsets(
-        &self,
-        mode: &str,
-        band: &str,
-        dial_hz: u64,
-        range: (u32, u32),
-    ) -> Vec<u32> {
-        let i = self.shared.lock();
-        if !(i.enabled && i.use_) {
-            return Vec::new();
-        }
-        i.hearing
-            .decoded_offsets(mode, band, dial_hz, range, utc_s())
     }
     /// The audio offsets the current target decodes from senders of `parity` (his end of my
     /// Tx parity, WstxHearing::DecodedOffsets), newest first; none with Use off.
@@ -903,11 +854,6 @@ impl Feed {
         self.shared.wake.notify_all();
         saved.map_err(|_| "storage_unavailable")?;
         Ok(self.view())
-    }
-    #[cfg(test)]
-    pub(crate) fn switch_use(&self, use_: bool) {
-        let (profile, boot) = (self.profile.clone(), self.boot.clone());
-        self.set_use(&profile, &boot, use_).unwrap();
     }
 }
 
@@ -1156,12 +1102,6 @@ pub(crate) fn target_offsets(
     #[cfg(not(test))]
     let dial = contact_http::confirmed_dial(r);
     Some(feed.decoded_of_parity(mode_name(mode), band, dial?, freeslot::band(mode), parity))
-}
-/// WstxHearingFeed::FeedSwitches in effect (the toggle and the Settings switch on); false without a
-/// feed.
-#[cfg(test)]
-pub(crate) fn use_on(r: &recording::Recording) -> bool {
-    r.pskr.get().is_some_and(|f| f.use_on())
 }
 
 #[derive(Deserialize)]

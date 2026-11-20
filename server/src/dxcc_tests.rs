@@ -295,7 +295,7 @@ fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
 // Proves: TC-055-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
-    use crate::automation_tests::{at_even, publish};
+    use crate::automation::tests::{at_even, publish};
     let f = crate::mcp_tests::station(false).await;
     // W1AW was worked on 20m in FT4: on 20m FT8 it is not new on the band (WSJT-X
     // highlights by band, not mode, by default).
@@ -401,7 +401,7 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
 // browser needs no query. Hand-written log and expected statuses.
 #[tokio::test]
 async fn tc_011_003_receive_results_carry_the_worked_status() {
-    use crate::automation_tests::{at_even, publish};
+    use crate::automation::tests::{at_even, publish};
     let f = crate::mcp_tests::station(false).await;
     let import = |adi: &str| {
         let id = crate::profile::new_uuid().unwrap();
@@ -478,7 +478,7 @@ async fn tc_011_003_receive_results_carry_the_worked_status() {
 // Proves: TC-055-006
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_055_006_non_cq_senders_carry_entity_and_flags() {
-    use crate::automation_tests::{at_even, publish};
+    use crate::automation::tests::{at_even, publish};
     let f = crate::mcp_tests::station(false).await;
     let adi = "<call:6>DL1ABC <gridsquare:4>JO62 <qso_date:8>20261031 <time_on:4>1230 <band:3>20m <mode:3>FT8 <eor>
 ";
@@ -728,17 +728,25 @@ fn tc_039_030_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls() {
         ],
     );
     let st = |worked, confirmed| Standing { worked, confirmed };
-    assert_eq!(w.call_standing("dl1abc"), st(true, false));
+    assert_eq!(w.call_scoped("dl1abc", None, None), st(true, false));
     assert_eq!(
-        w.call_standing("K1ABC"),
+        w.call_scoped("K1ABC", None, None),
         st(true, true),
         "any confirmed QSO"
     );
-    assert_eq!(w.call_standing("G4ABC"), st(false, false));
-    assert_eq!(w.grid_standing("JO62XX"), st(true, true), "by its square");
-    assert_eq!(w.grid_standing("IO91"), st(false, false));
-    assert_eq!(w.wpx_standing("DL1QQQ"), st(true, true), "the prefix DL1");
-    assert_eq!(w.wpx_standing("DL2QQQ"), st(false, false));
+    assert_eq!(w.call_scoped("G4ABC", None, None), st(false, false));
+    assert_eq!(
+        w.grid_scoped("JO62XX", None, None),
+        st(true, true),
+        "by its square"
+    );
+    assert_eq!(w.grid_scoped("IO91", None, None), st(false, false));
+    assert_eq!(
+        w.wpx_scoped("DL1QQQ", None, None),
+        st(true, true),
+        "the prefix DL1"
+    );
+    assert_eq!(w.wpx_scoped("DL2QQQ", None, None), st(false, false));
     assert!(w.gridless("k1abc"), "one QSO without a grid is enough");
     assert!(w.gridless("F1ABC"), "no 4-character square");
     assert!(!w.gridless("DL1ABC"));

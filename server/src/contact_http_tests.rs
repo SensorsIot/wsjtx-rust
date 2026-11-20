@@ -2223,7 +2223,7 @@ async fn hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields
     table.set_my_call(Some("HB9BLA"));
     table.set_dx_call(Some("KH7Z"));
     let payload = table.resolve(&wstx_rust::decoder::unpack(
-        &crate::contact_tests::dxpedition_bits("HB9BLA", "K1ABC", "KH7Z", -8),
+        &crate::contact::tests::dxpedition_bits("HB9BLA", "K1ABC", "KH7Z", -8),
     ));
     let mut record = serde_json::to_value(wstx_rust::decoder::Decode {
         payload,
@@ -3304,7 +3304,7 @@ async fn tc_085_004_the_contest_serial_counts_only_on_accepted() {
 // Proves: TC-085-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_085_001_g_auto_answers_the_station_logged_last_and_nothing_is_logged() {
-    use crate::automation_tests::{publish, run_state};
+    use crate::automation::tests::{publish, run_state};
     let f = crate::mcp_tests::station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let station = f.state.recording.contact.get().unwrap().clone();
@@ -3598,4 +3598,22 @@ fn transmit_view_shows_one_sntp_snapshot() {
     }
     let _ = std::fs::remove_dir_all(&dir);
     assert!(stale > 0, "the boundary was crossed");
+}
+
+impl Station {
+    /// One ContactCommand body through exactly the browser's validation and execution
+    /// (WstxQsoControl::QsoControl) as a browser operator action; `granted` is the
+    /// caller's current CL-022 grant. Station code uses `operate_as` with its source.
+    pub(crate) fn operate(
+        &self,
+        state: &ProfileState,
+        body: Value,
+        granted: bool,
+    ) -> Result<(StatusCode, Value), Refusal> {
+        self.operate_as(state, body, granted, authorization::Principal::Browser)
+    }
+    /// Test seam: a completed contact due for DirectLog at the next station step.
+    pub(crate) fn fixture_log(&self, c: contact::Contact) {
+        self.lock().engine.fixture_log(c);
+    }
 }
