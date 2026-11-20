@@ -2289,7 +2289,7 @@ test('completed QSOs log without a review and the open Logbook lists them live',
  snapshot={contact:{...contact,state:'rogers',next_slot:'tx4'},log:null};await page.evaluate(()=>window.wstxContact.load());
  await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='rogers');
  assert.equal(await page.locator('#operating-workspace').isVisible(),true,'no review page opens at completion');
- assert.equal(await page.locator('#log-review, #log-review-form, [id^=log-field-]').count(),0,'the review form is retired');
+ assert.equal(await page.locator('#log-review, #log-review-form, [id^=log-field-]').count(),0,'no review form is on the page');
  assert.equal(await page.locator('#contact-discard').count(),0);
  await page.getByRole('button',{name:'Log QSO'}).click();
  await page.locator('#contact-result',{hasText:'Log QSO: accepted'}).waitFor();
@@ -3832,7 +3832,7 @@ test('TC-039-006 Settings > General continent saves to the station strategy stor
   await page.selectOption('#station-continent','AS');const reply=await (await saved).json();
   assert.deepEqual([reply.revision,reply.configuration.continent,reply.my_continent],[1,'AS','AS']);
   await page.locator('#continent-derived').filter({hasText:'using AS'}).waitFor();
-  assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'not browser-local any more');
+  assert.equal(await page.evaluate(()=>Object.keys(localStorage).some(k=>k.startsWith('wstx.continent'))),false,'the continent is not stored in the browser');
   assert.deepEqual(errors,[]);
 });
 // The Most Wanted section: one button beside the date, no upload, a
