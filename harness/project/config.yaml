@@ -93,6 +93,12 @@ skill_additions:
   sysml-authoring: [harness/project/docs/Finished-Model.md]
   test-design: [harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests]
   conformance-review: [harness/project/docs/Finished-Model.md]
+# The ratchets (harness/general/core/docs/Harness-Changes.md, The ratchet): the product knows no
+# test (TR-24 of tools/sysml/README.md); its exception list only shrinks.
+ratchets:
+  product-knows-no-test:
+    command: python tools/sysml.py test-hooks
+    exceptions: tools/sysml/product-knows-no-test.txt
 # The merge queue (harness/general/core/docs/Merge-Queue.md) runs on HB9BLA. Its worker gates
 # in its own worktree with the inputs of harness/project/docs/specifics/local-windows-development.md ("Inputs").
 # CARGO_BUILD_JOBS is left unbounded on purpose: the gate runs ABOVE_NORMAL and outranks
