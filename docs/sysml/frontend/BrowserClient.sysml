@@ -25,9 +25,9 @@ package WstxBrowserClientPart {
                 + "client/src/frontend/.";
         }
         @DetailTests {
-            tests = "tests/communication.test.cjs";
+            tests = "tests/communication.test.cjs; tests/radio-selection.test.cjs";
             covers = "the label each stale path names on the station-stale event; the silence "
-                + "bound while a client file downloads";
+                + "bound while a client file downloads; a selection whose answer is lost";
         }
         attribute config : FrontendConfig;
         port station : BrowserExchange { doc /* The station, through web. */ }

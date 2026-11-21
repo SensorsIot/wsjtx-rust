@@ -97,6 +97,7 @@ fn policy_startup_is_immediate_then_backoff_1_2_4_8_8_without_catch_up() {
     assert_eq!(p.step(&gate, Observed::Connecting, now), Action::None);
 }
 
+// Proves: TC-022-009
 #[test]
 fn policy_reset_only_after_fresh_readback() {
     let mut p = Lifecycle::new();
@@ -130,6 +131,7 @@ fn policy_reset_only_after_fresh_readback() {
     assert_eq!(p.step(&gate, fail, secs(now, 1.0)), Action::Attempt);
 }
 
+// Proves: TC-022-009
 #[test]
 fn policy_missing_preconditions_never_attempt_and_cancel_live_owner() {
     let t0 = Instant::now();
@@ -162,6 +164,7 @@ fn policy_missing_preconditions_never_attempt_and_cancel_live_owner() {
     }
 }
 
+// Proves: TC-022-009
 #[test]
 fn policy_identity_change_cancels_then_attempts_after_release() {
     let mut p = Lifecycle::new();
@@ -534,6 +537,7 @@ fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_o
     s.assert_read_only();
 }
 
+// Proves: TC-022-009
 #[test]
 fn station_open_failure_and_timeout_report_reason_and_release() {
     for (device, reason) in [
@@ -646,6 +650,7 @@ fn station_missing_preconditions_cause_zero_native_open() {
     }
 }
 
+// Proves: TC-022-009
 #[test]
 fn station_identity_change_mid_attempt_fences_late_result() {
     let s = Station::new(Device::Silent);
@@ -678,6 +683,7 @@ fn station_identity_change_mid_attempt_fences_late_result() {
 
 // An attempt refused before any actor exists (Actor::begin validation)
 // is a failed attempt with its reason and the normal backoff, not a silent wait.
+// Proves: TC-022-009
 #[test]
 fn station_begin_failure_reports_retry_reason_and_backs_off() {
     let s = Station::new(Device::Present);
@@ -704,6 +710,7 @@ fn station_begin_failure_reports_retry_reason_and_backs_off() {
 
 // A configuration the policy has not yet observed is only waiting, even
 // when the previous key is ready.
+// Proves: TC-022-009
 #[test]
 fn status_for_unobserved_key_is_waiting_not_previous_ready() {
     let mut p = Lifecycle::new();
@@ -771,6 +778,7 @@ fn station_port_released_by_other_program_reconnects_and_restores_selection() {
 }
 
 // The adoption never infers the mode from RF and never replaces a known selection.
+// Proves: TC-009-008
 #[test]
 fn station_readback_adoption_needs_exact_operating_mode_entry_and_unknown_band() {
     // 14.074 MHz is the 20 m FT8 entry, but the station operates FT4.

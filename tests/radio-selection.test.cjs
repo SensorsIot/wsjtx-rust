@@ -36,6 +36,7 @@ async function station(t,control={mode:'disabled',endpoint:null,ptt:'disabled'})
 // Parent has no selection route, so this
 // fails on actual HTTP404 rather than a build/import error.
 if(!process.env.WSTX_SELECTION_FIXTURE){
+// Proves: TC-003-003
 test('H1 raw TLS gzip snapshots preserve bounded JSON',{timeout:30000},async t=>{
   const {request,cookie}=await station(t);
   for(const route of ['/profile','/receive/selection','/receive','/radio','/recording']){
@@ -77,6 +78,7 @@ test('H1 all 49 ordered header cases use the real authenticated TLS router',{tim
   }
 });
 
+// Proves: TC-003-001, TC-003-003, TC-021-005
 test('H1 authentication errors mutations static and HEAD bypass negotiation',{timeout:30000},async t=>{
   const {id,request}=await station(t),forbidden={'Accept-Encoding':'identity;q=0,gzip;q=0'};
   for(const [route,method,body,headers,status]of [
@@ -104,6 +106,7 @@ test('H1 authentication errors mutations static and HEAD bypass negotiation',{ti
   const after=(await request('/receive/selection')).body;assert.equal(after.operating_revision,prior.operating_revision);assert.equal(after.generation,prior.generation);assert.equal(after.receive.job_id,null);
 });
 
+// Proves: TC-009-005
 test('authenticated TLS selection reports unknown nominal and early refusal',{timeout:30000},async t=>{
   const {id,request}=await station(t);
   const initial=await request('/receive/selection');assert.equal(initial.status,200,'selection route exists');
@@ -117,6 +120,7 @@ test('authenticated TLS selection reports unknown nominal and early refusal',{ti
 
 // Fixed expectations come from the
 // canonical CAS/fence contract, independently of the candidate's state machine.
+// Proves: TC-009-005
 test('unseen mutation fencing rejects delayed POST without creating operation',{timeout:30000},async t=>{
   const {id,request}=await station(t);const initial=await request('/receive/selection');assert.equal(initial.status,200);
   const s=initial.body,target=randomUUID(),cancel={v:1,profile_id:id,boot_id:s.boot_id,command_id:randomUUID(),action:'cancel',operating_revision:s.operating_revision,target_command_id:target};
@@ -130,6 +134,7 @@ test('unseen mutation fencing rejects delayed POST without creating operation',{
 
 // These responses come from the actual
 // authenticated router; no serial device or positive response is intercepted.
+// Proves: TC-009-005, TC-021-005
 test('strict TLS unions, early identity barriers and manual preferred defaults',{timeout:30000},async t=>{
   const {id,request}=await station(t);let s=(await request('/receive/selection')).body;
   const normal={v:1,profile_id:id,boot_id:s.boot_id,command_id:randomUUID(),action:'band',profile_revision:0,generation:s.generation,operating_revision:s.operating_revision,band:'40m'};
@@ -200,6 +205,7 @@ test('an event during a pending command keeps the unknown outcome barrier',{time
 
 // Interception only
 // delays a mutation body; all successful replies/state originate in the real server.
+// Proves: TC-009-005
 test('browser preferred selection and Stop fence a genuinely delayed POST',{timeout:45000},async t=>{
   const {origin,request,token}=await station(t);const {chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
@@ -238,6 +244,7 @@ test('browser preferred selection and Stop fence a genuinely delayed POST',{time
 
 // A status of the socket reads no receive snapshot while receive.state
 // holds it; the socket's first status, a changed saved profile and a failed read do, one each.
+// Proves: TC-007-005
 test('a status on the same socket reads no receive snapshot unless the state is in doubt',{timeout:30000},async t=>{
   const {origin,token}=await station(t),{chromium}=require('playwright');const browser=await chromium.launch();t.after(()=>browser.close());
   const context=await browser.newContext({ignoreHTTPSErrors:true}),page=await context.newPage();
@@ -277,6 +284,7 @@ test('a status on the same socket reads no receive snapshot unless the state is 
 // Actual TLS server/browser. COM250 is an
 // absent exact endpoint (read-only name resolution fails; no UART is opened), so the
 // station reports a truthful retry reason and never a fresh frequency.
+// Proves: TC-022-009, TC-227-001
 test('browser confirms receive-only setup once, has no Connect CAT buttons and shows retry reason',{timeout:60000},async t=>{
   const {origin,token,request}=await station(t,{mode:'cat',endpoint:'COM250',ptt:'disabled'}),{chromium}=require('playwright');
   const browser=await chromium.launch();t.after(()=>browser.close());
@@ -321,6 +329,7 @@ test('browser confirms receive-only setup once, has no Connect CAT buttons and s
 async function refreshStatus(page){const open=await page.locator('#settings-drawer').isVisible();if(!open)await page.locator('#open-server-settings').click();await page.locator('#refresh').click();if(!open)await page.locator('#settings-drawer .return-operate').click();}
 
 function liveSelectionFixture(){
+  // Proves: TC-007-005
   test('actual native/CAT/TLS two-browser Thin and Off selection workload',{timeout:510000},async t=>{
     const {performance}=require('node:perf_hooks'),{chromium}=require('playwright');
     const oracle=JSON.parse(process.env.WSTX_SELECTION_EXPECTED),token=process.env.WSTX_SELECTION_TOKEN;

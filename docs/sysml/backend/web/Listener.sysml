@@ -65,7 +65,9 @@ package WstxListener {
                 + "server/src/logbook_http_tests.rs::"
                 + "cty_upload_replaces_the_country_table_and_refusals_change_nothing; "
                 + "server/src/contact_http_tests.rs::"
-                + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions";
+                + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
+                + "tests/radio-selection.test.cjs::"
+                + "H1 authentication errors mutations static and HEAD bypass negotiation";
         }
     }
     verification 'TC-003-002' {
@@ -256,7 +258,11 @@ package WstxListener {
                 + "server/src/logbook_http_tests.rs::"
                 + "save_contact_refusals_byte_cap_and_command_receipts; "
                 + "server/src/contact_http_tests.rs::"
-                + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions";
+                + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
+                + "tests/radio-selection.test.cjs::"
+                + "H1 authentication errors mutations static and HEAD bypass negotiation; "
+                + "tests/radio-selection.test.cjs::"
+                + "strict TLS unions, early identity barriers and manual preferred defaults";
         }
     }
     verification 'TC-021-008' {
@@ -287,7 +293,12 @@ package WstxListener {
         objective { verify 'CL-003-08'; }
         @TestedBy {
             test = "tests/contact.test.cjs; tests/ui-operating.test.cjs; "
-                + "server/src/contact_http_tests.rs; server/src/receive_http_tests.rs";
+                + "server/src/contact_http_tests.rs; server/src/receive_http_tests.rs; "
+                + "tests/radio-selection.test.cjs::"
+                + "a status on the same socket reads no receive snapshot "
+                + "unless the state is in doubt; "
+                + "tests/radio-selection.test.cjs::"
+                + "actual native/CAT/TLS two-browser Thin and Off selection workload";
         }
     }
     verification 'TC-082-003' {

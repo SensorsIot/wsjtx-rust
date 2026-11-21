@@ -110,6 +110,7 @@ fn setter_fact_stays_unconfirmed_from_the_write_until_its_read_back() {
         (true, Some(14_074_000))
     );
 }
+// Proves: TC-009-006
 #[test]
 fn closing_publication_survives_late_attach_and_query() {
     let authority = Authority {

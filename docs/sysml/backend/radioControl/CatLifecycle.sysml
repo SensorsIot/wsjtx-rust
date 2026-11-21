@@ -81,7 +81,10 @@ package WstxCatLifecycle {
         }
         @TestedBy {
             test = "server/src/radioControl/cat_lifecycle_tests.rs; "
-                + "server/src/auth_tests.rs";
+                + "server/src/auth_tests.rs; "
+                + "tests/radio-selection.test.cjs::"
+                + "browser confirms receive-only setup once, "
+                + "has no Connect CAT buttons and shows retry reason";
         }
     }
 }

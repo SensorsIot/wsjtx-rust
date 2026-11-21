@@ -407,4 +407,16 @@ package WstxSettings {
         objective { verify 'CL-042-07'; }
         @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
+    verification 'TC-227-001' {
+        doc /* The radio line. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-227-01'; }
+        @TestedBy {
+            test = "tests/radio-selection.test.cjs::"
+                + "browser confirms receive-only setup once, "
+                + "has no Connect CAT buttons and shows retry reason";
+        }
+    }
 }

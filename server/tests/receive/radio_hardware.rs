@@ -22,6 +22,7 @@ use wstx_test_tools::receive_authority::receive_test_authority;
 fn authorized_ic7300_frequency_query_evidence() {
     radio_query_evidence(&[("read_frequency", Operation::ReadFrequency)]);
 }
+// Proves: TC-009-002
 #[test]
 #[ignore = "Explicit coordinator-selected sequential receive-only hardware checks"]
 fn authorized_ic7300_readonly_inventory_evidence() {
@@ -166,11 +167,13 @@ fn radio_request(authority: Authority, operation: Operation) -> Request {
         cancelled: Arc::new(AtomicBool::new(false)),
     }
 }
+// Proves: TC-009-002
 #[test]
 #[ignore = "Coordinator prepares USB-D before capture; leaves state until explicit restoration"]
 fn authorized_ic7300_prepare_usb_data() {
     receive_configuration_evidence(false)
 }
+// Proves: TC-009-002
 #[test]
 #[ignore = "Coordinator restores exact baseline only after audio capture has completed"]
 fn authorized_ic7300_restore_lsb_data_off() {
@@ -242,6 +245,7 @@ fn receive_configuration_evidence(restore: bool) {
     result.unwrap();
 }
 
+// Proves: TC-044-012
 #[test]
 fn usb_data_prepare_and_restore_have_independent_icom_bytes_and_readbacks() {
     use radio_control::executor::{Executor, Transport};
