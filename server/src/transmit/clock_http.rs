@@ -22,9 +22,13 @@ pub(crate) struct Clock {
     revision: Mutex<(Value, u64)>,
 }
 impl Clock {
-    pub(crate) fn new(ntp: Arc<wstx_rust::transmit::clock::Monitor>) -> Arc<Self> {
+    pub(crate) fn new(
+        ntp: Arc<wstx_rust::transmit::clock::Monitor>,
+        clock: Arc<dyn wstx_rust::transmit::clock::Clock>,
+        windows_time: wstx_rust::transmit::air::WindowsTimeReader,
+    ) -> Arc<Self> {
         Arc::new(Self {
-            station: StationClock::new(ntp),
+            station: StationClock::new(ntp, clock, windows_time),
             revision: Mutex::new((Value::Null, 0)),
         })
     }

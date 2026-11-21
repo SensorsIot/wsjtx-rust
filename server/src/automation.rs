@@ -592,14 +592,12 @@ type FreeKey = (
     i64,
 );
 /// The automation owner of one station (one per contact engine).
-#[derive(Default)]
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
     /// The free_tx_slots.state cursor: one more at each build of the station's value.
     free_tx_slots_builds: std::sync::atomic::AtomicU64,
-    /// Test seam: added to the monotonic clock of every automation step.
-    #[cfg(test)]
-    pub(crate) skew: Mutex<Duration>,
+    /// The station's clocks: the monotonic time of every automation step.
+    pub(crate) clock: Arc<dyn wstx_rust::transmit::clock::Clock>,
     /// Test seam: runs between select_row and enable_tx (a racing Halt).
     #[cfg(test)]
     pub(crate) before_enable: Mutex<Option<Box<dyn FnOnce() + Send>>>,
@@ -634,12 +632,20 @@ impl Owner {
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
     }
+    /// The automation owner on the station's clocks `clock`.
+    pub(crate) fn new(clock: Arc<dyn wstx_rust::transmit::clock::Clock>) -> Self {
+        Self {
+            inner: Default::default(),
+            free_tx_slots_builds: Default::default(),
+            clock,
+            #[cfg(test)]
+            before_enable: Default::default(),
+            #[cfg(test)]
+            before_slot_move: Default::default(),
+        }
+    }
     fn now(&self) -> Instant {
-        #[cfg(test)]
-        let skew = *self.skew.lock().unwrap_or_else(|p| p.into_inner());
-        #[cfg(not(test))]
-        let skew = Duration::ZERO;
-        Instant::now() + skew
+        self.clock.now()
     }
     #[cfg(test)]
     fn before_enable(&self) {

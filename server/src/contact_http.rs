@@ -357,7 +357,10 @@ pub(crate) fn confirmed_dial(r: &recording::Recording) -> Option<u64> {
 }
 
 impl Station {
-    pub(crate) fn start(store: &profile::Store) -> Arc<Self> {
+    pub(crate) fn start(
+        store: &profile::Store,
+        clock: Arc<dyn wstx_rust::transmit::clock::Clock>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(Inner {
                 engine: start_engine(store),
@@ -373,7 +376,7 @@ impl Station {
             }),
             revision: AtomicU64::new(0),
             started: Instant::now(),
-            automation: crate::automation::Owner::default(),
+            automation: crate::automation::Owner::new(clock),
             strategy: crate::strategy::Owner::default(),
             strategy_select: std::sync::atomic::AtomicBool::new(false),
             #[cfg(test)]
@@ -603,7 +606,7 @@ impl Station {
                 contest,
             );
         });
-        Self::store_logs(inner, state);
+        Self::store_logs(inner, state, self.automation.clock.as_ref());
         let sent = std::mem::take(&mut inner.outbox);
         self.revision
             .store(inner.engine.revision, Ordering::Release);
@@ -611,11 +614,6 @@ impl Station {
         for record in &sent {
             crate::udp::logged(state, record);
         }
-    }
-    /// Test seam: ends the retry backoff of failed log writes.
-    #[cfg(test)]
-    pub(crate) fn retry_logs_now(&self) {
-        self.lock().retry_at = None;
     }
     /// The LogRecord of a contact at `now` (WstxLogbook::DirectLog): FREQ = confirmed
     /// dial + Tx offset, BAND from the dial, MY_GRIDSQUARE the effective locator.
@@ -771,8 +769,12 @@ impl Station {
     /// Stores the pending records (now, or at the retry time after a failure) under the
     /// station's authorization lock. Only the first store of a contact id goes to the
     /// UDP targets (outbox), so each contact reaches the external programs once.
-    fn store_logs(inner: &mut Inner, state: &ProfileState) {
-        if inner.unlogged.is_empty() || inner.retry_at.is_some_and(|t| Instant::now() < t) {
+    fn store_logs(
+        inner: &mut Inner,
+        state: &ProfileState,
+        clock: &dyn wstx_rust::transmit::clock::Clock,
+    ) {
+        if inner.unlogged.is_empty() || inner.retry_at.is_some_and(|t| clock.now() < t) {
             return;
         }
         let gate = |publish: &mut dyn FnMut() -> std::io::Result<()>| {
@@ -808,7 +810,7 @@ impl Station {
                     {
                         inner.log = Some(view);
                     }
-                    inner.retry_at = Some(Instant::now() + LOG_RETRY);
+                    inner.retry_at = Some(clock.now() + LOG_RETRY);
                     break;
                 }
             }
@@ -1449,7 +1451,7 @@ impl Station {
         })?;
         // Log QSO is stored before its receipt (a failed write stays pending, retried);
         // its UDP messages leave with the next station tick.
-        Self::store_logs(inner, state);
+        Self::store_logs(inner, state, self.automation.clock.as_ref());
         let revision = inner.engine.revision;
         self.revision.store(revision, Ordering::Release);
         let receipt = json!({"v":1,"profile_id":r.profile,"boot_id":r.boot,"command_id":command_id,

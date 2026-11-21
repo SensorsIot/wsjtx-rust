@@ -238,6 +238,7 @@ async fn live_native_browser_mode(mode: &str) {
         profile_id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        crate::contact_http::tests::DrivenClock::new(),
     );
     if mode == "ft8" {
         recording.fixture_input(Box::new(Input::new(fixture)));
@@ -484,6 +485,7 @@ impl KeptPageBoot {
             profile_id.to_owned(),
             boot.clone(),
             std::sync::Arc::new(crate::profile::Disk),
+            crate::contact_http::tests::DrivenClock::new(),
         );
         // The busy recording in every FT8 period: each period's rows move to the kept period.
         // One input per receive start the driver makes; the restart driver starts twice, so
@@ -704,6 +706,7 @@ async fn live_native_busy_period_rows_promptly() {
         profile_id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        crate::contact_http::tests::DrivenClock::new(),
     );
     recording.fixture_input(Box::new(input));
     let app = App {
@@ -1024,6 +1027,7 @@ fn resource_station_process_delta_and_owner_release() {
         profile_id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        crate::contact_http::tests::DrivenClock::new(),
     );
     let mut metrics = StationMetrics::bind_self();
     let idle = metrics.sample();

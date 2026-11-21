@@ -300,6 +300,7 @@ async fn live_native_selection_tls_thin_and_off() {
         id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        crate::contact_http::tests::DrivenClock::new(),
     );
     recording.initialize_profile_revision(0);
     recording.fixture_inputs(inputs);

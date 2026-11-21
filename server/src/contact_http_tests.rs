@@ -202,6 +202,155 @@ pub(crate) fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
+/// The station's clocks as a test drives them: the system clocks plus an offset the test
+/// sets, or a time it freezes. A sleep waits for real, or with `advancing` adds its duration
+/// to the offset after a real wait of at least an 80th of it. One jump of the offset can be
+/// armed for the next sleep; the jumps made are counted.
+#[derive(Default)]
+pub(crate) struct DrivenClock(Mutex<Driven>);
+#[derive(Default)]
+struct Driven {
+    offset: Duration,
+    frozen: Option<(Instant, std::time::SystemTime)>,
+    advancing: bool,
+    armed: Option<Duration>,
+    jumps: usize,
+}
+impl DrivenClock {
+    /// A clock at offset zero, sleeping for real.
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+    fn lock(&self) -> std::sync::MutexGuard<'_, Driven> {
+        self.0.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    /// The clock runs `offset` ahead of the system clocks.
+    pub(crate) fn set_offset(&self, offset: Duration) {
+        self.lock().offset = offset;
+    }
+    /// The offset grows by `by`.
+    pub(crate) fn advance(&self, by: Duration) {
+        self.lock().offset += by;
+    }
+    /// The clock stands still at `ahead` past the system clocks now.
+    pub(crate) fn freeze(&self, ahead: Duration) -> Instant {
+        let at = (Instant::now() + ahead, std::time::SystemTime::now() + ahead);
+        self.lock().frozen = Some(at);
+        at.0
+    }
+    /// Each later sleep adds its duration to the offset.
+    pub(crate) fn advancing(&self) {
+        self.lock().advancing = true;
+    }
+    /// The next sleep first moves the offset by `jump`.
+    pub(crate) fn arm_jump(&self, jump: Duration) {
+        self.lock().armed = Some(jump);
+    }
+    /// The armed jumps made so far.
+    pub(crate) fn jumps(&self) -> usize {
+        self.lock().jumps
+    }
+}
+impl wstx_rust::transmit::clock::Clock for DrivenClock {
+    fn now(&self) -> Instant {
+        let d = self.lock();
+        d.frozen.map_or_else(|| Instant::now() + d.offset, |f| f.0)
+    }
+    fn system(&self) -> std::time::SystemTime {
+        let d = self.lock();
+        d.frozen
+            .map_or_else(|| std::time::SystemTime::now() + d.offset, |f| f.1)
+    }
+    fn sleep(&self, duration: Duration) {
+        let advancing = {
+            let mut d = self.lock();
+            if let Some(jump) = d.armed.take() {
+                d.offset += jump;
+                d.jumps += 1;
+            }
+            d.advancing
+        };
+        if advancing {
+            std::thread::sleep(duration / 80);
+            self.advance(duration);
+        } else {
+            std::thread::sleep(duration);
+        }
+    }
+}
+
+/// A source of SNTP rounds the test gives one at a time: each round's (asked, measurement)
+/// pair; it blocks until the test gives the next one.
+pub(crate) struct RoundSource {
+    rounds:
+        Mutex<std::sync::mpsc::Receiver<(bool, Option<wstx_rust::transmit::clock::Measurement>)>>,
+    asked: std::sync::mpsc::Sender<()>,
+    taken: Mutex<Option<Option<wstx_rust::transmit::clock::Measurement>>>,
+}
+/// The test's end of a `RoundSource`.
+pub(crate) struct Rounds {
+    give: std::sync::mpsc::Sender<(bool, Option<wstx_rust::transmit::clock::Measurement>)>,
+    asked: Mutex<std::sync::mpsc::Receiver<()>>,
+}
+impl RoundSource {
+    /// A monitor started on a round source, and the test's end of it.
+    pub(crate) fn start() -> (Arc<wstx_rust::transmit::clock::Monitor>, Rounds) {
+        let (give, rounds) = std::sync::mpsc::channel();
+        let (asked_tx, asked) = std::sync::mpsc::channel();
+        let source = RoundSource {
+            rounds: Mutex::new(rounds),
+            asked: asked_tx,
+            taken: Mutex::new(None),
+        };
+        let monitor =
+            wstx_rust::transmit::clock::Monitor::start(Box::new(source), Duration::ZERO).unwrap();
+        // The first round is asked for.
+        asked.recv().unwrap();
+        (
+            monitor,
+            Rounds {
+                give,
+                asked: Mutex::new(asked),
+            },
+        )
+    }
+    /// A monitor whose source is given no round.
+    pub(crate) fn idle() -> Arc<wstx_rust::transmit::clock::Monitor> {
+        Self::start().0
+    }
+}
+impl Rounds {
+    /// One round; returns once the monitor stored it (its source is asked for the next).
+    pub(crate) fn give(&self, asked: bool, m: Option<wstx_rust::transmit::clock::Measurement>) {
+        let waiting = self.asked.lock().unwrap_or_else(|p| p.into_inner());
+        self.give.send((asked, m)).unwrap();
+        waiting.recv().unwrap();
+    }
+}
+impl wstx_rust::transmit::clock::Source for RoundSource {
+    fn asks(&self) -> bool {
+        let _ = self.asked.send(());
+        let round = self.rounds.lock().unwrap_or_else(|p| p.into_inner()).recv();
+        let (asked, m) = match round {
+            Ok(round) => round,
+            // The test is gone: the monitor ends with its last holder.
+            Err(_) => {
+                std::thread::sleep(Duration::from_millis(10));
+                (false, None)
+            }
+        };
+        *self.taken.lock().unwrap_or_else(|p| p.into_inner()) = Some(m);
+        asked
+    }
+    fn measure(&mut self) -> Option<wstx_rust::transmit::clock::Measurement> {
+        self.taken
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()
+            .flatten()
+    }
+}
+
 pub(crate) struct Fixture {
     pub(crate) router: Router,
     pub(crate) state: Arc<ProfileState>,
@@ -212,6 +361,8 @@ pub(crate) struct Fixture {
     pub(crate) bench: Bench,
     /// The file fakes of the store, the logbook and the recording; a restart keeps them.
     pub(crate) files: StationFiles,
+    /// The station's clocks, shared by the recording and the contact station.
+    pub(crate) clock: Arc<DrivenClock>,
 }
 pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
     let (dir, _) = profile_directory(origin, transmit, "JN47AA");
@@ -256,14 +407,22 @@ fn start_station_on(
     let boot = profile::new_uuid().unwrap();
     let (store, _) = profile::Store::open(&dir, files.store.clone()).unwrap();
     let id = store.document.profile_id.clone();
-    let recording =
-        recording::Recording::open(&dir, id.clone(), boot.clone(), files.recording.clone());
+    let clock = DrivenClock::new();
+    let recording = recording::Recording::open(
+        &dir,
+        id.clone(),
+        boot.clone(),
+        files.recording.clone(),
+        clock.clone(),
+    );
     let bench = Bench::default();
     bench.unsupported.store(!transmit, Ordering::SeqCst);
     let _ = recording
         .transmit
         .set(transmit_http::Station::start_with(Box::new(bench.clone())).unwrap());
-    let _ = recording.contact.set(contact_http::Station::start(&store));
+    let _ = recording
+        .contact
+        .set(contact_http::Station::start(&store, clock.clone()));
     let state = Arc::new(ProfileState {
         store: Mutex::new(store),
         authorization: Mutex::new(None),
@@ -288,9 +447,14 @@ fn start_station_on(
         dir,
         bench,
         files,
+        clock,
     }
 }
 impl Fixture {
+    /// The station's clocks move past the backoff of a failed log write.
+    pub(crate) fn pass_log_retry(&self) {
+        self.clock.advance(LOG_RETRY);
+    }
     /// Ends this station (its store and locks are released) and starts a new one on the
     /// same profile directory.
     pub(crate) fn restart(mut self) -> Fixture {
@@ -3215,7 +3379,7 @@ async fn tc_085_001_log_qso_pending_records_and_restart() {
     entered_qso_85(&f, P85 + 390_000, "W1AW");
     assert_eq!(log_view_85(&f), refused_85(&f, "W1AW"));
     f.files.logbook.disarm();
-    f.contact().retry_logs_now();
+    f.pass_log_retry();
     f.tick();
     assert_eq!(calls_85(&f), ["K1ABC", "W1AW"]);
     assert_eq!(datagrams_85(&target), [5, 12]);
@@ -3538,13 +3702,19 @@ fn on_station_clock(
 ) -> (std::path::PathBuf, Arc<recording::Recording>) {
     let dir = std::env::temp_dir().join(format!("wstx-tx-clock-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
+    let time = DrivenClock::new();
     let r = recording::Recording::open(
         &dir,
         profile::new_uuid().unwrap(),
         profile::new_uuid().unwrap(),
         std::sync::Arc::new(crate::profile::Disk),
+        time.clone(),
     );
-    let clock = clock_http::Clock::new(ntp);
+    let clock = clock_http::Clock::new(
+        ntp,
+        time,
+        Box::new(wstx_rust::transmit::clock::windows_time),
+    );
     let _ = r.clock.set(clock.clone());
     let _ = r
         .transmit
@@ -3601,9 +3771,9 @@ fn reads_while<T: Send>(read: impl Fn() -> T + Sync, write: impl FnOnce()) -> Ve
 // Proves: TC-007-005
 #[test]
 fn a_transmit_revision_never_carries_older_fields() {
-    let ntp = wstx_rust::transmit::clock::Monitor::new();
-    ntp.record(Some(sntp(501, Duration::ZERO)));
-    let (dir, r) = on_station_clock(ntp.clone());
+    let (ntp, rounds) = RoundSource::start();
+    rounds.give(false, Some(sntp(501, Duration::ZERO)));
+    let (dir, r) = on_station_clock(ntp);
     let read = || {
         let (revision, fields) = transmit_http::state_read(&r).unwrap();
         (
@@ -3613,7 +3783,7 @@ fn a_transmit_revision_never_carries_older_fields() {
     };
     let mut seen = reads_while(read, || {
         for offset in 502..20_000 {
-            ntp.record(Some(sntp(offset, Duration::ZERO)));
+            rounds.give(false, Some(sntp(offset, Duration::ZERO)));
             std::thread::yield_now();
         }
     });
@@ -3637,15 +3807,15 @@ fn a_transmit_revision_never_carries_older_fields() {
 // Proves: TC-007-005
 #[test]
 fn transmit_view_shows_one_sntp_snapshot() {
-    let ntp = wstx_rust::transmit::clock::Monitor::new();
-    ntp.record(Some(sntp(40, Duration::ZERO)));
-    let (dir, r) = on_station_clock(ntp.clone());
+    let (ntp, rounds) = RoundSource::start();
+    rounds.give(false, Some(sntp(40, Duration::ZERO)));
+    let (dir, r) = on_station_clock(ntp);
     let service = &r.transmit.get().unwrap().service;
     let read = || transmit_http::view_json(&r, &service.view());
     for v in reads_while(read, || {
         for k in 0..20_000 {
             let offset = if k % 2 == 0 { 525 } else { 40 };
-            ntp.record(Some(sntp(offset, Duration::ZERO)));
+            rounds.give(false, Some(sntp(offset, Duration::ZERO)));
             std::thread::yield_now();
         }
     }) {
@@ -3654,7 +3824,7 @@ fn transmit_view_shows_one_sntp_snapshot() {
     }
     let mut stale = 0;
     for _ in 0..200 {
-        ntp.round(true, Some(sntp(40, Duration::from_millis(599_998))));
+        rounds.give(true, Some(sntp(40, Duration::from_millis(599_998))));
         let until = std::time::Instant::now() + Duration::from_millis(4);
         for v in reads_while(read, || {
             while std::time::Instant::now() < until {

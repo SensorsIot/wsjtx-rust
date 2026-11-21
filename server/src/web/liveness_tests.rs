@@ -154,6 +154,7 @@ pub(crate) fn plaintext_station(name: &str) -> (App, std::path::PathBuf) {
         id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        crate::contact_http::tests::DrivenClock::new(),
     );
     recording.initialize_profile_revision(0);
     let app = App {

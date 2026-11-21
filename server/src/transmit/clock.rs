@@ -281,6 +281,32 @@ pub fn query(
     }
 }
 
+/// The station's clocks: monotonic time, system time and a wait on them. The entry point
+/// fills it with `SystemClock`; a test drives its own.
+pub trait Clock: Send + Sync {
+    /// Monotonic time now.
+    fn now(&self) -> Instant;
+    /// System time now.
+    fn system(&self) -> SystemTime;
+    /// Returns once `duration` has passed on this clock.
+    fn sleep(&self, duration: Duration);
+}
+
+/// The real clocks of the station.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemClock;
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+    fn system(&self) -> SystemTime {
+        SystemTime::now()
+    }
+    fn sleep(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
+}
+
 /// A source of clock measurements (SNTP on the station, fakes in tests).
 pub trait Source: Send {
     fn measure(&mut self) -> Option<Measurement>;
@@ -343,14 +369,13 @@ pub struct Monitor {
     last: Mutex<(Option<Measurement>, bool)>,
 }
 impl Monitor {
-    /// A monitor that never measures by itself (state unknown until `record`).
-    pub fn new() -> Arc<Self> {
+    fn new() -> Arc<Self> {
         Arc::new(Self::default())
     }
     /// One completed round, stored as one step: `asked` whether it asked any server,
     /// `measurement` its valid answer (none keeps the previous measurement, which then ages
     /// out).
-    pub fn round(&self, asked: bool, measurement: Option<Measurement>) {
+    fn round(&self, asked: bool, measurement: Option<Measurement>) {
         let mut last = self.last.lock().unwrap_or_else(|p| p.into_inner());
         last.1 |= asked;
         if let Some(m) = measurement {
@@ -385,11 +410,6 @@ impl Monitor {
                 }
             })?;
         Ok(monitor)
-    }
-    /// Records a measurement without marking a round (test seam): keeps the previous
-    /// measurement (which then ages out) when none was taken.
-    pub fn record(&self, measurement: Option<Measurement>) {
-        self.round(false, measurement);
     }
     pub fn latest(&self) -> Option<Measurement> {
         self.read().0

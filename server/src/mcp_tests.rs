@@ -5,7 +5,7 @@
 // messages of MCP 2026-07-28 and 2025-11-25. Expected values come from the hand-authored
 // fixture rows, the fixture's own identities and the WstxMcp tables, not from MCP output.
 use super::*;
-use crate::contact_http::tests::{Bench, now_ms, period_text, record};
+use crate::contact_http::tests::{Bench, DrivenClock, now_ms, period_text, record};
 use axum::body::Body;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::{rand::SecureRandom, signature::KeyPair};
@@ -26,6 +26,8 @@ pub(crate) struct Mcp {
     pub(crate) scope: authorization::WireScope,
     key: Option<ring::signature::EcdsaKeyPair>,
     pub(crate) gid: String,
+    /// The station's clocks, shared by the recording and the contact station.
+    pub(crate) clock: Arc<DrivenClock>,
 }
 pub(crate) struct Reply {
     pub(crate) status: StatusCode,
@@ -64,11 +66,13 @@ pub(crate) async fn station_prepared(
     let (mut store, _) =
         profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
     let authority = authorization_http::Service::initialize(&mut store, &origin).unwrap();
+    let clock = DrivenClock::new();
     let recording = recording::Recording::open(
         &dir,
         id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        clock.clone(),
     );
     recording.initialize_profile_revision(store.document.revision);
     let bench = Bench::default();
@@ -76,7 +80,9 @@ pub(crate) async fn station_prepared(
     let _ = recording
         .transmit
         .set(transmit_http::Station::start_with(Box::new(bench.clone())).unwrap());
-    let _ = recording.contact.set(contact_http::Station::start(&store));
+    let _ = recording
+        .contact
+        .set(contact_http::Station::start(&store, clock.clone()));
     let state = Arc::new(ProfileState {
         store: Mutex::new(store),
         authorization: Mutex::new(authority),
@@ -111,6 +117,7 @@ pub(crate) async fn station_prepared(
         },
         key: None,
         gid: String::new(),
+        clock,
     };
     f.enroll().await;
     f.mcp = f.new_mcp_client("fixture agent").await.1;
@@ -1509,7 +1516,8 @@ async fn tc_110_001_h_a_change_through_the_mcp_tool_is_saved() {
         saved,
         json!({"schema_version":1,"profile_id":f.id,"auto_seq":true,"call_first":false})
     );
-    let restarted = contact_http::Station::start(&f.state.store.lock().unwrap());
+    let restarted =
+        contact_http::Station::start(&f.state.store.lock().unwrap(), DrivenClock::new());
     let snapshot: Value = serde_json::from_slice(&restarted.snapshot(&f.state).unwrap()).unwrap();
     assert_eq!(
         (

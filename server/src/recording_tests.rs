@@ -1,5 +1,6 @@
 //! Canonical SysML recording/display independent byte/math/state oracles. Cost 2, Windows PC; no hardware.
 use super::*;
+use crate::contact_http::tests::DrivenClock;
 use profile::tests::{Fault, FaultScope, FaultyFiles, Step};
 #[path = "transmit/recording_tx_tests.rs"]
 mod tx;
@@ -615,11 +616,16 @@ impl Fixture {
         Self(path, FaultyFiles::new())
     }
     fn recording(&self) -> Arc<Recording> {
+        self.recording_on(DrivenClock::new())
+    }
+    /// The recording on the station clocks `clock`.
+    fn recording_on(&self, clock: Arc<DrivenClock>) -> Arc<Recording> {
         Recording::open(
             &self.0,
             "00000000-0000-4000-8000-000000000001".into(),
             profile::new_uuid().unwrap(),
             self.1.clone(),
+            clock,
         )
     }
     fn wave(&self, bytes: &[u8]) -> File {
@@ -904,6 +910,7 @@ fn selection_profile_fixture() -> (
         profile::new_uuid().unwrap(),
         profile::new_uuid().unwrap(),
         std::sync::Arc::new(crate::profile::Disk),
+        DrivenClock::new(),
     );
     let document = json!({"schema_version":1,"profile_id":r.profile,"revision":0,"display_name":"Before edit","callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     fs::write(
@@ -1599,9 +1606,11 @@ fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
 #[test]
 fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
     let f = Fixture::new();
-    let r = f.recording();
+    let clock = DrivenClock::new();
+    let r = f.recording_on(clock.clone());
     let id = import(&r, &wav(&[0; 1200])).unwrap();
-    r.resources.lock().unwrap().cross_deadline = true;
+    // The first row is due 100 ms into the replay; the worker's first wait jumps past it.
+    clock.arm_jump(Duration::from_secs(1));
     let generation = r.snapshot()["generation"].as_u64().unwrap();
     r.replay(&r.profile, &r.boot, generation, &id).unwrap();
     let began = Instant::now();
@@ -1612,7 +1621,7 @@ fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
     assert_eq!(r.snapshot()["job"]["state"], "completed");
     let resources = r.resources.lock().unwrap();
     assert_eq!(resources.active_workers, 0);
-    assert_eq!(resources.deadline_crossings, 1);
+    assert_eq!(clock.jumps(), 1);
     drop(resources);
     assert!(r.reserve(&r.profile, &r.boot, generation + 1).is_ok());
 }
@@ -2701,12 +2710,7 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
 // system clock whatever correction is applied (no feedback loop).
 #[test]
 fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate() {
-    let fixture = Fixture::new();
-    let r = fixture.recording();
-    let clock = crate::clock_http::Clock::new(wstx_rust::transmit::clock::Monitor::new());
-    let _ = r.clock.set(clock.clone());
-    let (job, mut decoded) = live_ring(&r);
-    relative_clock(&r, "ft8", "2026-11-01T00:00:00.0000000Z", 0);
+    let (_fixture, r, clock, time, job, _) = air_station();
     let (context, timing) = {
         let s = r.state.lock().unwrap();
         let l = s.live.as_ref().unwrap();
@@ -2743,15 +2747,15 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
         if first == 150 * 12000 {
             // Twelve stations heard 2 s late against the system clock: windows of two
             // periods apply the -2000 ms correction, at most 1000 ms per period.
-            clock.station.with_air(|a| {
-                for k in 0..2 {
-                    let t = k * 15_000;
-                    for i in 0..12 {
-                        a.observe(t, t, &format!("K{i}ABC"), "HB9BLA", 2000, Some(-6.0));
-                    }
-                    a.period_done(t, t, 15_000);
+            clock.station.set_own_call("HB9BLA");
+            for k in 0..2 {
+                time.set_offset(Duration::from_millis(k * 15_000));
+                for i in 0..12 {
+                    clock.station.observe(&format!("K{i}ABC"), 2000, Some(-6.0));
                 }
-            });
+                clock.station.period_done(15_000);
+            }
+            time.set_offset(Duration::ZERO);
             assert_eq!(r.clock_correction(), -20_000_000);
             correction = -20_000_000.0;
         }
@@ -2783,11 +2787,12 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
     }
     // Period and DT carry drift plus correction; the estimator gets the raw DT only.
     // Frame 204000 is 17.0 s after the anchor; with 0.5 s drift that is system 17.5 s:
-    // raw DT +2.0 s in the 00:00:15 period, corrected 00:00:15 DT 0.0.
+    // raw DT +2.0 s in the 00:00:15 period, corrected 00:00:15 DT 0.0. They run on a second
+    // station set up as the first, whose station clock is fresh (correction 0).
+    let (_fixture, r, clock, _, job, mut decoded) = air_station();
     decoded.payload = decoder::unpack(&wstx_rust::transmit::pack("CQ K1ABC FN42").unwrap().bits);
     decoded.snr_db = Some(-7.0);
     decoded.start_frame = 204_000;
-    clock.station.with_air(|a| *a = Default::default());
     for (applied, period, dt) in [
         (-20_000_000, "2026-11-01T00:00:15.0000000Z", 0.0),
         (0, "2026-11-01T00:00:15.0000000Z", 2.0),
@@ -2808,10 +2813,33 @@ fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate()
             "{record}"
         );
     }
-    assert_eq!(
-        clock.station.with_air(|a| a.observed()),
-        [("K1ABC".to_string(), 2000), ("K1ABC".to_string(), 2000)]
+    // Both fed raw DT 2000 ms: one station at median 2000 (a corrected feed gives 1000).
+    clock.station.period_done(15_000);
+    let (estimate, _) = clock.station.view().air.unwrap();
+    assert_eq!((estimate.stations, estimate.median_dt_ms), (1, 2000));
+}
+/// A recording with a live FT8 ring at the fixed anchor whose station clock and recording run
+/// on one driven clock at offset zero, as main wires them.
+fn air_station() -> (
+    Fixture,
+    Arc<Recording>,
+    Arc<crate::clock_http::Clock>,
+    Arc<DrivenClock>,
+    Job,
+    decoder::Decode,
+) {
+    let fixture = Fixture::new();
+    let time = DrivenClock::new();
+    let r = fixture.recording_on(time.clone());
+    let clock = crate::clock_http::Clock::new(
+        crate::contact_http::tests::RoundSource::idle(),
+        time.clone(),
+        Box::new(|| wstx_rust::transmit::clock::WindowsTime::Running),
     );
+    let _ = r.clock.set(clock.clone());
+    let (job, decoded) = live_ring(&r);
+    relative_clock(&r, "ft8", "2026-11-01T00:00:00.0000000Z", 0);
+    (fixture, r, clock, time, job, decoded)
 }
 
 // Both a new period view and the late window's growth

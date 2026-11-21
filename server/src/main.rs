@@ -310,9 +310,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let boot = profile::new_uuid().map_err(|_| error("resource_unavailable", ""))?;
             let base = selected.clone().ok_or("profile directory absent")?;
             let id = store.document.profile_id.clone();
-            let (recording_boot, recording_files) = (boot.clone(), files.clone());
+            // The station's clocks, one for every part that reads or waits on time.
+            let station_clock: Arc<dyn wstx_rust::transmit::clock::Clock> =
+                Arc::new(wstx_rust::transmit::clock::SystemClock);
+            let (recording_boot, recording_files, recording_clock) =
+                (boot.clone(), files.clone(), station_clock.clone());
             let recording = tokio::task::spawn_blocking(move || {
-                recording::Recording::open(&base, id, recording_boot, recording_files)
+                recording::Recording::open(
+                    &base,
+                    id,
+                    recording_boot,
+                    recording_files,
+                    recording_clock,
+                )
             })
             .await?;
             // The station's CAT serial line, leased under its radio-ownership folder.
@@ -343,7 +353,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // The station clock of receive and transmit: the system clock plus
             // the correction from the air; SNTP only measures for warnings (no source
             // setting; a clock.json in the station folder is ignored and left in place).
-            let clock = clock_http::Clock::new(clock);
+            let clock = clock_http::Clock::new(
+                clock,
+                station_clock.clone(),
+                Box::new(wstx_rust::transmit::clock::windows_time),
+            );
             let _ = recording.clock.set(clock.clone());
             let transmit = transmit_http::Station::start(clock.station.clone())
                 .map_err(|_| error("resource_unavailable", ""))?;
@@ -368,7 +382,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             recording.sync_transmit_mode();
             // WstxQsoPart::QsoService: one contact engine per station, consuming the transmit
             // owner.
-            let _ = recording.contact.set(contact_http::Station::start(&store));
+            let _ = recording
+                .contact
+                .set(contact_http::Station::start(&store, station_clock));
             // FR-023: a native profile starts its own direct radio session; a standard
             // profile never opens a native socket.
             if let Some(native) = &store.document.native {
