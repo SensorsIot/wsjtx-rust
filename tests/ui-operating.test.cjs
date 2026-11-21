@@ -364,11 +364,16 @@ const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'sele
 // A halt outcome as recording.js sends it for a skipped halt; the page then reads GET /contact itself.
 const halted=page=>page.evaluate(()=>dispatchEvent(new CustomEvent('keyboard-halt',{detail:{reply:null}})));
 // Makes the page read GET /contact and resolves once it shows the snapshot of that read.
-async function reread(page){
-  const request=page.waitForRequest(r=>r.method()==='GET'&&new URL(r.url()).pathname==='/contact');
+// Given shows, it resolves once the page's snapshot holds that contact (id and state) instead:
+// a GET /contact the page queued behind the first may replace that read's exact body.
+// An optional timeout bounds each of its waits; without it they keep Playwright's default.
+async function reread(page,{timeout,shows}={}){
+  const bound=timeout===undefined?{}:{timeout};
+  if(shows){await halted(page);await page.waitForFunction(c=>{const s=window.wstxContact.snapshot()?.contact;return s?.id===c.id&&s.state===c.state;},shows,bound);return;}
+  const request=page.waitForRequest(r=>r.method()==='GET'&&new URL(r.url()).pathname==='/contact',bound);
   await halted(page);
   const body=await (await (await request).response()).text();
-  await page.waitForFunction(b=>JSON.stringify(window.wstxContact.snapshot())===JSON.stringify(JSON.parse(b)),body);
+  await page.waitForFunction(b=>JSON.stringify(window.wstxContact.snapshot())===JSON.stringify(JSON.parse(b)),body,bound);
 }
 // Records a page's contact commands and answers them like the station (202) without effects.
 async function contactCommands(page,commands){await page.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});}
@@ -1581,18 +1586,26 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
   const standard=(from,to='CQ')=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
   const record=(sequence,text,from,hz,p,to='CQ')=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to),period_start_utc:p});
+  // Each wait is bounded by the page's own limit for what it waits on: a station read ends within
+  // the page's 10 s abort (client request and fetchSnapshot), a command receipt within its 5 s hold.
+  // A shared deadline keeps the sum below the 45 s test timeout; a wait that runs out names itself.
+  const PAGE_READ_MS=10000,RECEIPT_HOLD_MS=5000,deadline=performance.now()+42000;
+  const within=async(what,ms,wait,detail)=>{const bound=Math.max(1,Math.round(Math.min(ms,deadline-performance.now())));try{return await wait({timeout:bound});}catch(e){if(e?.name!=='TimeoutError')throw e;assert.fail(`TC-050-001 wait ${what} timed out after ${bound} ms${detail?` (${await detail().catch(()=>'page closed')})`:''}`);}};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
     const base=await (await fetch(app.origin+'/profile')).json();
     state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
     state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
     records=[record(0,'CQ K1ABC FN42','K1ABC',1000,period[0]),{...record(1,'CQ W1XYZ FN42','W1XYZ',1480,period[0]),a_priori:1}];
     Object.assign(state.job,{first_sequence:0,next_sequence:2,available_count:2,latest_decode:{id:1,first_sequence:0,next_sequence:2,period_start_utc:period[0],complete:true}});
-    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    // Waits for the page's /recording sync shorter than the page's 10 s abort, then answers either way.
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending,null,{timeout:5000}).catch(()=>{});await route.fulfill({json:state}).catch(()=>{});});
     await p.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
     await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
     await contactCommands(p,commands);
   }});
-  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&window.wstxContact?.snapshot(),null,{timeout:25000});
+  // The /receive handler's 5 s wait for the /recording sync, then the page's read.
+  await within('first two latest rows',5000+PAGE_READ_MS,o=>page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===2&&window.wstxContact?.snapshot(),null,o),
+    ()=>page.evaluate(()=>`${live?'live set without rows':'live unset'}, liveFailed ${liveFailed}`));
   // Independent great-circle distance between the JN47AA and FN42 square centres (R 6371 km).
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[42.5,-71]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.deepEqual(await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.children[5].textContent,r.children[6].textContent,r.className])),[['CQ K1ABC FN42','\u2014',`${km} km`,'ba-cq'],['CQ W1XYZ FN42','\u2014',`${km} km`,'ba-cq']],'columns, distance JN47AA-FN42 and the CQ colour');
@@ -1601,12 +1614,14 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('tr[data-result-id] td[data-col=message]')].map(c=>[c.dataset.ap??null,getComputedStyle(c,'::after').content])),[[null,'none'],['a1','" a1"']],'a-priori marker');
   // QSO pane: a CQ near Rx (W1XYZ at 1480 Hz) is no QSO pane line;
   // nobody calls me yet.
-  await page.locator('#qso-others-none').filter({hasText:'Nobody is calling'}).waitFor();
+  await within('nobody calling',PAGE_READ_MS,o=>page.locator('#qso-others-none').filter({hasText:'Nobody is calling'}).waitFor(o));
   assert.deepEqual(await page.locator('#qso-others tr').allTextContents(),[]);
   // A new period keeps the previous one below a divider, newest first.
   records.push(record(2,'HB9BLA K1ABC -05','K1ABC',1010,period[1],'HB9BLA'));
   Object.assign(state.job,{next_sequence:3,available_count:3,latest_decode:{id:2,first_sequence:2,next_sequence:3,period_start_utc:period[1],complete:true}});
-  await page.evaluate(()=>receiveSync());await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===1&&document.querySelectorAll('tr[data-period=history]').length===2);
+  // The page's own read ends first; the rows then follow from it, with no second receiveSync().
+  await page.evaluate(()=>receiveSync());await within('latest_decode.id===2 read',PAGE_READ_MS,o=>page.waitForFunction(()=>!livePending&&live?.job?.latest_decode?.id===2,null,o));
+  await within('one latest and two history rows',PAGE_READ_MS,o=>page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===1&&document.querySelectorAll('tr[data-period=history]').length===2,null,o));
   const order=await page.locator('#band-activity tbody tr').evaluateAll(rows=>rows.map(r=>r.classList.contains('ba-divider')?'|'+r.textContent:r.children[4].textContent));
   assert.deepEqual(order,['HB9BLA K1ABC -05','|FT8 period 12:00:00 UTC','CQ K1ABC FN42','CQ W1XYZ FN42']);
   assert.equal(await page.locator('tr[data-period=latest]').getAttribute('class'),'ba-tome','a call to my callsign is highlighted');
@@ -1627,7 +1642,8 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   // CQ with no contact arms (a new own CQ); with an active contact it asks first.
   let m=commands.length;await page.locator('#qso-cq').click();for(let i=0;i<40&&commands.length<m+1;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.enabled,c.safety_revision]),[['enable_tx',true,7]]);
-  contact=partner('replying');await reread(page);await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'K1ABC'}).waitFor();
+  // A reread may wait for a pending GET /contact and the one queued behind it.
+  contact=partner('replying');await within('reread replying contact',2*PAGE_READ_MS,o=>reread(page,{...o,shows:contact}));await within('K1ABC in the QSO pane',PAGE_READ_MS,o=>page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'K1ABC'}).waitFor(o));
   // No RR73 or 73 button; the fold-out Now of a Tx line chooses it
   // next and turns Enable Tx on, as WSJT-X Next/Now. No Reply button either:
   // the double-click above replies.
@@ -1640,14 +1656,14 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   m=commands.length;await now('tx5').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.slot??c.enabled,c.safety_revision]),[['choose_next','tx5',undefined],['enable_tx',true,7]],'Now Tx5 on a contact in progress: Tx5 next, then transmit');
   // On a completed contact Enable Tx would start a fresh CQ, so Now is off.
-  contact=partner('completed');await reread(page);await page.waitForFunction(()=>document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
+  contact=partner('completed');await within('reread completed contact',2*PAGE_READ_MS,o=>reread(page,{...o,shows:contact}));await within('Now Tx5 disabled',PAGE_READ_MS,o=>page.waitForFunction(()=>document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled,null,o));
   assert.deepEqual([await now('tx4').isDisabled(),await now('tx5').isDisabled()],[true,true],'Now disabled on a completed contact');
   m=commands.length;await now('tx4').click({force:true});await now('tx5').click({force:true});
   await now('tx5').evaluate(b=>{b.disabled=false;b.click();b.disabled=true;});await page.waitForTimeout(500);
   assert.deepEqual(commands.slice(m),[],'a completed contact sends no choose_next or enable_tx');
   await page.locator('#qso-more summary').click();
-  contact=partner('replying');await reread(page);await page.waitForFunction(()=>!document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
-  m=commands.length;await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
+  contact=partner('replying');await within('reread replying contact again',2*PAGE_READ_MS,o=>reread(page,{...o,shows:contact}));await within('Now Tx5 enabled',PAGE_READ_MS,o=>page.waitForFunction(()=>!document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled,null,o));
+  m=commands.length;await page.locator('#qso-cq').click();await within('abandon confirmation',RECEIPT_HOLD_MS+PAGE_READ_MS,o=>page.locator('#op-confirm[open]').waitFor(o));
   assert.match(await page.locator('#op-confirm-text').textContent(),/Abandon the QSO with K1ABC/);await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
   assert.equal(commands.length,m,'cancelled CQ sends nothing');
   assert.equal(await page.locator('#contact-enable').count(),0);assert.equal(commands.some(c=>c.action==='redecode'),false);
