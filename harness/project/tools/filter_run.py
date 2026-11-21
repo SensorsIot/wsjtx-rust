@@ -20,7 +20,10 @@ selection. A test runs when it matches any word:
   name. A command without `--test-name-pattern` gets the words as its pattern; one with it
   gets a single pattern that matches a name only when the command's own pattern and a word
   both match it (a second `--test-name-pattern` would widen the selection). Its
-  `--test-skip-pattern` holds. The tests that ran are counted by node_test_count.mjs.
+  `--test-skip-pattern` holds. The tests that ran are counted by node_test_count.mjs. The step
+  runs with `--test-force-exit`: in a file none of whose tests match, node runs the `after`
+  hooks before an asynchronous `before` hook has finished, so what that hook opens (a
+  browser, a server) is never closed and the file would never end.
 - `@unittest` (a `python -m unittest` command): a word is one `-k` (a substring of
   `module.Class.method`, or an fnmatch pattern when it holds `*`). Exit 5, "NO TESTS RAN",
   of a step that ran no test is no failure by itself.
@@ -36,10 +39,12 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 MARKERS = ("@run", "@libtest", "@node", "@unittest")
 NO_TESTS_RAN = 5
+READ_GRACE = 5   # seconds the output is still read after the command has exited
 # cargo options that take a value: a word after one is that value, not a test name filter.
 CARGO_VALUE = {"--bin", "--test", "--example", "--bench", "-p", "--package", "--config", "--profile",
                "--features", "-F", "--target", "--message-format", "--manifest-path", "-j", "--jobs",
@@ -80,19 +85,29 @@ def parse(argv):
 
 
 def stream(argv):
-    """(exit code, output text) of one command, its output shown as it comes."""
+    """(exit code, output text) of one command, its output shown as it comes. A process the
+    command started and left running may hold the output pipe open: the output is read until
+    the command has exited and READ_GRACE seconds more, not until the pipe closes."""
     out = sys.stdout.buffer
+    sys.stdout.flush()
     try:
         proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     except OSError as e:
         print(f"filter_run: cannot start {argv[0]}: {e}", file=sys.stderr)
         return 127, ""
     chunks = []
-    for raw in proc.stdout:
-        out.write(raw)
-        out.flush()
-        chunks.append(raw)
-    return proc.wait(), b"".join(chunks).decode("utf-8", "replace")
+
+    def read():
+        for raw in proc.stdout:
+            out.write(raw)
+            out.flush()
+            chunks.append(raw)
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    rc = proc.wait()
+    reader.join(READ_GRACE)
+    return rc, b"".join(chunks).decode("utf-8", "replace")
 
 
 def cargo_parts(argv):
@@ -173,7 +188,7 @@ def run_node(argv, words):
     try:
         reporter = Path(__file__).with_name("node_test_count.mjs").resolve().as_uri()
         at = rest.index("--test") + 1
-        rest[at:at] = ["--test-name-pattern=" + node_pattern(words, own),
+        rest[at:at] = ["--test-name-pattern=" + node_pattern(words, own), "--test-force-exit",
                        "--test-reporter=spec", "--test-reporter-destination=stdout",
                        "--test-reporter=" + reporter, "--test-reporter-destination=" + counted]
         rc, _ = stream(rest)

@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 
 import yaml
@@ -221,6 +222,16 @@ test('echo only in node', () => {});
 test('foxtrot skipped', { skip: true }, () => {});
 """
 
+# A file whose asynchronous before hook opens a handle that only its after hook closes, as
+# the browser test files do with Chromium.
+NODE_HOOKED = """
+const {test, before, after} = require('node:test');
+let timer;
+before(async () => { await new Promise(r => setTimeout(r, 300)); timer = setInterval(() => {}, 1000); });
+after(async () => { clearInterval(timer); });
+test('golf with hooks', async () => {});
+"""
+
 UNITTEST = """
 import unittest
 
@@ -252,6 +263,9 @@ class Runs(unittest.TestCase):
             f.write(LIB_RS)
         with open(os.path.join(cls.dir, "fixture.test.cjs"), "w", encoding="utf-8") as f:
             f.write(NODE_TEST)
+        cls.hooked = os.path.join(cls.dir, "hooked.test.cjs")
+        with open(cls.hooked, "w", encoding="utf-8") as f:
+            f.write(NODE_HOOKED)
         cls.py = os.path.join(cls.dir, "py")
         os.makedirs(cls.py)
         with open(os.path.join(cls.py, "test_fixture.py"), "w", encoding="utf-8") as f:
@@ -273,7 +287,8 @@ class Runs(unittest.TestCase):
         argv = [sys.executable, HELPER, "fixture", *words]
         for step in steps:
             argv += step
-        r = subprocess.run(argv, env=self.env, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        r = subprocess.run(argv, env=self.env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=300)
         return r.returncode, r.stdout, r.stderr
 
     def family(self, name):
@@ -336,6 +351,14 @@ class Runs(unittest.TestCase):
         self.assertTrue(self.ran("node", out, "alpha"), out)
         self.assertFalse(self.ran("node", out, "bravo"), out)
         self.assertNotIn("charlie", out)
+
+    def test_a_node_file_whose_hooks_open_a_handle_ends_when_no_test_of_it_matches(self):
+        for words, rc_expected in ((["alpha"], 0), (["zulu"], 1)):
+            with self.subTest(words=words):
+                t0 = time.monotonic()
+                rc, out, err = self.run_helper(words, self.node + [self.hooked])
+                self.assertEqual(rc, rc_expected, out + err)
+                self.assertLess(time.monotonic() - t0, 60, out + err)
 
     def test_a_skip_of_the_step_holds_under_a_word(self):
         rc, out, err = self.run_helper(["alpha", "bravo"], self.libtest + ["--", "--skip", "bravo"])
