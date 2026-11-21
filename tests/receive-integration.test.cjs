@@ -50,7 +50,8 @@ test('real native audio reaches Rust manager HTTP and literal browser callsign',
     assert.equal(await row.count(),1);
     for(const width of [360,1440,1499,1500,1600]){
       await page.setViewportSize({width,height:900});
-      const cells=await row.locator('td').evaluateAll(nodes=>nodes.map(el=>{const s=getComputedStyle(el);return {font:parseFloat(s.fontSize),top:parseFloat(s.paddingTop),bottom:parseFloat(s.paddingBottom)};}));
+      // One page task collects and reads the rows, so a redraw cannot detach them between the two.
+      const cells=await page.evaluate(text=>[...document.querySelectorAll('#band-activity tbody tr[data-result-id]')].filter(r=>r.textContent.includes(text)).flatMap(r=>[...r.querySelectorAll('td')]).map(el=>{const s=getComputedStyle(el);return {font:parseFloat(s.fontSize),top:parseFloat(s.paddingTop),bottom:parseFloat(s.paddingBottom)};}),'CQ K1ABC FN42');
       assert.ok(cells[0].font>=16,`source time readable at ${width}px`);
       for(const cell of cells.slice(1))assert.ok(cell.font>=16,`decoded cell readable at ${width}px`);
       // CL-055-05: dense rows with a fine pointer keep 1 px vertical

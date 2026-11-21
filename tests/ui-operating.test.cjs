@@ -1719,7 +1719,8 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   const rad=Math.PI/180,[pa,pb]=[[47+1/48,8+1/24],[42.5,-71]],km=Math.round(2*6371*Math.asin(Math.sqrt(Math.sin((pb[0]-pa[0])*rad/2)**2+Math.cos(pa[0]*rad)*Math.cos(pb[0]*rad)*Math.sin((pb[1]-pa[1])*rad/2)**2)));
   assert.deepEqual(await page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.children[5].textContent,r.children[6].textContent,r.className])),[['CQ K1ABC FN42','\u2014',`${km} km`,'ba-cq'],['CQ W1XYZ FN42','\u2014',`${km} km`,'ba-cq']],'columns, distance JN47AA-FN42 and the CQ colour');
   // An a-priori word (a_priori 1) carries the WSJT-X a1 marker outside the message text.
-  assert.deepEqual(await page.locator('tr[data-result-id] td[data-col=message]').evaluateAll(cells=>cells.map(c=>[c.dataset.ap??null,getComputedStyle(c,'::after').content])),[[null,'none'],['a1','" a1"']],'a-priori marker');
+  // One page task collects and reads the rows, so a redraw cannot detach them between the two.
+  assert.deepEqual(await page.evaluate(()=>[...document.querySelectorAll('tr[data-result-id] td[data-col=message]')].map(c=>[c.dataset.ap??null,getComputedStyle(c,'::after').content])),[[null,'none'],['a1','" a1"']],'a-priori marker');
   // QSO pane: a CQ near Rx (W1XYZ at 1480 Hz) is no QSO pane line;
   // nobody calls me yet.
   await page.locator('#qso-others-none').filter({hasText:'Nobody is calling'}).waitFor();
@@ -2401,7 +2402,8 @@ test('Band Activity shows the worked_status of each record with no query',{timeo
  // by default. Only interesting stations are coloured (unlike WSJT-X): no CQ slot, so
  // the CQ of a station worked on this band and mode has no colour; rows in value order.
  // CL-050-08: a row in QSO with another station colours only its sender's call (the .ba-from span).
- const rowsNow=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.querySelector('.ba-from')??r.children[4]).backgroundColor]));
+ // One page task collects and reads the rows, so a redraw cannot detach them between the two.
+ const rowsNow=()=>page.evaluate(()=>[...document.querySelectorAll('tr[data-result-id]')].map(r=>[r.children[4].textContent,r.dataset.worked??null,r.dataset.hl??null,getComputedStyle(r.querySelector('.ba-from')??r.children[4]).backgroundColor]));
  const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
  assert.deepEqual(await rowsNow(),[['CQ W1XYZ FN42','not_worked','new_call new_call_band',newCall],['K9XX W2AB R-05','not_worked','new_call new_call_band',newCall],['CQ K1ABC FN42','worked_this_band_and_mode',null,none],['FREE TEXT',null,null,none]],'no CQ colour; worked before has no colour; New slots on non-CQ senders too (CL-055-04)');
  await page.locator('#open-server-settings').click();
@@ -2441,7 +2443,8 @@ test('QSO pane callers show worked-before status and only interesting stations a
   page.on('request',r=>{if(new URL(r.url()).pathname==='/contact/worked')queries.push(JSON.parse(r.postData()));});
  }});
  await page.waitForFunction(()=>document.querySelectorAll('#qso-others tr[data-worked]').length===3,null,{timeout:25000});
- const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.text,tr.dataset.worked??null,tr.dataset.hl??null,getComputedStyle(tr.cells[1]).backgroundColor,tr.title,tr.getAttribute('aria-description')]));
+ // One page task collects and reads the rows, so a redraw cannot detach them between the two.
+ const others=()=>page.evaluate(()=>[...document.querySelectorAll('#qso-others tr')].map(tr=>[tr.dataset.text,tr.dataset.worked??null,tr.dataset.hl??null,getComputedStyle(tr.cells[1]).backgroundColor,tr.title,tr.getAttribute('aria-description')]));
  const [newCallBand,newCall,none]=['rgba(153, 255, 255, 0.2)','rgba(0, 255, 255, 0.24)','rgba(0, 0, 0, 0)'];
  // BandActivityHover rule: one line, only the
  // enabled colour reasons, the strongest per kind; an uncoloured line has no tip.
@@ -2499,7 +2502,8 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
  }});
  await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('tr.ba-strategy'),null,{timeout:25000});
  // CL-050-08: the one-line reason tip of the colour; a row in QSO with another station colours only its sender's call.
- const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.dataset.tip??'',getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description'),r.querySelector('.ba-from')?getComputedStyle(r.querySelector('.ba-from')).backgroundColor:null]));
+ // One page task collects and reads the rows, so a redraw cannot detach them between the two.
+ const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tr[data-sequence]')].map(r=>[r.children[4].textContent,r.dataset.tip??'',getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description'),r.querySelector('.ba-from')?getComputedStyle(r.querySelector('.ba-from')).backgroundColor:null]));
  const none='rgba(0, 0, 0, 0)';
  const expected=[
   ['HB9BLA W1XYZ -12','New call','rgba(255, 102, 102, 0.32)',null],
@@ -3105,7 +3109,8 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
       await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'WW Digi',my_continent:'EU',contest:{qsos:12,multipliers:7,points:30,score:210},verdicts:[{sequence:2,rank:0,grey:false,dupe:false,new_multiplier:true,points:4},{sequence:0,rank:1,grey:false,dupe:false,new_multiplier:false,points:2},{sequence:1,rank:null,grey:false,dupe:true,new_multiplier:false,points:null},{sequence:4,rank:null,grey:false,dupe:true,new_multiplier:false,points:null},{sequence:3,rank:null,grey:true}]}});});
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===6&&document.querySelector('#strategy-contest')?.disabled===false,null,{timeout:25000});
-  const shown=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.filter(r=>getComputedStyle(r).display!=='none').map(r=>[r.children[4].textContent,r.className.split(' ').filter(c=>c.startsWith('ba-')&&c!=='ba-cq').join(' ')]));
+  // One page task collects and reads the rows, so a redraw cannot detach them between the two.
+  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tr[data-sequence]')].filter(r=>getComputedStyle(r).display!=='none').map(r=>[r.children[4].textContent,r.className.split(' ').filter(c=>c.startsWith('ba-')&&c!=='ba-cq').join(' ')]));
   // Without a contest the toggle is hidden, the selector unchanged, nothing evaluated.
   assert.equal(await page.locator('#activity-show-all').isVisible(),false);
   assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None']);
