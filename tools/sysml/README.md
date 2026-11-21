@@ -188,8 +188,14 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   name's unit, a Real compared at the model's decimals, an enumeration value as its wire
   name), its name is found as an identifier or a word of a string literal in the model's,
   the snake_case or the UpperCamelCase form (a command field by its key), its variable is a
-  string literal; V2, a test bound to a case of a clause reaching it holds its qualified
-  name, or its definition's qualified name and the feature's name. A feature of an `item
+  string literal; V2, a test bound to a case of a clause reaching it (the test `symbol` of a
+  `path::symbol` binding, or a test of a bound file that names the case by its `Proves:` tag
+  or title) holds in its own code, outside comments, its qualified name, or its definition's
+  qualified name and the feature's name. Its own code is its body and the bodies of the
+  functions of its file it calls, directly or through each other. A comment is a Rust `//`,
+  `///`, `//!` or block comment, a Node `//` or block comment, or a Python `#` comment or
+  docstring. Another test, the file's top level, a comment before the test and a comment
+  inside it do not count. A feature of an `item
   def` in the files named above is a command field: its value is verified when its name is
   found. The forms of V1 are tried in that order; at the first form that has a candidate, two
   candidates, or a module `F` that another compared value of that name also has in its code,
@@ -547,3 +553,33 @@ run them are those of `harness/project/suites/`.
 | TV-212 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n5_fixture_reader | N5: a lookup of a fixture reader's own package is exempt, of another package not. |
 | TV-213 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n6_whole_name_not_joined | N6: a literal that is a whole qualified name is not joined to a prefix. |
 | TV-214 | TR-21 | `test_equivalence.py` ReaderRecognitionTests.test_r_lookup_readers_of_this_repository | R-lookup: the composed names of the profile tests are lookup citations that resolve on HEAD by declaration, and HEAD against itself has no stale citation. |
+| TV-215 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_test_by_symbol_holding_the_name_in_a_string_is_accepted | a test bound by `path::symbol` whose Rust body holds the qualified name in a string literal verifies the value. |
+| TV-216 | TR-16 | `test_values.py` BoundTestCodeTest.test_node_test_named_by_its_title_is_accepted | in a bound Node file, the test that names the case by its title and holds the qualified name in its callback verifies the value. |
+| TV-217 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_test_named_by_proves_with_definition_and_feature_is_accepted | in a bound Rust file, the test its `Proves:` tag names, holding the definition's qualified name and the feature's name in its body's code, verifies the value. |
+| TV-218 | TR-16 | `test_values.py` BoundTestCodeTest.test_name_in_a_helper_two_calls_away_is_accepted | the qualified name in a function of the file that the bound test calls through a second function verifies the value. |
+| TV-219 | TR-16 | `test_values.py` BoundTestCodeTest.test_definition_in_a_node_arrow_helper_and_feature_in_the_test_is_accepted | the definition's qualified name in a Node arrow function the bound test calls and the feature's name in the test's callback verify the value. |
+| TV-220 | TR-16 | `test_values.py` BoundTestCodeTest.test_python_test_method_is_accepted | a Python test method bound by `path::Class.test_x` or named by its `Proves:` tag, holding the qualified name, verifies the value, also after line separators in an earlier string. |
+| TV-221 | TR-16 | `test_values.py` BoundTestCodeTest.test_helpers_calling_each_other_end_and_are_accepted | two functions that call each other, one called by the bound test: the check ends and the qualified name in either verifies the value. |
+| TV-222 | TR-16 | `test_values.py` BoundTestCodeTest.test_comment_marks_inside_a_string_are_code | the qualified name in a string literal holding `//` or `/*` before it, in Rust, Node and Python, verifies the value. |
+| TV-223 | TR-16 | `test_values.py` BoundTestCodeTest.test_raw_and_template_strings_are_code | the qualified name in a Rust raw string and in a Node template literal verifies the value. |
+| TV-224 | TR-16 | `test_values.py` BoundTestCodeTest.test_quote_in_a_comment_does_not_hide_a_string | a bound test holding the name in a comment and in a string, after a comment holding a quote mark, verifies the value. |
+| TV-225 | TR-16 | `test_values.py` BoundTestCodeTest.test_name_in_another_unbound_test_is_refused | the qualified name in another test of the file, not bound, while the bound test does not hold it, verifies nothing. |
+| TV-226 | TR-16 | `test_values.py` BoundTestCodeTest.test_name_in_another_test_bound_to_another_case_is_refused | the qualified name in another test of the file that is bound to another case verifies nothing. |
+| TV-227 | TR-16 | `test_values.py` BoundTestCodeTest.test_name_at_the_top_level_is_refused | the qualified name only at the file's top level, as a Rust `const` or `static` and as a Node module `const`, verifies nothing. |
+| TV-228 | TR-16 | `test_values.py` BoundTestCodeTest.test_name_in_a_comment_before_the_test_is_refused | the qualified name only in a comment between the `Proves:` tag and the test verifies nothing. |
+| TV-229 | TR-16 | `test_values.py` BoundTestCodeTest.test_helper_only_another_test_calls_is_refused | the qualified name in a function that only an unbound test calls verifies nothing. |
+| TV-230 | TR-16 | `test_values.py` BoundTestCodeTest.test_two_parts_in_two_tests_are_refused | the definition's qualified name in another test and the feature's name in the bound test verify nothing. |
+| TV-231 | TR-16 | `test_values.py` BoundTestCodeTest.test_whole_file_name_in_a_test_not_naming_the_case_is_refused | in a bound file, the qualified name in a test that does not name the case, while the test that names it does not hold it, verifies nothing. |
+| TV-232 | TR-16 | `test_values.py` BoundTestCodeTest.test_whole_file_without_a_test_naming_the_case_is_refused | a bound file in which no test names the case verifies nothing, though it holds the qualified name. |
+| TV-233 | TR-16 | `test_values.py` BoundTestCodeTest.test_unreadable_bound_file_is_not_verified | a bound file that is no UTF-8, or holds a raw string without its end, verifies nothing and raises no exception. |
+| TV-234 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_line_comment_in_the_test_is_refused | the qualified name only in a Rust `//` comment in the bound test verifies nothing. |
+| TV-235 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_doc_comment_in_the_test_is_refused | the qualified name only in a Rust `///` or `//!` comment in the bound test verifies nothing. |
+| TV-236 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_block_comment_in_the_test_is_refused | the qualified name only in a Rust block comment in the bound test, on one line or over lines, or a `/** */` comment, verifies nothing. |
+| TV-237 | TR-16 | `test_values.py` BoundTestCodeTest.test_node_line_comment_in_the_test_is_refused | the qualified name only in a Node `//` comment in the test's callback verifies nothing. |
+| TV-238 | TR-16 | `test_values.py` BoundTestCodeTest.test_node_block_comment_in_the_test_is_refused | the qualified name only in a Node block comment in the test's callback verifies nothing. |
+| TV-239 | TR-16 | `test_values.py` BoundTestCodeTest.test_python_comment_in_the_test_is_refused | the qualified name only in a Python `#` comment in the test method verifies nothing. |
+| TV-240 | TR-16 | `test_values.py` BoundTestCodeTest.test_python_docstring_of_the_test_is_refused | the qualified name only in the docstring of the test method verifies nothing. |
+| TV-241 | TR-16 | `test_values.py` BoundTestCodeTest.test_comment_in_a_called_helper_is_refused | the qualified name only in a comment of a function the bound test calls, in Rust and in a Node arrow function, verifies nothing. |
+| TV-242 | TR-16 | `test_values.py` BoundTestCodeTest.test_second_form_with_one_part_in_a_comment_is_refused | the definition's qualified name in code and the feature's name only in a comment, or the other way round, verify nothing. |
+| TV-243 | TR-16 | `test_values.py` BoundTestCodeTest.test_variable_in_the_bound_test_is_still_not_verified | a `WSTX_*` variable whose name stands only in the code of a bound test of a clause reaching it is not verified. |
+| TV-244 | TR-23 | `test_values.py` PythonNamingTest.test_python_tests_named_by_proves_are_bound | in a bound Python file, a test method or a module-level test whose attached `Proves:` tag names the case is a bound test, named as `python_tests` lists it, `<Class>.<name>` or `<name>`, also after a string whose lines start at column 0 and after a form feed or line separator in a comment or string; a `def test_…` inside a function, a test of a class inside a function and a test the tag does not name are not. |
