@@ -30,10 +30,25 @@ set -o pipefail; git -C D:/Github/wsjtx-rust show <commit>:tools/deploy/station-
 The commit is the one the merge queue pushed; Alex runs the same line (`alex.install` in
 `harness/project/config.yaml`).
 
+A push is one line `<old>..<new>  HEAD -> master` in a merge-queue log under
+`.git\harness-parallel\queue\logs\`; its verdict is the log's last line beginning with
+`harness gate`. A green push has the verdict `harness gate: <n> suites, green`, a harness
+push one beginning with `harness gate: harness change`. The command accepts a commit C on
+GitHub master when a green push has C as its new tip (that log is the push-gate log), or when
+C's chain, walked back from the push of C through each push's old tip, is one or more harness
+pushes followed by a green push whose new tip G is an ancestor of C, and every path of the
+diff from G to C is a harness path of G: the harness checkout (the one submodule path that
+`.gitmodules` at G names and that is a gitlink in G's tree), `harness/project` and the
+`harness_paths` of `harness/project/config.yaml` at G. Such a package is C's build; its
+gates.json adds `gated_commit` (G) and `harness_push_logs` (a copy of each harness push's
+log, newest first), and G's log is its gate receipt.
+
 It refuses (exit 1, before any step) any other argument list, a commit not on GitHub master,
-and a commit for which not exactly one merge-queue log under `.git\harness-parallel\queue\logs\`
-shows a green gate and the push of that commit to master (the commit the queue pushed when
-it landed a batch). It builds the package in
+a commit of the walk that no push has as its new tip (a commit inside a push, a commit
+pushed by hand outside the merge queue, or a chain without a green push), a commit of the
+walk that more than one log shows pushed, a push of the chain that is neither green nor a
+harness push, a G that is not an ancestor of C, and a diff from G to C holding paths that are
+no harness paths (the first 10 named). A log without a push line is ignored. It builds the package in
 `.git\harness-parallel\resources\station-update\packages\<ver>\`, never in a working tree,
 or reuses one there whose manifest names the commit (a folder holding anything else is
 refused); it copies the mechanism files from the commit's `git archive` export into the
@@ -64,8 +79,10 @@ when a decision is needed." It binds the deploy part of the harness rule
 under it needs no OK per install.
 
 1. **When a deploy applies without asking.** All of these hold:
-   - the push gate is green on exactly that commit and the package matches it (the package
-     checks of `station-update.ps1`);
+   - the push gate is green on exactly that commit, or the commit rests on its newest
+     green-gated ancestor through harness pushes only and its diff from that ancestor holds
+     only harness paths (make_package.py, F1 of #334), and the package matches it (the
+     package checks of `station-update.ps1`);
    - the station is idle, checked inside `station\logs\update.lock`, which the deploy holds
      from the check until the station has stopped. Idle means all of: the update lock is
      free; no live radio lease (`.git\harness-parallel\radio\lease.json` missing or
