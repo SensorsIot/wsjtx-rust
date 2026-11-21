@@ -21,6 +21,13 @@
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
     cargo test --workspace --locked --bins --examples --test '*' &&
     cargo test --workspace --locked --lib -- --skip decoder::
+  # The filter form (gate.py --suite --filter; Project-Specifics.md, Functional test selection):
+  # the steps of run, each narrowed to the filter words by harness/project/tools/filter_run.py.
+  filter: >-
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
+    python harness/project/tools/filter_run.py wstx-rust {filter}
+    @libtest cargo test --workspace --locked --bins --examples --test '*'
+    @libtest cargo test --workspace --locked --lib -- --skip decoder::
   paths:
   - server/
   - fixtures/transmit/
@@ -62,6 +69,12 @@
     --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
     --config profile.unit-opt.overflow-checks=true --profile unit-opt
     decoder::
+  filter: >-
+    python harness/project/tools/filter_run.py wstx-rust-decoder {filter}
+    @libtest cargo test --locked -p wstx-rust --lib
+    --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
+    --config profile.unit-opt.overflow-checks=true --profile unit-opt
+    decoder::
   paths:
   - server/
   - fixtures/decoder/
@@ -95,6 +108,10 @@
 - suite: protocol
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py protocol {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-skip-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
   paths: &browser-inputs
   - server/
   - client/
@@ -131,6 +148,10 @@
 - suite: protocol-thin
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py protocol-thin {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-name-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
   paths: *browser-inputs
   timing: true
   timing_inputs:
@@ -158,6 +179,10 @@
 - suite: profiles
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/profiles.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py profiles {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 tests/profiles.test.cjs
   paths: *browser-inputs
   select:
   - server/src/main.rs
@@ -192,6 +217,10 @@
 - suite: recording-storage
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS" --test-skip-pattern="^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py recording-storage {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-name-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS" --test-skip-pattern="^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
   paths: *browser-inputs
   select:
   - server/src/main.rs
@@ -226,6 +255,10 @@
 - suite: recording-display
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS|^four stations retain isolated identities|^TC-010-002|^TC-010-005 review real Detailed peer cadence" tests/recording.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py recording-display {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-skip-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS|^four stations retain isolated identities|^TC-010-002|^TC-010-005 review real Detailed peer cadence" tests/recording.test.cjs
   paths: *browser-inputs
   select:
   - server/src/main.rs
@@ -256,6 +289,10 @@
 - suite: recording-thin
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-010-002|^TC-010-005 review real Detailed peer cadence|^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py recording-thin {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-name-pattern="^TC-010-002|^TC-010-005 review real Detailed peer cadence|^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
   paths: *browser-inputs
   timing: true
   # Code that sets the pushed-state and display cadence: router and status websocket, compression,
@@ -290,6 +327,9 @@
 - suite: recording-fixtures
   cost: 2
   run: node --test --test-concurrency=1 tests/profile/recording-fixtures.test.cjs tools/recording-fixtures.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py recording-fixtures {filter}
+    @node node --test --test-concurrency=1 tests/profile/recording-fixtures.test.cjs tools/recording-fixtures.test.cjs
   paths:
   - tests/profile/recording-fixtures.test.cjs
   - tools/recording-fixtures.cjs
@@ -318,6 +358,9 @@
 - suite: model-values
   cost: 2
   run: node --test --test-concurrency=1 tools/test/node/model-values.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py model-values {filter}
+    @node node --test --test-concurrency=1 tools/test/node/model-values.test.cjs
   paths:
   - tools/test/node/model-values.cjs
   - tools/test/node/model-values.test.cjs
@@ -338,6 +381,10 @@
 - suite: test-tools
   cost: 2
   run: "cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern=\"^model values: \" \"tools/test/node/*.test.cjs\""
+  filter: >-
+    python harness/project/tools/filter_run.py test-tools {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-skip-pattern="^model values: " "tools/test/node/*.test.cjs"
   paths:
   - tools/test/
   - fixtures/flex/
@@ -358,6 +405,10 @@
 - suite: sysml-documentation
   cost: 2
   run: "python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -p \"test_[dr]*.py\" -q"
+  # Under --filter the model check, which selects no tests, is left out.
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-documentation {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_[dr]*.py" -q
   paths:
   - docs/sysml/
   - tools/sysml.py
@@ -375,6 +426,9 @@
 - suite: sysml-tools
   cost: 2
   run: "python -m unittest discover -s tools/sysml/tests -p \"test_[!adre]*.py\" -q"
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-tools {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_[!adre]*.py" -q
   paths:
   - docs/sysml/
   - tools/sysml.py
@@ -390,6 +444,9 @@
 - suite: sysml-architecture-context
   cost: 2
   run: "python -m unittest discover -s tools/sysml/tests -p \"test_architecture_context.py\" -q"
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-architecture-context {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_architecture_context.py" -q
   paths:
   - docs/sysml/
   - tools/sysml.py
@@ -411,6 +468,9 @@
 - suite: sysml-architecture
   cost: 2
   run: "python -m unittest discover -s tools/sysml/tests -p \"test_a*[!x]?.py\" -q"
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-architecture {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_a*[!x]?.py" -q
   paths:
   - tools/sysml.py
   - tools/sysml/Validate.java
@@ -441,6 +501,9 @@
 - suite: sysml-equivalence-tests
   cost: 2
   run: "python -m unittest discover -s tools/sysml/tests -p \"test_e*.py\" -q"
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-equivalence-tests {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_e*.py" -q
   paths:
   - tools/sysml.py
   - tools/sysml/
@@ -455,6 +518,7 @@
 - suite: sysml-equivalence
   cost: 2
   run: python tools/sysml.py equivalence --marked
+  # No filter form: the run is a model check with no tests to select.
   paths:
   - docs/sysml/
   - tools/sysml.py
@@ -474,6 +538,7 @@
 - suite: source-model-traces
   cost: 2
   run: python tools/sysml.py traces
+  # No filter form: the run is a model check with no tests to select.
   paths:
   - client/
   - server/
@@ -505,6 +570,9 @@
 - suite: deploy-tooling
   cost: 2
   run: python -m unittest discover -s tools/deploy/tests -v
+  filter: >-
+    python harness/project/tools/filter_run.py deploy-tooling {filter}
+    @unittest python -m unittest discover -s tools/deploy/tests -v
   paths:
   - tools/deploy/
   select:
@@ -514,6 +582,9 @@
 - suite: test-bench
   cost: 2
   run: python -m unittest discover -s tools/test/powershell -v
+  filter: >-
+    python harness/project/tools/filter_run.py test-bench {filter}
+    @unittest python -m unittest discover -s tools/test/powershell -v
   paths:
   - tools/test/powershell/
   - tools/deploy/tests/pwsh.py
@@ -527,6 +598,10 @@
 - suite: fortran-reference-tools
   cost: 2
   run: python -m unittest discover -s tools/test/python -p "test_wsjtx*reference.py" -v && python -m unittest discover -s tools/test/python -p test_analyze_fortran_trace.py -v
+  filter: >-
+    python harness/project/tools/filter_run.py fortran-reference-tools {filter}
+    @unittest python -m unittest discover -s tools/test/python -p "test_wsjtx*reference.py" -v
+    @unittest python -m unittest discover -s tools/test/python -p test_analyze_fortran_trace.py -v
   paths:
   - .github/workflows/fortran-stage-diagnostics.yml
   - fixtures/decoder/wsjtx-stage-logging.patch.gz
@@ -571,6 +646,15 @@
     --skip live_busy_period_publishes_every_decode_promptly &&
     cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1 &&
     python tools/test/python/independent-vector-tool/test_cache.py
+  # Under --filter the forged-cache refusal test_cache.py, a script that selects no tests, is
+  # left out.
+  filter: >-
+    python harness/project/tools/filter_run.py decoder-correctness {filter}
+    @libtest cargo test --release --locked --test decoder_signal -- --test-threads=1
+    --skip release_runtime_and_overlapping_window_history
+    --skip cooperative_quanta_and_partial_cancellation
+    --skip live_busy_period_publishes_every_decode_promptly
+    @libtest cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1
   paths:
   - server/src/decoder/
   - server/src/modes/decoder/
@@ -627,6 +711,8 @@
     cargo test --release --locked --test decoder_signal --message-format=json -- --test-threads=1 --skip release_runtime_and_overlapping_window_history | python tools/test/python/windows_resource_job.py resolve --stream-log "$run_dir/ordinary.log" --receipt "$run_dir/artifact.json"
     python tools/test/python/windows_resource_job.py run --case busy --artifact-receipt "$run_dir/artifact.json"
     python tools/test/python/windows_resource_job.py run --case matrix --ordinary-gate --artifact-receipt "$run_dir/artifact.json"
+  # No filter form: windows_resource_job.py resolve binds every ordinary pass of decoder_signal
+  # into one artifact, so a partial run cannot be resolved.
   # The release library step runs the two decoder phase tests that debug assertions compile
   # out (#[cfg(not(debug_assertions))]): each asserts a 250 ms return after cancellation, so
   # they run here, alone, with the WSTX_DECODER_CACHE they read. It is red unless libtest
@@ -716,6 +802,7 @@
 - suite: live-receive-integration
   cost: 2
   run: cargo test --release --locked --test audio_receive live_native_provider_decodes_independent_ft8_callsign -- --exact
+  # No filter form: the run is exactly one test, so the whole suite is that test.
   paths:
   - server/src/source.rs
   - server/src/audio.rs
@@ -758,6 +845,9 @@
 - suite: live-station-browser
   cost: 2
   run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_ -- --nocapture --skip receive_http_tests::live_native_busy_period_rows_promptly"
+  filter: >-
+    python harness/project/tools/filter_run.py live-station-browser {filter}
+    @libtest cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_ -- --nocapture --skip receive_http_tests::live_native_busy_period_rows_promptly
   paths:
   - server/src/main.rs
   - server/src/profile.rs
@@ -851,6 +941,10 @@
   timing_classes: [display, compute]
   build: cargo test --release --locked --bin wstx-rust --no-run
   run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture && cargo test --release --locked --bin wstx-rust receive_http_tests::resource_station_process_delta_and_owner_release -- --exact --ignored --nocapture"
+  filter: >-
+    python harness/project/tools/filter_run.py live-station-latency {filter}
+    @libtest cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture
+    @libtest cargo test --release --locked --bin wstx-rust receive_http_tests::resource_station_process_delta_and_owner_release -- --exact --ignored --nocapture
   # Reachability (harness reachability.py): the busy-period case starts
   # tests/frontend/receive-latency.test.cjs and prints its output only when it fails.
   reach:
@@ -892,6 +986,10 @@
 - suite: native-flex
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/flexAdapter/native-flex.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py native-flex {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 tests/flexAdapter/native-flex.test.cjs
   paths: *browser-inputs
   select:
   - server/src/flex/
@@ -918,6 +1016,10 @@
 - suite: operating-layout
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/ui-operating.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py operating-layout {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 tests/ui-operating.test.cjs
   paths: *browser-inputs
   select:
   - server/src/main.rs
@@ -959,6 +1061,7 @@
 - suite: contact-browser
   cost: 2
   run: cargo test --release --locked --bin wstx-rust contact_http::tests::contact_browser_ -- --nocapture
+  # No filter form: the run is exactly one test, so the whole suite is that test.
   paths:
   - server/
   - client/
@@ -1001,6 +1104,10 @@
     python -m unittest discover -s fixtures/decoder/simulator-tool -p test_wsjtx_simulated_samples.py -v &&
     python fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/manifest.json" --fixture-directory fixtures/decoder &&
     python fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/../ft8/manifest.json" --fixture-directory fixtures/decoder
+  # Under --filter the two --verify-manifest runs, which select no tests, are left out.
+  filter: >-
+    python harness/project/tools/filter_run.py simulator-fixtures {filter}
+    @unittest python -m unittest discover -s fixtures/decoder/simulator-tool -p test_wsjtx_simulated_samples.py -v
   paths:
   - fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py
   - fixtures/decoder/simulator-tool/test_wsjtx_simulated_samples.py
@@ -1028,6 +1135,12 @@
 - suite: radio-selection
   cost: 2
   run: "cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_commission_ -- --nocapture && cargo test --release --locked --bin wstx-rust selection_http_tests::selection_state_ -- --nocapture && cargo build --workspace --locked && node --test --test-concurrency=1 tests/radio-selection.test.cjs"
+  filter: >-
+    python harness/project/tools/filter_run.py radio-selection {filter}
+    @libtest cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_commission_ -- --nocapture
+    @libtest cargo test --release --locked --bin wstx-rust selection_http_tests::selection_state_ -- --nocapture
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 tests/radio-selection.test.cjs
   paths: *browser-inputs
   select:
   - docs/sysml/
@@ -1072,6 +1185,7 @@
 - suite: radio-selection-thin
   cost: 2
   run: cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_tls_thin_and_off -- --nocapture
+  # No filter form: the run is exactly one test, so the whole suite is that test.
   paths: *browser-inputs
   timing: true
   # Timing for the 4230-5000 ms native setup, of which this suite is the only oracle: CAT
@@ -1115,6 +1229,10 @@
 - suite: mcp
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/mcp/mcp.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py mcp {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 tests/mcp/mcp.test.cjs
   paths:
   - server/
   - client/
