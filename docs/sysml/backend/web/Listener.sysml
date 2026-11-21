@@ -51,6 +51,33 @@ package WstxListener {
         @FollowsSource { reference = "RFC 8446 (TLS 1.3); RFC 7468 (PEM); RFC 5280; RFC 5958"; }
     }
 
+    verification 'TC-003-001' {
+        doc /*
+    A request of another origin, or a change without one, is refused and changes nothing.
+        */
+        subject web : WebAdapter;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-003-07'; }
+        @TestedBy {
+            test = "tests/communication.test.cjs::"
+                + "TLS login, unauthorized/origin denial, plaintext refusal";
+        }
+    }
+    verification 'TC-003-002' {
+        doc /*
+    With both TLS files the listener takes TLS only; beyond loopback it refuses no TLS or no origin.
+        */
+        subject web : WebAdapter;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-003-07'; }
+        @TestedBy {
+            test = "tests/communication.test.cjs::"
+                + "TLS login, unauthorized/origin denial, plaintext refusal";
+        }
+    }
+
     requirement 'CL-003-01' {
         subject web : WebAdapter;
         doc /* web MUST serve the browser client as ClientFiles says. */

@@ -7,6 +7,7 @@ package WstxWebPart {
     private import WstxDisplayData::DisplayDataPort;
     private import WstxStationTime::StationTimePort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def WebAdapter {
@@ -21,6 +22,11 @@ package WstxWebPart {
         @CodeDiffers {
             what = "Its code stands in server/src/http_compression.rs, server/src/main.rs, "
                 + "outside server/src/web/ and client/src/web/.";
+        }
+        @DetailTests {
+            tests = "server/src/web/http_compression_tests.rs";
+            covers = "the negotiation of the views' coding against the vectors of RFC 9110, "
+                + "the size bounds of the view answers and the one run of their handler";
         }
         item context : WebContext {
             doc /* Its context, as the supervisor last gave it. */ }

@@ -3,6 +3,7 @@ package WstxMcpPart {
     private import WstxStationCommands::AgentOperations;
     private import WstxMcp::McpPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def McpAdapter {
@@ -15,6 +16,11 @@ package WstxMcpPart {
         @CodeDiffers {
             what = "Its code stands in server/src/mcp.rs, outside server/src/mcp/ and "
                 + "client/src/mcp/.";
+        }
+        @DetailTests {
+            tests = "server/src/mcp_tests.rs";
+            covers = "the refusal of the MCP principal on the routes no tool reaches and its "
+                + "commands that reset no watchdog";
         }
         port agent : McpPort { doc /* The agents of the station. */ }
         port supervisor : AgentOperations {

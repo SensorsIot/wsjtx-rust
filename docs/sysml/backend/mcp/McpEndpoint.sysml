@@ -53,7 +53,23 @@ package WstxMcpEndpoint {
         objective { verify 'CL-012-01'; verify 'CL-012-02'; }
         @TestedBy {
             test = "server/src/mcp_tests.rs::"
-                + "tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras";
+                + "tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras; "
+                + "tests/mcp/mcp.test.cjs::"
+                + "an MCP client with its own MCP client token observes the browser state "
+                + "of the actual executable";
+        }
+    }
+    verification 'TC-020-005' {
+        doc /*
+    Endpoint refusals, and argument errors and station refusals as tool errors, before any effect.
+        */
+        subject mcp : McpAdapter;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-012-01'; verify 'CL-012-02'; }
+        @TestedBy {
+            test = "server/src/mcp_tests.rs::"
+        + "tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_before_effects";
         }
     }
 }

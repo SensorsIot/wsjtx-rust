@@ -20,6 +20,7 @@ package WstxSupervisorPart {
     private import WstxRecordingTransfer::RecordingTransfer;
     private import WstxWebControl::WebControlPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def Supervisor {
@@ -38,6 +39,11 @@ package WstxSupervisorPart {
                 + "server/src/receive/receive_startup.rs, server/src/selection_http.rs, "
                 + "server/src/station/selection.rs, outside server/src/supervisor/ and "
                 + "client/src/supervisor/.";
+        }
+        @DetailTests {
+            tests = "server/src/mcp_tests.rs; tests/mcp/mcp.test.cjs";
+            covers = "the MCP client token: its creation, listing, hashed record, audit and "
+                + "revocation, and its refusal on the browser routes";
         }
         attribute records : StartupRecords {
             doc /* Its records, as the last MemorySnapshot of the profile gave them. */ }
