@@ -267,23 +267,7 @@ RUST_TEST_FN = re.compile(r"\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s
 JS_TEST_NAME = re.compile(r"\s*test\s*\(\s*(['\"])((?:\\.|(?!\1)[^\r\n])*)\1")
 
 
-PYTHON_TEST_DEF = re.compile(r"([ \t]*)(?:async\s+)?def\s+(test_\w+)")
-PYTHON_CLASS = re.compile(r"([ \t]*)class\s+(\w+)")
-
-
-def python_test_name(lines: list[str], index: int, method: re.Match) -> str | None:
-    """The name `python_tests` gives the `def test_…` on line `index`: `<Class>.<name>` in a
-    class body, `<name>` at module level, none inside a function."""
-    indent = len(method[1].expandtabs())
-    if not indent:
-        return method[2]
-    for line in reversed(lines[:index]):
-        code = line.strip()
-        if not code or code.startswith(("#", "@")) or len(line.expandtabs()) - len(line.expandtabs().lstrip()) >= indent:
-            continue
-        owner = PYTHON_CLASS.match(line)
-        return f"{owner[2]}.{method[2]}" if owner else None
-    return None
+PYTHON_TEST_DEF = re.compile(r"\s*(?:async\s+)?def\s+test_\w+")
 
 
 def naming_tests(source: str) -> list[tuple[str, set[str]]]:
@@ -302,12 +286,17 @@ def naming_tests(source: str) -> list[tuple[str, set[str]]]:
                 named.setdefault(test, set()).update(ref for ref in source_proves(tag[1]) if ref.startswith("TC-"))
         elif script := JS_TEST_NAME.match(line):
             named.setdefault(index, set()).update(re.findall(r"\bTC-\d{3}-\d{3}\b", script[2]))
-    found = []
+    found, python = [], None
     for test, cases in sorted(named.items()):
         if script := JS_TEST_NAME.match(lines[test]):
             name = re.sub(r"\\(.)", r"\1", script[2])
-        elif method := PYTHON_TEST_DEF.match(lines[test]):
-            name = python_test_name(lines, test, method)
+        elif PYTHON_TEST_DEF.match(lines[test]):
+            if python is None:
+                try:
+                    python = python_test_lines(ast.parse(source))
+                except (SyntaxError, ValueError):
+                    python = {}
+            name = python.get(test + 1)
         else:
             name = next((function[1] for code in lines[test:test + 12] if (function := RUST_TEST_FN.match(code))), None)
         if name is not None and cases:
@@ -3620,14 +3609,12 @@ def python_code(source: str) -> SourceCode:
     def span(node) -> tuple[int, int]:
         return starts[node.lineno - 1], starts[min(node.end_lineno, len(lines))]
 
-    def scan(body: list, owner: str | None):
-        for node in body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
-                tests.setdefault(f"{owner}.{node.name}" if owner else node.name, []).append(span(node))
-            elif isinstance(node, ast.ClassDef):
-                scan(node.body, node.name)
-
-    scan(module.body, None)
+    definitions = {}
+    for node in ast.walk(module):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            definitions[node.lineno] = node
+    for line, name in python_test_lines(module).items():
+        tests.setdefault(name, []).append(span(definitions[line]))
     for node in ast.walk(module):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             functions.setdefault(node.name, []).append(span(node))
@@ -4470,12 +4457,18 @@ def python_tests(key: str, source: str) -> list[str]:
     except (SyntaxError, ValueError) as error:
         line = getattr(error, "lineno", None) or 1
         raise ValueError(f"source not readable: {key}:{line}: Python that does not parse ({error.__class__.__name__})") from None
-    names = []
+    return list(python_test_lines(module).values())
+
+
+def python_test_lines(module: ast.Module) -> dict[int, str]:
+    """The line of each `def test_…` directly in a class body or at module level, in source
+    order, with its name: `<Class>.<name>` or `<name>`."""
+    names = {}
 
     def scan(body: list, owner: str | None):
         for node in body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
-                names.append(f"{owner}.{node.name}" if owner else node.name)
+                names[node.lineno] = f"{owner}.{node.name}" if owner else node.name
             elif isinstance(node, ast.ClassDef):
                 scan(node.body, node.name)
 

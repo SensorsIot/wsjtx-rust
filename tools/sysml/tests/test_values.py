@@ -579,20 +579,41 @@ class BoundTestCodeTest(unittest.TestCase):
 class PythonNamingTest(unittest.TestCase):
     def test_python_tests_named_by_proves_are_bound(self):
         """TV-244 (TR-23): in a bound Python file, a test method or a module-level test whose
-        attached `Proves:` tag names the case is a bound test, named `<Class>.<name>` or
-        `<name>`; a `def test_…` inside a function and a test the tag does not name are not."""
-        source = ("import unittest\n\n\n"
-                  "class RuleTest(unittest.TestCase):\n"
-                  "    def helper(self):\n        pass\n\n"
-                  "    # Proves: TC-043-002\n    @unittest.skipIf(False, 'kept')\n    def test_restart(self):\n        pass\n\n"
-                  "    # Proves: TC-043-001\n    def test_other(self):\n        pass\n\n\n"
-                  "def outer():\n    # Proves: TC-043-002\n    def test_inner():\n        pass\n\n\n"
-                  "# Proves: TC-043-002\ndef test_module():\n    pass\n")
-        with tempfile.TemporaryDirectory() as folder:
-            (Path(folder) / PYTHON).parent.mkdir(parents=True)
-            (Path(folder) / PYTHON).write_text(source, encoding="utf-8", newline="\n")
-            self.assertEqual(tool.bound_tests("TC-043-002", [PYTHON], Path(folder)),
-                             ["python RuleTest.test_restart", "python test_module"])
+        attached `Proves:` tag names the case is a bound test, named as `python_tests` lists it,
+        `<Class>.<name>` or `<name>`, also after a string whose lines start at column 0; a
+        `def test_…` inside a function, a test of a class inside a function and a test the tag
+        does not name are not."""
+        cases = {
+            "method, module test, nested def, other case": (
+                "import unittest\n\n\n"
+                "class RuleTest(unittest.TestCase):\n"
+                "    def helper(self):\n        pass\n\n"
+                "    # Proves: TC-043-002\n    @unittest.skipIf(False, 'kept')\n    def test_restart(self):\n        pass\n\n"
+                "    # Proves: TC-043-001\n    def test_other(self):\n        pass\n\n\n"
+                "def outer():\n    # Proves: TC-043-002\n    def test_inner():\n        pass\n\n\n"
+                "# Proves: TC-043-002\ndef test_module():\n    pass\n",
+                ["python RuleTest.test_restart", "python test_module"]),
+            "string at column 0 in an earlier method": (
+                "import unittest\n\n\n"
+                "class RuleTest(unittest.TestCase):\n"
+                '    def test_a(self):\n        text = """\nx\n"""\n\n'
+                "    # Proves: TC-043-002\n    def test_b(self):\n        pass\n",
+                ["python RuleTest.test_b"]),
+            "class inside a function": (
+                "import unittest\n\n\n"
+                "def build():\n    class RuleTest(unittest.TestCase):\n"
+                "        # Proves: TC-043-002\n        def test_inner(self):\n            pass\n\n"
+                "    return RuleTest\n",
+                []),
+        }
+        for name, (source, expected) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as folder:
+                (Path(folder) / PYTHON).parent.mkdir(parents=True)
+                (Path(folder) / PYTHON).write_text(source, encoding="utf-8", newline="\n")
+                bound = tool.bound_tests("TC-043-002", [PYTHON], Path(folder))
+                self.assertEqual(bound, expected)
+                listed = {"python " + test for test in tool.python_tests(PYTHON, source)}
+                self.assertLessEqual(set(bound), listed)
 
 
 if __name__ == "__main__":
