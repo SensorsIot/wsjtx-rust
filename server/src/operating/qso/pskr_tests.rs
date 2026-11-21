@@ -1310,7 +1310,20 @@ async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use()
     assert_eq!(target_hearing(r, None, mode), HearingState::Unknown);
     // Without a confirmed dial no offset is known; with it, those of the asked parity.
     assert_eq!(target_offsets(r, mode, Parity::Odd), None);
-    *feed.dial.lock().unwrap() = Some(14_074_000);
+    let peer =
+        crate::cat_lifecycle_tests::attach_peer(r, crate::cat_lifecycle_tests::Device::Present);
+    peer.lock().unwrap().dial = 14_074_000;
+    let revision = f.state.store.lock().unwrap().document.revision;
+    r.radio_connect(
+        wstx_rust::radio_control::Configuration::parse("COM3").unwrap(),
+        revision,
+    )
+    .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while crate::contact_http::confirmed_dial(r) != Some(14_074_000) {
+        assert!(std::time::Instant::now() < deadline, "dial not confirmed");
+        std::thread::sleep(Duration::from_millis(5));
+    }
     assert_eq!(target_offsets(r, mode, Parity::Odd), Some(vec![1200]));
     assert_eq!(target_offsets(r, mode, Parity::Even), Some(vec![]));
     assert!(use_on(r));

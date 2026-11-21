@@ -45,6 +45,15 @@ impl<T: Transport + ?Sized> Transport for Box<T> {
         (**self).close()
     }
 }
+/// Opens the station's CAT line for a configuration; the entry point supplies the adapter.
+pub trait Opener: Send + Sync {
+    fn open(
+        &self,
+        configuration: &Configuration,
+        deadline: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<Box<dyn Transport>>;
+}
 struct Inner<T> {
     transport: T,
     configuration: Configuration,

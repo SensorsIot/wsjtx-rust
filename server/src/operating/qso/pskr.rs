@@ -622,9 +622,6 @@ pub(crate) struct Feed {
     files: Arc<dyn profile::Files>,
     profile: String,
     boot: String,
-    /// Test seam: the dial when the fixture has no CAT actor.
-    #[cfg(test)]
-    pub(crate) dial: Mutex<Option<u64>>,
 }
 impl Drop for Feed {
     fn drop(&mut self) {
@@ -685,8 +682,6 @@ impl Feed {
             files,
             profile: profile.to_owned(),
             boot: boot.to_owned(),
-            #[cfg(test)]
-            dial: Mutex::new(None),
         })
     }
     /// The target the feed follows (its receiver subscription), if any.
@@ -1101,9 +1096,6 @@ pub(crate) fn target_offsets(
     if !feed.use_on() {
         return None;
     }
-    #[cfg(test)]
-    let dial = (*feed.dial.lock().unwrap()).or_else(|| contact_http::confirmed_dial(r));
-    #[cfg(not(test))]
     let dial = contact_http::confirmed_dial(r);
     Some(feed.decoded_of_parity(mode_name(mode), band, dial?, freeslot::band(mode), parity))
 }

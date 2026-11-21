@@ -1,5 +1,8 @@
 //! Exclusive, overlapped serial I/O. This value stays on the CAT actor thread.
-use super::{Configuration, Error, Result, executor::Transport};
+use super::{
+    Configuration, Error, Result,
+    executor::{Opener, Transport},
+};
 use ::windows::{
     Win32::{
         Devices::Communication::*,
@@ -11,7 +14,7 @@ use ::windows::{
 };
 use std::{
     fs::{File, OpenOptions},
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -465,22 +468,22 @@ pub(crate) fn claim_identity(identity: &str, lock_root: &Path) -> Result<File> {
     })?;
     Ok(file)
 }
-impl SerialTransport {
-    #[cfg(test)]
-    #[allow(
-        dead_code,
-        reason = "Only the native fixture target consumes this private test constructor"
-    )]
-    pub(crate) fn from_owned_test_handle(handle: std::os::windows::io::OwnedHandle) -> Self {
-        use std::os::windows::io::IntoRawHandle;
-        Self {
-            handle: Some(HANDLE(handle.into_raw_handle())),
-            pending: None,
-            identity: "owned-test-pipe".into(),
-            ownership: None,
-        }
+/// The station's CAT opener on Windows: the serial line, leased under `lock_root`.
+pub struct SerialOpener {
+    pub lock_root: PathBuf,
+}
+impl Opener for SerialOpener {
+    fn open(
+        &self,
+        configuration: &Configuration,
+        deadline: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<Box<dyn Transport>> {
+        SerialTransport::open(configuration, &self.lock_root, deadline, cancel)
+            .map(|transport| Box::new(transport) as Box<dyn Transport>)
     }
-
+}
+impl SerialTransport {
     /// Resolve the selected endpoint and open its immutable OS interface path.
     pub fn open(
         configuration: &Configuration,
@@ -495,11 +498,30 @@ impl SerialTransport {
         let identity = endpoint.instance_id;
         let ownership = claim_identity(&identity, lock_root)?;
         check(deadline, cancel)?;
-        // SAFETY: validated COM path is NUL-terminated; exclusive access, no inherited handle.
         // Physical USB SEND/CW/RTTY inhibit must be verified before calling open.
+        let mut result = Self::open_interface(&endpoint.interface_path, identity, ownership)?;
+        if let Err(error) = check(deadline, cancel).and_then(|_| result.configure(9600)) {
+            if result.close().is_err() {
+                return Err(Error::FailedClose);
+            }
+            return Err(error);
+        }
+        Ok(result)
+    }
+    /// Open a NUL-terminated OS interface path for exclusive overlapped read and write,
+    /// holding `ownership` as its lease.
+    pub(crate) fn open_interface(
+        interface_path: &[u16],
+        identity: String,
+        ownership: File,
+    ) -> Result<Self> {
+        if interface_path.last() != Some(&0) {
+            return Err(Error::InvalidConfiguration);
+        }
+        // SAFETY: the path is NUL-terminated; exclusive access, no inherited handle.
         let handle = unsafe {
             CreateFileW(
-                PCWSTR(endpoint.interface_path.as_ptr()),
+                PCWSTR(interface_path.as_ptr()),
                 GENERIC_READ.0 | GENERIC_WRITE.0,
                 FILE_SHARE_MODE(0),
                 None,
@@ -509,19 +531,12 @@ impl SerialTransport {
             )
         }
         .map_err(map)?;
-        let mut result = Self {
+        Ok(Self {
             handle: Some(handle),
             pending: None,
             identity,
             ownership: Some(ownership),
-        };
-        if let Err(error) = check(deadline, cancel).and_then(|_| result.configure(9600)) {
-            if result.close().is_err() {
-                return Err(Error::FailedClose);
-            }
-            return Err(error);
-        }
-        Ok(result)
+        })
     }
     fn handle(&self) -> Result<HANDLE> {
         self.handle.ok_or(Error::Unavailable)

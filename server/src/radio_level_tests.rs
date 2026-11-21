@@ -9,7 +9,10 @@ use crate::contact_http::tests::{Fixture, fixture};
 use axum::http::StatusCode;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
-use wstx_rust::radio_control::{self as cat, codec, executor::Transport};
+use wstx_rust::radio_control::{
+    self as cat, codec,
+    executor::{Opener, Transport},
+};
 
 const READ_ALC: [u8; 7] = [0xfe, 0xfe, 0x94, 0xe0, 0x15, 0x13, 0xfd];
 const READ_PO: [u8; 7] = [0xfe, 0xfe, 0x94, 0xe0, 0x15, 0x11, 0xfd];
@@ -83,6 +86,21 @@ impl Transport for Port {
         Ok(())
     }
 }
+/// The station's CAT opener over the scripted radio.
+struct RadioOpener(Arc<Mutex<Ic7300>>);
+impl Opener for RadioOpener {
+    fn open(
+        &self,
+        _: &cat::Configuration,
+        _: Instant,
+        _: &AtomicBool,
+    ) -> cat::Result<Box<dyn Transport>> {
+        Ok(Box::new(Port {
+            radio: self.0.clone(),
+            pending: VecDeque::new(),
+        }))
+    }
+}
 fn fixed(data: [u8; 2]) -> Option<AlcAt> {
     Some(Arc::new(move || data))
 }
@@ -109,15 +127,14 @@ fn station(ic7300: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
         store.document.radio = Some(profile::Radio::DEFAULT);
     }
     let ic7300 = Arc::new(Mutex::new(ic7300));
-    let shared = ic7300.clone();
-    f.state
-        .recording
-        .fixture_cat_transport(Arc::new(move |_, _, _| {
-            Ok(Box::new(Port {
-                radio: shared.clone(),
-                pending: VecDeque::new(),
-            }) as Box<dyn Transport>)
-        }));
+    assert!(
+        f.state
+            .recording
+            .cat_opener
+            .set(Arc::new(RadioOpener(ic7300.clone())))
+            .is_ok(),
+        "a recording receives one CAT opener"
+    );
     f.state
         .recording
         .radio_connect(cat::Configuration::parse("COM3").unwrap(), 0)

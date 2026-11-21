@@ -7,9 +7,10 @@ use radio_control::{
     executor::Transport,
     windows::{SerialTransport, claim_identity, resolve_endpoint},
 };
+use std::io::{Read, Write};
 use std::sync::{Arc, atomic::AtomicU64};
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
@@ -100,29 +101,19 @@ fn read_only_selected_endpoint_discovery() {
 }
 #[allow(unsafe_code)]
 mod windows_fixture {
-    use super::{NEXT, SerialTransport};
     use ::windows::{
-        Win32::{Foundation::*, Storage::FileSystem::*, System::Pipes::*},
-        core::{HRESULT, PCWSTR},
+        Win32::{Storage::FileSystem::*, System::Pipes::*},
+        core::PCWSTR,
     };
-    use std::{
-        os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
-        sync::atomic::Ordering,
-    };
+    use std::os::windows::io::{FromRawHandle, OwnedHandle};
 
-    pub fn pair() -> ::windows::core::Result<(SerialTransport, SerialTransport)> {
-        let name: Vec<u16> = format!(
-            "\\\\.\\pipe\\wstx-cat-{}-{}\0",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        )
-        .encode_utf16()
-        .collect();
-        // SAFETY: unique local-only named pipe, no shared memory or external radio endpoints.
+    /// The server end of a unique local-only named pipe (synchronous I/O, the test's own).
+    pub fn server(name: &[u16]) -> ::windows::core::Result<std::fs::File> {
+        // SAFETY: NUL-terminated unique pipe name, no shared memory or external radio endpoints.
         let server = unsafe {
             CreateNamedPipeW(
                 PCWSTR(name.as_ptr()),
-                PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+                PIPE_ACCESS_DUPLEX,
                 PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_REJECT_REMOTE_CLIENTS,
                 1,
                 256,
@@ -135,53 +126,49 @@ mod windows_fixture {
             return Err(::windows::core::Error::from_thread());
         }
         // SAFETY: successful CreateNamedPipe returned sole ownership to this fixture.
-        let server = unsafe { OwnedHandle::from_raw_handle(server.0) };
-        // SAFETY: unique pipe created above; asynchronous owned client handle.
-        let client = unsafe {
-            CreateFileW(
-                PCWSTR(name.as_ptr()),
-                GENERIC_READ.0 | GENERIC_WRITE.0,
-                FILE_SHARE_MODE(0),
-                None,
-                OPEN_EXISTING,
-                FILE_FLAG_OVERLAPPED,
-                None,
-            )
-        }?;
-        // SAFETY: CreateFile returned this fixture's sole client handle ownership.
-        let client = unsafe { OwnedHandle::from_raw_handle(client.0) };
-        // The client is already connected; do not leave a pending ConnectNamedPipe operation.
-        // SAFETY: server handle remains owned and live, no pending connect is requested.
-        if let Err(error) = unsafe { ConnectNamedPipe(HANDLE(server.as_raw_handle()), None) }
-            && error.code() != HRESULT::from_win32(ERROR_PIPE_CONNECTED.0)
-        {
-            return Err(error);
-        }
-        Ok((
-            SerialTransport::from_owned_test_handle(server),
-            SerialTransport::from_owned_test_handle(client),
-        ))
+        Ok(unsafe { OwnedHandle::from_raw_handle(server.0) }.into())
     }
 }
-fn pair() -> (SerialTransport, SerialTransport) {
-    windows_fixture::pair().expect("unique owned local-only overlapped pipe fixture opens")
+/// A pipe whose client end the transport opens through `open_interface`, leased in a
+/// temporary lock root of its own; the server end is the test's peer.
+fn pair() -> (PathBuf, SerialTransport, std::fs::File) {
+    let id = format!(
+        "{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    );
+    let name: Vec<u16> = format!("\\\\.\\pipe\\wstx-cat-{id}\0")
+        .encode_utf16()
+        .collect();
+    let peer = windows_fixture::server(&name).expect("unique local-only pipe opens");
+    let root = std::env::temp_dir().join(format!("wstx-cat-pipe-{id}"));
+    let identity = format!("pipe-fixture-{id}");
+    let lease = claim_identity(&identity, &root).unwrap();
+    let transport = SerialTransport::open_interface(&name, identity, lease).unwrap();
+    // The client end is already connected; the server needs no pending connect.
+    (root, transport, peer)
 }
 #[test]
 fn native_overlapped_pipe_io_uses_actual_owned_buffers_and_close() {
-    let (mut receiver, mut sender) = pair();
+    let (root, mut transport, mut peer) = pair();
     let cancel = AtomicBool::new(false);
     let end = Instant::now() + Duration::from_secs(2);
-    assert_eq!(sender.write(&[0xfe, 0xfe, 0xe0], end, &cancel), Ok(3));
+    assert_eq!(transport.write(&[0xfe, 0xfe, 0xe0], end, &cancel), Ok(3));
+    let mut heard = [0; 3];
+    peer.read_exact(&mut heard).unwrap();
+    assert_eq!(heard, [0xfe, 0xfe, 0xe0]);
+    peer.write_all(&[0xfe, 0xfe, 0x94]).unwrap();
     let mut bytes = [0; 256];
-    assert_eq!(receiver.read(&mut bytes, end, &cancel), Ok(3));
-    assert_eq!(&bytes[..3], &[0xfe, 0xfe, 0xe0]);
-    receiver.close().unwrap();
-    receiver.close().unwrap();
-    sender.close().unwrap();
+    assert_eq!(transport.read(&mut bytes, end, &cancel), Ok(3));
+    assert_eq!(&bytes[..3], &[0xfe, 0xfe, 0x94]);
+    transport.close().unwrap();
+    transport.close().unwrap();
+    drop(peer);
+    std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
 fn native_pending_read_deadline_and_cross_thread_cancel_are_acknowledged() {
-    let (mut receiver, _sender) = pair();
+    let (root, mut receiver, _peer) = pair();
     let mut bytes = [0; 256];
     let no_cancel = AtomicBool::new(false);
     let start = Instant::now();
@@ -212,4 +199,5 @@ fn native_pending_read_deadline_and_cross_thread_cancel_are_acknowledged() {
         ),
         Err(Error::Unavailable)
     );
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -317,23 +317,11 @@ pub struct Recording {
     diagnostics_error: Arc<AtomicBool>,
     /// The file port the recordings are written, listed and removed through.
     files: Arc<dyn profile::Files>,
-    #[cfg(test)]
-    cat_transport: Mutex<Option<CatTransport>>,
+    /// The CAT line opener the entry point supplies; without one CAT is unavailable.
+    pub(crate) cat_opener: std::sync::OnceLock<Arc<dyn wstx_rust::radio_control::executor::Opener>>,
     #[cfg(test)]
     resources: Mutex<Resources>,
 }
-/// Fixture seam replacing only the physical serial open, never the actor/executor.
-#[cfg(test)]
-pub(crate) type CatTransport = Arc<
-    dyn Fn(
-            &wstx_rust::radio_control::Configuration,
-            Instant,
-            &AtomicBool,
-        ) -> wstx_rust::radio_control::Result<
-            Box<dyn wstx_rust::radio_control::executor::Transport>,
-        > + Send
-        + Sync,
->;
 
 /// One analysis window's decode in progress (Recording::begin_window_decode).
 pub(crate) struct WindowDecode(Arc<Recording>);
@@ -887,18 +875,6 @@ impl Recording {
     #[cfg(all(test, not(debug_assertions)))]
     pub(crate) fn fixture_inputs(&self, inputs: Vec<Box<dyn LiveInput>>) {
         self.resources.lock().unwrap().live_inputs = inputs.into();
-    }
-    #[cfg(test)]
-    pub(crate) fn fixture_radio(&self, actor: Arc<wstx_rust::radio_control::actor::Actor>) {
-        let snapshot = actor.snapshot().unwrap();
-        let mut s = self.state.lock().unwrap();
-        assert!(
-            s.operating.radio.actor.is_none(),
-            "fixture must not replace a live actor under the state lock"
-        );
-        s.operating.radio.generation = snapshot.authority.connection_generation;
-        s.operating.radio.cached = Some(snapshot);
-        s.operating.radio.actor = Some(actor);
     }
     #[cfg(test)]
     pub(crate) fn receive_start_input(
@@ -1505,48 +1481,18 @@ impl Recording {
     ) -> std::result::Result<wstx_rust::radio_control::actor::Actor, wstx_rust::radio_control::Error>
     {
         use wstx_rust::radio_control::{actor::Actor, catalogue::Catalogue};
-        #[cfg(test)]
-        if let Some(open) = self.cat_transport.lock().unwrap().clone() {
-            let native = configuration.clone();
-            return Catalogue::builtin().and_then(|catalogue| {
-                Actor::begin(
-                    configuration,
-                    authority,
-                    catalogue,
-                    move |deadline, cancel| open(&native, deadline, cancel),
-                )
-            });
-        }
-        #[cfg(windows)]
-        {
-            let lock_root = std::env::var_os("LOCALAPPDATA")
-                .map(PathBuf::from)
-                .unwrap_or_else(std::env::temp_dir)
-                .join("WstxRust")
-                .join("radio-ownership");
-            let native = configuration.clone();
-            Catalogue::builtin().and_then(|catalogue| {
-                Actor::begin(
-                    configuration,
-                    authority,
-                    catalogue,
-                    move |deadline, cancel| {
-                        wstx_rust::radio_control::windows::SerialTransport::open(
-                            &native, &lock_root, deadline, cancel,
-                        )
-                    },
-                )
-            })
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = (configuration, authority);
-            Err(wstx_rust::radio_control::Error::Unavailable)
-        }
-    }
-    #[cfg(test)]
-    pub(crate) fn fixture_cat_transport(&self, open: CatTransport) {
-        *self.cat_transport.lock().unwrap() = Some(open);
+        let Some(opener) = self.cat_opener.get().cloned() else {
+            return Err(wstx_rust::radio_control::Error::Unavailable);
+        };
+        let native = configuration.clone();
+        Catalogue::builtin().and_then(|catalogue| {
+            Actor::begin(
+                configuration,
+                authority,
+                catalogue,
+                move |deadline, cancel| opener.open(&native, deadline, cancel),
+            )
+        })
     }
     /// One tick of the automatic read-only lifecycle. The caller holds the profile
     /// store and authority locks (lock order store -> authorization -> recording), so a
@@ -3342,8 +3288,6 @@ struct Resources {
     live_input: Option<Box<dyn LiveInput>>,
     live_inputs: VecDeque<Box<dyn LiveInput>>,
     fail_live_spawn: bool,
-    /// Refusals the startup resume sees instead of its next selection admission.
-    resume_refusals: VecDeque<&'static str>,
 }
 fn io<T>(value: std::io::Result<T>) -> Result<T> {
     value.map_err(|_| "storage_unavailable")
@@ -3433,8 +3377,7 @@ impl Recording {
                 diagnostics,
                 diagnostics_error: Arc::new(AtomicBool::new(false)),
                 files,
-                #[cfg(test)]
-                cat_transport: Mutex::new(None),
+                cat_opener: std::sync::OnceLock::new(),
                 #[cfg(test)]
                 resources: Mutex::new(Resources::default()),
             });
@@ -3513,8 +3456,7 @@ impl Recording {
             diagnostics,
             diagnostics_error: Arc::new(AtomicBool::new(false)),
             files,
-            #[cfg(test)]
-            cat_transport: Mutex::new(None),
+            cat_opener: std::sync::OnceLock::new(),
             #[cfg(test)]
             resources: Mutex::new(Resources::default()),
         });
