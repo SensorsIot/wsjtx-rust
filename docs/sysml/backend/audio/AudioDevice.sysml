@@ -6,6 +6,7 @@ package WstxAudioDevice {
     private import WstxAudioControl::AudioState;
     private import WstxAudioControl::AudioConfig;
     private import WstxAudioStreams::SourceError;
+    private import WstxCapture::'CL-008-02';
     private import WstxModelBindings::ImplementationState;
     private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
@@ -44,6 +45,19 @@ package WstxAudioDevice {
         attribute closeMaxMs : Integer = 250 {
             doc /* A stop is answered with the state closed within this time, or with
                  failedClose. */ }
+    }
+
+    verification 'TC-002-002' {
+        doc /* The station's own IC-7300: its receive audio captured. */
+        subject audio : AudioInterface;
+        @TestLevel { cost = 4; location = TestLocation::station; }
+        @Automation { run = AutomationState::partial; method = "automated"; }
+        objective { verify 'CL-008-08'; verify 'CL-008-02'; }
+        @TestedBy {
+            test = "server/tests/receive/audio_hardware.rs::"
+                + "selected_radio_audio_capture_evidence; "
+                + "server/tests/receive/audio_listen.rs::selected_radio_audio_to_listening_wav";
+        }
     }
 
     verification 'TC-002-003' {

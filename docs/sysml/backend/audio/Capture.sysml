@@ -67,7 +67,14 @@ package WstxCapture {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-02'; }
-        @TestedBy { test = "server/tests/audio_contract.rs; server/tests/audio_receive.rs"; }
+        @TestedBy {
+            test = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; "
+                + "server/src/audio_tests.rs::each_loss_event_names_its_epoch_trigger; "
+                + "server/tests/source_contract.rs::"
+                + "epoch_requires_current_owner_ack_and_rejects_old_identity; "
+                + "server/tests/receive/audio_listen.rs::"
+                + "packet_queue_counts_invalid_full_and_clock_step_losses";
+        }
     }
 
     requirement 'CL-007-11' {

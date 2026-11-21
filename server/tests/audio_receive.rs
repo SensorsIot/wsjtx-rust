@@ -181,6 +181,7 @@ fn live_provider_analysis_boundary_is_native_packet_partition_invariant() {
     }
 }
 
+// Proves: TC-002-001, TC-007-012
 #[test]
 fn live_provider_known_gap_resets_history_without_renumbering_samples() {
     let mut provider = Provider::new();
@@ -210,6 +211,7 @@ fn live_provider_known_gap_resets_history_without_renumbering_samples() {
 }
 
 // Unknown native loss requires a new owner context.
+// Proves: TC-002-001
 #[test]
 fn live_provider_unknown_loss_requires_ack_and_rejects_old_window_context() {
     let mut provider = Provider::new();

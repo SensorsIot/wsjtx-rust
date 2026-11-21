@@ -128,7 +128,15 @@ package WstxLiveReceive {
                 + "server/src/recording_tests.rs::"
             + "latest_decode_cancel_and_failure_preserve_published_period_without_new_identity; "
                 + "server/src/recording_tests.rs::"
-                + "air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate";
+                + "air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate; "
+                + "server/tests/audio_receive.rs::"
+                + "live_provider_known_gap_resets_history_without_renumbering_samples; "
+                + "server/src/receive_http_tests.rs::"
+                + "live_native_fixture_reaches_real_manager_http_and_browser_callsign; "
+                + "server/src/receive_http_tests.rs::"
+                + "live_native_ft4_fixture_reaches_real_manager_http_and_browser_callsign; "
+                + "tests/receive-integration.test.cjs::"
+                + "real native audio reaches Rust manager HTTP and literal browser callsign";
         }
     }
 

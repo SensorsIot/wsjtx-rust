@@ -110,7 +110,8 @@ package WstxMessagePayload {
             test = "server/tests/decoder_vectors.rs::frozen_payload_channel_tone_vectors; "
                 + "server/tests/decoder_vectors.rs::canonical_payload_boundaries; "
                 + "server/tests/decoder_signal.rs::"
-                + "crc_valid_unsupported_and_invalid_payloads_are_retained";
+                + "crc_valid_unsupported_and_invalid_payloads_are_retained; "
+                + "server/tests/decoder_vectors.rs::rr73_packed_as_a_grid_square_is_the_roger";
         }
     }
 

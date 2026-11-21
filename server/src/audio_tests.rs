@@ -1,6 +1,7 @@
 use super::*;
 // Every capture-thread loss event names its own
 // epoch trigger (pool, contention and clock-step losses have no public injection path).
+// Proves: TC-002-001
 #[test]
 fn each_loss_event_names_its_epoch_trigger() {
     let f = NativeFormat {

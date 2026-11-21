@@ -195,6 +195,7 @@ impl recording::LiveInput for Input {
 
 // Cost2: isolated real HTTP server + Chromium on development PC; no hardware.
 // Mandatory release execution is registered as live-station-browser.
+// Proves: TC-007-012, TC-009-004
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_fixture_reaches_real_manager_http_and_browser_callsign() {
@@ -202,6 +203,7 @@ async fn live_native_fixture_reaches_real_manager_http_and_browser_callsign() {
 }
 
 // Same actual native provider, decoder, owner, HTTP and browser path in FT4 mode.
+// Proves: TC-007-012, TC-009-004
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_ft4_fixture_reaches_real_manager_http_and_browser_callsign() {

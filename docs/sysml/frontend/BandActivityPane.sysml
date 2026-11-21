@@ -408,7 +408,11 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-055-05'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs; "
+                + "tests/receive-integration.test.cjs::"
+                + "real native audio reaches Rust manager HTTP and literal browser callsign";
+        }
     }
     verification 'TC-037-004' {
         doc /* A change of contact only on a row that can start one. */

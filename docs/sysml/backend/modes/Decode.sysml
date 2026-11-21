@@ -69,12 +69,17 @@ package WstxDecode {
                 + "server/src/modes/decoder/snr_test.rs; "
                 + "server/src/modes/decoder/search_test.rs; "
                 + "server/src/modes/decoder/apriori_test.rs; "
-                + "server/tests/modes/decoder_live.rs";
+                + "server/tests/modes/decoder_live.rs; "
+                + "server/tests/decoder_signal.rs; "
+                + "server/tests/decoder_vectors.rs; "
+                + "server/src/modes/decoder/history.rs";
             covers = "the band limit, the baseband and symbol transforms, the bit metrics, "
                 + "the coarse FT4 search, the subtraction of decoded frames, channel "
                 + "decoding, the SNR measurement, the refinement of a candidate, the retry "
-                + "of a failed word, the guard against weak false words and the history "
-                + "of returned frames";
+                + "of a failed word, the guard against weak false words, the history "
+                + "of returned frames, the byte accounting of the frame history, the "
+                + "agreement of the planned and the scalar transform, and the channel "
+                + "decoder's repair of a corrupted word";
         }
         @FollowsSource {
             reference = "QEX, The FT4 and FT8 Communication Protocols, sections 2 to 5 and "
@@ -297,7 +302,11 @@ package WstxDecode {
                 + "server/tests/decoder_signal.rs::quality_corpus; "
                 + "server/tests/decoder_signal.rs::official_modern_recording_baselines; "
                 + "server/src/modes/decoder/search_test.rs::"
-                + "ft4_a_priori_recovers_weak_cq_and_qso_words";
+                + "ft4_a_priori_recovers_weak_cq_and_qso_words; "
+                + "server/tests/decoder_signal.rs::"
+                + "phase_drift_dynamic_range_and_residual_regressions; "
+                + "server/tests/decoder_signal.rs::recorded_corpus_reaches_jt9_deep_decodes; "
+                + "server/tests/decoder_signal.rs::same_frequency_preserves_two_temporal_frames";
         }
     }
 
@@ -322,7 +331,13 @@ package WstxDecode {
                 + "server/src/modes/decoder/search_test.rs::"
                 + "weak_qso_words_decode_only_with_the_right_calls; "
                 + "server/src/modes/decoder/search_test.rs::"
-                + "wrong_dx_call_never_yields_a_false_word";
+                + "wrong_dx_call_never_yields_a_false_word; "
+                + "server/tests/decoder_signal.rs::"
+                + "phase_drift_dynamic_range_and_residual_regressions; "
+                + "server/tests/decoder_signal.rs::"
+                + "resource_busy_live_overlap_and_pending_cancel; "
+                + "server/tests/decoder_signal.rs::"
+                + "live_busy_period_publishes_every_decode_promptly";
         }
     }
 
@@ -340,11 +355,16 @@ package WstxDecode {
                 + "physical_wrong_mode_reproduction_has_no_frame_or_search_error; "
                 + "server/tests/decoder_signal.rs::"
                 + "release_runtime_and_overlapping_window_history; "
-                + "server/tests/decoder_signal.rs::planned_scalar_and_gain_invariance; "
                 + "server/src/receive_http_tests.rs::"
                 + "resource_station_process_delta_and_owner_release; "
                 + "server/src/modes/decoder/physical_ft4_test.rs::"
-                + "qualified_support_count_keeps_the_256_257_barrier";
+                + "qualified_support_count_keeps_the_256_257_barrier; "
+                + "server/tests/decoder_signal.rs::"
+                + "cooperative_quanta_and_partial_cancellation; "
+                + "server/tests/decoder_signal.rs::"
+                + "phase_drift_dynamic_range_and_residual_regressions; "
+                + "server/tests/decoder_signal.rs::"
+                + "resource_busy_live_overlap_and_pending_cancel";
         }
     }
 

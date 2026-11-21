@@ -10,6 +10,7 @@ package WstxAudioPart {
     private import WstxStationTime::StationTimePort;
     private import WstxSoundDevice::SoundDevicePort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def AudioInterface {
@@ -30,6 +31,10 @@ package WstxAudioPart {
                 + "server/src/radio_setup.rs, server/src/source.rs, "
                 + "server/src/transmit/playback.rs, outside server/src/audio/ and "
                 + "client/src/audio/.";
+        }
+        @DetailTests {
+            tests = "server/tests/source_contract.rs";
+            covers = "the checks of a sample block and of an epoch's timing record";
         }
         attribute config : AudioConfig {
             doc /* Its configuration, as the last AudioDevices gave it. */ }

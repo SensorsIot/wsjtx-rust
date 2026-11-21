@@ -32,6 +32,7 @@ fn context(id: &str) -> (Arc<SourceDescriptor>, SourceTiming) {
     (descriptor, timing)
 }
 
+// Proves: TC-002-001
 #[test]
 fn epoch_requires_current_owner_ack_and_rejects_old_identity() {
     let mut latch = EpochLatch::default();
