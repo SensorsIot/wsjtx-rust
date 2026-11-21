@@ -267,10 +267,30 @@ RUST_TEST_FN = re.compile(r"\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s
 JS_TEST_NAME = re.compile(r"\s*test\s*\(\s*(['\"])((?:\\.|(?!\1)[^\r\n])*)\1")
 
 
+PYTHON_TEST_DEF = re.compile(r"([ \t]*)(?:async\s+)?def\s+(test_\w+)")
+PYTHON_CLASS = re.compile(r"([ \t]*)class\s+(\w+)")
+
+
+def python_test_name(lines: list[str], index: int, method: re.Match) -> str | None:
+    """The name `python_tests` gives the `def test_…` on line `index`: `<Class>.<name>` in a
+    class body, `<name>` at module level, none inside a function."""
+    indent = len(method[1].expandtabs())
+    if not indent:
+        return method[2]
+    for line in reversed(lines[:index]):
+        code = line.strip()
+        if not code or code.startswith(("#", "@")) or len(line.expandtabs()) - len(line.expandtabs().lstrip()) >= indent:
+            continue
+        owner = PYTHON_CLASS.match(line)
+        return f"{owner[2]}.{method[2]}" if owner else None
+    return None
+
+
 def naming_tests(source: str) -> list[tuple[str, set[str]]]:
     """(test name, case identities) of every test of `source` that names a case: by the
     `Proves:` tag attached to it (as `attached_proves` reads it, shorthand expanded) or, for
-    a JavaScript test, by its name. A Rust test is named by its function."""
+    a JavaScript test, by its name. A Rust test is named by its function, a Python test as
+    `python_tests` names it."""
     lines = source.splitlines()
     named = {}
     for index, line in enumerate(lines):
@@ -286,6 +306,8 @@ def naming_tests(source: str) -> list[tuple[str, set[str]]]:
     for test, cases in sorted(named.items()):
         if script := JS_TEST_NAME.match(lines[test]):
             name = re.sub(r"\\(.)", r"\1", script[2])
+        elif method := PYTHON_TEST_DEF.match(lines[test]):
+            name = python_test_name(lines, test, method)
         else:
             name = next((function[1] for code in lines[test:test + 12] if (function := RUST_TEST_FN.match(code))), None)
         if name is not None and cases:
@@ -3287,14 +3309,22 @@ def part_code(model: Model, links: dict, all_modules: list[str]) -> dict[str, li
 def value_faults(model: Model, entries: dict, links: dict, root: Path) -> list[tuple]:
     """TR-16: each compared element is covered, in this order, by V3 (every clause naming or
     reaching it is target or partial), V4 (its `@CodeDiffers`, refused where its code
-    matches), V1 (its constant, name or variable in its code) or V2 (a test bound to a case
-    of a clause reaching it holds its qualified name)."""
+    matches), V1 (its constant, name or variable in its code) or V2: a test bound to a case
+    of a clause reaching it (the test `symbol` of a `path::symbol` binding, or a test of a
+    bound file that names the case by its `Proves:` tag or title) holds in its own code,
+    outside comments, its qualified name, or its definition's qualified name and the
+    feature's name. Its own code is its body and the bodies of the functions of its file it
+    calls, directly or through each other. A comment is a Rust `//`, `///`, `//!` or block
+    comment, a Node `//` or block comment, or a Python `#` comment or docstring. Another
+    test, the file's top level, a comment before the test and a comment inside it do not
+    count. A variable is never verified by V2."""
     modules = code_modules(root)
     scope = CodeScope(root, modules)
     controls = control_packages(model)
     elements = compared_elements(model, controls)
     reach = clause_reach(model, entries)
     codes = part_code(model, links, modules)
+    readers = BoundTestCode(root)
     faults = []
 
     def code_of(element: Element) -> list[str]:
@@ -3374,23 +3404,272 @@ def value_faults(model: Model, entries: dict, links: dict, root: Path) -> list[t
         if found and item.kind == "value":
             faults.append(("TR-16", element.key, line, f"Model and code differ: {item.qualified}: {what}"))
             continue
-        tests = {binding.partition("::")[0] for clause in clauses for case in entries[clause]["cases"]
-                 for binding in entries[case]["bindings"]}
         package, _, rest = item.qualified.partition("::")
         definition = package + "::" + rest.rsplit("::", 1)[0]
-        if item.kind != "variable" and any(held_in(root / test, item.qualified, definition, item.element.name) for test in tests):
+        if item.kind != "variable" and any(
+                held_in(code, item.qualified, definition, item.element.name)
+                for clause in clauses for case in entries[clause]["cases"]
+                for binding in entries[case]["bindings"] if binding
+                for code in readers.codes(case, binding)):
             continue
         faults.append(("TR-16", element.key, line, "Value not verified: " + item.qualified))
     return faults
 
 
-def held_in(path: Path, qualified: str, definition: str, name: str) -> bool:
-    """V2: a test file holds the qualified name, or its definition's and the feature's name."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    return qualified in text or definition in text and re.search(r"(?<![\w'])" + re.escape(name.strip("'")) + r"(?![\w'])", text) is not None
+def held_in(code: str, qualified: str, definition: str, name: str) -> bool:
+    """V2: the code of one bound test holds, outside comments, the qualified name, or both its
+    definition's qualified name and the feature's name. The code is the test's own code: its
+    body and the bodies of the functions of its file it calls, directly or through each
+    other (`BoundTestCode`); another test, the file's top level, a comment before the test
+    and a comment inside it are not in it."""
+    return qualified in code or definition in code and re.search(r"(?<![\w'])" + re.escape(name.strip("'")) + r"(?![\w'])", code) is not None
+
+
+# ---- The own code of a bound test (TR-16, V2) ----
+
+RUST_FUNCTION = re.compile(r"(?<![\w$])fn\s+(\w+)")
+JS_FUNCTION = re.compile(r"(?<![\w$.])(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(")
+JS_ARROW_HEAD = re.compile(r"(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?")
+JS_ARROW_PARAMETER = re.compile(r"[A-Za-z_$][\w$]*\s*=>")
+CALL_FORM = re.compile(r"(?<![\w$])([A-Za-z_$][\w$]*)\s*\(")
+CLOSERS = {"(": ")", "[": "]", "{": "}"}
+
+
+def spaced_out(source: str, spans) -> str:
+    """`source` with each (start, end) span replaced by spaces, its line breaks kept."""
+    code = list(source)
+    for start, end in spans:
+        code[start:end] = re.sub(r"[^\n]", " ", source[start:end])
+    return "".join(code)
+
+
+def closing(code: str, opening: int) -> int:
+    """The end, after the closing bracket, of the bracket at `opening` in `code` (comments and
+    strings blanked); refused when it does not close."""
+    stack, index = [], opening
+    while index < len(code):
+        character = code[index]
+        if character in CLOSERS:
+            stack.append(CLOSERS[character])
+        elif character in ")]}":
+            if not stack or stack.pop() != character:
+                break
+            if not stack:
+                return index + 1
+        index += 1
+    raise SourceUnreadable("a bracket without its end", opening)
+
+
+class SourceCode:
+    """One source file read for V2: `functions` maps each function name to its (start, end)
+    spans, `tests` maps each test name to its spans, `code` is the text without comments,
+    `masked` the text without comments and strings."""
+
+    def __init__(self, code: str, masked: str, functions: dict, tests: dict, calls=None):
+        self.code, self.masked, self.functions, self.tests = code, masked, functions, tests
+        self._calls = calls
+
+    def calls(self, span) -> set[str]:
+        if self._calls is not None:
+            return self._calls.get(span, set())
+        return set(CALL_FORM.findall(self.masked, span[0], span[1]))
+
+    def own_code(self, name: str) -> list[str]:
+        """The code of each test named `name`: its body and the bodies of the functions of
+        the file it calls, directly or through each other; other tests never."""
+        test_spans = {span for spans in self.tests.values() for span in spans}
+        found = []
+        for span in self.tests.get(name) or self.functions.get(name, []):
+            seen, todo = {span}, [span]
+            while todo:
+                for called in self.calls(todo.pop()):
+                    for helper in self.functions.get(called, []):
+                        if helper not in seen and helper not in test_spans:
+                            seen.add(helper)
+                            todo.append(helper)
+            found.append("\n".join(self.code[start:end] for start, end in sorted(seen)))
+        return found
+
+
+def rust_code(source: str) -> SourceCode:
+    """The functions and tests of Rust source; a test is a function under `#[test]` or
+    `#[tokio::test]`, or any function named by a `path::symbol` binding."""
+    segments = rust_segments(source)
+    code = spaced_out(source, [(start, end) for kind, start, end in segments if kind == "comment"])
+    masked = spaced_out(source, [(start, end) for _kind, start, end in segments])
+    characters, index = [], 0
+    while index < len(masked):
+        if masked[index] == "'":
+            literal = RUST_CHARACTER.match(masked, index) or RUST_LIFETIME.match(masked, index)
+            end = literal.end() if literal else index + 1
+            if literal and literal.group().endswith("'"):
+                characters.append((index, end))
+        elif word := SOURCE_WORD.match(masked, index):
+            end = word.end()
+        else:
+            end = index + 1
+        index = end
+    masked = spaced_out(masked, characters)
+    functions = {}
+    for match in RUST_FUNCTION.finditer(masked):
+        index, depth = match.end(), 0
+        while index < len(masked):
+            if masked[index] in "([":
+                depth += 1
+            elif masked[index] in ")]":
+                depth -= 1
+            elif masked[index] in "{;" and depth == 0:
+                break
+            index += 1
+        if index < len(masked) and masked[index] == "{":
+            functions.setdefault(match[1], []).append((match.start(), closing(masked, index)))
+    marked = {name for name, _offset in rust_test_names(source, segments)}
+    tests = {name: spans for name, spans in functions.items() if name in marked}
+    return SourceCode(code, masked, functions, tests)
+
+
+def javascript_code(source: str) -> SourceCode:
+    """The functions (`function name(`, `const name = … =>`) and the tests (each `test(`,
+    `it(` call by its title, as `node_tests` reads it) of JavaScript source."""
+    regexes = []
+    found, _end = javascript_segments(source, regexes=regexes)
+    comments = [(start, end) for kind, start, end in found if kind == "comment"]
+    if source.startswith("#!"):
+        comments.append((0, line_end(source, 0)))
+    code = spaced_out(source, comments)
+    masked = spaced_out(source, comments +[(start, end) for _kind, start, end in found] + regexes)
+    strings = {start: end for kind, start, end in found if kind == "string"}
+    functions = {}
+    for match in JS_FUNCTION.finditer(masked):
+        body = masked.find("{", closing(masked, match.end() - 1))
+        if body >= 0:
+            functions.setdefault(match[1], []).append((match.start(), closing(masked, body)))
+    for match in JS_ARROW_HEAD.finditer(masked):
+        index = match.end()
+        if masked.startswith("(", index):
+            index = closing(masked, index)
+            arrow = re.compile(r"\s*=>").match(masked, index)
+        else:
+            arrow = JS_ARROW_PARAMETER.match(masked, index)
+        if not arrow:
+            continue
+        index = arrow.end()
+        while index < len(masked) and masked[index] in " \t":
+            index += 1
+        if masked.startswith("{", index):
+            end = closing(masked, index)
+        else:
+            end, depth = index, 0
+            while end < len(masked):
+                character = masked[end]
+                if character in CLOSERS:
+                    depth += 1
+                elif character in ")]}":
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif character in ";\n" and depth == 0:
+                    break
+                end += 1
+        functions.setdefault(match[1], []).append((match.start(), end))
+    tests = {}
+    for match in JS_TEST_CALL.finditer(masked):
+        if not match[1] and JS_FUNCTION_HEAD.search(masked, max(0, match.start() - 40), match.start()):
+            continue
+        index = match.end()
+        while index < len(masked) and masked[index].isspace():
+            index += 1
+        opening = source[index] if index < len(source) else ""
+        if opening in ("'", '"') and index + 1 in strings:
+            title = re.sub(r"\\(.)", r"\1", source[index + 1:strings[index + 1]])
+        elif opening == "`":
+            end = javascript_template(source, index, [])
+            title = source[index + 1:end - 1].replace("\r\n", "\n").replace("\n", "\\n")
+        else:
+            continue
+        tests.setdefault(title, []).append((match.start(), closing(masked, match.end() - 1)))
+    return SourceCode(code, masked, functions, tests)
+
+
+def python_code(source: str) -> SourceCode:
+    """The functions and the tests (`<Class>.<name>` or `<name>`, as `python_tests` names them)
+    of Python source; comments are its `#` comments and the docstrings."""
+    module = ast.parse(source)
+    lines = source.splitlines(keepends=True)
+    starts = [0]
+    for text in lines:
+        starts.append(starts[-1] + len(text))
+
+    def offset(line: int, column: int) -> int:
+        """The character offset of a 1-based line and a UTF-8 byte column."""
+        text = lines[line - 1] if line <= len(lines) else ""
+        return starts[line - 1] + len(text.encode("utf-8")[:column].decode("utf-8", "ignore"))
+
+    comments = []
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.COMMENT:
+            comments.append((starts[token.start[0] - 1] + token.start[1], starts[token.end[0] - 1] + token.end[1]))
+    for node in ast.walk(module):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                comments.append((offset(first.lineno, first.col_offset), offset(first.end_lineno, first.end_col_offset)))
+    code = spaced_out(source, comments)
+    functions, tests, calls = {}, {}, {}
+
+    def span(node) -> tuple[int, int]:
+        return starts[node.lineno - 1], starts[min(node.end_lineno, len(lines))]
+
+    def scan(body: list, owner: str | None):
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
+                tests.setdefault(f"{owner}.{node.name}" if owner else node.name, []).append(span(node))
+            elif isinstance(node, ast.ClassDef):
+                scan(node.body, node.name)
+
+    scan(module.body, None)
+    for node in ast.walk(module):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            functions.setdefault(node.name, []).append(span(node))
+            calls[span(node)] = {call.func.id if isinstance(call.func, ast.Name) else call.func.attr
+                                 for call in ast.walk(node) if isinstance(call, ast.Call)
+                                 and isinstance(call.func, (ast.Name, ast.Attribute))}
+    return SourceCode(code, code, functions, tests, calls)
+
+
+class BoundTestCode:
+    """V2's reader: the code of each test bound to a case, read once per file. A file that
+    cannot be read, or code its reader cannot place, gives no code."""
+
+    READERS = {"rust": rust_code, "node": javascript_code, "python": python_code}
+
+    def __init__(self, root: Path):
+        self.root, self.files, self.found = root, {}, {}
+
+    def source(self, path: str):
+        if path not in self.files:
+            try:
+                source = source_text(path, self.root / path)
+                read = self.READERS[TEST_KINDS.get(posixpath.splitext(path)[1], "node")](source)
+                self.files[path] = read
+            except (OSError, ValueError, SyntaxError, IndexError, tokenize.TokenError):
+                self.files[path] = None
+        return self.files[path]
+
+    def codes(self, case: str, binding: str) -> list[str]:
+        """The code, without comments, of each test `bound_tests` names for `case` by
+        `binding`."""
+        if (case, binding) not in self.found:
+            codes = []
+            if code := self.source(binding.partition("::")[0]):
+                try:
+                    names = {line.split(" ", 1)[1] for line in bound_tests(case, [binding], self.root)}
+                except (OSError, ValueError):
+                    names = set()
+                for name in sorted(names):
+                    codes += code.own_code(name)
+            self.found[(case, binding)] = codes
+        return self.found[(case, binding)]
 
 
 # ---- History in comments, names and test strings (TR-22) ----
