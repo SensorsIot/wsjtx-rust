@@ -68,7 +68,7 @@ gate:
   # protocol-thin, recording-thin and radio-selection-thin run beside other groups: measured
   # stable there (Project-Specifics.md, Parallel groups). The CPU measurements
   # keep exclusive: ["*"], and the CPU-heavy decoder groups stay apart from protocol-thin and
-  # recording-thin (link-measurement tag) in suites.yaml.
+  # recording-thin (link-measurement tag) in harness/project/suites/.
   timing_alone: false
   # On D:, which has the room; C: holds TEMP and the live station. A machine without D:
   # falls back to the default; old folders in the default root are pruned too.

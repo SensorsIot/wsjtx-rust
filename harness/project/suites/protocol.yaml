@@ -1,0 +1,39 @@
+- suite: protocol
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py protocol {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-skip-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
+  paths:
+  - server/
+  - client/
+  - tests/
+  - tools/test/
+  - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/sysml/
+  - .github/workflows/windows-rust.yml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/main.rs
+  - server/src/web/link_log.rs
+  - client/app.js
+  - client/index.html
+  - client/style.css
+  - tests/communication.test.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  - package.json
+  - package-lock.json
+  build: cargo build --workspace --locked
+  needs: "Node 24, npm ci, Playwright Chromium. Windows PC; disposable server/browser/TLS. Functional status, session, reconnect and TLS cases; the TC-021-007 silence bounds run in protocol-thin (TC-021-008 dead peer removal and the TC-080-001 link byte log are Rust tests of wstx-rust)."

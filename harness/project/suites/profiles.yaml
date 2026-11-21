@@ -1,0 +1,50 @@
+- suite: profiles
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/profiles.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py profiles {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 tests/profiles.test.cjs
+  paths:
+  - server/
+  - client/
+  - tests/
+  - tools/test/
+  - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/sysml/
+  - .github/workflows/windows-rust.yml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/main.rs
+  - server/src/profile.rs
+  - server/src/authorization.rs
+  - server/src/authorization_http.rs
+  - client/app.js
+  - client/index.html
+  - client/style.css
+  - client/authorization.js
+  - client/recording.js
+  - client/recording.css
+  - tests/profiles.test.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
+  - tools/test/node/audio-endpoints-route.cjs
+  # The profile values and outcome names its tests read (Profile.sysml), the unit suffixes
+  # (Units.sysml) and the JavaScript model-value reader.
+  - docs/sysml/backend/profile/Profile.sysml
+  - docs/sysml/shared/Units.sysml
+  - tools/test/node/model-values.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  - package.json
+  - package-lock.json
+  build: cargo build --workspace --locked
+  needs: Node 24, npm ci, Playwright Chromium. Windows PC; disposable station profiles and real browser windows.

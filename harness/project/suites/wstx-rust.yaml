@@ -1,0 +1,54 @@
+- suite: wstx-rust
+  cost: 2
+  # Its own Cargo output directory: `cargo test` links target/debug/wstx-rust.exe with the
+  # dev-dependency features, which would replace the executable the browser groups run
+  # (Windows refuses to replace a running executable). The decoder unit tests run in
+  # wstx-rust-decoder; the two release-only decoder phase tests
+  # (resource_phase_detection_observes_work_without_publishing and
+  # resource_phase_subtraction_cancels_after_actual_transform_before_mutation) run in
+  # decoder-quality.
+  # --bins --examples --test '*' plus --lib is --all-targets of this workspace (no bench
+  # targets; --benches would also select the lib and bins). A new bench target needs its own
+  # --bench here. The workspace holds the test-tools crate wstx-test-tools: its unit tests and
+  # tests/ run here too.
+  run: >-
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
+    cargo test --workspace --locked --bins --examples --test '*' &&
+    cargo test --workspace --locked --lib -- --skip decoder::
+  # The filter form (gate.py --suite --filter; Project-Specifics.md, Functional test selection):
+  # the steps of run, each narrowed to the filter words by harness/project/tools/filter_run.py.
+  filter: >-
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
+    python harness/project/tools/filter_run.py wstx-rust {filter}
+    @libtest cargo test --workspace --locked --bins --examples --test '*'
+    @libtest cargo test --workspace --locked --lib -- --skip decoder::
+  paths:
+  - server/
+  - fixtures/transmit/
+  - fixtures/decoder/
+  - fixtures/flex/
+  - tests/
+  - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
+  - tools/test/blocked-ports.json
+  - tools/test/fixtures/model-values/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - .github/workflows/windows-rust.yml
+  - docs/sysml/
+  select:
+  - docs/sysml/
+  - server/
+  - fixtures/transmit/
+  - fixtures/decoder/
+  - fixtures/flex/
+  - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
+  - tools/test/blocked-ports.json
+  - tools/test/fixtures/model-values/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  build: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" cargo test --workspace --locked --all-targets --no-run
+  needs: "Pinned Rust toolchain. Windows PC; no radio or live station. Every unit and integration test of the workspace except the library's decoder:: unit tests (wstx-rust-decoder), in a separate Cargo output directory so that it runs beside the browser groups."

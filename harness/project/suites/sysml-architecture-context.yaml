@@ -1,0 +1,18 @@
+# TR-07 on the working model: test_architecture_context.py reads Context.sysml and the
+# packages of interfaces/external/ with the tool's parser, without the Pilot.
+- suite: sysml-architecture-context
+  cost: 2
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_architecture_context.py\" -q"
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-architecture-context {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_architecture_context.py" -q
+  paths:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/tests/test_architecture_context.py
+  select:
+  - docs/sysml/Context.sysml
+  - docs/sysml/interfaces/external/
+  - tools/sysml.py
+  - tools/sysml/tests/test_architecture_context.py
+  needs: "Python 3.12. Windows PC; TR-07 (TV-001, TV-002): the outside things of ShackContext with their ports, each joined once through an interface of interfaces/external to its station function, read from Context.sysml and compared with the test's owner table. No Java, Pilot, radio or live service."

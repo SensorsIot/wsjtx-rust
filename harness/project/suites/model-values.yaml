@@ -1,0 +1,19 @@
+- suite: model-values
+  cost: 2
+  run: node --test --test-concurrency=1 tools/test/node/model-values.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py model-values {filter}
+    @node node --test --test-concurrency=1 tools/test/node/model-values.test.cjs
+  paths:
+  - tools/test/node/model-values.cjs
+  - tools/test/node/model-values.test.cjs
+  - tools/test/fixtures/model-values/
+  - package.json
+  - package-lock.json
+  select:
+  - tools/test/node/model-values.cjs
+  - tools/test/node/model-values.test.cjs
+  - tools/test/fixtures/model-values/
+  - package.json
+  - package-lock.json
+  needs: "Node 24. Windows PC; TR-20 (TV-158, TV-159): the JavaScript model-value reader on the fixture tree tools/test/fixtures/model-values/ and its list of expected values. No browser, radio or Rust build."

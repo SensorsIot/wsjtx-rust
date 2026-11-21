@@ -1,0 +1,29 @@
+- suite: source-model-traces
+  cost: 2
+  run: python tools/sysml.py traces
+  # No filter form: the run is a model check with no tests to select.
+  paths:
+  - client/
+  - server/
+  - tests/
+  - docs/sysml/
+  - tools/
+  - fixtures/
+  - README.md
+  - Cargo.toml
+  - rust-toolchain.toml
+  - .github/workflows/fortran-stage-diagnostics.yml
+  - .github/workflows/windows-rust.yml
+  select:
+  - client/
+  - server/
+  - tests/
+  - docs/sysml/
+  - tools/
+  - fixtures/
+  - README.md
+  - Cargo.toml
+  - rust-toolchain.toml
+  - .github/workflows/fortran-stage-diagnostics.yml
+  - .github/workflows/windows-rust.yml
+  needs: Python 3.12. Windows PC; canonical source/model identity and binding checks and the history check of comments, test names, test strings and Markdown (TR-22) over every file it reads. No Java, model mutation suite, compilation, radio or behavior proof.

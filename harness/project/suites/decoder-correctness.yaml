@@ -1,0 +1,61 @@
+- suite: decoder-correctness
+  cost: 2
+  # The decode correctness, thread-parity and jt9-parity passes of decoder_signal: the
+  # ordinary named passes minus the two that assert a wall-clock bound (the 50 ms
+  # cooperative quantum, with its partial-cancellation case, and the busy-period latency).
+  # decoder-quality runs all of them, bound to its artifact, and the resource matrix when
+  # a timing input changes (every production decoder source).
+  # The forged-cache refusal (test_cache.py) and the resource harness's own tests (owned-worker
+  # cleanup, concurrency qualification) are test-tool tests outside decoder_signal.
+  run: >-
+    cargo test --release --locked --test decoder_signal -- --test-threads=1
+    --skip release_runtime_and_overlapping_window_history
+    --skip cooperative_quanta_and_partial_cancellation
+    --skip live_busy_period_publishes_every_decode_promptly &&
+    cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1 &&
+    python tools/test/python/independent-vector-tool/test_cache.py
+  # Under --filter the forged-cache refusal test_cache.py, a script that selects no tests, is
+  # left out.
+  filter: >-
+    python harness/project/tools/filter_run.py decoder-correctness {filter}
+    @libtest cargo test --release --locked --test decoder_signal -- --test-threads=1
+    --skip release_runtime_and_overlapping_window_history
+    --skip cooperative_quanta_and_partial_cancellation
+    --skip live_busy_period_publishes_every_decode_promptly
+    @libtest cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1
+  paths:
+  - server/src/decoder/
+  - server/src/modes/decoder/
+  - server/src/lib.rs
+  - server/tests/decoder_signal.rs
+  - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - docs/sysml/backend/modes/Decode.sysml
+  - docs/sysml/backend/modes/MessagePayload.sysml
+  - docs/sysml/shared/Units.sysml
+  # Selected by what decoder-quality does not time but these passes read: the decoder
+  # fixtures (the jt9 parity corpus, baselines, vectors) and the library root. A production
+  # decoder source, decoder_signal.rs or a Cargo pin selects decoder-quality, which runs
+  # these passes too (bound to its artifact). The decoder's *_test.rs files are not in this
+  # binary (wstx-rust-decoder runs them, decoder-quality the two release-only phase tests).
+  # The model files are those whose values these
+  # passes read: DecodeQuality and DecodeBudgets (Decode.sysml), FrameStatus
+  # (MessagePayload.sysml) and the unit suffixes of the values with a unit (Units.sysml).
+  select:
+  - fixtures/decoder/
+  - server/src/lib.rs
+  - tools/test/rust/
+  - tools/test/python/independent-vector-tool/
+  - docs/sysml/backend/modes/Decode.sysml
+  - docs/sysml/backend/modes/MessagePayload.sysml
+  - docs/sysml/shared/Units.sysml
+  build: cargo test --release --locked --test decoder_signal --no-run
+  # CPU-heavy (12-thread busy-period decode): kept apart from the timing suites that run
+  # beside other groups (gate.timing_alone: false).
+  exclusive: [link-measurement]
+  needs: "Pinned Rust, 64-bit Windows. The decoder_signal correctness passes: the original quality cases, independent waveforms, gain invariance, unmodulated and wrong-mode sources, CRC/payload retention, forged-cache refusal, phase-drift/dynamic-range regressions, official recording baselines, the jt9 deep-decode parity corpus, same-frequency frames, physical noise, the thread parity on 1/4/12 threads (its speed-up is only printed), owned-worker cleanup and the concurrency-qualification logic. WSTX_SAMPLE_DIR, WSTX_DECODER_OFFICIAL_FT8, WSTX_DECODER_CACHE, WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION name the verified inputs; WSTX_DECODER_SYNCHRONIZATION names the root of the synchronization inputs, one folder per generator_sha256 of synchronization-cases.json, composed on first use and verified afterwards; missing inputs fail closed. Not a measurement: it runs beside other groups."

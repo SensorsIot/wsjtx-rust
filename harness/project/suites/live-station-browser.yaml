@@ -1,0 +1,70 @@
+- suite: live-station-browser
+  cost: 2
+  run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_ -- --nocapture --skip receive_http_tests::live_native_busy_period_rows_promptly"
+  filter: >-
+    python harness/project/tools/filter_run.py live-station-browser {filter}
+    @libtest cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_ -- --nocapture --skip receive_http_tests::live_native_busy_period_rows_promptly
+  paths:
+  - server/src/main.rs
+  - server/src/profile.rs
+  - server/src/recording.rs
+  - server/src/recording_http.rs
+  - server/src/receive.rs
+  - server/src/receive_http.rs
+  - server/src/receive_http_tests.rs
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/decoder/
+  - server/src/modes/decoder/
+  - server/src/lib.rs
+  - client/
+  - tests/receive-integration.test.cjs
+  - tests/frontend/receive-latency.test.cjs
+  - tests/frontend/receive-page.test.cjs
+  - tools/test/node/page-watch.cjs
+  - tools/test/node/live-page-check.cjs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/main.rs
+  - server/src/profile.rs
+  - server/src/recording.rs
+  - server/src/recording_http.rs
+  - server/src/receive.rs
+  - server/src/receive_http.rs
+  - server/src/receive_http_tests.rs
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/decoder/
+  - server/src/modes/decoder/
+  - server/src/lib.rs
+  - client/
+  - tests/receive-integration.test.cjs
+  - tests/frontend/receive-latency.test.cjs
+  - tests/frontend/receive-page.test.cjs
+  - tools/test/node/page-watch.cjs
+  - tools/test/node/live-page-check.cjs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  build: cargo test --release --locked --bin wstx-rust --no-run
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; actual isolated Router and production source/converter/receive owner/modem/browser with independently verified native packets. WSTX_DECODER_VECTORS must name the pinned frozen cache; verify-only, no gate-time download. Missing inputs fail closed. No physical audio device, CAT or network service. WSTX_SAMPLE_DIR names the busy recording of the page kept across a restart and periods (tests/frontend/receive-page.test.cjs, its own loopback server, no transmit). Cheap seeded manager/epoch/ring cases remain in debug. The busy-period latency case runs in live-station-latency."

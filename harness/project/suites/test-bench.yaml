@@ -1,0 +1,15 @@
+- suite: test-bench
+  cost: 2
+  run: python -m unittest discover -s tools/test/powershell -v
+  filter: >-
+    python harness/project/tools/filter_run.py test-bench {filter}
+    @unittest python -m unittest discover -s tools/test/powershell -v
+  paths:
+  - tools/test/powershell/
+  - tools/deploy/tests/pwsh.py
+  - tools/deploy/agent-client.ps1
+  - tools/deploy/station-update/launcher.ps1
+  select:
+  - tools/test/powershell/
+  - tools/deploy/tests/pwsh.py
+  needs: "Python 3.12, Windows PowerShell 5.1 and git with the checkout. Windows PC. Every serial port, station process, scheduled task, station HTTP call and emulator process is a mock function in a temporary sandbox. No station, radio, emulator or network service."

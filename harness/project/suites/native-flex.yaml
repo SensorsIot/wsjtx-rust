@@ -1,0 +1,42 @@
+- suite: native-flex
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/flexAdapter/native-flex.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py native-flex {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 tests/flexAdapter/native-flex.test.cjs
+  paths:
+  - server/
+  - client/
+  - tests/
+  - tools/test/
+  - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/sysml/
+  - .github/workflows/windows-rust.yml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/flex/
+  - server/src/flexAdapter/
+  - server/src/profile.rs
+  - server/src/recording.rs
+  - server/src/selection_http.rs
+  - server/src/receive/receive_startup.rs
+  - client/recording.js
+  - server/src/flex_http.rs
+  - server/src/authorization.rs
+  - server/src/authorization_http.rs
+  - server/src/radio_setup.rs
+  - server/src/main.rs
+  - server/src/receive_http.rs
+  - client/app.js
+  - client/contact.js
+  - client/index.html
+  - tests/flexAdapter/native-flex.test.cjs
+  - tools/test/node/flex-emulator.cjs
+  - tools/test/node/flex-live-check.cjs
+  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; real candidate stations with disposable HTTPS profiles against the independent loopback native-API emulator (TCP/UDP on 127.0.0.1 only, discovery on per-test loopback ports) and the verified WSTX_DECODER_VECTORS for one FT8 period. No FlexRadio, SmartSDR/CAT/DAX program, audio device, broadcast, LAN discovery or network service.

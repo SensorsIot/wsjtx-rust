@@ -1,4 +1,4 @@
-"""TR-02: the suites of harness/project/suites.yaml select and fingerprint the model checks."""
+"""TR-02: the suites of the registry harness/project/suites/ select and fingerprint the model checks."""
 import fnmatch
 import importlib.util
 from pathlib import Path
@@ -35,7 +35,7 @@ def discover_patterns(rows):
 class TraceSelectionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.rows = registry.parse((ROOT / "harness/project/suites.yaml").read_text(encoding="utf-8"))
+        cls.rows = registry.load(ROOT)
 
     def test_code_changes_select_fast_trace_check_without_full_model_suite(self):
         """TV-126 (TR-02): a code change selects traces, not the full model suite."""
@@ -121,7 +121,7 @@ class TraceSelectionTests(unittest.TestCase):
         """TV-132 (TR-02): the suite definitions select both architecture suites."""
         architecture = [name for name in self.rows if name.startswith(VALIDATOR)]
         self.assertIn(VALIDATOR, architecture)
-        self.assert_selection("harness/project/suites.yaml", architecture, ())
+        self.assert_selection("harness/project/suites/sysml-architecture.yaml", architecture, ())
 
     # T4: source edits select neither architecture suite; they invalidate the
     # validator suite's evidence (its pinned checks read them), not the working-model suite's.

@@ -1,0 +1,36 @@
+# The validator tests of the architecture: every test_a*.py but test_architecture_context.py.
+# One unittest pattern cannot leave out a single name, so -p takes the test_a*.py names
+# whose next-to-last letter before .py is not `x` (test_architecture_context.py ends in `xt`).
+# A new test_a*.py file ending in x and one letter matches no suite's pattern, and
+# test_trace_selection.py (sysml-tools, selected by any tools/sysml/ change) refuses it
+# (TV-134); it also refuses a validator test file this select does not list (TV-131).
+# tools/sysml/tests/test_a_ selects the new files named test_a_*.py.
+- suite: sysml-architecture
+  cost: 2
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_a*[!x]?.py\" -q"
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-architecture {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_a*[!x]?.py" -q
+  paths:
+  - tools/sysml.py
+  - tools/sysml/Validate.java
+  - tools/sysml/toolchain.json
+  - tools/sysml/tests/test_architecture_integrity.py
+  - tools/sysml/tests/test_architecture_oracle.py
+  - tools/sysml/tests/test_architecture_structure.py
+  - tools/sysml/tests/test_a_
+  # Fingerprint only, never select: a model or source edit changes its evidence, not its
+  # selection (TV-133).
+  - docs/sysml/
+  - client/
+  - server/
+  - tests/
+  select:
+  - tools/sysml.py
+  - tools/sysml/Validate.java
+  - tools/sysml/toolchain.json
+  - tools/sysml/tests/test_architecture_integrity.py
+  - tools/sysml/tests/test_architecture_oracle.py
+  - tools/sysml/tests/test_architecture_structure.py
+  - tools/sysml/tests/test_a_
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; TR-06 to TR-09 (TV-003 to TV-032): `oracle`, the architecture comparison and the deployment rules on fixture trees in the finished form, one full Pilot validation per model state in a bounded pool. Selected by the tool that judges the model, the validator Validate.java, its library pin toolchain.json and its own test files (which hold the fixtures), not by a model edit or the oracle file: the working model is judged by sysml-architecture-context and sysml-documentation (check). Model and source edits change its fingerprint only. No radio or live service."

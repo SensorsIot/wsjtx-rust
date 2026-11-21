@@ -1,0 +1,69 @@
+- suite: live-station-latency
+  cost: 2
+  timing: true
+  timing_inputs:
+  - server/src/main.rs
+  - server/src/receive.rs
+  - server/src/receive_http.rs
+  - server/src/receive_http_tests.rs
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/decoder/
+  - server/src/modes/decoder/
+  - client/recording.js
+  - tests/frontend/receive-latency.test.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  - package.json
+  - package-lock.json
+  - tools/test/python/windows_process_metrics.py
+  - docs/sysml/backend/modes/Decode.sysml
+  - docs/sysml/shared/Units.sysml
+  exclusive: ["*"]
+  timing_classes: [display, compute]
+  build: cargo test --release --locked --bin wstx-rust --no-run
+  run: "cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture && cargo test --release --locked --bin wstx-rust receive_http_tests::resource_station_process_delta_and_owner_release -- --exact --ignored --nocapture"
+  filter: >-
+    python harness/project/tools/filter_run.py live-station-latency {filter}
+    @libtest cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_busy_period_rows_promptly -- --exact --nocapture
+    @libtest cargo test --release --locked --bin wstx-rust receive_http_tests::resource_station_process_delta_and_owner_release -- --exact --ignored --nocapture
+  # Reachability (harness reachability.py): the busy-period case starts
+  # tests/frontend/receive-latency.test.cjs and prints its output only when it fails.
+  reach:
+    launches:
+      live_native_busy_period_rows_promptly: [tests/frontend/receive-latency.test.cjs]
+  paths:
+  - server/src/main.rs
+  - server/src/profile.rs
+  - server/src/recording.rs
+  - server/src/recording_http.rs
+  - server/src/receive.rs
+  - server/src/receive_http.rs
+  - server/src/receive_http_tests.rs
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/decoder/
+  - server/src/modes/decoder/
+  - server/src/lib.rs
+  - client/
+  - tests/receive-integration.test.cjs
+  - tests/frontend/receive-latency.test.cjs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  - tools/test/python/windows_process_metrics.py
+  - docs/sysml/backend/modes/Decode.sysml
+  - docs/sysml/shared/Units.sysml
+  needs: "Pinned Rust, Python, Node 24 and Playwright Chromium. Windows PC; timing suite: the busy-period browser latency case through the actual isolated Router, receive owner and browser, and the station process case (CL-007-04 regression detector only, never its evidence: at most 96 MiB private-commit delta, at most 250 ms owner release) through tools/test/python/windows_process_metrics.py. WSTX_DECODER_VECTORS and WSTX_SAMPLE_DIR must name the verified fixtures; missing inputs fail closed. Runs only when the router, the receive/source/audio/decoder pipeline, the recording client that polls and paints the rows, its test files or the toolchain change, or on request (Harness-Timing: yes)."

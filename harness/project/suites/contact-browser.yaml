@@ -1,0 +1,39 @@
+- suite: contact-browser
+  cost: 2
+  run: cargo test --release --locked --bin wstx-rust contact_http::tests::contact_browser_ -- --nocapture
+  # No filter form: the run is exactly one test, so the whole suite is that test.
+  paths:
+  - server/
+  - client/
+  - tests/contact.test.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/main.rs
+  - server/src/contact.rs
+  - server/src/contact_http.rs
+  - server/src/contact_http_tests.rs
+  - server/src/logbook.rs
+  - server/src/logbook_http.rs
+  - server/src/transmit_http.rs
+  - server/src/transmit/
+  - server/src/modes/transmit/
+  - client/contact.js
+  - client/logbook.js
+  - client/recording.js
+  - client/recording.css
+  - tests/contact.test.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  - package.json
+  - package-lock.json
+  - client/app.js
+  - client/index.html
+  - client/authorization.js
+  build: cargo test --release --locked --bin wstx-rust --no-run
+  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated Router with the contact engine, the transmit owner on a recording hardware double and hand-authored codec-packed result rows published by a test-only control peer. No transceiver, audio device, PTT or network service.

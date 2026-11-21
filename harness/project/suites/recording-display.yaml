@@ -1,0 +1,46 @@
+- suite: recording-display
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS|^four stations retain isolated identities|^TC-010-002|^TC-010-005 review real Detailed peer cadence" tests/recording.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py recording-display {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-skip-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS|^four stations retain isolated identities|^TC-010-002|^TC-010-005 review real Detailed peer cadence" tests/recording.test.cjs
+  paths:
+  - server/
+  - client/
+  - tests/
+  - tools/test/
+  - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/sysml/
+  - .github/workflows/windows-rust.yml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/main.rs
+  - server/src/recording.rs
+  - server/src/recording_http.rs
+  - server/src/spectrum.rs
+  - client/recording.js
+  - client/recording.css
+  - tests/recording.test.cjs
+  - fixtures/decoder/manifest.json
+  - fixtures/decoder/ft4-manifest.json
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  - package.json
+  - package-lock.json
+  - client/app.js
+  - client/index.html
+  - client/style.css
+  - client/authorization.js
+  build: cargo build --workspace --locked
+  needs: Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; actual server/browser, spectrum/waterfall and desktop/mobile geometry.

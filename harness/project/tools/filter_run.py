@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The run of a suite's filter form (harness/project/suites.yaml `filter:`, read only by
+"""The run of a suite's filter form (harness/project/suites/ `filter:`, read only by
 `gate.py --suite NAME --filter WORDS`): the suite's own runner steps, each narrowed to the
 tests that match a filter word, and RED when no step ran any test.
 

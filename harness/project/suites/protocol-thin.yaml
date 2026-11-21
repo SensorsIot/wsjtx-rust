@@ -1,0 +1,43 @@
+- suite: protocol-thin
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py protocol-thin {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-name-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
+  paths:
+  - server/
+  - client/
+  - tests/
+  - tools/test/
+  - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/sysml/
+  - .github/workflows/windows-rust.yml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  timing: true
+  timing_inputs:
+  - server/src/main.rs
+  - server/src/web/link_log.rs
+  - server/src/http_compression.rs
+  - client/app.js
+  - client/index.html
+  - client/style.css
+  - tests/communication.test.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  - package.json
+  - package-lock.json
+  build: cargo build --workspace --locked
+  shared: [link-measurement]
+  timing_classes: [display]
+  needs: "Node 24, npm ci, Playwright Chromium. Windows PC; timing suite: TC-021-007 silence detection and recovery bounds through the controllable local proxy (support.cjs link). Runs only when the router with the status websocket (main.rs), compression, the status client (app.js, index.html, style.css), its test file, the proxy or the toolchain change, or on request (Harness-Timing: yes)."

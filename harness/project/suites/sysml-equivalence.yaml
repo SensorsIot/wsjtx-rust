@@ -1,0 +1,21 @@
+# TR-21 (`equivalence --marked`): a commit marked `Model-Move: pure` must not change the
+# meaning of the model. A gate check of this project only.
+- suite: sysml-equivalence
+  cost: 2
+  run: python tools/sysml.py equivalence --marked
+  # No filter form: the run is a model check with no tests to select.
+  paths:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  - server/
+  - client/
+  - tests/
+  - fixtures/
+  - harness/project/
+  - README.md
+  select:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout: a local master ref, every commit of master..HEAD with its first parent, and git archive of each. Each marked commit and its first parent are extracted to a temporary folder and exported once per distinct tree by the Pilot; an unmarked change prints no marked commit. No radio or live service."
