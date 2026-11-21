@@ -981,7 +981,9 @@ fn resource_runtime_parent() {
         "metrics_source_identity":metrics_source_identity})
     );
     let mut completed_configurations = 0;
-    let mut baselines = std::collections::BTreeMap::<(String, bool), Value>::new();
+    // The first baseline of each request, keyed by resource_baseline_key.
+    let mut baselines = std::collections::BTreeMap::<ResourceRequest, Value>::new();
+    let mut detail_checks = 0;
     for case in cases["samples"].as_array().unwrap() {
         let mode = case["mode"].as_str().unwrap();
         for scalar in [false, true] {
@@ -1084,10 +1086,33 @@ fn resource_runtime_parent() {
                                     1
                                 }
                             );
-                            if let Some(reference) = baselines.get(&(mode.to_owned(), long)) {
-                                resource_compare_baseline(reference, &baseline, mode);
+                            let request =
+                                resource_baseline_key(case, scalar, long, concurrency, attempt);
+                            if let Some(reference) = baselines.get(&request) {
+                                if let Err(reason) =
+                                    resource_repeatability_check(reference, &baseline, mode)
+                                {
+                                    panic!(
+                                        "Repeatability of one request ({mode}, scalar {scalar}, long {long}): {reason}"
+                                    );
+                                }
                             } else {
-                                baselines.insert((mode.to_owned(), long), baseline);
+                                if scalar {
+                                    // Detail check of WstxDecode::DecodeWindow, not a proof of
+                                    // CL-007-08: the scalar against the planned transform, with
+                                    // the tolerances of planned_scalar_and_gain_invariance.
+                                    let planned =
+                                        &baselines[&resource_baseline_key(case, false, long, 1, 0)];
+                                    if let Err(reason) =
+                                        resource_scalar_detail_check(planned, &baseline, mode)
+                                    {
+                                        panic!(
+                                            "planned-versus-scalar detail check ({mode}, long {long}): {reason}"
+                                        );
+                                    }
+                                    detail_checks += 1;
+                                }
+                                baselines.insert(request, baseline);
                             }
                         }
                         let mut timings = vec![Vec::<f64>::new(); concurrency];
@@ -1190,6 +1215,7 @@ fn resource_runtime_parent() {
         }
     }
     assert_eq!(completed_configurations, 16);
+    assert_eq!(detail_checks, 4, "planned-versus-scalar detail checks");
     assert_eq!(resource_source(), source);
     assert_eq!(resource_hash(&executable), executable_hash);
 }
@@ -1361,37 +1387,257 @@ fn resource_repeat(
         assert!((a.frequency_hz - b.frequency_hz).abs() <= frequency);
     }
 }
-fn resource_compare_baseline(expected: &Value, actual: &Value, mode: &str) {
-    let mut expected = expected.as_array().unwrap().iter().collect::<Vec<_>>();
-    let mut actual = actual.as_array().unwrap().iter().collect::<Vec<_>>();
-    let order = |a: &&Value, b: &&Value| {
-        a["payload77"]
-            .as_str()
-            .cmp(&b["payload77"].as_str())
-            .then(a["start_frame"].as_u64().cmp(&b["start_frame"].as_u64()))
-    };
-    expected.sort_by(order);
-    actual.sort_by(order);
+/// The identity of one decode request in the resource matrix: mode, input, scalar choice
+/// and length.
+type ResourceRequest = (String, String, bool, bool);
+/// The request a matrix baseline belongs to. The concurrency and the attempt that produced
+/// the baseline are not part of the request.
+fn resource_baseline_key(
+    case: &Value,
+    scalar: bool,
+    long: bool,
+    _concurrency: usize,
+    _attempt: u64,
+) -> ResourceRequest {
+    (
+        case["mode"].as_str().unwrap().to_owned(),
+        case["id"].as_str().unwrap().to_owned(),
+        scalar,
+        long,
+    )
+}
+/// Compares two baselines record by record in the given order: the same count, equal
+/// payloads, starts within `start` frames and frequencies within `frequency` Hz.
+fn resource_compare_records(
+    expected: &[&Value],
+    actual: &[&Value],
+    start: u64,
+    frequency: f64,
+) -> Result<(), String> {
+    if actual.len() != expected.len() {
+        return Err(format!(
+            "{} records, expected {}",
+            actual.len(),
+            expected.len()
+        ));
+    }
+    for (index, (a, b)) in actual.iter().zip(expected).enumerate() {
+        if a["payload77"] != b["payload77"] {
+            return Err(format!("record {index}: payload differs"));
+        }
+        let start_difference = a["start_frame"]
+            .as_u64()
+            .unwrap()
+            .abs_diff(b["start_frame"].as_u64().unwrap());
+        if start_difference > start {
+            return Err(format!(
+                "record {index}: start differs by {start_difference} frames, above {start}"
+            ));
+        }
+        let frequency_difference =
+            (a["frequency_hz"].as_f64().unwrap() - b["frequency_hz"].as_f64().unwrap()).abs();
+        if frequency_difference > frequency {
+            return Err(format!(
+                "record {index}: frequency differs by {frequency_difference} Hz, above {frequency} Hz"
+            ));
+        }
+    }
+    Ok(())
+}
+/// The Repeatability comparison of two baselines of one request (CL-007-08), in the order
+/// the decoder returned the records, with the tolerances of WstxDecode::Repeatability.
+fn resource_repeatability_check(
+    expected: &Value,
+    actual: &Value,
+    mode: &str,
+) -> Result<(), String> {
+    let expected = expected.as_array().unwrap().iter().collect::<Vec<_>>();
+    let actual = actual.as_array().unwrap().iter().collect::<Vec<_>>();
     let start = repeatability("startToleranceFrames") as u64;
     let frequency = repeatability(if mode == "ft8" {
         "ft8RepeatToleranceHz"
     } else {
         "ft4RepeatToleranceHz"
     });
-    assert_eq!(actual.len(), expected.len());
-    for (a, b) in actual.into_iter().zip(expected) {
-        assert_eq!(a["payload77"], b["payload77"]);
-        assert!(
-            a["start_frame"]
-                .as_u64()
-                .unwrap()
-                .abs_diff(b["start_frame"].as_u64().unwrap())
-                <= start
+    resource_compare_records(&expected, &actual, start, frequency)
+}
+/// The detail comparison of WstxDecode::DecodeWindow between a planned and a scalar
+/// baseline of one case and length: the records paired after a sort by payload and start,
+/// with the tolerances of planned_scalar_and_gain_invariance.
+fn resource_scalar_detail_check(planned: &Value, scalar: &Value, mode: &str) -> Result<(), String> {
+    let mut planned = planned.as_array().unwrap().iter().collect::<Vec<_>>();
+    let mut scalar = scalar.as_array().unwrap().iter().collect::<Vec<_>>();
+    let order = |a: &&Value, b: &&Value| {
+        a["payload77"]
+            .as_str()
+            .cmp(&b["payload77"].as_str())
+            .then(a["start_frame"].as_u64().cmp(&b["start_frame"].as_u64()))
+    };
+    planned.sort_by(order);
+    scalar.sort_by(order);
+    let frequency = if mode == "ft8" {
+        FT8_SCALAR_FREQUENCY_TOLERANCE_HZ
+    } else {
+        FT4_SCALAR_FREQUENCY_TOLERANCE_HZ
+    };
+    resource_compare_records(
+        &planned,
+        &scalar,
+        TRANSFORM_START_TOLERANCE_FRAMES,
+        frequency,
+    )
+}
+/// A synthetic matrix baseline of (payload77, start_frame, frequency_hz) records.
+fn resource_synthetic_baseline(records: &[(&str, u64, f64)]) -> Value {
+    Value::Array(
+        records
+            .iter()
+            .map(|&(payload, start, frequency)| {
+                serde_json::json!({"payload77":payload,"start_frame":start,"frequency_hz":frequency})
+            })
+            .collect(),
+    )
+}
+/// The Repeatability frequency tolerance of a matrix mode, read from the model.
+fn resource_repeat_frequency(mode: &str) -> f64 {
+    repeatability(if mode == "ft8" {
+        "ft8RepeatToleranceHz"
+    } else {
+        "ft4RepeatToleranceHz"
+    })
+}
+#[test]
+fn resource_repeatability_check_accepts_tolerance_edges() {
+    let start = repeatability("startToleranceFrames") as u64;
+    for mode in ["ft8", "ft4"] {
+        let frequency = resource_repeat_frequency(mode);
+        let expected = resource_synthetic_baseline(&[("a", 1000, 0.0), ("b", 5000, 0.0)]);
+        assert_eq!(
+            resource_repeatability_check(&expected, &expected, mode),
+            Ok(()),
+            "{mode} equal"
         );
-        assert!(
-            (a["frequency_hz"].as_f64().unwrap() - b["frequency_hz"].as_f64().unwrap()).abs()
-                <= frequency
+        let edge = resource_synthetic_baseline(&[
+            ("a", 1000 + start, frequency),
+            ("b", 5000 - start, -frequency),
+        ]);
+        assert_eq!(
+            resource_repeatability_check(&expected, &edge, mode),
+            Ok(()),
+            "{mode} at the tolerances"
         );
+    }
+}
+#[test]
+fn resource_repeatability_check_rejects_each_break() {
+    let start = repeatability("startToleranceFrames") as u64;
+    for mode in ["ft8", "ft4"] {
+        let frequency = resource_repeat_frequency(mode);
+        let expected = resource_synthetic_baseline(&[("a", 1000, 0.0), ("b", 5000, 0.0)]);
+        for (name, actual) in [
+            (
+                "one more record",
+                resource_synthetic_baseline(&[
+                    ("a", 1000, 0.0),
+                    ("b", 5000, 0.0),
+                    ("c", 9000, 0.0),
+                ]),
+            ),
+            (
+                "one fewer record",
+                resource_synthetic_baseline(&[("a", 1000, 0.0)]),
+            ),
+            (
+                "payload",
+                resource_synthetic_baseline(&[("a", 1000, 0.0), ("c", 5000, 0.0)]),
+            ),
+            (
+                "start",
+                resource_synthetic_baseline(&[("a", 1000 + start + 1, 0.0), ("b", 5000, 0.0)]),
+            ),
+            (
+                "frequency",
+                resource_synthetic_baseline(&[("a", 1000, 0.0), ("b", 5000, 2. * frequency)]),
+            ),
+            (
+                "order",
+                resource_synthetic_baseline(&[("b", 5000, 0.0), ("a", 1000, 0.0)]),
+            ),
+        ] {
+            assert!(
+                resource_repeatability_check(&expected, &actual, mode).is_err(),
+                "{mode} {name} accepted"
+            );
+        }
+    }
+}
+#[test]
+fn resource_baseline_key_identifies_request() {
+    let cases: Value =
+        serde_json::from_str(include_str!("../../fixtures/decoder/resource-cases.json")).unwrap();
+    let samples = cases["samples"].as_array().unwrap();
+    let (ft8, ft4) = (&samples[0], &samples[1]);
+    let key = resource_baseline_key(ft8, false, false, 1, 0);
+    assert_ne!(key, resource_baseline_key(ft8, true, false, 1, 0), "scalar");
+    assert_ne!(key, resource_baseline_key(ft8, false, true, 1, 0), "length");
+    assert_ne!(key, resource_baseline_key(ft4, false, false, 1, 0), "case");
+    let other_input = serde_json::json!({"mode":ft8["mode"],"id":"another-input"});
+    assert_ne!(
+        key,
+        resource_baseline_key(&other_input, false, false, 1, 0),
+        "input"
+    );
+    assert_eq!(
+        key,
+        resource_baseline_key(ft8, false, false, 4, 0),
+        "concurrency"
+    );
+    assert_eq!(
+        key,
+        resource_baseline_key(ft8, false, false, 1, 2),
+        "attempt"
+    );
+}
+#[test]
+fn resource_scalar_detail_check_uses_detail_tolerances() {
+    let start = TRANSFORM_START_TOLERANCE_FRAMES;
+    for (mode, frequency) in [
+        ("ft8", FT8_SCALAR_FREQUENCY_TOLERANCE_HZ),
+        ("ft4", FT4_SCALAR_FREQUENCY_TOLERANCE_HZ),
+    ] {
+        let planned = resource_synthetic_baseline(&[("a", 1000, 0.0), ("b", 5000, 0.0)]);
+        let edge = resource_synthetic_baseline(&[
+            ("a", 1000 + start, frequency),
+            ("b", 5000 - start, -frequency),
+        ]);
+        assert_eq!(
+            resource_scalar_detail_check(&planned, &edge, mode),
+            Ok(()),
+            "{mode} at the tolerances"
+        );
+        for (name, scalar) in [
+            (
+                "record count",
+                resource_synthetic_baseline(&[("a", 1000, 0.0)]),
+            ),
+            (
+                "payload",
+                resource_synthetic_baseline(&[("a", 1000, 0.0), ("c", 5000, 0.0)]),
+            ),
+            (
+                "start",
+                resource_synthetic_baseline(&[("a", 1000 + start + 1, 0.0), ("b", 5000, 0.0)]),
+            ),
+            (
+                "frequency",
+                resource_synthetic_baseline(&[("a", 1000, 0.0), ("b", 5000, 2. * frequency)]),
+            ),
+        ] {
+            assert!(
+                resource_scalar_detail_check(&planned, &scalar, mode).is_err(),
+                "{mode} {name} accepted"
+            );
+        }
     }
 }
 
