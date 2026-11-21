@@ -34,7 +34,11 @@ fn resource_owned_worker_failure_cleanup_uses_process_object_not_pid_reopen() {
     if std::env::var_os("WSTX_RESOURCE_WORKER_CONFIG").is_some() {
         return cleanup_worker();
     }
-    assert!(cfg!(windows) && usize::BITS == 64);
+    assert_eq!(
+        (std::env::consts::OS, usize::BITS),
+        ("windows", 64),
+        "the process-object cleanup check requires a 64-bit Windows host"
+    );
     let executable = std::env::current_exe().unwrap();
     let config = serde_json::json!({"worker_id":format!("cleanup-control-{}",std::process::id()),
         "source_sha":resource_source(),"executable_sha256":resource_hash(&executable)});

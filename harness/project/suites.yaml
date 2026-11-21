@@ -105,6 +105,34 @@
   exclusive: [link-measurement]
   needs: "Pinned Rust toolchain. Windows PC; no radio or live station. The library's decoder:: unit tests (the complement of wstx-rust's --skip decoder::), except the two release-only phase tests that debug assertions compile out (resource_phase_detection_observes_work_without_publishing and resource_phase_subtraction_cancels_after_actual_transform_before_mutation), which run in decoder-quality; selected by the decoder, the transmit packer its tests encode with (transmit/pack.rs and its module root), the library root, the decoder fixtures they include and the Cargo pins."
 
+- suite: rust-clippy-release
+  cost: 1
+  # The Rust pack's clippy check runs the debug build only; this run also lints the
+  # release-only test code (cfg(not(debug_assertions))). Its own Cargo output directory.
+  # paths: every file that include_str!, include_bytes! or #[path] pulls into the build.
+  run: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/clippy-release" cargo clippy --workspace --all-targets --locked --release -- -D warnings
+  paths:
+  - server/
+  - tools/test/rust/
+  - tools/test/blocked-ports.json
+  - fixtures/decoder/
+  - fixtures/transmit/
+  - fixtures/flex/
+  - fixtures/pskr/
+  - client/
+  - tests/fixtures/http/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  select:
+  - server/
+  - tools/test/rust/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  build: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/clippy-release" cargo clippy --workspace --all-targets --locked --release -- -D warnings
+  needs: "Pinned Rust toolchain with clippy. Windows PC; no radio or live station. Release clippy with -D warnings over every workspace target: the release-only test code (cfg(not(debug_assertions))) that the Rust pack's debug clippy check does not compile."
+
 - suite: protocol
   cost: 2
   run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern="^TC-021-007|^a deferred client download that holds station messages" tests/communication.test.cjs
