@@ -54,7 +54,7 @@ fn signal(rate: u32, hz: f64, n: usize) -> Vec<f32> {
         .collect()
 }
 // Independent complex DFT of every phase response.
-// Proves: TC-002-001, TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_filter_response() {
     let (passband, ripple, stopband, rejected) = filter_limits();
@@ -83,7 +83,7 @@ fn audio_filter_response() {
     }
 }
 // Rational count independent of callback partition, no padded edges.
-// Proves: TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_partition_count_delay() {
     for rate in [44100, 48000] {
@@ -117,7 +117,7 @@ fn audio_partition_count_delay() {
     }
 }
 // Channel0, integer extrema, nonfinite and alignment rejection.
-// Proves: TC-002-001, TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_native_normalization() {
     let f = format(48000);
@@ -170,7 +170,7 @@ fn acknowledge(source: &mut LiveSource, p: EpochProposal, id: &str) {
         .unwrap();
 }
 // Actual epoch acknowledgement and gaps without invented samples.
-// Proves: TC-002-001, TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_epoch_known_unknown_gap_and_cancel() {
     let f = format(48000);
@@ -214,7 +214,7 @@ fn audio_epoch_known_unknown_gap_and_cancel() {
     ));
 }
 // Queue duration cap, explicit loss and bounded cancellation.
-// Proves: TC-002-003
+// Proves: TC-002-001, TC-007-011
 #[test]
 fn audio_queue_and_clock_bounds() {
     let q = PacketQueue::new(format(48000)).unwrap();
@@ -245,7 +245,7 @@ fn audio_queue_and_clock_bounds() {
 }
 
 // Exact bounded packet ownership recycles across ring wraps.
-// Proves: TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_native_packet_buffers_recycle_without_loss_or_counter_drift() {
     let format = format(48000);
@@ -288,7 +288,7 @@ fn audio_native_packet_buffers_recycle_without_loss_or_counter_drift() {
 }
 
 // Impulse center and known-gap phase use an independent rational oracle.
-// Proves: TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_impulse_and_large_gap_phase() {
     for rate in [44100, 48000] {
@@ -320,7 +320,7 @@ fn audio_impulse_and_large_gap_phase() {
     }
 }
 // Overflow invalidates buffered samples before any old-context publication.
-// Proves: TC-002-003
+// Proves: TC-002-001, TC-002-003
 #[test]
 fn audio_overflow_and_duplicate_epoch() {
     let f = format(44100);
@@ -359,7 +359,7 @@ fn audio_overflow_and_duplicate_epoch() {
     ));
 }
 // Backoff and explicit stop never rely on UTC.
-// Proves: TC-002-001, TC-002-003
+// Proves: TC-002-003
 #[test]
 fn audio_lifecycle_retries() {
     let mut lifecycle = Lifecycle::default();
@@ -601,7 +601,7 @@ fn realtime_bound_audio_controller_profiles_and_stop() {
 }
 
 // Actual converter waveform gain/rejection, not only coefficient response.
-// Proves: TC-002-001, TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_waveform_response() {
     let (passband, ripple, stopband, rejected) = filter_limits();
@@ -626,7 +626,7 @@ fn audio_waveform_response() {
 }
 
 // Native driver metadata schema is independently encoded.
-// Proves: TC-002-001, TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_wave_format_validation() {
     for rate in [44100_u32, 48000] {
@@ -697,7 +697,7 @@ fn audio_wave_format_validation() {
 }
 
 // A failed bracket cannot conceal a later UTC jump.
-// Proves: TC-002-003
+// Proves: TC-007-011
 #[test]
 fn audio_clock_rejected_bracket_preserves_reference() {
     let a = ClockCorrelation::bracket(100, 1000, 102).unwrap();
@@ -855,7 +855,7 @@ fn drain(source: &mut LiveSource, blocks: &mut Vec<SampleBlock>) -> Vec<EpochPro
 // previous packet (measured QPC step jitter up to 0.56 ms, flagged or not). That is a
 // counted engine glitch on a continuous timeline: one source epoch, gap-free canonical
 // frames, no reset.
-// Proves: TC-002-001, TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_contiguous_engine_discontinuity_keeps_the_source_epoch() {
     let f = format(48000);
@@ -906,7 +906,7 @@ fn audio_contiguous_engine_discontinuity_keeps_the_source_epoch() {
 
 // A contiguous-position flag without a consistent QPC,
 // and every own-queue loss, is still unknown loss; each epoch names its trigger.
-// Proves: TC-002-003
+// Proves: TC-002-001
 #[test]
 fn audio_unknown_loss_epochs_name_their_trigger() {
     let f = format(48000);
