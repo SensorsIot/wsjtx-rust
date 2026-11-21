@@ -138,6 +138,52 @@ partitioned by the test-name patterns of their `run` commands; each complement i
 future names instead of silently omitting them. No test assertion, budget or test case is
 removed by selection.
 
+`python harness/general/core/tools/gate.py --suite NAME --filter "WORDS"` runs selected tests
+of one suite with the gate's environment, through the suite's `filter:` form. Only this
+command reads `filter:`; the gate's selection, its memos and whole-suite runs use `run`. A
+form runs the steps of the suite's `run` through `harness/project/tools/filter_run.py`, each
+narrowed to the words: the same build steps, runner targets, test-name filters, `--skip`,
+`--test-name-pattern` and `--test-skip-pattern`. A word therefore never reaches a test that a
+sibling suite owns through the partition, and where `run` already selects by a name pattern
+(`protocol-thin`, `recording-storage`, `recording-thin`) or a test-name filter (`decoder::`,
+`receive_http_tests::live_native_`), the words narrow that selection and never widen it.
+
+- Suites with a form: libtest `wstx-rust`, `wstx-rust-decoder`, `decoder-correctness`,
+  `live-station-browser` and `live-station-latency` (its two named tests;
+  `resource_station_process_delta_and_owner_release` keeps `--ignored`); `node --test`
+  `protocol`, `protocol-thin`, `profiles`, `recording-storage`, `recording-display`,
+  `recording-thin`, `recording-fixtures`, `model-values`, `test-tools`, `native-flex`,
+  `operating-layout` and `mcp`; libtest and node `radio-selection`; unittest
+  `sysml-documentation`, `sysml-tools`, `sysml-architecture-context`, `sysml-architecture`,
+  `sysml-equivalence-tests`, `deploy-tooling`, `test-bench`, `fortran-reference-tools` and
+  `simulator-fixtures`.
+- Words: each word of `--filter`, split as a shell splits it, is one selection, and a test
+  runs when it matches any word, in every runner step of the suite. In libtest a word is a
+  substring of the test path (`module::test_name`); in node a JavaScript regular expression
+  on the test name, with `.` for each space of a name (`--filter "deferred.client.download"`);
+  in unittest a substring of the dotted name `module.Class.method`, or an fnmatch pattern
+  when the word holds `*`.
+- No test selected: when no step of the suite runs a test for the words (a skipped test does
+  not count), the run prints `filter_run: <suite>: no test selected by --filter <words>`,
+  exits 1 and the gate prints `RED <suite>`, although libtest and `node --test` exit 0 and
+  unittest exits 5 for an empty run. A step that selects nothing while another step runs a
+  test is no failure by itself; a run in which a test ran passes only when every test that
+  ran passed.
+- Steps left out under `--filter`, because they select no tests: the `python tools/sysml.py
+  check` of `sysml-documentation`, the two `--verify-manifest` runs of `simulator-fixtures`
+  and `independent-vector-tool/test_cache.py` of `decoder-correctness`. Whole-suite runs
+  and the gate run them.
+- Suites without a form, each with its reason in its entry; `--filter` on them is refused
+  with the gate's "has no filter form" message. `live-receive-integration`,
+  `contact-browser` and `radio-selection-thin`: the run is exactly one test, so the whole
+  suite is that test. `sysml-equivalence` and `source-model-traces`: the run is a model
+  check with no tests to select. `decoder-quality`: `windows_resource_job.py resolve` binds
+  every ordinary pass of `decoder_signal` into one artifact, so a partial run cannot be
+  resolved.
+
+`harness/project/tests/test_filter_forms.py` holds the list of suites with and without a
+form and checks that each form runs exactly the steps of its `run`.
+
 Runtime oracles are selected by changed implementation and executable tests. Source edits
 also select the fast binding check `source-model-traces`, without a dependency that runs the
 full Pilot suites on every code edit. A source edit or deletion invalidates the trace,
