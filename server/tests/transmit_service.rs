@@ -175,6 +175,7 @@ fn run(core: &mut Core<Fake>, f: &Fake, until: i64) {
     }
 }
 
+// Proves: TC-008-003
 #[test]
 fn nothing_is_keyed_or_played_without_explicit_armed_authority() {
     let f = Fake::new();
@@ -200,6 +201,7 @@ fn nothing_is_keyed_or_played_without_explicit_armed_authority() {
     assert!(f.log().is_empty());
 }
 
+// Proves: TC-008-003
 #[test]
 fn ptt_is_keyed_at_period_start_with_readback_before_audio_at_planned_sample() {
     let f = Fake::new();
@@ -249,6 +251,7 @@ fn ptt_is_keyed_at_period_start_with_readback_before_audio_at_planned_sample() {
     );
 }
 
+// Proves: TC-008-003
 #[test]
 fn late_start_skips_the_elapsed_prefix_and_stale_or_unsynchronized_requests_are_refused() {
     let f = Fake::new();
@@ -332,6 +335,7 @@ fn late_start_skips_the_elapsed_prefix_and_stale_or_unsynchronized_requests_are_
     assert_eq!(core.view().arm_state, ArmState::Armed);
 }
 
+// Proves: TC-008-003
 #[test]
 fn pending_request_is_replaced_until_audio_start_then_queued_for_the_next_period() {
     let f = Fake::new();
@@ -430,6 +434,7 @@ fn a_request_for_another_period_while_keyed_before_audio_is_queued_not_refused()
     );
 }
 
+// Proves: TC-008-005
 #[test]
 fn halt_mid_audio_stops_audio_and_releases_ptt_and_disarms() {
     let f = Fake::new();
@@ -461,6 +466,7 @@ fn halt_mid_audio_stops_audio_and_releases_ptt_and_disarms() {
     assert_eq!(core.halt(), HaltState::Idle, "idempotent");
 }
 
+// Proves: TC-008-005
 #[test]
 fn service_halt_is_confirmed_within_the_bound_while_the_owner_is_busy() {
     let f = Fake::new();
@@ -507,6 +513,7 @@ fn service_halt_is_confirmed_within_the_bound_while_the_owner_is_busy() {
     driver.join().unwrap();
 }
 
+// Proves: TC-008-005
 #[test]
 fn audio_loss_cat_loss_and_ptt_errors_release_and_disarm() {
     // Audio device lost mid-play.
@@ -589,6 +596,7 @@ fn audio_loss_cat_loss_and_ptt_errors_release_and_disarm() {
     assert_eq!(core.view().last_disarm_cause, DisarmCause::AuthorityChanged);
 }
 
+// Proves: TC-008-003
 #[test]
 fn restart_never_resumes_an_armed_station_or_its_request() {
     let f = Fake::new();
@@ -610,6 +618,7 @@ fn restart_never_resumes_an_armed_station_or_its_request() {
 // The owner counts started transmissions; an
 // answer resets the count; at the limit the next request is never keyed and nothing
 // is halted.
+// Proves: TC-111-010, TC-111-013
 #[test]
 fn tx_watchdog_stop_never_keys_and_tune_ends_at_its_limit() {
     let f = Fake::new();
@@ -777,6 +786,7 @@ const KEY: &[u8] = &[0xfe, 0xfe, 0x94, 0xe0, 0x1c, 0, 1, 0xfd];
 const UNKEY: &[u8] = &[0xfe, 0xfe, 0x94, 0xe0, 0x1c, 0, 0, 0xfd];
 const READ: &[u8] = &[0xfe, 0xfe, 0x94, 0xe0, 0x1c, 0, 0xfd];
 
+// Proves: TC-009-007
 #[test]
 fn ci_v_ptt_bytes_readback_and_hold_exclude_polling() {
     let (actor, state) = radio();
@@ -817,6 +827,7 @@ fn ci_v_ptt_bytes_readback_and_hold_exclude_polling() {
     assert!(!actor.ptt_indeterminate());
 }
 
+// Proves: TC-009-007
 #[test]
 fn closing_a_keyed_connection_sends_one_off_only_switch_and_timeouts_close() {
     let (actor, state) = radio();
@@ -842,6 +853,7 @@ fn closing_a_keyed_connection_sends_one_off_only_switch_and_timeouts_close() {
     assert_ne!(actor.snapshot().unwrap().state, cat::State::Ready);
 }
 
+// Proves: TC-008-005
 #[test]
 fn halt_through_the_real_actor_unkeys_mid_audio_within_the_bound() {
     struct Station {
@@ -901,6 +913,7 @@ fn halt_through_the_real_actor_unkeys_mid_audio_within_the_bound() {
     assert_eq!(frames.iter().filter(|w| *w == UNKEY).count(), 1);
 }
 
+// Proves: TC-008-004
 #[test]
 fn output_renderer_plays_from_the_planned_sample_on_every_channel_then_silence() {
     use wstx_rust::audio::{Encoding, NativeFormat};
@@ -942,6 +955,7 @@ fn output_renderer_plays_from_the_planned_sample_on_every_channel_then_silence()
     assert!(!tone.exhausted());
 }
 
+// Proves: TC-008-003, TC-008-005
 #[test]
 fn startup_safety_release_is_off_only_once_per_boot_and_only_when_tx_is_observed() {
     // Radio found transmitting before this boot keyed: exactly one release.
@@ -1011,6 +1025,7 @@ fn wait_for(what: &str, limit: Duration, done: impl Fn() -> bool) {
 
 // The release never depends on the
 // device reporting the end.
+// Proves: TC-008-005
 #[test]
 fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls() {
     for stuck in [AudioPoll::Playing, AudioPoll::Idle] {
@@ -1092,6 +1107,7 @@ fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline(
 // reports the end: PTT is released by the device-independent bound (FT8 audio end
 // + 1 000 ms = P + 14 140 <= P + 14 500, FT4 P + 6 340 <= P + 7 000, also after a late
 // start), the transmission fails audioStalled and the station disarms.
+// Proves: TC-008-005
 #[test]
 fn a_device_that_stops_consuming_half_way_is_stalled_and_released_by_the_bound() {
     let ft4 = |seq| Request {
@@ -1149,6 +1165,7 @@ fn a_device_that_stops_consuming_half_way_is_stalled_and_released_by_the_bound()
 }
 
 // An owner panic fails closed.
+// Proves: TC-008-003, TC-008-005
 #[test]
 fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
     let f = Fake::new();
@@ -1184,6 +1201,7 @@ fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
 
 // A halt during the output open
 // prevents keying.
+// Proves: TC-008-005
 #[test]
 fn halt_during_a_slow_output_open_never_keys() {
     let f = Fake::new();
@@ -1211,6 +1229,7 @@ fn halt_during_a_slow_output_open_never_keys() {
 }
 
 // A halt while the key exchange runs releases within the bound.
+// Proves: TC-008-005
 #[test]
 fn halt_during_a_slow_key_releases_within_the_bound() {
     let f = Fake::new();
@@ -1241,6 +1260,7 @@ fn halt_during_a_slow_key_releases_within_the_bound() {
 
 // WstxTransmitControl::TransmitHaltUse: the watchdog stop never touches
 // PTT: a failing release cannot make it indeterminate, and no halt is recorded.
+// Proves: TC-111-013
 #[test]
 fn watchdog_stop_never_touches_ptt() {
     let f = Fake::new();
@@ -1267,6 +1287,7 @@ fn watchdog_stop_never_touches_ptt() {
 }
 
 // Mutation guards named by the review.
+// Proves: TC-008-003, TC-008-005
 #[test]
 fn arm_is_refused_while_ptt_is_indeterminate_and_submit_checks_the_safety_revision() {
     let f = Fake::new();
@@ -1289,6 +1310,7 @@ fn arm_is_refused_while_ptt_is_indeterminate_and_submit_checks_the_safety_revisi
     assert_eq!(core.view().arm_state, ArmState::Disarmed);
 }
 
+// Proves: TC-008-004
 #[test]
 fn render_drain_stops_topping_up_and_watchdog_flags_a_stall() {
     use wstx_rust::playback::{Fill, Progress, Renderer, Source, plan_fill};
@@ -1371,12 +1393,12 @@ fn render_model(capacity: u32, delay: impl Fn(i64) -> i64) -> (i64, i64, i64) {
     panic!("the program never finished");
 }
 
-// Detail test of the render fill (WstxTransmitPart::TransmitService @DetailTests), no case:
 // with the 100 ms render buffer (renderBufferMs, 4 800 frames) and 20 ms of silence ahead (silencePrefillMs), the
 // program starts within 30 ms of play (20 ms ahead plus one 10 ms engine period) and
 // its end is reported within 100 ms of the nominal end, also when the render thread is
 // delayed 40 ms once a second; a 20 ms buffer underruns then and its end report slips
 // by about 400 ms.
+// Proves: TC-008-004
 #[test]
 fn the_render_buffer_absorbs_render_delays_without_delaying_the_start_or_the_end() {
     let load = |period: i64| if period % 1_000 == 500 { 40 } else { 0 };
@@ -1400,6 +1422,7 @@ fn the_render_buffer_absorbs_render_delays_without_delaying_the_start_or_the_end
     );
 }
 
+// Proves: TC-009-007
 #[test]
 fn a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes() {
     let (actor, state) = radio();
@@ -1477,6 +1500,7 @@ impl Hardware for AbortAware {
 
 // Re-check finding: the boxed station hardware receives
 // the halt flag, so a halt during the CAT key wait sends no key and is confirmed in bound.
+// Proves: TC-008-005
 #[test]
 fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
     let f = Fake::new();
@@ -1540,6 +1564,7 @@ fn accepted_requests_teach_the_station_hash_table() {
 }
 
 // A failed PTT release on abort is reported.
+// Proves: TC-008-005
 #[test]
 fn abort_with_a_failed_release_is_reported_not_silent() {
     let f = Fake::new();
@@ -1556,6 +1581,7 @@ fn abort_with_a_failed_release_is_reported_not_silent() {
 }
 
 // Abort also stops Tune.
+// Proves: TC-008-005
 #[test]
 fn abort_stops_tune_without_a_halt() {
     let f = Fake::new();

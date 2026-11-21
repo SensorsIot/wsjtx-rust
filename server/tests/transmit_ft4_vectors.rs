@@ -352,6 +352,7 @@ fn tc_006_002_ft4_start_plan_late_start_and_refusals() {
 
 /// FT4 carries the EU VHF type 5 payload: every EU VHF message of the FT8 vectors that ft4sim
 /// encodes unaltered packs to its bits, codeword and tones.
+// Proves: TC-005-002
 #[test]
 fn tc_099_001_ft4_eu_vhf_matches_ft4sim() {
     for message in [
@@ -391,6 +392,7 @@ fn tc_099_001_ft4_eu_vhf_matches_ft4sim() {
 }
 
 /// FT4 carries the same Field Day and RTTY Roundup payloads, TU; included.
+// Proves: TC-005-002
 #[test]
 fn tc_024_007_ft4_field_day_and_rtty_roundup_match_ft4sim() {
     let mut exact = 0;

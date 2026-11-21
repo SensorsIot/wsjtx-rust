@@ -51,6 +51,7 @@ fn ptt_setters(writes: &[Vec<u8>]) -> usize {
         .count()
 }
 
+// Proves: TC-008-003
 #[test]
 fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means_no_key() {
     let directory =
@@ -240,6 +241,7 @@ fn object_keys(v: &Value) -> Vec<String> {
     k
 }
 
+// Proves: TC-003-001, TC-006-004, TC-021-005
 #[tokio::test]
 async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms() {
     let (router, origin, id, boot, dir) = app().await;
@@ -439,6 +441,7 @@ async fn transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms
 
 // Startup safety release: a radio found
 // transmitting by the first fresh readback after boot gets exactly one off-only switch.
+// Proves: TC-008-005
 #[test]
 fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() {
     let directory = std::env::temp_dir().join(format!(
@@ -497,6 +500,7 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
 // GET /transmit reports the station's SNTP
 // measurement (exact keys) and the clock state the transmit owner plans with: the station
 // clock, which SNTP never makes unsynchronized; SNTP beyond 500 ms only warns.
+// Proves: TC-092-003
 #[tokio::test]
 async fn transmit_wire_shows_the_sntp_clock_measurement() {
     use wstx_rust::transmit::clock::Measurement;
