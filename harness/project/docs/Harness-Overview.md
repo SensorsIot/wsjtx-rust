@@ -37,10 +37,16 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   `harness/general/lang/rust/`. Fixes to it are made inside it.
 - `harness/project/` is the project harness, this project's own part:
   - `config.yaml`: the harness configuration (packs, gate, queue, machines, Alex);
-  - `suites.yaml`: the test registry;
+  - `suites.yaml`: the test registry, with the `filter:` forms that
+    `gate.py --suite NAME --filter WORDS` runs
+    ([Functional test selection](Project-Specifics.md#functional-test-selection));
   - `model_bindings.py`: the gate's model bindings (`gate.model_bindings`);
+  - `tools/`: `filter_run.py`, which runs a suite's filter form (its `run` steps, each
+    narrowed to the filter words, RED when no test ran), and `node_test_count.mjs`, the
+    `node --test` reporter that counts the tests it ran;
   - `tests/`: the tests of the project's role additions (`test_role_context.py`,
-    `test_station_switch_guard.py`), run with
+    `test_station_switch_guard.py`) and of the filter forms and `filter_run.py`
+    (`test_filter_forms.py`), run with
     `python -m unittest discover -s harness/project/tests`;
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
