@@ -7,8 +7,12 @@
   filter: >-
     python harness/project/tools/filter_run.py deploy-tooling {filter}
     @unittest python -m unittest discover -s tools/deploy/tests -v
+  # harness/general: the deploy's harness-path test reads gate.py from the checkout. A push
+  # that moves only the gitlink is a harness change and runs no suite; the next run of this
+  # suite checks the classification again.
   paths:
   - tools/deploy/
+  - harness/general
   select:
   - tools/deploy/
   needs: "Python 3.12 with pip (the deploy command's tests build their fake cargo and rustc from pip's launcher), Windows PowerShell 5.1, Git Bash and git with the checkout's history. Windows PC; every station, scheduled task, firewall, process, network, git remote and GitHub call is a mock in a temporary sandbox. No station, radio or network service."

@@ -28,7 +28,7 @@ CR (policy item 4). Suite `deploy-tooling`
 
 ```text
 ef106effe4e5b85a9c02a21dd8808d04281b239feecc5f54a5fe932eb2827c09  tools/deploy/station-update/station-update.ps1
-b611766f68a987b450c15d38233c3c9eab5eb2eef58d9cc93db56fdce62fef07  tools/deploy/station-update/make_package.py
+f96d422885999769bc03755c7f7a0ae22c532d7d304ce6543cbf81f3cd0ee0af  tools/deploy/station-update/make_package.py
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
 506cc03746fb8bce42cd20bbafbe83715cf21bf502acb7ab558a5513a9b1f770  tools/deploy/station-probe.ps1
