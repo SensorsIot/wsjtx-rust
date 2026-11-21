@@ -520,6 +520,7 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
 
 // Creation persists only the intent and a fresh client identity, and
 // no writer can give the native profile a device or CAT selection afterwards.
+// Proves: TC-023-007
 #[test]
 fn native_profile_creation_persists_intent_without_runtime_handles() {
     let directory = std::env::temp_dir().join(format!("wstx-native-{}", new_uuid().unwrap()));
