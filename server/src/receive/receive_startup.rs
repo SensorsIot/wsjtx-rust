@@ -273,15 +273,7 @@ impl Recording {
                 }
             };
             let command = intent.command_id.clone();
-            #[cfg(test)]
-            let refused = self.resources.lock().unwrap().resume_refusals.pop_front();
-            #[cfg(not(test))]
-            let refused: Option<&'static str> = None;
-            let begun = match refused {
-                Some(e) => Err(e),
-                None => self.selection_begin(intent, Some(device.into()), cat),
-            };
-            match begun {
+            match self.selection_begin(intent, Some(device.into()), cat) {
                 Ok(_) => {
                     *own = Some(command.clone());
                     break command;

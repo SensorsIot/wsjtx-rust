@@ -219,21 +219,63 @@ fn startup_resume_off_or_stopped_stays_off() {
     assert_eq!(receive["job"]["mode"], "ft8");
 }
 
+/// The startup view stays `waiting` for `span` (the resume keeps retrying).
+fn waits_through(r: &Recording, span: Duration) {
+    let end = Instant::now() + span;
+    while Instant::now() < end {
+        assert_eq!(r.startup_view()["resume"]["state"], "waiting");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 // Transient refusals while CAT comes up (radio not yet
-// ready, the actor's poll holding its lease, a connection change between preflights)
-// are retried within the wait: the resume still selects the stored band.
+// ready, the radio's transmit switch held) are retried within the wait: the resume still
+// selects the stored band.
 // Proves: TC-045-001
 #[test]
 fn startup_resume_retries_transient_selection_refusals() {
+    use crate::cat_lifecycle_tests::{Device, attach_peer};
     let dir = Dir::new();
     dir.write(&stored(false, "ft8", Some("40m")));
     let r = dir.open();
-    r.resources.lock().unwrap().resume_refusals =
-        ["radio_unavailable", "busy", "state_conflict"].into();
+    let peer = attach_peer(&r, Device::Present);
     inject(&r);
-    let view = resume(&r, false, Duration::from_secs(5));
+    let run = r
+        .resume_receive(Some("profile-input".into()), true, Duration::from_secs(10))
+        .unwrap();
+    let begun = Instant::now() + Duration::from_secs(5);
+    while r.startup_view()["resume"]["state"] == "idle" {
+        assert!(Instant::now() < begun, "the resume did not begin");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // No radio connected: refused radio_unavailable.
+    waits_through(&r, Duration::from_millis(300));
+    // Connect and hold the transmit switch before any attempt can see the radio Ready:
+    // the peer lock holds the open, the station lock holds the attempts.
+    let open = peer.lock().unwrap();
+    r.radio_connect(
+        wstx_rust::radio_control::Configuration::parse("COM3").unwrap(),
+        0,
+    )
+    .unwrap();
+    let actor = r.radio_actor().unwrap();
+    {
+        let _attempts = r.state.lock().unwrap();
+        drop(open);
+        actor
+            .ptt(true, Instant::now() + Duration::from_secs(5))
+            .unwrap();
+    }
+    assert!(peer.lock().unwrap().transmitting);
+    // The switch held: refused busy.
+    waits_through(&r, Duration::from_millis(300));
+    actor
+        .ptt(false, Instant::now() + Duration::from_secs(5))
+        .unwrap();
+    assert!(!peer.lock().unwrap().transmitting);
+    run.join().unwrap();
+    let view = r.startup_view();
     assert_eq!(view["resume"], json!({"state":"started","error":null}));
-    assert!(r.resources.lock().unwrap().resume_refusals.is_empty());
     let selection = r.selection_snapshot(false).unwrap();
     assert_eq!(selection["selection"]["band"], "40m");
     assert_eq!(selection["selection"]["nominal_hz"], 7074000);

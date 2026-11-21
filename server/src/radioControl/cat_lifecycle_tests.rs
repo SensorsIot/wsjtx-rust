@@ -13,7 +13,10 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use wstx_rust::radio_control::{self as cat, executor::Transport};
+use wstx_rust::radio_control::{
+    self as cat,
+    executor::{Opener, Transport},
+};
 
 pub(crate) const ENDPOINT: &str = "icom7300://COM3?baud=9600&radio=94&controller=E0";
 
@@ -257,6 +260,11 @@ impl Transport for Port {
                 peer.transmitting = false;
                 vec![0xfb]
             }
+            // A key by a station test's own transmit switch (never the lifecycle).
+            [0x1c, 0, 1] => {
+                peer.transmitting = true;
+                vec![0xfb]
+            }
             // RF work (an operator band selection), never the lifecycle: the radio
             // accepts the dial, mode and data setters.
             [5, f @ ..] if f.len() == 5 => {
@@ -327,20 +335,55 @@ pub(crate) fn attach_peer(recording: &Recording, device: Device) -> Arc<Mutex<Pe
         transmitting: false,
         dial: 7_074_000,
     }));
-    let physical = peer.clone();
-    recording.fixture_cat_transport(Arc::new(move |_, _, _| {
-        let mut p = physical.lock().unwrap();
+    assert!(
+        recording
+            .cat_opener
+            .set(Arc::new(PeerOpener(peer.clone())))
+            .is_ok(),
+        "a recording receives one CAT opener"
+    );
+    let mut attached = ATTACHED.lock().unwrap();
+    attached.retain(|(_, p)| p.strong_count() > 0);
+    attached.push((
+        std::ptr::from_ref(recording) as usize,
+        Arc::downgrade(&peer),
+    ));
+    peer
+}
+/// The scripted peer of each live recording, by its address (the opener holds the peer).
+static ATTACHED: Mutex<Vec<(usize, std::sync::Weak<Mutex<Peer>>)>> = Mutex::new(Vec::new());
+/// The scripted peer `attach_peer` gave this recording.
+pub(crate) fn attached_peer(recording: &Recording) -> Arc<Mutex<Peer>> {
+    let address = std::ptr::from_ref(recording) as usize;
+    ATTACHED
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .filter(|(a, _)| *a == address)
+        .find_map(|(_, p)| p.upgrade())
+        .expect("the recording has a scripted peer")
+}
+/// The station's CAT opener over the scripted peer: each open is counted.
+struct PeerOpener(Arc<Mutex<Peer>>);
+impl Opener for PeerOpener {
+    fn open(
+        &self,
+        _: &cat::Configuration,
+        _: Instant,
+        _: &AtomicBool,
+    ) -> cat::Result<Box<dyn Transport>> {
+        let mut p = self.0.lock().unwrap();
         p.opens += 1;
         match p.device {
             Device::Absent => Err(cat::Error::Unavailable),
             Device::Busy => Err(cat::Error::ResourceInUse),
             _ => Ok(Box::new(Port {
-                peer: physical.clone(),
+                peer: self.0.clone(),
                 pending: VecDeque::new(),
-            }) as Box<dyn Transport>),
+            })),
         }
-    }));
-    peer
+    }
 }
 
 struct Station {

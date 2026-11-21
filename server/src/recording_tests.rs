@@ -2290,6 +2290,23 @@ fn selection_radio_cache_unversioned_failure_cannot_clear_current_facts() {
     );
     actor.request_close();
 }
+#[test]
+fn recording_without_cat_port_opens_no_line() {
+    let fixture = Fixture::new();
+    let r = fixture.recording();
+    assert_eq!(
+        r.radio_connect(
+            wstx_rust::radio_control::Configuration::parse("COM3").unwrap(),
+            0
+        )
+        .err(),
+        Some("radio_unavailable")
+    );
+    let view = r.radio_view();
+    assert_eq!(view["state"], "unavailable");
+    assert_eq!(view["error"], "radio_unavailable");
+    assert!(r.radio_actor().is_none(), "no CAT owner, so no serial open");
+}
 
 #[test]
 fn review_connect_profile_edit_before_install_releases_own_reservation() {
@@ -3644,6 +3661,17 @@ fn the_dial_is_not_taken_while_a_selection_pends_or_on_another_revision() {
 }
 
 impl Recording {
+    pub(crate) fn fixture_radio(&self, actor: Arc<wstx_rust::radio_control::actor::Actor>) {
+        let snapshot = actor.snapshot().unwrap();
+        let mut s = self.state.lock().unwrap();
+        assert!(
+            s.operating.radio.actor.is_none(),
+            "fixture must not replace a live actor under the state lock"
+        );
+        s.operating.radio.generation = snapshot.authority.connection_generation;
+        s.operating.radio.cached = Some(snapshot);
+        s.operating.radio.actor = Some(actor);
+    }
     /// Test fixture: the operating selection band (no radio command).
     pub(crate) fn fixture_band(&self, band: &'static str) {
         self.state.lock().unwrap().operating.nominal.band = Some(band);

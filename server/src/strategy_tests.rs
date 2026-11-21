@@ -5999,7 +5999,17 @@ fn attach_feed(f: &Mcp) -> Arc<crate::pskr::Feed> {
         std::sync::Arc::new(crate::profile::Disk),
     );
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
-    *feed.dial.lock().unwrap() = Some(14_074_000);
+    if f.state.recording.cat_opener.get().is_none() {
+        dial_20m(f);
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while crate::contact_http::confirmed_dial(&f.state.recording) != Some(14_074_000) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "dial 14074000 not confirmed"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     feed
 }
 /// A spot from `sender` heard by `receiver` at `hz` on `band` FT8, sent at `t_tx` (UTC s), rp -12.
@@ -6348,7 +6358,8 @@ async fn tc_039_043_band_mode_auto_off_and_halt_end_the_contact_at_once() {
     let t = leaving(|_| {}, &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
     publish(f, rep(e, 1), &[]);
-    f.state.recording.fixture_band("40m");
+    let peer = crate::cat_lifecycle_tests::attached_peer(&f.state.recording);
+    retune(f, &peer, 7_074_000);
     f.tick();
     assert_eq!(
         contact(f).await,

@@ -315,6 +315,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recording::Recording::open(&base, id, recording_boot, recording_files)
             })
             .await?;
+            // The station's CAT serial line, leased under its radio-ownership folder.
+            #[cfg(windows)]
+            let _ = recording.cat_opener.set(std::sync::Arc::new(
+                wstx_rust::radio_control::windows::SerialOpener {
+                    lock_root: env::var_os("LOCALAPPDATA")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(env::temp_dir)
+                        .join("WstxRust")
+                        .join("radio-ownership"),
+                },
+            ));
             recording.initialize_profile_revision(store.document.revision);
             // WstxTransmitPart::TransmitService: one transmit owner per station, disarmed at
             // startup. WstxStationClock::TimeServerCheck: the station measures its UTC offset

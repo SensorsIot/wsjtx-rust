@@ -8,7 +8,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::AtomicBool;
 use wstx_rust::radio_control::{
     self as cat,
-    executor::Transport,
+    executor::{Opener, Transport},
     setup::{AudioEndpoint, Flow, PortInfo, Topology},
 };
 
@@ -81,6 +81,21 @@ impl Transport for Port {
         Ok(())
     }
 }
+/// The station's CAT opener over the scripted radio.
+struct RadioOpener(Arc<Mutex<Ic7300>>);
+impl Opener for RadioOpener {
+    fn open(
+        &self,
+        _: &cat::Configuration,
+        _: Instant,
+        _: &AtomicBool,
+    ) -> cat::Result<Box<dyn Transport>> {
+        Ok(Box::new(Port {
+            radio: self.0.clone(),
+            pending: VecDeque::new(),
+        }))
+    }
+}
 fn hb9bla_menu() -> HashMap<[u8; 2], Vec<u8>> {
     HashMap::from([
         ([0x00, 0x78], vec![0x01]),
@@ -101,15 +116,14 @@ fn station(radio: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
         ptt: "cat".into(),
     };
     let radio = Arc::new(Mutex::new(radio));
-    let shared = radio.clone();
-    f.state
-        .recording
-        .fixture_cat_transport(Arc::new(move |_, _, _| {
-            Ok(Box::new(Port {
-                radio: shared.clone(),
-                pending: VecDeque::new(),
-            }) as Box<dyn Transport>)
-        }));
+    assert!(
+        f.state
+            .recording
+            .cat_opener
+            .set(Arc::new(RadioOpener(radio.clone())))
+            .is_ok(),
+        "a recording receives one CAT opener"
+    );
     f.state
         .recording
         .radio_connect(cat::Configuration::parse("COM3").unwrap(), 0)
