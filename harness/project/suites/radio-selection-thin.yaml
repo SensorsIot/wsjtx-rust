@@ -18,7 +18,7 @@
   - package-lock.json
   timing: true
   # Timing for the 4230-5000 ms native setup, of which this suite is the only oracle: CAT
-  # (radio_control/, cat_lifecycle.rs), the router, compression, the selection reads, the receive
+  # (the radio control files listed below), the router, compression, the selection reads, the receive
   # and spectrum pushes, the clients that read them, its Rust and browser test files and their
   # helpers, the toolchain and the dependency versions. Not capture (source.rs, audio): it reaches
   # the browsers only through the owners above. Not recording.css or the Cargo.toml and package.json
@@ -31,9 +31,20 @@
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
   - server/src/radioControl/cat_lifecycle.rs
-  - server/src/radio_control/
-  - server/src/radioControl/
-  - server/src/transmit/codec.rs
+  - server/src/radioControl/mod.rs
+  - server/src/radioControl/actor.rs
+  - server/src/radioControl/catalogue.rs
+  - server/src/radioControl/codec.rs
+  - server/src/radioControl/executor.rs
+  - server/src/radioControl/executor_tests.rs
+  - server/src/radioControl/ic7300-catalogue.json
+  - server/src/radioControl/setup.rs
+  - server/src/radioControl/setup_tests.rs
+  - server/src/radioControl/windows.rs
+  - server/src/radioControl/windows_tests.rs
+  - server/src/radioControl/cat_lifecycle_tests.rs
+  - server/src/radioControl/radio_agc.rs
+  - server/src/radioControl/radio_agc_tests.rs
   - server/src/receive.rs
   - server/src/receive_http.rs
   - server/src/spectrum.rs

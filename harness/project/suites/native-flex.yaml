@@ -24,13 +24,14 @@
   - server/src/flexAdapter/
   - server/src/profile.rs
   - server/src/recording.rs
+  - server/src/radioControl/radio_connection.rs
   - server/src/selection_http.rs
   - server/src/receive/receive_startup.rs
   - client/recording.js
   - server/src/flex_http.rs
   - server/src/authorization.rs
   - server/src/authorization_http.rs
-  - server/src/radio_setup.rs
+  - server/src/radioControl/radio_setup.rs
   - server/src/main.rs
   - server/src/receive_http.rs
   - client/app.js

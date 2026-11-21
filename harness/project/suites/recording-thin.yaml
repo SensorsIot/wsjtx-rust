@@ -28,6 +28,7 @@
   timing_inputs:
   - server/src/main.rs
   - server/src/recording.rs
+  - server/src/radioControl/radio_connection.rs
   - server/src/recording_http.rs
   - server/src/spectrum.rs
   - server/src/http_compression.rs
