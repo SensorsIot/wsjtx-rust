@@ -69,9 +69,10 @@ package WstxRadioControlPart {
             module = "server/src/radioControl/windows.rs; server/src/radio_setup.rs";
         }
         @DetailTests {
-            tests = "server/tests/receive/radio_native.rs";
+            tests = "server/tests/receive/radio_native.rs; "
+                + "server/src/radioControl/windows_tests.rs";
             covers = "reading and writing with a time limit and a withdrawal; the "
-                + "finding of a port by its exact name";
+                + "finding of a port by its exact name; the serial line of an opened port";
         }
         port serial : ~RadioAccess;
         port radio : CatPort;

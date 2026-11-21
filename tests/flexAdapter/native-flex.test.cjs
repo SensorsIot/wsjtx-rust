@@ -454,6 +454,7 @@ test('TC-023-001 stations racing for one DAX channel end on different channels',
   assert.deepEqual(new Set(emulator.slicesOf(a.clientId).concat(emulator.slicesOf(b.clientId)).map(v => v.dax)).size, 2);
 });
 
+// Proves: TC-045-001
 test('CL-045-02 a native station resumes its receive at startup, waiting a bounded time for its session', {timeout: 150000}, async t => {
   const port = await udpPort();
   let emulator = await new FlexEmulator({discoveryPorts: [port]}).start();

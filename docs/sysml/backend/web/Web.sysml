@@ -24,9 +24,10 @@ package WstxWebPart {
                 + "outside server/src/web/ and client/src/web/.";
         }
         @DetailTests {
-            tests = "server/src/web/http_compression_tests.rs";
+            tests = "server/src/web/http_compression_tests.rs; tests/radio-selection.test.cjs";
             covers = "the negotiation of the views' coding against the vectors of RFC 9110, "
-                + "the size bounds of the view answers and the one run of their handler";
+                + "the size bounds of the view answers and the one run of their handler; "
+                + "the 49 Accept-Encoding vectors through the router, their 406 answers among them";
         }
         item context : WebContext {
             doc /* Its context, as the supervisor last gave it. */ }

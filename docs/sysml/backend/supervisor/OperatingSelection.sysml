@@ -241,7 +241,15 @@ package WstxOperatingSelection {
                 + "server/src/recording_tests.rs::"
                 + "a_selection_refused_by_the_selection_rule_changes_nothing; "
                 + "server/src/recording_tests.rs::"
-                + "a_cancel_it_does_not_carry_out_is_refused_and_changes_nothing";
+                + "a_cancel_it_does_not_carry_out_is_refused_and_changes_nothing; "
+                + "tests/radio-selection.test.cjs::"
+                + "authenticated TLS selection reports unknown nominal and early refusal; "
+                + "tests/radio-selection.test.cjs::"
+                + "unseen mutation fencing rejects delayed POST without creating operation; "
+                + "tests/radio-selection.test.cjs::"
+                + "strict TLS unions, early identity barriers and manual preferred defaults; "
+                + "tests/radio-selection.test.cjs::"
+                + "browser preferred selection and Stop fence a genuinely delayed POST";
         }
     }
 

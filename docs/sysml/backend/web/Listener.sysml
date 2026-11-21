@@ -69,7 +69,9 @@ package WstxListener {
                 + "tests/profiles.test.cjs::"
                 + "same-host four-port TLS cookies, reconnect, negatives and rotation; "
                 + "tests/recording.test.cjs::"
-                + "every recording endpoint retains TLS cookie and exact Origin boundaries";
+                + "every recording endpoint retains TLS cookie and exact Origin boundaries; "
+                + "tests/radio-selection.test.cjs::"
+                + "H1 authentication errors mutations static and HEAD bypass negotiation";
         }
     }
     verification 'TC-003-002' {
@@ -266,7 +268,11 @@ package WstxListener {
                 + "tests/recording.test.cjs::"
                 + "review: recording JSON media whitespace parity and malformed parameters; "
                 + "tests/recording.test.cjs::"
-                + "every recording endpoint retains TLS cookie and exact Origin boundaries";
+                + "every recording endpoint retains TLS cookie and exact Origin boundaries; "
+                + "tests/radio-selection.test.cjs::"
+                + "H1 authentication errors mutations static and HEAD bypass negotiation; "
+                + "tests/radio-selection.test.cjs::"
+                + "strict TLS unions, early identity barriers and manual preferred defaults";
         }
     }
     verification 'TC-021-008' {
@@ -297,7 +303,12 @@ package WstxListener {
         objective { verify 'CL-003-08'; }
         @TestedBy {
             test = "tests/contact.test.cjs; tests/ui-operating.test.cjs; "
-                + "server/src/contact_http_tests.rs; server/src/receive_http_tests.rs";
+                + "server/src/contact_http_tests.rs; server/src/receive_http_tests.rs; "
+                + "tests/radio-selection.test.cjs::"
+                + "a status on the same socket reads no receive snapshot "
+                + "unless the state is in doubt; "
+                + "tests/radio-selection.test.cjs::"
+                + "actual native/CAT/TLS two-browser Thin and Off selection workload";
         }
     }
     verification 'TC-082-003' {

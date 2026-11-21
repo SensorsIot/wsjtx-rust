@@ -178,7 +178,9 @@ package WstxCatControl {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-09'; }
         @TestedBy {
-            test = "server/tests/radio_control.rs; server/src/radio_control/executor_tests.rs";
+            test = "server/tests/radio_control.rs; server/src/radio_control/executor_tests.rs; "
+                + "server/tests/receive/radio_hardware.rs::"
+                + "usb_data_prepare_and_restore_have_independent_icom_bytes_and_readbacks";
         }
     }
 
