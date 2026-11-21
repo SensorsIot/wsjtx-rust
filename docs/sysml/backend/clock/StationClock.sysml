@@ -158,7 +158,10 @@ package WstxStationClock {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-043-01'; verify 'CL-043-03'; }
-        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
+        @TestedBy {
+            test = "server/tests/transmit_air_clock.rs; "
+                + "server/src/transmit/clock_http_tests.rs::no_clock_source_setting";
+        }
     }
 
     verification 'TC-006-003' {
@@ -176,7 +179,13 @@ package WstxStationClock {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-043-03'; verify 'CL-009-05'; }
-        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
+        @TestedBy {
+            test = "server/tests/transmit_air_clock.rs; "
+                + "server/src/transmit/clock_http_tests.rs::"
+                + "warnings_windows_time_capture_and_revision; "
+                + "server/src/transmit/transmit_http_tests.rs::"
+                + "transmit_wire_shows_the_sntp_clock_measurement";
+        }
     }
 
     verification 'TC-043-002' {

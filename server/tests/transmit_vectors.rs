@@ -261,6 +261,7 @@ fn oracle(message: &str) -> &'static Value {
 /// EU VHF: every oracle vector packs bit for bit as ft8code, renders its own tokens
 /// with a hash table that knows both calls and <...> without one; every rejected shape is
 /// never packed as EU VHF; the 38-character message is refused tooLong.
+// Proves: TC-005-001
 #[test]
 fn tc_099_001_eu_vhf_packs_exactly_as_ft8code() {
     for message in EU_VHF {

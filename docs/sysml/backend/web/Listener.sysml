@@ -71,7 +71,9 @@ package WstxListener {
                 + "tests/recording.test.cjs::"
                 + "every recording endpoint retains TLS cookie and exact Origin boundaries; "
                 + "tests/radio-selection.test.cjs::"
-                + "H1 authentication errors mutations static and HEAD bypass negotiation";
+                + "H1 authentication errors mutations static and HEAD bypass negotiation; "
+                + "server/src/transmit/transmit_http_tests.rs::"
+                + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms";
         }
     }
     verification 'TC-003-002' {
@@ -272,7 +274,9 @@ package WstxListener {
                 + "tests/radio-selection.test.cjs::"
                 + "H1 authentication errors mutations static and HEAD bypass negotiation; "
                 + "tests/radio-selection.test.cjs::"
-                + "strict TLS unions, early identity barriers and manual preferred defaults";
+                + "strict TLS unions, early identity barriers and manual preferred defaults; "
+                + "server/src/transmit/transmit_http_tests.rs::"
+                + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms";
         }
     }
     verification 'TC-021-008' {

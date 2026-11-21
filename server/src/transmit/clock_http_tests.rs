@@ -237,6 +237,7 @@ async fn clock_view_wire_with_and_without_a_43_file() {
 // No clock source setting: clock.json missing, {source ntp}, {source
 // air} and malformed give the same view (twelve stations 2 s fast: -2000 after two periods,
 // synchronized); each file byte for byte unchanged; POST /clock answered as an unknown route.
+// Proves: TC-092-001
 #[tokio::test]
 async fn no_clock_source_setting() {
     let unknown = {
@@ -295,6 +296,7 @@ async fn no_clock_source_setting() {
 // GET /clock and GET /transmit after each step: the same warning, the
 // Windows Time service state, capture_warning, and clock_revision increasing at each change
 // of a clock.state field and only then.
+// Proves: TC-007-011, TC-092-003
 #[tokio::test]
 async fn warnings_windows_time_capture_and_revision() {
     let (ntp, rounds) = RoundSource::start();
