@@ -156,7 +156,7 @@ pub struct CaptureHandle {
     finished: Option<Result<(), SourceError>>,
 }
 impl CaptureHandle {
-    pub fn begin(endpoint_id: &str) -> Result<Self, SourceError> {
+    pub fn begin(endpoint_id: &str, device: Arc<dyn CaptureDevice>) -> Result<Self, SourceError> {
         if endpoint_id.is_empty() || endpoint_id.len() > 2048 || endpoint_id.contains('\0') {
             return Err(SourceError::Unavailable);
         }
@@ -171,7 +171,7 @@ impl CaptureHandle {
             .name("radio-capture".into())
             .spawn(move || {
                 raise_thread_priority();
-                let result = capture(&id, started_tx, thread_cancel, thread_wake, &done_tx);
+                let result = device.capture(&id, started_tx, thread_cancel, thread_wake, &done_tx);
                 let _ = done_tx.try_send(result);
             })
             .map_err(|_| SourceError::Unavailable)?;
@@ -256,6 +256,7 @@ impl Drop for CaptureHandle {
 /// Independent audio lifecycle. Opening/closing never block the receive worker.
 pub struct AudioController {
     endpoint_id: String,
+    device: Arc<dyn CaptureDevice>,
     lifecycle: Lifecycle,
     handle: Option<CaptureHandle>,
     live: Option<LiveSource>,
@@ -277,12 +278,13 @@ impl AudioController {
     pub fn capture_diagnostics(&self) -> Option<super::CaptureDiagnostics> {
         Some(self.live.as_ref()?.capture_diagnostics())
     }
-    pub fn new(endpoint_id: String) -> Result<Self, SourceError> {
+    pub fn new(endpoint_id: String, device: Arc<dyn CaptureDevice>) -> Result<Self, SourceError> {
         if endpoint_id.is_empty() || endpoint_id.len() > 2048 || endpoint_id.contains('\0') {
             return Err(SourceError::Unavailable);
         }
         Ok(Self {
             endpoint_id,
+            device,
             lifecycle: Lifecycle::default(),
             handle: None,
             live: None,
@@ -304,7 +306,7 @@ impl AudioController {
         Ok(())
     }
     fn open(&mut self) {
-        match CaptureHandle::begin(&self.endpoint_id) {
+        match CaptureHandle::begin(&self.endpoint_id, self.device.clone()) {
             Ok(handle) => {
                 self.handle = Some(handle);
                 self.lifecycle.state = AudioState::Opening;
@@ -424,6 +426,20 @@ impl SampleSource for AudioController {
             .acknowledge_epoch(counter, descriptor, timing)
     }
 }
+/// The real capture device: the WASAPI shared-mode capture of the endpoint.
+pub struct Wasapi;
+impl CaptureDevice for Wasapi {
+    fn capture(
+        &self,
+        endpoint_id: &str,
+        opened: mpsc::SyncSender<Opened>,
+        cancel: Arc<AtomicBool>,
+        wake: Arc<Mutex<Option<usize>>>,
+        closed: &mpsc::SyncSender<Result<(), SourceError>>,
+    ) -> Result<(), SourceError> {
+        capture(endpoint_id, opened, cancel, wake, closed)
+    }
+}
 // Field drop order releases interfaces and event before the owning COM apartment.
 struct NativeCaptureOwner {
     reader: IAudioCaptureClient,
@@ -435,7 +451,7 @@ struct NativeCaptureOwner {
 }
 fn capture(
     id: &str,
-    started: mpsc::SyncSender<Result<(Arc<PacketQueue>, NativeFormat), SourceError>>,
+    started: mpsc::SyncSender<Opened>,
     cancel: Arc<AtomicBool>,
     wake: Arc<Mutex<Option<usize>>>,
     closed: &mpsc::SyncSender<Result<(), SourceError>>,
@@ -598,82 +614,6 @@ fn capture(
         }
     }
     result
-}
-
-#[cfg(test)]
-impl AudioController {
-    fn worker_fixture(
-        endpoint_id: String,
-        format: NativeFormat,
-        worker: impl FnOnce(
-            Arc<PacketQueue>,
-            Arc<AtomicBool>,
-            mpsc::SyncSender<Result<(), SourceError>>,
-        ) + Send
-        + 'static,
-    ) -> Result<(Self, Arc<PacketQueue>), SourceError> {
-        let queue = PacketQueue::new(format)?;
-        let (opened_tx, opened) = mpsc::sync_channel(1);
-        let (done_tx, done) = mpsc::sync_channel(1);
-        let cancel = Arc::new(AtomicBool::new(false));
-        let worker_cancel = cancel.clone();
-        let worker_queue = queue.clone();
-        let thread = thread::spawn(move || {
-            let _ = opened_tx.send(Ok((worker_queue.clone(), format)));
-            worker(worker_queue, worker_cancel, done_tx);
-        });
-        let mut controller = Self::new(endpoint_id)?;
-        controller.lifecycle.request_start();
-        controller.handle = Some(CaptureHandle {
-            queue: Some(queue.clone()),
-            thread: Some(thread),
-            opened,
-            done,
-            cancel,
-            wake: Arc::new(Mutex::new(None)),
-            finished: None,
-        });
-        Ok((controller, queue))
-    }
-    /// Software packet boundary; no endpoint is activated.
-    pub fn packet_fixture(
-        endpoint_id: String,
-        format: NativeFormat,
-    ) -> Result<(Self, Arc<PacketQueue>), SourceError> {
-        Self::worker_fixture(endpoint_id, format, |_, cancel, done| {
-            while !cancel.load(Ordering::Acquire) {
-                thread::sleep(Duration::from_millis(1));
-            }
-            let _ = done.try_send(Ok(()));
-        })
-    }
-    /// Injects Stop and native-owner lifetime into the same finalizer used by WASAPI.
-    pub fn capture_close_fixture<O: Send + 'static>(
-        format: NativeFormat,
-        owner: O,
-        prior: Result<(), SourceError>,
-        stop: impl FnMut(&mut O) -> Result<(), SourceError> + Send + 'static,
-        wait: impl FnMut() + Send + 'static,
-    ) -> Result<Self, SourceError> {
-        let (controller, _) = Self::worker_fixture(
-            "close-boundary-fixture".into(),
-            format,
-            move |queue, _, done| {
-                let result = finish_capture_owner(
-                    owner,
-                    prior,
-                    stop,
-                    || {
-                        queue.fail(SourceError::FailedClose);
-                        let _ = done.try_send(Err(SourceError::FailedClose));
-                    },
-                    wait,
-                );
-                let _ = done.try_send(result);
-            },
-        )?;
-        Ok(controller)
-    }
 }
 
 /// Keeps this real-time audio thread ahead of the parallel decode workers, which use all

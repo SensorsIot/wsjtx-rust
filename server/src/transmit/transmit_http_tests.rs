@@ -63,6 +63,8 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
         profile::new_uuid().unwrap(),
         std::sync::Arc::new(crate::profile::Disk),
         DrivenClock::new(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     let peer = attach_peer(&recording, Device::Present);
     let station = start_on(ntp_clock(RoundSource::idle()));
@@ -173,6 +175,8 @@ async fn app_with(
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         time.clone(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     // As main wires it: one station clock for the clock view and the transmit owner.
     let clock = crate::clock_http::Clock::new(
@@ -449,6 +453,8 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
         profile::new_uuid().unwrap(),
         std::sync::Arc::new(crate::profile::Disk),
         DrivenClock::new(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     let peer = attach_peer(&recording, Device::Present);
     peer.lock().unwrap().transmitting = true;

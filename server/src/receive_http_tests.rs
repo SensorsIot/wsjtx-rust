@@ -171,6 +171,45 @@ impl SampleSource for Input {
         result
     }
 }
+/// The live inputs of a test station: a FIFO of inputs, the next one handed to each live
+/// start whatever its device; with none left the start is audio_unavailable.
+#[derive(Default)]
+pub(crate) struct QueuedInputs(Mutex<std::collections::VecDeque<Box<dyn recording::LiveInput>>>);
+impl QueuedInputs {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+    /// Queues an input behind those already queued (the release-only station tests).
+    #[cfg(not(debug_assertions))]
+    pub(crate) fn push(&self, input: Box<dyn recording::LiveInput>) {
+        self.0.lock().unwrap().push_back(input);
+    }
+    /// Drops every queued input and queues this one.
+    pub(crate) fn replace(&self, input: Box<dyn recording::LiveInput>) {
+        let mut queue = self.0.lock().unwrap();
+        queue.clear();
+        queue.push_back(input);
+    }
+    /// Fills the station's live inputs with this queue.
+    pub(crate) fn fill(self: &Arc<Self>, recording: &recording::Recording) {
+        assert!(recording.inputs.set(self.clone()).is_ok());
+    }
+}
+/// The profile revision a start is checked against: the station's current one.
+pub(crate) fn profile_revision(recording: &recording::Recording) -> u64 {
+    recording.selection_snapshot(false).unwrap()["profile_revision"]
+        .as_u64()
+        .unwrap_or(0)
+}
+impl recording::LiveInputs for QueuedInputs {
+    fn open(&self, _device: &str) -> Result<Box<dyn recording::LiveInput>, SourceError> {
+        self.0
+            .lock()
+            .unwrap()
+            .pop_front()
+            .ok_or(SourceError::Unavailable)
+    }
+}
 impl recording::LiveInput for Input {
     fn start(&mut self) -> Result<(), SourceError> {
         self.running = true;
@@ -239,17 +278,19 @@ async fn live_native_browser_mode(mode: &str) {
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         crate::contact_http::tests::DrivenClock::new(),
+        Arc::new(recording::Threads),
+        Arc::new(recording::WavFiles),
     );
+    let inputs = QueuedInputs::new();
+    inputs.fill(&recording);
     if mode == "ft8" {
-        recording.fixture_input(Box::new(Input::new(fixture)));
+        inputs.push(Box::new(Input::new(fixture)));
     } else {
         // The browser chooses FT4 with the top-bar band and mode selects; the band
         // selection starts receive (in FT8) first and the mode change restarts it in FT4,
         // so each of the two receive starts opens its own native fixture input.
-        recording.fixture_inputs(vec![
-            Box::new(Input::new(NativeFt8Fixture::load_mode(mode))),
-            Box::new(Input::new(fixture)),
-        ]);
+        inputs.push(Box::new(Input::new(NativeFt8Fixture::load_mode(mode))));
+        inputs.push(Box::new(Input::new(fixture)));
     }
     let app = App {
         origin: origin.clone(),
@@ -486,20 +527,20 @@ impl KeptPageBoot {
             boot.clone(),
             std::sync::Arc::new(crate::profile::Disk),
             crate::contact_http::tests::DrivenClock::new(),
+            Arc::new(recording::Threads),
+            Arc::new(recording::WavFiles),
         );
         // The busy recording in every FT8 period: each period's rows move to the kept period.
         // One input per receive start the driver makes; the restart driver starts twice, so
         // that the second start raises the generation above the new boot's 0, as any band
         // change on the running station does.
-        let inputs = (0..inputs)
-            .map(|_| {
-                let mut input =
-                    BusyPeriodInput::load(Arc::new(std::sync::atomic::AtomicU64::new(0)));
-                input.repeat_seconds = 15;
-                Box::new(input) as Box<dyn recording::LiveInput>
-            })
-            .collect();
-        recording.fixture_inputs(inputs);
+        let queued = QueuedInputs::new();
+        queued.fill(&recording);
+        for _ in 0..inputs {
+            let mut input = BusyPeriodInput::load(Arc::new(std::sync::atomic::AtomicU64::new(0)));
+            input.repeat_seconds = 15;
+            queued.push(Box::new(input));
+        }
         let app = App {
             origin: origin.to_owned(),
             profile: Some(Arc::new(ProfileState {
@@ -707,8 +748,12 @@ async fn live_native_busy_period_rows_promptly() {
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         crate::contact_http::tests::DrivenClock::new(),
+        Arc::new(recording::Threads),
+        Arc::new(recording::WavFiles),
     );
-    recording.fixture_input(Box::new(input));
+    let inputs = QueuedInputs::new();
+    inputs.fill(&recording);
+    inputs.push(Box::new(input));
     let app = App {
         origin: origin.clone(),
         profile: Some(Arc::new(ProfileState {
@@ -1028,7 +1073,11 @@ fn resource_station_process_delta_and_owner_release() {
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         crate::contact_http::tests::DrivenClock::new(),
+        Arc::new(recording::Threads),
+        Arc::new(recording::WavFiles),
     );
+    let inputs = QueuedInputs::new();
+    inputs.fill(&recording);
     let mut metrics = StationMetrics::bind_self();
     let idle = metrics.sample();
     let mut phases = Vec::new();
@@ -1044,14 +1093,15 @@ fn resource_station_process_delta_and_owner_release() {
         let fixture = NativeFt8Fixture::load_mode(mode);
         let payload = fixture.expected["payload77"].as_str().unwrap().to_owned();
         let generation = recording.receive_snapshot()["generation"].as_u64().unwrap();
+        inputs.replace(Box::new(Input::new(fixture)));
         let started = recording
-            .receive_start_input(
+            .receive_start(
                 &profile_id,
                 &boot,
                 generation,
+                profile_revision(&recording),
                 "explicit-test-native-input".into(),
                 if mode == "ft8" { "ft8" } else { "ft4" },
-                Box::new(Input::new(fixture)),
             )
             .unwrap();
         let job = started["job"]["id"].as_str().unwrap().to_owned();

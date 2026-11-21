@@ -18,6 +18,8 @@ impl Dir {
             profile::new_uuid().unwrap(),
             std::sync::Arc::new(crate::profile::Disk),
             crate::contact_http::tests::DrivenClock::new(),
+            std::sync::Arc::new(crate::recording::Threads),
+            std::sync::Arc::new(crate::recording::WavFiles),
         )
     }
 }

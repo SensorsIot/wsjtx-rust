@@ -95,7 +95,8 @@ fn selected_radio_audio_to_listening_wav() {
     let output = selected_output();
     let manifest_path = output.with_extension("manifest.json");
     assert!(!manifest_path.exists(), "capture manifest already exists");
-    let mut capture = CaptureHandle::begin(RADIO_INPUT).expect("selected radio input begins");
+    let mut capture = CaptureHandle::begin(RADIO_INPUT, std::sync::Arc::new(audio::Wasapi))
+        .expect("selected radio input begins");
     let open_limit = Instant::now() + Duration::from_secs(5);
     let (queue, format) = loop {
         if let Some(result) = capture.poll_open() {

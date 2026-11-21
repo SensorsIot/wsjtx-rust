@@ -155,6 +155,8 @@ pub(crate) fn plaintext_station(name: &str) -> (App, std::path::PathBuf) {
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         crate::contact_http::tests::DrivenClock::new(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     recording.initialize_profile_revision(0);
     let app = App {

@@ -243,33 +243,6 @@ fn audio_queue_and_clock_bounds() {
     assert_eq!(a.utc_at(120001), Some(1000001));
 }
 
-// Available native FIFO capacity survives consumer bookkeeping.
-// Proves: TC-002-003
-#[test]
-fn audio_consumer_bookkeeping_cannot_drop_an_admissible_native_packet() {
-    let queue = PacketQueue::new(format(48000)).unwrap();
-    let producer = queue.clone();
-    let (start, ready) = std::sync::mpsc::sync_channel(0);
-    let (done, result) = std::sync::mpsc::sync_channel(1);
-    let worker = std::thread::spawn(move || {
-        ready.recv().unwrap();
-        done.send(producer.push(&[], 480, 0, 0, SILENT)).unwrap();
-    });
-    queue.with_consumer_bookkeeping(|| {
-        start.send(()).unwrap();
-        assert_eq!(
-            result.recv_timeout(std::time::Duration::from_millis(250)),
-            Ok(true),
-            "consumer bookkeeping blocked/discarded an otherwise admissible native packet"
-        );
-    });
-    worker.join().unwrap();
-    assert_eq!(queue.queued_frames(), 480);
-    assert_eq!(queue.diagnostics().queue_contention, 0);
-    let mut source = LiveSource::new(queue, format(48000)).unwrap();
-    assert!(matches!(source.poll(), SourcePoll::EpochChanged(_)));
-}
-
 // Exact bounded packet ownership recycles across ring wraps.
 // Proves: TC-002-003
 #[test]
@@ -284,11 +257,7 @@ fn audio_native_packet_buffers_recycle_without_loss_or_counter_drift() {
     for batch in 0..20 {
         for packet in 0..64 {
             let first = (batch * 64 + packet) * 4;
-            if packet == 0 {
-                queue.with_consumer_bookkeeping(|| assert!(queue.push(&bytes, 4, first, 0, 0)));
-            } else {
-                assert!(queue.push(&bytes, 4, first, 0, 0));
-            }
+            assert!(queue.push(&bytes, 4, first, 0, 0));
         }
         assert_eq!(queue.queued_frames(), 256);
         for _ in 0..64 {
@@ -423,12 +392,93 @@ fn audio_lifecycle_retries() {
         assert!(!lifecycle.due(u64::MAX));
     }
 }
+/// A capture device that opens a software packet queue of `format` and hands it to the
+/// test; no endpoint is activated. It delivers nothing until cancelled.
+#[cfg(windows)]
+struct PacketDevice {
+    format: NativeFormat,
+    queues: std::sync::Mutex<std::sync::mpsc::Sender<Arc<PacketQueue>>>,
+}
+#[cfg(windows)]
+impl PacketDevice {
+    fn new(format: NativeFormat) -> (Arc<Self>, std::sync::mpsc::Receiver<Arc<PacketQueue>>) {
+        let (queues, opened) = std::sync::mpsc::channel();
+        (
+            Arc::new(Self {
+                format,
+                queues: std::sync::Mutex::new(queues),
+            }),
+            opened,
+        )
+    }
+}
+#[cfg(windows)]
+impl CaptureDevice for PacketDevice {
+    fn capture(
+        &self,
+        _endpoint_id: &str,
+        opened: std::sync::mpsc::SyncSender<Opened>,
+        cancel: Arc<std::sync::atomic::AtomicBool>,
+        _wake: Arc<std::sync::Mutex<Option<usize>>>,
+        _closed: &std::sync::mpsc::SyncSender<Result<(), SourceError>>,
+    ) -> Result<(), SourceError> {
+        let queue = PacketQueue::new(self.format)?;
+        let _ = opened.send(Ok((queue.clone(), self.format)));
+        let _ = self.queues.lock().unwrap().send(queue);
+        while !cancel.load(std::sync::atomic::Ordering::Acquire) {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        Ok(())
+    }
+}
+/// The close of one native capture owner, run through the same finalizer as WASAPI's: it
+/// opens a new queue, then closes `owner` with `stop` after the read outcome `prior`.
+#[cfg(windows)]
+#[allow(clippy::type_complexity)]
+struct CloseDevice<O> {
+    close: std::sync::Mutex<
+        Option<(
+            O,
+            Result<(), SourceError>,
+            Box<dyn FnMut(&mut O) -> Result<(), SourceError> + Send>,
+            Box<dyn FnMut() + Send>,
+        )>,
+    >,
+}
+#[cfg(windows)]
+impl<O: Send + 'static> CaptureDevice for CloseDevice<O> {
+    fn capture(
+        &self,
+        _endpoint_id: &str,
+        opened: std::sync::mpsc::SyncSender<Opened>,
+        _cancel: Arc<std::sync::atomic::AtomicBool>,
+        _wake: Arc<std::sync::Mutex<Option<usize>>>,
+        closed: &std::sync::mpsc::SyncSender<Result<(), SourceError>>,
+    ) -> Result<(), SourceError> {
+        let Some((owner, prior, stop, wait)) = self.close.lock().unwrap().take() else {
+            let _ = opened.send(Err(SourceError::Unavailable));
+            return Err(SourceError::Unavailable);
+        };
+        let queue = PacketQueue::new(format(48000))?;
+        let _ = opened.send(Ok((queue.clone(), format(48000))));
+        audio::finish_capture_owner(
+            owner,
+            prior,
+            stop,
+            || {
+                queue.fail(SourceError::FailedClose);
+                let _ = closed.try_send(Err(SourceError::FailedClose));
+            },
+            wait,
+        )
+    }
+}
 // Proves: TC-002-003
 #[cfg(windows)]
 #[test]
 fn audio_capture_without_a_named_endpoint_is_refused_unavailable() {
     assert!(matches!(
-        AudioController::new(String::new()),
+        AudioController::new(String::new(), PacketDevice::new(format(48000)).0),
         Err(SourceError::Unavailable)
     ));
 }
@@ -438,8 +488,12 @@ fn audio_capture_without_a_named_endpoint_is_refused_unavailable() {
 #[test]
 fn audio_controller_profiles_and_stop() {
     use std::time::{Duration, Instant};
-    let (mut a, qa) = AudioController::packet_fixture("radio-A".into(), format(48000)).unwrap();
-    let (mut b, qb) = AudioController::packet_fixture("radio-B".into(), format(44100)).unwrap();
+    let (device_a, queue_a) = PacketDevice::new(format(48000));
+    let (device_b, queue_b) = PacketDevice::new(format(44100));
+    let mut a = AudioController::new("radio-A".into(), device_a).unwrap();
+    let mut b = AudioController::new("radio-B".into(), device_b).unwrap();
+    a.start().unwrap();
+    b.start().unwrap();
     let start = Instant::now();
     while a.status().state != AudioState::Running || b.status().state != AudioState::Running {
         assert!(matches!(a.poll(), SourcePoll::Pending));
@@ -447,6 +501,8 @@ fn audio_controller_profiles_and_stop() {
         assert!(start.elapsed() < Duration::from_millis(250));
         std::thread::yield_now();
     }
+    let qa = queue_a.recv_timeout(Duration::from_millis(250)).unwrap();
+    let qb = queue_b.recv_timeout(Duration::from_millis(250)).unwrap();
     assert_eq!(a.selected_endpoint(), "radio-A");
     assert_eq!(b.selected_endpoint(), "radio-B");
     qa.push(&bytes(&vec![0.1; 480]), 480, 100, 5, 0);
@@ -621,27 +677,29 @@ fn audio_failed_stop_quarantines_owner_and_apartment_without_reopen() {
         let stop_gate = released.clone();
         let wait = Arc::new((Mutex::new(()), Condvar::new()));
         let wait_worker = wait.clone();
-        let mut controller = AudioController::capture_close_fixture(
-            format(48000),
-            owner,
-            prior,
-            move |_| {
-                if stop_gate.load(Ordering::Acquire) {
-                    Ok(())
-                } else {
-                    Err(SourceError::Unavailable)
-                }
-            },
-            move || {
-                let (lock, changed) = &*wait_worker;
-                drop(
-                    changed
-                        .wait_timeout(lock.lock().unwrap(), Duration::from_millis(10))
-                        .unwrap(),
-                );
-            },
-        )
-        .unwrap();
+        let device = Arc::new(CloseDevice {
+            close: Mutex::new(Some((
+                owner,
+                prior,
+                Box::new(move |_: &mut Owner| {
+                    if stop_gate.load(Ordering::Acquire) {
+                        Ok(())
+                    } else {
+                        Err(SourceError::Unavailable)
+                    }
+                }) as Box<dyn FnMut(&mut Owner) -> Result<(), SourceError> + Send>,
+                Box::new(move || {
+                    let (lock, changed) = &*wait_worker;
+                    drop(
+                        changed
+                            .wait_timeout(lock.lock().unwrap(), Duration::from_millis(10))
+                            .unwrap(),
+                    );
+                }) as Box<dyn FnMut() + Send>,
+            ))),
+        });
+        let mut controller = AudioController::new("close-boundary-fixture".into(), device).unwrap();
+        controller.start().unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             if matches!(

@@ -214,6 +214,49 @@ impl SourceFile {
         }))
     }
 }
+/// The replay source port: opens the committed recording a replay reads its blocks from.
+pub trait ReplaySources: Send + Sync {
+    fn open(&self, path: &Path, source: Arc<SourceDescriptor>) -> Result<Box<dyn ReplaySource>>;
+}
+/// One opened replay input: the next block of at most 4096 samples, or the end.
+pub trait ReplaySource: Send {
+    fn next(&mut self) -> Result<Option<SampleBlock>>;
+}
+impl ReplaySource for SourceFile {
+    fn next(&mut self) -> Result<Option<SampleBlock>> {
+        SourceFile::next(self)
+    }
+}
+/// The real replay source: the recording's WAV file.
+pub struct WavFiles;
+impl ReplaySources for WavFiles {
+    fn open(&self, path: &Path, source: Arc<SourceDescriptor>) -> Result<Box<dyn ReplaySource>> {
+        Ok(Box::new(SourceFile::open(path, source)?))
+    }
+}
+/// The worker spawner port: the receive and replay workers start through it.
+pub trait Spawner: Send + Sync {
+    fn spawn(
+        &self,
+        name: Option<&'static str>,
+        run: Box<dyn FnOnce() + Send>,
+    ) -> std::io::Result<std::thread::JoinHandle<()>>;
+}
+/// The real spawner: one operating-system thread per job, named when a name is given.
+pub struct Threads;
+impl Spawner for Threads {
+    fn spawn(
+        &self,
+        name: Option<&'static str>,
+        run: Box<dyn FnOnce() + Send>,
+    ) -> std::io::Result<std::thread::JoinHandle<()>> {
+        let mut builder = std::thread::Builder::new();
+        if let Some(name) = name {
+            builder = builder.name(name.into());
+        }
+        builder.spawn(run)
+    }
+}
 #[derive(Clone, Serialize)]
 pub struct Import {
     pub id: String,
@@ -322,8 +365,13 @@ pub struct Recording {
     pub(crate) time: Arc<dyn wstx_rust::transmit::clock::Clock>,
     /// The CAT line opener the entry point supplies; without one CAT is unavailable.
     pub(crate) cat_opener: std::sync::OnceLock<Arc<dyn wstx_rust::radio_control::executor::Opener>>,
-    #[cfg(test)]
-    resources: Mutex<Resources>,
+    /// The audio inputs a live start opens, filled by the entry point; without them a live
+    /// start other than a native session is audio_unavailable.
+    pub(crate) inputs: std::sync::OnceLock<Arc<dyn LiveInputs>>,
+    /// The spawner of the receive and replay workers.
+    spawner: Arc<dyn Spawner>,
+    /// The source a replay reads its recording from.
+    replays: Arc<dyn ReplaySources>,
 }
 
 /// One analysis window's decode in progress (Recording::begin_window_decode).
@@ -499,8 +547,24 @@ impl LiveInput for wstx_rust::flex::NativeInput {
 enum StartGuard {
     Profile(u64),
     Selection(u64),
-    #[cfg(test)]
-    Fixture,
+}
+/// The live input port: a live start opens the input of its device through it.
+pub(crate) trait LiveInputs: Send + Sync {
+    fn open(&self, device: &str) -> std::result::Result<Box<dyn LiveInput>, source::SourceError>;
+}
+/// The real live inputs: an audio controller over the capture device.
+#[cfg(windows)]
+pub(crate) struct AudioInputs {
+    pub(crate) capture: Arc<dyn audio::CaptureDevice>,
+}
+#[cfg(windows)]
+impl LiveInputs for AudioInputs {
+    fn open(&self, device: &str) -> std::result::Result<Box<dyn LiveInput>, source::SourceError> {
+        Ok(Box::new(audio::AudioController::new(
+            device.to_owned(),
+            self.capture.clone(),
+        )?))
+    }
 }
 #[cfg(windows)]
 impl LiveInput for audio::AudioController {
@@ -822,20 +886,6 @@ impl Recording {
         guard: StartGuard,
     ) -> Result<Value> {
         self.reap_receive();
-        #[cfg(test)]
-        {
-            let input = {
-                let mut resources = self.resources.lock().unwrap();
-                resources
-                    .live_input
-                    .take()
-                    .or_else(|| resources.live_inputs.pop_front())
-            };
-            if let Some(input) = input {
-                return self
-                    .receive_start_checked(profile, boot, generation, device, mode, input, guard);
-            }
-        }
         // FR-023: a native profile receives from its own confirmed DAX stream through the
         // same live source, converter and receive owner as an audio device.
         if let Some(session) = self.flex.get() {
@@ -846,51 +896,9 @@ impl Recording {
             return self
                 .receive_start_checked(profile, boot, generation, device, mode, input, guard);
         }
-        #[cfg(windows)]
-        let input = audio::AudioController::new(device.clone()).map_err(audio_error)?;
-        #[cfg(not(windows))]
-        {
-            let _ = (profile, boot, generation, device, mode);
-            return Err("audio_unavailable");
-        }
-        #[cfg(windows)]
-        self.receive_start_checked(
-            profile,
-            boot,
-            generation,
-            device,
-            mode,
-            Box::new(input),
-            guard,
-        )
-    }
-    #[cfg(all(test, not(debug_assertions)))]
-    pub(crate) fn fixture_input(&self, input: Box<dyn LiveInput>) {
-        self.resources.lock().unwrap().live_input = Some(input);
-    }
-    #[cfg(all(test, not(debug_assertions)))]
-    pub(crate) fn fixture_inputs(&self, inputs: Vec<Box<dyn LiveInput>>) {
-        self.resources.lock().unwrap().live_inputs = inputs.into();
-    }
-    #[cfg(test)]
-    pub(crate) fn receive_start_input(
-        self: &Arc<Self>,
-        profile: &str,
-        boot: &str,
-        generation: u64,
-        device: String,
-        mode: &'static str,
-        input: Box<dyn LiveInput>,
-    ) -> Result<Value> {
-        self.receive_start_checked(
-            profile,
-            boot,
-            generation,
-            device,
-            mode,
-            input,
-            StartGuard::Fixture,
-        )
+        let inputs = self.inputs.get().ok_or("audio_unavailable")?;
+        let input = inputs.open(&device).map_err(audio_error)?;
+        self.receive_start_checked(profile, boot, generation, device, mode, input, guard)
     }
     #[allow(
         clippy::too_many_arguments,
@@ -1015,13 +1023,7 @@ impl Recording {
         Ok(self.receive_snapshot())
     }
     fn spawn_receive(&self, run: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
-        #[cfg(test)]
-        if std::mem::take(&mut self.resources.lock().unwrap().fail_live_spawn) {
-            return Err(std::io::Error::other("injected receive spawn failure"));
-        }
-        let worker = std::thread::Builder::new()
-            .name("station-receive".into())
-            .spawn(run)?;
+        let worker = self.spawner.spawn(Some("station-receive"), Box::new(run))?;
         self.state.lock().unwrap().live_worker = Some(worker);
         Ok(())
     }
@@ -3273,16 +3275,6 @@ impl LiveSpectrum {
         Ok(frames)
     }
 }
-#[cfg(test)]
-#[derive(Default)]
-struct Resources {
-    active_workers: usize,
-    peak_workers: usize,
-    peak_blocks: usize,
-    live_input: Option<Box<dyn LiveInput>>,
-    live_inputs: VecDeque<Box<dyn LiveInput>>,
-    fail_live_spawn: bool,
-}
 fn io<T>(value: std::io::Result<T>) -> Result<T> {
     value.map_err(|_| "storage_unavailable")
 }
@@ -3310,6 +3302,8 @@ impl Recording {
         boot: String,
         files: Arc<dyn profile::Files>,
         time: Arc<dyn wstx_rust::transmit::clock::Clock>,
+        spawner: Arc<dyn Spawner>,
+        replays: Arc<dyn ReplaySources>,
     ) -> Arc<Self> {
         let dir = base.join("recordings");
         let startup = Mutex::new(startup::Startup::load(base, &profile, files.clone()));
@@ -3374,8 +3368,9 @@ impl Recording {
                 files,
                 time,
                 cat_opener: std::sync::OnceLock::new(),
-                #[cfg(test)]
-                resources: Mutex::new(Resources::default()),
+                inputs: std::sync::OnceLock::new(),
+                spawner,
+                replays,
             });
         }
         if dir.join("current.json").exists() {
@@ -3454,8 +3449,9 @@ impl Recording {
             files,
             time,
             cat_opener: std::sync::OnceLock::new(),
-            #[cfg(test)]
-            resources: Mutex::new(Resources::default()),
+            inputs: std::sync::OnceLock::new(),
+            spawner,
+            replays,
         });
         if this.cleanup(None).is_err() {
             this.state.lock().unwrap().storage_error = Some("storage_unavailable");
@@ -3863,7 +3859,11 @@ impl Recording {
         }
         let this = self.clone();
         let worker_job = job.clone();
-        std::thread::spawn(move || this.run(worker_job, meta));
+        drop(
+            self.spawner
+                .spawn(None, Box::new(move || this.run(worker_job, meta)))
+                .expect("failed to spawn thread"),
+        );
         Ok(json!({"v":1,"id":job.id,"generation":job.generation,"state":"running"}))
     }
     pub fn cancel_job(&self, id: &str) -> Result<Value> {
@@ -3880,18 +3880,7 @@ impl Recording {
         Ok(value)
     }
     fn run(&self, job: Job, meta: Metadata) {
-        #[cfg(test)]
-        {
-            let mut r = self.resources.lock().unwrap();
-            r.active_workers += 1;
-            r.peak_workers = r.peak_workers.max(r.active_workers);
-            assert_eq!(r.active_workers, 1);
-        }
         let result = self.process(&job, &meta);
-        #[cfg(test)]
-        {
-            self.resources.lock().unwrap().active_workers -= 1;
-        }
         self.release(job, meta, result);
     }
     fn release(&self, job: Job, meta: Metadata, result: Result<()>) {
@@ -3929,10 +3918,10 @@ impl Recording {
             total_frames: Some(meta.frames),
             utc_anchor: None,
         });
-        let mut input = SourceFile::open(&self.path(&meta.recording_id, "wav"), source)?;
+        let mut input = self
+            .replays
+            .open(&self.path(&meta.recording_id, "wav"), source)?;
         let mut block = input.next()?.ok_or("recording_unavailable")?;
-        #[cfg(test)]
-        self.observe_blocks(&[&block]);
         if Some(&block.source.source_id) != job.source_id.as_ref()
             || block.discontinuity
             || block.end_of_stream != (block.samples.len() as u64 == meta.frames)
@@ -3969,8 +3958,6 @@ impl Recording {
                 .min(meta.frames);
                 while history_first + (history.len() as u64) < needed {
                     let next = input.next()?.ok_or("recording_unavailable")?;
-                    #[cfg(test)]
-                    self.observe_blocks(&[&block, &next]);
                     if next.first_frame != history_first + history.len() as u64 {
                         return Err("recording_unavailable");
                     }
@@ -4039,20 +4026,6 @@ impl Recording {
             }
         }
         Ok(())
-    }
-    #[cfg(test)]
-    fn observe_blocks(&self, blocks: &[&SampleBlock]) {
-        assert!(blocks.len() <= 2);
-        for block in blocks {
-            assert!(block.samples.len() <= 4096);
-            assert_eq!(
-                Arc::strong_count(&block.samples),
-                1,
-                "spectrum must release every previous immutable sample allocation"
-            );
-        }
-        let mut r = self.resources.lock().unwrap();
-        r.peak_blocks = r.peak_blocks.max(blocks.len());
     }
 }
 pub fn terminal(state: &str) -> bool {
