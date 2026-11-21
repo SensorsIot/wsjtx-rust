@@ -75,6 +75,7 @@ async fn tc_089_002_a_selection_on_the_newest_publication_counts_its_stations() 
 // period, its row flat 30, published complete at e + 44.1 s (in progress). The slot check counts it:
 // 1460..1540 closed, Tx alone to the nearest free slot clear of the station and of Rx (1800): 1450
 // and 1550 both 50 Hz away, the lower 1450; Rx stays 1800.
+// Proves: TC-089-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_002_a_held_slot_check_counts_the_newest_period() {
     let rows = |f: &Mcp, e: i64| {
@@ -102,6 +103,7 @@ async fn tc_089_002_a_held_slot_check_counts_the_newest_period() {
 // e + 16 s: a build counting e - 15 and e - 45 s (2), [[300, 2700]]. P's complete publication at
 // P + 14.1 s with a station decoded at 1200 Hz in P: one build at once, at_utc_ms P + 14.1 s, P
 // counted (3), 1160..1240 closed: [[300, 1200], [1250, 2700]].
+// Proves: TC-089-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_003_the_marks_count_the_publication_of_the_period_in_progress_in_a_qso() {
     let f = station(true).await;
@@ -148,6 +150,7 @@ async fn tc_089_003_the_marks_count_the_publication_of_the_period_in_progress_in
 // rx_parity odd, P counted (3), [[300, 1200], [1250, 2700]]. At the next period start e + 30 s the
 // parity flips: even, e - 30 and e - 60 s (2), the odd decode closes nothing:
 // [[300, 2700]].
+// Proves: TC-089-001
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_003_listening_counts_the_period_in_progress_once_completely_published() {
     let f = station(true).await;
@@ -372,6 +375,7 @@ async fn tc_089_004_hold_tx_stop_and_a_second_auto_on() {
 // to another call: the first empty publication after Esc); the odd e + 15 s published empty at
 // e + 29.1 s, the second: the CQ's slot with P counted, 1760..1840 closed (also by K1ABC in
 // e - 30 s), the nearest free 1750 (the lower of 1750 and 1850).
+// Proves: TC-089-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_after_esc_on_a_manual_contact_the_cq_waits() {
     let t = run_cq(false, |f, e| {
@@ -426,6 +430,7 @@ async fn tc_089_004_after_esc_on_a_manual_contact_the_cq_waits() {
 // e + 30 s, flat, at e + 44.1 s); at the second (the odd e + 45 s at e + 59.1 s) it decides with
 // what is due (flat rows; K1ABC at 1800 in e - 30 s closes at most 1760..1840): the current Tx 1500
 // is free and kept, Rx = Tx = 1500, tx_slot {1500, 0}.
+// Proves: TC-089-004
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_004_after_a_completed_manual_contact_the_cq_waits() {
     const RR73: (&str, f64, Option<f64>) = ("HB9BLA K1ABC RR73", 1800.0, Some(-5.0));

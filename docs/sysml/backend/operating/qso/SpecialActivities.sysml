@@ -243,7 +243,9 @@ package WstxSpecialActivities {
                 + "server/src/contact_tests.rs::"
                 + "a_hound_refuses_wrong_period_rows_other_hounds_other_slots_and_ft4; "
                 + "server/src/contact_tests.rs::"
-                + "a_hound_ignores_rr73_of_other_stations_and_replies_nothing_while_tuning";
+                + "a_hound_ignores_rr73_of_other_stations_and_replies_nothing_while_tuning; "
+                + "server/src/transmit_state_tests.rs::"
+                + "tc_111_003_a_stale_safety_revision_prepares_nothing_and_a_hound_calls_no_cq";
         }
     }
 
@@ -279,7 +281,21 @@ package WstxSpecialActivities {
         objective { verify 'CL-111-10'; }
         @TestedBy {
             test = "server/src/contact_tests.rs::"
-                + "hound_reply_timeout_hound_watchdog_and_tx_watchdog";
+                + "hound_reply_timeout_hound_watchdog_and_tx_watchdog; "
+                + "server/src/transmit_state_tests.rs::"
+                + "tc_111_016_the_hound_stops_300_s_after_its_last_start";
+        }
+    }
+
+    verification 'TC-085-007' {
+        doc /* The contest serial counts only for an accepted contact. */
+        subject qso : QsoService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-085-03'; }
+        @TestedBy {
+            test = "server/src/contact_http_tests.rs::"
+                + "tc_085_004_the_contest_serial_counts_only_on_accepted";
         }
     }
 }

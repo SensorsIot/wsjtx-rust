@@ -23,8 +23,8 @@ package WstxAutoPart {
                 + "server/src/operating/auto/ and client/src/operating/auto/.";
         }
         @DetailTests {
-            tests = "server/src/automation_tests.rs";
-            covers = "the steps of Auto";
+            tests = "server/src/automation_tests.rs; server/src/operating/qso/autofinish_tests.rs";
+            covers = "the steps of Auto; the finishing guard of a started QSO";
         }
         port control : ~AutoControlPort;
         port rules : ~AutoSharePort;
