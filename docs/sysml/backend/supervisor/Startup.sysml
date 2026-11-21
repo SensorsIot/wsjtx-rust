@@ -192,7 +192,20 @@ package WstxStartup {
                 + "startup_resume_skips_what_a_command_started_and_never_ends_the_process; "
                 + "tests/flexAdapter/native-flex.test.cjs::"
                 + "CL-045-02 a native station resumes its receive at startup, waiting a "
-                + "bounded time for its session";
+                + "bounded time for its session; "
+                + "server/src/receive/receive_startup_tests.rs::"
+                + "startup_file_invalid_or_foreign_is_ignored";
+        }
+    }
+    verification 'TC-045-003' {
+        doc /* The receive started is remembered, and a stop clears it. */
+        subject supervisor : Supervisor;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-045-01'; }
+        @TestedBy {
+            test = "server/src/receive/receive_startup_tests.rs::"
+                + "startup_choice_round_trips_and_stop_clears";
         }
     }
 }

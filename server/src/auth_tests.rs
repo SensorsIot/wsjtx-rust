@@ -8,6 +8,7 @@ use ring::{
 use tower::ServiceExt;
 
 // Independent cookie/header vectors.
+// Proves: TC-003-001
 #[test]
 fn profile_credentials_require_one_selected_cookie_across_all_header_fields() {
     let app = App {
@@ -485,6 +486,7 @@ async fn http_auth_current_grant_dispatches_operating_mutations_revoked_or_forei
 
 // A plaintext selected profile has no grant service
 // and keeps the runtime-token contract for operating HTTP routes and WS.
+// Proves: TC-021-005
 #[tokio::test]
 async fn plaintext_profile_operating_routes_and_ws_require_runtime_token() {
     let mut f = HttpFixture::new("http://localhost:8080");
@@ -579,6 +581,7 @@ async fn plaintext_profile_operating_routes_and_ws_require_runtime_token() {
     );
 }
 
+// Proves: TC-003-001, TC-021-005
 #[tokio::test]
 async fn http_auth_origin_tls_precede_credentials_and_strict_body_bounds_have_no_commit() {
     let f = HttpFixture::new("https://localhost:8080");
@@ -1052,6 +1055,7 @@ async fn http_auth_safety_edit_preserves_key_identity_but_advances_scope_and_cle
     );
 }
 
+// Proves: TC-003-001, TC-021-005
 #[tokio::test]
 async fn http_auth_status_requires_post_and_wrong_origin_is_forbidden_before_auth() {
     let app = App {
@@ -1355,6 +1359,7 @@ async fn commission_http_commits_exact_disabled_configuration_and_retained_dupli
 }
 
 // Each invalid request has an independent pristine fixture.
+// Proves: TC-003-001, TC-021-005
 #[tokio::test]
 async fn commission_http_strict_negatives_never_change_acknowledgement_or_files() {
     for case in [
@@ -2369,6 +2374,7 @@ mod automatic_cat {
         }
     }
 
+    // Proves: TC-022-009
     #[tokio::test]
     async fn status_reports_retry_reason_and_never_fresh_frequency_while_unavailable() {
         let f = HttpFixture::new("https://localhost:8080");
@@ -2398,6 +2404,7 @@ mod automatic_cat {
         assert_eq!(peer.lock().unwrap().opens, 1);
     }
 
+    // Proves: TC-006-004, TC-021-005
     #[tokio::test]
     async fn deprecated_connect_and_disconnect_validate_then_refuse_with_zero_io() {
         let f = HttpFixture::new("https://localhost:8080");
@@ -2457,6 +2464,7 @@ mod automatic_cat {
 
 // A saved profile callsign becomes the station's
 // own call for HashResolution.
+// Proves: TC-024-001
 #[tokio::test]
 async fn profile_save_sets_my_call_for_the_hash_table() {
     let f = HttpFixture::new("https://localhost:8080");
@@ -2485,6 +2493,7 @@ async fn profile_save_sets_my_call_for_the_hash_table() {
 // extra, duplicate, missing or wrongly typed fields 400, wrong media 415, 1025 bytes 413
 // (1024 padded bytes accepted), a missing Origin 403, an unknown transport 401. None of them changes the
 // durable record or the current transport.
+// Proves: TC-003-001, TC-021-005
 #[tokio::test]
 async fn status_strict_request_bounds_have_zero_effects() {
     let f = HttpFixture::new("https://localhost:8080");

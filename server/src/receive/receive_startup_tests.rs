@@ -77,6 +77,7 @@ fn stop(r: &Recording) {
 
 // Start (direct and band selection) persists mode, band and audio
 // input next to profile.json; Monitor-off persists; operator Stop clears the choice.
+// Proves: TC-045-003
 #[test]
 fn startup_choice_round_trips_and_stop_clears() {
     let dir = Dir::new();
@@ -135,6 +136,7 @@ fn startup_choice_round_trips_and_stop_clears() {
 
 // A foreign, malformed, oversize or out-of-domain file resumes
 // nothing, reads as the defaults and is reported, never trusted.
+// Proves: TC-045-001
 #[test]
 fn startup_file_invalid_or_foreign_is_ignored() {
     let mut extra = stored(true, "ft8", Some("20m"));
@@ -326,6 +328,7 @@ fn startup_resume_cat_unavailable_falls_back_to_plain_receive() {
 
 // GET/POST /receive/startup through the station router, with the
 // station's refusal codes and no change on a refused request.
+// Proves: TC-003-001, TC-006-004, TC-021-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn startup_http_view_and_monitor_off_update() {
     let f = crate::contact_http::tests::fixture("http://127.0.0.1:18451", false);

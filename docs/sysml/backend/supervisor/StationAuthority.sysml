@@ -144,7 +144,11 @@ package WstxStationAuthority {
                 + "server/src/logbook_http_tests.rs::"
                 + "save_contact_refusals_byte_cap_and_command_receipts; "
                 + "server/src/contact_http_tests.rs::"
-                + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions";
+                + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
+                + "server/src/auth_tests.rs::"
+                + "deprecated_connect_and_disconnect_validate_then_refuse_with_zero_io; "
+                + "server/src/receive/receive_startup_tests.rs::"
+                + "startup_http_view_and_monitor_off_update";
         }
     }
 
