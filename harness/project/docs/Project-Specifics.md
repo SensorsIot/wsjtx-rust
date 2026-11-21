@@ -194,7 +194,9 @@ generation 2 or more: only while receive runs FT8 or FT4 on a selected band,
 Monitor off at startup is not set and the saved receive choice is that mode and band, so that the
 selection tunes the radio as the resume after the restart does and saves the same choice.
 Otherwise, or when the selection is refused or does not take, the result is NOT-EXERCISED naming
-why. `live-station-browser` gates the same oracle in-process.
+why. The station keeps one session per grant, so on the old boot the page and the script share
+one session: the page holds the one the script reads and selects with, and gets the new one after
+any new login of the script. `live-station-browser` gates the same oracle in-process.
 
 ### Parallel groups and shared resources
 
@@ -508,7 +510,7 @@ b611766f68a987b450c15d38233c3c9eab5eb2eef58d9cc93db56fdce62fef07  tools/deploy/s
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
 506cc03746fb8bce42cd20bbafbe83715cf21bf502acb7ab558a5513a9b1f770  tools/deploy/station-probe.ps1
-4116d80faf8f8112abf4e1a183b96ea86b4643f07d161158fe0c3456c62cf7e4  tools/deploy/live-page-check.ps1
+639f288c5b18f992e50f6d435a05dc47c890826a6de48b5b39407467eee4ee9f  tools/deploy/live-page-check.ps1
 ```
 
 ### Standing consent at 1 %
