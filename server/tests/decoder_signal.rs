@@ -1334,13 +1334,17 @@ fn resource_repeat(
     actual: &[wstx_rust::decoder::Decode],
     mode: Mode,
 ) {
+    let start = repeatability("startToleranceFrames") as u64;
+    let frequency = repeatability(if mode == Mode::Ft8 {
+        "ft8RepeatToleranceHz"
+    } else {
+        "ft4RepeatToleranceHz"
+    });
     assert_eq!(actual.len(), expected.len());
     for (a, b) in actual.iter().zip(expected) {
         assert_eq!(a.payload, b.payload);
-        assert!(a.start_frame.abs_diff(b.start_frame) <= 1);
-        assert!(
-            (a.frequency_hz - b.frequency_hz).abs() <= if mode == Mode::Ft8 { 0.2 } else { 0.5 }
-        );
+        assert!(a.start_frame.abs_diff(b.start_frame) <= start);
+        assert!((a.frequency_hz - b.frequency_hz).abs() <= frequency);
     }
 }
 fn resource_compare_baseline(expected: &Value, actual: &Value, mode: &str) {
@@ -1354,6 +1358,12 @@ fn resource_compare_baseline(expected: &Value, actual: &Value, mode: &str) {
     };
     expected.sort_by(order);
     actual.sort_by(order);
+    let start = repeatability("startToleranceFrames") as u64;
+    let frequency = repeatability(if mode == "ft8" {
+        "ft8RepeatToleranceHz"
+    } else {
+        "ft4RepeatToleranceHz"
+    });
     assert_eq!(actual.len(), expected.len());
     for (a, b) in actual.into_iter().zip(expected) {
         assert_eq!(a["payload77"], b["payload77"]);
@@ -1362,11 +1372,11 @@ fn resource_compare_baseline(expected: &Value, actual: &Value, mode: &str) {
                 .as_u64()
                 .unwrap()
                 .abs_diff(b["start_frame"].as_u64().unwrap())
-                <= 1
+                <= start
         );
         assert!(
             (a["frequency_hz"].as_f64().unwrap() - b["frequency_hz"].as_f64().unwrap()).abs()
-                <= if mode == "ft8" { 0.2 } else { 0.5 }
+                <= frequency
         );
     }
 }
