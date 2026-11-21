@@ -520,12 +520,31 @@ class ArtifactTests(ApiFreeCase):
         with self.assertRaises(guardian.JobError):
             guardian.load_handoff(path, self.root)
 
+    def test_busy_then_matrix_from_one_handoff_each_write_their_own_claim(self):
+        receipt, folder, path = self.resolve(io.BytesIO(self.producer()))
+        launched = []
+
+        def owned(argv, case, *_args, **_kwargs):
+            launched.append((case, argv[2]))
+            return {"case": case}
+
+        with patch.object(guardian, "run_owned", side_effect=owned):
+            for case in ("busy", "matrix"):
+                self.assertEqual(guardian.run_case(path, case, self.root), {"case": case})
+        self.assertEqual(launched, [("busy", guardian.BUSY), ("matrix", guardian.MATRIX)])
+        for case in ("busy", "matrix"):
+            self.assertEqual(guardian.decode_json((folder / f"{case}.launch.claim").read_bytes()),
+                             {"case": case, "nonce": receipt["handoff_nonce"]})
+
     def test_exclusive_launch_claim_refuses_replay_before_owned_job(self):
-        _receipt, folder, path = self.resolve(io.BytesIO(self.producer()))
-        (folder / "launch.claim").write_bytes(b"already consumed\n")
-        with patch.object(guardian, "OwnedJob", side_effect=AssertionError("must not create job")):
-            with self.assertRaises(FileExistsError):
-                guardian.run_case(path, "matrix", self.root)
+        for case in ("busy", "matrix"):
+            with self.subTest(case=case):
+                _receipt, folder, path = self.resolve(io.BytesIO(self.producer()))
+                (folder / f"{case}.launch.claim").write_bytes(b"already consumed\n")
+                with patch.object(guardian, "OwnedJob", side_effect=AssertionError("must not create job")), \
+                        patch.object(guardian, "run_owned", side_effect=AssertionError("must not launch")):
+                    with self.assertRaises(FileExistsError):
+                        guardian.run_case(path, case, self.root)
 
 
 class CaseTranscriptTests(ApiFreeCase):
@@ -703,6 +722,19 @@ class CaseTranscriptTests(ApiFreeCase):
             with self.subTest(events=events[-1]):
                 with self.assertRaises(guardian.JobError):
                     self.parse("busy", events)
+
+    def test_strict_busy_run_whose_child_fails_exits_red(self):
+        events = json.loads(json.dumps(self.busy_events()))
+        events[-1][1]["cancel_to_kernel_return_seconds"] = 0.251
+        with self.assertRaises(guardian.JobError) as caught:
+            self.parse("busy", events)
+        self.assertEqual(caught.exception.operation, "invalid_busy_cancel_boundary")
+        stderr = io.StringIO()
+        with patch.object(guardian, "run_case", side_effect=caught.exception), \
+                patch.object(sys, "stderr", stderr):
+            self.assertEqual(guardian.main(["run", "--case", "busy",
+                                            "--artifact-receipt", "unused.json"]), 1)
+        self.assertEqual(json.loads(stderr.getvalue())["error"], "invalid_busy_cancel_boundary")
 
 
 class MatrixQualificationTests(ApiFreeCase):

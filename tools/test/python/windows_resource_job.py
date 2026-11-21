@@ -826,7 +826,8 @@ def run_case(receipt_path, case, root):
     receipt, artifact = load_handoff(receipt_path, root)
     budget.remaining()
     output = Path(receipt_path).resolve().parent
-    write_new(output / "launch.claim", {"case": case, "nonce": receipt["handoff_nonce"]})
+    # One claim per case: a handoff runs each case at most once, and both cases may run from it.
+    write_new(output / f"{case}.launch.claim", {"case": case, "nonce": receipt["handoff_nonce"]})
     argv = [str(artifact), "--exact", CASES[case]]
     if case == "busy":
         argv.append("--ignored")
