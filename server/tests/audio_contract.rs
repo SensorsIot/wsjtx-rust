@@ -54,7 +54,7 @@ fn signal(rate: u32, hz: f64, n: usize) -> Vec<f32> {
         .collect()
 }
 // Independent complex DFT of every phase response.
-// Proves: TC-002-003
+// Proves: TC-002-001, TC-002-003
 #[test]
 fn audio_filter_response() {
     let (passband, ripple, stopband, rejected) = filter_limits();
@@ -601,7 +601,7 @@ fn realtime_bound_audio_controller_profiles_and_stop() {
 }
 
 // Actual converter waveform gain/rejection, not only coefficient response.
-// Proves: TC-002-003
+// Proves: TC-002-001, TC-002-003
 #[test]
 fn audio_waveform_response() {
     let (passband, ripple, stopband, rejected) = filter_limits();
