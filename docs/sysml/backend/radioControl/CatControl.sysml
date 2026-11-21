@@ -65,8 +65,8 @@ package WstxCatControl {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-04'; }
         @TestedBy {
-            test = "server/tests/radio_control.rs; "
-                + "server/tests/receive/radio_native.rs::"
+            test = "server/tests/radioControl/radio_control.rs; "
+                + "server/tests/radioControl/radio_native.rs::"
                 + "physical_identity_lease_conflicts_across_processes_and_case_aliases";
         }
     }
@@ -77,7 +77,7 @@ package WstxCatControl {
         @TestLevel { cost = 4; location = TestLocation::station; }
         @Automation { run = AutomationState::partial; method = "automated"; }
         objective { verify 'CL-008-04'; }
-        @TestedBy { test = "server/tests/receive/radio_hardware.rs"; }
+        @TestedBy { test = "server/tests/radioControl/radio_hardware.rs"; }
     }
 
     requirement 'CL-008-06' {
@@ -132,7 +132,7 @@ package WstxCatControl {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-06'; }
         @TestedBy {
-            test = "server/tests/radio_control.rs; "
+            test = "server/tests/radioControl/radio_control.rs; "
                 + "server/src/radio_level_tests.rs::a_transmit_hold_refuses_the_lease_at_once; "
                 + "server/tests/transmit_service.rs::"
                 + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing; "
@@ -180,8 +180,9 @@ package WstxCatControl {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-09'; }
         @TestedBy {
-            test = "server/tests/radio_control.rs; server/src/radio_control/executor_tests.rs; "
-                + "server/tests/receive/radio_hardware.rs::"
+            test = "server/tests/radioControl/radio_control.rs; "
+                + "server/src/radioControl/executor_tests.rs; "
+                + "server/tests/radioControl/radio_hardware.rs::"
                 + "usb_data_prepare_and_restore_have_independent_icom_bytes_and_readbacks";
         }
     }

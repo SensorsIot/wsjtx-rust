@@ -41,12 +41,16 @@ mod protocol_tests;
 mod pskr;
 #[path = "radioControl/radio_agc.rs"]
 mod radio_agc;
+#[path = "radioControl/radio_http.rs"]
 mod radio_http;
 #[cfg(test)]
+#[path = "radioControl/radio_http_tests.rs"]
 mod radio_http_tests;
 mod radio_level;
+#[path = "radioControl/radio_setup.rs"]
 mod radio_setup;
 #[cfg(test)]
+#[path = "radioControl/radio_setup_tests.rs"]
 mod radio_setup_tests;
 mod receive;
 mod receive_http;

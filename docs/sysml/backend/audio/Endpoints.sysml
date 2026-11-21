@@ -21,7 +21,7 @@ package WstxEndpoints {
              (EndpointNaming). */
         @Status { build = ImplementationState::partial; }
         @ImplementedIn {
-            module = "server/src/radio_setup.rs; server/src/radio_control/setup.rs";
+            module = "server/src/radioControl/radio_setup.rs; server/src/radioControl/setup.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-002'; end #derive ::> 'CL-044-07'; }
@@ -51,7 +51,8 @@ package WstxEndpoints {
         @CodeDiffers {
             what = "The code checks only the present endpoints: the not present endpoint of "
                 + "AudioConfig counts toward no maxEndpoints, and its last known name is not "
-                + "held to maxTextBytes (endpoints_view in server/src/radio_setup.rs).";
+                + "held to maxTextBytes (endpoints_view in "
+                + "server/src/radioControl/radio_setup.rs).";
         }
         attribute maxEndpoints : Integer = 64;
         attribute maxTextBytes : Integer = 256;
@@ -64,7 +65,8 @@ package WstxEndpoints {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-07'; }
         @TestedBy {
-            test = "server/src/radio_control/setup_tests.rs; server/src/radio_setup_tests.rs";
+            test = "server/src/radioControl/setup_tests.rs; "
+                + "server/src/radioControl/radio_setup_tests.rs";
         }
     }
 }

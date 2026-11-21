@@ -67,7 +67,7 @@ package WstxAudioControl {
                  endpoint whose name was never read. */
             @CodeDiffers {
                 what = "The record is NamesRecord::names, a map from the endpoint's id to "
-                    + "its name, in server/src/radio_setup.rs.";
+                    + "its name, in server/src/radioControl/radio_setup.rs.";
             }
         }
     }

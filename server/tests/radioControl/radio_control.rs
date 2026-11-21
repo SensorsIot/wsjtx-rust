@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-#[path = "../src/radio_control/mod.rs"]
+#[path = "../../src/radioControl/mod.rs"]
 pub mod radio_control;
 use radio_control::{
     catalogue::Catalogue,
@@ -577,9 +577,10 @@ fn configuration_and_catalogue_cannot_admit_raw_or_transmit_operations() {
         serde_json::from_str::<Operation>(r#"{"operation":"read_frequency","raw":[28,0,1]}"#)
             .is_err()
     );
-    let mut doc: serde_json::Value =
-        serde_json::from_slice(include_bytes!("../src/radio_control/ic7300-catalogue.json"))
-            .unwrap();
+    let mut doc: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../src/radioControl/ic7300-catalogue.json"
+    ))
+    .unwrap();
     doc["commands"][0]["request_prefix"] = serde_json::json!([28, 0, 1]);
     assert!(Catalogue::parse(&serde_json::to_vec(&doc).unwrap()).is_err());
     assert!(Catalogue::parse(&vec![b' '; 262145]).is_err());
@@ -1047,9 +1048,10 @@ fn polling_has_one_cycle_per_second_and_fragmentation_never_renews_deadline() {
 // Proves: TC-009-001
 #[test]
 fn an_operation_the_radio_has_not_is_unsupported_and_sends_nothing() {
-    let mut doc: serde_json::Value =
-        serde_json::from_slice(include_bytes!("../src/radio_control/ic7300-catalogue.json"))
-            .unwrap();
+    let mut doc: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../src/radioControl/ic7300-catalogue.json"
+    ))
+    .unwrap();
     doc["models"][0]["commands"]
         .as_array_mut()
         .unwrap()
