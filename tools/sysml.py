@@ -274,8 +274,8 @@ def naming_tests(source: str) -> list[tuple[str, set[str]]]:
     """(test name, case identities) of every test of `source` that names a case: by the
     `Proves:` tag attached to it (as `attached_proves` reads it, shorthand expanded) or, for
     a JavaScript test, by its name. A Rust test is named by its function, a Python test as
-    `python_tests` names it."""
-    lines = source.splitlines()
+    `python_tests` names it. Lines are counted at newlines only, as the ast counts them."""
+    lines = source.split("\n")
     named = {}
     for index, line in enumerate(lines):
         if tag := PROVES_TAG.match(line):
@@ -3582,9 +3582,10 @@ def javascript_code(source: str) -> SourceCode:
 
 def python_code(source: str) -> SourceCode:
     """The functions and the tests (`<Class>.<name>` or `<name>`, as `python_tests` names them)
-    of Python source; comments are its `#` comments and the docstrings."""
+    of Python source; comments are its `#` comments and the docstrings. Lines are counted
+    at newlines only, as the ast and tokenize count them."""
     module = ast.parse(source)
-    lines = source.splitlines(keepends=True)
+    lines = io.StringIO(source).readlines()
     starts = [0]
     for text in lines:
         starts.append(starts[-1] + len(text))

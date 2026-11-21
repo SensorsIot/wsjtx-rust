@@ -386,10 +386,14 @@ class BoundTestCodeTest(unittest.TestCase):
 
     def test_python_test_method_is_accepted(self):
         """TV-220 (TR-16): a Python test method bound by `path::Class.test_x` or named by its
-        `Proves:` tag, holding the qualified name, verifies the value."""
+        `Proves:` tag, holding the qualified name, verifies the value, also after line separators
+        in an earlier string."""
         body = f'        self.assertEqual(model_value("{QUALIFIED}"), 3000)\n'
         tagged = python_test(body).replace("    def test_", "    # Proves: TC-043-002\n    def test_")
-        self.verdicts({"symbol": (PYTHON, python_test(body)), "Proves": (PYTHON, tagged, PYTHON)}, [])
+        separated = python_test(body).replace("    def test_", '    def helper(self):\n        return "a b\fc d"\n\n'
+                                                                 "    def test_")
+        self.verdicts({"symbol": (PYTHON, python_test(body)), "Proves": (PYTHON, tagged, PYTHON),
+                       "line separators in an earlier string": (PYTHON, separated)}, [])
 
     def test_helpers_calling_each_other_end_and_are_accepted(self):
         """TV-221 (TR-16): two functions that call each other, one called by the bound test: the
@@ -580,7 +584,8 @@ class PythonNamingTest(unittest.TestCase):
     def test_python_tests_named_by_proves_are_bound(self):
         """TV-244 (TR-23): in a bound Python file, a test method or a module-level test whose
         attached `Proves:` tag names the case is a bound test, named as `python_tests` lists it,
-        `<Class>.<name>` or `<name>`, also after a string whose lines start at column 0; a
+        `<Class>.<name>` or `<name>`, also after a string whose lines start at column 0 and after a
+        form feed or line separator in a comment or string; a
         `def test_…` inside a function, a test of a class inside a function and a test the tag
         does not name are not."""
         cases = {
@@ -597,6 +602,18 @@ class PythonNamingTest(unittest.TestCase):
                 "import unittest\n\n\n"
                 "class RuleTest(unittest.TestCase):\n"
                 '    def test_a(self):\n        text = """\nx\n"""\n\n'
+                "    # Proves: TC-043-002\n    def test_b(self):\n        pass\n",
+                ["python RuleTest.test_b"]),
+            "form feed in an earlier comment": (
+                "import unittest\n\n\n"
+                "class RuleTest(unittest.TestCase):\n"
+                "    # one page\f the next\n    def test_a(self):\n        pass\n\n"
+                "    # Proves: TC-043-002\n    def test_b(self):\n        pass\n",
+                ["python RuleTest.test_b"]),
+            "line separator in an earlier string": (
+                "import unittest\n\n\n"
+                "class RuleTest(unittest.TestCase):\n"
+                '    def test_a(self):\n        text = "one two three\x1cfour\x85five\vsix"\n\n'
                 "    # Proves: TC-043-002\n    def test_b(self):\n        pass\n",
                 ["python RuleTest.test_b"]),
             "class inside a function": (
