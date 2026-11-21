@@ -37,6 +37,13 @@ pub(crate) struct Inputs {
     meter_sink: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 type Stopper = Arc<dyn Fn() + Send + Sync>;
+/// What a station shares with its transmit adapter: the station inputs the adapter reads
+/// and the output stopper it fills for `Station::emergency_release`.
+#[derive(Clone, Default)]
+pub(crate) struct Shared {
+    inputs: Arc<Mutex<Inputs>>,
+    slot: Arc<Mutex<Option<Stopper>>>,
+}
 pub(crate) struct StationHardware {
     inputs: Arc<Mutex<Inputs>>,
     #[cfg(windows)]
@@ -47,6 +54,21 @@ pub(crate) struct StationHardware {
     clock: Arc<StationClock>,
     /// CL-044-12 the Tx level of the next play and a running Tune.
     level_db: i32,
+}
+impl StationHardware {
+    /// The station's transmit adapter over `clock`, reading and filling `shared`.
+    pub(crate) fn new(clock: Arc<StationClock>, shared: &Shared) -> Self {
+        Self {
+            inputs: shared.inputs.clone(),
+            #[cfg(windows)]
+            output: None,
+            slot: shared.slot.clone(),
+            abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            origin: Instant::now(),
+            clock,
+            level_db: tx::LEVEL_MAX_DB,
+        }
+    }
 }
 impl Hardware for StationHardware {
     fn meter_due(&mut self) {
@@ -207,8 +229,8 @@ impl Hardware for StationHardware {
 
 pub(crate) struct Station {
     inputs: Arc<Mutex<Inputs>>,
-    /// The station clock; None for injected test hardware.
-    clock: Option<Arc<StationClock>>,
+    /// The station clock.
+    clock: Arc<StationClock>,
     slot: Arc<Mutex<Option<Stopper>>>,
     pub(crate) service: Service<Box<dyn Hardware>>,
     receipts: Mutex<VecDeque<(String, Value, Value)>>,
@@ -217,25 +239,18 @@ pub(crate) struct Station {
 }
 impl Station {
     /// `clock` is the process's station clock (tests pass one whose SNTP monitor never
-    /// measures).
-    pub(crate) fn start(clock: Arc<StationClock>) -> std::io::Result<Arc<Self>> {
-        let inputs = Arc::new(Mutex::new(Inputs::default()));
-        let slot = Arc::new(Mutex::new(None));
-        let hardware = StationHardware {
-            inputs: inputs.clone(),
-            #[cfg(windows)]
-            output: None,
-            slot: slot.clone(),
-            abort: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            origin: Instant::now(),
-            clock: clock.clone(),
-            level_db: tx::LEVEL_MAX_DB,
-        };
+    /// measures); `hardware` is the transmit adapter, sharing `shared` with this station.
+    pub(crate) fn start(
+        clock: Arc<StationClock>,
+        shared: Shared,
+        hardware: Box<dyn Hardware>,
+    ) -> std::io::Result<Arc<Self>> {
+        let Shared { inputs, slot } = shared;
         Ok(Arc::new(Self {
             inputs,
-            clock: Some(clock),
+            clock,
             slot,
-            service: Service::start(Box::new(hardware) as Box<dyn Hardware>)?,
+            service: Service::start(hardware)?,
             receipts: Mutex::new(VecDeque::new()),
             revision: Mutex::new((None, 0)),
         }))
@@ -250,18 +265,6 @@ impl Station {
     /// Shares the station's call hash table with the transmit owner (CL-024-01).
     pub(crate) fn attach_hashes(&self, hashes: Arc<Mutex<wstx_rust::decoder::HashTable>>) {
         self.service.with(|c| c.attach_hashes(hashes));
-    }
-    /// Test seam: the same station with injected hardware (virtual devices, no radio).
-    #[cfg(test)]
-    pub(crate) fn start_with(hardware: Box<dyn Hardware>) -> std::io::Result<Arc<Self>> {
-        Ok(Arc::new(Self {
-            inputs: Arc::new(Mutex::new(Inputs::default())),
-            clock: None,
-            slot: Arc::new(Mutex::new(None)),
-            service: Service::start(hardware)?,
-            receipts: Mutex::new(VecDeque::new()),
-            revision: Mutex::new((None, 0)),
-        }))
     }
     /// WstxTransmitState::SafetyReleases for process exit and panics: stop output and, only if
     /// the CI-V switch may be keyed, send one off-only release bounded to 500 ms. Uses
@@ -290,10 +293,8 @@ impl Station {
         actor: Option<Arc<Actor>>,
     ) {
         let c = &document.control;
-        if let Some(clock) = &self.clock {
-            // The station's own decodes never count for the clock from the air.
-            clock.set_own_call(&document.callsign);
-        }
+        // The station's own decodes never count for the clock from the air.
+        self.clock.set_own_call(&document.callsign);
         let mut i = self.inputs.lock().unwrap_or_else(|p| p.into_inner());
         i.configured = c.mode == "cat" && c.ptt == "cat" && document.audio.output_device.is_some();
         i.output_device = document.audio.output_device.clone();

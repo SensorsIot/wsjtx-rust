@@ -6,6 +6,7 @@
 use super::*;
 use crate::contact_http::tests::{Fixture, fixture, now_ms, period_text, record};
 use crate::profile::tests::{Fault, FaultScope, Step};
+use crate::recording::tests::ScriptedSession;
 use axum::body::Body;
 use std::sync::atomic::Ordering;
 use tower::ServiceExt;
@@ -1508,14 +1509,14 @@ fn name_of(owner: &Owner, f: &Fixture) -> Value {
     owner.snapshot(&f.state.recording)["instance_name"].clone()
 }
 /// A native Flex fixture: the session double, set before the owner opens.
-fn flex_fixture(origin: &str) -> (Fixture, Arc<wstx_rust::flex::Session>) {
+fn flex_fixture(origin: &str) -> (Fixture, Arc<ScriptedSession>) {
     let f = fixture(origin, false);
-    let session = wstx_rust::flex::Session::double();
+    let session = ScriptedSession::new();
     assert!(f.state.recording.flex.set(session.clone()).is_ok());
     (f, session)
 }
-fn flex_ready(session: &wstx_rust::flex::Session, letter: &str) {
-    session.double_set(|s| {
+fn flex_ready(session: &ScriptedSession, letter: &str) {
+    session.set(|s| {
         s.state = wstx_rust::flex::State::Ready;
         s.radio = Some(wstx_rust::flex::session::RadioFacts {
             model: Some("FLEX-6600".into()),
@@ -1683,7 +1684,7 @@ async fn tc_112_001_instance_name() {
     owner.step(&k.state);
     assert!(drain(&a).is_empty(), "no datagram before the first ready");
     assert_eq!(name_of(&owner, &k), Value::Null);
-    session.double_set(|s| s.state = wstx_rust::flex::State::Connecting);
+    session.set(|s| s.state = wstx_rust::flex::State::Connecting);
     owner.step(&k.state);
     assert!(drain(&a).is_empty());
     flex_ready(&session, "A");
@@ -1692,7 +1693,7 @@ async fn tc_112_001_instance_name() {
     assert_eq!(kinds(&sent), [0, 1]);
     assert_eq!(head(&sent[0]).2, "WSTX-Rust - FLEX-6600 A");
     assert_eq!(name_of(&owner, &k), "WSTX-Rust - FLEX-6600 A");
-    session.double_set(|s| s.state = wstx_rust::flex::State::Connecting);
+    session.set(|s| s.state = wstx_rust::flex::State::Connecting);
     owner.step(&k.state);
     flex_ready(&session, "B");
     owner.step(&k.state);

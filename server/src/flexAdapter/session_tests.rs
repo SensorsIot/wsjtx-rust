@@ -1,5 +1,39 @@
 use super::*;
 
+// A session without a radio thread, for the tests of its tune and setup steps.
+impl Session {
+    fn double() -> Arc<Self> {
+        let (tunes, _) = sync_channel(1);
+        Arc::new(Self {
+            shared: Arc::new(Shared {
+                snapshot: Mutex::new(Snapshot {
+                    state: State::Unauthorized,
+                    error: None,
+                    radio_code: None,
+                    session: 0,
+                    radio: None,
+                    slice: None,
+                    counters: Counters::default(),
+                    last_peak: None,
+                    vita_tsi: None,
+                    vita_offset_ms: None,
+                    jitter_mean_ms: None,
+                    jitter_max_ms: None,
+                    retry_after_ms: None,
+                }),
+                sink: Mutex::new(None),
+                attachments: Mutex::new(0),
+                shutdown: AtomicBool::new(false),
+                allowed: AtomicBool::new(false),
+                tuned_hz: AtomicU64::new(0),
+                revision: AtomicU64::new(1),
+            }),
+            tunes,
+            thread: Mutex::new(None),
+        })
+    }
+}
+
 // Slice status frequencies are exact integers in hertz.
 #[test]
 fn megahertz_text_round_trips_exact_hertz() {

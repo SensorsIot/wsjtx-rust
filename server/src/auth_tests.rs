@@ -2134,7 +2134,7 @@ mod automatic_cat {
     // station moved to another radio needs the confirmation again.
     #[tokio::test]
     async fn discovery_moving_to_another_radio_requires_the_confirmation_again() {
-        use crate::radio_setup_tests::{double, port};
+        use crate::radio_setup_tests::{double, hardware_of, port};
         let f = HttpFixture::new("https://localhost:8080");
         let state = f.app().profile.as_ref().unwrap().clone();
         let g = f.authorize().await;
@@ -2163,7 +2163,7 @@ mod automatic_cat {
             std::collections::HashMap::from([(free, (0x94, 19200))]),
             vec![saved],
         );
-        *state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+        hardware_of(&state.recording, hw);
         radio_setup::confirm_keying(&state);
         assert!(radio_setup::discover_on_start(&state).is_some());
         assert!(matches!(

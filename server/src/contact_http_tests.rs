@@ -417,9 +417,19 @@ fn start_station_on(
     );
     let bench = Bench::default();
     bench.unsupported.store(!transmit, Ordering::SeqCst);
-    let _ = recording
-        .transmit
-        .set(transmit_http::Station::start_with(Box::new(bench.clone())).unwrap());
+    let station_clock = wstx_rust::transmit::air::StationClock::new(
+        RoundSource::idle(),
+        DrivenClock::new(),
+        Box::new(|| wstx_rust::transmit::clock::WindowsTime::Running),
+    );
+    let _ = recording.transmit.set(
+        transmit_http::Station::start(
+            station_clock,
+            transmit_http::Shared::default(),
+            Box::new(bench.clone()),
+        )
+        .unwrap(),
+    );
     let _ = recording
         .contact
         .set(contact_http::Station::start(&store, clock.clone()));
@@ -3716,9 +3726,11 @@ fn on_station_clock(
         Box::new(wstx_rust::transmit::clock::windows_time),
     );
     let _ = r.clock.set(clock.clone());
-    let _ = r
-        .transmit
-        .set(transmit_http::Station::start(clock.station.clone()).unwrap());
+    let shared = transmit_http::Shared::default();
+    let hardware = transmit_http::StationHardware::new(clock.station.clone(), &shared);
+    let _ = r.transmit.set(
+        transmit_http::Station::start(clock.station.clone(), shared, Box::new(hardware)).unwrap(),
+    );
     (dir, r)
 }
 /// An SNTP measurement of `offset_ms` taken `age` ago.

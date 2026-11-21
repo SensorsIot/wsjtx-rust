@@ -7,6 +7,7 @@
 //! (CL-112-01). Routes: GET /udp (UdpSnapshot), PUT /udp (configuration).
 use crate::*;
 use axum::extract::RawQuery;
+use flex_http::NativeSession;
 use recording_http::authorize;
 use selection_http::empty;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, UdpSocket};
@@ -240,7 +241,7 @@ pub(crate) fn base_name(document: &profile::ProfileDocument) -> String {
 }
 /// CL-112-01 the base form of a native Flex profile once its session is ready with the
 /// radio's model and the slice letter.
-fn flex_name(session: &wstx_rust::flex::Session) -> Option<String> {
+fn flex_name(session: &dyn NativeSession) -> Option<String> {
     let s = session.snapshot();
     if s.state != wstx_rust::flex::State::Ready {
         return None;
@@ -727,7 +728,7 @@ impl Owner {
     /// A native Flex profile fixes its name when its session is first ready (CL-112-01).
     fn name_flex(&self, inner: &mut Inner, r: &recording::Recording) {
         if inner.name.is_none()
-            && let Some(base) = r.flex.get().and_then(|s| flex_name(s))
+            && let Some(base) = r.flex.get().and_then(|s| flex_name(&**s))
         {
             inner.name = Some(self.claim(&base));
         }

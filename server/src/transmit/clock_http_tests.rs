@@ -53,9 +53,11 @@ fn station(dir: std::path::PathBuf, ntp: Arc<Monitor>) -> Station {
     let clock =
         clock_http::Clock::new(ntp, time.clone(), Box::new(move || *reader.lock().unwrap()));
     let _ = recording.clock.set(clock.clone());
-    let _ = recording
-        .transmit
-        .set(transmit_http::Station::start(clock.station.clone()).unwrap());
+    let shared = transmit_http::Shared::default();
+    let hardware = transmit_http::StationHardware::new(clock.station.clone(), &shared);
+    let _ = recording.transmit.set(
+        transmit_http::Station::start(clock.station.clone(), shared, Box::new(hardware)).unwrap(),
+    );
     let app = App {
         origin: "http://127.0.0.1:18001".to_string(),
         profile: Some(Arc::new(ProfileState {

@@ -38,6 +38,12 @@ pub(crate) fn ntp_clock(
         Box::new(|| wstx_rust::transmit::clock::WindowsTime::Running),
     )
 }
+/// The station's transmit owner on its real adapter over `clock`, as main wires them.
+fn start_on(clock: Arc<wstx_rust::transmit::air::StationClock>) -> Arc<transmit_http::Station> {
+    let shared = transmit_http::Shared::default();
+    let hardware = transmit_http::StationHardware::new(clock.clone(), &shared);
+    transmit_http::Station::start(clock, shared, Box::new(hardware)).unwrap()
+}
 fn ptt_setters(writes: &[Vec<u8>]) -> usize {
     writes
         .iter()
@@ -59,7 +65,7 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
         DrivenClock::new(),
     );
     let peer = attach_peer(&recording, Device::Present);
-    let station = transmit_http::Station::start(ntp_clock(RoundSource::idle())).unwrap();
+    let station = start_on(ntp_clock(RoundSource::idle()));
     let _ = recording.transmit.set(station.clone());
     // Receive-only commissioning (PTT disabled) is not transmit capability.
     let receive_only = document(&id, "disabled", Some("fixture-output"));
@@ -175,9 +181,7 @@ async fn app_with(
         Box::new(|| wstx_rust::transmit::clock::WindowsTime::Running),
     );
     let _ = recording.clock.set(clock.clone());
-    let _ = recording
-        .transmit
-        .set(transmit_http::Station::start(clock.station.clone()).unwrap());
+    let _ = recording.transmit.set(start_on(clock.station.clone()));
     let origin = "http://127.0.0.1:18001".to_string();
     let app = App {
         origin: origin.clone(),
@@ -448,7 +452,7 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
     );
     let peer = attach_peer(&recording, Device::Present);
     peer.lock().unwrap().transmitting = true;
-    let station = transmit_http::Station::start(ntp_clock(RoundSource::idle())).unwrap();
+    let station = start_on(ntp_clock(RoundSource::idle()));
     let _ = recording.transmit.set(station.clone());
     // Even a receive-only profile gets the release: it only ever turns RF off.
     let doc = document(&id, "disabled", None);
@@ -539,7 +543,7 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
 // Proves: TC-044-017
 #[test]
 fn the_meter_call_of_the_transmit_step_reaches_the_sink() {
-    let station = transmit_http::Station::start(ntp_clock(RoundSource::idle())).unwrap();
+    let station = start_on(ntp_clock(RoundSource::idle()));
     let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let seen = count.clone();
     station.set_meter_sink(Arc::new(move || {

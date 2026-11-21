@@ -1030,9 +1030,6 @@ pub struct Engine {
     /// Test seam: the split move is refused (WstxOperatingChain::BusyPartner "a refused move").
     #[cfg(test)]
     pub refuse_split: bool,
-    /// Test record: (period, Tx offset) of every started request, as submitted.
-    #[cfg(test)]
-    pub started_hz: Vec<(i64, u32)>,
     /// Contacts due for the log (completed, or Log QSO), handed over by the station; the
     /// flag: this hand-over counts the contest serial when the log accepts it (CL-085-03).
     to_log: Vec<(LogKind, Contact, bool)>,
@@ -1160,8 +1157,6 @@ impl Engine {
             last_started: None,
             #[cfg(test)]
             refuse_split: false,
-            #[cfg(test)]
-            started_hz: Vec::new(),
             last_tx_start_ms: None,
             last_rr73_ms: None,
             hound: Hound::default(),
@@ -2396,8 +2391,6 @@ impl Engine {
                         self.last_started_period = Some(submitted.period);
                         self.last_tx_start_ms = Some(submitted.period);
                         self.last_started = Some((submitted.period, submitted.contact_id.clone()));
-                        #[cfg(test)]
-                        self.started_hz.push((submitted.period, submitted.tx_hz));
                         // planClassicTxStart: a pending first reply is sent once it starts.
                         if mine
                             && self.settings.activity == Activity::Hound
