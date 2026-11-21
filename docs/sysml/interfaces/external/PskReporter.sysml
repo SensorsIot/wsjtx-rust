@@ -149,8 +149,6 @@ package WstxPskReporter {
                 + "server/src/operating/qso/pskr_tests.rs::"
                 + "a_refusing_or_broken_peer_is_a_named_error; "
                 + "server/src/operating/qso/pskr_tests.rs::"
-                + "the_broker_can_only_be_replaced_on_loopback; "
-                + "server/src/operating/qso/pskr_tests.rs::"
                 + "the_compiled_roots_validate_the_captured_broker_chain; "
                 + "server/src/operating/qso/pskr_tests.rs::a_peer_without_tls_is_refused";
         }

@@ -1,5 +1,6 @@
 // Hand-written list text and replies; no network.
 use super::*;
+// Proves: TC-039-055
 #[test]
 fn tc_039_031_parser_refuses_all_but_the_exact_list() {
     let ok = List::parse(r#"{"1":"344","2":123,"3":"9999"}"#, "2026-11-06").unwrap();
@@ -26,6 +27,7 @@ fn tc_039_031_parser_refuses_all_but_the_exact_list() {
         .collect();
     assert_eq!(List::from_value(&Value::Object(many), "d"), None);
 }
+// Proves: TC-039-031
 #[test]
 fn tc_039_031_every_bundled_entity_has_its_adif_number() {
     let table = crate::dxcc::Table::default();
@@ -51,6 +53,7 @@ fn tc_039_031_every_bundled_entity_has_its_adif_number() {
         assert_eq!(adif_number(name), Some(number), "{name}");
     }
 }
+// Proves: TC-039-055
 #[test]
 fn tc_039_031_response_body() {
     assert_eq!(

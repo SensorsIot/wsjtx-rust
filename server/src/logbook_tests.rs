@@ -124,6 +124,7 @@ fn calls(log: &Logbook) -> Vec<String> {
 }
 
 // Exact WSJT-X-compatible ADI writing and reading.
+// Proves: TC-011-005
 #[test]
 fn adi_record_is_written_in_wsjtx_field_order_with_exact_lengths_and_round_trips() {
     let mut record = reviewed(ID1, "K1ABC");
@@ -147,6 +148,7 @@ fn adi_record_is_written_in_wsjtx_field_order_with_exact_lengths_and_round_trips
 }
 
 // Header, case, type indicators and boundaries.
+// Proves: TC-011-002
 #[test]
 fn adi_parser_accepts_header_case_variants_and_line_breaks_between_fields() {
     let text = "Exported by another logger\r\n<ADIF_VER:5>3.1.8 <PROGRAMID:5>OTHER\r\n<EOH>\r\n\
@@ -180,6 +182,7 @@ fn adi_parser_accepts_header_case_variants_and_line_breaks_between_fields() {
 }
 
 // Malformed, length, character and required-field refusals.
+// Proves: TC-011-002
 #[test]
 fn adi_parser_refuses_malformed_length_character_and_missing_fields_with_context() {
     let ok = "<call:5>K1ABC <qso_date:8>20261031 <time_on:4>1230 <mode:3>FT8 <eor>";
@@ -889,6 +892,7 @@ fn save_is_exactly_once_and_injected_failures_leave_no_torn_file() {
 }
 
 // An invalid stored log is unavailable, never overwritten.
+// Proves: TC-011-001
 #[test]
 fn invalid_stored_log_is_unavailable_and_never_rewritten() {
     let dir = Dir::new();
@@ -1098,6 +1102,7 @@ fn unreadable_stored_log_is_unavailable_and_left_untouched() {
 }
 
 // The contest fields and RTTY RSTs of LogRecord.
+// Proves: TC-011-006
 #[test]
 fn contest_fields_and_rtty_rst_are_validated() {
     let mut r = reviewed(ID1, "K1ABC");
@@ -1447,6 +1452,7 @@ fn update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one(
 
 // WstxValueOrder::WorkedWindowRule off the station step: the last set at once,
 // never built on the caller's thread; the new one follows on its own thread.
+// Proves: TC-011-007
 #[test]
 fn worked_latest_returns_the_last_set_and_builds_off_the_caller() {
     let dir = Dir::new();
@@ -1491,6 +1497,7 @@ fn worked_latest_returns_the_last_set_and_builds_off_the_caller() {
 
 // WstxValueOrder::WorkedWindowRule: only the records of the window, cached until
 // the log changes, a record without a date only for all time.
+// Proves: TC-011-007
 #[test]
 fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {
     let dir = Dir::new();
@@ -1533,6 +1540,7 @@ fn worked_window_reads_only_the_dated_records_and_is_cached_per_revision() {
 // The award query layer: worked vs confirmed
 // per DXCC entity, entity x band and entity x band x mode from one lookup of the worked set
 // (needed = not worked or not confirmed), rebuilt when a rerun adds a confirmation.
+// Proves: TC-011-003
 #[test]
 fn worked_set_reports_worked_and_confirmed_per_entity_band_and_mode() {
     use crate::dxcc::{Category, Standing};
@@ -1679,6 +1687,7 @@ fn tc_085_002_terms_of_the_same_station_again() {
     );
 }
 
+// Proves: TC-011-005
 #[test]
 fn stored_log_with_former_verbatim_qsl_fields_stays_readable() {
     let dir = Dir::new();

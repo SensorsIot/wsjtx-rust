@@ -153,19 +153,41 @@ package WstxLogbook {
                 + "save_is_exactly_once_and_injected_failures_leave_no_torn_file; "
                 + "server/src/logbook_tests.rs::"
                 + "review_validation_refuses_each_invalid_field_with_its_key; "
-                + "server/src/logbook_tests.rs::contest_fields_and_rtty_rst_are_validated; "
-                + "server/src/logbook_tests.rs::"
-                + "adi_record_is_written_in_wsjtx_field_order_with_exact_lengths_and_round_trips; "
-                + "server/src/logbook_tests.rs::"
-                + "adi_parser_accepts_header_case_variants_and_line_breaks_between_fields; "
-                + "server/src/logbook_tests.rs::"
-                + "adi_parser_refuses_malformed_length_character_and_missing_fields_with_context; "
-                + "server/src/logbook_tests.rs::"
-                + "stored_log_with_former_verbatim_qsl_fields_stays_readable; "
                 + "server/src/logbook_tests.rs::"
                 + "unreadable_stored_log_is_unavailable_and_left_untouched; "
                 + "server/src/logbook_tests.rs::"
-                + "invalid_stored_log_is_unavailable_and_never_rewritten";
+                + "invalid_stored_log_is_unavailable_and_never_rewritten; "
+                + "server/src/logbook_http_tests.rs::"
+                + "save_contact_refusals_byte_cap_and_command_receipts; "
+                + "server/src/logbook_http_tests.rs::"
+                + "unreadable_contacts_file_makes_save_storage_unavailable";
+        }
+    }
+
+    verification 'TC-011-005' {
+        doc /* A record as the logbook's file holds it, written and read back. */
+        subject log : LogService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-010-04'; }
+        @TestedBy {
+            test = "server/src/logbook_tests.rs::"
+                + "adi_record_is_written_in_wsjtx_field_order_with_exact_lengths_and_round_trips; "
+                + "server/src/logbook_tests.rs::"
+                + "stored_log_with_former_verbatim_qsl_fields_stays_readable";
+        }
+    }
+
+    verification 'TC-011-006' {
+        doc /* A record outside what LogRecord allows is refused with its field. */
+        subject log : LogService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-010-04'; }
+        @TestedBy {
+            test = "server/src/logbook_tests.rs::contest_fields_and_rtty_rst_are_validated; "
+                + "server/src/logbook_http_tests.rs::"
+                + "save_contact_refusals_byte_cap_and_command_receipts";
         }
     }
 
@@ -438,7 +460,13 @@ package WstxLogbook {
                 + "server/src/logbook_tests.rs::"
                 + "an_update_whose_write_fails_stores_none_of_its_records; "
                 + "server/src/logbook_http_tests.rs::"
-                + "history_and_export_routes_follow_the_wire_contract";
+                + "history_and_export_routes_follow_the_wire_contract; "
+                + "server/src/logbook_tests.rs::"
+                + "adi_parser_accepts_header_case_variants_and_line_breaks_between_fields; "
+                + "server/src/logbook_tests.rs::"
+                + "adi_parser_refuses_malformed_length_character_and_missing_fields_with_context; "
+                + "server/src/logbook_http_tests.rs::"
+                + "export_over_http_is_streamed_in_chunks_without_content_length";
         }
     }
 
@@ -492,12 +520,23 @@ package WstxLogbook {
                 + "tc_055_002_new_dxcc_band_continent_and_zone_against_the_log; "
                 + "server/src/dxcc_tests.rs::"
                 + "tc_039_030_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls; "
-                + "server/src/dxcc_tests.rs::tc_039_030_wpx_prefix_table; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/dxcc_tests.rs::tc_039_030_wpx_prefix_table";
+        }
+    }
+
+    verification 'TC-011-007' {
+        doc /*
+    The worked set of a window, given at once and made anew after a change of the logbook.
+        */
+        subject log : LogService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-010-13'; }
+        @TestedBy {
+            test = "server/src/logbook_tests.rs::"
                 + "worked_window_reads_only_the_dated_records_and_is_cached_per_revision; "
                 + "server/src/logbook_tests.rs::"
-                + "worked_latest_returns_the_last_set_and_builds_off_the_caller; "
-                + "server/src/dxcc_tests.rs::tc_055_002_worked_set_follows_each_uploaded_table";
+                + "worked_latest_returns_the_last_set_and_builds_off_the_caller";
         }
     }
 }

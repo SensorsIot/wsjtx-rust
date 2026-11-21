@@ -8,6 +8,7 @@ package WstxSpotsPart {
     private import WstxPskReporter::ReportCollectorPort;
     private import WstxDecodes::DecodesPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def SpotsService {
@@ -22,6 +23,11 @@ package WstxSpotsPart {
         @CodeDiffers {
             what = "Its code stands in server/src/operating/qso/pskr.rs, outside "
                 + "server/src/spots/ and client/src/spots/.";
+        }
+        @DetailTests {
+            tests = "server/src/operating/qso/pskr_tests.rs";
+            covers = "the broker a test names in the environment, on a loopback address only; "
+                + "the routes of the two switches and the file that keeps them";
         }
         attribute config : SpotsConfig {
             doc /* Its configuration, as the last SpotsConfiguration gave it. */ }

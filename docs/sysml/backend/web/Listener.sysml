@@ -61,7 +61,9 @@ package WstxListener {
         objective { verify 'CL-003-07'; }
         @TestedBy {
             test = "tests/communication.test.cjs::"
-                + "TLS login, unauthorized/origin denial, plaintext refusal";
+                + "TLS login, unauthorized/origin denial, plaintext refusal; "
+                + "server/src/logbook_http_tests.rs::"
+                + "cty_upload_replaces_the_country_table_and_refusals_change_nothing";
         }
     }
     verification 'TC-003-002' {
@@ -248,7 +250,9 @@ package WstxListener {
         @TestedBy {
             test = "tests/communication.test.cjs::"
                 + "TC-021-005: actual-server correlation, negative cases and size boundaries; "
-                + "server/src/protocol_tests.rs::protocol_returns_specified_response_and_errors";
+                + "server/src/protocol_tests.rs::protocol_returns_specified_response_and_errors; "
+                + "server/src/logbook_http_tests.rs::"
+                + "save_contact_refusals_byte_cap_and_command_receipts";
         }
     }
     verification 'TC-021-008' {
