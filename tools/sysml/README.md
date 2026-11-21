@@ -1,7 +1,7 @@
 # Model tools
 
 The contract of the model tools (`tools/sysml.py`, `tools/sysml/Validate.java`): the pinned
-toolchain, the commands, the rules `TR-01` to `TR-23` they check and the tests `TV-nnn`
+toolchain, the commands, the rules `TR-01` to `TR-24` they check and the tests `TV-nnn`
 that prove them. The rules of the model itself are the
 [finished model](../../harness/project/docs/Finished-Model.md); each rule below names the
 rule of the finished model it checks. `TR` and `TV` are identities of the tool: no
@@ -40,6 +40,7 @@ python tools/sysml.py traces <rev>
 python tools/sysml.py status
 python tools/sysml.py markers
 python tools/sysml.py oracle
+python tools/sysml.py test-hooks
 python -m unittest discover -s tools/sysml/tests -q
 ```
 
@@ -68,6 +69,9 @@ python -m unittest discover -s tools/sysml/tests -q
 - `equivalence <base> [<head>]`, `equivalence --marked`, `identities <base> [<head>]`:
   compare two revisions of the model (TR-21); they read the repository only.
 - `validate <files>`: the Pilot on the files given, in that order (TR-02).
+- `test-hooks [--lines]`: the product files that hold a test item, a test switch or a hook
+  (TR-24); the command of the ratchet `product-knows-no-test`. It reads the working tree and
+  writes nothing.
 
 A command that cannot run exits 2 with `SysML check failed: <message>`.
 
@@ -323,6 +327,74 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
     revision (`unknown revision: <rev>`), a Node `test(` or `it(` whose title is no
     literal (`unreadable test name: <path>:<line>`), and a source its reader cannot read
     (`source not readable: <path>:<line>: <reason>`).
+- **TR-24 The product knows no test (testing standard, Test tools; Rust pack, Ports are
+  traits).** `test-hooks` lists the product files that hold a test item, a test switch or a
+  hook:
+  - It reads the working tree: the tracked files (`git ls-files`) present on disk, and the
+    model files below `docs/sysml/`. It writes nothing and runs no Java, no Pilot and no
+    network access. The product files are the code modules of TR-17 that are tracked, except
+    any file named `*_test.rs`.
+  - It prints each product file holding at least one form below: one path per line,
+    relative and `/`-separated, sorted, each path once, and exits 0 with or without paths.
+    With `--lines` it prints one line per form found, `<path>:<line>: <form>: <text>`,
+    sorted by path and line, `<line>` the first line of the form, and exits 0. `<form>` is
+    one of `cfg test`, `test file declared`, `debug_assertions`, `doc(hidden)`,
+    `environment`, `CommonJS export`, `process.env`, `unread global`, `unread member`;
+    `<text>` is the attribute, call or name found.
+  - Comments (line, block and doc comments), strings, raw strings, template strings and
+    JavaScript regular-expression literals are not read, with the readers of TR-22. An
+    attribute is read whole across line breaks; CRLF and LF read alike.
+  - Test predicates (Rust). A cfg predicate is the predicate of `#[cfg(…)]`, `#![cfg(…)]`
+    or `cfg!(…)`, or the first argument of `#[cfg_attr(…)]`; it names `test` when the word
+    `test` stands in it. Listed (`cfg test`): every predicate naming `test`, except the
+    attributes of a test-file declaration: `cfg(not(test))`, `cfg(any(windows, test))`, an
+    inline `#[cfg(test)] mod tests { … }`, and `#[cfg(test)]` on a field, function,
+    statement, `use` or `impl`. A test-file declaration is a `mod <name>;` item, of any
+    visibility and without a body, one of whose outer attributes is `#[cfg(test)]` or
+    `#[cfg(all(…))]` with `test` as a direct argument, and which resolves to a file named
+    `tests.rs`, `*_tests.rs` or `*_test.rs`: by `#[path = "…"]` relative to the declaring
+    file's folder, otherwise as `rust_modules` finds it. Every outer attribute of that item
+    belongs to the declaration and is not listed (`#[path]`, a second
+    `#[cfg(not(debug_assertions))]`, `cfg(all(test, not(debug_assertions)))`). A `mod
+    <name>;` with a test predicate that resolves to a file not named as a test file is
+    listed (`cfg test`); a `mod <name>;` that resolves to a test file without a test
+    predicate among its attributes is listed (`test file declared`).
+  - Build-profile branches (Rust). Listed (`debug_assertions`): every predicate in which the
+    word `debug_assertions` stands, except the attributes of a test-file declaration. Not
+    listed: `debug_assert!`, `debug_assert_eq!` and `debug_assert_ne!`.
+  - Hidden items (Rust). Listed (`doc(hidden)`): every `doc` attribute holding `hidden`,
+    whatever the item's visibility.
+  - Environment reads (Rust). A read is a call of `env::var`, `env::var_os`, `env::vars` or
+    `env::vars_os`, whatever path stands before `env::`; the macro `env!` or `option_env!`;
+    or a `use` that imports one of those four functions from `std::env`. Each is listed
+    (`environment`) unless its first argument is a string literal naming a product
+    variable: a name that stands as a whole word in the text of a model file below
+    `docs/sysml/`, or, for `env!` and `option_env!` only, a name that begins with
+    `CARGO_PKG_`. Always listed: `vars`, `vars_os`, a name that is not a literal, and the
+    `use`.
+  - Client modules (`*.js` below `client/`). Listed (`CommonJS export`): `module.exports`,
+    an assignment to `exports.<name>`, and `typeof module` or `typeof exports`. Listed
+    (`process.env`): every `process.env`. Listed (`unread global`): an assignment
+    `window.<name> =` or `globalThis.<name> =` when no client file holds `window.<name>` or
+    `globalThis.<name>` other than as the target of an assignment; an `=` that is part of
+    `==`, `===` or `=>` is no assignment. Listed (`unread member`): when the value assigned
+    is an object literal, directly or as the argument of `Object.freeze(`, each of its
+    members (shorthand or key) that no client file reads as `<global>.<member>` or
+    `<global>?.<member>` after `window.` or `globalThis.`. A read in a test, a tool or a
+    file outside `client/` does not count; a read through another variable (`const c =
+    window.x; c.load()`) is not recognised, so the member stays listed.
+  - The exception list `tools/sysml/product-knows-no-test.txt`, in the form
+    `harness/general/core/tools/ratchet.py` reads: a first comment line naming the ratchet
+    and the command, then one path per line, each with a comment naming its forms. Its
+    paths are exactly what `test-hooks` prints. TR-22 does not read `.txt` files, so an
+    `# approved: <decision>` line is not refused as history.
+  - Refused with exit 2, `SysML check failed: <message>` and nothing on stdout: a product
+    file that is not UTF-8 (`source not readable: <path>:1: source not UTF-8`), a source
+    its reader cannot read (`source not readable: <path>:<line>: <reason>`), no git work
+    tree, or git failing.
+  - Limits: the command finds forms, not intent. Not found: a function only tests call; a
+    visibility widened for tests; a custom `--cfg` or a Cargo feature; a client switch read
+    from storage or the URL.
 
 ## Meaning and limits of semantic validation
 
@@ -583,3 +655,12 @@ run them are those of `harness/project/suites/`.
 | TV-242 | TR-16 | `test_values.py` BoundTestCodeTest.test_second_form_with_one_part_in_a_comment_is_refused | the definition's qualified name in code and the feature's name only in a comment, or the other way round, verify nothing. |
 | TV-243 | TR-16 | `test_values.py` BoundTestCodeTest.test_variable_in_the_bound_test_is_still_not_verified | a `WSTX_*` variable whose name stands only in the code of a bound test of a clause reaching it is not verified. |
 | TV-244 | TR-23 | `test_values.py` PythonNamingTest.test_python_tests_named_by_proves_are_bound | in a bound Python file, a test method or a module-level test whose attached `Proves:` tag names the case is a bound test, named as `python_tests` lists it, `<Class>.<name>` or `<name>`, also after a string whose lines start at column 0 and after a form feed or line separator in a comment or string; a `def test_…` inside a function, a test of a class inside a function and a test the tag does not name are not. |
+| TV-245 | TR-24 | `test_product_knows_no_test.py` AcceptedTests.test_tv245_accepted_forms | test-file declarations, forms in comments and strings, product variables, `debug_assert!`, forms in test, tool and fixture files and client globals and members read in another client file print nothing, with and without `--lines`, exit 0. |
+| TV-246 | TR-24 | `test_product_knows_no_test.py` TestPredicateTests.test_tv246_test_predicates | each test predicate added to a passing product file lists exactly that file; a test file declared without a test predicate is `test file declared`. |
+| TV-247 | TR-24 | `test_product_knows_no_test.py` BuildProfileTests.test_tv247_build_profile_branches | each predicate naming `debug_assertions` is listed alone. |
+| TV-248 | TR-24 | `test_product_knows_no_test.py` HiddenItemTests.test_tv248_hidden_items | a `doc` attribute holding `hidden` is listed, on a public or a private item. |
+| TV-249 | TR-24 | `test_product_knows_no_test.py` EnvironmentTests.test_tv249_environment_reads | each read of a variable the model does not name, `vars`, `vars_os`, a name that is no literal and the `use` are listed alone; the same file passes once the model names the variable. |
+| TV-250 | TR-24 | `test_product_knows_no_test.py` ClientTests.test_tv250_client_modules | CommonJS exports, `process.env`, a global no client file reads and an object member no client file reads through its global are each listed alone. |
+| TV-251 | TR-24 | `test_product_knows_no_test.py` OutputTests.test_tv251_paths_and_lines, OutputTests.test_tv251_files_not_read | sorted paths, one `--lines` line per form at its first line, exit 0 with and without findings; an untracked file, a tracked file deleted on disk and a file below `server/examples/` are not listed. |
+| TV-252 | TR-24 | `test_product_knows_no_test.py` RefusalTests.test_tv252_refusals | a product file in Latin-1, a raw string without its end and a folder with no git work tree exit 2 with their message and an empty stdout. |
+| TV-253 | TR-24 | `test_product_knows_no_test.py` ThisRepositoryTests.test_tv253_this_repository_matches_its_exception_list | `test-hooks` on this repository prints exactly the paths of `tools/sysml/product-knows-no-test.txt`. |
