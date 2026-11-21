@@ -71,6 +71,7 @@ async function refreshStatus(page){const open=await page.locator('#settings-draw
 async function terminal(f){for(let n=0;n<30;n++){const s=await f.snapshot();if(['completed','cancelled','failed'].includes(s.job?.state))return s;await sleep(20);}assert.fail('worker did not release in 600 ms');}
 
 // Only a current accepted snapshot clears disconnected presentation.
+// Proves: TC-021-007
 test('authenticated reconnect accepts only current connected operating snapshots',{timeout:30000},async t=>{
   const f=await fixture(t,{secure:true}),p=await page(f),gates=[],allGates=[];
   const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
@@ -186,6 +187,7 @@ test('review: missing original, corrupt metadata and manifest remain recoverable
 });
 
 // Cancellation while the reservation response is delayed.
+// Proves: TC-018-002
 test('review: cancel pending reservation response deletes returned reservation without PUT',{timeout:12000},async t=>{
   const f=await fixture(t),p=await page(f),errors=[];p.on('pageerror',e=>errors.push(String(e)));
   let release,observed,puts=0,resource;
@@ -204,6 +206,7 @@ test('review: cancel pending reservation response deletes returned reservation w
 });
 
 // The JSON media grammar remains the profile grammar.
+// Proves: TC-021-005
 test('review: recording JSON media whitespace parity and malformed parameters',{timeout:10000},async t=>{
   const f=await fixture(t);
   for(const type of ['application/json','application/json ;charset=utf-8','application/json;\tcharset=utf-8',' Application/JSON ; CHARSET=UTF-8 ']){
@@ -275,6 +278,7 @@ test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeo
 });
 
 // Four Windows processes with actual maximum-source work.
+// Proves: TC-004-003, TC-018-003
 test('four stations retain isolated identities and release cancellation within 250 ms',{timeout:30000},async t=>{
   const stations=await Promise.all(Array.from({length:4},()=>fixture(t))),maxFrames=recordingLimit('importMaxFrames');
   await Promise.all(stations.map(f=>f.upload(wav(120))));const jobs=await Promise.all(stations.map(f=>f.replay()));
@@ -284,6 +288,7 @@ test('four stations retain isolated identities and release cancellation within 2
 });
 
 // Endpoint-wide TLS authentication/Origin priority and WS opt-in.
+// Proves: TC-003-001, TC-021-005
 test('every recording endpoint retains TLS cookie and exact Origin boundaries',{timeout:45000},async t=>{
   const f=await fixture(t,{secure:true}),s=await f.snapshot(),id=crypto.randomUUID();
   const absent=await browser.newContext({ignoreHTTPSErrors:true});t.after(()=>absent.close());

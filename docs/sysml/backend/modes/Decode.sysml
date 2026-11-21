@@ -364,7 +364,9 @@ package WstxDecode {
                 + "server/tests/decoder_signal.rs::"
                 + "phase_drift_dynamic_range_and_residual_regressions; "
                 + "server/tests/decoder_signal.rs::"
-                + "resource_busy_live_overlap_and_pending_cancel";
+                + "resource_busy_live_overlap_and_pending_cancel; "
+                + "tests/recording.test.cjs::"
+                + "four stations retain isolated identities and release cancellation within 250 ms";
         }
     }
 

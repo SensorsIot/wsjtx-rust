@@ -314,7 +314,11 @@ package WstxOperatingScreen {
         objective { verify 'CL-003-04'; }
         @TestedBy {
             test = "tests/communication.test.cjs::"
-                + "TC-021-007: dropped connection, bounded retries, fresh snapshot";
+                + "TC-021-007: dropped connection, bounded retries, fresh snapshot; "
+                + "tests/profiles.test.cjs::"
+                + "status readiness survives held settings HTTP with bounded refresh; "
+                + "tests/recording.test.cjs::"
+                + "authenticated reconnect accepts only current connected operating snapshots";
         }
     }
     verification 'TC-007-002' {
