@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
-//! The test tools of the Rust tests (Project-Specifics, "Test tools"): code only tests run,
+//! The test tools of the Rust tests
+//! (harness/project/docs/specifics/windows-build-and-packaging.md, "Test tools"): code only tests run,
 //! never product. The crate depends on no product package; each tool takes plain values.
 //! Product code names a tool only in a test file.
 pub mod capture_evidence;

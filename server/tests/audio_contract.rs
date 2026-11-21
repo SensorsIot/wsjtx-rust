@@ -7,7 +7,8 @@ pub mod source;
 use audio::*;
 use source::*;
 use std::sync::Arc;
-// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+// The test-only model-value reader
+// (harness/project/docs/specifics/local-windows-development.md, "Model values read by tests").
 use wstx_test_tools::model_values;
 
 /// A number of WstxCapture::CaptureStream, read from the model.

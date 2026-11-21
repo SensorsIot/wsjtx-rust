@@ -8,15 +8,15 @@ contract; the references below are the constraints a change must respect.
 
 | Subject | Reference |
 |---|---|
-| Product contract | [Functional model entry point](../../../docs/sysml/Requirements.sysml); [exclusive authority selection](Project-Specifics.md#exclusive-functional-authority) |
+| Product contract | [Functional model entry point](../../../docs/sysml/Requirements.sysml); [exclusive authority selection](specifics/product-model-maintenance.md#exclusive-functional-authority) |
 | Product component/interface boundaries | [Architecture](../../../docs/sysml/Shack.sysml) and its referenced behaviour/interface packages |
 | The finished model: the rules every model change and its check name (M1–M8) | [Finished model](Finished-Model.md); read first by the definer and the reviewer of a model change |
 | Product SysML artifacts and view scope | [Architecture model](../../../docs/sysml/Shack.sysml); [catalog and validation](../../../tools/sysml/README.md#the-rules) |
 | Behavior baseline and provenance | [Functional model](../../../docs/sysml/Requirements.sysml) and its referenced scope/provenance packages; distribution notices in [README](../../../README.md#license-and-attribution) |
-| The machine (HB9BLA, with the transceiver) | [Machine](Project-Specifics.md#machine) |
+| The machine (HB9BLA, with the transceiver) | [Machine](specifics/machine.md#machine) |
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
-| Language rules | the packs in `harness/project/config.yaml`: [Rust](../../general/lang/rust/standard.md), [Rust supply chain](../../general/lang/rust-supply-chain/standard.md), [Python](../../general/lang/python/standard.md); [crates that need `unsafe`](Project-Specifics.md#crates-that-need-unsafe) |
-| Security | [principles](../../general/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
+| Language rules | the packs in `harness/project/config.yaml`: [Rust](../../general/lang/rust/standard.md), [Rust supply chain](../../general/lang/rust-supply-chain/standard.md), [Python](../../general/lang/python/standard.md); [crates that need `unsafe`](specifics/windows-build-and-packaging.md#crates-that-need-unsafe) |
+| Security | [principles](../../general/core/docs/standards/security.md); [deployment authority](specifics/deployment-authority.md#deployment-authority) |
 | Testing | [testing](../../general/core/docs/standards/testing.md); suites in `harness/project/suites/`, one file per suite |
 | Change and harness-improvement reports; restart checkpoints | [Reporting](../../general/core/docs/CR-Reporting.md); shared harness overview: `python harness/general/core/tools/report_cr.py --harness --root harness/general` |
 | The coordinator (main session), parallel issue workspaces and sub-agents | [Agent roles](../../general/core/agents/roles.md), [workspace tool](../../general/core/docs/Workspaces.md); `python harness/general/core/tools/parallel.py status` |
@@ -40,7 +40,7 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   - `suites/`: the test registry, one file per suite (`harness/project/suites/<suite>.yaml`,
     [the registry](../../general/core/docs/standards/testing.md#the-registry)), with the
     `filter:` forms that `gate.py --suite NAME --filter WORDS` runs
-    ([Functional test selection](Project-Specifics.md#functional-test-selection));
+    ([Functional test selection](specifics/local-windows-development.md#functional-test-selection));
   - `model_bindings.py`: the gate's model bindings (`gate.model_bindings`);
   - `tools/`: `filter_run.py`, which runs a suite's filter form (its `run` steps, each
     narrowed to the filter words, RED when no test ran), and `node_test_count.mjs`, the
@@ -52,7 +52,17 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
     [Finished model](Finished-Model.md), this overview,
-    [MEMORY](MEMORY.md) and [Project specifics](Project-Specifics.md).
+    [MEMORY](MEMORY.md) and [Project specifics](Project-Specifics.md), the index of
+    `specifics/`, one file per section: [Machine](specifics/machine.md),
+    [Windows build and packaging](specifics/windows-build-and-packaging.md),
+    [GitHub Actions](specifics/github-actions.md),
+    [Local Windows development](specifics/local-windows-development.md),
+    [Merge queue](specifics/merge-queue.md),
+    [Same-machine development](specifics/same-machine-development.md),
+    [Deployment authority](specifics/deployment-authority.md),
+    [References](specifics/references.md),
+    [Product model maintenance](specifics/product-model-maintenance.md) and
+    [Project model documentation contract](specifics/project-model-documentation-contract.md).
 
 The machine's notifier secrets are outside the repository, in `~/.harness/wsjtx-rust/secrets.md`
 (`python harness/general/core/tools/notify.py check` names a missing key, never a value).
@@ -73,22 +83,22 @@ instructions are in [Project specifics](Project-Specifics.md).
   gate execution. The manual-only hosted workflow supplies the alternative location
   when explicitly selected; it does not add a routine second run.
 - **Test selection:** explicit file owners and downstream functional dependencies in
-  `harness/project/suites/`; see [functional test selection](Project-Specifics.md#functional-test-selection).
+  `harness/project/suites/`; see [functional test selection](specifics/local-windows-development.md#functional-test-selection).
   Shared or unmapped changes select broader checks. `--plan` explains the selection;
   `--full` executes every eligible group without memo reuse.
 - **Deploy:** a Windows release executable built and installed on HB9BLA
-  ([machine](Project-Specifics.md#machine)); the dry run uses that
+  ([machine](specifics/machine.md#machine)); the dry run uses that
   candidate on HB9BLA. The manual hosted workflow can supply build and test evidence
   when explicitly chosen; its artifact is never installed on the station. A deploy needs no
   OK under the standing deploy policy, also for a change to the deploy
-  mechanism ([deployment authority](Project-Specifics.md#deployment-authority)).
+  mechanism ([deployment authority](specifics/deployment-authority.md#deployment-authority)).
 - **Live tests:** tests that need a radio, a sound device or the network are cost 3–5,
   marked `#[ignore]`, get their own suites and run only on HB9BLA, where the transceiver is
   connected. Live tests key the simulator; the real IC-7300 once the operator has decided
-  #239 ([simulator live tests](Project-Specifics.md#simulator-live-tests)). Cost 4 and 5 then
+  #239 ([simulator live tests](specifics/deployment-authority.md#simulator-live-tests)). Cost 4 and 5 then
   run without asking under the standing consent at 1 %
-  ([deployment authority](Project-Specifics.md#deployment-authority)); QSO tests keep the
-  bounds of [QSO tests](Project-Specifics.md#qso-tests).
+  ([deployment authority](specifics/deployment-authority.md#deployment-authority)); QSO tests keep the
+  bounds of [QSO tests](specifics/deployment-authority.md#qso-tests).
 
 ## Harness paths
 
@@ -120,13 +130,13 @@ notice to the operator (the user who last edited the schedule); it names the cra
 
 ## Documentation is current-state
 
-The [exclusive authority binding](Project-Specifics.md#exclusive-functional-authority)
+The [exclusive authority binding](specifics/product-model-maintenance.md#exclusive-functional-authority)
 selects one functional authority. With the canonical model declaration, SysML alone owns
 product requirements, behaviour, architecture, interfaces and durable verification
 definitions. Harness instructions, skills,
 standards, process, build and gate documentation remain Markdown.
 
-For each functional issue follow the [required sequence](Project-Specifics.md#required-sequence-for-functional-issues):
+For each functional issue follow the [required sequence](specifics/project-model-documentation-contract.md#required-sequence-for-functional-issues):
 settle the canonical requirements and independent verification expectations, implement
 against the model, test the function with independent oracles, for real where it matters, and
 only then have the independent review, to find undesired behaviour. Reconcile delivered functionality, source bindings and test cases before

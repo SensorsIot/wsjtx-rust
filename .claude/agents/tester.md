@@ -29,7 +29,7 @@ hooks:
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
 <!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
 <!-- source harness/general/lang/javascript/standard.md sha256=018b21f4d1ed383044ccc31e6c7fc66e8c9cb07b6f3c8d54cee8c17f5b796265 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=e4e4a300de23acca9122b1654d87176b9d536a7e3dab5300b75ec4e07d8ffbf4 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=7da0be2988e134fa958d9b8f3bf99e891aa48673e1df7fe85708dfde90ecb600 -->
 <!-- source harness/project/mcp/station.json sha256=67279a1fa8de19d052d2df10e4f9f8491f967d58bcc8639dbb7650f4ee0cb898 -->
 <!-- harness-role-policy {"commands": ["gh issue view {issues}( .*)?", "(python3?|py)(\\.exe)? \\S*gate\\.py --live( --plan)?( --base [0-9a-f]{7,40})?( --consent)?", "gh issue comment {issue} --body 'Live test: (PASS|RED|NOT RUN)[^'\\n]*(\\n[^']*)?'", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/{issue}/[A-Za-z0-9_-]+|tools/test/powershell/radio-preflight|tools/test/powershell/qso-test|tools/deploy/live-page-check)\\.ps1( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/station-switch\\.ps1 -To (simulator|back)", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/emulator\\.ps1 -(Start|Stop|Status)", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/live/{issue}/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{worktree}/**", "{session}/**", "D:/wstx-tmp/live/{issue}/**"]} -->
 
@@ -67,22 +67,22 @@ operator's consent or under the project's standing consent policy, which the bri
 
 ## Added by the project (harness/project/docs/Agent-Working-Rules.md)
 
-The live-test binding is [Keying the radio](../../harness/project/docs/Project-Specifics.md#keying-the-radio) and the
-[standing consent at 1 %](../../harness/project/docs/Project-Specifics.md#standing-consent-at-1-). A run writes under `D:/wstx-tmp/live/<issue>/`
-([limits for experiments](../../harness/project/docs/Project-Specifics.md#limits-for-experiments)): its log, and its
+The live-test binding is [Keying the radio](../../harness/project/docs/specifics/deployment-authority.md#keying-the-radio) and the
+[standing consent at 1 %](../../harness/project/docs/specifics/deployment-authority.md#standing-consent-at-1-). A run writes under `D:/wstx-tmp/live/<issue>/`
+([limits for experiments](../../harness/project/docs/specifics/project-model-documentation-contract.md#limits-for-experiments)): its log, and its
 scripts, which act on the station only through the station client
 `tools/deploy/agent-client.ps1` (dot-sourced:
 `Open-AgentSession`, `Agent-Get`, `Agent-Post`). It runs them, and the radio preflight or
 the live page check, as
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
 or `… -File tools/test/powershell/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`, or
-a QSO test ([QSO tests](../../harness/project/docs/Project-Specifics.md#qso-tests)) as
+a QSO test ([QSO tests](../../harness/project/docs/specifics/deployment-authority.md#qso-tests)) as
 `… -File tools/test/powershell/qso-test.ps1 -Holder <run> -Issue <n> -Item <k>`, or
 `… -File tools/deploy/live-page-check.ps1 -Repo D:/Github/wsjtx-rust -Shared D:/Github/wsjtx-rust/.git/harness-parallel -AgentClient tools/deploy/agent-client.ps1`,
 or sets up and clears its simulator bench with exactly
 `… -File tools/test/powershell/station-switch.ps1 -To simulator` or `-To back` and
 `… -File tools/test/powershell/emulator.ps1 -Start`, `-Stop` or `-Status`
-([Simulator live tests](../../harness/project/docs/Project-Specifics.md#simulator-live-tests)). A simulator run, whether
+([Simulator live tests](../../harness/project/docs/specifics/deployment-authority.md#simulator-live-tests)). A simulator run, whether
 the real IC-7300 is on or off: switch the station to the simulator, start the emulator once
 the station runs, test, halt, stop the emulator, switch the station back with `-To back`; a
 run that ends early still stops the emulator it started and switches back. It installs
@@ -113,4 +113,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{worktree}/**`, `{session}/**`, `D:/wstx-tmp/live/{issue}/**`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/live/{issue}/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=cc731a3820bd08eb3855f4330d02d3acf2ba6b21fe963232f8c23d42e370ee47 -->
+<!-- harness-agent-v1 sha256=ef1b19e6e99e30e146a77f415b02cbbc1d07329bb788b641d00f3b577dec0615 -->

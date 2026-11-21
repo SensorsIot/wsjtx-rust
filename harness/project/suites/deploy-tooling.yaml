@@ -1,4 +1,5 @@
-# The deploy mechanism (Project-Specifics.md, Deployment authority): its pins, the station drill
+# The deploy mechanism (harness/project/docs/specifics/deployment-authority.md,
+# Deployment authority): its pins, the station drill
 # and the mocked install flow. -v names every test and every skip in the gate log.
 - suite: deploy-tooling
   cost: 2

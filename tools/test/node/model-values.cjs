@@ -1,6 +1,7 @@
 'use strict';
-// The model-value reader of the JavaScript tests (Project-Specifics, "Model values read by
-// tests"). A contract test names a value the model holds as data by its qualified
+// The model-value reader of the JavaScript tests
+// (harness/project/docs/specifics/local-windows-development.md,
+// "Model values read by tests"). A contract test names a value the model holds as data by its qualified
 // name `Package::Element(::Feature)*`, and this module finds it in the `.sysml` text at run
 // time. It reads only the subset of that section and throws on anything else; the pinned
 // Pilot of `tools/sysml.py check` validates the SysML itself. The Rust reader

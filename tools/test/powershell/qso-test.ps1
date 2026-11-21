@@ -1,4 +1,5 @@
-# QSO test driver (harness/project/docs/Project-Specifics.md, QSO tests): one QSO test on the
+# QSO test driver
+# (harness/project/docs/specifics/deployment-authority.md, QSO tests): one QSO test on the
 # simulator profile SIM-IC7300 that answers a CQ under the operator's bounds, and its verdict.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/qso-test.ps1 -Holder <run> -Issue <n> -Item <k>
 # Order: the profile guard (GET /transmit profile_id is SIM-IC7300's, its CAT port and baud

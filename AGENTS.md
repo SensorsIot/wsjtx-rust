@@ -9,7 +9,7 @@ the project is built, tested or gated follow [Harness changes](harness/general/c
 The constraints a change must respect are indexed in the
 [Harness Overview](harness/project/docs/Harness-Overview.md). Read only the parts relevant
 to the task. The product contract's authority is bound in
-[exclusive functional authority](harness/project/docs/Project-Specifics.md#exclusive-functional-authority).
+[exclusive functional authority](harness/project/docs/specifics/product-model-maintenance.md#exclusive-functional-authority).
 
 Agent workflows and project-local skill setup are indexed in the pinned
 [harness skill](harness/general/SKILL.md) and [agent discovery](harness/general/README.md#agent-discovery).
@@ -17,4 +17,4 @@ The general harness is the git submodule at `harness/general/`
 (https://github.com/SensorsIot/harness, branch `main`); the project harness is `harness/project/`.
 
 Once per clone, the operator sets the checkout up
-([Local Windows development](harness/project/docs/Project-Specifics.md#local-windows-development)).
+([Local Windows development](harness/project/docs/specifics/local-windows-development.md#local-windows-development)).

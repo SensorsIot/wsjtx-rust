@@ -8,7 +8,8 @@
 # control from 0000 to 0255, not watts. Po also follows the Tx level and the profile's limit, so a
 # confirmed value is the control and not the output. Measured on 20 m at -19 dB: 0128 gave Po
 # 34-43 %; 0003, 0013 and 0026 gave Po 0 to 1 %; no wattmeter. Short keying uses 0003; a QSO test
-# (qso-test.ps1) keys its SWR check at 0128 and its QSO at 0255 (Project-Specifics.md, QSO tests).
+# (qso-test.ps1) keys its SWR check at 0128 and its QSO at 0255
+# (harness/project/docs/specifics/deployment-authority.md, QSO tests).
 # -NoWrite reads only, and refuses if the radio reads another value. An agent runs it before it keys and keys only on exit 0, while its lease is live.
 # -Port and -Baud name the CAT port, both or neither; without them it is radio-port.json's. The
 # lease and each record hold the port and baud. -Restore, a renewal and -NoWrite use the live

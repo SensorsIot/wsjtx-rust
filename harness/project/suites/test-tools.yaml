@@ -1,4 +1,5 @@
-# The tests of the Node test tools (Project-Specifics, "Test tools"), each beside its tool in
+# The tests of the Node test tools (harness/project/docs/specifics/windows-build-and-packaging.md,
+# "Test tools"), each beside its tool in
 # tools/test/node/; the model-value reader's tests run in model-values. The Rust test tools'
 # tests run in wstx-rust (the workspace) and, release only, in decoder-correctness.
 - suite: test-tools

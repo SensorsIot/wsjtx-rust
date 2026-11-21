@@ -13,7 +13,7 @@ description: 'coordinator: the main session of a project with harness/project/. 
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
 <!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
 <!-- source harness/general/lang/javascript/standard.md sha256=018b21f4d1ed383044ccc31e6c7fc66e8c9cb07b6f3c8d54cee8c17f5b796265 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=e4e4a300de23acca9122b1654d87176b9d536a7e3dab5300b75ec4e07d8ffbf4 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=7da0be2988e134fa958d9b8f3bf99e891aa48673e1df7fe85708dfde90ecb600 -->
 
 # Coordinator
 
@@ -217,4 +217,4 @@ holds the rules, before a handover and for an issue another machine owns.
 ## Added by the project (harness/project/docs/Agent-Working-Rules.md)
 
 The coordinator reads the [project memory](../../../harness/project/docs/MEMORY.md) first.
-<!-- harness-forwarder-v1 sha256=96807a9a2932b02bc9a5bd0e1434fa2051457ae5163f4dbeae855ee309b85498 -->
+<!-- harness-forwarder-v1 sha256=63f44caaa816244c8daae297dd5a405a37ac6ddc1e246d16eeda4d350d562238 -->

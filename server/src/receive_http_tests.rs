@@ -4,7 +4,8 @@ use super::*;
 use wstx_test_tools::native_ft8_fixture::{
     NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES,
 };
-// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+// The test-only model-value reader
+// (harness/project/docs/specifics/local-windows-development.md, "Model values read by tests").
 #[cfg(all(windows, not(debug_assertions)))]
 use wstx_test_tools::model_values;
 

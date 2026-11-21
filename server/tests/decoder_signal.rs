@@ -17,7 +17,8 @@ use wstx_test_tools::resource_harness::{
     resource_guardian_before_probes, resource_hash, resource_host_scope, resource_line,
     resource_metrics_source_identity, resource_qualify_round, resource_sample, resource_source,
 };
-// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+// The test-only model-value reader
+// (harness/project/docs/specifics/local-windows-development.md, "Model values read by tests").
 use wstx_test_tools::model_values;
 
 /// A value of WstxDecode, read from the model: with its unit
