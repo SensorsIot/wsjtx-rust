@@ -45,9 +45,9 @@
   - server/src/radioControl/cat_lifecycle_tests.rs
   - server/src/radioControl/radio_agc.rs
   - server/src/radioControl/radio_agc_tests.rs
-  - server/src/receive.rs
-  - server/src/receive_http.rs
-  - server/src/spectrum.rs
+  - server/src/receive/receive.rs
+  - server/src/receive/receive_http.rs
+  - server/src/receive/spectrum.rs
   - client/app.js
   - client/index.html
   - client/recording.js

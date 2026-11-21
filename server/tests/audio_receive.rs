@@ -6,7 +6,7 @@ pub use wstx_rust::{decoder, source};
 use wstx_test_tools::native_ft8_fixture::{
     NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES,
 };
-#[path = "../src/receive.rs"]
+#[path = "../src/receive/receive.rs"]
 mod receive;
 
 use receive::{AnalysisWindow, WindowBuffer, WindowError};

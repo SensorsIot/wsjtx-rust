@@ -271,13 +271,13 @@ package WstxReceiveControl {
         out item startLive : StartLive {
             @CodeDiffers {
                 what = "The code names it start: the route POST /receive/start (start in "
-                    + "server/src/receive_http.rs).";
+                    + "server/src/receive/receive_http.rs).";
             }
         }
         out item stopLive : StopLive {
             @CodeDiffers {
                 what = "The code names it stop: the route POST /receive/stop (stop in "
-                    + "server/src/receive_http.rs).";
+                    + "server/src/receive/receive_http.rs).";
             }
         }
         out item startReplay : StartReplay {
@@ -292,13 +292,13 @@ package WstxReceiveControl {
         out item readRecords : ReadRecords {
             @CodeDiffers {
                 what = "The code names it results: the route GET /receive/results (results "
-                    + "in server/src/receive_http.rs).";
+                    + "in server/src/receive/receive_http.rs).";
             }
         }
         out item readDiagnostics : ReadDiagnostics {
             @CodeDiffers {
                 what = "The code names it diagnostics: the route GET /receive/diagnostics "
-                    + "(diagnostics in server/src/receive_http.rs).";
+                    + "(diagnostics in server/src/receive/receive_http.rs).";
             }
         }
         in item accepted : JobAccepted;

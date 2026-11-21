@@ -3,13 +3,10 @@
   timing: true
   timing_inputs:
   - server/src/main.rs
-  - server/src/receive.rs
-  - server/src/receive_http.rs
-  - server/src/receive_http_tests.rs
-  - server/src/source.rs
-  - server/src/audio.rs
+  - server/src/receive/receive.rs
+  - server/src/receive/receive_http.rs
+  - server/src/receive/receive_http_tests.rs
   - server/src/audio/
-  - server/src/decoder/
   - server/src/modes/decoder/
   - client/recording.js
   - tests/frontend/receive-latency.test.cjs
@@ -38,16 +35,13 @@
   paths:
   - server/src/main.rs
   - server/src/profile.rs
-  - server/src/recording.rs
+  - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/recording_http.rs
-  - server/src/receive.rs
-  - server/src/receive_http.rs
-  - server/src/receive_http_tests.rs
-  - server/src/source.rs
-  - server/src/audio.rs
+  - server/src/receive/receive.rs
+  - server/src/receive/receive_http.rs
+  - server/src/receive/receive_http_tests.rs
   - server/src/audio/
-  - server/src/decoder/
   - server/src/modes/decoder/
   - server/src/lib.rs
   - client/

@@ -20,16 +20,12 @@ package WstxReceivePart {
              publishes the decoded frames of each period. A replay makes spectrum rows
              of the stored recording. */
         @ImplementedIn {
-            module = "server/src/recording.rs; server/src/receive.rs; server/src/spectrum.rs; "
-                + "server/src/receive/receive_diagnostics.rs; server/src/receive_http.rs";
-        }
-        @CodeDiffers {
-            what = "Its code stands in server/src/receive.rs, server/src/receive_http.rs, "
-                + "server/src/recording.rs, server/src/spectrum.rs, outside server/src/receive/ "
-                + "and client/src/receive/.";
+            module = "server/src/receive/recording.rs; server/src/receive/receive.rs; "
+                + "server/src/receive/spectrum.rs; server/src/receive/receive_diagnostics.rs; "
+                + "server/src/receive/receive_http.rs";
         }
         @DetailTests {
-            tests = "server/src/recording_tests.rs; server/tests/receive_integration.rs; "
+            tests = "server/src/receive/recording_tests.rs; server/tests/receive_integration.rs; "
                 + "server/src/contact_http_tests.rs";
             covers = "the conversion of a time to UTC text; the limits of a block the "
                 + "window buffer takes; the call hash table shared with transmit";

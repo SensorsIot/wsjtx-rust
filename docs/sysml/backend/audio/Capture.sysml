@@ -69,7 +69,7 @@ package WstxCapture {
         objective { verify 'CL-008-02'; }
         @TestedBy {
             test = "server/tests/audio_contract.rs; server/tests/audio_receive.rs; "
-                + "server/src/audio_tests.rs::each_loss_event_names_its_epoch_trigger; "
+                + "server/src/audio/audio_tests.rs::each_loss_event_names_its_epoch_trigger; "
                 + "server/tests/source_contract.rs::"
                 + "epoch_requires_current_owner_ack_and_rejects_old_identity; "
                 + "server/tests/receive/audio_listen.rs::"
@@ -108,7 +108,7 @@ package WstxCapture {
                  than this since the tie was last set. */
             @CodeDiffers {
                 what = "Receive moves the tie, not audio: ClockTracker in "
-                    + "server/src/recording.rs moves it beyond RESCHEDULE_TICKS, 50 ms.";
+                    + "server/src/receive/recording.rs moves it beyond RESCHEDULE_TICKS, 50 ms.";
             }
         }
         attribute stepMs : Integer = 200 {
@@ -116,21 +116,21 @@ package WstxCapture {
                  measurement of the rate anew. */
             @CodeDiffers {
                 what = "Receive starts the average anew, not audio: ClockTracker in "
-                    + "server/src/recording.rs does so beyond STEP_TICKS, 200 ms.";
+                    + "server/src/receive/recording.rs does so beyond STEP_TICKS, 200 ms.";
             }
         }
         attribute rateKnownSeconds : Integer = 60 {
             doc /* The rate of the drift is known after this much of the stream. */
             @CodeDiffers {
                 what = "Receive measures the rate, not audio: ClockTracker in "
-                    + "server/src/recording.rs gives it after 60 s of the stream.";
+                    + "server/src/receive/recording.rs gives it after 60 s of the stream.";
             }
         }
         attribute driftWarnPpm : Integer = 1000 {
             doc /* CaptureWarning::driftHigh holds while the known rate is beyond this,
                  either way. */
             @CodeDiffers {
-                what = "Receive raises driftHigh, not audio: server/src/recording.rs "
+                what = "Receive raises driftHigh, not audio: server/src/receive/recording.rs "
                     + "warns beyond CAPTURE_DRIFT_WARN_PPM, 1000 ppm.";
             }
         }
@@ -146,7 +146,7 @@ package WstxCapture {
             test = "server/tests/audio_contract.rs::audio_queue_and_clock_bounds; "
                 + "server/tests/audio_contract.rs::"
                 + "audio_clock_rejected_bracket_preserves_reference; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "drifting_capture_clock_keeps_prompt_windows_on_the_utc_period; "
                 + "server/src/transmit/clock_http_tests.rs::"
                 + "warnings_windows_time_capture_and_revision";

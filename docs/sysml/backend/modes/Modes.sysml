@@ -11,8 +11,8 @@ package WstxModesPart {
              a window of samples, turns each payload into a message with its fields, and
              turns a message into its waveform. */
         @ImplementedIn {
-            module = "server/src/decoder/mod.rs; server/src/decoder/payload.rs; "
-                + "server/src/decoder/search.rs; server/src/decoder/subtraction.rs; "
+            module = "server/src/modes/decoder/mod.rs; server/src/modes/decoder/payload.rs; "
+                + "server/src/modes/decoder/search.rs; server/src/modes/decoder/subtraction.rs; "
                 + "server/src/lib.rs; server/src/modes/decoder/apriori.rs; "
                 + "server/src/modes/decoder/baseband.rs; server/src/modes/decoder/bitmetrics.rs; "
                 + "server/src/modes/decoder/channel.rs; server/src/modes/decoder/coarse_ft4.rs; "
@@ -23,12 +23,10 @@ package WstxModesPart {
                 + "server/src/modes/decoder/synchronization.rs; "
                 + "server/src/modes/decoder/waveform.rs; server/src/modes/playback/windows.rs; "
                 + "server/src/modes/transmit/mod.rs; server/src/modes/transmit/waveform.rs; "
-                + "server/src/transmit/pack.rs";
+                + "server/src/modes/transmit/pack.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/decoder/mod.rs, server/src/decoder/payload.rs, "
-                + "server/src/decoder/search.rs, server/src/decoder/subtraction.rs, "
-                + "server/src/lib.rs, server/src/transmit/pack.rs, outside server/src/modes/ and "
+            what = "Its code stands in server/src/lib.rs, outside server/src/modes/ and "
                 + "client/src/modes/.";
         }
         port receive : ~ReceiveProcessing;

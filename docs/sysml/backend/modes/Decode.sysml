@@ -26,8 +26,8 @@ package WstxDecode {
              protocol defines their payload, channel code and waveform (DecodeWindow). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/decoder/mod.rs; server/src/decoder/search.rs; "
-                + "server/src/decoder/subtraction.rs; server/src/modes/decoder/apriori.rs; "
+            module = "server/src/modes/decoder/mod.rs; server/src/modes/decoder/search.rs; "
+                + "server/src/modes/decoder/subtraction.rs; server/src/modes/decoder/apriori.rs; "
                 + "server/src/modes/decoder/baseband.rs; "
                 + "server/src/modes/decoder/bitmetrics.rs; "
                 + "server/src/modes/decoder/channel.rs; "
@@ -355,7 +355,7 @@ package WstxDecode {
                 + "physical_wrong_mode_reproduction_has_no_frame_or_search_error; "
                 + "server/tests/decoder_signal.rs::"
                 + "release_runtime_and_overlapping_window_history; "
-                + "server/src/receive_http_tests.rs::"
+                + "server/src/receive/receive_http_tests.rs::"
                 + "resource_station_process_delta_and_owner_release; "
                 + "server/src/modes/decoder/physical_ft4_test.rs::"
                 + "qualified_support_count_keeps_the_256_257_barrier; "

@@ -408,7 +408,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-07'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs; server/src/recording_tests.rs"; }
+        @TestedBy { test = "server/src/log/udp_tests.rs; server/src/receive/recording_tests.rs"; }
     }
 
     verification 'TC-112-002' {

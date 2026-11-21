@@ -24,9 +24,8 @@
   - docs/sysml/
   select:
   - docs/sysml/
-  - server/src/decoder/
   - server/src/modes/decoder/
-  - server/src/transmit/pack.rs
+  - server/src/modes/transmit/pack.rs
   - server/src/modes/transmit/mod.rs
   - server/src/lib.rs
   - tools/test/rust/src/model_values.rs

@@ -18,11 +18,11 @@ use std::{
     time::{Duration, Instant},
 };
 use wstx_rust::transmit::air;
-#[path = "receive/receive_diagnostics.rs"]
+#[path = "receive_diagnostics.rs"]
 pub(crate) mod diagnostics;
-#[path = "radioControl/radio_connection.rs"]
+#[path = "../radioControl/radio_connection.rs"]
 mod radio_connection;
-#[path = "receive/receive_startup.rs"]
+#[path = "receive_startup.rs"]
 pub(crate) mod startup;
 #[cfg(test)]
 #[path = "recording_tests.rs"]

@@ -22,10 +22,10 @@
   select:
   - server/src/main.rs
   - server/src/profile.rs
-  - server/src/recording.rs
+  - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
-  - server/src/receive.rs
-  - server/src/receive_http.rs
+  - server/src/receive/receive.rs
+  - server/src/receive/receive_http.rs
   - server/src/receive/receive_diagnostics.rs
   - server/src/receive/receive_startup.rs
   - server/src/contact_http.rs

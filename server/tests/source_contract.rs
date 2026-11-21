@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-#[path = "../src/source.rs"]
+#[path = "../src/audio/source.rs"]
 pub mod source;
 
 use source::*;

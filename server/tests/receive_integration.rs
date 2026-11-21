@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 pub use wstx_rust::decoder;
-#[path = "../src/receive.rs"]
+#[path = "../src/receive/receive.rs"]
 mod receive;
-#[path = "../src/source.rs"]
+#[path = "../src/audio/source.rs"]
 pub mod source;
 
 use decoder::Mode;

@@ -215,7 +215,7 @@ pub fn arrl_sections() -> &'static [String] {
     static T: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     T.get_or_init(|| {
         serde_json::from_str(include_str!(
-            "../../../fixtures/decoder/protocol-data/arrl_rac_sections.json"
+            "../../../../fixtures/decoder/protocol-data/arrl_rac_sections.json"
         ))
         .expect("section table")
     })
@@ -224,7 +224,7 @@ pub fn rtty_exchanges() -> &'static [String] {
     static T: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     T.get_or_init(|| {
         serde_json::from_str(include_str!(
-            "../../../fixtures/decoder/protocol-data/states_provinces.json"
+            "../../../../fixtures/decoder/protocol-data/states_provinces.json"
         ))
         .expect("RTTY exchange table")
     })

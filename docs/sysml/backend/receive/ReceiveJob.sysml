@@ -97,17 +97,17 @@ package WstxReceiveJob {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-02'; verify 'CL-006-04'; }
         @TestedBy {
-            test = "server/src/recording_tests.rs::"
+            test = "server/src/receive/recording_tests.rs::"
                 + "processing_failure_with_eos_cannot_complete_before_or_after_release; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "crossing_pacing_deadline_completes_and_releases_worker_slot; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "live_terminal_is_unobservable_until_actual_input_drop_releases; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "live_worker_spawn_failure_releases_admission_without_reusing_generation; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "live_second_epoch_source_uuid_failure_releases_original_admission; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "a_replay_start_it_does_not_admit_is_refused_and_changes_nothing; "
                 + "tests/recording.test.cjs";
         }
@@ -186,19 +186,19 @@ package WstxReceiveJob {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-03'; }
         @TestedBy {
-            test = "server/src/recording_tests.rs::"
+            test = "server/src/receive/recording_tests.rs::"
                 + "live_results_evict_oldest_and_never_restart_sequence; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "live_publication_is_atomic_at_byte_counter_and_context_boundaries; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "a_frame_outside_its_limits_never_becomes_a_record_and_reads_are_refused; "
-                + "server/src/receive_http_tests.rs::"
+                + "server/src/receive/receive_http_tests.rs::"
                 + "live_native_fixture_reaches_real_manager_http_and_browser_callsign; "
-                + "server/src/receive_http_tests.rs::"
+                + "server/src/receive/receive_http_tests.rs::"
                 + "live_native_ft4_fixture_reaches_real_manager_http_and_browser_callsign; "
                 + "tests/receive-integration.test.cjs::"
                 + "real native audio reaches Rust manager HTTP and literal browser callsign";

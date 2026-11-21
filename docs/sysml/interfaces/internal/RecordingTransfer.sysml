@@ -178,14 +178,14 @@ package WstxRecordingTransfer {
             @CodeDiffers {
                 what = "The import reads live_owner_released and the running band or mode "
                     + "selection of the state it shares with receive (admit_for in "
-                    + "server/src/recording.rs).";
+                    + "server/src/receive/recording.rs).";
             }
         }
         attribute jobRunning : Boolean {
             doc /* A job of receive has not ended. */
             @CodeDiffers {
                 what = "The import reads the job of the state it shares with receive "
-                    + "(admit_for in server/src/recording.rs).";
+                    + "(admit_for in server/src/receive/recording.rs).";
             }
         }
     }
@@ -203,7 +203,7 @@ package WstxRecordingTransfer {
         out item receiveBusy : ReceiveBusy {
             @CodeDiffers {
                 what = "The code gives no ReceiveBusy: the import and receive share one "
-                    + "state in server/src/recording.rs, which the import reads when it is "
+                    + "state in server/src/receive/recording.rs, which the import reads when it is "
                     + "reserved.";
             }
         }

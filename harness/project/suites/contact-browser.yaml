@@ -23,6 +23,7 @@
   - server/src/logbook_http.rs
   - server/src/transmit_http.rs
   - server/src/transmit/
+  - server/src/audio/playback.rs
   - server/src/radioControl/codec.rs
   - server/src/modes/transmit/
   - server/src/operating/qso/pskr.rs

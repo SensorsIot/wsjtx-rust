@@ -374,7 +374,7 @@ struct BusyPeriodInput {
 impl BusyPeriodInput {
     fn load(period: Arc<std::sync::atomic::AtomicU64>) -> Self {
         let manifest: Value =
-            serde_json::from_str(include_str!("../../fixtures/decoder/manifest.json")).unwrap();
+            serde_json::from_str(include_str!("../../../fixtures/decoder/manifest.json")).unwrap();
         let sha = manifest["files"]
             .as_array()
             .unwrap()

@@ -24,7 +24,6 @@
     --skip live_busy_period_publishes_every_decode_promptly
     @libtest cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1
   paths:
-  - server/src/decoder/
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/decoder_signal.rs

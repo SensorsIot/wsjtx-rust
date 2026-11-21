@@ -10,7 +10,7 @@ use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_cha
 use std::sync::{Arc, Mutex};
 
 #[cfg(windows)]
-#[path = "audio/windows.rs"]
+#[path = "windows.rs"]
 #[allow(unsafe_code)]
 mod windows;
 #[cfg(windows)]

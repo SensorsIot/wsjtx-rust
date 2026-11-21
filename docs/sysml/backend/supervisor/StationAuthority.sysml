@@ -137,7 +137,7 @@ package WstxStationAuthority {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-07'; }
         @TestedBy {
-            test = "server/src/recording_tests.rs::"
+            test = "server/src/receive/recording_tests.rs::"
                 + "selection_start_checks_independent_loaded_profile_revision_after_unlock; "
                 + "server/src/transmit/transmit_http_tests.rs::"
                 + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms; "

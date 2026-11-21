@@ -25,7 +25,7 @@ package WstxMessagePayload {
         doc /* The payload function MUST give every returned frame exactly the fields of
              a decoded frame, with the fields of its message family (UnpackPayload). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/decoder/payload.rs"; }
+        @ImplementedIn { module = "server/src/modes/decoder/payload.rs"; }
     }
     #derivation connection { end #original ::> 'FR-004'; end #derive ::> 'CL-007-09'; }
 
@@ -134,7 +134,7 @@ package WstxMessagePayload {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-01'; }
-        @TestedBy { test = "server/src/recording_tests.rs"; }
+        @TestedBy { test = "server/src/receive/recording_tests.rs"; }
     }
 
     verification 'TC-024-010' {

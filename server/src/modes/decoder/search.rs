@@ -885,5 +885,5 @@ async fn refine_known(
 }
 
 #[cfg(test)]
-#[path = "../modes/decoder/search_test.rs"]
+#[path = "search_test.rs"]
 mod tests;

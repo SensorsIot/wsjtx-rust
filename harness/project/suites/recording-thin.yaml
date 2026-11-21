@@ -27,10 +27,10 @@
   # and the reader of the RecordingLimits values its TC-018 tests read are inputs too.
   timing_inputs:
   - server/src/main.rs
-  - server/src/recording.rs
+  - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/recording_http.rs
-  - server/src/spectrum.rs
+  - server/src/receive/spectrum.rs
   - server/src/http_compression.rs
   - client/app.js
   - client/index.html

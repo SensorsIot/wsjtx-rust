@@ -323,7 +323,7 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-010-09'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs; server/src/recording_tests.rs"; }
+        @TestedBy { test = "tests/ui-operating.test.cjs; server/src/receive/recording_tests.rs"; }
     }
     verification 'TC-024-004' {
         doc /* Free text in Tx5 and rows to <MYCALL>. */
@@ -356,7 +356,8 @@ package WstxBandActivityPane {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-057-01'; }
         @TestedBy {
-            test = "server/src/receive_http_tests.rs; tests/frontend/receive-latency.test.cjs; "
+            test = "server/src/receive/receive_http_tests.rs; "
+                + "tests/frontend/receive-latency.test.cjs; "
                 + "tests/ui-operating.test.cjs::"
                 + "a correlated period view extended in place adds the late starter without an "
                 + "error or a reload";
@@ -402,7 +403,7 @@ package WstxBandActivityPane {
         objective { verify 'CL-050-08'; }
         @TestedBy {
             test = "tests/ui-operating.test.cjs; tests/frontend/receive-page.test.cjs; "
-                + "server/src/receive_http_tests.rs";
+                + "server/src/receive/receive_http_tests.rs";
         }
     }
     verification 'TC-055-007' {
