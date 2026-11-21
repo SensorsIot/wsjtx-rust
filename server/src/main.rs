@@ -1220,8 +1220,6 @@ async fn connection(
 ) {
     // Every time of this loop is the runtime's clock, so a test can drive it (TC-021-008).
     use tokio::time::Instant;
-    #[cfg(test)]
-    let mut record = SocketRecord::begin();
     let recording = profile.as_ref().map(|p| p.recording.clone());
     let mut heartbeat = interval(Duration::from_millis(socket_protocol::HEARTBEAT_MS));
     heartbeat.tick().await;
@@ -1295,11 +1293,11 @@ async fn connection(
     // Events pace by the peer's display subscription; a peer that never chose one
     // (a bare status observer) receives none.
     let mut subscribed = false;
-    let reason = loop {
+    loop {
         let auth_ready = if let Some(context) = &authority {
             match context.current_async().await {
                 Ok(true) => true,
-                Ok(false) => break "authority",
+                Ok(false) => break,
                 Err(_) => false,
             }
         } else {
@@ -1307,14 +1305,12 @@ async fn connection(
         };
         tokio::select! {
             biased;
-            _ = tokio::time::sleep_until(optional_since.unwrap_or_else(Instant::now)+Duration::from_secs(2)), if optional_since.is_some()=>break "optional flush stalled 2 s",
+            _ = tokio::time::sleep_until(optional_since.unwrap_or_else(Instant::now)+Duration::from_secs(2)), if optional_since.is_some()=>break,
             _ = heartbeat.tick() => {
-                if last_pong.elapsed() > Duration::from_secs(15) { break "no pong for 15 s"; }
-                if !send_control(&mut socket, Message::Text(json!({"v":1,"type":"heartbeat"}).to_string().into()),optional_since).await { break "heartbeat write"; }
-                #[cfg(test)]
-                record.heartbeat();
+                if last_pong.elapsed() > Duration::from_secs(15) { break; }
+                if !send_control(&mut socket, Message::Text(json!({"v":1,"type":"heartbeat"}).to_string().into()),optional_since).await { break; }
                 optional_since=None;
-                if !send(&mut socket,Message::Ping(Vec::new().into())).await {break "ping write";}
+                if !send(&mut socket,Message::Ping(Vec::new().into())).await {break;}
             }
             _ = async {
                 tokio::select! {
@@ -1331,14 +1327,14 @@ async fn connection(
                 let mut key=data.clone();key["audio"]["retry_after_ms"]=Value::Null;
                 if notify && key!=receive_seen {
                     let event=receive_http::receive_state_delta(&receive_sent,&data);
-                    if !send_control(&mut socket,Message::Text(json!({"v":1,"type":"receive.state","data":event}).to_string().into()),optional_since).await {break "receive.state write";}
+                    if !send_control(&mut socket,Message::Text(json!({"v":1,"type":"receive.state","data":event}).to_string().into()),optional_since).await {break;}
                     optional_since=None;receive_seen=key;receive_sent=data;
                 }
             }
             _ = contact_tick.tick(), if subscribed && recording.as_ref().is_some_and(|r| r.contact.get().is_some()) => {
                 if !auth_ready { continue; }
                 if optional_since.is_some() {
-                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break "optional write error" }
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
                 let r=recording.as_ref().unwrap();
                 // The snapshot holds the transmit view as well; a peer still lacking dialogue rows gets them on the next tick.
@@ -1355,7 +1351,7 @@ async fn connection(
                             match optional_write(&mut socket,Message::Text(contact_http::state_event(&snapshot,changed).into())) {
                                 Ok(None)=>{},
                                 Ok(Some(flushed))=>{if complete {contact_seen=Some(revision);}contact_sent=holds;contact_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},
-                                Err(_)=>break "optional write error",
+                                Err(_)=>break,
                             }
                         }
                     }
@@ -1367,7 +1363,7 @@ async fn connection(
                         match optional_write(&mut socket,Message::Text(transmit_http::state_event(r,revision,changed).into())) {
                             Ok(None)=>{},
                             Ok(Some(flushed))=>{transmit_seen=Some(revision);transmit_sent=now;transmit_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},
-                            Err(_)=>break "optional write error",
+                            Err(_)=>break,
                         }
                     }
                 }
@@ -1376,7 +1372,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(automation::state_event(r,automation.unwrap_or_default()).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{automation_seen=automation;if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
                 if display_profile!="off" && let Some((build,text,null))=r.contact.get().and_then(|c|c.automation.free_tx_slots_event(r,free_tx_slots_seen)) {
@@ -1385,7 +1381,7 @@ async fn connection(
                     else { match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{free_tx_slots_seen=Some(build);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     } }
                 }
                 let strategy=r.contact.get().map_or(0,|c|c.strategy.revision());
@@ -1394,7 +1390,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(strategy::state_event(r,strategy).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{strategy_seen=Some(strategy);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
                 let alert=r.contact.get().map_or(0,|c|c.strategy.alert_revision());
@@ -1403,7 +1399,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(strategy::alert_event(r,alert).into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{alert_seen=Some(alert);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
                 if r.agc.revision()!=agc_seen {
@@ -1411,7 +1407,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{agc_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
                 if let Some(feed)=r.pskr.get() && feed.revision()!=pskr_seen {
@@ -1419,7 +1415,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{pskr_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
                 if r.tx_level.revision()!=tx_level_seen {
@@ -1427,7 +1423,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{tx_level_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
                 if let Some(session)=r.flex.get() && session.revision()!=native_seen {
@@ -1435,7 +1431,7 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{native_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
                 let (text,transmitting)=contact_http::tick_event(r);
@@ -1445,40 +1441,36 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{last_station_tick=Some(Instant::now());tick_transmitting=Some(transmitting);if !flushed {optional_since=Some(Instant::now());}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
             }
             _ = clock_tick.tick(), if subscribed && recording.as_ref().is_some_and(|r| r.clock.get().is_some()) => {
                 if !auth_ready { continue; }
                 if optional_since.is_some() {
-                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break "optional write error" }
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
                 if clock_sent_at.is_some_and(|at| at.elapsed() < Duration::from_millis(socket_protocol::EVENT_DELAY_MS)) { continue; }
                 if let Some((revision,text))=clock_http::state_event(recording.as_ref().unwrap()) && clock_seen!=Some(revision) {
-                    #[cfg(test)]
-                    let (handed,event)=(Instant::now(),text.clone());
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{
-                            #[cfg(test)]
-                            record.clock_state(handed,event);
                             clock_seen=Some(revision);clock_sent_at=Some(Instant::now());if !flushed {optional_since=Some(Instant::now());}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
             }
             _ = recording_tick.tick(), if subscribed && recording.is_some() => {
                 if !auth_ready { continue; }
                 if optional_since.is_some() {
-                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break "optional write error" }
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
                 let (revision,text)=recording.as_ref().unwrap().profile_state_event();
                 if profile_seen!=Some(revision) {
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{profile_seen=Some(revision);if !flushed {optional_since=Some(Instant::now());continue;}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
                 if let Some(now)=profile.as_ref().and_then(|p|selection_http::pushed_view(p)) {
@@ -1488,7 +1480,7 @@ async fn connection(
                         match optional_write(&mut socket,Message::Text(text.into())) {
                             Ok(None)=>{},
                             Ok(Some(flushed))=>{selection_sent=holds;selection_sent_at=Instant::now();if !flushed {optional_since=Some(Instant::now());continue;}},
-                            Err(_)=>break "optional write error",
+                            Err(_)=>break,
                         }
                     }
                 }
@@ -1500,14 +1492,14 @@ async fn connection(
                     match optional_write(&mut socket,Message::Text(json!({"v":1,"type":"recording.state","data":data}).to_string().into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{recording_seen=Some((key,data,Instant::now()));if !flushed {optional_since=Some(Instant::now());}},
-                        Err(_)=>break "optional write error",
+                        Err(_)=>break,
                     }
                 }
             }
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Text(text))) => {
                     if let Some(context) = &authority {
-                        match context.current_async().await { Ok(true) => (), Ok(false) => break "authority", Err(_) => continue }
+                        match context.current_async().await { Ok(true) => (), Ok(false) => break, Err(_) => continue }
                     }
                     let mut value = reply(&text);
                     if value["data"]["code"] == "unknown_command" {
@@ -1533,17 +1525,17 @@ async fn connection(
                             } else { value["data"]["code"] = json!("unavailable"); }
                         }
                     }
-                    if !send_control(&mut socket, Message::Text(value.to_string().into()),optional_since).await { break "reply write"; }
+                    if !send_control(&mut socket, Message::Text(value.to_string().into()),optional_since).await { break; }
                     optional_since=None;
                 }
                 Some(Ok(Message::Pong(_))) => last_pong = Instant::now(),
-                Some(Ok(Message::Binary(_))) => { let _ = send_control(&mut socket, Message::Close(Some(CloseFrame { code: 1003, reason: "text required".into() })),optional_since).await; break "binary frame"; }
+                Some(Ok(Message::Binary(_))) => { let _ = send_control(&mut socket, Message::Close(Some(CloseFrame { code: 1003, reason: "text required".into() })),optional_since).await; break; }
                 Some(Ok(Message::Ping(_))) => {},
-                _ => break "peer closed or receive error",
+                _ => break,
             },
             _ = async { if display_profile=="detail" {detail_tick.tick().await} else {display.tick().await} }, if display_profile != "off" => {
                 if optional_since.is_some() {
-                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break "optional write error" }
+                    match optional_flush(&mut socket) { Ok(true)=>optional_since=None, Ok(false)=>continue, Err(_)=>break }
                 }
                 let live=recording.as_ref().is_some_and(|r|r.state.lock().unwrap().job.as_ref().is_some_and(|j|j.kind=="live"));
                 if display_profile=="thin" && last_display.elapsed()<Duration::from_secs(if live {2}else{1}) {continue;}
@@ -1558,83 +1550,11 @@ async fn connection(
                             Ok(None)=>{},
                             Ok(Some(flushed))=>{seen=Some(identity);last_display=if live {next_thin_anchor(last_display,Duration::from_secs(2),Instant::now())} else {Instant::now()};if display_profile=="detail" {next_detail=arm_detail(&mut detail_tick,tokio::time::Instant::now(),behind);}
                             if !flushed {optional_since=Some(Instant::now());}},
-                            Err(_)=>break "optional write error",
+                            Err(_)=>break,
                         }
                     }
                 }
             }
         }
-    };
-    #[cfg(test)]
-    record.end(reason);
-    let _ = reason;
-}
-/// Why and when each socket of this test process ended (TC-021-008 reads the close reason; the
-/// two-browser selection workload prints the records as failure evidence).
-#[cfg(test)]
-pub(crate) static SOCKET_CLOSES: Mutex<Vec<Value>> = Mutex::new(Vec::new());
-/// Each clock.state write of this test process: the socket's number, the instant on the
-/// connection's runtime clock at which the event was handed to it, and the event (TC-092-009).
-#[cfg(test)]
-pub(crate) static CLOCK_WRITES: Mutex<Vec<(u64, tokio::time::Instant, String)>> =
-    Mutex::new(Vec::new());
-#[cfg(test)]
-static SOCKETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-/// The test-only record of one `connection()`. All times are UTC ms on one clock: the system UTC
-/// at the begin, plus the runtime clock's elapsed time since the begin, so that a driven runtime
-/// gives exact values.
-#[cfg(test)]
-struct SocketRecord {
-    /// This socket's number in the process.
-    socket: u64,
-    begin_utc_ms: u64,
-    begin: tokio::time::Instant,
-    /// The last heartbeat write, ms after the begin.
-    last_heartbeat: Option<u64>,
-    /// The longest interval between consecutive heartbeat writes (the first from the begin) and
-    /// the ms after the begin at which it ended; the earliest on a tie.
-    longest_heartbeat: Option<(u64, u64)>,
-}
-#[cfg(test)]
-impl SocketRecord {
-    fn begin() -> SocketRecord {
-        SocketRecord {
-            socket: SOCKETS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            begin_utc_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis() as u64),
-            begin: tokio::time::Instant::now(),
-            last_heartbeat: None,
-            longest_heartbeat: None,
-        }
-    }
-    fn elapsed_ms(&self) -> u64 {
-        self.begin.elapsed().as_millis() as u64
-    }
-    fn heartbeat(&mut self) {
-        let at = self.elapsed_ms();
-        let interval = at - self.last_heartbeat.unwrap_or(0);
-        if self
-            .longest_heartbeat
-            .is_none_or(|(longest, _)| interval > longest)
-        {
-            self.longest_heartbeat = Some((interval, at));
-        }
-        self.last_heartbeat = Some(at);
-    }
-    fn clock_state(&self, handed: tokio::time::Instant, event: String) {
-        CLOCK_WRITES
-            .lock()
-            .unwrap()
-            .push((self.socket, handed, event));
-    }
-    fn end(self, reason: &str) {
-        let utc = |ms: u64| self.begin_utc_ms + ms;
-        let record = json!({"utc_ms":utc(self.elapsed_ms()),"reason":reason,
-            "begin_utc_ms":self.begin_utc_ms,
-            "last_heartbeat_utc_ms":self.last_heartbeat.map(utc),
-            "longest_heartbeat_ms":self.longest_heartbeat.map(|(ms, _)| ms),
-            "longest_heartbeat_end_utc_ms":self.longest_heartbeat.map(|(_, end)| utc(end))});
-        SOCKET_CLOSES.lock().unwrap().push(record);
     }
 }

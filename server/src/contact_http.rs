@@ -106,6 +106,10 @@ struct Inner {
 const CQ_ONLY_AFTER_MS: i64 = 300_000;
 /// The contact engine of one station (one per process, like the transmit owner).
 pub(crate) struct Station {
+    /// The station's command lock: every contact command holds it, and a run holds it over its
+    /// selection step and its slot move. Lock order: the automation lock, this, `inner`, the
+    /// transmit core; the waterfall, the live records and the PSK feed come after it.
+    commands: Commands,
     inner: Mutex<Inner>,
     revision: AtomicU64,
     started: Instant,
@@ -121,6 +125,40 @@ pub(crate) struct Station {
     pub(crate) grant: std::sync::atomic::AtomicBool,
 }
 type Tx = Core<Box<dyn Hardware>>;
+/// A lock its holding thread takes again at once: the run's own commands run inside its hold.
+#[derive(Default)]
+struct Commands {
+    /// The holding thread and how often it holds.
+    holder: Mutex<(Option<std::thread::ThreadId>, usize)>,
+    free: std::sync::Condvar,
+}
+/// One hold of the station's command lock, given back when dropped.
+pub(crate) struct CommandHold<'a>(&'a Commands);
+impl Commands {
+    fn holder(&self) -> std::sync::MutexGuard<'_, (Option<std::thread::ThreadId>, usize)> {
+        self.holder.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    fn hold(&self) -> CommandHold<'_> {
+        let me = std::thread::current().id();
+        let mut holder = self.holder();
+        while holder.0.is_some_and(|t| t != me) {
+            holder = self.free.wait(holder).unwrap_or_else(|p| p.into_inner());
+        }
+        holder.0 = Some(me);
+        holder.1 += 1;
+        CommandHold(self)
+    }
+}
+impl Drop for CommandHold<'_> {
+    fn drop(&mut self) {
+        let mut holder = self.0.holder();
+        holder.1 -= 1;
+        if holder.1 == 0 {
+            holder.0 = None;
+            self.0.free.notify_one();
+        }
+    }
+}
 
 fn refusal(code: &str, field: Option<&str>) -> Response {
     let status = match code {
@@ -362,6 +400,7 @@ impl Station {
         clock: Arc<dyn wstx_rust::transmit::clock::Clock>,
     ) -> Arc<Self> {
         Arc::new(Self {
+            commands: Commands::default(),
             inner: Mutex::new(Inner {
                 engine: start_engine(store),
                 rows: None,
@@ -502,6 +541,11 @@ impl Station {
     }
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
+    }
+    /// A hold of the station's command lock: until it is dropped, a contact command of another
+    /// thread waits; the holding thread's own commands run.
+    pub(crate) fn hold_commands(&self) -> CommandHold<'_> {
+        self.commands.hold()
     }
     fn run<R>(r: &recording::Recording, f: impl FnOnce(Option<&mut Tx>, i64) -> R) -> R {
         match r.transmit.get() {
@@ -1330,6 +1374,7 @@ impl Station {
         (automatic, run_select): (bool, bool),
     ) -> Result<(StatusCode, Value), Refusal> {
         let r = &state.recording;
+        let _commands = self.hold_commands();
         let (call, locator) = profile_facts(state);
         let contest = self.contest_dupes(state);
         let mut guard = self.lock();

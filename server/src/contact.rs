@@ -1027,9 +1027,6 @@ pub struct Engine {
     /// The period and contact of the latest started transmission (the send the busy pause
     /// judges at its stop point).
     last_started: Option<(i64, String)>,
-    /// Test seam: the split move is refused (WstxOperatingChain::BusyPartner "a refused move").
-    #[cfg(test)]
-    pub refuse_split: bool,
     /// Contacts due for the log (completed, or Log QSO), handed over by the station; the
     /// flag: this hand-over counts the contest serial when the log accepts it (CL-085-03).
     to_log: Vec<(LogKind, Contact, bool)>,
@@ -1155,8 +1152,6 @@ impl Engine {
             rx_decodes: None,
             decided: None,
             last_started: None,
-            #[cfg(test)]
-            refuse_split: false,
             last_tx_start_ms: None,
             last_rr73_ms: None,
             hound: Hound::default(),
@@ -3129,10 +3124,6 @@ impl Engine {
     /// BusyPartner split move: the nearest candidate clear of his signal (None: the move is
     /// refused, the stop follows).
     fn split_move(&self, mode: Mode, tx: u32, his: u32) -> Option<u32> {
-        #[cfg(test)]
-        if self.refuse_split {
-            return None;
-        }
         let decoded = self
             .rx_decodes
             .as_ref()

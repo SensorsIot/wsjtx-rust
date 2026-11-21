@@ -1075,9 +1075,10 @@ fn tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for() {
 // 1600 stays; FT4 1639 -> 1490 (1639 - 140 = 1499), 1640 stays. Never below 500: Tx 550 his 600 ->
 // 500; Tx 520 his 560 -> 660 (460 is below 500). A station decoded at 1440 in my Rx period
 // (overlapping 1400..1480) -> 1390; his PSK frequency 1470 of my Tx parity -> 1420 (50 Hz from it).
-// set_frequency refused: the state off with cause partnerWorksOther (CL-111-03), nothing keyed on
-// his signal. The operator's Tx onto his signal stays until his next message to W9XYZ, which
-// moves it again.
+// 25 stations decoded in my Rx period at 500, 590, ..., 2660 Hz leave no 10 Hz candidate free
+// (each lies within 50 Hz of one): Tx 1500 his 1550 -> 1450, the nearest candidate clear of him as
+// with no decodes, and the contact stays armed. The operator's Tx onto his signal stays until his
+// next message to W9XYZ, which moves it again.
 #[test]
 fn tc_097_017_c_the_split_frequency_table() {
     let table = [
@@ -1121,17 +1122,19 @@ fn tc_097_017_c_the_split_frequency_table() {
     s.engine.his_psk = vec![1470];
     ke1j_says(&mut s, 0, 900, "W9XYZ KE1J -07", 1550.0);
     assert_eq!(s.engine.settings.tx_hz, 1420);
-    // A refused move: the partnerWorksOther stop.
+    // Decodes covering every candidate: the nearest clear of him, as with none.
     let mut s = calling_ke1j(Mode::Ft8, 6);
-    s.engine.refuse_split = true;
-    ke1j_says(&mut s, 0, -1_000, "W9XYZ KE1J -07", 1510.0);
-    let v = s.core.view();
+    s.run(period(1) + 900);
+    let mut rows: Vec<_> = (0..25)
+        .map(|i| s.row(P0, "CQ DL1ABC JO62", 500.0 + 90.0 * f64::from(i), None))
+        .collect();
+    rows.push(s.row(P0, "W9XYZ KE1J -07", 1550.0, None));
+    s.deliver(&rows);
     assert_eq!(
-        (v.arm_state, v.last_disarm_cause),
-        (ArmState::Disarmed, DisarmCause::PartnerWorksOther)
+        s.engine.settings.tx_hz, 1450,
+        "every candidate decoded: the nearest clear of him"
     );
-    s.run(period(4));
-    assert!(s.sent.is_empty(), "nothing keyed on his signal");
+    assert!(s.armed());
     // The operator's Tx wins until his next message to another call.
     let mut s = calling_ke1j(Mode::Ft8, 6);
     ke1j_says(&mut s, 0, 900, "W9XYZ KE1J -07", 1510.0);

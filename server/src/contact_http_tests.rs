@@ -32,6 +32,9 @@ pub(crate) struct Bench {
     /// When armed, the next device poll holds the transmit owner between its poll and its
     /// release deadline read.
     gate: Arc<PollGate>,
+    /// When armed, the first read of the hardware context off the transmit owner's thread for
+    /// which the armed condition holds waits until the test releases it.
+    context_gate: Arc<ContextGate>,
     /// The step-back record; its lock is the innermost of the bench.
     record: Arc<Mutex<StepBack>>,
 }
@@ -50,7 +53,57 @@ struct PollGate {
     entered: AtomicBool,
     release: AtomicBool,
 }
+/// A test's hold of one hardware context read made off the transmit owner's thread: the read
+/// for which `when` first holds sets `entered` and returns only at `release`.
+#[derive(Default)]
+struct ContextGate {
+    when: Mutex<Option<Box<dyn Fn() -> bool + Send>>>,
+    entered: AtomicBool,
+    release: AtomicBool,
+}
 impl Bench {
+    /// Arms the context gate: the first context read off the transmit owner's thread made
+    /// while `when` answers true is held until `release_context`.
+    pub(crate) fn arm_context(&self, when: impl Fn() -> bool + Send + 'static) {
+        self.context_gate.entered.store(false, Ordering::SeqCst);
+        self.context_gate.release.store(false, Ordering::SeqCst);
+        *self.context_gate.when.lock().unwrap() = Some(Box::new(when));
+    }
+    /// Waits until the armed context read is held.
+    pub(crate) async fn context_held(&self) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !self.context_gate.entered.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "no context read was held");
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    /// Lets the held context read return.
+    pub(crate) fn release_context(&self) {
+        self.context_gate.release.store(true, Ordering::SeqCst);
+    }
+    /// Holds this context read when the armed gate's condition holds (off the owner's thread).
+    fn context_gate(&self) {
+        if std::thread::current().name() == Some("transmit") {
+            return;
+        }
+        let held = {
+            let mut when = self.context_gate.when.lock().unwrap();
+            let hit = when.as_ref().is_some_and(|w| w());
+            if hit {
+                *when = None;
+            }
+            hit
+        };
+        if !held {
+            return;
+        }
+        self.context_gate.entered.store(true, Ordering::SeqCst);
+        // A hang guard only: the test releases the read within its own steps.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !self.context_gate.release.load(Ordering::SeqCst) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
     /// Arms the poll gate and waits until the transmit owner is held in its next device poll,
     /// holding the core: until `release_poll`, a read of the transmit owner waits.
     pub(crate) async fn hold_poll(&self) {
@@ -112,6 +165,7 @@ impl Hardware for Bench {
         wstx_rust::transmit::ClockState::Synchronized
     }
     fn context(&self) -> Context {
+        self.context_gate();
         if self.unsupported.load(Ordering::SeqCst) {
             return Context {
                 capability: Capability::Unsupported,
