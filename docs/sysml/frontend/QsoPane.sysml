@@ -207,6 +207,18 @@ package WstxQsoPane {
         objective { verify 'CL-037-04'; }
         @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
+    verification 'TC-037-005' {
+        doc /* The Calling me section: its marks and colours. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-037-04'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "QSO pane callers show worked-before status and only interesting stations "
+                + "are coloured";
+        }
+    }
     verification 'TC-007-003' {
         doc /* Rows, the partner's selection and the pane. */
         subject browser : BrowserClient;
@@ -238,6 +250,22 @@ package WstxQsoPane {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-05'; }
         @TestedBy { test = "tests/contact.test.cjs; server/src/contact_http_tests.rs"; }
+    }
+    verification 'TC-050-009' {
+        doc /* The message lines: Auto Seq off, the next message, the log, PSK Reporter's lines. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-050-05'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "Auto Seq off is shown on the QSO pane and an RR73 offers 73 next; "
+                + "tests/ui-operating.test.cjs::"
+                + "completed QSOs log without a review and the open Logbook lists them live; "
+                + "tests/ui-operating.test.cjs::"
+                + "the PSK Reporter lines in the QSO pane, their age formats, no polling and the "
+                + "fixed pane";
+        }
     }
     verification 'TC-050-003' {
         doc /* The period bar's colour on station time. */

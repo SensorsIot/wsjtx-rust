@@ -356,7 +356,10 @@ package WstxBandActivityPane {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-057-01'; }
         @TestedBy {
-            test = "server/src/receive_http_tests.rs; tests/frontend/receive-latency.test.cjs";
+            test = "server/src/receive_http_tests.rs; tests/frontend/receive-latency.test.cjs; "
+                + "tests/ui-operating.test.cjs::"
+                + "a correlated period view extended in place adds the late starter without an "
+                + "error or a reload";
         }
     }
     verification 'TC-061-004' {
@@ -420,7 +423,31 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-05'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs; "
+                + "tests/contact.test.cjs::"
+                + "double-click starts transmission, partner report advances to Tx3, Esc aborts "
+                + "the QSO (no halt) with a panel open; "
+                + "tests/contact.test.cjs::"
+                + "a double-click on a CQ not for me warns and only the confirmation selects it; "
+                + "tests/contact.test.cjs::"
+                + "mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO "
+                + "completes, and CQ right after it calls; "
+                + "tests/contact.test.cjs::"
+                + "from-CQ: a double-click from my CQ switches with Tx kept on, the new QSO "
+                + "completes, and a double-click after it replies";
+        }
+    }
+    verification 'TC-037-006' {
+        doc /* The row's menu, with Ignore and Stop ignoring. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-037-05'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "Band Activity Ignore and the Settings ignore lists";
+        }
     }
     verification 'TC-039-006' {
         doc /* The strategy selector and its marks. */

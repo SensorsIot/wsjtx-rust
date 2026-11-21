@@ -318,7 +318,12 @@ package WstxOperatingScreen {
                 + "tests/profiles.test.cjs::"
                 + "status readiness survives held settings HTTP with bounded refresh; "
                 + "tests/recording.test.cjs::"
-                + "authenticated reconnect accepts only current connected operating snapshots";
+                + "authenticated reconnect accepts only current connected operating snapshots; "
+                + "tests/ui-operating.test.cjs::"
+                + "pointer resize and stale link preserve read-only authority; "
+                + "tests/ui-operating.test.cjs::"
+                + "no receive start, stop or selection without an operator action across "
+                + "reconnects and two tabs";
         }
     }
     verification 'TC-007-002' {
@@ -357,7 +362,25 @@ package WstxOperatingScreen {
                 + "station request; "
                 + "tests/ui-operating.test.cjs::"
                 + "TC-007-009 the Rx/Tx strip, marker drag and WSJT-X keys send exactly the "
-                + "expected requests";
+                + "expected requests; "
+                + "tests/contact.test.cjs::"
+                + "double-click starts transmission, partner report advances to Tx3, Esc aborts "
+                + "the QSO (no halt) with a panel open; "
+                + "tests/contact.test.cjs::"
+                + "Alt+H halts even when the contact snapshot is unavailable; "
+                + "tests/contact.test.cjs::"
+                + "Alt+H halts once before and once after the contact client loads";
+        }
+    }
+    verification 'TC-007-013' {
+        doc /* A change of band or mode during a contact asks first. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-010-16'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "band, mode and Apply ask before restarting receive during a QSO";
         }
     }
     verification 'TC-051-002' {
@@ -367,6 +390,18 @@ package WstxOperatingScreen {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-051-02'; verify 'CL-051-03'; }
         @TestedBy { test = "tests/ui-operating.test.cjs"; }
+    }
+    verification 'TC-051-004' {
+        doc /* A page takes up a new client of its station. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-051-02'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "an open page reloads after the station restarts with another client build "
+                + "and receives again";
+        }
     }
     verification 'TC-074-001' {
         doc /* A page kept open across a station restart. */

@@ -399,6 +399,49 @@ package WstxSettings {
         objective { verify 'CL-227-01'; }
         @TestedBy { test = "tests/ui-operating.test.cjs"; }
     }
+    verification 'TC-227-002' {
+        doc /* The drawer: saves, unsaved changes, the question before a restart, its closing. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-227-01'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "Save FT8 decode windows reads and saves the station setting in Settings > "
+                + "Expert; "
+                + "tests/ui-operating.test.cjs::"
+                + "the UDP editor reads GET /udp when Settings opens and saves the edited "
+                + "targets with one PUT; "
+                + "tests/ui-operating.test.cjs::"
+                + "the UDP editor saves an IPv6 multicast target with hop limit and interface "
+                + "index; "
+                + "tests/ui-operating.test.cjs::"
+                + "band, mode and Apply ask before restarting receive during a QSO; "
+                + "tests/ui-operating.test.cjs::"
+                + "in-page navigation preserves unsaved profile and selected recording with no "
+                + "command replay; "
+                + "tests/ui-operating.test.cjs::"
+                + "Update logbook from ADIF in Settings consolidates a logger export and Export "
+                + "downloads contacts.adi; "
+                + "tests/ui-operating.test.cjs::"
+                + "Settings > General country file shows its date, uploads and restores; "
+                + "tests/contact.test.cjs::"
+                + "a pointer action outside the Settings drawer returns to operation";
+        }
+    }
+    verification 'TC-097-020' {
+        doc /* The contest prompt, and a new strategy saved unselected. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-097-12'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "the contest prompt offers the contest strategies, no operation choice; "
+                + "tests/ui-operating.test.cjs::"
+                + "Editor offers what must be new and the station saves it unselected";
+        }
+    }
     verification 'TC-042-007' {
         doc /* The alert history, the sound and the notification. */
         subject browser : BrowserClient;
