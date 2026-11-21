@@ -98,6 +98,7 @@ fn json_body(bytes: Vec<u8>) -> Response {
         .body(Body::from(bytes))
         .unwrap()
 }
+// Proves: TC-003-003
 #[tokio::test]
 async fn h1_exact_vary_merge_framing_and_validator_rules() {
     use axum::http::{Method, header};
@@ -156,6 +157,7 @@ async fn h1_exact_vary_merge_framing_and_validator_rules() {
         assert_eq!(&bytes[..3], &[31, 139, 8]);
     }
 }
+// Proves: TC-003-003
 #[tokio::test]
 async fn h1_exclusions_preserve_original_before_forbidden_negotiation() {
     use axum::http::{Method, header};
@@ -504,6 +506,7 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
 
 // Public script/style assets are gzip only when the client
 // selects it; every other negotiation keeps the exact identity bytes, never 406.
+// Proves: TC-003-003
 #[tokio::test]
 async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwise() {
     use crate::{App, Semaphore};

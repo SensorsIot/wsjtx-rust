@@ -5,7 +5,12 @@ package WstxContentCoding {
     private import WstxWebPart::WebAdapter;
     private import WstxModelNotes::FollowsSource;
     private import WstxModelBindings::ImplementationState;
+    private import WstxModelBindings::AutomationState;
     private import WstxModelBindings::Status;
+    private import WstxModelBindings::Automation;
+    private import WstxModelBindings::TestedBy;
+    private import WstxModelBindings::TestLevel;
+    private import WstxModelBindings::TestLocation;
 
     doc /* How web codes the answers of the link to keep them small on a slow link. */
 
@@ -27,6 +32,24 @@ package WstxContentCoding {
         @FollowsSource {
             reference = "RFC 9110 sections 8.4 and 12.5.3 (content coding, Accept-Encoding); "
                 + "RFC 1952 (gzip)";
+        }
+    }
+
+    verification 'TC-003-003' {
+        doc /*
+Gzip only when Accept-Encoding selects it, the form of a coded answer, and the answers never coded.
+        */
+        subject web : WebAdapter;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-003-09'; }
+        @TestedBy {
+            test = "server/src/web/http_compression_tests.rs::"
+                + "h1_exact_vary_merge_framing_and_validator_rules; "
+                + "server/src/web/http_compression_tests.rs::"
+                + "h1_exclusions_preserve_original_before_forbidden_negotiation; "
+                + "server/src/web/http_compression_tests.rs::"
+                + "static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwise";
         }
     }
 }

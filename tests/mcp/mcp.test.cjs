@@ -65,6 +65,7 @@ after(async () => {
   if (root) await fs.rm(root, {recursive: true, force: true});
 });
 
+// Proves: TC-020-001
 test('an MCP client with its own MCP client token observes the browser state of the actual executable', {timeout: 60000}, async () => {
   const browser = await browserGrant();
   const created = await settings(browser.cookie, 'create', {name: 'Claude Code'});

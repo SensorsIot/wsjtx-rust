@@ -162,6 +162,7 @@ test('a deferred client download that holds station messages 16 s is not a lost 
 });
 
 // Cost level 2: disposable local TLS endpoint/credentials.
+// Proves: TC-003-001, TC-003-002
 test('TLS login, unauthorized/origin denial, plaintext refusal', async t => {
   const app = await server(tlsEnv); t.after(() => app.close());
   const context = await contextFor(app.origin); t.after(() => context.close()); const page = await context.newPage();

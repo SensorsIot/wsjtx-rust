@@ -5,6 +5,7 @@ package WstxBrowserClientPart {
     private import WstxStrategies::AlertSound;
     private import WstxOperatorInteraction::OperatorInteractionPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def BrowserClient {
@@ -22,6 +23,11 @@ package WstxBrowserClientPart {
                 + "client/index.html, client/logbook.js, client/recording.css, "
                 + "client/recording.js, client/style.css, outside server/src/frontend/ and "
                 + "client/src/frontend/.";
+        }
+        @DetailTests {
+            tests = "tests/communication.test.cjs";
+            covers = "the label each stale path names on the station-stale event; the silence "
+                + "bound while a client file downloads";
         }
         attribute config : FrontendConfig;
         port station : BrowserExchange { doc /* The station, through web. */ }

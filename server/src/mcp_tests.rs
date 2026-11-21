@@ -619,6 +619,7 @@ async fn tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras() {
     assert_eq!(f.keys(), 0, "observation never keys");
 }
 
+// Proves: TC-020-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_before_effects() {
     let f = station(true).await;
