@@ -13,7 +13,15 @@
   - server/src/transmit/
   - server/src/modes/transmit/mod.rs
   - server/src/modes/playback/
-  - server/src/radio_control/
+  - server/src/radioControl/mod.rs
+  - server/src/radioControl/actor.rs
+  - server/src/radioControl/catalogue.rs
+  - server/src/radioControl/codec.rs
+  - server/src/radioControl/executor.rs
+  - server/src/radioControl/executor_tests.rs
+  - server/src/radioControl/ic7300-catalogue.json
+  - server/src/radioControl/setup.rs
+  - server/src/radioControl/setup_tests.rs
   - server/src/radioControl/cat_lifecycle.rs
   - server/src/radioControl/windows.rs
   - server/src/radio_level.rs
@@ -21,13 +29,14 @@
   - server/src/station/selection.rs
   - server/src/selection_http.rs
   - server/src/recording.rs
+  - server/src/radioControl/radio_connection.rs
   - server/src/contact_http_tests.rs
   - server/src/audio.rs
   - server/src/audio/
   - server/src/source.rs
   - server/tests/transmit_service.rs
-  - server/tests/receive/radio_native.rs
-  - server/tests/radio_control.rs
+  - server/tests/radioControl/radio_native.rs
+  - server/tests/radioControl/radio_control.rs
   - server/tests/audio_contract.rs
   - docs/sysml/backend/radioControl/CatControl.sysml
   - docs/sysml/backend/supervisor/OperatingSelection.sysml

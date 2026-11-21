@@ -22,6 +22,7 @@
   select:
   - server/src/main.rs
   - server/src/recording.rs
+  - server/src/radioControl/radio_connection.rs
   - server/src/recording_http.rs
   - server/src/spectrum.rs
   - client/recording.js

@@ -8,6 +8,7 @@
   - server/src/main.rs
   - server/src/profile.rs
   - server/src/recording.rs
+  - server/src/radioControl/radio_connection.rs
   - server/src/recording_http.rs
   - server/src/receive.rs
   - server/src/receive_http.rs
@@ -39,6 +40,7 @@
   - server/src/main.rs
   - server/src/profile.rs
   - server/src/recording.rs
+  - server/src/radioControl/radio_connection.rs
   - server/src/recording_http.rs
   - server/src/receive.rs
   - server/src/receive_http.rs

@@ -22,8 +22,8 @@ package WstxProfilePart {
         }
         @CodeDiffers {
             what = "Its code stands in server/src/main.rs, server/src/most_wanted.rs, "
-                + "server/src/profile.rs, server/src/radio_control/setup.rs, "
-                + "server/src/radio_setup.rs, server/src/recording.rs, "
+                + "server/src/profile.rs, server/src/radioControl/setup.rs, "
+                + "server/src/radioControl/radio_setup.rs, server/src/recording.rs, "
                 + "server/src/recording_http.rs, outside server/src/profile/ and "
                 + "client/src/profile/.";
         }

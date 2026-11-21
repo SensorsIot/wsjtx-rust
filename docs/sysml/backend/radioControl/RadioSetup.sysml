@@ -123,8 +123,8 @@ package WstxRadioSetup {
             verify 'CL-044-03';
         }
         @TestedBy {
-            test = "server/src/radio_control/setup_tests.rs; "
-                + "server/src/radio_setup_tests.rs";
+            test = "server/src/radioControl/setup_tests.rs; "
+                + "server/src/radioControl/radio_setup_tests.rs";
         }
     }
 
@@ -138,8 +138,8 @@ package WstxRadioSetup {
             verify 'CL-044-02';
         }
         @TestedBy {
-            test = "server/src/radio_control/setup_tests.rs; "
-                + "server/src/radio_setup_tests.rs";
+            test = "server/src/radioControl/setup_tests.rs; "
+                + "server/src/radioControl/radio_setup_tests.rs";
         }
     }
 
@@ -166,7 +166,7 @@ package WstxRadioSetup {
              ends the request; SettingsOutcome names it and the error.
              The values before the Apply are not kept. */
         @CodeDiffers {
-            what = "server/src/radio_setup.rs keeps the values before an Apply in "
+            what = "server/src/radioControl/radio_setup.rs keeps the values before an Apply in "
                 + "radio-settings-undo.json, offers an Undo that writes them back, and "
                 + "refuses an Apply with undo_pending while that file names another radio "
                 + "address.";
@@ -179,7 +179,7 @@ package WstxRadioSetup {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-04'; }
-        @TestedBy { test = "server/src/radio_setup_tests.rs"; }
+        @TestedBy { test = "server/src/radioControl/radio_setup_tests.rs"; }
     }
 
     requirement 'CL-044-19' {
@@ -284,7 +284,7 @@ package WstxRadioSetup {
         }
         @TestedBy {
             test = "server/src/radioControl/radio_agc_tests.rs; "
-                + "server/src/radio_setup_tests.rs";
+                + "server/src/radioControl/radio_setup_tests.rs";
         }
     }
 
@@ -333,7 +333,7 @@ package WstxRadioSetup {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-15'; }
         @TestedBy {
-            test = "server/src/radio_setup_tests.rs";
+            test = "server/src/radioControl/radio_setup_tests.rs";
         }
     }
 }

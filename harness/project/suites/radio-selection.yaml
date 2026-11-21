@@ -28,11 +28,23 @@
   - server/src/station/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
-  - server/src/radio_http.rs
-  - server/src/radio_http_tests.rs
-  - server/src/radio_control/
-  - server/src/radioControl/
-  - server/src/transmit/codec.rs
+  - server/src/radioControl/mod.rs
+  - server/src/radioControl/actor.rs
+  - server/src/radioControl/catalogue.rs
+  - server/src/radioControl/codec.rs
+  - server/src/radioControl/executor.rs
+  - server/src/radioControl/executor_tests.rs
+  - server/src/radioControl/ic7300-catalogue.json
+  - server/src/radioControl/setup.rs
+  - server/src/radioControl/setup_tests.rs
+  - server/src/radioControl/windows.rs
+  - server/src/radioControl/windows_tests.rs
+  - server/src/radioControl/cat_lifecycle_tests.rs
+  - server/src/radioControl/radio_agc.rs
+  - server/src/radioControl/radio_agc_tests.rs
+  - server/src/radioControl/radio_http.rs
+  - server/src/radioControl/radio_http_tests.rs
+  - server/src/radioControl/radio_connection.rs
   - server/src/radioControl/cat_lifecycle.rs
   - server/src/recording.rs
   - server/src/receive.rs

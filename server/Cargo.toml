@@ -50,12 +50,16 @@ name = "decoder_live"
 path = "tests/modes/decoder_live.rs"
 
 [[test]]
+name = "radio_control"
+path = "tests/radioControl/radio_control.rs"
+
+[[test]]
 name = "radio_hardware"
-path = "tests/receive/radio_hardware.rs"
+path = "tests/radioControl/radio_hardware.rs"
 
 [[test]]
 name = "radio_native"
-path = "tests/receive/radio_native.rs"
+path = "tests/radioControl/radio_native.rs"
 
 [[test]]
 name = "transmit_clock"

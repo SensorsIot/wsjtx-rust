@@ -558,7 +558,7 @@ package WstxProfileDocument {
              direction (EndpointIds). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/radio_control/setup.rs; server/src/radio_setup.rs";
+            module = "server/src/radioControl/setup.rs; server/src/radioControl/radio_setup.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-001'; end #derive ::> 'CL-044-05'; }

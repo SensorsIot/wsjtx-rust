@@ -64,7 +64,7 @@ package WstxRadioControl {
             doc /* What the rig can do over CAT, as its catalogue entry gives it from
                  Hamlib's capabilities of the rig. */
             @CodeDiffers {
-                what = "The catalogue of server/src/radio_control/catalogue.rs states no abilities "
+                what = "The catalogue of server/src/radioControl/catalogue.rs states no abilities "
                     + "of a rig.";
             }
         }
@@ -72,7 +72,7 @@ package WstxRadioControl {
             doc /* The frequencies the rig transmits on, as its catalogue entry gives them
                  from Hamlib's transmit ranges of the rig. */
             @CodeDiffers {
-                what = "The catalogue of server/src/radio_control/catalogue.rs states no transmit "
+                what = "The catalogue of server/src/radioControl/catalogue.rs states no transmit "
                     + "ranges of a rig.";
             }
         }
@@ -84,8 +84,8 @@ package WstxRadioControl {
             @FollowsSource { reference = "Hamlib: the receive ranges of the rig's capabilities"; }
             @CodeDiffers {
                 what = "The code holds 30000 to 74800000 Hz for every rig: Operation::validate in "
-                    + "server/src/radio_control/mod.rs, the frequency codec of "
-                    + "server/src/transmit/codec.rs and Session::tune of "
+                    + "server/src/radioControl/mod.rs, the frequency codec of "
+                    + "server/src/radioControl/codec.rs and Session::tune of "
                     + "server/src/flexAdapter/session.rs; the catalogue's frequency commands must "
                     + "state that range.";
             }
@@ -115,44 +115,44 @@ package WstxRadioControl {
         enum keyOverCat {
             @CodeDiffers {
                 what = "The code names no ability of a rig: the catalogue of "
-                    + "server/src/radio_control/catalogue.rs states none.";
+                    + "server/src/radioControl/catalogue.rs states none.";
             }
         }
         enum setPower {
             @CodeDiffers {
                 what = "The code names no ability of a rig: the catalogue of "
-                    + "server/src/radio_control/catalogue.rs states none.";
+                    + "server/src/radioControl/catalogue.rs states none.";
             }
         }
         enum split;
         enum setAgc {
             @CodeDiffers {
                 what = "The code names no ability of a rig: the catalogue of "
-                    + "server/src/radio_control/catalogue.rs states none.";
+                    + "server/src/radioControl/catalogue.rs states none.";
             }
         }
         enum dataMode {
             @CodeDiffers {
                 what = "The code names no ability of a rig: the catalogue of "
-                    + "server/src/radio_control/catalogue.rs states none.";
+                    + "server/src/radioControl/catalogue.rs states none.";
             }
         }
         enum readAlc {
             @CodeDiffers {
                 what = "The code names no ability of a rig: the catalogue of "
-                    + "server/src/radio_control/catalogue.rs states none.";
+                    + "server/src/radioControl/catalogue.rs states none.";
             }
         }
         enum readPower {
             @CodeDiffers {
                 what = "The code names no ability of a rig: the catalogue of "
-                    + "server/src/radio_control/catalogue.rs states none.";
+                    + "server/src/radioControl/catalogue.rs states none.";
             }
         }
         enum readSwr {
             @CodeDiffers {
                 what = "The code names no ability of a rig: the catalogue of "
-                    + "server/src/radio_control/catalogue.rs states none.";
+                    + "server/src/radioControl/catalogue.rs states none.";
             }
         }
     }
@@ -328,7 +328,7 @@ package WstxRadioControl {
                  first. A request names the connection it is meant for. */
             @CodeDiffers {
                 what = "The status gives it as connection_generation (Recording::radio_view in "
-                    + "server/src/recording.rs).";
+                    + "server/src/radioControl/radio_connection.rs).";
             }
         }
         attribute 'state' : CatState;
@@ -345,7 +345,7 @@ package WstxRadioControl {
                  by CAT. */
             @CodeDiffers {
                 what = "The status gives no abilities of the rig (Recording::radio_view in "
-                    + "server/src/recording.rs).";
+                    + "server/src/radioControl/radio_connection.rs).";
             }
         }
         attribute txRanges : FrequencyRange[0..*] {
@@ -353,7 +353,7 @@ package WstxRadioControl {
                  by CAT. */
             @CodeDiffers {
                 what = "The status gives no transmit ranges of the rig (Recording::radio_view in "
-                    + "server/src/recording.rs).";
+                    + "server/src/radioControl/radio_connection.rs).";
             }
         }
         attribute facts : RadioFacts;
@@ -440,7 +440,7 @@ package WstxRadioControl {
             doc /* How long to wait for a running exchange to end. */
             @CodeDiffers {
                 what = "The reservation takes a deadline, an Instant, in place of a wait "
-                    + "(Actor::reserve_transition in server/src/radio_control/actor.rs).";
+                    + "(Actor::reserve_transition in server/src/radioControl/actor.rs).";
             }
         }
     }
@@ -452,14 +452,14 @@ package WstxRadioControl {
         attribute connectionNumber : Integer {
             @CodeDiffers {
                 what = "The request names it as Authority::connection_generation (Request in "
-                    + "server/src/radio_control/mod.rs).";
+                    + "server/src/radioControl/mod.rs).";
             }
         }
         attribute withinMs : Integer {
             doc /* The time the supervisor gives the operation. */
             @CodeDiffers {
                 what = "The request carries a deadline, an Instant (Request::deadline in "
-                    + "server/src/radio_control/mod.rs).";
+                    + "server/src/radioControl/mod.rs).";
             }
         }
         attribute frequencyHz : Integer[0..1];
@@ -467,14 +467,14 @@ package WstxRadioControl {
         attribute filterNumber : Integer[0..1] {
             @CodeDiffers {
                 what = "The operation names it filter (Operation in "
-                    + "server/src/radio_control/mod.rs).";
+                    + "server/src/radioControl/mod.rs).";
             }
         }
         attribute data : Boolean[0..1];
         attribute dataFilterNumber : Integer[0..1] {
             @CodeDiffers {
                 what = "The operation names it data_filter (Operation::ReceiveSetup in "
-                    + "server/src/radio_control/mod.rs).";
+                    + "server/src/radioControl/mod.rs).";
             }
         }
     }
@@ -531,18 +531,20 @@ package WstxRadioControl {
             doc /* The number of the COM port. */
             @CodeDiffers {
                 what = "The report gives the port as port, the text COMn (detect in "
-                    + "server/src/radio_setup.rs).";
+                    + "server/src/radioControl/radio_setup.rs).";
             }
         }
         attribute friendlyName : String[0..1];
         attribute vendorId : String[0..1] {
             @CodeDiffers {
-                what = "The report gives it as vid (detect in server/src/radio_setup.rs).";
+                what = "The report gives it as vid (detect in "
+                    + "server/src/radioControl/radio_setup.rs).";
             }
         }
         attribute productId : String[0..1] {
             @CodeDiffers {
-                what = "The report gives it as pid (detect in server/src/radio_setup.rs).";
+                what = "The report gives it as pid (detect in "
+                    + "server/src/radioControl/radio_setup.rs).";
             }
         }
         attribute instanceId : String;
@@ -572,7 +574,7 @@ package WstxRadioControl {
         attribute comPort : Integer {
             @CodeDiffers {
                 what = "The proposal gives the port as port, the text COMn (detect in "
-                    + "server/src/radio_setup.rs).";
+                    + "server/src/radioControl/radio_setup.rs).";
             }
         }
         attribute model : String;
@@ -593,7 +595,7 @@ package WstxRadioControl {
         attribute settingsPort : Integer[0..1] {
             @CodeDiffers {
                 what = "The report gives it as port inside settings (detect in "
-                    + "server/src/radio_setup.rs).";
+                    + "server/src/radioControl/radio_setup.rs).";
             }
         }
         attribute settings : SettingFinding[0..*] {
@@ -616,7 +618,7 @@ package WstxRadioControl {
         attribute connectionNumber : Integer {
             @CodeDiffers {
                 what = "The request names it connection_generation (apply_route in "
-                    + "server/src/radio_setup.rs).";
+                    + "server/src/radioControl/radio_setup.rs).";
             }
         }
     }
@@ -684,7 +686,7 @@ package WstxRadioControl {
         out item withdraw : WithdrawRequest {
             @CodeDiffers {
                 what = "The supervisor withdraws a request by setting its flag Request::cancelled "
-                    + "(server/src/radio_control/mod.rs).";
+                    + "(server/src/radioControl/mod.rs).";
             }
         }
         out item applyAgc : ApplyAgc {
@@ -701,7 +703,7 @@ package WstxRadioControl {
         out item detect : DetectRadios;
         out item applyRecommended : ApplyRecommended {
             @CodeDiffers {
-                what = "The supervisor calls apply of server/src/radio_setup.rs.";
+                what = "The supervisor calls apply of server/src/radioControl/radio_setup.rs.";
             }
         }
         out item discover : DiscoverRadio;
@@ -711,24 +713,27 @@ package WstxRadioControl {
         in item detection : DetectionReport;
         in item detectRefused : DetectRefused {
             @CodeDiffers {
-                what = "A refusal is the Err text of detect in server/src/radio_setup.rs.";
+                what = "A refusal is the Err text of detect in "
+                    + "server/src/radioControl/radio_setup.rs.";
             }
         }
         in item settingsOutcome : SettingsOutcome {
             @CodeDiffers {
-                what = "The outcome is the Ok value of apply in server/src/radio_setup.rs.";
+                what = "The outcome is the Ok value of apply in "
+                    + "server/src/radioControl/radio_setup.rs.";
             }
         }
         in item settingsRefused : SettingsRefused {
             @CodeDiffers {
-                what = "A refusal is the Err text of apply in server/src/radio_setup.rs.";
+                what = "A refusal is the Err text of apply in "
+                    + "server/src/radioControl/radio_setup.rs.";
             }
         }
         in item discovered : RadioDiscovered;
         in item radioKept : RadioKept {
             @CodeDiffers {
                 what = "Discovery answers None when the profile's control stays "
-                    + "(discover_within in server/src/radio_setup.rs).";
+                    + "(discover_within in server/src/radioControl/radio_setup.rs).";
             }
         }
         in item status : RadioStatus;
@@ -749,7 +754,7 @@ package WstxRadioControl {
             doc /* The number of the COM port, 1 to 256. */
             @CodeDiffers {
                 what = "The CAT adapter takes the number as port (Hardware::open in "
-                    + "server/src/radio_setup.rs).";
+                    + "server/src/radioControl/radio_setup.rs).";
             }
         }
     }
@@ -764,7 +769,7 @@ package WstxRadioControl {
         attribute comPort : Integer {
             @CodeDiffers {
                 what = "The CAT adapter takes the number as port (Hardware::reserve in "
-                    + "server/src/radio_setup.rs).";
+                    + "server/src/radioControl/radio_setup.rs).";
             }
         }
     }
@@ -804,7 +809,7 @@ package WstxRadioControl {
         in item closeFailed : CloseFailed {
             @CodeDiffers {
                 what = "A close that fails answers Err(Error::FailedClose) (Transport::close in "
-                    + "server/src/radio_control/executor.rs).";
+                    + "server/src/radioControl/executor.rs).";
             }
         }
     }

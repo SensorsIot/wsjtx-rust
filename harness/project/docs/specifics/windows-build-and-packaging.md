@@ -14,7 +14,7 @@ calls the Windows API in the modules below, and only these allow `unsafe`, each 
 
 - `server/src/audio/windows.rs`: WASAPI capture, declared in `server/src/audio.rs`;
 - `server/src/modes/playback/windows.rs`: WASAPI render, declared in `server/src/transmit/playback.rs`;
-- `server/src/radioControl/windows.rs`: the CAT port's serial I/O, declared in `server/src/radio_control/mod.rs`;
+- `server/src/radioControl/windows.rs`: the CAT port's serial I/O, declared in `server/src/radioControl/mod.rs`;
 - `server/src/transmit/windows_time.rs`: the read-only Windows Time service query, declared in
   `server/src/modes/transmit/mod.rs`.
 

@@ -27,8 +27,8 @@ package WstxAudioPart {
                 + "server/src/audio/windows.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/audio.rs, server/src/radio_control/setup.rs, "
-                + "server/src/radio_setup.rs, server/src/source.rs, "
+            what = "Its code stands in server/src/audio.rs, server/src/radioControl/setup.rs, "
+                + "server/src/radioControl/radio_setup.rs, server/src/source.rs, "
                 + "server/src/transmit/playback.rs, outside server/src/audio/ and "
                 + "client/src/audio/.";
         }
