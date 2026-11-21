@@ -610,7 +610,7 @@ test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:6
   let release,fetched;const held=new Promise(r=>{release=r;}),read=new Promise(r=>{fetched=r;});
   await page.route('**/contact',async route=>{const response=await route.fetch();fetched();await held;await route.fulfill({response});});
   try{
-    page.evaluate(()=>window.wstxContact.load());await read;
+    page.evaluate(()=>dispatchEvent(new CustomEvent('keyboard-halt',{detail:{reply:null}})));await read;
     await watchdogs(8);
     await waitFor(async()=>await page.evaluate(()=>window.wstxContact.snapshot()?.settings?.tx_calls)===8,'the change is shown',5000);
     release();await new Promise(r=>setTimeout(r,2500));
