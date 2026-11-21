@@ -322,9 +322,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     recording_boot,
                     recording_files,
                     recording_clock,
+                    Arc::new(recording::Threads),
+                    Arc::new(recording::WavFiles),
                 )
             })
             .await?;
+            // The live inputs receive opens: the WASAPI capture of the selected device.
+            #[cfg(windows)]
+            let _ = recording
+                .inputs
+                .set(std::sync::Arc::new(recording::AudioInputs {
+                    capture: std::sync::Arc::new(audio::Wasapi),
+                }));
             // The ports and audio endpoints radio detection reads.
             #[cfg(windows)]
             let _ = recording

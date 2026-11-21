@@ -98,6 +98,8 @@ impl HttpFixture {
             boot.clone(),
             files.recording.clone(),
             crate::contact_http::tests::DrivenClock::new(),
+            std::sync::Arc::new(crate::recording::Threads),
+            std::sync::Arc::new(crate::recording::WavFiles),
         );
         recording.initialize_profile_revision(store.document.revision);
         App {

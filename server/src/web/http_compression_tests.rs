@@ -409,8 +409,12 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         crate::contact_http::tests::DrivenClock::new(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     r.initialize_profile_revision(0);
+    let inputs = receive_http_tests::QueuedInputs::new();
+    inputs.fill(&r);
     let app = App {
         origin: "http://localhost:18001".into(),
         profile: Some(Arc::new(ProfileState {
@@ -436,13 +440,14 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
         boot: boot.clone(),
     };
     let (input, queue) = receive_http_tests::Input::queued();
-    r.receive_start_input(
+    inputs.replace(Box::new(input));
+    r.receive_start(
         &id,
         &boot,
         0,
+        receive_http_tests::profile_revision(&r),
         "isolated-native-queue".into(),
         "ft8",
-        Box::new(input),
     )
     .unwrap();
     assert!(queue.push(&[], 480, 0, 0, audio::SILENT));

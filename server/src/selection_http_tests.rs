@@ -301,9 +301,15 @@ async fn live_native_selection_tls_thin_and_off() {
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         crate::contact_http::tests::DrivenClock::new(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     recording.initialize_profile_revision(0);
-    recording.fixture_inputs(inputs);
+    let queued = crate::receive_http_tests::QueuedInputs::new();
+    queued.fill(&recording);
+    for input in inputs {
+        queued.push(input);
+    }
     let (actor, rig) = radio_http_tests::actor(id.clone(), boot.clone(), 0, true);
     recording.fixture_radio(actor.clone());
     let app = App {

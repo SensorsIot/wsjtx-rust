@@ -411,15 +411,8 @@ fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
     let r = fixture.recording();
     let (mut input, _) = crate::receive_http_tests::Input::queued();
     let (entered, released) = input.block_release();
-    let snapshot = r
-        .receive_start_input(
-            &r.profile,
-            &r.boot,
-            0,
-            "native-queue-fixture".into(),
-            "ft8",
-            Box::new(input),
-        )
+    let snapshot = fixture
+        .start(&r, 0, "native-queue-fixture", "ft8", input)
         .unwrap();
     let generation = snapshot["generation"].as_u64().unwrap();
     let id = snapshot["job"]["id"].as_str().unwrap();
@@ -447,17 +440,10 @@ fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
 fn live_worker_spawn_failure_releases_admission_without_reusing_generation() {
     let fixture = Fixture::new();
     let r = fixture.recording();
-    r.resources.lock().unwrap().fail_live_spawn = true;
+    fixture.3.fail_next();
     let (input, _) = crate::receive_http_tests::Input::queued();
     assert_eq!(
-        r.receive_start_input(
-            &r.profile,
-            &r.boot,
-            0,
-            "native-queue-fixture".into(),
-            "ft8",
-            Box::new(input)
-        ),
+        fixture.start(&r, 0, "native-queue-fixture", "ft8", input),
         Err("audio_unavailable")
     );
     let snapshot = r.receive_snapshot();
@@ -478,15 +464,9 @@ fn live_second_epoch_source_uuid_failure_releases_original_admission() {
     let fixture = Fixture::new();
     let r = fixture.recording();
     let (input, queue) = crate::receive_http_tests::Input::queued();
-    r.receive_start_input(
-        &r.profile,
-        &r.boot,
-        0,
-        "native-queue-fixture".into(),
-        "ft8",
-        Box::new(input),
-    )
-    .unwrap();
+    fixture
+        .start(&r, 0, "native-queue-fixture", "ft8", input)
+        .unwrap();
     assert!(queue.push(&[], 1024, 0, 0, audio::SILENT));
     let deadline = Instant::now() + Duration::from_secs(1);
     while r.receive_snapshot()["source"].is_null() && Instant::now() < deadline {
@@ -515,8 +495,153 @@ fn live_second_epoch_source_uuid_failure_releases_original_admission() {
             .is_ok()
     );
 }
-/// A disposable profile directory and the file fake every recording opened on it uses.
-struct Fixture(PathBuf, Arc<FaultyFiles>);
+/// A disposable profile directory and the file fake, live inputs, spawner and replay
+/// sources every recording opened on it uses.
+struct Fixture(
+    PathBuf,
+    Arc<FaultyFiles>,
+    Arc<QueuedInputs>,
+    Arc<CountingSpawner>,
+    Arc<WatchedReplays>,
+);
+use crate::receive_http_tests::QueuedInputs;
+impl Fixture {
+    /// Queues `input` as the only input and starts receive on it at the current profile
+    /// revision.
+    fn start(
+        &self,
+        r: &Arc<Recording>,
+        generation: u64,
+        device: &str,
+        mode: &'static str,
+        input: crate::receive_http_tests::Input,
+    ) -> Result<Value> {
+        self.2.replace(Box::new(input));
+        let revision = r.state.lock().unwrap().operating.profile_revision;
+        r.receive_start(
+            &r.profile,
+            &r.boot,
+            generation,
+            revision,
+            device.into(),
+            mode,
+        )
+    }
+}
+
+/// The real spawner, counting each worker from its spawn until its job returns; armed, its
+/// next spawn fails and runs nothing.
+#[derive(Default)]
+pub(crate) struct CountingSpawner {
+    counts: Arc<(Mutex<(usize, usize)>, std::sync::Condvar)>,
+    fail: AtomicBool,
+}
+/// Ends the count of one worker however its job returns.
+struct Counted(Arc<(Mutex<(usize, usize)>, std::sync::Condvar)>);
+impl Drop for Counted {
+    fn drop(&mut self) {
+        self.0.0.lock().unwrap().0 -= 1;
+        self.0.1.notify_all();
+    }
+}
+impl CountingSpawner {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+    /// The next spawn fails with an injected error.
+    fn fail_next(&self) {
+        self.fail.store(true, Ordering::Release);
+    }
+    fn active(&self) -> usize {
+        self.counts.0.lock().unwrap().0
+    }
+    fn peak(&self) -> usize {
+        self.counts.0.lock().unwrap().1
+    }
+    /// Waits, at most `within`, until no worker is active.
+    fn wait_idle(&self, within: Duration) {
+        let counts = self.counts.0.lock().unwrap();
+        let _ = self
+            .counts
+            .1
+            .wait_timeout_while(counts, within, |c| c.0 > 0)
+            .unwrap();
+    }
+}
+impl Spawner for CountingSpawner {
+    fn spawn(
+        &self,
+        name: Option<&'static str>,
+        run: Box<dyn FnOnce() + Send>,
+    ) -> std::io::Result<std::thread::JoinHandle<()>> {
+        if self.fail.swap(false, Ordering::AcqRel) {
+            return Err(std::io::Error::other("injected receive spawn failure"));
+        }
+        {
+            let mut c = self.counts.0.lock().unwrap();
+            c.0 += 1;
+            c.1 = c.1.max(c.0);
+        }
+        let counted = Counted(self.counts.clone());
+        Threads.spawn(
+            name,
+            Box::new(move || {
+                let _counted = counted;
+                run();
+            }),
+        )
+    }
+}
+
+/// The real replay sources, checking at each block that a replay holds at most two blocks
+/// of at most 4096 samples alive and has released every earlier one.
+#[derive(Default)]
+pub(crate) struct WatchedReplays {
+    peak: Arc<std::sync::atomic::AtomicUsize>,
+}
+impl WatchedReplays {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+    /// The most blocks one replay held alive at once.
+    fn peak(&self) -> usize {
+        self.peak.load(Ordering::Acquire)
+    }
+}
+impl ReplaySources for WatchedReplays {
+    fn open(&self, path: &Path, source: Arc<SourceDescriptor>) -> Result<Box<dyn ReplaySource>> {
+        Ok(Box::new(Watched {
+            inner: WavFiles.open(path, source)?,
+            blocks: Vec::new(),
+            peak: self.peak.clone(),
+        }))
+    }
+}
+struct Watched {
+    inner: Box<dyn ReplaySource>,
+    blocks: Vec<std::sync::Weak<[f32]>>,
+    peak: Arc<std::sync::atomic::AtomicUsize>,
+}
+impl ReplaySource for Watched {
+    fn next(&mut self) -> Result<Option<SampleBlock>> {
+        let block = self.inner.next()?;
+        self.blocks.retain(|b| b.strong_count() > 0);
+        if let Some(block) = &block {
+            for earlier in &self.blocks {
+                assert_eq!(
+                    earlier.strong_count(),
+                    1,
+                    "spectrum must release every previous immutable sample allocation"
+                );
+            }
+            assert!(block.samples.len() <= 4096);
+            self.blocks.push(Arc::downgrade(&block.samples));
+            assert!(self.blocks.len() <= 2);
+            self.peak.fetch_max(self.blocks.len(), Ordering::AcqRel);
+        }
+        Ok(block)
+    }
+}
 
 // Deterministically hold the operation in
 // restarting while the real PacketQueue/LiveSource rotates its continuing worker.
@@ -624,15 +749,8 @@ fn selection_old_command_cannot_cancel_unrelated_later_start() {
         });
     }
     let (input, _) = crate::receive_http_tests::Input::queued();
-    let started = r
-        .receive_start_input(
-            &r.profile,
-            &r.boot,
-            1,
-            "independent-new-input".into(),
-            "ft4",
-            Box::new(input),
-        )
+    let started = fixture
+        .start(&r, 1, "independent-new-input", "ft4", input)
         .unwrap();
     let current = r.state.lock().unwrap().job.as_ref().unwrap().clone();
     assert!(!Arc::ptr_eq(&current.cancel, &old.cancel));
@@ -675,25 +793,88 @@ impl Fixture {
         let path =
             std::env::temp_dir().join(format!("wstx-recording-{}", profile::new_uuid().unwrap()));
         fs::create_dir(&path).unwrap();
-        Self(path, FaultyFiles::new())
+        Self(
+            path,
+            FaultyFiles::new(),
+            QueuedInputs::new(),
+            CountingSpawner::new(),
+            WatchedReplays::new(),
+        )
     }
     fn recording(&self) -> Arc<Recording> {
         self.recording_on(DrivenClock::new())
     }
     /// The recording on the station clocks `clock`.
     fn recording_on(&self, clock: Arc<DrivenClock>) -> Arc<Recording> {
-        Recording::open(
+        let r = Recording::open(
             &self.0,
             "00000000-0000-4000-8000-000000000001".into(),
             profile::new_uuid().unwrap(),
             self.1.clone(),
             clock,
-        )
+            self.3.clone(),
+            self.4.clone(),
+        );
+        self.2.fill(&r);
+        r
     }
     fn wave(&self, bytes: &[u8]) -> File {
         let path = self.0.join("fixture.wav");
         fs::write(&path, bytes).unwrap();
         File::open(path).unwrap()
+    }
+}
+
+// Without live inputs a start opens no device of the PC and is refused before admission.
+#[test]
+fn recording_without_input_port_opens_no_device() {
+    let fixture = Fixture::new();
+    let r = Recording::open(
+        &fixture.0,
+        "00000000-0000-4000-8000-000000000001".into(),
+        profile::new_uuid().unwrap(),
+        fixture.1.clone(),
+        DrivenClock::new(),
+        Arc::new(Threads),
+        Arc::new(WavFiles),
+    );
+    assert_eq!(
+        r.receive_start(
+            &r.profile,
+            &r.boot,
+            0,
+            0,
+            "{0.0.1.00000000}.{probe}".into(),
+            "ft8"
+        ),
+        Err("audio_unavailable")
+    );
+    let view = r.receive_snapshot();
+    assert_eq!(view["generation"], 0);
+    assert!(view["job"].is_null(), "{view}");
+}
+
+// The real spawner runs each job on a thread of its own, named when a name is given.
+#[test]
+fn threads_run_each_job_on_its_own_named_thread() {
+    let caller = std::thread::current().id();
+    for name in [Some("station-receive"), None] {
+        let (tx, rx) = std::sync::mpsc::channel();
+        Threads
+            .spawn(
+                name,
+                Box::new(move || {
+                    let current = std::thread::current();
+                    tx.send((current.id(), current.name().map(str::to_owned)))
+                        .unwrap();
+                }),
+            )
+            .unwrap()
+            .join()
+            .unwrap();
+        let (id, seen) = rx.try_recv().unwrap();
+        assert_ne!(id, caller);
+        assert_eq!(seen.as_deref(), name);
     }
 }
 
@@ -780,7 +961,7 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     let r = fixture.recording();
     r.initialize_profile_revision(7);
     let (input, _) = crate::receive_http_tests::Input::queued();
-    r.resources.lock().unwrap().live_input = Some(Box::new(input));
+    fixture.2.replace(Box::new(input));
     assert_eq!(
         r.receive_start(&r.profile, &r.boot, 0, 6, "must-not-open".into(), "ft8"),
         Err("state_conflict")
@@ -788,7 +969,7 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     assert_eq!(r.state.lock().unwrap().operating.revision, 0);
     assert_eq!(r.receive_snapshot()["generation"], 0);
     let (input, _) = crate::receive_http_tests::Input::queued();
-    r.resources.lock().unwrap().live_input = Some(Box::new(input));
+    fixture.2.replace(Box::new(input));
     let started = r
         .receive_start(&r.profile, &r.boot, 0, 7, "current-input".into(), "ft8")
         .unwrap();
@@ -802,6 +983,10 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     selection_released(&r);
     r.profile_changed(8);
     r.profile_changed(9);
+    // The input the old start would open: its open succeeds, its revision is refused.
+    fixture
+        .2
+        .replace(Box::new(crate::receive_http_tests::Input::queued().0));
     assert_eq!(
         r.receive_start(&r.profile, &r.boot, 1, 7, "old-input".into(), "ft4"),
         Err("state_conflict")
@@ -860,15 +1045,7 @@ fn selection_release_timeout_retains_owner_and_never_commits_target() {
     let r = fixture.recording();
     let (mut input, _) = crate::receive_http_tests::Input::queued();
     let (entered, released) = input.block_release();
-    r.receive_start_input(
-        &r.profile,
-        &r.boot,
-        0,
-        "held-input".into(),
-        "ft8",
-        Box::new(input),
-    )
-    .unwrap();
+    fixture.start(&r, 0, "held-input", "ft8", input).unwrap();
     r.selection_begin(selection_intent(&r, "band", None, Some("40m")), None, false)
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -893,18 +1070,9 @@ fn selection_manual_mode_switch_uses_same_owner_and_profile_change_blocks_restar
     let fixture = Fixture::new();
     let r = fixture.recording();
     let (first, _) = crate::receive_http_tests::Input::queued();
-    let old = r
-        .receive_start_input(
-            &r.profile,
-            &r.boot,
-            0,
-            "first-input".into(),
-            "ft8",
-            Box::new(first),
-        )
-        .unwrap();
+    let old = fixture.start(&r, 0, "first-input", "ft8", first).unwrap();
     let (next, _) = crate::receive_http_tests::Input::queued();
-    r.resources.lock().unwrap().live_input = Some(Box::new(next));
+    fixture.2.replace(Box::new(next));
     r.selection_begin(
         selection_intent(&r, "band", None, Some("40m")),
         Some("next-input".into()),
@@ -928,15 +1096,9 @@ fn selection_manual_mode_switch_uses_same_owner_and_profile_change_blocks_restar
     let (mut held, _) = crate::receive_http_tests::Input::queued();
     let (entered, released) = held.block_release();
     let generation = r.receive_snapshot()["generation"].as_u64().unwrap();
-    r.receive_start_input(
-        &r.profile,
-        &r.boot,
-        generation,
-        "held-input".into(),
-        "ft8",
-        Box::new(held),
-    )
-    .unwrap();
+    fixture
+        .start(&r, generation, "held-input", "ft8", held)
+        .unwrap();
     let admitted = r
         .selection_begin(
             selection_intent(&r, "mode", Some("ft4"), None),
@@ -973,6 +1135,8 @@ fn selection_profile_fixture() -> (
         profile::new_uuid().unwrap(),
         std::sync::Arc::new(crate::profile::Disk),
         DrivenClock::new(),
+        Arc::new(Threads),
+        Arc::new(WavFiles),
     );
     let document = json!({"schema_version":1,"profile_id":r.profile,"revision":0,"display_name":"Before edit","callsign":"HB9BLA","locator":"JN47AA","endpoint":{"bind":"127.0.0.1:18001","origin":null},"connection_type":"standard","audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     fs::write(
@@ -1578,12 +1742,11 @@ fn replay_window_start_and_partial_last_row_follow_source_clock() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(r.snapshot()["job"]["state"], "completed");
-    {
-        let resources = r.resources.lock().unwrap();
-        assert_eq!(resources.active_workers, 0);
-        assert_eq!(resources.peak_workers, 1);
-        assert_eq!(resources.peak_blocks, 2);
-    }
+    // The worker counts as ended once its job has returned, after the terminal state.
+    f.3.wait_idle(Duration::from_secs(3).saturating_sub(began.elapsed()));
+    assert_eq!(f.3.active(), 0);
+    assert_eq!(f.3.peak(), 1);
+    assert_eq!(f.4.peak(), 2);
     assert!(began.elapsed() >= Duration::from_secs_f64(1.01));
     let frame = r.state.lock().unwrap().frame.clone().unwrap();
     assert_eq!(frame["data"]["sequence"], 1);
@@ -1681,10 +1844,10 @@ fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(r.snapshot()["job"]["state"], "completed");
-    let resources = r.resources.lock().unwrap();
-    assert_eq!(resources.active_workers, 0);
+    // The worker counts as ended once its job has returned, after the terminal state.
+    f.3.wait_idle(Duration::from_secs(2).saturating_sub(began.elapsed()));
+    assert_eq!(f.3.active(), 0);
     assert_eq!(clock.jumps(), 1);
-    drop(resources);
     assert!(r.reserve(&r.profile, &r.boot, generation + 1).is_ok());
 }
 // Independent f64 DFT, native bins and power/EOS rows.

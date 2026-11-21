@@ -47,6 +47,8 @@ fn station(dir: std::path::PathBuf, ntp: Arc<Monitor>) -> Station {
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         time.clone(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     let windows_time = Arc::new(Mutex::new(WindowsTime::Running));
     let reader = windows_time.clone();

@@ -23,7 +23,8 @@ fn selected_radio_audio_capture_evidence() {
         std::env::var("WSTX_AUDIO_PROBE_ENDPOINT").as_deref(),
         Ok(RADIO_INPUT)
     );
-    let mut capture = CaptureHandle::begin(RADIO_INPUT).expect("selected input open begins");
+    let mut capture = CaptureHandle::begin(RADIO_INPUT, std::sync::Arc::new(audio::Wasapi))
+        .expect("selected input open begins");
     let opening_deadline = Instant::now() + Duration::from_secs(5);
     let (queue, format) = loop {
         if let Some(result) = capture.poll_open() {

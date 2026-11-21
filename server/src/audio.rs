@@ -15,8 +15,28 @@ use std::sync::{Arc, Mutex};
 mod windows;
 #[cfg(windows)]
 pub use windows::{
-    AudioController, CaptureHandle, InputDevice, enumerate_inputs, enumerate_outputs, system_clock,
+    AudioController, CaptureHandle, InputDevice, Wasapi, enumerate_inputs, enumerate_outputs,
+    system_clock,
 };
+
+/// What a capture sends once its device is open: its packet queue and native format.
+#[cfg(windows)]
+pub type Opened = Result<(Arc<PacketQueue>, NativeFormat), SourceError>;
+/// The capture device port. `capture` runs on the capture thread for the whole capture:
+/// it sends the opened queue (or the open error) on `opened`, delivers packets until
+/// `cancel` or the queue is cancelled, publishes its wake event handle in `wake` while it
+/// waits on one, and reports a failed close on `closed` as soon as it is known.
+#[cfg(windows)]
+pub trait CaptureDevice: Send + Sync {
+    fn capture(
+        &self,
+        endpoint_id: &str,
+        opened: SyncSender<Opened>,
+        cancel: Arc<AtomicBool>,
+        wake: Arc<Mutex<Option<usize>>>,
+        closed: &SyncSender<Result<(), SourceError>>,
+    ) -> Result<(), SourceError>;
+}
 
 pub const MAX_NATIVE_PACKET_FRAMES: usize = 8192;
 pub const FILTER_TAPS: usize = 257;
@@ -478,11 +498,6 @@ impl PacketQueue {
     }
     pub fn queued_frames(&self) -> usize {
         self.frames.load(Ordering::Acquire)
-    }
-    #[cfg(test)]
-    pub fn with_consumer_bookkeeping<T>(&self, action: impl FnOnce() -> T) -> T {
-        let _consumer = self.state.lock().unwrap();
-        action()
     }
 }
 

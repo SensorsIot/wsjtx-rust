@@ -73,6 +73,8 @@ pub(crate) async fn station_prepared(
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
         clock.clone(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     recording.initialize_profile_revision(store.document.revision);
     let bench = Bench::default();

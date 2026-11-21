@@ -363,6 +363,8 @@ pub(crate) struct Fixture {
     pub(crate) files: StationFiles,
     /// The station's clocks, shared by the recording and the contact station.
     pub(crate) clock: Arc<DrivenClock>,
+    /// The live inputs the station's receive starts open.
+    pub(crate) inputs: Arc<crate::receive_http_tests::QueuedInputs>,
 }
 pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
     let (dir, _) = profile_directory(origin, transmit, "JN47AA");
@@ -414,7 +416,11 @@ fn start_station_on(
         boot.clone(),
         files.recording.clone(),
         clock.clone(),
+        Arc::new(recording::Threads),
+        Arc::new(recording::WavFiles),
     );
+    let inputs = crate::receive_http_tests::QueuedInputs::new();
+    inputs.fill(&recording);
     let bench = Bench::default();
     bench.unsupported.store(!transmit, Ordering::SeqCst);
     let station_clock = wstx_rust::transmit::air::StationClock::new(
@@ -458,6 +464,7 @@ fn start_station_on(
         bench,
         files,
         clock,
+        inputs,
     }
 }
 impl Fixture {
@@ -3719,6 +3726,8 @@ fn on_station_clock(
         profile::new_uuid().unwrap(),
         std::sync::Arc::new(crate::profile::Disk),
         time.clone(),
+        std::sync::Arc::new(crate::recording::Threads),
+        std::sync::Arc::new(crate::recording::WavFiles),
     );
     let clock = clock_http::Clock::new(
         ntp,

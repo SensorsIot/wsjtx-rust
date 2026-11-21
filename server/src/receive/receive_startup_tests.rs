@@ -1,25 +1,42 @@
 use super::*;
-use crate::receive_http_tests::Input;
+use crate::receive_http_tests::{Input, QueuedInputs};
+use crate::recording::tests::{CountingSpawner, WatchedReplays};
 use axum::http::StatusCode;
 
 const PROFILE: &str = "00000000-0000-4000-8000-000000000001";
 
-struct Dir(PathBuf);
+/// A disposable profile directory and the live inputs, spawner and replay sources every
+/// recording opened on it uses.
+struct Dir(
+    PathBuf,
+    Arc<QueuedInputs>,
+    Arc<CountingSpawner>,
+    Arc<WatchedReplays>,
+);
 impl Dir {
     fn new() -> Self {
         let path =
             std::env::temp_dir().join(format!("wstx-startup-{}", profile::new_uuid().unwrap()));
         fs::create_dir(&path).unwrap();
-        Self(path)
+        Self(
+            path,
+            QueuedInputs::new(),
+            CountingSpawner::new(),
+            WatchedReplays::new(),
+        )
     }
     fn open(&self) -> Arc<Recording> {
-        Recording::open(
+        let r = Recording::open(
             &self.0,
             PROFILE.into(),
             profile::new_uuid().unwrap(),
             std::sync::Arc::new(crate::profile::Disk),
             crate::contact_http::tests::DrivenClock::new(),
-        )
+            self.2.clone(),
+            self.3.clone(),
+        );
+        self.1.fill(&r);
+        r
     }
     fn file(&self) -> Value {
         serde_json::from_slice(&fs::read(self.0.join(FILE)).unwrap()).unwrap()
@@ -33,8 +50,8 @@ impl Drop for Dir {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
-fn inject(r: &Recording) {
-    r.resources.lock().unwrap().live_input = Some(Box::new(Input::queued().0));
+fn inject(inputs: &QueuedInputs) {
+    inputs.replace(Box::new(Input::queued().0));
 }
 fn resume(r: &Arc<Recording>, cat: bool, wait: Duration) -> Value {
     r.resume_receive(Some("profile-input".into()), cat, wait)
@@ -65,7 +82,7 @@ fn startup_choice_round_trips_and_stop_clears() {
     let dir = Dir::new();
     let r = dir.open();
     assert!(!dir.0.join(FILE).exists());
-    inject(&r);
+    inject(&dir.1);
     r.receive_start(&r.profile, &r.boot, 0, 0, "first-input".into(), "ft8")
         .unwrap();
     assert_eq!(
@@ -73,7 +90,7 @@ fn startup_choice_round_trips_and_stop_clears() {
         json!({"schema_version":1,"profile_id":PROFILE,"monitor_off_at_startup":false,
             "last_receive":{"mode":"ft8","band":null,"input_device":"first-input"}})
     );
-    inject(&r);
+    inject(&dir.1);
     let s = r.state.lock().unwrap();
     let intent = selection::Intent {
         command_id: profile::new_uuid().unwrap(),
@@ -144,7 +161,7 @@ fn startup_file_invalid_or_foreign_is_ignored() {
         let dir = Dir::new();
         fs::write(dir.0.join(FILE), &bytes).unwrap();
         let r = dir.open();
-        inject(&r);
+        inject(&dir.1);
         let view = resume(&r, false, Duration::ZERO);
         assert_eq!(view["storage_error"], "invalid_startup");
         assert_eq!(view["monitor_off_at_startup"], false);
@@ -163,7 +180,7 @@ fn startup_resume_starts_stored_band_and_mode() {
     let dir = Dir::new();
     dir.write(&stored(false, "ft4", Some("20m")));
     let r = dir.open();
-    inject(&r);
+    inject(&dir.1);
     let view = resume(&r, false, Duration::ZERO);
     assert_eq!(view["resume"], json!({"state":"started","error":null}));
     let selection = r.selection_snapshot(false).unwrap();
@@ -184,19 +201,19 @@ fn startup_resume_off_or_stopped_stays_off() {
     let dir = Dir::new();
     dir.write(&stored(true, "ft8", Some("20m")));
     let r = dir.open();
-    inject(&r);
+    inject(&dir.1);
     assert_eq!(resume(&r, false, Duration::ZERO)["resume"]["state"], "off");
     assert_eq!(r.receive_snapshot()["job"], Value::Null);
     assert_eq!(r.receive_snapshot()["generation"], 0);
 
     let dir = Dir::new();
     let r = dir.open();
-    inject(&r);
+    inject(&dir.1);
     r.receive_start(&r.profile, &r.boot, 0, 0, "first-input".into(), "ft8")
         .unwrap();
     stop(&r);
     let restarted = dir.open();
-    inject(&restarted);
+    inject(&dir.1);
     assert_eq!(
         resume(&restarted, false, Duration::ZERO)["resume"]["state"],
         "idle"
@@ -206,11 +223,11 @@ fn startup_resume_off_or_stopped_stays_off() {
     let dir = Dir::new();
     dir.write(&stored(false, "ft4", Some("20m")));
     let r = dir.open();
-    inject(&r);
+    inject(&dir.1);
     let operator = r
         .receive_start(&r.profile, &r.boot, 0, 0, "operator-input".into(), "ft8")
         .unwrap();
-    inject(&r);
+    inject(&dir.1);
     assert_eq!(
         resume(&r, false, Duration::ZERO)["resume"]["state"],
         "skipped"
@@ -240,7 +257,7 @@ fn startup_resume_retries_transient_selection_refusals() {
     dir.write(&stored(false, "ft8", Some("40m")));
     let r = dir.open();
     let peer = attach_peer(&r, Device::Present);
-    inject(&r);
+    inject(&dir.1);
     let run = r
         .resume_receive(Some("profile-input".into()), true, Duration::from_secs(10))
         .unwrap();
@@ -291,7 +308,7 @@ fn startup_resume_cat_unavailable_falls_back_to_plain_receive() {
     let dir = Dir::new();
     dir.write(&stored(false, "ft8", Some("40m")));
     let r = dir.open();
-    inject(&r);
+    inject(&dir.1);
     let view = resume(&r, true, Duration::from_millis(300));
     assert_eq!(
         view["resume"],
@@ -381,7 +398,7 @@ fn startup_resume_never_arms_or_keys() {
         let before = observed();
         assert_ne!(before[0]["arm_state"], "armed");
         r.remember_receive("ft8", Some("20m"), "stored-input");
-        inject(&r);
+        inject(&f.inputs);
         assert_eq!(
             resume(&r, cat, Duration::from_millis(100))["resume"]["state"],
             state
@@ -403,7 +420,7 @@ fn startup_resume_skips_what_a_command_started_and_never_ends_the_process() {
     let dir = Dir::new();
     dir.write(&stored(false, "ft4", Some("20m")));
     let r = dir.open();
-    inject(&r);
+    inject(&dir.1);
     let intent = {
         let s = r.state.lock().unwrap();
         selection::Intent {
@@ -426,7 +443,7 @@ fn startup_resume_skips_what_a_command_started_and_never_ends_the_process() {
         std::thread::sleep(Duration::from_millis(1));
     }
     let job = r.receive_snapshot()["job"]["id"].clone();
-    inject(&r);
+    inject(&dir.1);
     assert_eq!(
         resume(&r, false, Duration::ZERO)["resume"]["state"],
         "skipped"
@@ -441,7 +458,7 @@ fn startup_resume_skips_what_a_command_started_and_never_ends_the_process() {
     let dir = Dir::new();
     dir.write(&stored(false, "ft4", Some("20m")));
     let r = dir.open();
-    inject(&r);
+    inject(&dir.1);
     let import = r.reserve(&r.profile, &r.boot, 0).unwrap();
     assert_eq!(
         resume(&r, false, Duration::ZERO)["resume"]["state"],
