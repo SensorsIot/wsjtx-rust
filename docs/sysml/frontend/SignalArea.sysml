@@ -197,7 +197,11 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-08'; }
-        @TestedBy { test = "tests/recording.test.cjs"; }
+        @TestedBy {
+            test = "tests/recording.test.cjs; "
+                + "tests/ui-operating.test.cjs::"
+                + "pointer resize and stale link preserve read-only authority";
+        }
     }
     verification 'TC-010-007' {
         doc /* Rows move down by their time at each speed; gaps and stops. */

@@ -89,6 +89,7 @@ test('TC-007-003 QSO pane candidates selection without transmit',{timeout:90000}
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: TC-007-009, TC-037-004, TC-050-005
 test('double-click starts transmission, partner report advances to Tx3, Esc aborts the QSO (no halt) with a panel open',{timeout:90000},async()=>{
   // WstxQsoTransmit::StartRule: no Enable Tx control and no Reply button;
   // a double-click on the decoded row selects it again and arms.
@@ -165,6 +166,7 @@ test('double-click starts transmission, partner report advances to Tx3, Esc abor
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: TC-037-004
 test('a double-click on a CQ not for me warns and only the confirmation selects it',{timeout:60000},async()=>{
   await publish(evenNow(),[{text:'CQ NA W9XYZ EN52',hz:1650,snr:-3}]);
   const row=page.locator('#band-activity tbody tr[data-sequence]').filter({hasText:'CQ NA W9XYZ EN52'});
@@ -248,6 +250,7 @@ test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout
 
 // DirectLog: Log QSO logs at once on the actual server, without a review form.
 // (the browser Log QSO button).
+// Proves: TC-037-001
 test('manual DX entry and Log QSO log the contact at once without hiding Halt Tx',{timeout:30000},async()=>{
   if(!await page.locator('#qso-more').evaluate(el=>el.open))await page.locator('#qso-more summary').click();
   await page.locator('#dx-call').fill('dl1abc');await page.locator('#dx-grid').fill('JO62');await page.locator('#dx-grid').press('Enter');
@@ -270,6 +273,7 @@ test('manual DX entry and Log QSO log the contact at once without hiding Halt Tx
 
 // With the contact snapshot unavailable (GET /contact failing),
 // Alt+H still sends the halt; only a station known to be receive-only skips it.
+// Proves: TC-007-009
 test('Alt+H halts even when the contact snapshot is unavailable',{timeout:60000},async()=>{
   await page.route('**/contact',route=>route.abort('failed'));
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
@@ -288,6 +292,7 @@ test('Alt+H halts even when the contact snapshot is unavailable',{timeout:60000}
 });
 
 // OpenRegion / SettingsDrawer: a pointer action outside the drawer closes it.
+// Proves: TC-227-002
 test('a pointer action outside the Settings drawer returns to operation',{timeout:30000},async()=>{
   if(await page.locator('#region-logbook').isVisible())await page.locator('#region-logbook .return-operate').click();
   await page.locator('#operating-workspace').waitFor({state:'visible'});
@@ -300,6 +305,7 @@ test('a pointer action outside the Settings drawer returns to operation',{timeou
 
 // The keyboard halt does not wait for contact.js (loaded after the first
 // state reads); one Alt+H sends exactly one halt before and after that load.
+// Proves: TC-007-009
 test('Alt+H halts once before and once after the contact client loads',{timeout:60000},async()=>{
   // Hold /contact.js so the first Esc happens deterministically before it loads.
   let release;const held=new Promise(r=>release=r);
@@ -680,6 +686,7 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
 
 // The socket's first event holds the whole snapshot, a later one what changed, and the browser
 // shows a change from outside without any timer read on Detailed or Thin.
+// Proves: TC-007-005
 test('operating selection is pushed: the event carries it, no timer read of GET /receive/selection',{timeout:90000},async()=>{
   const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='selection.state')frames.push({at:performance.now(),data:m.data,bytes:Buffer.byteLength(e.payload)});}catch{}}));
   const reads=(a,b=Infinity)=>requests.filter(r=>r.method==='GET'&&r.path==='/receive/selection'&&r.at>=a&&r.at<b);
@@ -711,6 +718,7 @@ test('operating selection is pushed: the event carries it, no timer read of GET 
 
 // The socket's read getting lost on the link leaves the
 // controls on the state its first event gave: there is no timer read to repair them.
+// Proves: TC-007-005
 test('a lost selection read does not disable the controls the socket event holds',{timeout:60000},async()=>{
   let release,reached;const gate=new Promise(r=>release=r),entered=new Promise(r=>reached=r);
   await page.route('**/receive/selection',async route=>{reached();await gate;await route.abort('failed');},{times:1});
@@ -755,6 +763,7 @@ test('TC-085-005 the QSO pane says that a QSO with the station logged last was n
   assert.deepEqual(page.errors,[]);
 });
 
+// Proves: TC-037-004
 test('mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO completes, and CQ right after it calls',{timeout:420000},async()=>{
   // Mid-QSO: calling K1ABC (armed), K1ABC does not answer, double-click DL1ABC.
   let mark=await dblclickRow('CQ K1ABC FN42',1234.6,-12);
@@ -776,6 +785,7 @@ test('mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO comp
   await waitFor(async()=>{const v=await snapshot();return v.transmit.arm_state==='armed'&&v.contact?.state==='calling';},async()=>`calling CQ after DL1ABC: ${await page.locator('#contact-result').textContent()} ${JSON.stringify(commands().slice(-2))} ${JSON.stringify((await snapshot()).transmit)} ${JSON.stringify((await snapshot()).contact?.state)}`,15000);
   assert.deepEqual(page.errors,[]);
 });
+// Proves: TC-037-004
 test('from-CQ: a double-click from my CQ switches with Tx kept on, the new QSO completes, and a double-click after it replies',{timeout:420000},async()=>{
   let mark;
   // From my CQ: CQ (arms, calling), then double-click another station's CQ.

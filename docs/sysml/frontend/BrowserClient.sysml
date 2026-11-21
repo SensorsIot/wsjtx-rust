@@ -26,11 +26,12 @@ package WstxBrowserClientPart {
         }
         @DetailTests {
             tests = "tests/communication.test.cjs; tests/profiles.test.cjs; "
-                + "tests/radio-selection.test.cjs";
+                + "tests/radio-selection.test.cjs; tests/ui-operating.test.cjs";
             covers = "the label each stale path names on the station-stale event; the silence "
                 + "bound while a client file downloads; the browser's grant: the token login "
                 + "and its retries, the retained credential, its renewal and faults, and the "
-                + "transport cookie; a selection whose answer is lost";
+                + "transport cookie; a selection whose answer is lost; the job a live frame "
+                + "belongs to inside the page, and the screen's behaviour no clause states yet";
         }
         attribute config : FrontendConfig;
         port station : BrowserExchange { doc /* The station, through web. */ }

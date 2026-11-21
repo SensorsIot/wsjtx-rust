@@ -87,7 +87,11 @@ package WstxLowerPanel {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-01'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs; "
+                + "tests/contact.test.cjs::"
+                + "manual DX entry and Log QSO log the contact at once without hiding Halt Tx";
+        }
     }
     verification 'TC-037-002' {
         doc /* The error field lists the problems that hold. */

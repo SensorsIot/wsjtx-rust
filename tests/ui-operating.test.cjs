@@ -272,6 +272,7 @@ test('TC-007-002 operating split, drawer and pages remain accessible at narrow a
 });
 
 // Link loss and no invented commands.
+// Proves: TC-010-003, TC-021-007
 test('pointer resize and stale link preserve read-only authority',{timeout:20000},async t=>{
   const {page,app,errors,sent}=await fixture(t,{width:1440,height:900});
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
@@ -366,6 +367,7 @@ async function contactCommands(page,commands){await page.route('**/contact/comma
 
 // With Auto Seq off the
 // QSO pane says so, and the partner's RR73 in roger_report offers 73 as one action.
+// Proves: TC-050-009
 test('Auto Seq off is shown on the QSO pane and an RR73 offers 73 next',{timeout:40000},async t=>{
   const commands=[];let contact=null,settings={auto_seq:false};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -862,6 +864,7 @@ test('TC-007-009 one fixed operating screen at 1366x768 holds only the operating
 });
 
 // Exception chips and the explicit receive start/stop.
+// Proves: TC-037-002
 test('exception chips appear only for an exception and start, stop and explain receive',{timeout:40000},async t=>{
   let current,idle;const posts=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input',beforeNavigate:async(p,app)=>{
@@ -1274,6 +1277,7 @@ test('Monitor off at startup reads and saves the station setting without touchin
 });
 
 // The FT8 window dump is an Expert setting, off by default and read on demand.
+// Proves: TC-227-002
 test('Save FT8 decode windows reads and saves the station setting in Settings > Expert',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const requests=[],posts=[];
@@ -1302,6 +1306,7 @@ test('Save FT8 decode windows reads and saves the station setting in Settings > 
 });
 
 // The UDP interface is a Logging & Reporting setting.
+// Proves: TC-227-002
 test('the UDP editor reads GET /udp when Settings opens and saves the edited targets with one PUT',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const requests=[],puts=[];
@@ -1350,6 +1355,7 @@ test('the UDP editor reads GET /udp when Settings opens and saves the edited tar
 });
 
 // The UDP editor takes an IPv6 multicast group.
+// Proves: TC-227-002
 test('the UDP editor saves an IPv6 multicast target with hop limit and interface index',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
   const puts=[];
@@ -1383,6 +1389,7 @@ test('the UDP editor saves an IPv6 multicast target with hop limit and interface
 });
 
 // Restart changes ask first during a QSO.
+// Proves: TC-007-013, TC-227-002
 test('band, mode and Apply ask before restarting receive during a QSO',{timeout:40000},async t=>{
   let contact=null;const selects=[],puts=[];
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -1789,6 +1796,7 @@ test('TC-007-009 Day, Dark and Night themes switch manually and by time without 
 // No automatic restart or mutation retry.
 // Investigation guard: with a running receive, reconnects, status refreshes, repeated
 // readiness and a second tab never send a receive start, stop or selection by themselves.
+// Proves: TC-021-007
 test('no receive start, stop or selection without an operator action across reconnects and two tabs',{timeout:90000},async t=>{
   let running;const mutations=[];
   const watch=p=>{p.on('request',r=>{const path=new URL(r.url()).pathname;if(r.method()!=='GET'&&/^\/receive\/(start|stop|select)$/.test(path))mutations.push(path);});};
@@ -1843,6 +1851,7 @@ test('an unauthorized browser sees only the token form until it is authorized',{
 });
 
 // Actual form state survives region changes.
+// Proves: TC-227-002
 test('in-page navigation preserves unsaved profile and selected recording with no command replay',{timeout:20000},async t=>{
  const {page,errors}=await fixture(t,{width:1440,height:950});
  const mutations=[];page.on('request',r=>{if(r.method()!=='GET')mutations.push({method:r.method(),url:r.url()});});
@@ -2170,6 +2179,7 @@ test('TC-061-008 a Tx period is a thin band, the time axis stays exact and nothi
 });
 
 // A late window extends the period view in place
+// Proves: TC-057-001
 test('a correlated period view extended in place adds the late starter without an error or a reload',{timeout:35000},async t=>{
   let state,records,requested=[];
   const period='2026-10-27T12:00:15.0000000Z';
@@ -2280,6 +2290,7 @@ test('TC-007-006 selectable ordering is numeric, unknown-last and persists acros
 // shows the server's log outcome; an open Logbook page lists a newly logged record by
 // itself. The record is stored through the server's own SaveContact route, standing in
 // for the server-side DirectLog store, which contact_http/udp tests prove.
+// Proves: TC-050-009
 test('completed QSOs log without a review and the open Logbook lists them live',{timeout:30000},async t=>{
  let snapshot={contact:null,log:null};const commands=[],posts=[];
  const {page,app,errors}=await fixture(t,{width:1200,height:900},{beforeNavigate:async(p,app)=>{
@@ -2322,6 +2333,7 @@ test('completed QSOs log without a review and the open Logbook lists them live',
 // Browser subset with the actual server
 // and Chromium; a synthetic Log4OM-shaped export (byte order mark, '#' banner, PROGRAMID
 // LOG4OM2, a UTF-8 NAME, MFSK/FT4) and hand-counted summaries.
+// Proves: TC-227-002
 test('Update logbook from ADIF in Settings consolidates a logger export and Export downloads contacts.adi',{timeout:30000},async t=>{
  const {page,errors}=await fixture(t,{width:1200,height:900});
  await page.waitForFunction(()=>profileData&&window.wstxLogbook);
@@ -2411,6 +2423,7 @@ test('Band Activity shows the worked_status of each record with no query',{timeo
 // query; receive pages, flags and the manual band selection are presentation fixtures, not RF truth.
 // The stations calling me carry the Band Activity marks: only interesting senders coloured, worked
 // before on this band and mode no colour, the status as text, and no extra query.
+// Proves: TC-037-005
 test('QSO pane callers show worked-before status and only interesting stations are coloured',{timeout:40000},async t=>{
  let state;const queries=[],period='2026-10-27T12:00:15.0000000Z';
  const standard=(from,exchange)=>({type:'standard',to:{kind:'call',text:'HB9BLA',hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange});
@@ -2792,6 +2805,7 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
 // The transmit status line shows the station's SNTP clock
 // state and measurement from a GET /transmit fixture (no CAT, PTT or audio: the profile's
 // CAT PTT setting is set in the page only, the server keeps transmit unsupported).
+// Proves: TC-043-003
 test('transmit status shows the SNTP clock measurement',{timeout:45000},async t=>{
   let view;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
@@ -3238,6 +3252,7 @@ const toggle=locator=>locator.evaluate(e=>(e.getAnimations().forEach(a=>a.finish
 // Auto and PSK in the QSO pane's direct buttons
 // follow only the pushed station state, send one POST per click and are disabled with their
 // reasons; the strategy element names the run state and Auto off. Expected values are the model's.
+// Proves: TC-081-006, TC-039-006
 test('Auto and PSK follow only the push, one POST per click, their disabled states and the strategy status',{timeout:90000},async t=>{
   const {page,errors,s,push,settle,status}=await strategydefStation(t,{width:1366,height:768});
   const auto=page.locator('#qso-auto'),psk=page.locator('#qso-pskr');
@@ -3335,6 +3350,7 @@ test('TC-081-006 the Auto button says that Auto off finishes a QSO already start
 // The two PSK
 // Reporter lines while Use is on and a run's own contact has a target, with the age from
 // station.tick; hidden otherwise; no polling; the QSO pane keeps its height at 1366x768 and 360x740.
+// Proves: TC-050-009, TC-037-003
 test('the PSK Reporter lines in the QSO pane, their age formats, no polling and the fixed pane',{timeout:90000},async t=>{
   const {page,errors,s,push}=await strategydefStation(t,{width:1366,height:768});
   const T=Math.floor(Date.now()/1000);
@@ -3515,6 +3531,7 @@ test('the editor with the nine decisions and the selector with the saved contest
 // WW Digi · <period> UTC · WW Digi · Auto on" after Auto on; Start with "WW Digi fast" sends that
 // active with the same contest. Station replies are routed fixtures; the expected requests are
 // written here. Red on the branch base: the prompt offers an operation choice.
+// Proves: TC-097-020
 test('the contest prompt offers the contest strategies, no operation choice',{timeout:60000},async t=>{
   const {builtin:_,...fastBase}=contestBuiltin('WW Digi fast','ww_digi');
   const fast={...fastBase,filters:{...noLists(),countries:{include:[],exclude:[{kind:'country',value:'Japan',bands:null}]}},leave:{mode:'contest',tx_changes:1},cq_when_idle:false};
@@ -3867,6 +3884,7 @@ test('TC-039-006 Settings > General Most Wanted: one button beside the date, a f
 });
 // The editor offers what must be new and the actual isolated station
 // accepts and keeps the saved draft; Save does not start anything. Expected values written here.
+// Proves: TC-097-020
 test('Editor offers what must be new and the station saves it unselected',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.waitForFunction(()=>document.querySelector('#strategy-edit')?.disabled===false,null,{timeout:25000});
@@ -3969,6 +3987,7 @@ test('TC-039-006 Rows arriving during an evaluation are evaluated when it ends',
 // Settings > General ignore lists send exactly the requests written here; the station
 // replies (snapshots, verdicts) are hand-written fixtures; the row loses its strategy
 // mark only through the station's new verdicts.
+// Proves: TC-037-006
 test('Band Activity Ignore and the Settings ignore lists',{timeout:60000},async t=>{
   let state,view;const puts=[],ignores=[],evaluations=[],commands=[];let session=[];
   const period='2026-10-27T12:00:00.0000000Z';
@@ -4218,6 +4237,7 @@ test('TC-042-007 Alert history, sound and browser notification',{timeout:60000},
 // Settings > General shows the cty.dat in use (its date),
 // uploads a replacement to the actual isolated station and returns to the bundled file;
 // a file that is no cty.dat is refused with its line and changes nothing.
+// Proves: TC-227-002
 test('Settings > General country file shows its date, uploads and restores',{timeout:40000},async t=>{
   const {page,errors}=await fixture(t,{width:1366,height:768});
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
@@ -4295,6 +4315,7 @@ async function updatedStation(page,app,dir,t){
   }};
 }
 // An open page reloads itself once after a station update and receives again.
+// Proves: TC-051-004
 test('an open page reloads after the station restarts with another client build and receives again',{timeout:60000},async t=>{
   const {page,app,errors,dir}=await fixture(t,{width:1366,height:768});
   await page.evaluate(()=>{localStorage.setItem('wstx.theme.v1',JSON.stringify({theme:'day',mode:'manual',day:'07:00',night:'20:00'}));localStorage.setItem('wstx.waterfall-speed.v1','4');});
