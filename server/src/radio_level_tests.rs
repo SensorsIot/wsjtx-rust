@@ -1141,13 +1141,20 @@ async fn a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing()
     drop(lease);
 }
 
-// The refusal comes at 3 s, never before, and at most 250 ms after (the margin of
-// CL-044-16: 35 runs on HB9BLA waited 3001.9 to 3081.6 ms, the most beside a 2-job cargo
-// build).
+// The refusal comes at the wait of LeaseRule::waitMs, read from the model, never before,
+// and at most 250 ms after (the margin of CL-044-16: 35 runs on HB9BLA waited 3001.9 to
+// 3081.6 ms, the most beside a 2-job cargo build).
 // Timing: radio
 // Proves: TC-044-023
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn realtime_bound_a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing() {
+    let name = "WstxOperatingSelection::LeaseRule::waitMs";
+    let wait = match wstx_test_tools::model_values::Model::load().number_with_unit(name) {
+        Ok(Some(wstx_test_tools::model_values::Number::Integer(ms))) => {
+            Duration::from_millis(ms as u64)
+        }
+        other => panic!("model value {name}: {other:?}"),
+    };
     let (f, _) = station(radio(fixed([0, 0])));
     let lease = actor(&f)
         .reserve_transition(Instant::now() + Duration::from_secs(1))
@@ -1160,8 +1167,8 @@ async fn realtime_bound_a_lease_that_stays_held_refuses_busy_at_the_bound_and_ch
         (StatusCode::CONFLICT, Some("busy"))
     );
     assert!(
-        waited >= Duration::from_millis(3000) && waited < Duration::from_millis(3250),
-        "{waited:?}"
+        waited >= wait && waited < wait + Duration::from_millis(250),
+        "waited {waited:?}, bound [{wait:?}, {wait:?} + 250 ms) from {name}"
     );
     drop(lease);
 }

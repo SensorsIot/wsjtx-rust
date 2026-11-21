@@ -30,6 +30,7 @@
   - server/tests/radio_control.rs
   - server/tests/audio_contract.rs
   - docs/sysml/backend/radioControl/CatControl.sysml
+  - docs/sysml/backend/supervisor/OperatingSelection.sysml
   - docs/sysml/shared/Units.sysml
   - tools/test/rust/src/model_values.rs
   - server/Cargo.toml
@@ -39,4 +40,4 @@
   build: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" cargo test --workspace --locked --all-targets --no-run
   exclusive: ["*"]
   timing_classes: [radio, display]
-  needs: "Pinned Rust toolchain. Windows PC; no radio, audio device or live station. Timing suite: the realtime_bound_ tests of the transmit owner, the CAT actor and transport, the Tx level and lease code and the audio controller, on scripted hardware doubles, run alone. Runs when the transmit, radio-control, CAT lifecycle, level, lease (selection, recording), audio, source or playback code, the level tests' fixture, the four test files, the close bound's model file and reader, or the build inputs change, or on request (Harness-Timing: yes)."
+  needs: "Pinned Rust toolchain. Windows PC; no radio, audio device or live station. Timing suite: the realtime_bound_ tests of the transmit owner, the CAT actor and transport, the Tx level and lease code and the audio controller, on scripted hardware doubles, run alone. Runs when the transmit, radio-control, CAT lifecycle, level, lease (selection, recording), audio, source or playback code, the level tests' fixture, the four test files, the model files of the close and lease bounds and their reader, or the build inputs change, or on request (Harness-Timing: yes)."
