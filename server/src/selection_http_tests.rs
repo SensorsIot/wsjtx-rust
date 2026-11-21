@@ -456,7 +456,7 @@ async fn live_native_selection_tls_thin_and_off() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|v| v.as_f64().is_some_and(|ms| ms >= 4230.0 && ms < 5000.0)),
+            .all(|v| v.as_f64().is_some_and(|ms| (4230.0..5000.0).contains(&ms))),
         "actual setup stays within existing5s bound"
     );
     assert!(released);

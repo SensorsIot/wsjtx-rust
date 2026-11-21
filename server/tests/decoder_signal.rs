@@ -7,13 +7,8 @@ use std::{
     time::Instant,
 };
 use std::{
-    io::{BufRead, BufReader, Write},
-    process::{Child, ChildStdin, Command, Stdio},
-    sync::{
-        Arc, Mutex,
-        mpsc::{Receiver, sync_channel},
-    },
-    thread::JoinHandle,
+    io::Write,
+    process::Command,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use wstx_rust::decoder::{Decode, DecodeError, DecodeState, Decoder, Mode, quadratures};
@@ -938,8 +933,9 @@ fn resource_cpu_quantum_wall_seconds() -> f64 {
 const RESOURCE_QUALIFICATION_ATTEMPTS: u64 = 3;
 fn resource_runtime_parent() {
     resource_guardian_before_probes("matrix");
-    assert!(
-        cfg!(windows) && usize::BITS == 64,
+    assert_eq!(
+        (std::env::consts::OS, usize::BITS),
+        ("windows", 64),
         "resource acceptance requires recorded64bit Windows host"
     );
     let root = PathBuf::from(
@@ -1290,14 +1286,14 @@ fn resource_finite_child() {
             .unwrap()
             .as_nanos() as u64;
         let began = Instant::now();
-        let (actual, max_poll_wall_seconds) = resource_decode(&decoder, &samples, mode);
+        let (actual, max_poll_wall_seconds) = resource_decode(decoder, samples, mode);
         let monotonic_duration = began.elapsed();
         let ended_unix_ns = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos() as u64;
         let seconds = monotonic_duration.as_secs_f64();
-        resource_repeat(&expected, &actual, mode);
+        resource_repeat(expected, &actual, mode);
         resource_emit(
             serde_json::json!({"state":"completed","round":next_round,"seconds":seconds,"started_unix_ns":started_unix_ns,
             "ended_unix_ns":ended_unix_ns,"monotonic_duration_ns":monotonic_duration.as_nanos() as u64,
@@ -1574,14 +1570,13 @@ fn resource_official_comparison(records: &[Decode], oracle: &Value, context: &st
 #[ignore = "explicit resource diagnostic: genuine30s public async windows; selected root CPU budget, no new total deadline"]
 fn resource_busy_live_overlap_and_pending_cancel() {
     resource_guardian_before_probes("busy");
-    assert!(
-        cfg!(windows) && usize::BITS == 64,
+    assert_eq!(
+        (std::env::consts::OS, usize::BITS),
+        ("windows", 64),
         "recorded Windows resource diagnostic"
     );
-    assert!(
-        !cfg!(debug_assertions),
-        "resource timing evidence requires the release test executable"
-    );
+    // Resource timing evidence requires the release test executable: the file's
+    // `#![cfg(not(debug_assertions))]` compiles this test only there.
     let cases: Value =
         serde_json::from_str(include_str!("../../fixtures/decoder/resource-cases.json")).unwrap();
     let live = &cases["live_window"];
@@ -1710,7 +1705,7 @@ fn resource_busy_live_overlap_and_pending_cancel() {
     resource_official_comparison(&next.records, oracle, "busy-retained-next");
     assert_eq!(next.outcome, Ok(()));
     for record in &next.records {
-        assert!(record.start_frame >= 180000 && record.start_frame < 540000);
+        assert!((180000..540000).contains(&record.start_frame));
         assert!(
             !first
                 .records
