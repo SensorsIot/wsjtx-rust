@@ -429,6 +429,17 @@ package WstxUdp {
         @TestedBy { test = "server/src/log/udp_tests.rs"; }
     }
 
+    verification 'TC-012-009' {
+        doc /* A played recording sends no Decode. */
+        subject udp : Udp;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-040-04'; }
+        @TestedBy {
+            test = "server/src/log/udp_tests.rs::played_recording_sends_no_decode_and_no_clear";
+        }
+    }
+
     verification 'TC-112-004' {
         doc /* Clear on a change of band only. */
         subject udp : Udp;

@@ -6,6 +6,7 @@ package WstxLogPart {
     private import WstxOperatingChain::WorkedBeforePort;
     private import WstxDecodes::DecodesPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def LogService {
@@ -21,6 +22,12 @@ package WstxLogPart {
             what = "Its code stands in server/src/contact_http.rs, server/src/dxcc.rs, "
                 + "server/src/logbook.rs, server/src/logbook_http.rs, outside server/src/log/ and "
                 + "client/src/log/.";
+        }
+        @DetailTests {
+            tests = "server/src/logbook_http_tests.rs";
+            covers = "the log routes of a station without a profile; the log routes' admission "
+                + "by the grant or the runtime token and their publication only under a "
+                + "current grant";
         }
         port control : ~LogControlPort;
         port completed : ~CompletedContactPort;

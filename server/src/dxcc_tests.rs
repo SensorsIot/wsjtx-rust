@@ -209,6 +209,7 @@ fn tc_055_001_overrides_and_refused_files() {
     }
 }
 
+// Proves: TC-011-003, TC-055-002
 #[test]
 fn tc_055_002_new_dxcc_band_continent_and_zone_against_the_log() {
     let t = bundled();
@@ -399,6 +400,7 @@ async fn tc_055_002_receive_results_carry_entity_and_new_flags() {
 // The actual /receive/results route marks each decoded record
 // with the worked-before status of its concrete 'from' call on this band and mode, and the
 // browser needs no query. Hand-written log and expected statuses.
+// Proves: TC-055-002
 #[tokio::test]
 async fn tc_011_003_receive_results_carry_the_worked_status() {
     use crate::automation::tests::{at_even, publish};
@@ -628,6 +630,7 @@ async fn tc_055_002_every_decoded_sender_call_resolves() {
 // The cached worked set follows every country-table change: after
 // repeated uploads (freed tables whose memory may be reused) the set is always the one
 // of the current table.
+// Proves: TC-055-008
 #[test]
 fn tc_055_002_worked_set_follows_each_uploaded_table() {
     let dir =
@@ -669,6 +672,7 @@ fn tc_055_002_worked_set_follows_each_uploaded_table() {
 }
 
 // WstxValueOrder::WpxPrefix, the examples of the CQ WPX Contest rules.
+// Proves: TC-011-003
 #[test]
 fn tc_039_030_wpx_prefix_table() {
     for (call, prefix) in [
@@ -705,6 +709,7 @@ fn tc_039_030_wpx_prefix_table() {
 }
 
 // The per-call and per-prefix facts of the worked set.
+// Proves: TC-011-003
 #[test]
 fn tc_039_030_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls() {
     let t = bundled();

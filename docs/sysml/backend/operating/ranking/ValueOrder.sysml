@@ -470,7 +470,9 @@ package WstxValueOrder {
                 + "server/src/dxcc_tests.rs::"
                 + "tc_055_002_every_decoded_sender_call_resolves; "
                 + "server/src/dxcc_tests.rs::"
-                + "tc_011_003_receive_results_carry_the_worked_status";
+                + "tc_011_003_receive_results_carry_the_worked_status; "
+                + "server/src/dxcc_tests.rs::"
+                + "tc_055_002_new_dxcc_band_continent_and_zone_against_the_log";
         }
     }
 }

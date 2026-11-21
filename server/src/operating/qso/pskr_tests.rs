@@ -56,6 +56,7 @@ fn parse_spot_reads_the_schema_and_refuses_the_rest() {
 }
 
 // Exactly the two filters, and no data ever becomes a wildcard.
+// Proves: TC-039-052
 #[test]
 fn filters_are_exact_and_no_call_makes_a_wildcard() {
     assert_eq!(
@@ -89,6 +90,7 @@ fn filters_are_exact_and_no_call_makes_a_wildcard() {
 
 // The id names the call and stays inside what 3.1.1 obliges a
 // server to accept.
+// Proves: TC-039-052
 #[test]
 fn client_id_carries_the_call_and_stays_legal() {
     assert_eq!(client_id("HB9BLA", "1a2b3c4d-0000"), "wstxHB9BLA1a2b");
@@ -100,6 +102,7 @@ fn client_id_carries_the_call_and_stays_legal() {
 }
 
 // "He reports": a spot he received counts 600 s, not longer.
+// Proves: TC-039-020
 #[test]
 fn reports_counts_up_to_600_s_and_no_longer() {
     let mut h = Hearing::default();
@@ -271,6 +274,7 @@ fn the_model_is_bounded() {
 }
 
 // The packets, byte by byte, from the OASIS 3.1.1 tables.
+// Proves: TC-039-052
 #[test]
 fn packets_match_the_specification() {
     assert_eq!(
@@ -297,6 +301,7 @@ fn packets_match_the_specification() {
 }
 
 // Whole, split and hostile input; nothing panics or grows.
+// Proves: TC-039-052
 #[test]
 fn next_packet_parses_and_bounds() {
     let mut buffer = vec![0x20, 2, 0];
@@ -335,6 +340,7 @@ fn next_packet_parses_and_bounds() {
 
 // The reconnect delay doubles to its bound and starts over only
 // after a healthy session.
+// Proves: TC-039-052
 #[test]
 fn backoff_doubles_to_the_bound() {
     let mut b = Backoff::new(&FeedSession::BROKER);
@@ -555,6 +561,7 @@ fn session_against_a_local_peer() {
 
 // A peer that accepts and drops at once sees the attempts spread
 // by the doubling delay; the status names the error, then recovers without any operator step.
+// Proves: TC-039-052
 #[test]
 fn reconnect_backs_off_against_a_failing_peer_and_recovers() {
     let dir = Dir::new();
@@ -611,6 +618,7 @@ fn reconnect_backs_off_against_a_failing_peer_and_recovers() {
 
 // The switch on is never shown as off: connecting during the backoff,
 // and off and on again faster than the session looks ends that session, so connected is true.
+// Proves: TC-039-052
 #[test]
 fn the_status_follows_the_switch() {
     let dir = Dir::new();
@@ -679,6 +687,7 @@ fn the_status_follows_the_switch() {
 }
 
 // Refused and broken brokers: a named error, never a panic.
+// Proves: TC-039-052
 #[test]
 fn a_refusing_or_broken_peer_is_a_named_error() {
     for (script, code) in [
@@ -807,6 +816,7 @@ fn verify(host: &'static str, utc_s: u64) -> Result<(), rustls::Error> {
 }
 // The compiled-in roots validate the chain the broker presented on
 // 2026-11-06 (captured once, checked here with no network) and refuse another name or time.
+// Proves: TC-039-052
 #[test]
 fn the_compiled_roots_validate_the_captured_broker_chain() {
     const CAPTURED: u64 = 1_793_923_200; // 2026-11-06 00:00 UTC
@@ -816,6 +826,7 @@ fn the_compiled_roots_validate_the_captured_broker_chain() {
 }
 
 // A peer without valid TLS is never spoken to in MQTT.
+// Proves: TC-039-052
 #[test]
 fn a_peer_without_tls_is_refused() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

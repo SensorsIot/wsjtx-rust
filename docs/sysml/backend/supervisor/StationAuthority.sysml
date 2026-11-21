@@ -140,7 +140,9 @@ package WstxStationAuthority {
             test = "server/src/recording_tests.rs::"
                 + "selection_start_checks_independent_loaded_profile_revision_after_unlock; "
                 + "server/src/transmit/transmit_http_tests.rs::"
-                + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms";
+                + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms; "
+                + "server/src/logbook_http_tests.rs::"
+                + "save_contact_refusals_byte_cap_and_command_receipts";
         }
     }
 }

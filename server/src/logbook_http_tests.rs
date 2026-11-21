@@ -320,6 +320,7 @@ async fn environment_only_mode_answers_not_found() {
 }
 
 // SaveContact refusals, caps and idempotency.
+// Proves: TC-006-004, TC-011-001, TC-011-006, TC-021-005
 #[tokio::test]
 async fn save_contact_refusals_byte_cap_and_command_receipts() {
     let f = HttpFixture::new("http://localhost:8094");
@@ -748,6 +749,7 @@ async fn adi_import_over_http_reserves_chunks_retries_and_fails_atomically() {
 }
 
 // An unreadable log answers 503 and stays untouched.
+// Proves: TC-011-001
 #[tokio::test]
 async fn unreadable_contacts_file_makes_save_storage_unavailable() {
     let mut f = HttpFixture::new("http://localhost:8098");
@@ -777,6 +779,7 @@ async fn unreadable_contacts_file_makes_save_storage_unavailable() {
 // The station's cty.dat: bundled by default, replaced by an
 // upload that parses (and kept across a restart), refused uploads change nothing, null
 // returns to the bundled file, an unreadable stored upload falls back without touching it.
+// Proves: TC-003-001, TC-055-008
 #[tokio::test]
 async fn cty_upload_replaces_the_country_table_and_refusals_change_nothing() {
     let mut f = HttpFixture::new("http://localhost:8099");
@@ -914,6 +917,7 @@ async fn cty_upload_replaces_the_country_table_and_refusals_change_nothing() {
 // ExportAdi over HTTP is streamed no
 // Content-Length and no exact body size (chunked transfer), the 129 records arrive in two
 // data frames (128, then 1), with the export headers unchanged and no content coding.
+// Proves: TC-011-002
 #[tokio::test]
 async fn export_over_http_is_streamed_in_chunks_without_content_length() {
     use axum::body::HttpBody;

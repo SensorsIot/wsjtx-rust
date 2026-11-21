@@ -1872,6 +1872,7 @@ async fn tc_112_004_clear_on_a_band_change_only() {
 
 // Guard of existing behaviour: decodes of a played recording are
 // never sent, and no Clear goes out for them.
+// Proves: TC-012-009, TC-112-004
 #[tokio::test(flavor = "multi_thread")]
 async fn played_recording_sends_no_decode_and_no_clear() {
     let f = fixture("http://127.0.0.1:18420", false);

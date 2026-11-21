@@ -83,4 +83,19 @@ package WstxCountryFile {
              made afterwards; without a text the bundled file is in use. The settings
              function fetches and checks the file (WstxProfileDocument::CountryFileFetch). */
     }
+
+    verification 'TC-055-008' {
+        doc /*
+    The country file in use for every lookup and worked set, and the bundled one without it.
+        */
+        subject log : LogService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-055-03'; }
+        @TestedBy {
+            test = "server/src/logbook_http_tests.rs::"
+                + "cty_upload_replaces_the_country_table_and_refusals_change_nothing; "
+                + "server/src/dxcc_tests.rs::tc_055_002_worked_set_follows_each_uploaded_table";
+        }
+    }
 }
