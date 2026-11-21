@@ -467,6 +467,21 @@ fn cooperative_quanta_and_partial_cancellation() {
         eprintln!("{mode:?}: {polls} cooperative polls, maximum {maximum:?}");
     }
 }
+/// The largest start difference in frames between the planned and the scalar transform,
+/// and between a decode and the decode of its input at another gain. A tolerance of this
+/// detail test, not a model value.
+const TRANSFORM_START_TOLERANCE_FRAMES: u64 = 1;
+/// The largest FT8 frequency difference in Hz between the planned and the scalar
+/// transform. A tolerance of this detail test, not a model value.
+const FT8_SCALAR_FREQUENCY_TOLERANCE_HZ: f64 = 0.2;
+/// The largest FT4 frequency difference in Hz between the planned and the scalar
+/// transform. A tolerance of this detail test, not a model value.
+const FT4_SCALAR_FREQUENCY_TOLERANCE_HZ: f64 = 0.5;
+/// The bound, strictly below, of the frequency difference in Hz between a decode and the
+/// decode of its input at another gain. A tolerance of this detail test, not a model value.
+const GAIN_FREQUENCY_TOLERANCE_HZ: f64 = 0.1;
+// Detail test of WstxDecode::DecodeWindow: the agreement of the planned and the scalar
+// transform, and the independence of the frames from the input gain.
 #[test]
 fn planned_scalar_and_gain_invariance() {
     let root = prepared("quality");
@@ -481,13 +496,12 @@ fn planned_scalar_and_gain_invariance() {
             .unwrap();
         assert!(!planned.is_empty());
         assert_eq!(planned.len(), scalar.len());
-        // WstxDecode::Repeatability: the tolerances of two runs of one request.
-        let start = repeatability("startToleranceFrames") as u64;
-        let frequency = repeatability(if mode == Mode::Ft8 {
-            "ft8RepeatToleranceHz"
+        let start = TRANSFORM_START_TOLERANCE_FRAMES;
+        let frequency = if mode == Mode::Ft8 {
+            FT8_SCALAR_FREQUENCY_TOLERANCE_HZ
         } else {
-            "ft4RepeatToleranceHz"
-        });
+            FT4_SCALAR_FREQUENCY_TOLERANCE_HZ
+        };
         for (a, b) in planned.iter().zip(scalar) {
             assert_eq!(a.payload, b.payload);
             assert!(a.start_frame.abs_diff(b.start_frame) <= start);
@@ -500,7 +514,7 @@ fn planned_scalar_and_gain_invariance() {
             for (a, b) in planned.iter().zip(actual) {
                 assert_eq!(a.payload, b.payload, "gain {gain}");
                 assert!(a.start_frame.abs_diff(b.start_frame) <= start);
-                assert!((a.frequency_hz - b.frequency_hz).abs() < 0.1);
+                assert!((a.frequency_hz - b.frequency_hz).abs() < GAIN_FREQUENCY_TOLERANCE_HZ);
             }
         }
     }
