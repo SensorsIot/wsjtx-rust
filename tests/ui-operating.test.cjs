@@ -1309,7 +1309,9 @@ test('the UDP editor reads GET /udp when Settings opens and saves the edited tar
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});await page.waitForTimeout(500);
   assert.equal(requests.some(r=>r.endsWith(' /udp')),false,'no /udp request before Settings opens');
   const initial=await (await fetch(app.origin+'/udp')).json();
-  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
+  // The read stays held until the Logging tab is shown, so that no second read can replace a row while it is edited.
+  const hold=deferred();await page.route(url=>url.pathname==='/udp',async route=>{if(route.request().method()!=='GET')return route.fallback();await hold.promise;await route.continue();});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();hold.resolve();
   const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
   assert.ok(requests.filter(r=>r==='GET /udp').length>=1,'read when the drawer opens');
   // CL-112-01: the instance name is shown as text, with no input.
@@ -1343,6 +1345,7 @@ test('the UDP editor reads GET /udp when Settings opens and saves the edited tar
   assert.equal(await rows.count(),3,'the edits are kept');
   assert.equal(puts.length,2);
   assert.deepEqual(requests.filter(r=>/^POST \/receive\/(start|stop|select)$/.test(r)),[],'no receive mutation');
+  assert.equal(requests.filter(r=>r==='GET /udp').length,1,'the opening and the Logging tab share one read');
   assert.deepEqual(errors,[]);
 });
 
@@ -1353,7 +1356,9 @@ test('the UDP editor saves an IPv6 multicast target with hop limit and interface
   page.on('request',r=>{if(r.method()==='PUT'&&new URL(r.url()).pathname==='/udp')puts.push(JSON.parse(r.postData()));});
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
   const initial=await (await fetch(app.origin+'/udp')).json();
-  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
+  // The read stays held until the Logging tab is shown, so that no second read can replace a row while it is edited.
+  const hold=deferred();let reads=0;await page.route(url=>url.pathname==='/udp',async route=>{if(route.request().method()!=='GET')return route.fallback();reads++;await hold.promise;await route.continue();});
+  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();hold.resolve();
   const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
   const row=rows.nth(0);
   await row.locator('[data-f=address]').fill('[ff12::5754:5358]:2237');
@@ -1373,6 +1378,7 @@ test('the UDP editor saves an IPv6 multicast target with hop limit and interface
   // A wider-scope group drops the link-local hint.
   await row.locator('[data-f=address]').fill('[ff05::5754:5358]:2237');
   assert.doesNotMatch(await row.locator('[data-f=iface-note]').textContent(),/needs one/);
+  assert.equal(reads,1,'the opening and the Logging tab share one read');
   assert.deepEqual(errors,[]);
 });
 
