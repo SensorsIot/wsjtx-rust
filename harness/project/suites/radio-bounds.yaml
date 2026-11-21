@@ -1,0 +1,42 @@
+- suite: radio-bounds
+  cost: 2
+  # No filter form: the run is the 14 realtime_bound_ tests, measured alone; a whole
+  # run takes seconds, so a part of it saves nothing.
+  run: >-
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
+    cargo test --locked -p wstx-rust
+    --test transmit_service --test radio_native --test radio_control --test audio_contract
+    --bin wstx-rust -- --test-threads=1 realtime_bound_
+  paths: [server/, fixtures/transmit/, tools/test/rust/, docs/sysml/, Cargo.toml, Cargo.lock, rust-toolchain.toml]
+  timing: true
+  timing_inputs:
+  - server/src/transmit/
+  - server/src/modes/transmit/mod.rs
+  - server/src/modes/playback/
+  - server/src/radio_control/
+  - server/src/radioControl/cat_lifecycle.rs
+  - server/src/radioControl/windows.rs
+  - server/src/radio_level.rs
+  - server/src/radio_level_tests.rs
+  - server/src/station/selection.rs
+  - server/src/selection_http.rs
+  - server/src/recording.rs
+  - server/src/contact_http_tests.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/source.rs
+  - server/tests/transmit_service.rs
+  - server/tests/receive/radio_native.rs
+  - server/tests/radio_control.rs
+  - server/tests/audio_contract.rs
+  - docs/sysml/backend/radioControl/CatControl.sysml
+  - docs/sysml/shared/Units.sysml
+  - tools/test/rust/src/model_values.rs
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  build: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" cargo test --workspace --locked --all-targets --no-run
+  exclusive: ["*"]
+  timing_classes: [radio, display]
+  needs: "Pinned Rust toolchain. Windows PC; no radio, audio device or live station. Timing suite: the realtime_bound_ tests of the transmit owner, the CAT actor and transport, the Tx level and lease code and the audio controller, on scripted hardware doubles, run alone. Runs when the transmit, radio-control, CAT lifecycle, level, lease (selection, recording), audio, source or playback code, the level tests' fixture, the four test files, the close bound's model file and reader, or the build inputs change, or on request (Harness-Timing: yes)."

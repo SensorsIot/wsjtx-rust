@@ -252,34 +252,62 @@ fn the_meter_read_bound_is_400_ms_without_an_override() {
     assert_eq!(&deadlines[..3], [at + Duration::from_millis(400); 3]);
 }
 
-#[test]
-fn a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection() {
+/// A deadline `after` from now, handed to the product.
+fn deadline_in(after: Duration) -> Instant {
+    Instant::now() + after
+}
+/// Waits, under the hang guard, until `done` holds.
+fn wait_until(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + HANG_GUARD;
+    while !done() {
+        assert!(Instant::now() < deadline, "{what}");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+/// The held station of a silent radio, its meter read timed out once and a second read
+/// stalled in work on its own thread.
+fn stalled_meter_read() -> (Fixture, std::thread::JoinHandle<Result<Meters, cat::Error>>) {
     let (f, r) = station(radio(fixed([0, 0])));
     hold(&f);
     r.lock().unwrap().silent = true;
     // A timeout alone leaves the connection ready.
     assert_eq!(
-        actor(&f).read_meters(Instant::now() + Duration::from_millis(60)),
+        actor(&f).read_meters(deadline_in(Duration::from_millis(60))),
         Err(cat::Error::Timeout)
     );
     assert_eq!(actor(&f).snapshot().unwrap().state, cat::State::Ready);
-    // A release during a stalled read is served at once, inside the 250 ms halt bound.
     let reader = actor(&f);
     let before = meter_frames(&r).len();
-    let read =
-        std::thread::spawn(move || reader.read_meters(Instant::now() + Duration::from_secs(3)));
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while meter_frames(&r).len() == before {
-        assert!(Instant::now() < deadline, "the read did not start");
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    let read = std::thread::spawn(move || reader.read_meters(deadline_in(Duration::from_secs(3))));
+    wait_until("the read did not start", || {
+        meter_frames(&r).len() != before
+    });
+    (f, read)
+}
+
+#[test]
+fn a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection() {
+    let (f, read) = stalled_meter_read();
+    // A release during a stalled read is served, and the read ends cancelled.
+    actor(&f)
+        .ptt(false, deadline_in(Duration::from_secs(1)))
+        .unwrap();
+    assert_eq!(read.join().unwrap(), Err(cat::Error::Cancelled));
+    assert_eq!(actor(&f).snapshot().unwrap().state, cat::State::Ready);
+}
+
+// A release during a stalled read is served at once, inside the 250 ms halt bound.
+// Timing: radio
+// Proves: TC-009-007
+#[test]
+fn realtime_bound_a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection() {
+    let (f, read) = stalled_meter_read();
     let start = Instant::now();
     actor(&f)
         .ptt(false, Instant::now() + Duration::from_secs(1))
         .unwrap();
     assert!(start.elapsed() < Duration::from_millis(250));
     assert_eq!(read.join().unwrap(), Err(cat::Error::Cancelled));
-    assert_eq!(actor(&f).snapshot().unwrap().state, cat::State::Ready);
 }
 
 #[test]
@@ -1058,12 +1086,32 @@ async fn select_band(f: &Fixture, band: &str) -> (StatusCode, Value, Value) {
 async fn a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted() {
     let (f, _) = station(radio(fixed([0, 0])));
     let lease = actor(&f)
+        .reserve_transition(deadline_in(Duration::from_secs(1)))
+        .unwrap();
+    let holder = release_after(lease, 300);
+    let (s, v, _) = select_band(&f, "20m").await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    holder.join().unwrap();
+}
+
+/// Drops `lease` on its own thread after `ms` milliseconds: the poll that holds it ends.
+fn release_after<L: Send + 'static>(lease: L, ms: u64) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(ms));
+        drop(lease);
+    })
+}
+
+// A band change that meets a poll waits for the lease: at least until the poll ends.
+// Timing: radio
+// Proves: TC-044-023
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn realtime_bound_a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted() {
+    let (f, _) = station(radio(fixed([0, 0])));
+    let lease = actor(&f)
         .reserve_transition(Instant::now() + Duration::from_secs(1))
         .unwrap();
-    let holder = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(300));
-        drop(lease);
-    });
+    let holder = release_after(lease, 300);
     let start = Instant::now();
     let (s, v, _) = select_band(&f, "20m").await;
     assert_eq!(s, StatusCode::ACCEPTED, "{v}");
@@ -1071,26 +1119,18 @@ async fn a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted() {
     holder.join().unwrap();
 }
 
-// The wait is bounded; a refusal changes nothing. The refusal
-// comes at 3 s, never before, and at most 250 ms after (the margin of CL-044-16: 35 runs on
-// HB9BLA waited 3001.9 to 3081.6 ms, the most beside a 2-job cargo build).
+// The wait is bounded; a refusal changes nothing.
 // Proves: TC-044-023
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing() {
     let (f, _) = station(radio(fixed([0, 0])));
     let lease = actor(&f)
-        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .reserve_transition(deadline_in(Duration::from_secs(1)))
         .unwrap();
-    let start = Instant::now();
     let (s, v, before) = select_band(&f, "20m").await;
-    let waited = start.elapsed();
     assert_eq!(
         (s, v["error"]["code"].as_str()),
         (StatusCode::CONFLICT, Some("busy"))
-    );
-    assert!(
-        waited >= Duration::from_millis(3000) && waited < Duration::from_millis(3250),
-        "{waited:?}"
     );
     let (_, after, _, _) = f.call("GET", "/receive/selection", None).await;
     assert_eq!(after["operating_revision"], before["operating_revision"]);
@@ -1101,10 +1141,47 @@ async fn a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing()
     drop(lease);
 }
 
-// The hold of a transmission refuses at once: it lasts
-// far longer than the wait.
+// The refusal comes at 3 s, never before, and at most 250 ms after (the margin of
+// CL-044-16: 35 runs on HB9BLA waited 3001.9 to 3081.6 ms, the most beside a 2-job cargo
+// build).
+// Timing: radio
+// Proves: TC-044-023
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn realtime_bound_a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing() {
+    let (f, _) = station(radio(fixed([0, 0])));
+    let lease = actor(&f)
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    let start = Instant::now();
+    let (s, v, _) = select_band(&f, "20m").await;
+    let waited = start.elapsed();
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("busy"))
+    );
+    assert!(
+        waited >= Duration::from_millis(3000) && waited < Duration::from_millis(3250),
+        "{waited:?}"
+    );
+    drop(lease);
+}
+
+// The hold of a transmission refuses: it lasts far longer than the wait.
 #[test]
 fn a_transmit_hold_refuses_the_lease_at_once() {
+    let (f, _) = station(radio(fixed([0, 0])));
+    hold(&f);
+    assert!(matches!(
+        actor(&f).reserve_transition(deadline_in(Duration::from_secs(3))),
+        Err(cat::Error::Busy)
+    ));
+}
+
+// The hold of a transmission refuses the lease at once, far inside its 3 s wait.
+// Timing: radio
+// Proves: TC-009-001
+#[test]
+fn realtime_bound_a_transmit_hold_refuses_the_lease_at_once() {
     let (f, _) = station(radio(fixed([0, 0])));
     hold(&f);
     let start = Instant::now();
@@ -1115,23 +1192,40 @@ fn a_transmit_hold_refuses_the_lease_at_once() {
     assert!(start.elapsed() < Duration::from_millis(500));
 }
 
-// The hold of a transmission refuses a band change at once, and nothing changes.
+// The hold of a transmission refuses a band change, and nothing changes.
 // Proves: TC-044-023
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing() {
     let (f, _) = station(radio(fixed([0, 0])));
     hold(&f);
-    let start = Instant::now();
     let (s, v, before) = select_band(&f, "20m").await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("busy"))
+    );
+    let (_, after, _, _) = f.call("GET", "/receive/selection", None).await;
+    assert_eq!(after["operating_revision"], before["operating_revision"]);
+    assert_eq!(after["selection"], before["selection"]);
+    actor(&f)
+        .ptt(false, deadline_in(Duration::from_secs(1)))
+        .unwrap();
+}
+
+// The hold of a transmission refuses a band change at once, inside 1 s.
+// Timing: radio
+// Proves: TC-044-023
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn realtime_bound_a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing() {
+    let (f, _) = station(radio(fixed([0, 0])));
+    hold(&f);
+    let start = Instant::now();
+    let (s, v, _) = select_band(&f, "20m").await;
     let waited = start.elapsed();
     assert_eq!(
         (s, v["error"]["code"].as_str()),
         (StatusCode::CONFLICT, Some("busy"))
     );
     assert!(waited < Duration::from_millis(1000), "{waited:?}");
-    let (_, after, _, _) = f.call("GET", "/receive/selection", None).await;
-    assert_eq!(after["operating_revision"], before["operating_revision"]);
-    assert_eq!(after["selection"], before["selection"]);
     actor(&f)
         .ptt(false, Instant::now() + Duration::from_secs(1))
         .unwrap();

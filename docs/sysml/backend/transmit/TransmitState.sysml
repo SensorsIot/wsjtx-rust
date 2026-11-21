@@ -356,7 +356,17 @@ package WstxTransmitState {
                 + "abort_stops_tune_without_a_halt; "
                 + "server/tests/transmit_service.rs::"
                 + "a_failed_transmission_drops_the_next_request_unkeyed; "
-                + "server/src/log/udp_tests.rs::tc_112_006_close_at_shutdown";
+                + "server/src/log/udp_tests.rs::tc_112_006_close_at_shutdown; "
+                + "server/tests/transmit_service.rs::"
+            + "realtime_bound_service_halt_is_confirmed_within_the_bound_while_the_owner_is_busy; "
+                + "server/tests/transmit_service.rs::"
+                + "realtime_bound_halt_through_the_real_actor_unkeys_mid_audio_within_the_bound; "
+                + "server/tests/transmit_service.rs::"
+            + "realtime_bound_owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers; "
+                + "server/tests/transmit_service.rs::"
+                + "realtime_bound_halt_during_a_slow_key_releases_within_the_bound; "
+                + "server/tests/transmit_service.rs::"
+                + "realtime_bound_boxed_station_hardware_aborts_the_key_wait_on_halt";
         }
     }
 

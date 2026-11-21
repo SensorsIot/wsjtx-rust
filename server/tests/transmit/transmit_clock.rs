@@ -394,37 +394,52 @@ fn system_clock_reads_and_waits_on_the_system_clocks() {
     assert!(began.elapsed() >= Duration::from_millis(20));
 }
 
+/// Waits until `done` holds, under a hang guard well above the observed time.
+fn wait_until(what: &str, done: impl Fn() -> bool) {
+    let until = Instant::now() + Duration::from_secs(5);
+    while !done() {
+        assert!(Instant::now() < until, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+/// The state `monitor` answers, read on another thread, while the test supplies nothing: a
+/// reading that waited for the blocked round would never answer and fails at the hang guard.
+fn state_without_the_round(monitor: &Arc<Monitor>) -> ClockState {
+    let reader = monitor.clone();
+    let (answer, answered) = mpsc::channel();
+    std::thread::spawn(move || answer.send(reader.state()).unwrap());
+    answered
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the reading answers while the round is blocked")
+}
+
+// Timing: clock
 // Proves: TC-006-003
 #[test]
 fn monitor_measures_off_the_reading_thread_and_keeps_the_last_answer() {
-    let (monitor, send, _) = Scripted::start(Duration::from_millis(5));
-    // The measurement is blocked: reading answers at once, unknown.
-    let started = Instant::now();
-    assert_eq!(monitor.state(), ClockState::Unknown);
-    assert!(started.elapsed() < Duration::from_millis(50));
+    let (monitor, send, asked) = Scripted::start(Duration::from_millis(5));
+    // The measuring thread has asked for its first round and is blocked in it until the
+    // test supplies it: the reading answers meanwhile, unknown.
+    wait_until("the first round", || asked.load(Ordering::SeqCst) >= 1);
+    assert_eq!(state_without_the_round(&monitor), ClockState::Unknown);
+    assert!(monitor.latest().is_none(), "the round is still blocked");
     send.send((false, Some(measured_now(42)))).unwrap();
-    let until = Instant::now() + Duration::from_secs(5);
-    while monitor.latest().is_none() && Instant::now() < until {
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    wait_until("the first answer", || monitor.latest().is_some());
     assert_eq!(monitor.state(), ClockState::Synchronized);
     // A round without an answer keeps the previous measurement (it ages out later).
     send.send((false, None)).unwrap();
     send.send((false, Some(measured_now(700)))).unwrap();
-    let until = Instant::now() + Duration::from_secs(5);
-    while monitor.latest().map(|m| m.offset_ms) != Some(700) && Instant::now() < until {
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    wait_until("the 700 ms answer", || {
+        monitor.latest().map(|m| m.offset_ms) == Some(700)
+    });
     assert_eq!(monitor.state(), ClockState::Unsynchronized);
     let (quiet, send, asked) = Scripted::start(Duration::ZERO);
     send.send((false, Some(measured_now(1)))).unwrap();
     send.send((false, None)).unwrap();
     // Both rounds are stored once the third is asked for.
-    let until = Instant::now() + Duration::from_secs(5);
-    while asked.load(Ordering::SeqCst) < 3 {
-        assert!(Instant::now() < until, "the rounds were not taken");
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    wait_until("the rounds to be taken", || {
+        asked.load(Ordering::SeqCst) >= 3
+    });
     assert_eq!(quiet.latest().map(|m| m.offset_ms), Some(1));
 }
 

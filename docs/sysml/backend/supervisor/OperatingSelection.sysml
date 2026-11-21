@@ -266,7 +266,13 @@ package WstxOperatingSelection {
                 + "server/src/radio_level_tests.rs::"
                 + "a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing; "
                 + "server/src/radio_level_tests.rs::"
-                + "a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing";
+                + "a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing; "
+                + "server/src/radio_level_tests.rs::"
+                + "realtime_bound_a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted; "
+                + "server/src/radio_level_tests.rs::"
+        + "realtime_bound_a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing; "
+                + "server/src/radio_level_tests.rs::"
+            + "realtime_bound_a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing";
         }
     }
 

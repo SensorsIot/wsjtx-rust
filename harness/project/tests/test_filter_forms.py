@@ -38,7 +38,7 @@ WITH_FORM = {
 }
 WITHOUT_FORM = {
     "live-receive-integration", "contact-browser", "radio-selection-thin",
-    "sysml-equivalence", "source-model-traces", "decoder-quality",
+    "sysml-equivalence", "source-model-traces", "decoder-quality", "radio-bounds",
 }
 REASON = "# No filter form:"
 

@@ -166,8 +166,49 @@ fn native_overlapped_pipe_io_uses_actual_owned_buffers_and_close() {
     drop(peer);
     std::fs::remove_dir_all(root).unwrap();
 }
+/// A deadline `after` from now, handed to the transport.
+fn deadline_in(after: Duration) -> Instant {
+    Instant::now() + after
+}
+/// Sets `cancel` from another thread after `ms` milliseconds, while a read is pending: the
+/// transport signals no event for a pending read, so this is a fixed pause.
+fn cancel_after(cancel: &Arc<AtomicBool>, ms: u64) -> std::thread::JoinHandle<()> {
+    let signal = cancel.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(ms));
+        signal.store(true, Ordering::Release)
+    })
+}
 #[test]
 fn native_pending_read_deadline_and_cross_thread_cancel_are_acknowledged() {
+    let (root, mut receiver, _peer) = pair();
+    let mut bytes = [0; 256];
+    let no_cancel = AtomicBool::new(false);
+    assert_eq!(
+        receiver.read(
+            &mut bytes,
+            deadline_in(Duration::from_millis(40)),
+            &no_cancel
+        ),
+        Err(Error::Timeout)
+    );
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_thread = cancel_after(&cancel, 25);
+    assert_eq!(
+        receiver.read(&mut bytes, deadline_in(Duration::from_secs(2)), &cancel),
+        Err(Error::Cancelled)
+    );
+    cancel_thread.join().unwrap();
+    receiver.close().unwrap();
+    assert_eq!(
+        receiver.read(&mut bytes, deadline_in(Duration::from_secs(1)), &no_cancel),
+        Err(Error::Unavailable)
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+// Timing: radio
+#[test]
+fn realtime_bound_native_pending_read_deadline_and_cross_thread_cancel_are_acknowledged() {
     let (root, mut receiver, _peer) = pair();
     let mut bytes = [0; 256];
     let no_cancel = AtomicBool::new(false);
@@ -178,11 +219,7 @@ fn native_pending_read_deadline_and_cross_thread_cancel_are_acknowledged() {
     );
     assert!(start.elapsed() < Duration::from_millis(250));
     let cancel = Arc::new(AtomicBool::new(false));
-    let signal = cancel.clone();
-    let cancel_thread = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(25));
-        signal.store(true, Ordering::Release)
-    });
+    let cancel_thread = cancel_after(&cancel, 25);
     let start = Instant::now();
     assert_eq!(
         receiver.read(&mut bytes, start + Duration::from_secs(2), &cancel),
@@ -191,13 +228,5 @@ fn native_pending_read_deadline_and_cross_thread_cancel_are_acknowledged() {
     cancel_thread.join().unwrap();
     assert!(start.elapsed() < Duration::from_millis(250));
     receiver.close().unwrap();
-    assert_eq!(
-        receiver.read(
-            &mut bytes,
-            Instant::now() + Duration::from_secs(1),
-            &no_cancel
-        ),
-        Err(Error::Unavailable)
-    );
     std::fs::remove_dir_all(root).unwrap();
 }
