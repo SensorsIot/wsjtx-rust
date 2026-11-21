@@ -64,6 +64,26 @@ class ClassifyTests(unittest.TestCase):
             self.assertEqual(station_drill.classify(path), ["Restart-Service"])
             self.assertEqual(station_drill.main(["--script", path]), 2)
 
+    # Proves: TC-317-08
+    def test_the_drill_classifies_station_process_ps1_with_the_update(self):
+        self.assertEqual(station_drill.classify(real_script(), station_drill.PROCESS), [])
+        with tempfile.TemporaryDirectory() as tmp:
+            process = os.path.join(tmp, "station-process.ps1")
+            with open(process, "w", encoding="utf-8") as f:
+                f.write(read(station_drill.PROCESS).replace("  Start-Sleep -Milliseconds 800\n", "  Restart-Computer\n  Start-Sleep -Milliseconds 800\n", 1))
+            self.assertEqual(station_drill.classify(real_script(), process), ["Restart-Computer"])
+            self.assertEqual(station_drill.main(["--process", process]), 2)
+            # Negative: classifying the update script alone misses it.
+            self.assertEqual(station_drill.classify(real_script(), real_script()), [])
+            # Only the update's own form of the dot-source is accepted.
+            load = '. "$PSScriptRoot\\..\\station-process.ps1"'
+            self.assertIn(load, read(real_script()))
+            for other in (". $Other", '. "$PSScriptRoot\\..\\other.ps1"'):
+                script = os.path.join(tmp, "station-update.ps1")
+                with open(script, "w", encoding="utf-8") as f:
+                    f.write(read(real_script()).replace(load, other, 1))
+                self.assertEqual(station_drill.classify(script), ["(call-without-name)"], other)
+
     def test_here_string_content_is_not_a_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "s.ps1")

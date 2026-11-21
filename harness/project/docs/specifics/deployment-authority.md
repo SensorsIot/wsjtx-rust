@@ -12,8 +12,10 @@ HB9BLA and installed there at user level by the reviewed, versioned deploy scrip
 `tools/deploy/` is a product path: a change to it is a CR with review and the merge
 queue's gate, and suite `deploy-tooling` tests it. The **mechanism paths** are every file
 under `tools/deploy/station-update/` (`station-update.ps1`, `make_package.py`,
-`launcher.ps1`) plus `tools/deploy/agent-client.ps1`, `tools/deploy/station-probe.ps1`
-and `tools/deploy/live-page-check.ps1`. Every step of the
+`launcher.ps1`) plus `tools/deploy/agent-client.ps1`, `tools/deploy/station-probe.ps1`,
+`tools/deploy/live-page-check.ps1` and `tools/deploy/station-process.ps1` (the station's
+process list, Ctrl+C helper and task settle, shared by the update, the page check and the
+test bench). Every step of the
 [standing deploy policy](#standing-deploy-policy) lives in those files. `.gitattributes`
 marks them `-text`, so their bytes in git, in a checkout and in a package are the same.
 The live page check's checker `tools/test/node/live-page-check.cjs` is a test tool, gated by
@@ -109,7 +111,8 @@ under it needs no OK per install.
 3. **The deploy runs the bytes of the commit it installs.** `make_package.py` runs as
    extracted with `git show`; `station-update.ps1`, the probe and the page check run from
    the package. The page check takes the repository root, the shared folder and the agent
-   client as parameters and derives none of them from its own location. Before any write,
+   client as parameters and derives none of them from its own location. The page check and
+   the update dot-source `station-process.ps1` from the package beside them. Before any write,
    `station-update.ps1` compares each mechanism file of the package with the pins of the
    commit's own `harness/project/docs/Project-Specifics.md` (read with `git show`), and
    compares the launcher in the station folder with its pin (item 4). A commit without that

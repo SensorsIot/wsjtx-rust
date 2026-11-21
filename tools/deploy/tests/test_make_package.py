@@ -71,6 +71,14 @@ class MakePackageTests(unittest.TestCase):
         with open(os.path.join(src, "other.txt"), "rb") as g:
             self.assertIn(b"\r\n", g.read())
 
+    # Proves: TC-317-09
+    def test_station_process_ps1_is_a_copied_mechanism_file(self):
+        src, out = os.path.join(self.tmp.name, "src"), os.path.join(self.tmp.name, "out")
+        make_package.export(self.repo, "HEAD", src)
+        files = make_package.copy_mechanism(src, out)
+        self.assertIn("tools/deploy/station-process.ps1", [f["path"] for f in files])
+        self.assertTrue(os.path.isfile(os.path.join(out, "deploy", "tools", "deploy", "station-process.ps1")))
+
     def test_a_new_file_in_the_station_update_folder_is_a_mechanism_file(self):
         extra = os.path.join(self.repo, "tools", "deploy", "station-update", "helper.ps1")
         with open(extra, "wb") as f:

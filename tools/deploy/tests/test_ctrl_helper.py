@@ -1,7 +1,7 @@
 """The Ctrl+C helper of station-update.ps1, run for real on Windows (TC-178-08).
 
-Send-CtrlC and Signal-Text are taken from the script by the PowerShell parser and run as the
-script runs them (Start-Process of the helper, hidden). The targets are only processes this test
+Send-CtrlC is taken from station-process.ps1 and Signal-Text from station-update.ps1 by the
+PowerShell parser, and run as the update runs them (Start-Process of the helper, hidden). The targets are only processes this test
 starts: one that has exited (no such process) and a hidden powershell.exe sleeping in its own
 console. The oracle is Windows: AttachConsole on a process that does not exist fails with
 ERROR_INVALID_PARAMETER (87); a delivered Ctrl+C ends the sleeping powershell.exe.
@@ -21,14 +21,14 @@ import station_drill  # noqa: E402
 REPORT = "[IO.File]::WriteAllText(`$f, [string]`$e); "
 
 RUNNER = r"""
-param([string]$Script, [string]$Station, [int]$TargetPid)
+param([string]$Process, [string]$Script, [string]$Station, [int]$TargetPid)
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
-$stamp = 'helper-test'
-$tokens = $null; $errs = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($Script, [ref]$tokens, [ref]$errs)
-$wanted = @('Send-CtrlC', 'Signal-Text')
-foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $wanted -contains $n.Name }, $true)) {
-  . ([scriptblock]::Create($f.Extent.Text)) }
+$CtrlErrFile = Join-Path $Station 'logs\helper-test-ctrl.txt'
+foreach ($from in @(@($Process, 'Send-CtrlC'), @($Script, 'Signal-Text'))) {
+  $tokens = $null; $errs = $null
+  $ast = [System.Management.Automation.Language.Parser]::ParseFile($from[0], [ref]$tokens, [ref]$errs)
+  foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $from[1] }, $true)) {
+    . ([scriptblock]::Create($f.Extent.Text)) } }
 $s = Send-CtrlC $TargetPid
 "RC $($s.Rc)"
 if ($s.Delivered) { "LINE graceful stop (Ctrl+C) sent to PID ${TargetPid}: $(Signal-Text $s)" }
@@ -59,13 +59,14 @@ class CtrlHelperTests(unittest.TestCase):
                 child.wait(10)
         self.tmp.cleanup()
 
-    def script(self, report=True):
-        with open(station_drill.SCRIPT, encoding="utf-8-sig") as f:
+    def process(self, report=True):
+        """A copy of station-process.ps1, without the helper's error report for the negative."""
+        with open(station_drill.PROCESS, encoding="utf-8-sig") as f:
             text = f.read()
         self.assertEqual(text.count(REPORT), 2, "the helper's error report is not where the test expects it")
         if not report:
             text = text.replace(REPORT, "")
-        path = os.path.join(self.tmp.name, "station-update.ps1" if report else "no-report.ps1")
+        path = os.path.join(self.tmp.name, "station-process.ps1" if report else "no-report.ps1")
         with open(path, "w", encoding="utf-8-sig") as f:
             f.write(text)
         return path
@@ -75,7 +76,8 @@ class CtrlHelperTests(unittest.TestCase):
         with open(runner, "w", encoding="utf-8-sig") as f:
             f.write(RUNNER)
         proc = subprocess.run([station_drill.POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", runner,
-                               "-Script", self.script(report), "-Station", self.station, "-TargetPid", str(pid)],
+                               "-Process", self.process(report), "-Script", station_drill.SCRIPT, "-Station", self.station,
+                               "-TargetPid", str(pid)],
                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         out = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 0, out)

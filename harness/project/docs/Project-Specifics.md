@@ -27,10 +27,11 @@ CR (policy item 4). Suite `deploy-tooling`
 (`test_deploy_pins.py`) recomputes every pin from git.
 
 ```text
-ef106effe4e5b85a9c02a21dd8808d04281b239feecc5f54a5fe932eb2827c09  tools/deploy/station-update/station-update.ps1
-f96d422885999769bc03755c7f7a0ae22c532d7d304ce6543cbf81f3cd0ee0af  tools/deploy/station-update/make_package.py
+dad068c1c6b3ec23e71286f39a5c03e4e32bc7edbfc4375ceacdd7f5b24ae75f  tools/deploy/station-update/station-update.ps1
+84665730243c11664ec7e264fd1d43e3622ae02b592f55665db5f2706557b113  tools/deploy/station-update/make_package.py
 8579d535aa68596bd466b0fc400e4d8a8ca25c50e42291b3a09648ab01455509  tools/deploy/station-update/launcher.ps1
 9d0524dfc1dc536f5d54e3a1b956b737f5b2b8a5a1ccfebaa896b97241c89dd2  tools/deploy/agent-client.ps1
 506cc03746fb8bce42cd20bbafbe83715cf21bf502acb7ab558a5513a9b1f770  tools/deploy/station-probe.ps1
-639f288c5b18f992e50f6d435a05dc47c890826a6de48b5b39407467eee4ee9f  tools/deploy/live-page-check.ps1
+d7be2f1de962eb0bc0f90a5a6db6b3104af81cf66024853ab8a94d74e90ecee0  tools/deploy/live-page-check.ps1
+8e73a4ffaa082618c33c399330831444d4d92b05e6cc4ff981b46629ac85f93b  tools/deploy/station-process.ps1
 ```

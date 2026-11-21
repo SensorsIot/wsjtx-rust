@@ -6,6 +6,7 @@ process, scheduled task, station HTTP) is a mock function; no radio or station i
 """
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -29,13 +30,18 @@ def seen_at(command, variables, into):
 
 
 def prelude(log, raw="00 26", running=True, ptt="released", contact="idle", open_fails=False, comes_back=True,
-            stops_after=0, write="takes", reads_answered=99, ctrl_c_exit=0, show_port=False):
+            stops_after=0, write="takes", reads_answered=99, ctrl_c_exit=0, show_port=False, helper_error=None):
     """The fake radio holds `raw` in 14 0A (None: it never answers) and acknowledges a write:
     `takes` FB and stored, `ignored` FB and not stored, `refused` FA, `silent` no reply and not
     stored. It answers the first `reads_answered` reads. `log` receives what reached the system;
-    with `show_port` an open also notes `port <name> <baud>`."""
+    with `show_port` an open also notes `port <name> <baud>`. With `helper_error` the Ctrl+C
+    helper writes that number to the error file its code names ($f) and notes `ctrl-file <path>`."""
     bytes_of = "" if raw is None else f"0x{raw[:2]},0x{raw[3:]}"
     port_note = "Note \"port $($this.PortName) $($this.BaudRate)\"; " if show_port else ""
+    helper_note = ("" if helper_error is None else
+                   "$code = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([string]$ArgumentList[-1])); "
+                   "$f = if ($code -match '\\$f=''([^'']*)''') { $Matches[1] } else { '' }; "
+                   f"Note \"ctrl-file $f\"; if ($f) {{ [IO.File]::WriteAllText($f, '{helper_error}') }}\n  ")
     return f"""
 $global:Log = {pwsh.ps_quote(log)}
 function Note($t) {{ Add-Content -LiteralPath $global:Log -Value $t }}
@@ -49,7 +55,7 @@ function Get-CimInstance {{ param($ClassName,$Filter)
   if ($global:Up) {{ [pscustomobject]@{{ProcessId=4242; ExecutablePath=(Join-Path $env:FAKE_STATION 'abc\\wstx-rust.exe')}} }} }}
 function Start-Process {{ param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru,[switch]$Wait)
   Note 'ctrl-c'
-  if ({stops_after} -gt 0) {{ $global:DownAt = [DateTime]::UtcNow.AddSeconds({stops_after}) }} else {{ $global:Up = $false }}
+  {helper_note}if ({stops_after} -gt 0) {{ $global:DownAt = [DateTime]::UtcNow.AddSeconds({stops_after}) }} else {{ $global:Up = $false }}
   [pscustomobject]@{{ExitCode={ctrl_c_exit}}} }}
 function Stop-ScheduledTask {{ param($TaskName,$ErrorAction) Note 'task-stop' }}
 function Get-ScheduledTask {{ param($TaskName) [pscustomobject]@{{State='Ready'}} }}
@@ -299,6 +305,52 @@ function Agent-Get($c, $Route) {{ if ($Route -eq '/transmit') {{ [pscustomobject
         self.assertIn("helper exit 3", out)
         self.assertNotIn("THE STATION IS DOWN", out, "it is up: the statement would be false")
         self.assertNotIn("task-start", self.system())
+
+    def scratch_tool(self, old, new):
+        """radio-preflight.ps1 in a scratch tree of the same depth, its station-control.ps1 with
+        `old` replaced by `new`, and the repository's tools/deploy/station-process.ps1."""
+        tree = os.path.join(self.tmp.name, "tree")
+        bench = os.path.join(tree, "tools", "test", "powershell")
+        os.makedirs(bench, exist_ok=True)
+        os.makedirs(os.path.join(tree, "tools", "deploy"), exist_ok=True)
+        shutil.copyfile(os.path.join(REPO, "tools", "deploy", "station-process.ps1"), os.path.join(tree, "tools", "deploy", "station-process.ps1"))
+        for name in ("radio-preflight.ps1", "radio-port.json"):
+            shutil.copyfile(os.path.join(HERE, name), os.path.join(bench, name))
+        with open(os.path.join(HERE, "station-control.ps1"), encoding="utf-8") as f:
+            text = f.read()
+        self.assertEqual(text.count(old), 1, old)
+        with open(os.path.join(bench, "station-control.ps1"), "w", encoding="utf-8") as f:
+            f.write(text.replace(old, new))
+        return os.path.join(bench, "radio-preflight.ps1")
+
+    def helper_fails_case(self, tool=TOOL):
+        if os.path.exists(self.log):
+            os.unlink(self.log)
+        rc, out = pwsh.run(tool, ["-Holder", "run44-a", "-PowerBcd", "0003", "-StateDir", self.state, "-Station", self.station,
+                                  "-AgentClient", self.client],
+                           prelude(self.log, raw="00 03", stops_after=600, ctrl_c_exit=3, helper_error=6),
+                           env={"FAKE_STATION": self.station})
+        self.assertEqual(rc, 2, out)
+        self.assertIn("the station did not stop on Ctrl+C (helper exit 3)", out)
+        self.assertIn("32 s after Ctrl+C (helper exit 3), not restarted", out)
+        self.assertNotIn("@{", out)
+        files = [line[len("ctrl-file "):] for line in self.system() if line.startswith("ctrl-file ")]
+        self.assertEqual(len(files), 1, self.system())
+        self.assertEqual(os.path.normcase(os.path.dirname(files[0])), os.path.normcase(tempfile.gettempdir()), files)
+        self.assertFalse(os.path.normcase(files[0]).startswith(os.path.normcase(self.station)), files)
+        self.assertFalse(os.path.exists(files[0]), "the helper's error file is removed")
+
+    # Proves: TC-317-10
+    def test_a_failed_helper_is_named_by_its_exit_code_and_its_file_lies_in_the_temp_folder(self):
+        self.helper_fails_case()
+        load = "'..\\..\\..\\tools\\deploy\\station-process.ps1'"
+        for name, old, new in (("dot-source two folders up", load, "'..\\..\\tools\\deploy\\station-process.ps1'"),
+                               ("CtrlCExit set to the object", "$rc = (Send-CtrlC ([int]$process.ProcessId)).Rc",
+                                "$rc = Send-CtrlC ([int]$process.ProcessId)"),
+                               ("CtrlErrFile not set", "$CtrlErrFile = Join-Path", "$NoCtrlErrFile = Join-Path")):
+            with self.subTest(name):
+                with self.assertRaises(AssertionError):
+                    self.helper_fails_case(self.scratch_tool(old, new))
 
     def test_a_contact_or_ptt_leaves_the_station_alone(self):
         for client in ({"contact": "report"}, {"ptt": "asserted"}, {"broken": True}):

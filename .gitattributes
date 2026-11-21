@@ -10,3 +10,4 @@ tools/deploy/station-update/** -text
 tools/deploy/agent-client.ps1 -text
 tools/deploy/station-probe.ps1 -text
 tools/deploy/live-page-check.ps1 -text
+tools/deploy/station-process.ps1 -text

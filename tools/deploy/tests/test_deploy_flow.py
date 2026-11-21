@@ -13,6 +13,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -32,11 +33,12 @@ $global:Up = $true; $global:RunVer = 'ccccccccc'
 # FlowBoot counts the starts; FlowStop the stops (one Ctrl+C each); FlowBreak is set from a
 # Ctrl+Break until the next start; FlowReadIdx is the next GET /transmit reading per boot.
 $global:FlowBoot = 0; $global:FlowStop = 0; $global:FlowBreak = $false; $global:FlowReadIdx = @{}
+# FLOW_TASK_RUNNING: the task reports Running throughout; FLOW_TASK_STOP_FAILS: Stop-ScheduledTask throws.
 function Get-ScheduledTask { param($TaskName)
-  [pscustomobject]@{ Actions = @([pscustomobject]@{ Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$env:LOCALAPPDATA\WstxRust\station\launcher.ps1`"" }); State = 'Ready' } }
+  [pscustomobject]@{ Actions = @([pscustomobject]@{ Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$env:LOCALAPPDATA\WstxRust\station\launcher.ps1`"" }); State = $(if ($env:FLOW_TASK_RUNNING) { 'Running' } else { 'Ready' }) } }
 function Register-ScheduledTask { Flow 'TASK CHANGED' }
 function Set-ScheduledTask { Flow 'TASK CHANGED' }
-function Stop-ScheduledTask { param($TaskName, $ErrorAction) }
+function Stop-ScheduledTask { param($TaskName, $ErrorAction) if ($env:FLOW_TASK_STOP_FAILS) { throw 'flow: the task cannot be stopped' } }
 # The Ctrl+C helper: FLOW_STOPS gives, per stop, the helper's exit and Windows error for Ctrl+C
 # (c) and Ctrl+Break (b), and whether the station stays after a delivered signal (stay). The
 # error goes to the file the helper's code names, as the helper writes it.
@@ -174,7 +176,7 @@ class FlowCase(unittest.TestCase):
         return f"python {path} installed {COMMIT} --since {CURRENT}"
 
     def deploy(self, probe=PROBE_PASS, page=PAGE_PASS, subjects=SUBJECTS, issues=ISSUES, stops=(), reads=None,
-               before_throw=False, rollback=False):
+               before_throw=False, rollback=False, task_stop_fails=False, task_running=False):
         """Run the package's script. `stops`: per stop {"c": [rc, error], "b": [rc, error], "stay": bool};
         `reads`: {boot: [reading, ...]}. The steps leave out the Ctrl+Break and GET /transmit lines,
         which self.flow keeps with every other line."""
@@ -186,6 +188,10 @@ class FlowCase(unittest.TestCase):
                "FLOW_READS": json.dumps({str(k): v for k, v in (reads or {}).items()})}
         if before_throw:
             env["FLOW_BEFORE_THROW"] = "1"
+        if task_stop_fails:
+            env["FLOW_TASK_STOP_FAILS"] = "1"
+        if task_running:
+            env["FLOW_TASK_RUNNING"] = "1"
         rc, out, _ = self.s.run(env=env, prelude=FLOW, rollback=rollback)
         with open(self.log, encoding="utf-8") as f:
             self.flow = f.read().splitlines()
@@ -354,6 +360,84 @@ class DeployFlowTests(FlowCase):
             text = f.read()
         for command in ("Register-ScheduledTask", "Set-ScheduledTask", "Unregister-ScheduledTask", "New-ScheduledTask"):
             self.assertNotIn(command, text)
+
+
+def lines_of(out):
+    """The update's lines without their HH:mm:ss stamp."""
+    return [re.sub(r"^\d\d:\d\d:\d\d ", "", line) for line in out.splitlines()]
+
+
+class SharedStopTests(FlowCase):
+    """The update's stop on the shared station-process.ps1: each caller's sequence unchanged."""
+    NOTE = "note: Stop-ScheduledTask: flow: the task cannot be stopped"
+
+    def use_script(self, old, new):
+        """Run a scratch copy of the update with `old` replaced by `new` from here on."""
+        text = read(station_drill.SCRIPT).decode("utf-8")
+        self.assertEqual(text.count(old), 1, old)
+        path = os.path.join(self.tmp.name, "scratch", "station-update.ps1")
+        station_drill.write(path, text.replace(old, new))
+        self.s = FlowSandbox(os.path.join(self.tmp.name, "scratch-sandbox"), path)
+
+    def update_log(self):
+        [log] = glob.glob(os.path.join(self.s.station, "logs", "update-*.log"))
+        with open(log, encoding="utf-8") as f:
+            return f.read().splitlines()
+
+    def note_case(self):
+        rc, out, steps = self.deploy(task_stop_fails=True)
+        self.assertEqual(rc, 0, out)
+        self.assertTrue([line for line in self.update_log() if re.fullmatch(r"\d\d:\d\d:\d\d " + re.escape(self.NOTE), line)],
+                        self.update_log())
+        self.assertIn("started: 123456789 running, PID 4242; previous ccccccccc kept for -Rollback", lines_of(out))
+
+    def running_case(self):
+        rc, out, steps = self.deploy(task_running=True)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FAILED at step 'stop station': task still Running after the station exited; a restart would be ignored",
+                      lines_of(out))
+        self.assertEqual(self.active(), CURRENT)
+
+    def break_case(self):
+        rc, out, steps = self.deploy(stops=[{"stay": True}], reads={1: ["released,false,not_needed"]})
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([line for line in self.flow if line.startswith(("stop ", "break "))],
+                         ["stop ccccccccc lock=held", "break ccccccccc"], self.flow)
+
+    def graceful_case(self):
+        rc, out, steps = self.deploy()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("graceful stop (Ctrl+C) sent to PID 4242: helper exit 0", lines_of(out))
+        self.assertEqual([p for p in glob.glob(os.path.join(self.s.station, "logs", "*")) if p.endswith("-ctrl.txt")], [])
+
+    # Proves: TC-317-06
+    def test_a_failed_stop_scheduled_task_is_a_logged_step_and_the_update_goes_on(self):
+        self.note_case()
+        self.use_script("foreach ($note in @(Settle-Task)) { Step $note }", "Settle-Task")
+        with self.assertRaises(AssertionError):
+            self.note_case()
+
+    # Proves: TC-317-06
+    def test_a_task_still_running_after_the_settle_is_refused(self):
+        self.running_case()
+        self.use_script("  if ((Get-ScheduledTask -TaskName $TaskName).State -eq 'Running') { throw 'task still Running after the "
+                        "station exited; a restart would be ignored' }\n", "")
+        with self.assertRaises(AssertionError):
+            self.running_case()
+
+    # Proves: TC-317-06
+    def test_the_second_signal_is_ctrl_break(self):
+        self.break_case()
+        self.use_script("$b=Send-CtrlC $id 1", "$b=Send-CtrlC $id")
+        with self.assertRaises(AssertionError):
+            self.break_case()
+
+    # Proves: TC-317-06
+    def test_the_update_names_the_helper_error_file(self):
+        self.graceful_case()
+        self.use_script('$CtrlErrFile=Join-Path $Station "logs\\update-$stamp-ctrl.txt"\n', "")
+        with self.assertRaises(AssertionError):
+            self.graceful_case()
 
 
 if __name__ == "__main__":
