@@ -150,6 +150,7 @@ fn wav(path: &Path) -> Vec<f32> {
     assert!(format);
     result.unwrap()
 }
+// Proves: TC-004-001, TC-004-002
 #[test]
 fn independent_waveforms_decode() {
     let root = prepared("frozen");
@@ -218,6 +219,7 @@ fn independent_waveforms_decode() {
         );
     }
 }
+// Proves: TC-004-001, TC-004-002, TC-004-003
 #[test]
 fn quality_corpus() {
     let root = prepared("quality");
@@ -419,6 +421,7 @@ fn quality_corpus() {
     }
 }
 
+// Proves: TC-004-003
 #[test]
 fn cooperative_quanta_and_partial_cancellation() {
     use std::{
@@ -506,6 +509,7 @@ fn planned_scalar_and_gain_invariance() {
         }
     }
 }
+// Proves: TC-004-003
 #[test]
 fn unmodulated_sources_are_not_frames() {
     for mode in [Mode::Ft4, Mode::Ft8] {
@@ -525,6 +529,7 @@ fn unmodulated_sources_are_not_frames() {
         }
     }
 }
+// Proves: TC-004-005
 #[test]
 fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
     let fixture: Value = serde_json::from_str(include_str!(
@@ -620,6 +625,7 @@ fn crc_valid_unsupported_and_invalid_payloads_are_retained() {
     fs::remove_dir_all(resolved).unwrap();
 }
 
+// Proves: TC-004-001, TC-004-002, TC-004-003
 #[test]
 fn phase_drift_dynamic_range_and_residual_regressions() {
     let fixtures: Value = serde_json::from_str(include_str!(
@@ -717,6 +723,7 @@ fn phase_drift_dynamic_range_and_residual_regressions() {
     assert_eq!(checked, 14);
 }
 
+// Proves: TC-004-001, TC-004-002
 #[test]
 fn official_modern_recording_baselines() {
     let cases: Value = serde_json::from_str(include_str!(
@@ -831,6 +838,7 @@ fn official_modern_recording_baselines() {
 // On the recorded corpus the station finds at least
 // the pinned number of the complete-frame decodes of WSJT-X jt9 -8/-5 -d 3; jt9's output is a
 // lower bound, not exhaustive truth (CL-007-03).
+// Proves: TC-004-001, TC-004-002
 #[test]
 fn recorded_corpus_reaches_jt9_deep_decodes() {
     const MINIMUM: usize = 401;
@@ -912,6 +920,7 @@ fn recorded_corpus_reaches_jt9_deep_decodes() {
     );
 }
 
+// Proves: TC-004-003
 #[test]
 fn release_runtime_and_overlapping_window_history() {
     if std::env::var_os("WSTX_RESOURCE_WORKER_CONFIG").is_some() {
@@ -1560,6 +1569,7 @@ fn resource_official_comparison(records: &[Decode], oracle: &Value, context: &st
 }
 
 // Explicit diagnostic selection is required; no total busy-window SLA is added.
+// Proves: TC-004-002, TC-004-003
 #[test]
 #[ignore = "explicit resource diagnostic: genuine30s public async windows; selected root CPU budget, no new total deadline"]
 fn resource_busy_live_overlap_and_pending_cancel() {
@@ -1746,6 +1756,7 @@ fn resource_busy_live_overlap_and_pending_cancel() {
     );
 }
 
+// Proves: TC-004-003
 #[test]
 fn physical_noise_reproduction_has_no_frame() {
     let root = prepared("quality");
@@ -1757,6 +1768,7 @@ fn physical_noise_reproduction_has_no_frame() {
     );
 }
 
+// Proves: TC-004-001
 #[test]
 fn same_frequency_preserves_two_temporal_frames() {
     let root = prepared("frozen");
@@ -1794,6 +1806,7 @@ fn same_frequency_preserves_two_temporal_frames() {
     assert_eq!(result.len(), 2);
 }
 
+// Proves: TC-004-003
 #[test]
 fn physical_wrong_mode_reproduction_has_no_frame_or_search_error() {
     let root = prepared("quality");
@@ -1836,6 +1849,7 @@ fn busy_prompt_window() -> Vec<f32> {
 // A busy recorded period presented as the
 // UTC-aligned FT8 prompt window (15 s of audio completing at period start + 13.8 s)
 // publishes every decode within the 1.0 s modem share of the 1.2 s budget to +15.0 s.
+// Proves: TC-004-002
 #[test]
 fn live_busy_period_publishes_every_decode_promptly() {
     use std::task::{Context, Waker};

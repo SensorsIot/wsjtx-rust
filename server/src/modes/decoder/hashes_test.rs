@@ -228,6 +228,7 @@ fn sent_messages_teach_their_calls() {
 // unpack77's nonstandard DX-call rule: a 'to' hash equal
 // to my 12-bit hash is my call when the full call is the contact's DX call, even when
 // calls12 holds another call with that hash.
+// Proves: TC-024-001
 #[test]
 fn the_dx_call_rule_prefers_my_call_over_a_colliding_call() {
     let mine = ihashcall("HB9BLA", 12).unwrap();

@@ -195,7 +195,13 @@ package WstxReceiveJob {
                 + "server/src/recording_tests.rs::"
                 + "live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs; "
                 + "server/src/recording_tests.rs::"
-                + "a_frame_outside_its_limits_never_becomes_a_record_and_reads_are_refused";
+                + "a_frame_outside_its_limits_never_becomes_a_record_and_reads_are_refused; "
+                + "server/src/receive_http_tests.rs::"
+                + "live_native_fixture_reaches_real_manager_http_and_browser_callsign; "
+                + "server/src/receive_http_tests.rs::"
+                + "live_native_ft4_fixture_reaches_real_manager_http_and_browser_callsign; "
+                + "tests/receive-integration.test.cjs::"
+                + "real native audio reaches Rust manager HTTP and literal browser callsign";
         }
     }
 

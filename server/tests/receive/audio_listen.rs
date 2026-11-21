@@ -56,6 +56,7 @@ fn snapshot(value: audio::CaptureDiagnostics) -> Diagnostics {
     }
 }
 
+// Proves: TC-002-001
 #[test]
 fn packet_queue_counts_invalid_full_and_clock_step_losses() {
     let queue = audio::PacketQueue::new(audio::NativeFormat {
@@ -75,7 +76,7 @@ fn packet_queue_counts_invalid_full_and_clock_step_losses() {
     assert_eq!(queue.diagnostics().clock_step, 1);
 }
 
-// TC-009-002: opt-in listening artifact from the actual selected canonical input.
+// Proves: TC-002-002
 #[test]
 #[ignore = "Coordinator selects HB9BLA and retrieves a 120-second receive-only listening capture"]
 fn selected_radio_audio_to_listening_wav() {

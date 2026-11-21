@@ -877,6 +877,7 @@ fn audio_queue_full_epoch_names_its_trigger() {
 // Silent packets (zero-filled by the source) and
 // accepted engine glitches are marked on the canonical timeline, so a window can count
 // them; a new epoch forgets them.
+// Proves: TC-002-001
 #[test]
 fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
     let f = format(48000);
@@ -912,6 +913,7 @@ fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
 
 // Sustained silence over more packets than the
 // mark limit (600 silent 480-frame packets after one signal packet) stays counted in full.
+// Proves: TC-002-001
 #[test]
 fn audio_sustained_silence_is_counted_in_full() {
     let f = format(48000);

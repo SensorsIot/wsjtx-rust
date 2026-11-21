@@ -8,6 +8,7 @@ fn bits(s: &str) -> [u8; 77] {
         .try_into()
         .unwrap()
 }
+// Proves: TC-004-005
 #[test]
 fn frozen_payload_channel_tone_vectors() {
     let manifest: Value = serde_json::from_str(include_str!(
@@ -56,6 +57,7 @@ fn frozen_payload_channel_tone_vectors() {
         assert_eq!(c.decode(&llr, &|| false), Some(word), "fec {id}");
     }
 }
+// Proves: TC-004-005
 #[test]
 fn canonical_payload_boundaries() {
     let fixture: Value = serde_json::from_str(include_str!(
@@ -76,6 +78,7 @@ fn canonical_payload_boundaries() {
     }
 }
 //
+// Proves: TC-004-005
 #[test]
 fn rr73_packed_as_a_grid_square_is_the_roger() {
     let with_exchange = |text: &str, raw: Option<u32>| {
