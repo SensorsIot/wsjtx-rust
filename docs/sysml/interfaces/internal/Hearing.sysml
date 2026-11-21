@@ -137,13 +137,7 @@ package WstxHearing {
                  admitted. */
             @CodeDiffers {
                 what = "The broker is fixed: HOST mqtt.pskreporter.info and TLS_PORT 1884 "
-                    + "in server/src/operating/qso/pskr.rs; no setting names it. The environment "
-                    + "variable WSTX_PSKR, read at station start in server/src/main.rs, decides "
-                    + "instead while it is set (station_connector in "
-                    + "server/src/operating/qso/pskr.rs): tcp: followed by a loopback "
-                    + "address and a port, as address:port, names a broker the station speaks "
-                    + "with without TLS; every other value, also off and the empty value, allows "
-                    + "no session, and the feed's state stays off whatever its switches.";
+                    + "in server/src/operating/qso/pskr.rs; no setting names it.";
             }
         }
         attribute report : Boolean = false {

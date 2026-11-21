@@ -56,17 +56,43 @@ function stationDataRoot() {
   return stationData;
 }
 // Environment of a station a test starts: no inherited WSTX_ setting, no public SNTP
-// server (WstxStationClock::TimeServerCheck), no UDP interface, and the per-run station data.
+// server (WstxStationClock::TimeServerCheck), and the per-run station data.
 function stationEnv(env = {}) {
   const clean = {...process.env};
   // Windows environment names ignore case: no differently cased LOCALAPPDATA may survive.
   for (const key of Object.keys(clean)) if (key.startsWith('WSTX_') || key.toUpperCase() === 'LOCALAPPDATA') delete clean[key];
-  return {...clean, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', WSTX_PSKR: 'off', WSTX_RADIO_DISCOVERY: 'off', LOCALAPPDATA: stationDataRoot(), ...env};
+  return {...clean, WSTX_SNTP_SERVERS: '', LOCALAPPDATA: stationDataRoot(), ...env};
+}
+// The isolation settings of each `--profile <dir>` in `args` (relative to `cwd`, else to this
+// process's folder), written as the profile's own files where absent: PSK Reporter off, no
+// UDP target, no radio discovery at start. A file that exists keeps its bytes; a folder
+// without a readable profile.json gets nothing.
+function isolateProfile(args, cwd) {
+  for (let i = 0; i + 1 < args.length; i++) {
+    if (args[i] !== '--profile') continue;
+    const dir = path.resolve(cwd || process.cwd(), String(args[i + 1]));
+    let id;
+    try { id = JSON.parse(fs.readFileSync(path.join(dir, 'profile.json'), 'utf8')).profile_id; } catch { continue; }
+    if (typeof id !== 'string') continue;
+    const files = {
+      'pskr.json': {schema_version: 2, profile_id: id, enabled: false, use: true},
+      'udp.json': {schema_version: 1, profile_id: id, revision: 0, targets: []},
+      'radio-discovery.json': {schema_version: 1, profile_id: id, at_start: false}
+    };
+    for (const [name, document] of Object.entries(files)) {
+      try { fs.writeFileSync(path.join(dir, name), JSON.stringify(document), {flag: 'wx'}); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+    }
+  }
+}
+// Every start of the station in the suites: its profile folders isolated, then spawned.
+function spawnStation(exe, args, options = {}) {
+  isolateProfile(args, options.cwd);
+  return spawn(exe, args, options);
 }
 async function serverOnce(env, args) {
   const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', process.platform === 'win32' ? 'wstx-rust.exe' : 'wstx-rust');
   if (!fs.existsSync(exe)) throw new Error(`Missing candidate ${exe}; run cargo build --locked`);
-  const child = spawn(exe, args, {env: stationEnv({...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}), windowsHide: true});
+  const child = spawnStation(exe, args, {env: stationEnv({...(args.length ? {} : {WSTX_BIND: '127.0.0.1:0'}), ...env}), windowsHide: true});
   let output = '';
   const origin = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { child.kill(); reject(new Error('Server readiness timeout: ' + output)); }, 10000);
@@ -177,4 +203,4 @@ async function loginPage(page, origin, token, timeout = 30000) {
   await page.locator('#token').fill(token); await page.locator('#login button').click();
   await page.locator('#connection[data-state="connected"]').waitFor({timeout});
 }
-module.exports = {server, stationEnv, link, grant, loginPage, restrictedPorts, listenBrowser, browserPort};
+module.exports = {server, stationEnv, isolateProfile, spawnStation, link, grant, loginPage, restrictedPorts, listenBrowser, browserPort};

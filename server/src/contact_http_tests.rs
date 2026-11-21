@@ -1998,7 +1998,7 @@ async fn settings_browser_station(pattern: &str) -> (std::process::Output, Vec<(
         &f.dir,
         &f.id,
         &f.boot,
-        Some(broker.connector()),
+        broker.connector(),
         crate::pskr::FeedSession::BROKER,
         Arc::new(crate::profile::Disk),
     );
@@ -2006,7 +2006,6 @@ async fn settings_browser_station(pattern: &str) -> (std::process::Output, Vec<(
     let sockets = crate::udp::tests::RecordingSockets::default();
     let owner = crate::udp::Owner::open(
         &f.state,
-        false,
         &f.dir.join("udp-instance"),
         Arc::new(sockets.clone()),
     );
@@ -3366,7 +3365,6 @@ fn udp_target_85(f: &Fixture) -> std::net::UdpSocket {
     .unwrap();
     let owner = crate::udp::Owner::open(
         &f.state,
-        false,
         &f.dir.join("udp-instance"),
         Arc::new(crate::udp::SystemSockets),
     );

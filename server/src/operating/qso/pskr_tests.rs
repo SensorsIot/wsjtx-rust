@@ -595,7 +595,7 @@ fn the_fake_broker_answers_records_and_drops() {
         &dir.0,
         "p",
         "b00t",
-        Some(broker.connector()),
+        broker.connector(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -698,7 +698,7 @@ fn session_against_a_local_peer() {
         &dir.0,
         "p",
         "b00t",
-        Some(local_connector(port)),
+        local_connector(port),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -789,7 +789,7 @@ fn session_against_a_local_peer() {
             &dir.0,
             "p",
             "b00t",
-            Some(unreachable()),
+            unreachable(),
             FAST,
             std::sync::Arc::new(crate::profile::Disk)
         )
@@ -828,7 +828,7 @@ fn reconnect_backs_off_against_a_failing_peer_and_recovers() {
         &dir.0,
         "p",
         "b00t",
-        Some(local_connector(port)),
+        local_connector(port),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -893,7 +893,7 @@ fn the_status_follows_the_switch() {
         &dir.0,
         "p",
         "b",
-        Some(local_connector(port)),
+        local_connector(port),
         slow,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -911,18 +911,6 @@ fn the_status_follows_the_switch() {
         state == "connected"
     });
     assert_eq!(accepted.recv_timeout(Duration::from_secs(5)), Ok(1));
-    // Without a connector nothing can connect: the switch on still shows off.
-    let dir = Dir::new();
-    let none = Feed::start(
-        &dir.0,
-        "p",
-        "b",
-        None,
-        FAST,
-        std::sync::Arc::new(crate::profile::Disk),
-    );
-    none.set_enabled("p", "b", false).unwrap();
-    assert_eq!(none.set_enabled("p", "b", true).unwrap()["state"], "off");
 }
 
 // Refused and broken brokers: a named error, never a panic.
@@ -950,7 +938,7 @@ fn a_refusing_or_broken_peer_is_a_named_error() {
             &dir.0,
             "p",
             "b00t",
-            Some(local_connector(port)),
+            local_connector(port),
             FAST,
             std::sync::Arc::new(crate::profile::Disk),
         );
@@ -969,7 +957,7 @@ fn the_setting_defaults_on_and_survives() {
         &dir.0,
         "p",
         "b",
-        Some(unreachable()),
+        unreachable(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -982,7 +970,7 @@ fn the_setting_defaults_on_and_survives() {
             &dir.0,
             "p",
             "b",
-            Some(unreachable()),
+            unreachable(),
             FAST,
             std::sync::Arc::new(crate::profile::Disk)
         )
@@ -993,7 +981,7 @@ fn the_setting_defaults_on_and_survives() {
         &dir.0,
         "q",
         "b",
-        Some(unreachable()),
+        unreachable(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     )
@@ -1006,26 +994,13 @@ fn the_setting_defaults_on_and_survives() {
             &dir.0,
             "p",
             "b",
-            Some(unreachable()),
+            unreachable(),
             FAST,
             std::sync::Arc::new(crate::profile::Disk)
         )
         .view()["storage_error"],
         "invalid_pskr"
     );
-}
-
-// Only WSTX_PSKR=tcp: with a loopback address replaces the broker;
-// anything else unknown opens no connection.
-#[test]
-fn the_broker_can_only_be_replaced_on_loopback() {
-    let some = |setting: Option<&str>| station_connector(setting).is_some();
-    assert!(some(None));
-    assert!(!some(Some("off")));
-    assert!(!some(Some("")));
-    assert!(!some(Some("tcp:192.168.0.37:1883")));
-    assert!(!some(Some("tcp:mqtt.pskreporter.info:1883")));
-    assert!(some(Some("tcp:127.0.0.1:1883")));
 }
 
 fn chain() -> Vec<CertificateDer<'static>> {
@@ -1099,7 +1074,7 @@ async fn http_routes_read_and_switch_the_feed() {
         &dir.0,
         &f.id,
         &f.boot,
-        Some(unreachable()),
+        unreachable(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1203,7 +1178,7 @@ fn tc_039_048_decoded_offsets_are_kept_per_parity() {
         &dir.0,
         "p",
         "b",
-        Some(broker.connector()),
+        broker.connector(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1237,7 +1212,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         &dir.0,
         "p",
         "b",
-        Some(unreachable()),
+        unreachable(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1261,7 +1236,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         &dir.0,
         "p",
         "b",
-        Some(unreachable()),
+        unreachable(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     )
@@ -1275,7 +1250,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         &dir.0,
         "p",
         "b",
-        Some(unreachable()),
+        unreachable(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1300,7 +1275,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
             &dir.0,
             "p",
             "b",
-            Some(unreachable()),
+            unreachable(),
             FAST,
             std::sync::Arc::new(crate::profile::Disk),
         )
@@ -1327,7 +1302,7 @@ async fn tc_039_048_post_pskr_use_saves_and_refuses() {
         &f.dir,
         &f.id,
         &f.boot,
-        Some(unreachable()),
+        unreachable(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1436,7 +1411,7 @@ fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
         &dir.0,
         "p",
         "b00t",
-        Some(local_connector(port)),
+        local_connector(port),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1525,7 +1500,7 @@ async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use()
         &f.dir,
         &f.id,
         &f.boot,
-        Some(broker.connector()),
+        broker.connector(),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );

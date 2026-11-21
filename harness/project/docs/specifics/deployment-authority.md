@@ -233,22 +233,40 @@ no consent: nothing reaches an antenna. The tester uses FT4 unless a case needs 
 - **Profile.** `%LOCALAPPDATA%\WstxRust\station\profiles\SIM-IC7300`: CAT and PTT on COM4
   (`icom7300://COM4?baud=115200&radio=94&controller=e0`), the VB-Audio cables of the
   handoff, its own `contacts.adi`, `udp.json` with one target `127.0.0.1:22370` (`qso_logged`,
-  `logged_adif`), `pskr.json` disabled. The
+  `logged_adif`), `pskr.json` disabled, `radio-discovery.json` with `at_start` false. The
   operator profile `ic7300` and its logbook are never touched; their hashes are taken before
   and compared after.
-- **Switch.** The real IC-7300 may be on or off: with `WSTX_RADIO_DISCOVERY=off` the station
-  opens only COM4. `tools/test/powershell/station-switch.ps1 -To simulator` (the tester or
-  the coordinator) backs up `station\launcher.ps1` once, points its profile line at `profiles\SIM-IC7300` and sets
-  `WSTX_RADIO_DISCOVERY=off` and `WSTX_PSKR=off` (without discovery off, a silent COM4 makes
-  the station adopt the real radio on COM3), and `WSTX_UDP=off` unless every target of the
-  profile's `udp.json` is on `127.0.0.1` and none on the operator logger's port 2237 (it says
-  which, and why UDP stays off), stops the station gracefully
-  (Ctrl+C, `station-control.ps1`, as `radio-preflight.ps1` does), restarts the task, reads
-  the profile back (`GET /radio`, `station-running.json`) and compares the hashes of the
-  operator profile and its logbook; any difference exits non-zero. Return:
-  `station-switch.ps1 -To back`, the last step of the tester's run, or the coordinator: the
-  backed-up launcher (without one, the pinned launcher), the same restart. `-DryRun` prints
-  every step and changes nothing.
+- **Switch.** The real IC-7300 may be on or off: with discovery off at start the station
+  opens only COM4 (without it, a silent COM4 makes the station adopt the real radio on COM3).
+  `tools/test/powershell/station-switch.ps1 -To simulator` (the tester or the coordinator)
+  runs these steps in order:
+  1. The checks: `profiles\SIM-IC7300` exists and names no COM3, the operator hashes are
+     taken, a station in use exits 3. Then the build check: the running build's source commit
+     (the `x-wstx-source-commit` header of `GET /` and `station-running.json`, as
+     `station-probe.ps1` reads them) must be one 40-hex commit the checkout holds whose
+     `server/src/radioControl/radio_setup.rs` names `radio-discovery.json`. Otherwise it exits 2
+     with nothing switched: an older build, as between a landing and its deploy or after a
+     rollback, would ignore the profile's discovery setting.
+  2. It backs up `station\launcher.ps1` once.
+  3. It stops the station gracefully (Ctrl+C, `station-control.ps1`, as `radio-preflight.ps1`
+     does).
+  4. It writes the settings the bench needs into `profiles\SIM-IC7300` only, each in its full
+     form with the profile's id and read back: `pskr.json` `enabled` false (an existing `use`
+     kept), `radio-discovery.json` `at_start` false, and `udp.json` without targets (its
+     revision one higher) unless every target is on `127.0.0.1` and none on the operator
+     logger's port 2237 (it says which).
+  5. It points the launcher's profile line at `profiles\SIM-IC7300` and removes every line of
+     a removed switch variable, which the station does not read.
+  6. It restarts the task.
+  7. It reads back `GET /radio`, `station-running.json`, no COM3, `GET /pskr` `enabled` false,
+     `radio-discovery.json` and the launcher, and compares the operator hashes.
+
+  A failed write or read-back in step 4 or 5 exits 2 with the station stopped and the
+  launcher unchanged. A difference in step 7 stops the station and exits 2: no simulator
+  station stays connected to the real PSK Reporter. Return: `station-switch.ps1 -To back`,
+  the last step of the tester's run, or the coordinator: the backed-up launcher (without one,
+  the pinned launcher), the same restart; it writes no profile. `-DryRun` prints every step,
+  the three writes among them, and changes nothing.
 - **CAT confirmation.** A new profile, and any change of its CAT setup, needs the operator's
   receive-only confirmation in the browser (Settings, "CAT receive-only confirmation");
   until then CAT stays closed. Agents never change the CAT endpoint during a simulator run.

@@ -1,16 +1,16 @@
 'use strict';
-// The tests of the suite support (support.cjs): its browser ports and its per-run station data.
+// The tests of the suite support (support.cjs): its browser ports, its per-run station data
+// and the isolation settings of the stations it starts.
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {once, EventEmitter} = require('node:events');
-const {spawn} = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
-const {server, restrictedPorts, listenBrowser, browserPort} = require('./support.cjs');
+const {server, stationEnv, spawnStation, isolateProfile, restrictedPorts, listenBrowser, browserPort} = require('./support.cjs');
 
 const exe = process.env.WSTX_TEST_EXE || path.resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', process.platform === 'win32' ? 'wstx-rust.exe' : 'wstx-rust');
 const settings = i => ({display_name: `Station ${i}`, callsign: `TEST${i}`, locator: 'JN47AA', audio: {input_device: `{0.0.1.00000000}.{00000000-0000-4000-8000-${String(i).padStart(12, '0')}}`, output_device: `{0.0.0.00000000}.{00000000-0000-4000-8000-${String(i).padStart(12, '0')}}`}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}});
@@ -20,10 +20,10 @@ async function ports(n) {
   try {for (let i = 0; i < n; i++) {const s = net.createServer(); held.push(s); await listenBrowser(s);} return held.map(s => s.address().port);}
   finally {await Promise.all(held.map(s => new Promise(resolve => s.close(resolve))));}
 }
-// GET /profile of a plaintext station, with its own Origin.
-function request(origin) {
+// GET `route` (default /profile) of a plaintext station, with its own Origin.
+function request(origin, route = '/profile') {
   return new Promise((resolve, reject) => {
-    const req = http.request(origin + '/profile', {headers: {Origin: origin}, agent: false}, res => {
+    const req = http.request(origin + route, {headers: {Origin: origin}, agent: false}, res => {
       let data = ''; res.on('data', b => {data += b;}); res.on('end', () => {try {resolve({status: res.statusCode, body: JSON.parse(data)});} catch (error) {reject(error);}});
     });
     req.on('error', reject); req.end();
@@ -77,7 +77,7 @@ test('suite stations own profile UUIDs in per-run station data', {timeout: 30000
   };
   const account = {...process.env}; for (const key of Object.keys(account)) if (key.startsWith('WSTX_')) delete account[key];
   const held = await profile('held', heldPort), heldLock = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'wstx-rust-profile-locks', `${id}.lock`);
-  const other = spawn(exe, ['--profile', held.dir], {env: {...account, WSTX_SNTP_SERVERS: '', WSTX_UDP: 'off', WSTX_PSKR: 'off', WSTX_RADIO_DISCOVERY: 'off'}, windowsHide: true});
+  const other = spawnStation(exe, ['--profile', held.dir], {env: {...account, WSTX_SNTP_SERVERS: ''}, windowsHide: true});
   let otherOutput = ''; other.stdout.on('data', b => {otherOutput += b;}); other.stderr.on('data', b => {otherOutput += b;});
   t.after(async () => {if (other.exitCode === null && other.signalCode === null) {other.kill(); await once(other, 'exit');} await fs.rm(heldLock, {force: true});});
   const deadline = Date.now() + 10000;
@@ -87,4 +87,50 @@ test('suite stations own profile UUIDs in per-run station data', {timeout: 30000
   }
   const app = await server({}, ['--profile', (await profile('own', ownPort)).dir]); t.after(() => app.close());
   assert.equal((await request(`http://127.0.0.1:${ownPort}`)).body.profile_id, id);
+});
+
+// Test isolation: a station a suite starts runs on its profile's own settings, written where
+// absent: PSK Reporter off, no UDP target, no radio discovery at start.
+test('stations a suite starts hold the profile\'s own isolation settings', {timeout: 30000}, async t => {
+  // The stations stop before their folders go: a running station holds them.
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wstx-support-isolation-')), stops = [];
+  t.after(async () => {for (const stop of stops.reverse()) await stop(); await fs.rm(root, {recursive: true, force: true});});
+  const profile = async (dir, port) => {
+    const id = crypto.randomUUID();
+    await fs.mkdir(dir, {recursive: true});
+    await fs.writeFile(path.join(dir, 'profile.json'), JSON.stringify({schema_version: 1, profile_id: id, revision: 0, ...settings(2), endpoint: {bind: `127.0.0.1:${port}`, origin: null}, connection_type: 'standard'}));
+    return id;
+  };
+  const read = async (dir, name) => JSON.parse(await fs.readFile(path.join(dir, name), 'utf8'));
+  const exists = file => fs.access(file).then(() => true, () => false);
+  const [serverPort, directPort] = await ports(2);
+  // A station started by server() on a new profile folder.
+  const fresh = path.join(root, 'fresh'), id = await profile(fresh, serverPort);
+  const app = await server({}, ['--profile', fresh]); stops.push(() => app.close());
+  const origin = `http://127.0.0.1:${serverPort}`;
+  const pskr = (await request(origin, '/pskr')).body;
+  assert.deepEqual([pskr.enabled, pskr.state], [false, 'off'], JSON.stringify(pskr));
+  assert.deepEqual((await request(origin, '/udp')).body.configuration.targets, []);
+  assert.deepEqual(await read(fresh, 'radio-discovery.json'), {schema_version: 1, profile_id: id, at_start: false});
+  assert.deepEqual(await read(fresh, 'pskr.json'), {schema_version: 2, profile_id: id, enabled: false, use: true});
+  assert.deepEqual(await read(fresh, 'udp.json'), {schema_version: 1, profile_id: id, revision: 0, targets: []});
+  // spawnStation directly, with a folder relative to its cwd: the files land below cwd only.
+  const relative = `relative-${crypto.randomUUID()}`, below = path.join(root, relative);
+  const directId = await profile(below, directPort);
+  const direct = spawnStation(exe, ['--profile', relative], {cwd: root, env: stationEnv(), windowsHide: true});
+  stops.push(async () => {if (direct.exitCode === null && direct.signalCode === null) {direct.kill(); await once(direct, 'exit');}});
+  assert.deepEqual(await read(below, 'radio-discovery.json'), {schema_version: 1, profile_id: directId, at_start: false});
+  assert.deepEqual(await read(below, 'pskr.json'), {schema_version: 2, profile_id: directId, enabled: false, use: true});
+  assert.deepEqual(await read(below, 'udp.json'), {schema_version: 1, profile_id: directId, revision: 0, targets: []});
+  assert.equal(await exists(path.resolve(relative)), false, 'nothing in the process folder');
+  // A folder whose udp.json exists keeps its bytes; a folder without profile.json gets nothing.
+  const kept = path.join(root, 'kept'); await profile(kept, directPort);
+  const bytes = '{"schema_version":1, "kept":true}';
+  await fs.writeFile(path.join(kept, 'udp.json'), bytes);
+  isolateProfile(['--profile', kept]);
+  assert.equal(await fs.readFile(path.join(kept, 'udp.json'), 'utf8'), bytes);
+  assert.ok(await exists(path.join(kept, 'pskr.json')));
+  const bare = path.join(root, 'bare'); await fs.mkdir(bare);
+  isolateProfile(['--profile', bare]);
+  assert.deepEqual(await fs.readdir(bare), []);
 });

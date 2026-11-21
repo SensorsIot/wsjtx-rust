@@ -47,13 +47,12 @@ async function station(t, {name, native = true, discovery, granted = true, radio
   const common = {profile_id: id, revision: 0, display_name: name, callsign: 'HB9BLA', locator: 'JN47AA', endpoint: {bind: `127.0.0.1:${port}`, origin},
     audio: {input_device: null, output_device: null}, control: {mode: 'disabled', endpoint: null, ptt: 'disabled'}};
   const document = native
-    ? {schema_version: 2, ...common, connection_type: 'native_flex', native: {client_id: clientId, rx_antenna: 'ANT1', ...(radioAddress ? {radio_address: radioAddress} : {})}}
+    ? {schema_version: 2, ...common, connection_type: 'native_flex', native: {client_id: clientId, rx_antenna: 'ANT1', ...(radioAddress ? {radio_address: radioAddress} : {}),
+      ...(registerPort ? {register_port: registerPort} : {}), ...(discovery ? {discovery_address: `127.0.0.1:${discovery}`} : {})}}
     : {schema_version: 1, ...common, connection_type: 'standard'};
   const text = JSON.stringify(document);
   await fs.writeFile(path.join(dir, 'profile.json'), text);
-  const env = {WSTX_TLS_CERT: path.join(dir, 'cert.pem'), WSTX_TLS_KEY: path.join(dir, 'key.pem'), WSTX_TOKEN: token,
-    ...(discovery ? {WSTX_FLEX_DISCOVERY: `127.0.0.1:${discovery}`} : {}),
-    ...(registerPort ? {WSTX_FLEX_REGISTER_PORT: String(registerPort)} : {})};
+  const env = {WSTX_TLS_CERT: path.join(dir, 'cert.pem'), WSTX_TLS_KEY: path.join(dir, 'key.pem'), WSTX_TOKEN: token};
   let app = await server(env, ['--profile', dir]);
   t.after(() => app.close());
   let cookie = '';
@@ -260,7 +259,7 @@ test('TC-023-002 persisted intent reconciles restarted radios, changed handles a
   for (const s of [a, b]) {
     const saved = await fs.readFile(path.join(s.dir, 'profile.json'), 'utf8');
     assert.equal(saved, s.text);
-    assert.deepEqual(Object.keys(JSON.parse(saved).native).sort(), ['client_id', 'rx_antenna']);
+    assert.deepEqual(Object.keys(JSON.parse(saved).native).sort(), ['client_id', 'discovery_address', 'rx_antenna']);
     assert.doesNotMatch(saved, /serial/);
   }
 });

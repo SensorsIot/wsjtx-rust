@@ -157,6 +157,22 @@ pub struct Native {
         skip_serializing_if = "Option::is_none"
     )]
     pub radio_address: Option<String>,
+    /// The radio's UDP port a Registration from a saved address goes to, from 1 to 65535.
+    /// Absent means the radio's two ports; an explicit null is refused.
+    #[serde(
+        default,
+        deserialize_with = "present_port",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub register_port: Option<u16>,
+    /// The IPv4 address and port, other than 0, where Announcements are listened for.
+    /// Absent means every address of the PC on port 4992; an explicit null is refused.
+    #[serde(
+        default,
+        deserialize_with = "present_address",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub discovery_address: Option<String>,
 }
 impl Native {
     pub fn intent(&self) -> wstx_rust::flex::Intent {
@@ -166,17 +182,30 @@ impl Native {
             radio_address: self.radio_address.as_deref().and_then(|a| a.parse().ok()),
         }
     }
+    /// Where Announcements are listened for, when the profile names it.
+    pub fn discovery(&self) -> Option<SocketAddr> {
+        self.discovery_address
+            .as_deref()
+            .and_then(|a| a.parse().ok())
+    }
     fn valid(&self) -> bool {
         self.intent().valid()
             && valid_uuid(&self.client_id)
-            && self.radio_address.as_deref().is_none_or(|a| {
-                a.parse::<std::net::SocketAddrV4>()
-                    .is_ok_and(|a| a.port() != 0)
-            })
+            && self.radio_address.as_deref().is_none_or(ipv4_with_port)
+            && self.discovery_address.as_deref().is_none_or(ipv4_with_port)
+            && self.register_port.is_none_or(|p| p != 0)
     }
+}
+/// An IPv4 address with a port other than 0.
+fn ipv4_with_port(a: &str) -> bool {
+    a.parse::<std::net::SocketAddrV4>()
+        .is_ok_and(|a| a.port() != 0)
 }
 fn present_address<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     String::deserialize(d).map(Some)
+}
+fn present_port<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u16>, D::Error> {
+    u16::deserialize(d).map(Some)
 }
 // Present means an object: an explicit null is refused, absence is the standard path.
 fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Native>, D::Error> {
@@ -654,6 +683,8 @@ impl Store {
             client_id: new_uuid().map_err(|_| "resource_unavailable")?,
             rx_antenna: rx_antenna.into(),
             radio_address: radio_address.map(Into::into),
+            register_port: None,
+            discovery_address: None,
         });
         document
             .validate()
