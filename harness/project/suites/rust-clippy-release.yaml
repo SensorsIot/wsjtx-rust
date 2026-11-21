@@ -4,6 +4,7 @@
   # release-only test code (cfg(not(debug_assertions))). Its own Cargo output directory.
   # paths: every file that include_str!, include_bytes! or #[path] pulls into the build.
   run: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/clippy-release" cargo clippy --workspace --all-targets --locked --release -- -D warnings
+  # No filter form: the run is a lint (cargo clippy) with no tests to select.
   paths:
   - server/
   - tools/test/rust/

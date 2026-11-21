@@ -35,10 +35,12 @@ WITH_FORM = {
     "radio-selection",
     "sysml-documentation", "sysml-tools", "sysml-architecture-context", "sysml-architecture",
     "sysml-equivalence-tests", "deploy-tooling", "test-bench", "fortran-reference-tools", "simulator-fixtures",
+    "harness-tests", "contact-browser",
 }
 WITHOUT_FORM = {
-    "live-receive-integration", "contact-browser", "radio-selection-thin",
+    "live-receive-integration", "radio-selection-thin",
     "sysml-equivalence", "source-model-traces", "decoder-quality", "radio-bounds",
+    "rust-clippy-release",
 }
 REASON = "# No filter form:"
 
