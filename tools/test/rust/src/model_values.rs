@@ -1,5 +1,6 @@
-//! The model-value reader of the Rust tests (Project-Specifics, "Model values read by
-//! tests"). A contract test names a value the model holds as data by its
+//! The model-value reader of the Rust tests
+//! (harness/project/docs/specifics/local-windows-development.md,
+//! "Model values read by tests"). A contract test names a value the model holds as data by its
 //! qualified name `Package::Element(::Feature)*`, and this module finds it in the `.sysml`
 //! text at run time. It reads only the subset of that section and fails on anything else;
 //! the pinned Pilot of `tools/sysml.py check` validates the SysML itself.

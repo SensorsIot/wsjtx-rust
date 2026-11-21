@@ -30,7 +30,7 @@ hooks:
 <!-- source harness/general/lang/rust-supply-chain/standard.md sha256=ab1ac670441732d8313f48d63c33f22f7cccdba5a70efe26959c455bf2ed2112 -->
 <!-- source harness/general/lang/python/standard.md sha256=a5ca391a7468498ee03677db516132747c33c82a51e386194eae3e1aa32d8ea4 -->
 <!-- source harness/general/lang/javascript/standard.md sha256=018b21f4d1ed383044ccc31e6c7fc66e8c9cb07b6f3c8d54cee8c17f5b796265 -->
-<!-- source harness/project/docs/Agent-Working-Rules.md sha256=e4e4a300de23acca9122b1654d87176b9d536a7e3dab5300b75ec4e07d8ffbf4 -->
+<!-- source harness/project/docs/Agent-Working-Rules.md sha256=7da0be2988e134fa958d9b8f3bf99e891aa48673e1df7fe85708dfde90ecb600 -->
 <!-- harness-role-policy {"commands": ["git( -C \\S+)? (status|diff|log|show|rev-parse|merge-base|ls-files|ls-tree|cat-file|blame|grep|describe)( .*)?", "gh issue view {issues}( .*)?", "(python3?|py)(\\.exe)? \\S*cr_state\\.py class {issue} product --note '[^']*'", "(python|py)(\\.exe)? D:/wstx-tmp/experiments/{issue}/[A-Za-z0-9_-]+\\.py( .*)?", "(powershell|pwsh)(\\.exe)? -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/{issue}/[A-Za-z0-9_-]+\\.ps1( .*)?", "python tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})", "python {worktree}/tools/sysml\\.py (check|traces|fingerprints|status|retired|markers( [A-Za-z]+)*|identities( [A-Za-z0-9._/^~-]+){2}|equivalence( --marked)?( [A-Za-z0-9._/^~-]+){0,2})"], "writes": ["D:/wstx-tmp/experiments/{issue}/**"], "deny": ["\\s--output(=|\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?push(\\s|$)", "(^|\\s)(\\S*[/\\\\])?git(\\.exe)?\\s(.*\\s)?stash(\\s|$)", "install_hooks\\.py"], "model": {"files": [], "facts": []}, "reads": ["**", "!.git/**", "{session}/**", "D:/wstx-tmp/experiments/{issue}/**", ".git/migration-data/recordings/**"]} -->
 
 You answer one question under an issue's Open questions with an
@@ -66,7 +66,7 @@ question.
 ## Added by the project (harness/project/docs/Agent-Working-Rules.md)
 
 The experiment folder is `D:/wstx-tmp/experiments/<issue>/`, within the
-[limits for experiments](../../harness/project/docs/Project-Specifics.md#limits-for-experiments); its scripts run as
+[limits for experiments](../../harness/project/docs/specifics/project-model-documentation-contract.md#limits-for-experiments); its scripts run as
 `python D:/wstx-tmp/experiments/<issue>/<name>.py …` or
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/<issue>/<name>.ps1 …`.
 They read the recordings under `.git/migration-data/recordings/`, logs and the code; they do not use the station client, open COM3 or
@@ -97,4 +97,4 @@ The [agent working rules](../../harness/project/docs/Agent-Working-Rules.md) hol
 - Files you may read, by the context map (core/docs/Context.md; `!`: not): `**`, `!.git/**`, `{session}/**`, `D:/wstx-tmp/experiments/{issue}/**`, `.git/migration-data/recordings/**`
 - Files you may write, relative to the project unless absolute: `D:/wstx-tmp/experiments/{issue}/**`
 - Model files among them, where each changed line must match a delivery fact (none): none
-<!-- harness-agent-v1 sha256=2a5508dc9955a74fc0fcf575dc1dcd55c85f81b407fb9663b5eb9d684491af1e -->
+<!-- harness-agent-v1 sha256=9798815f4e563df4f7e0d3211d95d84fba89246e699fececd22d90914a6f9cfa -->

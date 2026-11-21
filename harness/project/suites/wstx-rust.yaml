@@ -15,7 +15,8 @@
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
     cargo test --workspace --locked --bins --examples --test '*' &&
     cargo test --workspace --locked --lib -- --skip decoder::
-  # The filter form (gate.py --suite --filter; Project-Specifics.md, Functional test selection):
+  # The filter form (gate.py --suite --filter; harness/project/docs/specifics/local-windows-development.md,
+  # Functional test selection):
   # the steps of run, each narrowed to the filter words by harness/project/tools/filter_run.py.
   filter: >-
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&

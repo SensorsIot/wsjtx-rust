@@ -15,7 +15,8 @@ use std::{
     },
     time::{Duration, Instant},
 };
-// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+// The test-only model-value reader
+// (harness/project/docs/specifics/local-windows-development.md, "Model values read by tests").
 use wstx_test_tools::model_values;
 
 /// WstxCatControl::RadioConnection::closeMaxMs, read from the model.

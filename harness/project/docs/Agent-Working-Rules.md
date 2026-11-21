@@ -26,7 +26,7 @@ rules around it. Agent memory only points here.
   is recorded on that issue. Without it the session writes the change text (outcome,
   changes, acceptance, evidence) and the operator implements it.
 - **Another person's checkout** is never touched.
-- **Machine.** All work runs on HB9BLA ([machine](Project-Specifics.md#machine)).
+- **Machine.** All work runs on HB9BLA ([machine](specifics/machine.md#machine)).
 
 ## Deciding
 
@@ -134,7 +134,7 @@ guard:
 ```
 
 - **Builds and tests** use the build and temp folders of
-  [Inputs](Project-Specifics.md#inputs) and run beside the gate
+  [Inputs](specifics/local-windows-development.md#inputs) and run beside the gate
   as [heavy runs yield to the gate](Agent-Working-Rules.md#who-changes-what) says, a timing failure rerun once.
   In the hook's one-command form: `CARGO_TARGET_DIR=D:/wstx-build/<worktree>
   TEMP=D:/wstx-build/<worktree> TMP=D:/wstx-build/<worktree> CARGO_BUILD_JOBS=2 nice -n 10
@@ -205,22 +205,22 @@ guard:
   reads: ["D:/wstx-tmp/live/{issue}/**"]
 ```
 
-The live-test binding is [Keying the radio](Project-Specifics.md#keying-the-radio) and the
-[standing consent at 1 %](Project-Specifics.md#standing-consent-at-1-). A run writes under `D:/wstx-tmp/live/<issue>/`
-([limits for experiments](Project-Specifics.md#limits-for-experiments)): its log, and its
+The live-test binding is [Keying the radio](specifics/deployment-authority.md#keying-the-radio) and the
+[standing consent at 1 %](specifics/deployment-authority.md#standing-consent-at-1-). A run writes under `D:/wstx-tmp/live/<issue>/`
+([limits for experiments](specifics/project-model-documentation-contract.md#limits-for-experiments)): its log, and its
 scripts, which act on the station only through the station client
 `tools/deploy/agent-client.ps1` (dot-sourced:
 `Open-AgentSession`, `Agent-Get`, `Agent-Post`). It runs them, and the radio preflight or
 the live page check, as
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/live/<issue>/<name>.ps1 …`
 or `… -File tools/test/powershell/radio-preflight.ps1 -Holder <run> -PowerBcd <value>`, or
-a QSO test ([QSO tests](Project-Specifics.md#qso-tests)) as
+a QSO test ([QSO tests](specifics/deployment-authority.md#qso-tests)) as
 `… -File tools/test/powershell/qso-test.ps1 -Holder <run> -Issue <n> -Item <k>`, or
 `… -File tools/deploy/live-page-check.ps1 -Repo D:/Github/wsjtx-rust -Shared D:/Github/wsjtx-rust/.git/harness-parallel -AgentClient tools/deploy/agent-client.ps1`,
 or sets up and clears its simulator bench with exactly
 `… -File tools/test/powershell/station-switch.ps1 -To simulator` or `-To back` and
 `… -File tools/test/powershell/emulator.ps1 -Start`, `-Stop` or `-Status`
-([Simulator live tests](Project-Specifics.md#simulator-live-tests)). A simulator run, whether
+([Simulator live tests](specifics/deployment-authority.md#simulator-live-tests)). A simulator run, whether
 the real IC-7300 is on or off: switch the station to the simulator, start the emulator once
 the station runs, test, halt, stop the emulator, switch the station back with `-To back`; a
 run that ends early still stops the emulator it started and switches back. It installs
@@ -238,7 +238,7 @@ guard:
 ```
 
 The experiment folder is `D:/wstx-tmp/experiments/<issue>/`, within the
-[limits for experiments](Project-Specifics.md#limits-for-experiments); its scripts run as
+[limits for experiments](specifics/project-model-documentation-contract.md#limits-for-experiments); its scripts run as
 `python D:/wstx-tmp/experiments/<issue>/<name>.py …` or
 `powershell -NoProfile -ExecutionPolicy Bypass -File D:/wstx-tmp/experiments/<issue>/<name>.ps1 …`.
 They read the recordings under `.git/migration-data/recordings/`, logs and the code; they do not use the station client, open COM3 or

@@ -17,7 +17,7 @@ harness_paths:
   - .github/workflows/rust-advisories.yml
   - deny.toml
   - .gitmodules
-# The one machine of the factory (harness/project/docs/Project-Specifics.md, "Machine"):
+# The one machine of the factory (harness/project/docs/specifics/machine.md, "Machine"):
 # the gate and the queue worker start only here.
 machines:
   HB9BLA:
@@ -60,13 +60,15 @@ execution_mode: local
 # their share of them; no build in the coordinator's workspace while a gate runs.
 parallel_workers: 6
 # The push gate runs up to three selected suites at a time; the suites' exclusive/shared
-# tags keep conflicting ones apart (harness/project/docs/Project-Specifics.md).
+# tags keep conflicting ones apart (harness/project/docs/specifics/local-windows-development.md,
+# "Parallel groups and shared resources").
 gate:
   # Shared compile cache for Rust builds (harness lang/rust "Shared compile cache"); sccache on HB9BLA.
   compile_cache: D:/sccache
   parallel: 3
   # protocol-thin, recording-thin and radio-selection-thin run beside other groups: measured
-  # stable there (Project-Specifics.md, Parallel groups). The CPU measurements
+  # stable there (harness/project/docs/specifics/local-windows-development.md,
+  # Parallel groups and shared resources). The CPU measurements
   # keep exclusive: ["*"], and the CPU-heavy decoder groups stay apart from protocol-thin and
   # recording-thin (link-measurement tag) in harness/project/suites/.
   timing_alone: false
@@ -92,9 +94,9 @@ skill_additions:
   test-design: [harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests]
   conformance-review: [harness/project/docs/Finished-Model.md]
 # The merge queue (harness/general/core/docs/Merge-Queue.md) runs on HB9BLA. Its worker gates
-# in its own worktree with the inputs of harness/project/docs/Project-Specifics.md ("Inputs").
+# in its own worktree with the inputs of harness/project/docs/specifics/local-windows-development.md ("Inputs").
 # CARGO_BUILD_JOBS is left unbounded on purpose: the gate runs ABOVE_NORMAL and outranks
-# only development work, the station runs above it (harness/project/docs/Project-Specifics.md).
+# only development work, the station runs above it (harness/project/docs/specifics/merge-queue.md, "Merge queue").
 queue:
   batch: 4
   trailer: "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -188,15 +190,16 @@ alex:
   # The station tester's MCP servers: the band simulator only; each station run starts and stops
   # its own IC-7300 emulator on COM5 with tools/test/powershell/emulator.ps1 (one owner of the port).
   launcher: {command: claude, permission_mode: auto, model: claude-opus-5-5, mcp: {station: harness/project/mcp/station.json}}
-  # Install: the one deploy command (Project-Specifics.md, Deployment authority), given the
+  # Install: the one deploy command (harness/project/docs/specifics/deployment-authority.md,
+  # Deployment authority), given the
   # commit the merge queue pushed; Git Bash by its full path (a bare bash finds WSL). Exit 3: the
   # station stayed busy; 6: the radio did not answer; nothing changed in either.
   install:
     dry_run: ["C:/Program Files/Git/bin/bash.exe", "-c", "set -o pipefail; git -C D:/Github/wsjtx-rust show {commit}:tools/deploy/station-update/make_package.py | python - {commit} --dry-run"]
     deploy: ["C:/Program Files/Git/bin/bash.exe", "-c", "set -o pipefail; git -C D:/Github/wsjtx-rust show {commit}:tools/deploy/station-update/make_package.py | python - {commit}"]
-    policy: "the standing deploy policy of Project-Specifics.md"
+    policy: "the standing deploy policy of harness/project/docs/specifics/deployment-authority.md"
     wait_exits: [3, 6]
     timeout_minutes: 45
   accept:
-    consent: {levels: [4, 5], policy: "the standing consent at 1 % of Project-Specifics.md"}
+    consent: {levels: [4, 5], policy: "the standing consent at 1 % of harness/project/docs/specifics/deployment-authority.md"}
   poll: 120

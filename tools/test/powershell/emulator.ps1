@@ -1,6 +1,6 @@
 # Starts and stops the IC-7300 emulator (the IC-7300 simulator project, simulator.py) on COM5 at
-# 115200 baud for a simulator live test (harness/project/docs/Project-Specifics.md, Simulator live
-# tests). It needs no administrator rights. Exactly one of:
+# 115200 baud for a simulator live test
+# (harness/project/docs/specifics/deployment-authority.md, Simulator live tests). It needs no administrator rights. Exactly one of:
 #   emulator.ps1 -Start     refuses when a process already runs the emulator on COM5 (simulator.py
 #                           --serial COM5 in its command line) or the record names a live process;
 #                           else starts it, writes the record and waits until a new run folder of

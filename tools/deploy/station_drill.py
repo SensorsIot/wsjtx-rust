@@ -586,7 +586,7 @@ PIN_CASES = [
 ]
 
 # With the deploy authority on, station-update.ps1 carries the amendment of
-# Project-Specifics.md#deployment-authority and asks the protected verifier first. The
+# harness/project/docs/specifics/deployment-authority.md and asks the protected verifier first. The
 # verifier's own refusals are tested in tests/test_authority.py; here the mock answers for it.
 PROTECTED_TASK = {"DRILL_TASK_ARGS": r'-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\ProgramData\WstxRust\deploy-authority\protected-launcher.ps1"'}
 APPROVAL_CASES = [

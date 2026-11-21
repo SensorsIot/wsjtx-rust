@@ -995,7 +995,8 @@ fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     assert_eq!(r.state.lock().unwrap().operating.profile_revision, 9);
 }
 
-// The test-only model-value reader (Project-Specifics, "Model values read by tests").
+// The test-only model-value reader
+// (harness/project/docs/specifics/local-windows-development.md, "Model values read by tests").
 use wstx_test_tools::model_values::{Model, Number};
 
 // The preferred FT8 and FT4 dial frequency of each band in WSJT-X's default
