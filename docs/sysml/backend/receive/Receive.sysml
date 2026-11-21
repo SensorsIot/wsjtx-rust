@@ -29,9 +29,10 @@ package WstxReceivePart {
                 + "and client/src/receive/.";
         }
         @DetailTests {
-            tests = "server/src/recording_tests.rs; server/tests/receive_integration.rs";
+            tests = "server/src/recording_tests.rs; server/tests/receive_integration.rs; "
+                + "server/src/contact_http_tests.rs";
             covers = "the conversion of a time to UTC text; the limits of a block the "
-                + "window buffer takes";
+                + "window buffer takes; the call hash table shared with transmit";
         }
         attribute config : ReceiveConfig {
             doc /* Its configuration, as the last ReceiveConfiguration gave it. */ }

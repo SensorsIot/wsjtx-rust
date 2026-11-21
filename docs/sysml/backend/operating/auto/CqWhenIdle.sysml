@@ -97,7 +97,11 @@ package WstxCqWhenIdle {
             test = "server/src/operating/qso/newest_rx_tests.rs::"
                 + "tc_089_004_a_contest_strategy_cq_counts_the_newest_rx_period; "
                 + "server/src/operating/qso/newest_rx_tests.rs::"
-                + "tc_089_004_hold_tx_stop_and_a_second_auto_on";
+                + "tc_089_004_hold_tx_stop_and_a_second_auto_on; "
+                + "server/src/operating/qso/newest_rx_tests.rs::"
+                + "tc_089_004_after_esc_on_a_manual_contact_the_cq_waits; "
+                + "server/src/operating/qso/newest_rx_tests.rs::"
+                + "tc_089_004_after_a_completed_manual_contact_the_cq_waits";
         }
     }
 

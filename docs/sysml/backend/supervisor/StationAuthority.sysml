@@ -142,7 +142,21 @@ package WstxStationAuthority {
                 + "server/src/transmit/transmit_http_tests.rs::"
                 + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms; "
                 + "server/src/logbook_http_tests.rs::"
-                + "save_contact_refusals_byte_cap_and_command_receipts";
+                + "save_contact_refusals_byte_cap_and_command_receipts; "
+                + "server/src/contact_http_tests.rs::"
+                + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions";
+        }
+    }
+
+    verification 'TC-005-003' {
+        doc /* The decode context follows the profile and the contact. */
+        subject supervisor : Supervisor;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-005-08'; }
+        @TestedBy {
+            test = "server/src/contact_http_tests.rs::"
+                + "a_priori_context_follows_profile_and_contact";
         }
     }
 }

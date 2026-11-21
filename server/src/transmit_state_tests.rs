@@ -216,6 +216,7 @@ fn tc_111_001_a_partner_works_another_station_stops_and_keeps_the_qso() {
 
 // After each stop that keeps the QSO state nothing is sent in
 // three own periods; Reply on the partner's row then transmits again, the same contact.
+// Proves: TC-010-011, TC-111-002
 #[test]
 fn tc_111_001_d_a_kept_qso_is_silent_until_reply_on_the_partners_row_continues_it() {
     let stops: [(&str, Build, DisarmCause); 5] = [
@@ -386,6 +387,7 @@ fn refused(s: &mut Station, command: Command, code: &'static str, label: &str) {
     }
 }
 
+// Proves: TC-111-019
 #[test]
 fn tc_111_003_reply_in_each_state() {
     for state in &STATES {
@@ -413,6 +415,7 @@ fn tc_111_003_reply_in_each_state() {
     }
 }
 
+// Proves: TC-111-019
 #[test]
 fn tc_111_003_call_cq_in_each_state() {
     for state in &STATES {
@@ -439,6 +442,7 @@ fn tc_111_003_call_cq_in_each_state() {
     }
 }
 
+// Proves: TC-111-019
 #[test]
 fn tc_111_003_call_dx_in_each_state() {
     for state in &STATES {
@@ -477,6 +481,7 @@ fn tc_111_003_call_dx_in_each_state() {
     }
 }
 
+// Proves: TC-111-019
 #[test]
 fn tc_111_003_send_next_in_each_state() {
     for state in &STATES {
@@ -508,6 +513,7 @@ fn tc_111_003_send_next_in_each_state() {
     }
 }
 
+// Proves: TC-111-012
 #[test]
 fn tc_111_003_reset_repetitions_in_each_state() {
     for state in &STATES {
@@ -563,6 +569,7 @@ fn tc_111_003_call_cq_on_an_own_cq_kept_off() {
 
 // A stale safety revision is stale_revision
 // and nothing is prepared; a Hound's call_cq is no_contact.
+// Proves: TC-024-011
 #[test]
 fn tc_111_003_a_stale_safety_revision_prepares_nothing_and_a_hound_calls_no_cq() {
     for stale in [Some(6), None] {
@@ -612,6 +619,7 @@ fn tc_111_003_a_stale_safety_revision_prepares_nothing_and_a_hound_calls_no_cq()
 // a completed and a cancelled QSO and with no contact are no_contact and nothing is sent in
 // three own periods; reply and call_dx after a completed QSO call their own partner; only
 // call_cq calls CQ.
+// Proves: TC-111-020
 #[test]
 fn tc_111_006_a_start_never_becomes_a_cq() {
     let ended: [(&str, Build); 3] = [
@@ -1073,6 +1081,7 @@ fn tc_111_012_reset_starts_the_count_anew_and_continues_after_the_limit() {
 }
 
 // Where Reset is refused.
+// Proves: TC-111-012
 #[test]
 fn tc_111_012_where_reset_is_refused() {
     // (c) a kept QSO after Halt, after the radio was lost and after a refused transmission.
@@ -1178,6 +1187,7 @@ fn to_the_limit(s: &mut Station) {
 
 // In one station step any stop wins over
 // any start.
+// Proves: TC-111-018
 #[test]
 fn tc_111_013_a_stop_wins_over_a_start_in_one_step() {
     // Halt and reply.
@@ -1321,6 +1331,7 @@ fn stops_at(s: &mut Station, at: i64, label: &str) {
 
 // While the Hound still calls with Tx1 the state goes off 300 s
 // after the last accepted start; every accepted start restarts the 300 s, Reset does not.
+// Proves: TC-111-016
 #[test]
 fn tc_111_016_the_hound_stops_300_s_after_its_last_start() {
     // 300 s after the start, not at 299 s.

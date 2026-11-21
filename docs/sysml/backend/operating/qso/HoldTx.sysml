@@ -173,7 +173,11 @@ package WstxHoldTx {
                 + "server/src/operating/qso/freeslot_tests.rs::"
                 + "tc_089_001_the_newest_period_counts_by_its_rows_so_far; "
                 + "server/src/operating/qso/freeslot_tests.rs::"
-                + "tc_089_001_an_ended_period_and_ft4";
+                + "tc_089_001_an_ended_period_and_ft4; "
+                + "server/src/operating/qso/newest_rx_tests.rs::"
+                + "tc_089_003_the_marks_count_the_publication_of_the_period_in_progress_in_a_qso; "
+                + "server/src/operating/qso/newest_rx_tests.rs::"
+                + "tc_089_003_listening_counts_the_period_in_progress_once_completely_published";
         }
     }
 
@@ -185,7 +189,9 @@ package WstxHoldTx {
         objective { verify 'CL-039-09'; }
         @TestedBy {
             test = "server/src/operating/qso/newest_rx_tests.rs::"
-                + "tc_089_002_a_selection_on_the_newest_publication_counts_its_stations";
+                + "tc_089_002_a_selection_on_the_newest_publication_counts_its_stations; "
+                + "server/src/operating/qso/newest_rx_tests.rs::"
+                + "tc_089_002_a_held_slot_check_counts_the_newest_period";
         }
     }
 

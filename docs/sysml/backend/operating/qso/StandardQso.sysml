@@ -373,7 +373,9 @@ package WstxStandardQso {
                 + "server/src/contact_tests.rs::"
                 + "a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_period; "
                 + "server/src/contact_tests.rs::"
-                + "a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period";
+                + "a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period; "
+                + "server/src/contact_http_tests.rs::"
+                + "tc_111_starts_are_single_commands_and_a_band_change_stops_the_station";
         }
     }
 
@@ -407,7 +409,11 @@ package WstxStandardQso {
                 + "server/src/contact_http_tests.rs::"
                 + "published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73; "
                 + "server/src/contact_http_tests.rs::"
-                + "armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once";
+                + "armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once; "
+                + "server/src/contact_http_tests.rs::"
+        + "ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change; "
+                + "server/src/contact_http_tests.rs::"
+        + "simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cancels_only_its_own";
         }
     }
 
@@ -469,7 +475,9 @@ package WstxStandardQso {
                 + "server/src/contact_tests.rs::"
                 + "tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy; "
                 + "server/src/contact_tests.rs::"
-                + "tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for";
+                + "tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for; "
+                + "server/src/contact_http_tests.rs::"
+                + "tc_097_017_d_get_contact_carries_the_busy_partner";
         }
     }
 }

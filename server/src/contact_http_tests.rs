@@ -564,6 +564,7 @@ const MAX_SAFE_TEST: u64 = 9_007_199_254_740_991;
 // Oracle: WstxOperatingChain::BusyPartner "Shown". The operator selects CQ
 // KE1J; KE1J's report to W9XYZ (packed with the real codec) is published: GET /contact's watchdog
 // carries busy_with "W9XYZ" and paused_calls 0 (no paused send yet); his RR73 to W9XYZ clears it.
+// Proves: TC-097-017
 #[tokio::test]
 async fn tc_097_017_d_get_contact_carries_the_busy_partner() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -603,6 +604,7 @@ async fn tc_097_017_d_get_contact_carries_the_busy_partner() {
     assert_eq!(f.snapshot().await["watchdog"]["busy_with"], Value::Null);
 }
 
+// Proves: TC-003-001, TC-006-004, TC-021-005
 #[tokio::test]
 async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -1021,6 +1023,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
     );
 }
 
+// Proves: TC-111-011
 #[tokio::test]
 async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action() {
     let f = fixture("http://127.0.0.1:18001", false);
@@ -1610,6 +1613,7 @@ async fn select_mode(f: &Fixture, mode: &str) -> (StatusCode, Value) {
 // The station's operating mode follows the live FT4 job
 // (WstxTransmitControl::StationMode) and a mode selection is refused busy while transmit
 // keys the radio (ModeChange; WSJT-X updateModeControlLock).
+// Proves: TC-007-008, TC-011-004
 #[tokio::test]
 async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change() {
     let f = fixture("http://127.0.0.1:18011", true);
@@ -1664,6 +1668,7 @@ async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mo
 // time a slow run lets that period start first; the owner then refuses the request as
 // stale_request, last_disarm_cause "refused", before the contact step sees the switch.)
 // (the cause mode_changed on the wire).
+// Proves: TC-007-008
 #[tokio::test]
 async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cancels_only_its_own() {
     let f4 = fixture("http://127.0.0.1:18012", true);
@@ -1769,6 +1774,7 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
 
 // The busy barrier also holds while PTT is keyed before
 // the audio and while the waveform plays (ModeChange); nothing changes.
+// Proves: TC-011-004
 #[tokio::test]
 async fn a_mode_selection_is_busy_while_ptt_is_keyed_and_while_transmitting() {
     use wstx_rust::transmit::service::{OutcomeKind, PttState, Request};
@@ -1828,6 +1834,7 @@ async fn a_mode_selection_is_busy_while_ptt_is_keyed_and_while_transmitting() {
 
 // StationOperatingMode persists across a receive stop: an
 // FT4 contact is kept when FT4 receive (started outside the operating selection) stops.
+// Proves: TC-011-004
 #[tokio::test]
 async fn the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_contact() {
     let f = fixture("http://127.0.0.1:18015", false);
@@ -2302,6 +2309,7 @@ async fn hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields
 // the profile callsign and the current contact: MyCall alone before a contact, then DxCall,
 // the WSJT-X QSO progress of the contact state and the Rx/Tx offsets. CQ-only (lapcqonly)
 // holds until Enable Tx is on, clears while it is on and returns 300 s after it went off.
+// Proves: TC-005-003
 #[tokio::test]
 async fn a_priori_context_follows_profile_and_contact() {
     use decoder::QsoProgress;
@@ -2649,6 +2657,7 @@ async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
 // safety revision, the causes on the wire, the station's band reaching the engine, and
 // TC-111-010 (b) on the wire. The station: router, contact engine and transmit owner on the
 // recording double. Expected values are the tables of CL-111-02 and CL-111-03.
+// Proves: TC-050-004, TC-111-002, TC-111-019
 #[tokio::test]
 async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station() {
     let f = fixture("http://127.0.0.1:18001", true);
@@ -3265,6 +3274,7 @@ fn log_qso_85(f: &Fixture, at: i64, call: &str, grid: Option<&str>) {
 // second QSO in a row with K1ABC (a dupe under the contest's rule) keeps the serial and the next
 // station is sent the same one; under band_grid a rover from a new grid is logged and counts; a
 // record refused log_invalid_field is accepted for the answer and counts.
+// Proves: TC-085-007
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_085_004_the_contest_serial_counts_only_on_accepted() {
     let f = fixture("http://127.0.0.1:18089", false);
