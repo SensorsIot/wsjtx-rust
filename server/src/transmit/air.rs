@@ -8,7 +8,7 @@
 //! plus the current correction, never from DT already shifted by the windows the
 //! correction aligns, so the correction converges to the middle without oscillating.
 use super::ClockState;
-use super::clock::{MAX_STEP_MS, Measurement, Monitor, WindowsTime, stale};
+use super::clock::{Clock, MAX_STEP_MS, Measurement, Monitor, WindowsTime, stale};
 use crate::decoder::{CallKind, Fields};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -319,7 +319,8 @@ pub struct View {
     pub warning: Option<Warning>,
 }
 
-type WindowsTimeReader = Box<dyn Fn() -> WindowsTime + Send + Sync>;
+/// Reads the Windows Time service state (`clock::windows_time` on the station).
+pub type WindowsTimeReader = Box<dyn Fn() -> WindowsTime + Send + Sync>;
 struct Inner {
     own: String,
     air: AirClock,
@@ -327,34 +328,45 @@ struct Inner {
 /// The station clock: the air estimator (the reference) and the SNTP monitor (warnings).
 pub struct StationClock {
     ntp: Arc<Monitor>,
+    clock: Arc<dyn Clock>,
     origin: Instant,
     inner: Mutex<Inner>,
-    windows_time: Mutex<WindowsTimeReader>,
+    windows_time: WindowsTimeReader,
 }
 fn unix_ms(t: SystemTime) -> i64 {
     t.duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
 }
-fn system_ms() -> i64 {
-    unix_ms(SystemTime::now())
-}
 impl StationClock {
-    pub fn new(ntp: Arc<Monitor>) -> Arc<Self> {
+    /// The station clock on the SNTP monitor `ntp`, the clocks `clock` and the Windows
+    /// Time reader `windows_time`.
+    pub fn new(
+        ntp: Arc<Monitor>,
+        clock: Arc<dyn Clock>,
+        windows_time: WindowsTimeReader,
+    ) -> Arc<Self> {
         Arc::new(Self {
             ntp,
-            origin: Instant::now(),
+            origin: clock.now(),
+            clock,
             inner: Mutex::new(Inner {
                 own: String::new(),
                 air: AirClock::default(),
             }),
-            windows_time: Mutex::new(Box::new(super::clock::windows_time)),
+            windows_time,
         })
     }
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(|p| p.into_inner())
     }
     fn mono_ms(&self) -> i64 {
-        self.origin.elapsed().as_millis() as i64
+        self.clock
+            .now()
+            .saturating_duration_since(self.origin)
+            .as_millis() as i64
+    }
+    fn system_ms(&self) -> i64 {
+        unix_ms(self.clock.system())
     }
     pub fn ntp(&self) -> &Arc<Monitor> {
         &self.ntp
@@ -368,7 +380,7 @@ impl StationClock {
     }
     /// One decoded message from `call` with raw DT (against the uncorrected system clock).
     pub fn observe(&self, call: &str, dt_ms: i64, snr_db: Option<f64>) {
-        let (mono, system) = (self.mono_ms(), system_ms());
+        let (mono, system) = (self.mono_ms(), self.system_ms());
         let mut i = self.lock();
         let Inner { own, air } = &mut *i;
         air.observe(mono, system, call, own, dt_ms, snr_db);
@@ -376,30 +388,17 @@ impl StationClock {
     /// A decode window of a mode with periods of `period_ms` completed (see
     /// AirClock::period_done).
     pub fn period_done(&self, period_ms: i64) {
-        let (mono, system) = (self.mono_ms(), system_ms());
+        let (mono, system) = (self.mono_ms(), self.system_ms());
         self.lock().air.period_done(mono, system, period_ms);
-    }
-    /// (monotonic ms since this clock's origin, system ms) now: the time base of
-    /// `with_air`, so a fixture can drive the estimator on times consistent with reads.
-    pub fn now_ms(&self) -> (i64, i64) {
-        (self.mono_ms(), system_ms())
-    }
-    /// Test seam: the air estimator on explicit clocks.
-    pub fn with_air<T>(&self, f: impl FnOnce(&mut AirClock) -> T) -> T {
-        f(&mut self.lock().air)
-    }
-    /// Test seam: replaces the Windows Time service reader.
-    pub fn set_windows_time_reader(&self, reader: WindowsTimeReader) {
-        *self.windows_time.lock().unwrap_or_else(|p| p.into_inner()) = reader;
     }
     /// The Windows Time service state, read now (no administrator rights needed).
     pub fn windows_time(&self) -> WindowsTime {
-        (self.windows_time.lock().unwrap_or_else(|p| p.into_inner()))()
+        (self.windows_time)()
     }
     /// One read of the monitor's last completed round, judged at one instant.
     pub fn view(&self) -> View {
         let (ntp, asked) = self.ntp.read();
-        let (now, system_now) = (Instant::now(), SystemTime::now());
+        let (now, system_now) = (self.clock.now(), self.clock.system());
         let age = ntp.as_ref().map(|m| now.saturating_duration_since(m.taken));
         let ntp_state = super::clock::state(ntp.as_ref(), now, system_now);
         let mono = now.saturating_duration_since(self.origin).as_millis() as i64;
@@ -418,7 +417,7 @@ impl StationClock {
     }
     /// The station clock state for transmit admission (never unknown).
     pub fn state(&self) -> ClockState {
-        let (mono, system) = (self.mono_ms(), system_ms());
+        let (mono, system) = (self.mono_ms(), self.system_ms());
         self.lock().air.state(mono, system)
     }
     /// The correction added to the system clock for station UTC (receive windows, DT,

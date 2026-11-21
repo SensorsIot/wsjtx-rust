@@ -16,6 +16,7 @@ use axum::{
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
+    future::Future,
     io,
     net::SocketAddr,
     pin::Pin,
@@ -76,8 +77,8 @@ impl Mode {
 pub(crate) trait PeriodClock: Send + Sync {
     fn utc_ms(&self) -> u64;
     fn mode(&self) -> Mode;
-    /// The longest the writer waits before it looks at the clock again; None: only when woken.
-    fn recheck(&self) -> Option<Duration>;
+    /// The writer's wait between two looks at the clock: completes when it looks again.
+    fn wait(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
 }
 /// The station's: the system clock's UTC and the operating selection's mode, looked at every
 /// 100 ms, so a mode change ends its period within 100 ms of the change.
@@ -89,8 +90,8 @@ impl PeriodClock for StationClock {
     fn mode(&self) -> Mode {
         Mode::of(self.0.operating_mode())
     }
-    fn recheck(&self) -> Option<Duration> {
-        Some(Duration::from_millis(100))
+    fn wait(&self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(tokio::time::sleep(Duration::from_millis(100)))
     }
 }
 
@@ -197,7 +198,6 @@ struct ClientPeriod {
 
 pub(crate) struct Log {
     clock: Box<dyn PeriodClock>,
-    wake: tokio::sync::Notify,
     connections: Mutex<Vec<Arc<Connection>>>,
     /// The open period: its start and mode.
     open: Mutex<(u64, Mode)>,
@@ -207,7 +207,6 @@ impl Log {
         let (now, mode) = (clock.utc_ms(), clock.mode());
         Arc::new(Log {
             clock,
-            wake: tokio::sync::Notify::new(),
             connections: Mutex::new(Vec::new()),
             open: Mutex::new((now - now % mode.period_ms(), mode)),
         })
@@ -229,11 +228,6 @@ impl Log {
             connections.push(connection.clone());
         }
         connection
-    }
-    /// Makes the writer look at the period clock now (a test's driven clock never wakes it).
-    #[cfg(test)]
-    pub(crate) fn wake(&self) {
-        self.wake.notify_one();
     }
     /// The lines of every period that ended by the clock's time; a mode change ends the open
     /// period at that time and starts one that runs to the next period start of the new mode.
@@ -324,12 +318,7 @@ impl Log {
 pub(crate) fn spawn_writer(log: Arc<Log>, state: Arc<crate::ProfileState>) {
     tokio::spawn(async move {
         loop {
-            match log.clock.recheck() {
-                Some(wait) => {
-                    let _ = tokio::time::timeout(wait, log.wake.notified()).await;
-                }
-                None => log.wake.notified().await,
-            }
+            log.clock.wait().await;
             let lines = log.advance();
             if lines.is_empty() {
                 continue;

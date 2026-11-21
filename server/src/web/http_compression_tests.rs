@@ -408,6 +408,7 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
         id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        crate::contact_http::tests::DrivenClock::new(),
     );
     r.initialize_profile_revision(0);
     let app = App {

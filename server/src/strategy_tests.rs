@@ -1310,26 +1310,10 @@ async fn tc_039_004_a_run_goes_on_after_each_qso_without_a_limit() {
     select(&f, config(Some("Test calls"))).await;
     let _client = f.state.recording.clients.session();
     // No limit on the contacts, and the run goes on before its 8 hours.
-    *f.state
-        .recording
-        .contact
-        .get()
-        .unwrap()
-        .automation
-        .skew
-        .lock()
-        .unwrap() = Duration::from_secs(479 * 60);
+    f.clock.set_offset(Duration::from_secs(479 * 60));
     f.tick();
     assert_eq!(run_state(&f).await, ("waiting".into(), Value::Null));
-    *f.state
-        .recording
-        .contact
-        .get()
-        .unwrap()
-        .automation
-        .skew
-        .lock()
-        .unwrap() = Duration::ZERO;
+    f.clock.set_offset(Duration::ZERO);
     // A caller is answered with a report; after its R-report and 73 the contact completes.
     for (i, call) in ["K1ABC", "K2ABC", "K3ABC"].into_iter().enumerate() {
         let at = e + 180_000 * i as i64;
@@ -1756,17 +1740,7 @@ async fn tc_039_004_a_strategy_run_follows_the_grant_not_the_transport() {
     assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
     assert_eq!(contact(&f).await.2, json!("armed"));
     // Past the transport's 8 h deadline: still running.
-    let skew = |d: Duration| {
-        *f.state
-            .recording
-            .contact
-            .get()
-            .unwrap()
-            .automation
-            .skew
-            .lock()
-            .unwrap() = d;
-    };
+    let skew = |d: Duration| f.clock.set_offset(d);
     skew(Duration::from_secs(8 * 3600 + 1));
     f.tick();
     assert_eq!(run_state(&f).await, ("contact_active".into(), Value::Null));
@@ -1826,15 +1800,7 @@ async fn quiet_contact(f: &Mcp) -> (Value, Value, Value) {
     )
 }
 fn at_skew(f: &Mcp, seconds: u64) {
-    *f.state
-        .recording
-        .contact
-        .get()
-        .unwrap()
-        .automation
-        .skew
-        .lock()
-        .unwrap() = Duration::from_secs(seconds);
+    f.clock.set_offset(Duration::from_secs(seconds));
     f.tick();
 }
 

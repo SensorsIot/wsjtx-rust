@@ -1105,7 +1105,7 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
     assert_eq!(stored(&f).len(), 2, "no retry before the backoff");
     assert!(drain(&a).is_empty());
     // The due retry runs in the station's contact step.
-    f.contact().retry_logs_now();
+    f.pass_log_retry();
     f.tick();
     let after = stored(&f);
     assert_eq!(after.len(), 3, "the retry stores it");
@@ -1145,7 +1145,7 @@ async fn tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_tar
         "the dropped record stays shown"
     );
     f.files.logbook.disarm();
-    f.contact().retry_logs_now();
+    f.pass_log_retry();
     f.tick();
     assert_eq!(
         f.state.logbook.total().unwrap(),

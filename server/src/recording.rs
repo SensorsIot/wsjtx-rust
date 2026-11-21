@@ -317,6 +317,8 @@ pub struct Recording {
     diagnostics_error: Arc<AtomicBool>,
     /// The file port the recordings are written, listed and removed through.
     files: Arc<dyn profile::Files>,
+    /// The station's clocks: replay pacing, the Set level settle and the meter reads.
+    pub(crate) time: Arc<dyn wstx_rust::transmit::clock::Clock>,
     /// The CAT line opener the entry point supplies; without one CAT is unavailable.
     pub(crate) cat_opener: std::sync::OnceLock<Arc<dyn wstx_rust::radio_control::executor::Opener>>,
     #[cfg(test)]
@@ -3283,8 +3285,6 @@ struct Resources {
     active_workers: usize,
     peak_workers: usize,
     peak_blocks: usize,
-    cross_deadline: bool,
-    deadline_crossings: usize,
     live_input: Option<Box<dyn LiveInput>>,
     live_inputs: VecDeque<Box<dyn LiveInput>>,
     fail_live_spawn: bool,
@@ -3315,6 +3315,7 @@ impl Recording {
         profile: String,
         boot: String,
         files: Arc<dyn profile::Files>,
+        time: Arc<dyn wstx_rust::transmit::clock::Clock>,
     ) -> Arc<Self> {
         let dir = base.join("recordings");
         let startup = Mutex::new(startup::Startup::load(base, &profile, files.clone()));
@@ -3377,6 +3378,7 @@ impl Recording {
                 diagnostics,
                 diagnostics_error: Arc::new(AtomicBool::new(false)),
                 files,
+                time,
                 cat_opener: std::sync::OnceLock::new(),
                 #[cfg(test)]
                 resources: Mutex::new(Resources::default()),
@@ -3456,6 +3458,7 @@ impl Recording {
             diagnostics,
             diagnostics_error: Arc::new(AtomicBool::new(false)),
             files,
+            time,
             cat_opener: std::sync::OnceLock::new(),
             #[cfg(test)]
             resources: Mutex::new(Resources::default()),
@@ -3949,7 +3952,7 @@ impl Recording {
         let (mut thin_start, mut detail_start) = (0u64, 0u64);
         let mut thin_peak = [0f32; 128];
         let mut thin_sequence = 0;
-        let began = Instant::now();
+        let began = self.time.now();
         for sequence in 0..meta.frames.div_ceil(spectrum::ROW_FRAMES) {
             let row_end = ((sequence + 1) * spectrum::ROW_FRAMES).min(meta.frames);
             let mut powers = [0f32; 1024];
@@ -4005,31 +4008,15 @@ impl Recording {
             }
             let due = Duration::from_secs_f64(row_end as f64 / spectrum::RATE as f64);
             loop {
-                #[cfg(test)]
-                let elapsed = began.elapsed();
-                #[cfg(test)]
-                {
-                    let cross = {
-                        let mut r = self.resources.lock().unwrap();
-                        let cross = r.cross_deadline;
-                        r.cross_deadline = false;
-                        if cross {
-                            r.deadline_crossings += 1;
-                        }
-                        cross
-                    };
-                    if cross {
-                        std::thread::sleep(due.saturating_sub(elapsed) + Duration::from_millis(1));
-                    }
-                }
-                let remaining = due.saturating_sub(began.elapsed());
+                let elapsed = self.time.now().saturating_duration_since(began);
+                let remaining = due.saturating_sub(elapsed);
                 if remaining.is_zero() {
                     break;
                 }
                 if job.cancel.load(Ordering::Acquire) {
                     return Err("cancelled");
                 }
-                std::thread::sleep(remaining.min(Duration::from_millis(20)));
+                self.time.sleep(remaining.min(Duration::from_millis(20)));
             }
             let levels: Vec<u8> = powers
                 .into_iter()

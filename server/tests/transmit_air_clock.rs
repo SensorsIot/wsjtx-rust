@@ -5,7 +5,7 @@
 // only beyond 1 s, system clock steps, the SNTP state only warning, and a closed receive
 // loop converging without oscillating. Every expected value is hand-computed in the
 // comments from the model's rule, never taken from the code under test.
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime};
 use wstx_rust::decoder::{Call, CallKind, Exchange, Fields, Mode};
 use wstx_rust::transmit::air::{
@@ -430,23 +430,111 @@ fn measured(offset_ms: i64) -> Measurement {
         system: SystemTime::now(),
     }
 }
-/// A station clock on `ntp` and the (monotonic, system) base of its estimator.
-fn station(ntp: &Arc<Monitor>) -> (Arc<StationClock>, i64, i64) {
-    let clock = StationClock::new(ntp.clone());
-    clock.set_own_call("HB9BLA");
-    let (mono, system) = clock.now_ms();
-    (clock, mono, system)
+/// The station's clocks as the test drives them: the system clocks plus an offset.
+#[derive(Default)]
+struct Driven(Mutex<Duration>);
+impl Driven {
+    fn set(&self, ms: i64) {
+        *self.0.lock().unwrap() = Duration::from_millis(ms as u64);
+    }
+    fn offset(&self) -> Duration {
+        *self.0.lock().unwrap()
+    }
 }
-/// Window `k` of `period_ms` periods on the station clock's own time base (consistent with
-/// its reads: no step).
-fn heard(clock: &StationClock, base: (i64, i64), k: i64, period_ms: i64, raw: &[i64]) {
+impl clock::Clock for Driven {
+    fn now(&self) -> Instant {
+        Instant::now() + self.offset()
+    }
+    fn system(&self) -> SystemTime {
+        SystemTime::now() + self.offset()
+    }
+    fn sleep(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
+}
+/// A source of SNTP rounds the test gives one at a time as (asked, measurement); it blocks
+/// until the test gives the next one.
+struct RoundSource {
+    rounds: Mutex<mpsc::Receiver<(bool, Option<Measurement>)>>,
+    asked: mpsc::Sender<()>,
+    taken: Mutex<Option<Option<Measurement>>>,
+}
+impl Source for RoundSource {
+    fn asks(&self) -> bool {
+        let _ = self.asked.send(());
+        let (asked, m) = match self.rounds.lock().unwrap().recv() {
+            Ok(round) => round,
+            // The test is gone: the monitor ends with its last holder.
+            Err(_) => {
+                std::thread::sleep(Duration::from_millis(10));
+                (false, None)
+            }
+        };
+        *self.taken.lock().unwrap() = Some(m);
+        asked
+    }
+    fn measure(&mut self) -> Option<Measurement> {
+        self.taken.lock().unwrap().take().flatten()
+    }
+}
+/// The test's end of a `RoundSource`.
+struct Rounds {
+    give: mpsc::Sender<(bool, Option<Measurement>)>,
+    asked: Mutex<mpsc::Receiver<()>>,
+}
+impl Rounds {
+    /// One round; returns once the monitor stored it (its source is asked for the next).
+    fn give(&self, asked: bool, m: Option<Measurement>) {
+        let waiting = self.asked.lock().unwrap();
+        self.give.send((asked, m)).unwrap();
+        waiting.recv().unwrap();
+    }
+}
+/// A monitor on a round source, and the test's end of it.
+fn monitor() -> (Arc<Monitor>, Rounds) {
+    let (give, rounds) = mpsc::channel();
+    let (asked_tx, asked) = mpsc::channel();
+    let source = RoundSource {
+        rounds: Mutex::new(rounds),
+        asked: asked_tx,
+        taken: Mutex::new(None),
+    };
+    let monitor = Monitor::start(Box::new(source), Duration::ZERO).unwrap();
+    asked.recv().unwrap();
+    (
+        monitor,
+        Rounds {
+            give,
+            asked: Mutex::new(asked),
+        },
+    )
+}
+/// A monitor whose source is given no round.
+fn idle() -> Arc<Monitor> {
+    monitor().0
+}
+/// A station clock on `ntp` and the clocks it runs on (offset zero).
+fn station(ntp: Arc<Monitor>) -> (Arc<StationClock>, Arc<Driven>) {
+    let driven = Arc::new(Driven::default());
+    let clock = StationClock::new(
+        ntp,
+        driven.clone(),
+        Box::new(|| clock::WindowsTime::Running),
+    );
+    clock.set_own_call("HB9BLA");
+    (clock, driven)
+}
+/// Window `k` of `period_ms` periods, each decode and the window's completion made with the
+/// station's clocks driven to its time; they return to offset zero after.
+fn heard(clock: &StationClock, driven: &Driven, k: i64, period_ms: i64, raw: &[i64]) {
     let t = k * period_ms + period_ms - 1000;
-    clock.with_air(|a| {
-        for (call, dt) in calls(raw.len()).iter().zip(raw) {
-            a.observe(base.0 + t, base.1 + t, call, "HB9BLA", *dt, Some(-5.0));
-        }
-        a.period_done(base.0 + t + 200, base.1 + t + 200, period_ms);
-    });
+    driven.set(t);
+    for (call, dt) in calls(raw.len()).iter().zip(raw) {
+        clock.observe(call, *dt, Some(-5.0));
+    }
+    driven.set(t + 200);
+    clock.period_done(period_ms);
+    driven.set(0);
 }
 
 // The 2 s ahead crowd gives the same correction and state with SNTP
@@ -456,13 +544,13 @@ fn heard(clock: &StationClock, base: (i64, i64), k: i64, period_ms: i64, raw: &[
 fn sntp_is_never_applied_and_only_warns() {
     let mut seen = vec![];
     for sntp in [Some(12), Some(-1900), None] {
-        let ntp = Monitor::new();
+        let (ntp, rounds) = monitor();
         if let Some(offset) = sntp {
-            ntp.record(Some(measured(offset)));
+            rounds.give(false, Some(measured(offset)));
         }
-        let (clock, m, s) = station(&ntp);
+        let (clock, d) = station(ntp);
         for k in 0..3 {
-            heard(&clock, (m, s), k, FT8, &crowd(2000));
+            heard(&clock, &d, k, FT8, &crowd(2000));
         }
         let v = clock.view();
         seen.push((v.state, v.correction_ms, v.warning));
@@ -559,9 +647,9 @@ fn applied_correction_converges_without_oscillation() {
 // Proves: TC-092-002
 #[test]
 fn replay_of_the_ft4_refusals_of_2026_11_09() {
-    let ntp = Monitor::new();
-    ntp.record(Some(measured(525)));
-    let (clock, m, s) = station(&ntp);
+    let (ntp, rounds) = monitor();
+    rounds.give(false, Some(measured(525)));
+    let (clock, d) = station(ntp);
     let check = |expected: i64| {
         let v = clock.view();
         assert_eq!(
@@ -572,21 +660,21 @@ fn replay_of_the_ft4_refusals_of_2026_11_09() {
     };
     let first = [-339, -339, -339, -339, -50, 100];
     for k in 0..3 {
-        heard(&clock, (m, s), k, FT4, &first);
+        heard(&clock, &d, k, FT4, &first);
         check(0);
     }
     // More than 120 s later (the first crowd has left the window).
     let second = [-339, -339, -339, -339, -339, 100];
-    heard(&clock, (m, s), 20, FT4, &second);
+    heard(&clock, &d, 20, FT4, &second);
     let e = clock.view().air.unwrap().0;
     assert_eq!((e.median_dt_ms, e.minus, e.stations), (-339, 5, 6));
     check(339);
     for k in 40..43 {
-        heard(&clock, (m, s), k, FT4, &[-339, 100]);
+        heard(&clock, &d, k, FT4, &[-339, 100]);
         check(339);
     }
     for k in 60..84 {
-        heard(&clock, (m, s), k, FT4, &[]);
+        heard(&clock, &d, k, FT4, &[]);
         check(339);
     }
 }
@@ -608,12 +696,12 @@ fn aged(offset_ms: i64, now: Instant, system: SystemTime, age: Duration) -> Meas
 #[test]
 fn three_situations_correction_state_and_warnings() {
     // SNTP +12 (synchronized): four at +1500 -> -1000, -1500, stations_off.
-    let ntp = Monitor::new();
-    ntp.record(Some(measured(12)));
-    let (clock, m, s) = station(&ntp);
-    heard(&clock, (m, s), 0, FT8, &[1500; 4]);
+    let (ntp, rounds) = monitor();
+    rounds.give(false, Some(measured(12)));
+    let (clock, d) = station(ntp.clone());
+    heard(&clock, &d, 0, FT8, &[1500; 4]);
     assert_eq!(clock.view().correction_ms, -1000);
-    heard(&clock, (m, s), 1, FT8, &[1500; 4]);
+    heard(&clock, &d, 1, FT8, &[1500; 4]);
     let v = clock.view();
     assert_eq!(
         (v.state, v.correction_ms, v.warning),
@@ -621,8 +709,8 @@ fn three_situations_correction_state_and_warnings() {
     );
     // stations_off: null at -500, set at -501 (four at +500 / +501 with SNTP +12).
     for (dt, expected) in [(500, None), (501, Some(Warning::StationsOff))] {
-        let (clock, m, s) = station(&ntp);
-        heard(&clock, (m, s), 0, FT8, &[dt; 4]);
+        let (clock, d) = station(ntp.clone());
+        heard(&clock, &d, 0, FT8, &[dt; 4]);
         let v = clock.view();
         assert_eq!((v.correction_ms, v.warning), (-dt, expected), "{dt}");
     }
@@ -632,9 +720,9 @@ fn three_situations_correction_state_and_warnings() {
         (501, Some(Warning::PcClockOff)),
         (-1900, Some(Warning::PcClockOff)),
     ] {
-        let ntp = Monitor::new();
-        ntp.record(Some(measured(offset)));
-        let v = StationClock::new(ntp).view();
+        let (ntp, rounds) = monitor();
+        rounds.give(false, Some(measured(offset)));
+        let v = station(ntp).0.view();
         assert_eq!(
             (v.state, v.correction_ms, v.warning),
             (Synchronized, 0, expected),
@@ -642,24 +730,24 @@ fn three_situations_correction_state_and_warnings() {
         );
     }
     // One round asked, no answer, no measurement: ntp_unreachable, synchronized.
-    let ntp = Monitor::new();
-    ntp.round(true, None);
-    let v = StationClock::new(ntp).view();
+    let (ntp, rounds) = monitor();
+    rounds.give(true, None);
+    let v = station(ntp).0.view();
     assert_eq!(
         (v.state, v.warning),
         (Synchronized, Some(Warning::NtpUnreachable))
     );
     // No round yet, and an empty server list (its rounds ask none): no warning.
-    assert_eq!(StationClock::new(Monitor::new()).view().warning, None);
+    assert_eq!(station(idle()).0.view().warning, None);
     let empty = Sntp {
         servers: vec![],
         timeout: Duration::from_millis(10),
         now: SystemTime::now,
     };
     assert!(!empty.asks());
-    let ntp = Monitor::new();
-    ntp.round(empty.asks(), None);
-    assert_eq!(StationClock::new(ntp).view().warning, None);
+    let (ntp, rounds) = monitor();
+    rounds.give(empty.asks(), None);
+    assert_eq!(station(ntp).0.view().warning, None);
     // A measurement 600 s old after failed rounds: still synchronized, null; 600 s + 1 ms:
     // unknown, ntp_unreachable. A 101 ms step with a young measurement: unknown, null.
     let (now, system) = (Instant::now(), SystemTime::now());
@@ -721,13 +809,13 @@ fn three_situations_correction_state_and_warnings() {
         (0, Synchronized)
     );
     // Correction -2000 is kept through every SNTP change (SNTP never resets it).
-    let ntp = Monitor::new();
-    let (clock, m, s) = station(&ntp);
+    let (ntp, rounds) = monitor();
+    let (clock, d) = station(ntp);
     for k in 0..3 {
-        heard(&clock, (m, s), k, FT8, &crowd(2000));
+        heard(&clock, &d, k, FT8, &crowd(2000));
     }
     for offset in [12, 600, 12] {
-        ntp.record(Some(measured(offset)));
+        rounds.give(false, Some(measured(offset)));
         assert_eq!(clock.view().correction_ms, -2000, "SNTP {offset}");
     }
 }
@@ -742,9 +830,14 @@ fn windows_time_service_state_is_read_without_administrator_rights() {
     let state = clock::windows_time();
     assert_ne!(state, clock::WindowsTime::Unknown);
     assert_eq!(
-        StationClock::new(Monitor::new()).windows_time(),
+        StationClock::new(
+            idle(),
+            Arc::new(Driven::default()),
+            Box::new(clock::windows_time)
+        )
+        .windows_time(),
         state,
-        "the station clock's default reader is the real query"
+        "the station clock's reader is the real query"
     );
 }
 
@@ -777,10 +870,10 @@ fn rounds_record_whether_a_server_was_asked() {
     std::thread::sleep(Duration::from_millis(50));
     assert!(!empty.asked());
     assert_eq!(
-        StationClock::new(asking).view().warning,
+        station(asking).0.view().warning,
         Some(Warning::NtpUnreachable)
     );
-    assert_eq!(StationClock::new(empty).view().warning, None);
+    assert_eq!(station(empty).0.view().warning, None);
 }
 
 /// Views of `clock` taken on three threads, from before `write` runs on this one until after
@@ -823,12 +916,12 @@ fn views_while(clock: &StationClock, write: impl FnOnce()) -> Vec<View> {
 // Proves: TC-092-003
 #[test]
 fn a_view_judges_the_measurement_it_shows() {
-    let ntp = Monitor::new();
-    ntp.record(Some(measured(40)));
-    let clock = StationClock::new(ntp.clone());
+    let (ntp, rounds) = monitor();
+    rounds.give(false, Some(measured(40)));
+    let (clock, _) = station(ntp);
     let views = views_while(&clock, || {
         for k in 0..20_000 {
-            ntp.record(Some(measured(if k % 2 == 0 { 525 } else { 40 })));
+            rounds.give(false, Some(measured(if k % 2 == 0 { 525 } else { 40 })));
             std::thread::yield_now();
         }
     });
@@ -851,9 +944,9 @@ fn a_view_judges_the_measurement_it_shows() {
 #[test]
 fn a_completed_round_is_read_whole() {
     for _ in 0..500 {
-        let ntp = Monitor::new();
-        let clock = StationClock::new(ntp.clone());
-        let views = views_while(&clock, || ntp.round(true, Some(measured(40))));
+        let (ntp, rounds) = monitor();
+        let (clock, _) = station(ntp);
+        let views = views_while(&clock, || rounds.give(true, Some(measured(40))));
         for v in &views {
             assert_ne!(v.warning, Some(Warning::NtpUnreachable), "{v:?}");
         }
@@ -868,13 +961,13 @@ fn a_completed_round_is_read_whole() {
 fn a_view_takes_its_age_once() {
     let mut stale = 0;
     for _ in 0..200 {
-        let ntp = Monitor::new();
+        let (ntp, rounds) = monitor();
         let (now, system) = (Instant::now(), SystemTime::now());
-        ntp.round(
+        rounds.give(
             true,
             Some(aged(40, now, system, Duration::from_millis(599_998))),
         );
-        let clock = StationClock::new(ntp);
+        let (clock, _) = station(ntp);
         let until = now + Duration::from_millis(4);
         let views = views_while(&clock, || {
             while Instant::now() < until {

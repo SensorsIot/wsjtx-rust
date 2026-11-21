@@ -97,6 +97,7 @@ impl HttpFixture {
             id.clone(),
             boot.clone(),
             files.recording.clone(),
+            crate::contact_http::tests::DrivenClock::new(),
         );
         recording.initialize_profile_revision(store.document.revision);
         App {

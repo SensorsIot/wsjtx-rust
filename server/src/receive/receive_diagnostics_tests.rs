@@ -17,6 +17,7 @@ impl Dir {
             PROFILE.into(),
             profile::new_uuid().unwrap(),
             std::sync::Arc::new(crate::profile::Disk),
+            crate::contact_http::tests::DrivenClock::new(),
         )
     }
 }
