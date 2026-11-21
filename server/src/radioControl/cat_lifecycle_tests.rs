@@ -406,6 +406,7 @@ impl Station {
             crate::profile::new_uuid().unwrap(),
             crate::profile::new_uuid().unwrap(),
             std::sync::Arc::new(crate::profile::Disk),
+            crate::contact_http::tests::DrivenClock::new(),
         );
         let peer = attach_peer(&recording, device);
         Self {

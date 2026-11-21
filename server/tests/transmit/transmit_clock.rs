@@ -5,7 +5,7 @@
 // synchronized/unsynchronized/unknown rule and PlanTransmitStart admission.
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use wstx_rust::decoder::Mode;
 use wstx_rust::transmit::clock::{
@@ -336,40 +336,95 @@ fn measured_now(offset_ms: i64) -> Measurement {
         ..measured(offset_ms, Instant::now())
     }
 }
-struct Scripted(mpsc::Receiver<Option<Measurement>>);
-impl Source for Scripted {
-    fn measure(&mut self) -> Option<Measurement> {
-        // Blocks like a slow network until the test supplies the next result.
-        self.0.recv().unwrap_or(None)
+/// One round as the test supplies it: whether it asked a server, and its measurement.
+type Round = (bool, Option<Measurement>);
+/// Rounds the test supplies as (asked, measurement) pairs; it counts the rounds it was asked
+/// for, so a round is known stored once the next one is asked for.
+struct Scripted {
+    rounds: Mutex<mpsc::Receiver<Round>>,
+    taken: Mutex<Option<Measurement>>,
+    asked: Arc<AtomicUsize>,
+}
+impl Scripted {
+    /// A monitor on a scripted source, its supply and its count of rounds asked for.
+    fn start(interval: Duration) -> (Arc<Monitor>, mpsc::Sender<Round>, Arc<AtomicUsize>) {
+        let (send, receive) = mpsc::channel();
+        let asked = Arc::new(AtomicUsize::new(0));
+        let source = Scripted {
+            rounds: Mutex::new(receive),
+            taken: Mutex::new(None),
+            asked: asked.clone(),
+        };
+        (
+            Monitor::start(Box::new(source), interval).unwrap(),
+            send,
+            asked,
+        )
     }
+}
+impl Source for Scripted {
+    fn asks(&self) -> bool {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        // Blocks like a slow network until the test supplies the next result.
+        let (asked, m) = self.rounds.lock().unwrap().recv().unwrap_or((false, None));
+        *self.taken.lock().unwrap() = m;
+        asked
+    }
+    fn measure(&mut self) -> Option<Measurement> {
+        self.taken.lock().unwrap().take()
+    }
+}
+
+/// The station's real clocks read between two reads of the system clocks around them, and a
+/// wait that lasts at least its duration.
+#[test]
+fn system_clock_reads_and_waits_on_the_system_clocks() {
+    use clock::Clock;
+    let c = clock::SystemClock;
+    let before = Instant::now();
+    let now = c.now();
+    let after = Instant::now();
+    assert!(before <= now && now <= after);
+    let before = SystemTime::now();
+    let system = c.system();
+    let after = SystemTime::now();
+    assert!(before <= system && system <= after);
+    let began = Instant::now();
+    c.sleep(Duration::from_millis(20));
+    assert!(began.elapsed() >= Duration::from_millis(20));
 }
 
 // Proves: TC-006-003
 #[test]
 fn monitor_measures_off_the_reading_thread_and_keeps_the_last_answer() {
-    let (send, receive) = mpsc::channel();
-    let monitor = Monitor::start(Box::new(Scripted(receive)), Duration::from_millis(5)).unwrap();
+    let (monitor, send, _) = Scripted::start(Duration::from_millis(5));
     // The measurement is blocked: reading answers at once, unknown.
     let started = Instant::now();
     assert_eq!(monitor.state(), ClockState::Unknown);
     assert!(started.elapsed() < Duration::from_millis(50));
-    send.send(Some(measured_now(42))).unwrap();
+    send.send((false, Some(measured_now(42)))).unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     while monitor.latest().is_none() && Instant::now() < until {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(monitor.state(), ClockState::Synchronized);
     // A round without an answer keeps the previous measurement (it ages out later).
-    send.send(None).unwrap();
-    send.send(Some(measured_now(700))).unwrap();
+    send.send((false, None)).unwrap();
+    send.send((false, Some(measured_now(700)))).unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     while monitor.latest().map(|m| m.offset_ms) != Some(700) && Instant::now() < until {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(monitor.state(), ClockState::Unsynchronized);
-    let quiet = Monitor::new();
-    quiet.record(Some(measured_now(1)));
-    quiet.record(None);
+    let (quiet, send, asked) = Scripted::start(Duration::ZERO);
+    send.send((false, Some(measured_now(1)))).unwrap();
+    send.send((false, None)).unwrap();
+    // Both rounds are stored once the third is asked for.
+    let until = Instant::now() + Duration::from_secs(5);
+    while asked.load(Ordering::SeqCst) < 3 {
+        assert!(Instant::now() < until, "the rounds were not taken");
+        std::thread::sleep(Duration::from_millis(1));
+    }
     assert_eq!(quiet.latest().map(|m| m.offset_ms), Some(1));
 }
 

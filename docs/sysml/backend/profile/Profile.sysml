@@ -5,6 +5,7 @@ package WstxProfilePart {
     private import WstxClubLog::ClubLogPort;
     private import WstxCountryFiles::CountryFilesPort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def PersistedProfile {
@@ -25,6 +26,10 @@ package WstxProfilePart {
                 + "server/src/radio_setup.rs, server/src/recording.rs, "
                 + "server/src/recording_http.rs, outside server/src/profile/ and "
                 + "client/src/profile/.";
+        }
+        @DetailTests {
+            tests = "server/src/profile_tests.rs";
+            covers = "the refusal of an open whose authorization record is missing or damaged";
         }
         attribute config : StationConfig {
             doc /* The station config, as the saved document holds it. */ }

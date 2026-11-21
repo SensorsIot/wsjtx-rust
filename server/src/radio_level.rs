@@ -23,7 +23,7 @@ const LEVEL_FILE_MAX: u64 = 256;
 pub(crate) const START_DB: i32 = -30;
 /// Tune level settle time before each meter read of the assistant.
 const SETTLE_MS: u64 = 400;
-const SETTLE: Duration = Duration::from_millis(if cfg!(test) { 5 } else { SETTLE_MS });
+const SETTLE: Duration = Duration::from_millis(SETTLE_MS);
 /// Bound of one meter read (all its frames).
 const METER_READ_MAX_MS: Duration = Duration::from_millis(400);
 /// Meter display while Tune runs outside the assistant.
@@ -186,9 +186,6 @@ struct Inner {
     /// SWR stopped transmitting; held until a later reading or Set level shows it clear.
     swr_fault: bool,
     revision: u64,
-    /// Test seam only: a fixture's bound of one meter read instead of METER_READ_MAX_MS.
-    #[cfg(test)]
-    read_bound: Option<Duration>,
 }
 #[derive(Default)]
 pub(crate) struct Owner {
@@ -203,19 +200,6 @@ impl Owner {
     }
     pub(crate) fn level_db(&self) -> i32 {
         self.lock().level_db
-    }
-    /// The bound of one meter read (CL-044-12: 400 ms); in tests the fixture's override.
-    fn read_bound(&self) -> Duration {
-        #[cfg(test)]
-        if let Some(bound) = self.lock().read_bound {
-            return bound;
-        }
-        METER_READ_MAX_MS
-    }
-    /// Test seam only: every meter read of this owner takes `bound` instead.
-    #[cfg(test)]
-    pub(crate) fn set_read_bound(&self, bound: Duration) {
-        self.lock().read_bound = Some(bound);
     }
     pub(crate) fn set_keying_confirmed(&self) {
         self.update(|i| i.keying_confirmed = true);
@@ -335,7 +319,7 @@ pub(crate) fn tick(recording: &Arc<Recording>, radio: Option<profile::Radio>, no
     let spawned = std::thread::Builder::new()
         .name("tx-meters".into())
         .spawn(move || {
-            let meters = actor.read_meters(Instant::now() + owner.tx_level.read_bound());
+            let meters = actor.read_meters(owner.time.now() + METER_READ_MAX_MS);
             owner.tx_level.lock().reading = false;
             if let Ok(meters) = meters {
                 owner.tx_level.record(meters);
@@ -359,8 +343,8 @@ pub(crate) fn on_meter_due(state: &Arc<ProfileState>) -> Option<std::thread::Joi
     std::thread::Builder::new()
         .name("tx-monitor".into())
         .spawn(move || {
-            let bound = running.recording.tx_level.read_bound();
-            if let Ok(meters) = actor.read_meters(Instant::now() + bound) {
+            let deadline = running.recording.time.now() + METER_READ_MAX_MS;
+            if let Ok(meters) = actor.read_meters(deadline) {
                 monitor(&running, &meters);
             }
         })
@@ -490,9 +474,9 @@ fn assistant(
     let mut level = START_DB;
     recording.tx_level.update(|i| i.level_db = level);
     let (stored, result) = loop {
-        let settled = Instant::now() + SETTLE;
-        while Instant::now() < settled && !lost() {
-            std::thread::sleep(Duration::from_millis(5));
+        let settled = recording.time.now() + SETTLE;
+        while recording.time.now() < settled && !lost() {
+            recording.time.sleep(Duration::from_millis(5));
         }
         if lost() {
             break (None, "aborted");
@@ -500,7 +484,7 @@ fn assistant(
         let Some(actor) = recording.radio_actor() else {
             break (None, "radio_unavailable");
         };
-        let meters = match actor.read_meters(Instant::now() + recording.tx_level.read_bound()) {
+        let meters = match actor.read_meters(recording.time.now() + METER_READ_MAX_MS) {
             Ok(meters) => meters,
             // A read cancelled by the release of a HALT is an abort, not a radio error.
             Err(_) if lost() => break (None, "aborted"),

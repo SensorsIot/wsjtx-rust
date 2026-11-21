@@ -5,6 +5,7 @@
 // timing transmit by the station clock, and clock.state pushed over the actual status
 // WebSocket to every profile. Expected values come from the model's rule and texts.
 use super::*;
+use crate::contact_http::tests::{DrivenClock, RoundSource};
 use axum::body::Body;
 use std::time::{Duration, SystemTime};
 use tower::ServiceExt;
@@ -15,6 +16,10 @@ struct Station {
     dir: std::path::PathBuf,
     id: String,
     recording: Arc<recording::Recording>,
+    /// The station's clocks.
+    time: Arc<DrivenClock>,
+    /// What the Windows Time reader reports.
+    windows_time: Arc<Mutex<WindowsTime>>,
 }
 impl Drop for Station {
     fn drop(&mut self) {
@@ -35,16 +40,18 @@ fn station(dir: std::path::PathBuf, ntp: Arc<Monitor>) -> Station {
         "audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
     let (store, _) = profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+    let time = DrivenClock::new();
     let recording = recording::Recording::open(
         &dir,
         id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        time.clone(),
     );
-    let clock = clock_http::Clock::new(ntp);
-    clock
-        .station
-        .set_windows_time_reader(Box::new(|| WindowsTime::Running));
+    let windows_time = Arc::new(Mutex::new(WindowsTime::Running));
+    let reader = windows_time.clone();
+    let clock =
+        clock_http::Clock::new(ntp, time.clone(), Box::new(move || *reader.lock().unwrap()));
     let _ = recording.clock.set(clock.clone());
     let _ = recording
         .transmit
@@ -71,6 +78,8 @@ fn station(dir: std::path::PathBuf, ntp: Arc<Monitor>) -> Station {
         dir,
         id,
         recording,
+        time,
+        windows_time,
     }
 }
 async fn call(s: &Station, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Bytes) {
@@ -105,27 +114,22 @@ fn keys(v: &Value) -> Vec<&str> {
 fn station_clock(s: &Station) -> Arc<wstx_rust::transmit::air::StationClock> {
     s.recording.clock.get().unwrap().station.clone()
 }
-/// `periods` FT8 windows of `stations` distinct stations at raw DT `dt` on the station
-/// clock's own time base (consistent with its reads).
+/// `periods` FT8 windows of `stations` distinct stations at raw DT `dt`, each heard with the
+/// station's clocks driven to its time; they return to offset zero after.
 fn heard(s: &Station, stations: usize, dt: i64, periods: std::ops::Range<i64>) {
     let clock = station_clock(s);
-    let (mono, system) = clock.now_ms();
-    clock.with_air(|a| {
-        for k in periods {
-            let t = k * 15_000 + 13_800;
-            for i in 0..stations {
-                a.observe(
-                    mono + t,
-                    system + t,
-                    &format!("K{i}ABC"),
-                    "HB9BLA",
-                    dt,
-                    Some(-4.0),
-                );
-            }
-            a.period_done(mono + t + 200, system + t + 200, 15_000);
+    clock.set_own_call("HB9BLA");
+    let at = |ms: i64| s.time.set_offset(Duration::from_millis(ms as u64));
+    for k in periods {
+        let t = k * 15_000 + 13_800;
+        at(t);
+        for i in 0..stations {
+            clock.observe(&format!("K{i}ABC"), dt, Some(-4.0));
         }
-    });
+        at(t + 200);
+        clock.period_done(15_000);
+    }
+    at(0);
 }
 fn measured(offset_ms: i64) -> Measurement {
     Measurement {
@@ -161,7 +165,7 @@ async fn clock_view_wire_with_and_without_a_43_file() {
         if file {
             std::fs::write(dir.join("clock.json"), text).unwrap();
         }
-        let s = station(dir, Monitor::new());
+        let s = station(dir, RoundSource::idle());
         let view = get(&s, "/clock").await;
         assert_eq!(keys(&view), VIEW_KEYS);
         assert_eq!(keys(&view["ntp"]), ["measurement", "state", "windows_time"]);
@@ -232,7 +236,7 @@ async fn clock_view_wire_with_and_without_a_43_file() {
 #[tokio::test]
 async fn no_clock_source_setting() {
     let unknown = {
-        let s = station(directory(), Monitor::new());
+        let s = station(directory(), RoundSource::idle());
         call(&s, "POST", "/no-such-route", Some(json!({"v":1}))).await
     };
     let mut views = vec![];
@@ -250,7 +254,7 @@ async fn no_clock_source_setting() {
         if let Some(text) = text {
             std::fs::write(dir.join("clock.json"), text).unwrap();
         }
-        let s = station(dir, Monitor::new());
+        let s = station(dir, RoundSource::idle());
         heard(&s, 12, 2000, 0..2);
         let mut view = get(&s, "/clock").await;
         assert_eq!(keys(&view), VIEW_KEYS);
@@ -289,9 +293,8 @@ async fn no_clock_source_setting() {
 // of a clock.state field and only then.
 #[tokio::test]
 async fn warnings_windows_time_capture_and_revision() {
-    let ntp = Monitor::new();
-    let s = station(directory(), ntp.clone());
-    let clock = station_clock(&s);
+    let (ntp, rounds) = RoundSource::start();
+    let s = station(directory(), ntp);
     let revision = |v: &Value| v["clock_revision"].as_u64().unwrap();
     let first = get(&s, "/clock").await;
     assert_eq!(
@@ -311,17 +314,17 @@ async fn warnings_windows_time_capture_and_revision() {
         assert_eq!(revision(&view), last + u64::from(changed), "{view}");
         last = revision(&view);
     };
-    ntp.record(Some(measured(12)));
+    rounds.give(false, Some(measured(12)));
     step(None, None, false).await;
-    ntp.record(Some(measured(40)));
+    rounds.give(false, Some(measured(40)));
     step(None, None, false).await;
-    ntp.record(Some(measured(501)));
+    rounds.give(false, Some(measured(501)));
     step(Some("pc_clock_off"), None, true).await;
-    ntp.record(Some(measured(525)));
+    rounds.give(false, Some(measured(525)));
     step(Some("pc_clock_off"), None, true).await;
-    ntp.record(Some(measured(500)));
+    rounds.give(false, Some(measured(500)));
     step(None, None, true).await;
-    ntp.round(true, None);
+    rounds.give(true, None);
     step(None, None, false).await;
     // The Windows Time service as the reader reports it.
     for (reader, name) in [
@@ -330,7 +333,7 @@ async fn warnings_windows_time_capture_and_revision() {
         (WindowsTime::Disabled, "disabled"),
         (WindowsTime::Unknown, "unknown"),
     ] {
-        clock.set_windows_time_reader(Box::new(move || reader));
+        *s.windows_time.lock().unwrap() = reader;
         assert_eq!(get(&s, "/clock").await["ntp"]["windows_time"], name);
     }
     // capture_warning with live receive: before the first epoch null; a correlated clock at
@@ -364,7 +367,7 @@ async fn warnings_windows_time_capture_and_revision() {
 // Proves: TC-043-003
 #[test]
 fn transmit_owner_admits_and_times_by_the_air_clock() {
-    let s = station(directory(), Monitor::new());
+    let s = station(directory(), RoundSource::idle());
     let transmit = s.recording.transmit.get().unwrap().clone();
     let utc = || transmit.service.with(|c| c.hardware().now_utc_ms());
     let wall = || {
@@ -422,13 +425,13 @@ async fn clock_state_is_pushed_to_every_profile() {
     use crate::strategy::tests::{Peer, serve};
     for transmit in [false, true] {
         let f = crate::mcp_tests::station(transmit).await;
-        let ntp = Monitor::new();
-        ntp.record(Some(measured(12)));
-        let _ = f
-            .state
-            .recording
-            .clock
-            .set(clock_http::Clock::new(ntp.clone()));
+        let (ntp, rounds) = RoundSource::start();
+        rounds.give(false, Some(measured(12)));
+        let _ = f.state.recording.clock.set(clock_http::Clock::new(
+            ntp,
+            f.clock.clone(),
+            Box::new(|| WindowsTime::Running),
+        ));
         f.state.recording.fixture_live_job("ft8");
         f.state
             .recording
@@ -490,7 +493,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         }
         // Nothing changes for 10 s, then SNTP +12 -> +40 (synchronized): no event.
         assert!(events(Duration::from_secs(10)).iter().all(Vec::is_empty));
-        ntp.record(Some(measured(40)));
+        rounds.give(false, Some(measured(40)));
         assert!(
             events(Duration::from_millis(1500))
                 .iter()
@@ -499,7 +502,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         // +525 and then +530: one event each, handed to each socket within 1 s.
         for offset in [525, 530] {
             let set = tokio::time::Instant::now();
-            ntp.record(Some(measured(offset)));
+            rounds.give(false, Some(measured(offset)));
             let got = events(Duration::from_millis(1500));
             let view = current().await;
             for got in &got {
@@ -527,7 +530,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         let set = tokio::time::Instant::now();
         let mut got = vec![vec![]; 2];
         for (offset, wait) in [(540, 100), (550, 100), (560, 2500)] {
-            ntp.record(Some(measured(offset)));
+            rounds.give(false, Some(measured(offset)));
             for (all, more) in got.iter_mut().zip(events(Duration::from_millis(wait))) {
                 all.extend(more);
             }
@@ -564,7 +567,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         f.state
             .recording
             .fixture_capture_clock(Some(true), Some(Some(12.0)));
-        ntp.record(Some(measured(12)));
+        rounds.give(false, Some(measured(12)));
         let got = events(Duration::from_millis(1500));
         let view = current().await;
         for got in &got {
@@ -586,9 +589,9 @@ async fn clock_state_is_pushed_to_every_profile() {
 #[test]
 fn a_revision_never_carries_older_clock_values() {
     use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
-    let ntp = Monitor::new();
-    ntp.record(Some(measured(501)));
-    let s = station(directory(), ntp.clone());
+    let (ntp, rounds) = RoundSource::start();
+    rounds.give(false, Some(measured(501)));
+    let s = station(directory(), ntp);
     let (r, c) = (&*s.recording, s.recording.clock.get().unwrap());
     let done = AtomicBool::new(false);
     let mut seen: Vec<(u64, i64)> = std::thread::scope(|scope| {
@@ -618,7 +621,7 @@ fn a_revision_never_carries_older_clock_values() {
             })
             .collect();
         for offset in 502..20_000 {
-            ntp.record(Some(measured(offset)));
+            rounds.give(false, Some(measured(offset)));
             std::thread::yield_now();
         }
         done.store(true, SeqCst);
@@ -644,14 +647,14 @@ fn a_revision_never_carries_older_clock_values() {
 // Proves: TC-043-003
 #[test]
 fn get_clock_shows_one_age() {
-    let ntp = Monitor::new();
-    let s = station(directory(), ntp.clone());
+    let (ntp, rounds) = RoundSource::start();
+    let s = station(directory(), ntp);
     let (r, c) = (&*s.recording, s.recording.clock.get().unwrap());
     let mut stale = 0;
     for _ in 0..200 {
         let (now, system) = (Instant::now(), SystemTime::now());
         let age = Duration::from_millis(599_998);
-        ntp.round(
+        rounds.give(
             true,
             Some(Measurement {
                 taken: now - age,

@@ -9,7 +9,10 @@
   # Its own Cargo output directory: `cargo test` links target/debug/wstx-rust.exe with the
   # dev-dependency features, which would replace the executable the browser groups run
   # (Windows refuses to replace a running executable). The decoder unit tests run in
-  # wstx-rust-decoder.
+  # wstx-rust-decoder; the two release-only decoder phase tests
+  # (resource_phase_detection_observes_work_without_publishing and
+  # resource_phase_subtraction_cancels_after_actual_transform_before_mutation) run in
+  # decoder-quality.
   # --bins --examples --test '*' plus --lib is --all-targets of this workspace (no bench
   # targets; --benches would also select the lib and bins). A new bench target needs its own
   # --bench here. The workspace holds the test-tools crate wstx-test-tools: its unit tests and
@@ -87,7 +90,7 @@
     --config profile.unit-opt.overflow-checks=true --profile unit-opt --no-run
   # CPU-heavy (all cores): kept apart from the timing suites that run beside other groups.
   exclusive: [link-measurement]
-  needs: "Pinned Rust toolchain. Windows PC; no radio or live station. The library's decoder:: unit tests (the complement of wstx-rust's --skip decoder::), selected by the decoder, the transmit packer its tests encode with (transmit/pack.rs and its module root), the library root, the decoder fixtures they include and the Cargo pins."
+  needs: "Pinned Rust toolchain. Windows PC; no radio or live station. The library's decoder:: unit tests (the complement of wstx-rust's --skip decoder::), except the two release-only phase tests that debug assertions compile out (resource_phase_detection_observes_work_without_publishing and resource_phase_subtraction_cancels_after_actual_transform_before_mutation), which run in decoder-quality; selected by the decoder, the transmit packer its tests encode with (transmit/pack.rs and its module root), the library root, the decoder fixtures they include and the Cargo pins."
 
 - suite: protocol
   cost: 2
@@ -587,7 +590,8 @@
   # fixtures (the jt9 parity corpus, baselines, vectors) and the library root. A production
   # decoder source, decoder_signal.rs or a Cargo pin selects decoder-quality, which runs
   # these passes too (bound to its artifact). The decoder's *_test.rs files are not in this
-  # binary (wstx-rust-decoder runs them). The model files are those whose values these
+  # binary (wstx-rust-decoder runs them, decoder-quality the two release-only phase tests).
+  # The model files are those whose values these
   # passes read: DecodeQuality and DecodeBudgets (Decode.sysml), FrameStatus
   # (MessagePayload.sysml) and the unit suffixes of the values with a unit (Units.sysml).
   select:
@@ -614,11 +618,26 @@
     python -m unittest discover -s tools/test/python -p test_windows_process_metrics.py -q
     cargo test --release --locked -p wstx-test-tools --test resource_harness -- --test-threads=1
     python tools/test/python/independent-vector-tool/test_cache.py
+    cargo test --release --locked -p wstx-rust --lib -- --exact --test-threads=1 decoder::search::tests::resource_phase_detection_observes_work_without_publishing decoder::subtraction::tests::resource_phase_subtraction_cancels_after_actual_transform_before_mutation 2>&1 | tee "$run_dir/release-lib.log"
+    release_lib_result=$(grep -E '^test result: ' "$run_dir/release-lib.log" || true)
+    if ! printf '%s\n' "$release_lib_result" | grep -qE '^test result: ok\. 2 passed; 0 failed;'; then
+      echo "decoder-quality: the release library step must run and pass exactly 2 tests (2 passed; 0 failed), got: ${release_lib_result:-no test result}" >&2
+      exit 1
+    fi
     cargo test --release --locked --test decoder_signal --message-format=json -- --test-threads=1 --skip release_runtime_and_overlapping_window_history | python tools/test/python/windows_resource_job.py resolve --stream-log "$run_dir/ordinary.log" --receipt "$run_dir/artifact.json"
+    python tools/test/python/windows_resource_job.py run --case busy --artifact-receipt "$run_dir/artifact.json"
     python tools/test/python/windows_resource_job.py run --case matrix --ordinary-gate --artifact-receipt "$run_dir/artifact.json"
-  # Reachability (harness reachability.py): the ordinary passes and the matrix case are
-  # named only in the JSON run records of tools/test/python/windows_resource_job.py (artifact.json,
-  # matrix.receipt.json), which the trap copies to HARNESS_REACH_DIR.
+  # The release library step runs the two decoder phase tests that debug assertions compile
+  # out (#[cfg(not(debug_assertions))]): each asserts a 250 ms return after cancellation, so
+  # they run here, alone, with the WSTX_DECODER_CACHE they read. It is red unless libtest
+  # reports exactly these two run and passed: a renamed, removed or compiled-out test never
+  # passes with 0 tests. The busy case (strict, no --ordinary-gate) runs from the same
+  # handoff before the matrix, so the matrix's NOT RUN exit 77 cannot skip it; a red busy
+  # case stops the run before the matrix.
+  # Reachability (harness reachability.py): the release library tests are named in the text
+  # output; the ordinary passes, the busy case and the matrix case are named only in the JSON
+  # run records of tools/test/python/windows_resource_job.py (artifact.json,
+  # busy.receipt.json, matrix.receipt.json), which the trap copies to HARNESS_REACH_DIR.
   reach:
     parsers: [text, json]
   paths:
@@ -644,6 +663,8 @@
   # Every production decoder source sets the measured time (checkpoint spacing, per-item
   # work, passes and budgets); the decoder's *_test.rs files are not in the measured binary,
   # so unit-test-only and parity-fixture-only changes run decoder-correctness alone. The
+  # exception is search_test.rs and subtraction_test.rs: they hold the two timed release-only
+  # phase tests of the release library step, which run only here. The
   # test-tools crate (tools/test/rust/, the resource harness and observer) is linked into the
   # measured binary. A new decoder module is declared in mod.rs, which is listed. Decode.sysml
   # holds the DecodeBudgets the matrix case reads, Units.sysml the unit suffixes it reads them by.
@@ -663,8 +684,10 @@
   - server/src/modes/decoder/physical_ft4.rs
   - server/src/modes/decoder/physical_sync.rs
   - server/src/decoder/search.rs
+  - server/src/modes/decoder/search_test.rs
   - server/src/modes/decoder/snr.rs
   - server/src/decoder/subtraction.rs
+  - server/src/modes/decoder/subtraction_test.rs
   - server/src/modes/decoder/synchronization.rs
   - server/src/modes/decoder/waveform.rs
   - server/tests/decoder_signal.rs
@@ -683,10 +706,12 @@
   - Cargo.lock
   - rust-toolchain.toml
   - server/Cargo.toml
-  build: cargo test --release --locked --test decoder_signal --no-run
+  build: >-
+    cargo test --release --locked -p wstx-rust --lib --no-run &&
+    cargo test --release --locked --test decoder_signal --no-run
   exclusive: ["*"]
   timing_classes: [compute, signal]
-  needs: Pinned Rust and Python, 64-bit Windows. Preserve every original quality case plus cleanup/concurrency controls; one release Cargo producer binds every ordinary named pass (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job over the complete resource matrix that tools/test/python/windows_resource_job.py checks. API-free guardian/metrics tests, the resource harness's own tests (owned-worker cleanup, concurrency qualification) and the fixture cache's forged-observation refusal (test_cache.py) precede execution; the 14 ordinary passes then run in decoder_signal. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings; explicitly prepared WSTX_DECODER_CACHE is required for the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION; WSTX_DECODER_SYNCHRONIZATION names the root of the synchronization inputs, one folder per generator_sha256 of synchronization-cases.json, composed on first use and verified afterwards. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
+  needs: Pinned Rust and Python, 64-bit Windows. Preserve every original quality case plus cleanup/concurrency controls; one release Cargo producer binds every ordinary named pass (including the live-latency, thread-parity and jt9-parity cases) and the exact artifact, then the same original runtime case runs under the owned Job over the complete resource matrix that tools/test/python/windows_resource_job.py checks. API-free guardian/metrics tests, the resource harness's own tests (owned-worker cleanup, concurrency qualification) and the fixture cache's forged-observation refusal (test_cache.py) precede execution; a release build of the library's tests then runs exactly the two release-only decoder phase tests (resource_phase_detection_observes_work_without_publishing, resource_phase_subtraction_cancels_after_actual_transform_before_mutation), red unless libtest reports 2 passed; 0 failed; the 14 ordinary passes then run in decoder_signal, and from the same handoff the strict busy case (resource_busy_live_overlap_and_pending_cancel, ignored in the ordinary pass) runs under the owned Job before the matrix. WSTX_SAMPLE_DIR and WSTX_DECODER_OFFICIAL_FT8 name verified recordings (the busy case decodes the official FT8 recording); explicitly prepared WSTX_DECODER_CACHE is required for the release library step and the matrix, with verified WSTX_DECODER_VECTORS and WSTX_DECODER_SYNCHRONIZATION; WSTX_DECODER_SYNCHRONIZATION names the root of the synchronization inputs, one folder per generator_sha256 of synchronization-cases.json, composed on first use and verified afterwards. In this ordinary gate a configuration whose 50 ms CPU quantum stays unmeasured after three attempts makes the matrix INCONCLUSIVE, printed as the last stderr line and exiting 77, the harness NOT RUN code; the gate lists it as NOT RUN, records not-run, never memoises it as passed and does not count it as red; every measured budget stays red when exceeded. CL-007-04 runtime evidence comes only from the strict exclusive-window run, which refuses an inconclusive matrix. No radio, audio device, arbitrary command mode or network download.
 
 - suite: live-receive-integration
   cost: 2

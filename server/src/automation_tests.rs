@@ -901,7 +901,7 @@ fn owner(f: &Mcp) -> Arc<contact_http::Station> {
     f.state.recording.contact.get().unwrap().clone()
 }
 fn skew(f: &Mcp, d: Duration) {
-    *owner(f).automation.skew.lock().unwrap() = d;
+    f.clock.set_offset(d);
 }
 
 // A plain MCP policy run decides no slot, with Hold

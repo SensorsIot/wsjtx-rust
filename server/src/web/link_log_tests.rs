@@ -30,6 +30,17 @@ const T0: u64 = 1_800_000_000_000;
 struct Driven {
     utc: AtomicU64,
     mode: Mutex<Mode>,
+    /// Completes the writer's wait: the test set the time or mode.
+    set: tokio::sync::Notify,
+}
+impl Driven {
+    fn at(utc: u64) -> Arc<Self> {
+        Arc::new(Driven {
+            utc: AtomicU64::new(utc),
+            mode: Mutex::new(Mode::Ft8),
+            set: tokio::sync::Notify::new(),
+        })
+    }
 }
 struct TestClock(Arc<Driven>);
 impl PeriodClock for TestClock {
@@ -39,8 +50,8 @@ impl PeriodClock for TestClock {
     fn mode(&self) -> Mode {
         *self.0.mode.lock().unwrap()
     }
-    fn recheck(&self) -> Option<Duration> {
-        None
+    fn wait(&self) -> Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(self.0.set.notified())
     }
 }
 
@@ -223,7 +234,7 @@ async fn settle(tallies: &[&Arc<Tally>]) {
 }
 
 /// Runs `script` on its own runtime and serves its requests on the station's paused runtime.
-async fn drive<F>(clock: Arc<Driven>, log: Arc<Log>, dir: std::path::PathBuf, script: F)
+async fn drive<F>(clock: Arc<Driven>, dir: std::path::PathBuf, script: F)
 where
     F: FnOnce(Control) -> Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + 'static,
 {
@@ -252,7 +263,7 @@ where
             Ok(Command::End(utc, mode, count, reply)) => {
                 clock.utc.store(utc, Ordering::SeqCst);
                 *clock.mode.lock().unwrap() = mode;
-                log.wake();
+                clock.set.notify_one();
                 let (path, seen) = (dir.join(FILE), returned.clone());
                 let lines = tokio::task::spawn_blocking(move || {
                     let read = || {
@@ -658,10 +669,7 @@ async fn link_byte_log_counts_each_client_per_period() {
     let f = crate::mcp_tests::station(false).await;
     let (mcp_id, mcp_token) = f.new_mcp_client("traffic agent").await;
     let config = certificate().await;
-    let clock = Arc::new(Driven {
-        utc: AtomicU64::new(T0),
-        mode: Mutex::new(Mode::Ft8),
-    });
+    let clock = Driven::at(T0);
     let log = Log::new(Box::new(TestClock(clock.clone())));
     crate::link_log::spawn_writer(log.clone(), f.state.clone());
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -675,7 +683,7 @@ async fn link_byte_log_counts_each_client_per_period() {
     let browser_client = format!("browser:{}", f.gid);
     let secrets = [f.token.clone(), mcp_token.clone(), f.mcp.clone()];
     let dir = f.dir.clone();
-    drive(clock, log, f.dir.clone(), move |control| {
+    drive(clock, f.dir.clone(), move |control| {
         Box::pin(async move {
             let h1 = tls_client(b"http/1.1");
             let (browser, mcp, local) = (
@@ -832,10 +840,7 @@ async fn link_byte_log_counts_each_client_per_period() {
 async fn link_byte_log_on_a_plaintext_profile() {
     let (app, dir) = plaintext_station("link-log");
     let state = app.profile.clone().unwrap();
-    let clock = Arc::new(Driven {
-        utc: AtomicU64::new(T0),
-        mode: Mutex::new(Mode::Ft8),
-    });
+    let clock = Driven::at(T0);
     let log = Log::new(Box::new(TestClock(clock.clone())));
     crate::link_log::spawn_writer(log.clone(), state);
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -844,7 +849,7 @@ async fn link_byte_log_on_a_plaintext_profile() {
     let server = crate::link_log::Server::new(listener, None, Some(log.clone())).unwrap();
     let service = tokio::spawn(server.serve(router(app.clone())));
     let origin = app.origin.clone();
-    drive(clock, log, dir.clone(), move |control| {
+    drive(clock, dir.clone(), move |control| {
         Box::pin(async move {
             let local = Arc::new(Tally::default());
             let mut ws = Ws::open(tcp(address, &local).await, &local, &origin, "").await;
@@ -881,10 +886,7 @@ async fn link_byte_log_on_a_plaintext_profile() {
 async fn link_byte_log_bounds_the_request_methods() {
     let (app, dir) = plaintext_station("link-methods");
     let state = app.profile.clone().unwrap();
-    let clock = Arc::new(Driven {
-        utc: AtomicU64::new(T0),
-        mode: Mutex::new(Mode::Ft8),
-    });
+    let clock = Driven::at(T0);
     let log = Log::new(Box::new(TestClock(clock.clone())));
     crate::link_log::spawn_writer(log.clone(), state);
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -892,7 +894,7 @@ async fn link_byte_log_bounds_the_request_methods() {
     let address = listener.local_addr().unwrap();
     let server = crate::link_log::Server::new(listener, None, Some(log.clone())).unwrap();
     let service = tokio::spawn(server.serve(router(app)));
-    drive(clock, log, dir.clone(), move |control| {
+    drive(clock, dir.clone(), move |control| {
         Box::pin(async move {
             let local = Arc::new(Tally::default());
             let mut h = tcp(address, &local).await;

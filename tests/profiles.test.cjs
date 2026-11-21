@@ -2126,6 +2126,7 @@ async function storedCredential(page) {
     finally {db.close();}
   });
 }
+// Proves: TC-003-001, TC-021-005
 test('same-host four-port TLS cookies, reconnect, negatives and rotation', {timeout: 90000}, async t => {
   const {profiles, apps} = await fixture(t, true); const {context, pages} = await browserWindows(t, profiles);
   for (let i = 0; i < 4; i++) {const p = profiles[i]; assert.equal((await request(p.origin)).status, 401); assert.equal((await request(p.origin, 'PUT', edit(i + 1, 0))).status, 401); assert.equal(await upgradeStatus(p), 401); if (i === 0) {await pages[i].route('**/session', route => route.abort()); await pages[i].locator('#token').fill(p.env.WSTX_TOKEN); await pages[i].locator('#login button').click(); await pages[i].locator('#login-error').filter({hasText: 'Could not authenticate'}).waitFor(); assert.equal(await pages[i].locator('#token').inputValue(), ''); await pages[i].unroute('**/session');} await pages[i].locator('#token').fill(p.env.WSTX_TOKEN); await pages[i].locator('#login button').click(); await connected(pages[i]);}
@@ -2281,6 +2282,7 @@ test('TC-022-002 review regression: admit the complete worst-case response budge
   }
   for (const other of profiles.slice(1)) assert.equal((await request(other.origin)).status, 200);
 });
+// Proves: TC-021-007
 test('status readiness survives held settings HTTP with bounded refresh', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t), {pages, context} = await browserWindows(t, profiles);
   await Promise.all(pages.map(connected)); const page = pages[0];

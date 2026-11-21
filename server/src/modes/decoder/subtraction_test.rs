@@ -179,13 +179,3 @@ fn cancelled_or_incomplete_subtraction_leaves_input_unchanged() {
     );
     assert_eq!(actual, original);
 }
-
-impl Subtractor {
-    #[cfg(not(debug_assertions))]
-    pub(in super::super) fn capacity_ledger(&self) -> serde_json::Value {
-        serde_json::json!({"phasor_complex64_capacity":self.phasors.capacity(),
-            "correction_f64_capacity":self.correction.capacity(),
-            "prefix_complex64_capacity":self.prefix.iter().map(Vec::capacity).sum::<usize>(),
-            "frame":self.frame})
-    }
-}

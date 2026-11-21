@@ -5,6 +5,7 @@
 use super::*;
 use crate::cat_lifecycle::{Gate, Key};
 use crate::cat_lifecycle_tests::{Device, ENDPOINT, attach_peer};
+use crate::contact_http::tests::{DrivenClock, RoundSource};
 use axum::body::Body;
 use tower::ServiceExt;
 use wstx_rust::radio_control as cat;
@@ -27,11 +28,15 @@ fn gate(revision: u64) -> Gate {
         configuration: cat::Configuration::parse(ENDPOINT).unwrap(),
     }
 }
-/// The station clock of a profile (the air is the reference, SNTP only warns).
+/// The station clock of a profile (the air is the reference, SNTP only warns) over `ntp`.
 pub(crate) fn ntp_clock(
     ntp: Arc<wstx_rust::transmit::clock::Monitor>,
 ) -> Arc<wstx_rust::transmit::air::StationClock> {
-    wstx_rust::transmit::air::StationClock::new(ntp)
+    wstx_rust::transmit::air::StationClock::new(
+        ntp,
+        DrivenClock::new(),
+        Box::new(|| wstx_rust::transmit::clock::WindowsTime::Running),
+    )
 }
 fn ptt_setters(writes: &[Vec<u8>]) -> usize {
     writes
@@ -51,11 +56,10 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
         id.clone(),
         profile::new_uuid().unwrap(),
         std::sync::Arc::new(crate::profile::Disk),
+        DrivenClock::new(),
     );
     let peer = attach_peer(&recording, Device::Present);
-    let station =
-        transmit_http::Station::start(ntp_clock(wstx_rust::transmit::clock::Monitor::new()))
-            .unwrap();
+    let station = transmit_http::Station::start(ntp_clock(RoundSource::idle())).unwrap();
     let _ = recording.transmit.set(station.clone());
     // Receive-only commissioning (PTT disabled) is not transmit capability.
     let receive_only = document(&id, "disabled", Some("fixture-output"));
@@ -139,7 +143,7 @@ fn automatic_lifecycle_with_a_transmit_owner_never_emits_ptt_and_no_output_means
 }
 
 async fn app() -> (Router, String, String, String, std::path::PathBuf) {
-    app_with(wstx_rust::transmit::clock::Monitor::new()).await
+    app_with(RoundSource::idle()).await
 }
 async fn app_with(
     clock: Arc<wstx_rust::transmit::clock::Monitor>,
@@ -156,14 +160,20 @@ async fn app_with(
         "audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
     std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
     let (store, _) = profile::Store::open(&dir, std::sync::Arc::new(crate::profile::Disk)).unwrap();
+    let time = DrivenClock::new();
     let recording = recording::Recording::open(
         &dir,
         id.clone(),
         boot.clone(),
         std::sync::Arc::new(crate::profile::Disk),
+        time.clone(),
     );
     // As main wires it: one station clock for the clock view and the transmit owner.
-    let clock = crate::clock_http::Clock::new(clock);
+    let clock = crate::clock_http::Clock::new(
+        clock,
+        time,
+        Box::new(|| wstx_rust::transmit::clock::WindowsTime::Running),
+    );
     let _ = recording.clock.set(clock.clone());
     let _ = recording
         .transmit
@@ -434,12 +444,11 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
         id.clone(),
         profile::new_uuid().unwrap(),
         std::sync::Arc::new(crate::profile::Disk),
+        DrivenClock::new(),
     );
     let peer = attach_peer(&recording, Device::Present);
     peer.lock().unwrap().transmitting = true;
-    let station =
-        transmit_http::Station::start(ntp_clock(wstx_rust::transmit::clock::Monitor::new()))
-            .unwrap();
+    let station = transmit_http::Station::start(ntp_clock(RoundSource::idle())).unwrap();
     let _ = recording.transmit.set(station.clone());
     // Even a receive-only profile gets the release: it only ever turns RF off.
     let doc = document(&id, "disabled", None);
@@ -480,17 +489,20 @@ fn radio_transmitting_at_boot_gets_exactly_one_off_only_release_with_readback() 
 // clock, which SNTP never makes unsynchronized; SNTP beyond 500 ms only warns.
 #[tokio::test]
 async fn transmit_wire_shows_the_sntp_clock_measurement() {
-    use wstx_rust::transmit::clock::{Measurement, Monitor};
-    let clock = Monitor::new();
-    let (router, _, _, _, dir) = app_with(clock.clone()).await;
+    use wstx_rust::transmit::clock::Measurement;
+    let (clock, rounds) = RoundSource::start();
+    let (router, _, _, _, dir) = app_with(clock).await;
     let taken = Instant::now() - Duration::from_secs(5);
-    clock.record(Some(Measurement {
-        server: "ch.pool.ntp.org".into(),
-        offset_ms: -120,
-        round_trip_ms: 31,
-        taken,
-        system: std::time::SystemTime::now() - Duration::from_secs(5),
-    }));
+    rounds.give(
+        false,
+        Some(Measurement {
+            server: "ch.pool.ntp.org".into(),
+            offset_ms: -120,
+            round_trip_ms: 31,
+            taken,
+            system: std::time::SystemTime::now() - Duration::from_secs(5),
+        }),
+    );
     let (status, view) = call(&router, "GET", "/transmit", None, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(view["clock"], "synchronized");
@@ -505,13 +517,16 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
     );
     let age = m["age_ms"].as_u64().unwrap();
     assert!((5_000..60_000).contains(&age), "age {age}");
-    clock.record(Some(Measurement {
-        server: "time.windows.com".into(),
-        offset_ms: 501,
-        round_trip_ms: 40,
-        taken: Instant::now(),
-        system: std::time::SystemTime::now(),
-    }));
+    rounds.give(
+        false,
+        Some(Measurement {
+            server: "time.windows.com".into(),
+            offset_ms: 501,
+            round_trip_ms: 40,
+            taken: Instant::now(),
+            system: std::time::SystemTime::now(),
+        }),
+    );
     let (_, view) = call(&router, "GET", "/transmit", None, None).await;
     assert_eq!(view["clock"], "synchronized");
     assert_eq!(view["clock_warning"], "pc_clock_off");
@@ -524,9 +539,7 @@ async fn transmit_wire_shows_the_sntp_clock_measurement() {
 // Proves: TC-044-017
 #[test]
 fn the_meter_call_of_the_transmit_step_reaches_the_sink() {
-    let station =
-        transmit_http::Station::start(ntp_clock(wstx_rust::transmit::clock::Monitor::new()))
-            .unwrap();
+    let station = transmit_http::Station::start(ntp_clock(RoundSource::idle())).unwrap();
     let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let seen = count.clone();
     station.set_meter_sink(Arc::new(move || {

@@ -66,6 +66,10 @@ package WstxListener {
                 + "cty_upload_replaces_the_country_table_and_refusals_change_nothing; "
                 + "server/src/contact_http_tests.rs::"
                 + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
+                + "tests/profiles.test.cjs::"
+                + "same-host four-port TLS cookies, reconnect, negatives and rotation; "
+                + "tests/recording.test.cjs::"
+                + "every recording endpoint retains TLS cookie and exact Origin boundaries; "
                 + "tests/radio-selection.test.cjs::"
                 + "H1 authentication errors mutations static and HEAD bypass negotiation";
         }
@@ -259,6 +263,12 @@ package WstxListener {
                 + "save_contact_refusals_byte_cap_and_command_receipts; "
                 + "server/src/contact_http_tests.rs::"
                 + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
+                + "tests/profiles.test.cjs::"
+                + "same-host four-port TLS cookies, reconnect, negatives and rotation; "
+                + "tests/recording.test.cjs::"
+                + "review: recording JSON media whitespace parity and malformed parameters; "
+                + "tests/recording.test.cjs::"
+                + "every recording endpoint retains TLS cookie and exact Origin boundaries; "
                 + "tests/radio-selection.test.cjs::"
                 + "H1 authentication errors mutations static and HEAD bypass negotiation; "
                 + "tests/radio-selection.test.cjs::"

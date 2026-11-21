@@ -28,6 +28,8 @@ struct Ic7300 {
     silent: bool,
     transmitting: bool,
     writes: Vec<Vec<u8>>,
+    /// The deadline handed with each meter frame's write.
+    meter_deadlines: Vec<Instant>,
 }
 struct Port {
     radio: Arc<Mutex<Ic7300>>,
@@ -37,10 +39,13 @@ impl Transport for Port {
     fn configure(&mut self, _: u32) -> cat::Result<()> {
         Ok(())
     }
-    fn write(&mut self, bytes: &[u8], _: Instant, _: &AtomicBool) -> cat::Result<usize> {
+    fn write(&mut self, bytes: &[u8], deadline: Instant, _: &AtomicBool) -> cat::Result<usize> {
         let mut r = self.radio.lock().unwrap();
         r.writes.push(bytes.to_vec());
         let body = &bytes[4..bytes.len() - 1];
+        if body.first() == Some(&0x15) {
+            r.meter_deadlines.push(deadline);
+        }
         if r.silent && body.first() == Some(&0x15) {
             return Ok(bytes.len());
         }
@@ -112,6 +117,7 @@ fn radio(alc: Option<AlcAt>) -> Ic7300 {
         silent: false,
         transmitting: false,
         writes: Vec::new(),
+        meter_deadlines: Vec::new(),
     }
 }
 /// The fixture station, IC-7300 CAT on COM3, its CAT owner Ready and managed.
@@ -145,10 +151,12 @@ fn station(ic7300: Ic7300) -> (Fixture, Arc<Mutex<Ic7300>>) {
         std::thread::sleep(Duration::from_millis(5));
     }
     ic7300.lock().unwrap().writes.clear();
-    // The scripted radio answers at once, so a read's time is scheduling only; the
-    // station's meter reads take the hang guard (the contract's 400 ms is the default,
-    // the_meter_read_bound_is_400_ms_without_an_override).
-    f.state.recording.tx_level.set_read_bound(HANG_GUARD);
+    // The scripted radio answers at once, so a read's time is scheduling only: the station
+    // clock runs 400 ms short of the hang guard ahead, so each meter read keeps at least the
+    // hang guard of real time (the_meter_read_bound_is_400_ms_without_an_override), and a
+    // settle passes on it in an 80th of its real time.
+    f.clock.set_offset(HANG_GUARD - Duration::from_millis(400));
+    f.clock.advancing();
     (f, ic7300)
 }
 /// The bound of every wait of these tests: a hang guard, never a measurement.
@@ -219,14 +227,29 @@ fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
     assert_eq!((meters.alc, meters.po), (None, Some(143)));
 }
 
-// A meter read is bounded at 400 ms (the contract's number); only a test
-// fixture's override changes it.
+// A meter read is bounded at 400 ms (the contract's number): on a station clock frozen at T,
+// the Tune display read hands the radio T + 400 ms with each meter frame.
 #[test]
 fn the_meter_read_bound_is_400_ms_without_an_override() {
-    let owner = Owner::default();
-    assert_eq!(owner.read_bound(), Duration::from_millis(400));
-    owner.set_read_bound(HANG_GUARD);
-    assert_eq!(owner.read_bound(), HANG_GUARD);
+    let (f, r) = station(radio(fixed([0, 7])));
+    let at = f.clock.freeze(HANG_GUARD);
+    let recording = &f.state.recording;
+    let settings = Some(profile::Radio::DEFAULT);
+    hold(&f);
+    let service = &recording.transmit.get().unwrap().service;
+    service.with(|c| {
+        c.arm(3).unwrap();
+        c.set_tune(true, 1500).unwrap();
+    });
+    let deadline = Instant::now() + HANG_GUARD;
+    while meter_frames(&r).len() < 3 {
+        assert!(Instant::now() < deadline, "no read");
+        tick(recording, settings, Instant::now());
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    service.with(|c| c.set_tune(false, 0).unwrap());
+    let deadlines = r.lock().unwrap().meter_deadlines.clone();
+    assert_eq!(&deadlines[..3], [at + Duration::from_millis(400); 3]);
 }
 
 #[test]
