@@ -236,12 +236,12 @@ def source_snapshot(root):
     root = Path(root).resolve(strict=True)
     paths = {
         "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "server/Cargo.toml",
-        "server/tests/decoder_signal.rs", "harness/project/suites.yaml",
+        "server/tests/decoder_signal.rs",
         "tools/test/python/windows_resource_job.py", "tools/test/python/test_windows_resource_job.py",
         "tools/test/python/windows_process_metrics.py",
         "tools/test/python/test_windows_process_metrics.py",
     }
-    for directory in ("server/src", "fixtures/decoder", "tools/test/rust",
+    for directory in ("server/src", "fixtures/decoder", "tools/test/rust", "harness/project/suites",
                       "tools/test/python/independent-vector-tool"):
         paths.update(path.relative_to(root).as_posix() for path in (root / directory).rglob("*")
                      if path.is_file() and "__pycache__" not in path.parts and

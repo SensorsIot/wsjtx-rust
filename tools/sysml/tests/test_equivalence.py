@@ -127,12 +127,14 @@ BASE = {
     "docs/sysml/Spec.md": "The spec.\n",
     "docs/sysml/Other.md": "Another file.\n",
 }
+# A suite file of the registry folder, citing a model file by its path.
+SUITE_FILE = "harness/project/suites/models.yaml"
 CITING = {
     "server/main.rs": "// See Core::Run.\n// See Core::Nothing.\nfn main() {}\n",
-    "harness/project/suites.yaml": "paths: [docs/sysml/Extra.sysml]\n",
+    SUITE_FILE: "paths: [docs/sysml/Extra.sysml]\n",
 }
 # A branch whose registry stands at .harness/: that root stays checked.
-OLD_ROOT = "harness/project/suites.yaml", ".harness/suites.yaml"
+OLD_ROOT = SUITE_FILE, ".harness/suites.yaml"
 
 
 def edit(files: dict, path: str, old: str, new: str) -> dict:
@@ -206,7 +208,7 @@ CASES = {
                      "docs/sysml/sub/Extra.sysml": EXTRA}),
     "E8 b updated": (CITED, {**{k: v for k, v in CITED.items() if k != "docs/sysml/Extra.sysml"},
                              "docs/sysml/sub/Extra.sysml": EXTRA,
-                             "harness/project/suites.yaml": "paths: [docs/sysml/sub/Extra.sysml]\n"}),
+                             SUITE_FILE: "paths: [docs/sysml/sub/Extra.sysml]\n"}),
     "E8 b old root": ({OLD_ROOT[1] if k == OLD_ROOT[0] else k: v for k, v in CITED.items()},
                       {**{(OLD_ROOT[1] if k == OLD_ROOT[0] else k): v for k, v in CITED.items() if k != "docs/sysml/Extra.sysml"},
                        "docs/sysml/sub/Extra.sysml": EXTRA}),
@@ -455,7 +457,7 @@ class SyntheticEquivalenceTests(unittest.TestCase):
         self.outcome("E8 a", 1, "stale-by-change server/main.rs:1 Core::Run")
         lines = self.outcome("E8 a updated", 0, "unresolved server/main.rs:2 Core::Nothing")
         self.assertFalse(any(line.startswith("stale-by-change") for line in lines), lines)
-        self.outcome("E8 b", 1, "stale-by-change harness/project/suites.yaml:1 docs/sysml/Extra.sysml")
+        self.outcome("E8 b", 1, f"stale-by-change {SUITE_FILE}:1 docs/sysml/Extra.sysml")
         self.outcome("E8 b updated", 0)
         self.outcome("E8 b old root", 1, "stale-by-change .harness/suites.yaml:1 docs/sysml/Extra.sysml")
         lines = self.outcome("E8 d", 0)

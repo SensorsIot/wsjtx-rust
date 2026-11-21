@@ -1,7 +1,7 @@
-"""The filter forms of harness/project/suites.yaml (`filter:`, read only by
+"""The filter forms of the registry harness/project/suites/ (`filter:`, read only by
 `gate.py --suite NAME --filter WORDS`) and harness/project/tools/filter_run.py, which they run.
 
-The registry checks read suites.yaml and run nothing. The run checks build fixture tests
+The registry checks read the suite files of harness/project/suites/ and run nothing. The run checks build fixture tests
 for each runner family in a temporary folder (a Cargo crate, a node --test file and a
 unittest module) and run filter_run.py on them with the real runners: cargo, node and
 Python. No station, radio or network.
@@ -22,7 +22,7 @@ import yaml
 
 # The checkout: three folders above harness/project/tests/.
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
-REGISTRY = os.path.join(ROOT, "harness", "project", "suites.yaml")
+REGISTRY = os.path.join(ROOT, "harness", "project", "suites")
 HELPER = os.path.join(ROOT, "harness", "project", "tools", "filter_run.py")
 HELPER_ARG = "harness/project/tools/filter_run.py"
 PLACEHOLDER = "PLACEHOLDERWORD"
@@ -65,8 +65,9 @@ def entry_blocks(text):
     return blocks
 
 
-def set_findings(rows, text):
-    """The differences between the suites with and without a form and the lists above."""
+def set_findings(rows, texts):
+    """The differences between the suites with and without a form and the lists above;
+    `texts` holds each suite file's text by suite name."""
     have = {r["suite"] for r in rows if "filter" in r}
     lack = {r["suite"] for r in rows if "filter" not in r}
     found = []
@@ -74,9 +75,9 @@ def set_findings(rows, text):
         found.append(f"with a form: {sorted(have ^ WITH_FORM)} differ")
     if lack != WITHOUT_FORM:
         found.append(f"without a form: {sorted(lack ^ WITHOUT_FORM)} differ")
-    blocks = entry_blocks(text)
     for name in sorted(lack):
-        if not any(line.strip().startswith(REASON) for line in blocks.get(name, [])):
+        own = entry_blocks(texts.get(name, "")).get(name, [])
+        if not any(line.strip().startswith(REASON) for line in own):
             found.append(f"{name}: no `{REASON}` reason comment in its entry")
     return found
 
@@ -125,34 +126,49 @@ def step_findings(row):
 
 
 def load():
-    with open(REGISTRY, encoding="utf-8") as f:
-        text = f.read()
-    return yaml.safe_load(text), text
+    """(the entries of every suite file, {suite: the text of its file})."""
+    rows, texts = [], {}
+    for name in sorted(os.listdir(REGISTRY)):
+        with open(os.path.join(REGISTRY, name), encoding="utf-8") as f:
+            text = f.read()
+        entries = yaml.safe_load(text)
+        rows.extend(entries)
+        for entry in entries:
+            texts[entry["suite"]] = text
+    return rows, texts
 
 
 class Registry(unittest.TestCase):
     def setUp(self):
-        self.rows, self.text = load()
+        self.rows, self.texts = load()
 
     def row(self, rows, name):
         return next(r for r in rows if r["suite"] == name)
 
     def test_the_suites_with_a_form_are_those_listed_and_the_others_give_their_reason(self):
-        self.assertEqual(set_findings(self.rows, self.text), [])
+        self.assertEqual(set_findings(self.rows, self.texts), [])
 
     def test_a_suite_without_a_form_that_gains_one_fails_the_check(self):
         rows = copy.deepcopy(self.rows)
         self.row(rows, "live-receive-integration")["filter"] = "python x.py {filter}"
-        self.assertNotEqual(set_findings(rows, self.text), [])
+        self.assertNotEqual(set_findings(rows, self.texts), [])
 
     def test_a_suite_with_a_form_that_loses_it_fails_the_check(self):
         rows = copy.deepcopy(self.rows)
         del self.row(rows, "protocol")["filter"]
-        self.assertNotEqual(set_findings(rows, self.text), [])
+        self.assertNotEqual(set_findings(rows, self.texts), [])
 
     def test_a_suite_without_a_form_and_without_its_reason_fails_the_check(self):
-        text = self.text.replace("  # No filter form: the run is a model check with no tests to select.\n", "")
-        self.assertNotEqual(set_findings(self.rows, text), [])
+        texts = {name: text.replace("  # No filter form: the run is a model check with no tests to select.\n", "")
+                 for name, text in self.texts.items()}
+        self.assertNotEqual(set_findings(self.rows, texts), [])
+
+    def test_a_reason_in_another_suite_file_does_not_count(self):
+        texts = dict(self.texts)
+        texts["sysml-equivalence"] = texts["sysml-equivalence"].replace(
+            "  # No filter form: the run is a model check with no tests to select.\n", "")
+        texts["protocol"] = texts["protocol"] + texts["source-model-traces"]
+        self.assertNotEqual(set_findings(self.rows, texts), [])
 
     def test_each_form_runs_exactly_the_steps_of_its_run(self):
         for row in self.rows:

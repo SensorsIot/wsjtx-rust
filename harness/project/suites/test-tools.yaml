@@ -1,0 +1,26 @@
+# The tests of the Node test tools (Project-Specifics, "Test tools"), each beside its tool in
+# tools/test/node/; the model-value reader's tests run in model-values. The Rust test tools'
+# tests run in wstx-rust (the workspace) and, release only, in decoder-correctness.
+- suite: test-tools
+  cost: 2
+  run: "cargo build --workspace --locked && node --test --test-concurrency=1 --test-skip-pattern=\"^model values: \" \"tools/test/node/*.test.cjs\""
+  filter: >-
+    python harness/project/tools/filter_run.py test-tools {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-skip-pattern="^model values: " "tools/test/node/*.test.cjs"
+  paths:
+  - tools/test/
+  - fixtures/flex/
+  - server/
+  - client/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - tools/test/node/
+  - tools/test/blocked-ports.json
+  - fixtures/flex/
+  build: cargo build --workspace --locked
+  needs: "Pinned Rust, Node 24 (npm ci) and Playwright Chromium. Windows PC; the test tools' own tests: suite ports and per-run station data, the peer helper, the audio endpoint route, the page watch and live page check, the selection evidence readers, the quiet press check, the FLEX emulator against a real FLEX-6600 packet and the FLEX live check against it with the verified WSTX_DECODER_VECTORS. Disposable stations, local fixture pages and loopback sockets only; no radio, audio device or network service."

@@ -1,0 +1,50 @@
+- suite: recording-thin
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-010-002|^TC-010-005 review real Detailed peer cadence|^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py recording-thin {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-name-pattern="^TC-010-002|^TC-010-005 review real Detailed peer cadence|^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
+  paths:
+  - server/
+  - client/
+  - tests/
+  - tools/test/
+  - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/sysml/
+  - .github/workflows/windows-rust.yml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  timing: true
+  # Code that sets the pushed-state and display cadence: router and status websocket, compression,
+  # the recording/spectrum producers, the clients that read them, its own test file and the receive
+  # peer, the toolchain and the dependency versions. Not recording.css or the Cargo.toml and
+  # package.json pins (Harness-Timing: yes reruns it). No 32 kbit/s link. The model files
+  # and the reader of the RecordingLimits values its TC-018 tests read are inputs too.
+  timing_inputs:
+  - server/src/main.rs
+  - server/src/recording.rs
+  - server/src/recording_http.rs
+  - server/src/spectrum.rs
+  - server/src/http_compression.rs
+  - client/app.js
+  - client/index.html
+  - client/recording.js
+  - tests/recording.test.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
+  - tools/test/node/model-values.cjs
+  - docs/sysml/backend/profile/Recordings.sysml
+  - docs/sysml/shared/Units.sysml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package-lock.json
+  build: cargo build --workspace --locked
+  shared: [link-measurement]
+  timing_classes: [display]
+  needs: "Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR. Windows PC; timing suite: the TC-010-002 recording.state push, failed-read reconnect and 120-row cap, the TC-010-005 Detailed peer cadence and the two TC-018 250 ms cancellation bounds (no 32 kbit/s link). Runs only when the router with the status websocket and detail cadence (main.rs), the recording/spectrum producers that pace the display, compression, the status and receive clients (app.js, index.html, recording.js), its test file, the support and peer helpers, the model-value reader with the Recordings and Units model files it reads, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."

@@ -1,0 +1,56 @@
+- suite: radio-selection-thin
+  cost: 2
+  run: cargo test --release --locked --bin wstx-rust selection_http_tests::live_native_selection_tls_thin_and_off -- --nocapture
+  # No filter form: the run is exactly one test, so the whole suite is that test.
+  paths:
+  - server/
+  - client/
+  - tests/
+  - tools/test/
+  - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/sysml/
+  - .github/workflows/windows-rust.yml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  timing: true
+  # Timing for the 4230-5000 ms native setup, of which this suite is the only oracle: CAT
+  # (radio_control/, cat_lifecycle.rs), the router, compression, the selection reads, the receive
+  # and spectrum pushes, the clients that read them, its Rust and browser test files and their
+  # helpers, the toolchain and the dependency versions. Not capture (source.rs, audio): it reaches
+  # the browsers only through the owners above. Not recording.css or the Cargo.toml and package.json
+  # pins. No 32 kbit/s link; it shares link-measurement so that the CPU-heavy decoder groups
+  # do not run beside it.
+  timing_inputs:
+  - server/src/main.rs
+  - server/src/http_compression.rs
+  - server/src/station/selection.rs
+  - server/src/selection_http.rs
+  - server/src/selection_http_tests.rs
+  - server/src/radioControl/cat_lifecycle.rs
+  - server/src/radio_control/
+  - server/src/radioControl/
+  - server/src/transmit/codec.rs
+  - server/src/receive.rs
+  - server/src/receive_http.rs
+  - server/src/spectrum.rs
+  - client/app.js
+  - client/index.html
+  - client/recording.js
+  - tests/radio-selection.test.cjs
+  - tools/test/node/selection-evidence.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package-lock.json
+  build:
+  - cargo build --workspace --locked
+  - cargo test --release --locked --bin wstx-rust --no-run
+  exclusive: [radio-selection-evidence]
+  shared: [link-measurement]
+  timing_classes: [display]
+  needs: "Windows PC, pinned Rust/Python/Node/Chromium and verified WSTX_DECODER_VECTORS. Timing suite: actual isolated station/receive owner, independent real-time native FT4/FT8 packets, literal typed serial fixture and two authenticated browsers on an unshaped TLS connection. Thin and Off windows as long as their gestures need, every known-answer context and pending seen through an event or a read; no physical radio, device or production fault switch. Runs only when the router, compression, the selection, CAT, receive or spectrum code, the status and receive/selection clients (app.js, index.html, recording.js), its Rust and browser test files and helpers, the toolchain or the dependency versions change, or on request (Harness-Timing: yes)."

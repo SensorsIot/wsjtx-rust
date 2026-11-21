@@ -1,0 +1,45 @@
+- suite: wstx-rust-decoder
+  cost: 2
+  # The decoder unit tests, optimized (debug assertions and overflow checks kept, as in the
+  # test profile): wrong_dx_call_never_yields_a_false_word takes about 610 s unoptimized
+  # and 27 s optimized. A separate profile directory (target/unit-opt).
+  run: >-
+    cargo test --locked -p wstx-rust --lib
+    --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
+    --config profile.unit-opt.overflow-checks=true --profile unit-opt
+    decoder::
+  filter: >-
+    python harness/project/tools/filter_run.py wstx-rust-decoder {filter}
+    @libtest cargo test --locked -p wstx-rust --lib
+    --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
+    --config profile.unit-opt.overflow-checks=true --profile unit-opt
+    decoder::
+  paths:
+  - server/
+  - fixtures/decoder/
+  - tools/test/rust/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - docs/sysml/
+  select:
+  - docs/sysml/
+  - server/src/decoder/
+  - server/src/modes/decoder/
+  - server/src/transmit/pack.rs
+  - server/src/modes/transmit/mod.rs
+  - server/src/lib.rs
+  - tools/test/rust/src/model_values.rs
+  - tools/test/rust/src/resource_observer.rs
+  - server/Cargo.toml
+  - fixtures/decoder/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  build: >-
+    cargo test --locked -p wstx-rust --lib
+    --config 'profile.unit-opt.inherits="release"' --config profile.unit-opt.debug-assertions=true
+    --config profile.unit-opt.overflow-checks=true --profile unit-opt --no-run
+  # CPU-heavy (all cores): kept apart from the timing suites that run beside other groups.
+  exclusive: [link-measurement]
+  needs: "Pinned Rust toolchain. Windows PC; no radio or live station. The library's decoder:: unit tests (the complement of wstx-rust's --skip decoder::), except the two release-only phase tests that debug assertions compile out (resource_phase_detection_observes_work_without_publishing and resource_phase_subtraction_cancels_after_actual_transform_before_mutation), which run in decoder-quality; selected by the decoder, the transmit packer its tests encode with (transmit/pack.rs and its module root), the library root, the decoder fixtures they include and the Cargo pins."

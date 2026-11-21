@@ -17,7 +17,7 @@ contract; the references below are the constraints a change must respect.
 | Project-specific environment, build and model validation | [Project specifics](Project-Specifics.md), `.github/workflows/windows-rust.yml` |
 | Language rules | the packs in `harness/project/config.yaml`: [Rust](../../general/lang/rust/standard.md), [Rust supply chain](../../general/lang/rust-supply-chain/standard.md), [Python](../../general/lang/python/standard.md); [crates that need `unsafe`](Project-Specifics.md#crates-that-need-unsafe) |
 | Security | [principles](../../general/core/docs/standards/security.md); [deployment authority](Project-Specifics.md#deployment-authority) |
-| Testing | [testing](../../general/core/docs/standards/testing.md); suites in `harness/project/suites.yaml` |
+| Testing | [testing](../../general/core/docs/standards/testing.md); suites in `harness/project/suites/`, one file per suite |
 | Change and harness-improvement reports; restart checkpoints | [Reporting](../../general/core/docs/CR-Reporting.md); shared harness overview: `python harness/general/core/tools/report_cr.py --harness --root harness/general` |
 | The coordinator (main session), parallel issue workspaces and sub-agents | [Agent roles](../../general/core/agents/roles.md), [workspace tool](../../general/core/docs/Workspaces.md); `python harness/general/core/tools/parallel.py status` |
 | Writing functional SysML models | [SysML v2 authoring](../../general/core/docs/standards/sysml-v2.md) |
@@ -37,8 +37,9 @@ Everything under `harness/` is the harness (HOW); everything else is product.
   `harness/general/lang/rust/`. Fixes to it are made inside it.
 - `harness/project/` is the project harness, this project's own part:
   - `config.yaml`: the harness configuration (packs, gate, queue, machines, Alex);
-  - `suites.yaml`: the test registry, with the `filter:` forms that
-    `gate.py --suite NAME --filter WORDS` runs
+  - `suites/`: the test registry, one file per suite (`harness/project/suites/<suite>.yaml`,
+    [the registry](../../general/core/docs/standards/testing.md#the-registry)), with the
+    `filter:` forms that `gate.py --suite NAME --filter WORDS` runs
     ([Functional test selection](Project-Specifics.md#functional-test-selection));
   - `model_bindings.py`: the gate's model bindings (`gate.model_bindings`);
   - `tools/`: `filter_run.py`, which runs a suite's filter form (its `run` steps, each
@@ -72,7 +73,7 @@ instructions are in [Project specifics](Project-Specifics.md).
   gate execution. The manual-only hosted workflow supplies the alternative location
   when explicitly selected; it does not add a routine second run.
 - **Test selection:** explicit file owners and downstream functional dependencies in
-  `harness/project/suites.yaml`; see [functional test selection](Project-Specifics.md#functional-test-selection).
+  `harness/project/suites/`; see [functional test selection](Project-Specifics.md#functional-test-selection).
   Shared or unmapped changes select broader checks. `--plan` explains the selection;
   `--full` executes every eligible group without memo reuse.
 - **Deploy:** a Windows release executable built and installed on HB9BLA

@@ -1,0 +1,15 @@
+- suite: sysml-tools
+  cost: 2
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_[!adre]*.py\" -q"
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-tools {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_[!adre]*.py" -q
+  paths:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  - .github/workflows/windows-rust.yml
+  select:
+  - tools/sysml.py
+  - tools/sysml/
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the tool's tests test_[!adre]*.py, every test file not run by another sysml suite: the rules on isolated models, some also on the real model. Selected only when the tool changes. No radio or live service."

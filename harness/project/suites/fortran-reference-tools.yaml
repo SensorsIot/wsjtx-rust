@@ -1,0 +1,34 @@
+- suite: fortran-reference-tools
+  cost: 2
+  run: python -m unittest discover -s tools/test/python -p "test_wsjtx*reference.py" -v && python -m unittest discover -s tools/test/python -p test_analyze_fortran_trace.py -v
+  filter: >-
+    python harness/project/tools/filter_run.py fortran-reference-tools {filter}
+    @unittest python -m unittest discover -s tools/test/python -p "test_wsjtx*reference.py" -v
+    @unittest python -m unittest discover -s tools/test/python -p test_analyze_fortran_trace.py -v
+  paths:
+  - .github/workflows/fortran-stage-diagnostics.yml
+  - fixtures/decoder/wsjtx-stage-logging.patch.gz
+  - server/examples/reference_decode.rs
+  - tools/test/python/wsjtx_reference.py
+  - tools/test/python/test_wsjtx_reference.py
+  - tools/test/python/WSJTX-REFERENCE.md
+  - tools/test/python/wsjtx_stage_reference.py
+  - tools/test/python/test_wsjtx_stage_reference.py
+  - tools/test/python/analyze_fortran_trace.py
+  - tools/test/python/test_analyze_fortran_trace.py
+  - fixtures/decoder/simulator-tool/wsjtx_simulator_components.py
+  - fixtures/decoder/simulator-cases.json
+  select:
+  - .github/workflows/fortran-stage-diagnostics.yml
+  - fixtures/decoder/wsjtx-stage-logging.patch.gz
+  - server/examples/reference_decode.rs
+  - tools/test/python/wsjtx_reference.py
+  - tools/test/python/test_wsjtx_reference.py
+  - tools/test/python/WSJTX-REFERENCE.md
+  - tools/test/python/wsjtx_stage_reference.py
+  - tools/test/python/test_wsjtx_stage_reference.py
+  - tools/test/python/analyze_fortran_trace.py
+  - tools/test/python/test_analyze_fortran_trace.py
+  - fixtures/decoder/simulator-tool/wsjtx_simulator_components.py
+  - fixtures/decoder/simulator-cases.json
+  needs: Python 3.12 standard library. Windows PC; the reference protocol, comparison, identity and trace-analyzer unit tests. No compiler, downloads, network, radio or hosted run.

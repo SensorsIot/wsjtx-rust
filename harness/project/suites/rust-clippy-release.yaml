@@ -1,0 +1,27 @@
+- suite: rust-clippy-release
+  cost: 1
+  # The Rust pack's clippy check runs the debug build only; this run also lints the
+  # release-only test code (cfg(not(debug_assertions))). Its own Cargo output directory.
+  # paths: every file that include_str!, include_bytes! or #[path] pulls into the build.
+  run: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/clippy-release" cargo clippy --workspace --all-targets --locked --release -- -D warnings
+  paths:
+  - server/
+  - tools/test/rust/
+  - tools/test/blocked-ports.json
+  - fixtures/decoder/
+  - fixtures/transmit/
+  - fixtures/flex/
+  - fixtures/pskr/
+  - client/
+  - tests/fixtures/http/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  select:
+  - server/
+  - tools/test/rust/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  build: CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/clippy-release" cargo clippy --workspace --all-targets --locked --release -- -D warnings
+  needs: "Pinned Rust toolchain with clippy. Windows PC; no radio or live station. Release clippy with -D warnings over every workspace target: the release-only test code (cfg(not(debug_assertions))) that the Rust pack's debug clippy check does not compile."

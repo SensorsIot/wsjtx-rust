@@ -330,7 +330,7 @@ execution of modelled behaviour and no proof that the code meets the model.
 ## Tests
 
 Each test of `tools/sysml/tests/` names its `TV` and rule in its docstring. The suites that
-run them are those of `harness/project/suites.yaml`.
+run them are those of `harness/project/suites/`.
 
 <!-- TV table -->
 

@@ -1,0 +1,37 @@
+- suite: mcp
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 tests/mcp/mcp.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py mcp {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 tests/mcp/mcp.test.cjs
+  paths:
+  - server/
+  - client/
+  - tests/mcp/mcp.test.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/main.rs
+  - server/src/mcp.rs
+  - server/src/automation.rs
+  - server/src/operating/qso/freeslot.rs
+  - server/src/authorization.rs
+  - server/src/authorization_http.rs
+  - client/authorization.js
+  - tests/mcp/mcp.test.cjs
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  - package.json
+  - package-lock.json
+  build: cargo build --workspace --locked
+  needs: Pinned Rust and Node 24 (npm ci for selfsigned). Windows PC; the compiled candidate on a disposable selected HTTPS profile with a throwaway certificate, a browser-style grant that creates an MCP client token and an independent JSON-RPC client. No transceiver, audio device, PTT or network service.

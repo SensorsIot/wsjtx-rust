@@ -1,0 +1,17 @@
+# TR-21: the tests of `equivalence` and `identities`, apart from
+# sysml-tools so that only the tool, the validator and their test file select them; about
+# 9 minutes (some 30 Pilot exports, 2 at a time).
+- suite: sysml-equivalence-tests
+  cost: 2
+  run: "python -m unittest discover -s tools/sysml/tests -p \"test_e*.py\" -q"
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-equivalence-tests {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_e*.py" -q
+  paths:
+  - tools/sysml.py
+  - tools/sysml/
+  select:
+  - tools/sysml.py
+  - tools/sysml/Validate.java
+  - tools/sysml/tests/test_equivalence.py
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; the full git history of the checkout (E1 reads 5da7aab02 and its parent, E10 8245ec5f0 and 0e4b4c73a) and git to build temporary repositories. No radio or live service."

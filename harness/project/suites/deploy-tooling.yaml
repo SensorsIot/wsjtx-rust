@@ -1,0 +1,13 @@
+# The deploy mechanism (Project-Specifics.md, Deployment authority): its pins, the station drill
+# and the mocked install flow. -v names every test and every skip in the gate log.
+- suite: deploy-tooling
+  cost: 2
+  run: python -m unittest discover -s tools/deploy/tests -v
+  filter: >-
+    python harness/project/tools/filter_run.py deploy-tooling {filter}
+    @unittest python -m unittest discover -s tools/deploy/tests -v
+  paths:
+  - tools/deploy/
+  select:
+  - tools/deploy/
+  needs: "Python 3.12 with pip (the deploy command's tests build their fake cargo and rustc from pip's launcher), Windows PowerShell 5.1, Git Bash and git with the checkout's history. Windows PC; every station, scheduled task, firewall, process, network, git remote and GitHub call is a mock in a temporary sandbox. No station, radio or network service."

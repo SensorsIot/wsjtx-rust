@@ -1,0 +1,42 @@
+- suite: live-receive-integration
+  cost: 2
+  run: cargo test --release --locked --test audio_receive live_native_provider_decodes_independent_ft8_callsign -- --exact
+  # No filter form: the run is exactly one test, so the whole suite is that test.
+  paths:
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/receive.rs
+  - server/src/decoder/
+  - server/src/modes/decoder/
+  - server/src/lib.rs
+  - server/tests/audio_receive.rs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
+  - fixtures/decoder/
+  - server/Cargo.toml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  select:
+  - server/src/source.rs
+  - server/src/audio.rs
+  - server/src/audio/
+  - server/src/receive.rs
+  - server/src/decoder/
+  - server/src/modes/decoder/
+  - server/src/lib.rs
+  - server/tests/audio_receive.rs
+  - tools/test/rust/src/native_ft8_fixture.rs
+  - tools/test/rust/src/lib.rs
+  - tools/test/rust/Cargo.toml
+  - tools/test/python/independent-vector-tool/
+  - fixtures/decoder/
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  build: cargo test --release --locked --test audio_receive --no-run
+  needs: Pinned Rust and Python. Windows PC; safe library APIs, deterministic injected native packets through the actual live source, shared receive window and pure FT8 decoder. WSTX_DECODER_VECTORS must name the verified frozen fixture cache. No transceiver, audio device, unsafe test import or network download; cheap provider boundary cases stay in the ordinary debug Rust group.

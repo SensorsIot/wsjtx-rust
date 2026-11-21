@@ -1,0 +1,50 @@
+- suite: recording-storage
+  cost: 2
+  run: cargo build --workspace --locked && node --test --test-concurrency=1 --test-name-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS" --test-skip-pattern="^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
+  filter: >-
+    python harness/project/tools/filter_run.py recording-storage {filter}
+    @run cargo build --workspace --locked
+    @node node --test --test-concurrency=1 --test-name-pattern="^TC-018-|^review:\s|^every recording endpoint retains TLS" --test-skip-pattern="^TC-018-002/003 HTTP admission|^TC-018-003 four stations|^four stations retain isolated identities" tests/recording.test.cjs
+  paths:
+  - server/
+  - client/
+  - tests/
+  - tools/test/
+  - fixtures/decoder/
+  - tools/recording-fixtures.cjs
+  - docs/sysml/
+  - .github/workflows/windows-rust.yml
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - package.json
+  - package-lock.json
+  select:
+  - server/src/main.rs
+  - server/src/recording.rs
+  - server/src/recording_http.rs
+  - client/recording.js
+  - client/recording.css
+  - tests/recording.test.cjs
+  - tools/recording-fixtures.cjs
+  - fixtures/decoder/manifest.json
+  - fixtures/decoder/ft4-manifest.json
+  - tools/test/node/support.cjs
+  - tools/test/blocked-ports.json
+  - tools/test/node/peer.cjs
+  # The recording limits its tests read (Recordings.sysml), the unit suffixes (Units.sysml)
+  # and the JavaScript model-value reader.
+  - docs/sysml/backend/profile/Recordings.sysml
+  - docs/sysml/shared/Units.sysml
+  - tools/test/node/model-values.cjs
+  - Cargo.toml
+  - Cargo.lock
+  - rust-toolchain.toml
+  - server/Cargo.toml
+  - package.json
+  - package-lock.json
+  - client/app.js
+  - client/index.html
+  - client/authorization.js
+  build: cargo build --workspace --locked
+  needs: Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR with verified original recordings. Windows PC; isolated import/job/storage tests.

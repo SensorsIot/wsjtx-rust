@@ -1,0 +1,33 @@
+- suite: simulator-fixtures
+  cost: 2
+  run: >-
+    python -m unittest discover -s fixtures/decoder/simulator-tool -p test_wsjtx_simulated_samples.py -v &&
+    python fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/manifest.json" --fixture-directory fixtures/decoder &&
+    python fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py --verify-manifest "$WSTX_SIMULATOR_SAMPLE_DIR/../ft8/manifest.json" --fixture-directory fixtures/decoder
+  # Under --filter the two --verify-manifest runs, which select no tests, are left out.
+  filter: >-
+    python harness/project/tools/filter_run.py simulator-fixtures {filter}
+    @unittest python -m unittest discover -s fixtures/decoder/simulator-tool -p test_wsjtx_simulated_samples.py -v
+  paths:
+  - fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-tool/test_wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-cases.json
+  - tools/test/python/independent-vector-tool/
+  - fixtures/decoder/protocol-data/
+  - docs/sysml/
+  select:
+  - fixtures/decoder/simulator-tool/wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-tool/test_wsjtx_simulated_samples.py
+  - fixtures/decoder/simulator-cases.json
+  - tools/test/python/independent-vector-tool/
+  - fixtures/decoder/protocol-data/
+  needs: >-
+    Python 3.12 standard library and the immutable portable simulator fixture store
+    CR18-simulated-samples-v2-03aef7cde-toold06cee63463b, provisioned before the gate from
+    the release fixtures-cr18-v2 (its zip extracted under the common Git directory's
+    migration-data, the archive SHA-256 checked). Set WSTX_SIMULATOR_SAMPLE_DIR to its ft4 directory;
+    its sibling ft8 directory is required. Set WSTX_SIMULATOR_ORACLE_DIR to
+    fixtures/decoder for repository tests (portable tests default to sibling oracle).
+    Preserve delivery-catalog.json and both mode manifests with the frozen store;
+    missing files fail. Windows PC, isolated integrity/refusal tests and explicit
+    verification of every WAV of both manifests; no download, compiler, decoder run or radio.

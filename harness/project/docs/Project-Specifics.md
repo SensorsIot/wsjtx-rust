@@ -115,7 +115,7 @@ python harness/general/core/tools/gate.py
 ```
 
 It selects affected compiler checks and functional test groups from the declared
-change owners and downstream dependencies in `harness/project/suites.yaml`. The ordinary
+change owners and downstream dependencies in `harness/project/suites/`. The ordinary
 push hook uses the same gate and its valid memoized results. Do not repeat the checks
 below when the gate has already supplied their evidence for the same candidate.
 Release packaging also runs on this PC; start the packaged candidate for the dry run.
@@ -128,7 +128,7 @@ selection. No group declares `depends_on`, which the harness follows transitivel
 names in its own `select` the files whose behaviour its test cases prove, not every file its
 fixture merely loads, and Cargo and Node dependency inputs select every group that compiles
 or runs them. A group's coverage is its `needs` and its change owners are its `select` in
-`harness/project/suites.yaml`; `gate.py --plan` (below) prints the groups a change selects
+`harness/project/suites/`; `gate.py --plan` (below) prints the groups a change selects
 and why. The selector does not infer changed functions from a file or guess dependencies
 from an agent's description. Unmapped inputs select every group that declares them;
 entirely unknown paths and selection-policy changes cause a full fallback.
@@ -204,7 +204,7 @@ its bound from the model has the same files in its suite's `timing_inputs` and `
 
 Measurements run only when the change touches time-critical code. Every
 timing, latency, cadence or throughput promise lives in a **timing suite** (`timing: true`
-in `harness/project/suites.yaml`). A timing suite has no `select`; its `timing_inputs` name
+in `harness/project/suites/`). A timing suite has no `select`; its `timing_inputs` name
 the code that sets the measured time, its own test files and helpers, and the toolchain and
 dependency pins, and nothing else selects it: no functional owner, unmapped-input or
 unowned-path fallback, `harness/project/` edit or dependency
@@ -354,7 +354,7 @@ $env:WSTX_SIMULATOR_ORACLE_DIR = Join-Path (git rev-parse --show-toplevel) 'fixt
 $env:CARGO_BUILD_JOBS = '2'
 ```
 
-Without these, a push that selects any suite whose `needs` in `harness/project/suites.yaml`
+Without these, a push that selects any suite whose `needs` in `harness/project/suites/`
 names a WSTX_* input is refused red. The merge-queue worker reads the same inputs from
 `queue.env` in `harness/project/config.yaml`.
 
@@ -790,7 +790,7 @@ compiles it in as `WSTX_SOURCE_COMMIT`, and a build without one reports `unknown
 fails. An older build sends no header, for example a rollback target. The probe
 then says so and keeps the image digest as the identity. Last, it checks that the launcher
 receipt agrees with what it observed. Tests of the deploy mechanism, its pins and its drill
-are suite `deploy-tooling` (cost 2, `harness/project/suites.yaml`):
+are suite `deploy-tooling` (cost 2, `harness/project/suites/deploy-tooling.yaml`):
 `python -m unittest discover -s tools/deploy/tests -v`.
 
 The operator can check the result without any agent; this is not a step of each install:

@@ -1,0 +1,20 @@
+- suite: sysml-documentation
+  cost: 2
+  run: "python tools/sysml.py check && python -m unittest discover -s tools/sysml/tests -p \"test_[dr]*.py\" -q"
+  # Under --filter the model check, which selects no tests, is left out.
+  filter: >-
+    python harness/project/tools/filter_run.py sysml-documentation {filter}
+    @unittest python -m unittest discover -s tools/sysml/tests -p "test_[dr]*.py" -q
+  paths:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  - client/
+  - server/
+  - tests/
+  - .github/workflows/windows-rust.yml
+  select:
+  - docs/sysml/
+  - tools/sysml.py
+  - tools/sysml/
+  needs: "Python 3.12 and pinned Java/OMG Pilot setup. Windows PC; `check` (the authority, catalog and trace checks, one full semantic validation, the architecture oracle, the identity history and the model rules) and test_[dr]*.py (the real model's mode traces, catalog and status, `check` on this tree, and the reference rows of two fixture models). The tool's other tests run in sysml-tools, sysml-architecture-context, sysml-architecture and sysml-equivalence-tests. This suite is selected by every model file and by the tool, which holds the oracle file that check reads. No radio or live service."

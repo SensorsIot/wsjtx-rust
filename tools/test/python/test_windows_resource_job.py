@@ -298,6 +298,8 @@ class ReadyAndDeadlineTests(ApiFreeCase):
 
 
 class ArtifactTests(ApiFreeCase):
+    SUITE_FILES = ("harness/project/suites/decoder-quality.yaml", "harness/project/suites/wstx-rust.yaml")
+
     def setUp(self):
         super().setUp()
         directory = tempfile.TemporaryDirectory()
@@ -307,7 +309,7 @@ class ArtifactTests(ApiFreeCase):
         self.executable = self.target / "x86_64-pc-windows-msvc/release/deps/decoder_signal-ab12.exe"
         self.executable.parent.mkdir(parents=True)
         self.executable.write_bytes(b"MZ fixed test artifact; never executable")
-        for relative in ("Cargo.lock", "rust-toolchain.toml", "harness/project/suites.yaml",
+        for relative in ("Cargo.lock", "rust-toolchain.toml", *self.SUITE_FILES,
                          "tools/test/python/windows_resource_job.py",
                          "tools/test/python/test_windows_resource_job.py",
                          "tools/test/python/windows_process_metrics.py",
@@ -384,6 +386,14 @@ class ArtifactTests(ApiFreeCase):
         self.assertIn("tools/test/python/windows_process_metrics.py", receipt["source_pins"])
         self.assertIn("tools/test/python/test_windows_process_metrics.py", receipt["source_pins"])
         self.assertIn("tools/test/rust/src/resource_harness.rs", receipt["source_pins"])
+
+    def test_source_snapshot_pins_every_suite_file_of_the_registry_folder(self):
+        pins = guardian.source_snapshot(self.root)
+        # every suite file and nothing else of the registry, the single-file form among it
+        self.assertEqual(sorted(k for k in pins if k.startswith("harness/project/suites")),
+                         sorted(self.SUITE_FILES))
+        (self.root / self.SUITE_FILES[1]).write_text("changed input\n", encoding="utf-8")
+        self.assertNotEqual(guardian.source_snapshot(self.root), pins)
 
     def test_wrong_target_package_source_profile_and_artifact_path_are_rejected(self):
         mutations = (
@@ -1059,8 +1069,9 @@ class OwnerCleanupTests(ApiFreeCase):
 class RegistryTests(ApiFreeCase):
     def test_registry_keeps_pipefail_full_ordinary_inventory_and_guarded_matrix_pair(self):
         root = Path(__file__).resolve().parents[3]
-        source = (root / "harness/project/suites.yaml").read_text(encoding="utf-8")
-        entry = source.split("- suite: decoder-quality\n", 1)[1].split("\n- suite:", 1)[0]
+        entry = (root / "harness/project/suites/decoder-quality.yaml").read_text(encoding="utf-8")
+        self.assertTrue(entry.startswith("- suite: decoder-quality\n"))
+        self.assertNotIn("\n- suite:", entry)
         self.assertIn("set -euo pipefail", entry)
         self.assertIn("cargo test --release --locked --test decoder_signal --message-format=json", entry)
         self.assertIn("--test-threads=1 --skip release_runtime_and_overlapping_window_history", entry)
