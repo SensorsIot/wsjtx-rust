@@ -158,11 +158,13 @@ package WstxOperatingSelection {
     #derivation connection { end #original ::> 'FR-021'; end #derive ::> 'CL-044-16'; }
 
     attribute def LeaseRule {
-        doc /* A selection reserves radio control with a wait (ReserveRadio::waitMs): a
-             reading of the radio or another exchange in work delays it and does not
-             refuse it. A reservation that radio control refuses (busy after the wait,
-             or at once while the transmitter may be keyed) refuses the selection with
-             busy, and nothing changes. */
+        doc /* A selection reserves radio control with a wait of waitMs
+             (ReserveRadio::waitMs): a reading of the radio or another exchange in work
+             delays it and does not refuse it. A reservation that radio control refuses
+             (busy after the wait, or at once while the transmitter may be keyed) refuses
+             the selection with busy, and nothing changes. */
+        attribute waitMs : Integer = 3000 {
+            doc /* How long a selection waits for radio control before it is refused. */ }
     }
 
     requirement 'CL-011-02' {
