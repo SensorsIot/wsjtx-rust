@@ -483,18 +483,87 @@ fn audio_capture_without_a_named_endpoint_is_refused_unavailable() {
         Err(SourceError::Unavailable)
     ));
 }
-// Actual controller isolates two packet drivers and acknowledges stop within250ms.
-// Proves: TC-002-001, TC-002-003
+/// Runs `step` until it reports done, under a hang guard well above the observed time.
 #[cfg(windows)]
-#[test]
-fn audio_controller_profiles_and_stop() {
-    use std::time::{Duration, Instant};
+fn until_done(what: &str, mut step: impl FnMut() -> bool) {
+    let start = std::time::Instant::now();
+    while !step() {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "timed out waiting for {what}"
+        );
+        std::thread::yield_now();
+    }
+}
+/// Two controllers on packet drivers of 48000 and 44100 Hz, started, with their queues.
+#[cfg(windows)]
+#[allow(clippy::type_complexity)]
+fn two_started_controllers() -> (
+    (AudioController, std::sync::mpsc::Receiver<Arc<PacketQueue>>),
+    (AudioController, std::sync::mpsc::Receiver<Arc<PacketQueue>>),
+) {
     let (device_a, queue_a) = PacketDevice::new(format(48000));
     let (device_b, queue_b) = PacketDevice::new(format(44100));
     let mut a = AudioController::new("radio-A".into(), device_a).unwrap();
     let mut b = AudioController::new("radio-B".into(), device_b).unwrap();
     a.start().unwrap();
     b.start().unwrap();
+    ((a, queue_a), (b, queue_b))
+}
+// Actual controller isolates two packet drivers and acknowledges stop.
+// Proves: TC-002-001, TC-002-003
+#[cfg(windows)]
+#[test]
+fn audio_controller_profiles_and_stop() {
+    use std::time::Duration;
+    let ((mut a, queue_a), (mut b, queue_b)) = two_started_controllers();
+    until_done("both running", || {
+        if a.status().state == AudioState::Running && b.status().state == AudioState::Running {
+            return true;
+        }
+        assert!(matches!(a.poll(), SourcePoll::Pending));
+        assert!(matches!(b.poll(), SourcePoll::Pending));
+        false
+    });
+    let qa = queue_a.recv_timeout(Duration::from_millis(250)).unwrap();
+    let qb = queue_b.recv_timeout(Duration::from_millis(250)).unwrap();
+    assert_eq!(a.selected_endpoint(), "radio-A");
+    assert_eq!(b.selected_endpoint(), "radio-B");
+    qa.push(&bytes(&vec![0.1; 480]), 480, 100, 5, 0);
+    let SourcePoll::EpochChanged(p) = a.poll() else {
+        panic!()
+    };
+    assert_eq!(p.native_rate, 48000);
+    assert!(matches!(b.poll(), SourcePoll::Pending));
+    assert_eq!(qb.queued_frames(), 0);
+    a.request_stop();
+    assert!(a.descriptor().is_none());
+    until_done("A closed", || {
+        if a.status().state == AudioState::Closed {
+            return true;
+        }
+        assert!(matches!(a.poll(), SourcePoll::Pending));
+        false
+    });
+    assert_eq!(b.status().state, AudioState::Running);
+    b.request_stop();
+    until_done("B closed", || {
+        if b.status().state == AudioState::Closed {
+            return true;
+        }
+        let _ = b.poll();
+        false
+    });
+}
+// The controller reaches Running and acknowledges each stop within 250 ms
+// (DeviceLifecycle::closeMaxMs).
+// Timing: display
+// Proves: TC-002-001, TC-002-003
+#[cfg(windows)]
+#[test]
+fn realtime_bound_audio_controller_profiles_and_stop() {
+    use std::time::{Duration, Instant};
+    let ((mut a, queue_a), (mut b, queue_b)) = two_started_controllers();
     let start = Instant::now();
     while a.status().state != AudioState::Running || b.status().state != AudioState::Running {
         assert!(matches!(a.poll(), SourcePoll::Pending));

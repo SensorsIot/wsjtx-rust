@@ -13,16 +13,18 @@
   # tests/ run here too.
   run: >-
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
-    cargo test --workspace --locked --bins --examples --test '*' &&
-    cargo test --workspace --locked --lib -- --skip decoder::
+    cargo test --workspace --locked --bins --examples --test '*' -- --skip realtime_bound_ &&
+    cargo test --workspace --locked --lib -- --skip decoder:: --skip realtime_bound_
+  # Both steps of run and of the form skip the realtime_bound_ tests: they run alone in
+  # radio-bounds.
   # The filter form (gate.py --suite --filter; harness/project/docs/specifics/local-windows-development.md,
   # Functional test selection):
   # the steps of run, each narrowed to the filter words by harness/project/tools/filter_run.py.
   filter: >-
     export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}/unit" &&
     python harness/project/tools/filter_run.py wstx-rust {filter}
-    @libtest cargo test --workspace --locked --bins --examples --test '*'
-    @libtest cargo test --workspace --locked --lib -- --skip decoder::
+    @libtest cargo test --workspace --locked --bins --examples --test '*' -- --skip realtime_bound_
+    @libtest cargo test --workspace --locked --lib -- --skip decoder:: --skip realtime_bound_
   paths:
   - server/
   - fixtures/transmit/

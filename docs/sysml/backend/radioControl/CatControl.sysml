@@ -135,7 +135,9 @@ package WstxCatControl {
             test = "server/tests/radio_control.rs; "
                 + "server/src/radio_level_tests.rs::a_transmit_hold_refuses_the_lease_at_once; "
                 + "server/tests/transmit_service.rs::"
-                + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing";
+                + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing; "
+                + "server/src/radio_level_tests.rs::"
+                + "realtime_bound_a_transmit_hold_refuses_the_lease_at_once";
         }
     }
 
@@ -281,7 +283,11 @@ package WstxCatControl {
                 + "a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection; "
                 + "server/src/radio_level_tests.rs::meter_scales_follow_the_manual_table; "
                 + "server/tests/transmit_service.rs::"
-                + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing";
+                + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing; "
+                + "server/tests/transmit_service.rs::"
+                + "realtime_bound_a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes; "
+                + "server/src/radio_level_tests.rs::"
+        + "realtime_bound_a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection";
         }
     }
 }

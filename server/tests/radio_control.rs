@@ -134,9 +134,21 @@ impl Transport for Fake {
     }
 }
 
-// Proves: TC-009-001, TC-009-003
-#[test]
-fn actor_has_one_io_owner_no_pending_operation_and_bounded_close() {
+/// Waits, under a hang guard well above the observed time, until `done` holds.
+fn wait_until(what: &str, limit: Duration, done: impl Fn() -> bool) {
+    let start = Instant::now();
+    while !done() {
+        assert!(start.elapsed() < limit, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+/// A ready actor on the script whose second exchange blocks in its read, that exchange in
+/// work on its own thread, and the script.
+fn actor_with_an_exchange_in_work() -> (
+    Arc<radio_control::actor::Actor>,
+    std::thread::JoinHandle<Result<Observation>>,
+    Arc<Mutex<Script>>,
+) {
     use radio_control::actor::Actor;
     let entered = Arc::new(AtomicBool::new(false));
     let release = Arc::new(AtomicBool::new(false));
@@ -157,19 +169,37 @@ fn actor_has_one_io_owner_no_pending_operation_and_bounded_close() {
         )
         .unwrap(),
     );
-    let limit = Instant::now() + Duration::from_secs(2);
-    while actor.snapshot().unwrap().state == State::Connecting && Instant::now() < limit {
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    wait_until("the connection", Duration::from_secs(2), || {
+        actor.snapshot().unwrap().state != State::Connecting
+    });
     assert_eq!(actor.snapshot().unwrap().state, State::Ready);
     let operation = actor.clone();
     let worker = std::thread::spawn(move || operation.execute(req(Operation::ReadMode)));
-    while !entered.load(Ordering::Acquire) && Instant::now() < limit {
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    assert!(entered.load(Ordering::Acquire));
+    wait_until("the exchange in work", Duration::from_secs(2), || {
+        entered.load(Ordering::Acquire)
+    });
+    (actor, worker, state)
+}
+
+// Proves: TC-009-001, TC-009-003
+#[test]
+fn actor_has_one_io_owner_no_pending_operation_and_bounded_close() {
+    let (actor, worker, state) = actor_with_an_exchange_in_work();
     assert_eq!(actor.execute(req(Operation::ReadMode)), Err(Error::Busy));
     assert_eq!(state.lock().unwrap().writes.len(), 2);
+    actor.request_close();
+    assert_eq!(worker.join().unwrap(), Err(Error::Cancelled));
+    wait_until("the closed port", Duration::from_secs(5), || {
+        actor.close_complete()
+    });
+    assert!(state.lock().unwrap().closed >= 1);
+}
+
+// Timing: radio
+// Proves: TC-009-003
+#[test]
+fn realtime_bound_actor_has_one_io_owner_no_pending_operation_and_bounded_close() {
+    let (actor, worker, state) = actor_with_an_exchange_in_work();
     let close_max = close_max();
     let before = Instant::now();
     actor.request_close();

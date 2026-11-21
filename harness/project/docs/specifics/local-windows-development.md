@@ -80,7 +80,8 @@ sibling suite owns through the partition, and where `run` already selects by a n
   suite is that test. `sysml-equivalence` and `source-model-traces`: the run is a model
   check with no tests to select. `decoder-quality`: `windows_resource_job.py resolve` binds
   every ordinary pass of `decoder_signal` into one artifact, so a partial run cannot be
-  resolved.
+  resolved. `radio-bounds`: the run is the 14 `realtime_bound_` tests, measured alone; a
+  whole run takes seconds, so a part of it saves nothing.
 
 `harness/project/tests/test_filter_forms.py` holds the list of suites with and without a
 form and checks that each form runs exactly the steps of its `run`.
@@ -160,7 +161,9 @@ runs. That evidence does not cover the CPU-heavy decoder groups as neighbours, s
 `exclusive: [link-measurement]`, which the three share (`radio-selection-thin`'s socket
 qualification fails beside `decoder-quality`). The CPU
 measurements run alone (`exclusive: ["*"]`): `decoder-quality` and
-`live-station-latency` (a browser row-latency budget on the busy decoder). The groups
+`live-station-latency` (a browser row-latency budget on the busy decoder), and so do the
+radio bounds on scripted doubles, `radio-bounds` (the `realtime_bound_` tests of PTT halt
+and release, CAT read, close and lease, and the audio stop). The groups
 declare what they must not share:
 
 - the browser groups run `target/debug/wstx-rust.exe`, which `cargo test` relinks with

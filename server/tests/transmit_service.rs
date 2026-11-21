@@ -466,40 +466,29 @@ fn halt_mid_audio_stops_audio_and_releases_ptt_and_disarms() {
     assert_eq!(core.halt(), HaltState::Idle, "idempotent");
 }
 
-// Proves: TC-008-005
-#[test]
-fn service_halt_is_confirmed_within_the_bound_while_the_owner_is_busy() {
-    let f = Fake::new();
+/// The owner thread of `f` mid-audio with a 30 ms PTT exchange, on the wall-clock driver
+/// from P - 100 ms.
+fn busy_owner_mid_audio(f: &Fake) -> (Service<Fake>, Driver) {
     f.0.ptt_delay_ms.store(30, Ordering::SeqCst);
     let service = Service::start(f.clone()).unwrap();
-    // Real clock: the fake time follows wall time from P.
-    let origin = Instant::now();
-    let clock = f.clone();
-    let stop = Arc::new(AtomicBool::new(false));
-    let ticking = stop.clone();
-    let driver = std::thread::spawn(move || {
-        while !ticking.load(Ordering::SeqCst) {
-            clock.at(P - 100 + origin.elapsed().as_millis() as i64);
-            std::thread::sleep(Duration::from_millis(1));
-        }
-    });
-    std::thread::sleep(Duration::from_millis(5));
+    let driver = drive(f, P - 100);
     service.with(|c| {
         c.arm(7).unwrap();
         c.submit(request(1, P, "CQ HB9BLA JN47"))
     });
-    while !service.view().transmitting {
-        assert!(origin.elapsed() < Duration::from_secs(3));
-        std::thread::sleep(Duration::from_millis(1));
-    }
-    let started = Instant::now();
+    wait_for("audio start", Duration::from_secs(3), || {
+        service.view().transmitting
+    });
+    (service, driver)
+}
+
+// Proves: TC-008-005
+#[test]
+fn service_halt_is_confirmed_within_the_bound_while_the_owner_is_busy() {
+    let f = Fake::new();
+    let (service, driver) = busy_owner_mid_audio(&f);
     let state = service.halt("00000000-0000-4000-8000-0000000000aa");
-    let elapsed = started.elapsed();
     assert_eq!(state, HaltState::Stopped);
-    assert!(
-        elapsed < Duration::from_millis(HALT_BOUND_MS),
-        "{elapsed:?}"
-    );
     assert!(
         f.0.stopped_by_handle.load(Ordering::SeqCst),
         "audio stopped without the core lock"
@@ -509,8 +498,25 @@ fn service_halt_is_confirmed_within_the_bound_while_the_owner_is_busy() {
         service.halt("00000000-0000-4000-8000-0000000000aa"),
         HaltState::Stopped
     );
-    stop.store(true, Ordering::SeqCst);
-    driver.join().unwrap();
+    end_drive(driver);
+}
+
+// Timing: radio
+// Proves: TC-008-005
+#[test]
+fn realtime_bound_service_halt_is_confirmed_within_the_bound_while_the_owner_is_busy() {
+    let f = Fake::new();
+    let (service, driver) = busy_owner_mid_audio(&f);
+    let started = Instant::now();
+    let state = service.halt("00000000-0000-4000-8000-0000000000aa");
+    let elapsed = started.elapsed();
+    assert_eq!(state, HaltState::Stopped);
+    assert!(
+        elapsed < Duration::from_millis(HALT_BOUND_MS),
+        "{elapsed:?}"
+    );
+    assert_eq!(f.keys().last().map(|k| k.1), Some(false));
+    end_drive(driver);
 }
 
 // Proves: TC-008-005
@@ -853,46 +859,46 @@ fn closing_a_keyed_connection_sends_one_off_only_switch_and_timeouts_close() {
     assert_ne!(actor.snapshot().unwrap().state, cat::State::Ready);
 }
 
-// Proves: TC-008-005
-#[test]
-fn halt_through_the_real_actor_unkeys_mid_audio_within_the_bound() {
-    struct Station {
-        fake: Fake,
-        actor: Arc<Actor>,
+/// The fake hardware keyed through the real CI-V actor.
+struct ActorStation {
+    fake: Fake,
+    actor: Arc<Actor>,
+}
+impl Hardware for ActorStation {
+    fn now_utc_ms(&self) -> i64 {
+        self.fake.now_utc_ms()
     }
-    impl Hardware for Station {
-        fn now_utc_ms(&self) -> i64 {
-            self.fake.now_utc_ms()
-        }
-        fn clock(&self) -> ClockState {
-            ClockState::Synchronized
-        }
-        fn context(&self) -> Context {
-            self.fake.context()
-        }
-        fn ptt(&mut self, on: bool) -> Result<(), PttError> {
-            actor_ptt(&self.actor, on, Duration::from_secs(1))
-        }
-        fn open_audio(&mut self) -> Result<(), AudioError> {
-            self.fake.open_audio()
-        }
-        fn play(&mut self, p: Program) -> Result<(), AudioError> {
-            self.fake.play(p)
-        }
-        fn poll_audio(&mut self) -> AudioPoll {
-            self.fake.poll_audio()
-        }
-        fn stop_audio(&mut self) {
-            self.fake.stop_audio()
-        }
-        fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
-            self.fake.audio_stopper()
-        }
+    fn clock(&self) -> ClockState {
+        ClockState::Synchronized
     }
+    fn context(&self) -> Context {
+        self.fake.context()
+    }
+    fn ptt(&mut self, on: bool) -> Result<(), PttError> {
+        actor_ptt(&self.actor, on, Duration::from_secs(1))
+    }
+    fn open_audio(&mut self) -> Result<(), AudioError> {
+        self.fake.open_audio()
+    }
+    fn play(&mut self, p: Program) -> Result<(), AudioError> {
+        self.fake.play(p)
+    }
+    fn poll_audio(&mut self) -> AudioPoll {
+        self.fake.poll_audio()
+    }
+    fn stop_audio(&mut self) {
+        self.fake.stop_audio()
+    }
+    fn audio_stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
+        self.fake.audio_stopper()
+    }
+}
+/// A core keyed through the real actor on the emulated IC-7300, its audio playing.
+fn actor_core_mid_audio() -> (Core<ActorStation>, Arc<Mutex<Radio>>) {
     let (actor, state) = radio();
     let fake = Fake::new();
     fake.at(P + 400);
-    let mut core = Core::new(Station {
+    let mut core = Core::new(ActorStation {
         fake: fake.clone(),
         actor,
     });
@@ -903,9 +909,25 @@ fn halt_through_the_real_actor_unkeys_mid_audio_within_the_bound() {
     fake.at(P + 600);
     core.tick(); // audio
     assert!(core.view().transmitting);
+    (core, state)
+}
+
+// Timing: radio
+// Proves: TC-008-005
+#[test]
+fn realtime_bound_halt_through_the_real_actor_unkeys_mid_audio_within_the_bound() {
+    let (mut core, state) = actor_core_mid_audio();
     let start = Instant::now();
     assert_eq!(core.halt(), HaltState::Stopped);
     assert!(start.elapsed() < Duration::from_millis(HALT_BOUND_MS));
+    assert!(!state.lock().unwrap().transmitting);
+}
+
+// Proves: TC-008-005
+#[test]
+fn halt_through_the_real_actor_unkeys_mid_audio_within_the_bound() {
+    let (mut core, state) = actor_core_mid_audio();
+    assert_eq!(core.halt(), HaltState::Stopped);
     let r = state.lock().unwrap();
     assert!(!r.transmitting);
     let frames = ptt_frames(&r);
@@ -1000,8 +1022,10 @@ fn startup_safety_release_is_off_only_once_per_boot_and_only_when_tx_is_observed
     assert_eq!(core.arm(7), Err(TransmitRefusal::RadioUnavailable));
 }
 
+/// The stop flag and thread of a wall-clock driver.
+type Driver = (Arc<AtomicBool>, std::thread::JoinHandle<()>);
 /// Wall-clock driver: the fake UTC follows real time from `start`.
-fn drive(f: &Fake, start: i64) -> (Arc<AtomicBool>, std::thread::JoinHandle<()>) {
+fn drive(f: &Fake, start: i64) -> Driver {
     let origin = Instant::now();
     let clock = f.clone();
     let stop = Arc::new(AtomicBool::new(false));
@@ -1015,12 +1039,26 @@ fn drive(f: &Fake, start: i64) -> (Arc<AtomicBool>, std::thread::JoinHandle<()>)
     });
     (stop, handle)
 }
+/// Stops a wall-clock driver and joins its thread.
+fn end_drive((stop, driver): Driver) {
+    stop.store(true, Ordering::SeqCst);
+    driver.join().unwrap();
+}
 fn wait_for(what: &str, limit: Duration, done: impl Fn() -> bool) {
     let start = Instant::now();
     while !done() {
         assert!(start.elapsed() < limit, "timed out waiting for {what}");
         std::thread::sleep(Duration::from_millis(1));
     }
+}
+/// A deadline `after` from now, handed to the product.
+fn deadline_in(after: Duration) -> Instant {
+    Instant::now() + after
+}
+/// A fixed pause where the product signals no event to wait on: the time a late key or
+/// release would take to show.
+fn settle(ms: u64) {
+    std::thread::sleep(Duration::from_millis(ms));
 }
 
 // The release never depends on the
@@ -1164,12 +1202,10 @@ fn a_device_that_stops_consuming_half_way_is_stalled_and_released_by_the_bound()
     }
 }
 
-// An owner panic fails closed.
-// Proves: TC-008-003, TC-008-005
-#[test]
-fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
-    let f = Fake::new();
-    let (stop, driver) = drive(&f, P + 300);
+/// The owner thread of `f` whose output poll panicked mid-audio, after its fail-closed
+/// release.
+fn faulted_owner(f: &Fake) -> (Service<Fake>, Driver) {
+    let driver = drive(f, P + 300);
     let service = Service::start(f.clone()).unwrap();
     service.with(|c| {
         c.arm(7).unwrap();
@@ -1182,21 +1218,40 @@ fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
     wait_for("fail-closed release", Duration::from_secs(2), || {
         f.keys().last().map(|k| k.1) == Some(false)
     });
+    (service, driver)
+}
+
+// An owner panic fails closed.
+// Proves: TC-008-003, TC-008-005
+#[test]
+fn owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
+    let f = Fake::new();
+    let (service, driver) = faulted_owner(&f);
     let v = service.view();
     assert_eq!(
         (v.arm_state, v.ptt, v.transmitting),
         (ArmState::Disarmed, PttState::Released, false)
     );
-    let started = Instant::now();
     let state = service.halt("00000000-0000-4000-8000-0000000000c1");
-    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS));
     assert_ne!(state, HaltState::Pending, "halt answers after a fault");
     assert!(
         service.with(|c| c.arm(7)).is_err(),
         "a faulted owner never re-arms"
     );
-    stop.store(true, Ordering::SeqCst);
-    driver.join().unwrap();
+    end_drive(driver);
+}
+
+// Timing: radio
+// Proves: TC-008-005
+#[test]
+fn realtime_bound_owner_panic_mid_audio_fails_closed_releases_and_halt_still_answers() {
+    let f = Fake::new();
+    let (service, driver) = faulted_owner(&f);
+    let started = Instant::now();
+    let state = service.halt("00000000-0000-4000-8000-0000000000c1");
+    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS));
+    assert_ne!(state, HaltState::Pending, "halt answers after a fault");
+    end_drive(driver);
 }
 
 // A halt during the output open
@@ -1228,13 +1283,10 @@ fn halt_during_a_slow_output_open_never_keys() {
     driver.join().unwrap();
 }
 
-// A halt while the key exchange runs releases within the bound.
-// Proves: TC-008-005
-#[test]
-fn halt_during_a_slow_key_releases_within_the_bound() {
-    let f = Fake::new();
+/// The owner thread of `f` with an 80 ms PTT exchange, its output opened for the key.
+fn slow_key_after_open(f: &Fake) -> (Service<Fake>, Driver) {
     f.0.ptt_delay_ms.store(80, Ordering::SeqCst);
-    let (stop, driver) = drive(&f, P - 50);
+    let driver = drive(f, P - 50);
     let service = Service::start(f.clone()).unwrap();
     service.with(|c| {
         c.arm(7).unwrap();
@@ -1243,10 +1295,17 @@ fn halt_during_a_slow_key_releases_within_the_bound() {
     wait_for("open", Duration::from_secs(2), || {
         f.log().iter().any(|(_, e)| *e == Event::Open)
     });
-    let started = Instant::now();
+    (service, driver)
+}
+
+// A halt while the key exchange runs releases within the bound.
+// Proves: TC-008-005
+#[test]
+fn halt_during_a_slow_key_releases_within_the_bound() {
+    let f = Fake::new();
+    let (service, driver) = slow_key_after_open(&f);
     let state = service.halt("00000000-0000-4000-8000-0000000000c3");
-    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS + 20));
-    std::thread::sleep(Duration::from_millis(300));
+    settle(300);
     let keys = f.keys();
     assert!(
         keys.is_empty() || keys.last().map(|k| k.1) == Some(false),
@@ -1254,8 +1313,20 @@ fn halt_during_a_slow_key_releases_within_the_bound() {
     );
     assert_ne!(state, HaltState::Pending);
     assert!(!f.log().iter().any(|(_, e)| matches!(e, Event::Play { .. })));
-    stop.store(true, Ordering::SeqCst);
-    driver.join().unwrap();
+    end_drive(driver);
+}
+
+// Timing: radio
+// Proves: TC-008-005
+#[test]
+fn realtime_bound_halt_during_a_slow_key_releases_within_the_bound() {
+    let f = Fake::new();
+    let (service, driver) = slow_key_after_open(&f);
+    let started = Instant::now();
+    let state = service.halt("00000000-0000-4000-8000-0000000000c3");
+    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS + 20));
+    assert_ne!(state, HaltState::Pending);
+    end_drive(driver);
 }
 
 // WstxTransmitControl::TransmitHaltUse: the watchdog stop never touches
@@ -1427,6 +1498,25 @@ fn the_render_buffer_absorbs_render_delays_without_delaying_the_start_or_the_end
 fn a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes() {
     let (actor, state) = radio();
     let lease = actor
+        .reserve_transition(deadline_in(Duration::from_secs(1)))
+        .unwrap();
+    let abort = Arc::new(AtomicBool::new(false));
+    let (a, flag) = (actor.clone(), abort.clone());
+    let waiter = std::thread::spawn(move || actor_ptt_abortable(&a, Duration::from_secs(2), &flag));
+    settle(50);
+    abort.store(true, Ordering::SeqCst);
+    assert_eq!(waiter.join().unwrap(), Err(PttError::Busy));
+    drop(lease);
+    assert!(ptt_frames(&state.lock().unwrap()).is_empty());
+    assert!(!actor.ptt_indeterminate());
+}
+
+// Timing: radio
+// Proves: TC-009-007
+#[test]
+fn realtime_bound_a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes() {
+    let (actor, state) = radio();
+    let lease = actor
         .reserve_transition(Instant::now() + Duration::from_secs(1))
         .unwrap();
     let abort = Arc::new(AtomicBool::new(false));
@@ -1443,7 +1533,6 @@ fn a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes() {
     assert!(elapsed < Duration::from_millis(250), "{elapsed:?}");
     drop(lease);
     assert!(ptt_frames(&state.lock().unwrap()).is_empty());
-    assert!(!actor.ptt_indeterminate());
 }
 
 /// A double whose key wait honours the attached priority-halt flag, as the station's
@@ -1451,6 +1540,8 @@ fn a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes() {
 struct AbortAware {
     fake: Fake,
     abort: Option<Arc<AtomicBool>>,
+    /// Set when the owner's key wait has begun.
+    waiting: Arc<AtomicBool>,
 }
 impl Hardware for AbortAware {
     fn now_utc_ms(&self) -> i64 {
@@ -1464,6 +1555,7 @@ impl Hardware for AbortAware {
     }
     fn ptt(&mut self, on: bool) -> Result<(), PttError> {
         if on {
+            self.waiting.store(true, Ordering::SeqCst);
             let start = Instant::now();
             while start.elapsed() < Duration::from_millis(1_000) {
                 if self
@@ -1504,33 +1596,50 @@ impl Hardware for AbortAware {
 #[test]
 fn boxed_station_hardware_aborts_the_key_wait_on_halt() {
     let f = Fake::new();
-    let (stop, driver) = drive(&f, P - 50);
-    let boxed: Box<dyn Hardware> = Box::new(AbortAware {
-        fake: f.clone(),
-        abort: None,
-    });
-    let service = Service::start(boxed).unwrap();
-    service.with(|c| {
-        c.arm(7).unwrap();
-        c.submit(request(1, P, "CQ HB9BLA JN47"))
-    });
-    wait_for("open", Duration::from_secs(2), || {
-        f.log().iter().any(|(_, e)| *e == Event::Open)
-    });
-    std::thread::sleep(Duration::from_millis(20));
-    let started = Instant::now();
+    let (service, driver) = boxed_station_in_the_key_wait(&f);
     let state = service.halt("00000000-0000-4000-8000-0000000000c4");
-    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS + 20));
     assert_ne!(state, HaltState::Pending, "halt confirmed within the bound");
-    std::thread::sleep(Duration::from_millis(1_200));
+    settle(1_200);
     assert!(
         f.keys().iter().all(|k| !k.1),
         "keyed after halt: {:?}",
         f.log()
     );
     assert_eq!(service.view().arm_state, ArmState::Disarmed);
-    stop.store(true, Ordering::SeqCst);
-    driver.join().unwrap();
+    end_drive(driver);
+}
+
+/// The owner thread of boxed station hardware over `f`, waiting in its key wait.
+fn boxed_station_in_the_key_wait(f: &Fake) -> (Service<Box<dyn Hardware>>, Driver) {
+    let driver = drive(f, P - 50);
+    let waiting = Arc::new(AtomicBool::new(false));
+    let boxed: Box<dyn Hardware> = Box::new(AbortAware {
+        fake: f.clone(),
+        abort: None,
+        waiting: waiting.clone(),
+    });
+    let service = Service::start(boxed).unwrap();
+    service.with(|c| {
+        c.arm(7).unwrap();
+        c.submit(request(1, P, "CQ HB9BLA JN47"))
+    });
+    wait_for("the key wait", Duration::from_secs(2), || {
+        waiting.load(Ordering::SeqCst)
+    });
+    (service, driver)
+}
+
+// Timing: radio
+// Proves: TC-008-005
+#[test]
+fn realtime_bound_boxed_station_hardware_aborts_the_key_wait_on_halt() {
+    let f = Fake::new();
+    let (service, driver) = boxed_station_in_the_key_wait(&f);
+    let started = Instant::now();
+    let state = service.halt("00000000-0000-4000-8000-0000000000c4");
+    assert!(started.elapsed() < Duration::from_millis(HALT_BOUND_MS + 20));
+    assert_ne!(state, HaltState::Pending, "halt confirmed within the bound");
+    end_drive(driver);
 }
 
 // Every request the transmit owner accepts teaches
