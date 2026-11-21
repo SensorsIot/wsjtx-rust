@@ -283,12 +283,12 @@ class Runs(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.dir, ignore_errors=True)
 
-    def run_helper(self, words, *steps):
+    def run_helper(self, words, *steps, cwd=None):
         argv = [sys.executable, HELPER, "fixture", *words]
         for step in steps:
             argv += step
         r = subprocess.run(argv, env=self.env, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           timeout=300)
+                           timeout=300, cwd=cwd)
         return r.returncode, r.stdout, r.stderr
 
     def family(self, name):
@@ -316,6 +316,11 @@ class Runs(unittest.TestCase):
                 rc, out, err = self.run_helper(["zulu"], self.family(family))
                 self.assertNotEqual(rc, 0, out + err)
                 self.assertIn("filter_run: fixture: no test selected by --filter zulu", err)
+
+    def test_a_node_file_named_by_a_relative_path_with_no_matching_test_is_red(self):
+        rc, out, err = self.run_helper(["zulu"], self.node[:4] + ["fixture.test.cjs"], cwd=self.dir)
+        self.assertNotEqual(rc, 0, out + err)
+        self.assertIn("filter_run: fixture: no test selected by --filter zulu", err)
 
     def test_a_skipped_test_is_no_test_that_ran(self):
         rc, out, err = self.run_helper(["foxtrot"], self.node)
