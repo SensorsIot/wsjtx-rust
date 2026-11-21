@@ -10,22 +10,34 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const crypto=require('node:crypto');
 const WebSocket=require('ws');
-const origin=process.env.WSTX_CONTACT_FIXTURE_ORIGIN,control=process.env.WSTX_CONTACT_FIXTURE_CONTROL;
-let browser,page,requests=[];
+const {grant,loginPage}=require('../tools/test/node/support.cjs');
+const origin=process.env.WSTX_CONTACT_FIXTURE_ORIGIN,control=process.env.WSTX_CONTACT_FIXTURE_CONTROL,token=process.env.WSTX_CONTACT_FIXTURE_TOKEN;
+let browser,page,requests=[],cookie;
+// A direct request to the station, carrying the CL-022 grant cookie taken in before().
+const stationFetch=(url,init={})=>fetch(url,{...init,headers:{...init.headers,Cookie:cookie}});
 const publish=async(period_ms,rows)=>(await fetch(control+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({period_ms,rows})})).json();
 const commands=()=>requests.filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body));
 const mutations=()=>requests.filter(r=>r.method!=='GET');
-const snapshot=async()=>(await fetch(origin+'/contact')).json();
+const snapshot=async()=>(await stationFetch(origin+'/contact')).json();
 async function waitFor(predicate,label,timeout=8000){const end=Date.now()+timeout;for(;;){const value=await predicate();if(value)return value;if(Date.now()>end)throw new Error('timeout: '+(typeof label==='function'?await label():label));await new Promise(r=>setTimeout(r,100));}}
 before(async()=>{
-  assert.ok(origin&&control,'run through contact_http::tests::contact_browser_operating_flow');
+  assert.ok(origin&&control&&token,'run through contact_http::tests::contact_browser_operating_flow');
+  const send=async(route,method,body,headers)=>{
+    const raw=typeof body==='string';
+    const r=await fetch(origin+route,{method,headers:{Origin:origin,...(raw?{}:{'Content-Type':'application/json'}),...headers},body:raw?body:JSON.stringify(body)});
+    const text=await r.text();
+    return {status:r.status,headers:{'set-cookie':r.headers.getSetCookie()},body:text?JSON.parse(text):null};
+  };
+  cookie=(await grant(origin,token,send)).cookie;
   browser=await chromium.launch();
-  const context=await browser.newContext({viewport:{width:1440,height:1000}});
+  const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}});
   page=await context.newPage();
   page.errors=[];page.on('pageerror',e=>page.errors.push(e.message));
   page.on('request',r=>{const u=new URL(r.url());const e={method:r.method(),path:u.pathname,body:r.postData(),at:performance.now(),end:null};requests.push(e);r.__e=e;});
   page.on('requestfinished',r=>{if(r.__e)r.__e.end=Math.round(performance.now());});page.on('requestfailed',r=>{if(r.__e)r.__e.end='failed';});
-  await page.goto(origin);await page.locator('#connection[data-state=connected]').waitFor();
+  await loginPage(page,origin,token);
+  // The login's own requests are not the operation's.
+  requests.length=0;
   // contact.js loads after the first recording/receive snapshots (idle link).
   await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
 });
@@ -66,7 +78,7 @@ test('TC-007-003 QSO pane candidates selection without transmit',{timeout:90000}
   const k1abc=rows.filter({hasText:'CQ K1ABC FN42'});
   await k1abc.focus();await page.keyboard.press('Enter');
   const select=await waitFor(()=>commands().find(c=>c.action==='select_row'),'select_row');
-  const live=await (await fetch(origin+'/receive')).json();
+  const live=await (await stationFetch(origin+'/receive')).json();
   assert.deepEqual(Object.keys(select.row).sort(),['generation','job_id','sequence','source_id']);
   assert.equal(select.row.source_id,live.source.id);assert.equal(select.row.job_id,live.job.id);assert.equal(select.row.generation,live.generation);
   assert.equal(String(select.row.sequence),await k1abc.getAttribute('data-sequence'));
@@ -259,7 +271,7 @@ test('manual DX entry and Log QSO log the contact at once without hiding Halt Tx
   await page.locator('#contact-result').filter({hasText:'invalid_call'}).waitFor();
   await page.getByRole('button',{name:'Log QSO'}).click();
   await page.locator('#contact-logged',{hasText:'Logged DL1ABC'}).waitFor();
-  const log=await (await fetch(origin+'/contacts')).json();
+  const log=await (await stationFetch(origin+'/contacts')).json();
   const id=(await snapshot()).contact.id;
   const records=log.records.filter(r=>r.contact_id===id);
   assert.equal(records.length,1,'exactly one record for the contact');
@@ -284,7 +296,7 @@ test('Alt+H halts even when the contact snapshot is unavailable',{timeout:60000}
   await new Promise(r=>setTimeout(r,500));
   assert.equal(requests.slice(mark).filter(r=>r.method==='POST'&&r.path==='/transmit/halt').length,1,'exactly one halt per Alt+H');
   const halt=JSON.parse(requests.slice(mark).find(r=>r.path==='/transmit/halt').body);
-  const live=await (await fetch(origin+'/receive')).json();
+  const live=await (await stationFetch(origin+'/receive')).json();
   assert.equal(halt.profile_id,live.profile_id);assert.equal(halt.boot_id,live.boot_id);
   await page.unroute('**/contact');
   await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
@@ -369,7 +381,7 @@ async function completes(call,report){
   await waitFor(()=>sentTo(`${call} HB9BLA 73`),`Tx5 to ${call}`,period);
   const done=await waitFor(async()=>{const s=await snapshot();return s.contact?.state==='completed'&&s;},'completed',period);
   assert.equal(done.contact.dx_call,call);
-  const log=await (await fetch(origin+'/contacts')).json();
+  const log=await (await stationFetch(origin+'/contacts')).json();
   assert.equal(log.records.filter(r=>r.contact_id===done.contact.id).length,1,`${call} logged once`);
   // The pane shows the completion (its snapshot is current) before the next action.
   await page.locator('#contact-logged').filter({hasText:`Logged ${call}`}).waitFor({timeout:15000});
@@ -394,8 +406,8 @@ test('TC-007-005 transmit state is pushed: the event carries it, no GET /transmi
   await waitFor(async()=>await page.evaluate(()=>/^(?!Transmit unavailable)/.test(document.querySelector('#transmit-status').textContent)),'shown from the event',5000);
   const count=frames.length;await sleep(6000);
   assert.equal(frames.length,count,'nothing while the view is unchanged');
-  const live=await (await fetch(origin+'/receive')).json();
-  const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
+  const live=await (await stationFetch(origin+'/receive')).json();
+  const watchdogs=async tx_calls=>{const r=await stationFetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
   const changed=performance.now();await watchdogs(8);
   await waitFor(async()=>await page.evaluate(()=>transmitView?.watchdog?.tx_calls)===8,'pushed change shown',5000);
   const event=frames.find(f=>f.at>=changed);assert.ok(event&&event.at-changed<=2000,'the change is pushed within the 1 s check');
@@ -416,14 +428,14 @@ test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{t
   for(const key of ['transmit','settings','watchdog'])assert.ok(key in first,`the first event has ${key}`);
   await new Promise(r=>setTimeout(r,1500));
   const before=await snapshot(),hold=!before.settings.hold_tx,changed=performance.now();
-  const sent=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:before.profile_id,boot_id:before.boot_id,command_id:crypto.randomUUID(),contact_revision:before.contact_revision,action:'set_hold_tx',enabled:hold})});
+  const sent=await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:before.profile_id,boot_id:before.boot_id,command_id:crypto.randomUUID(),contact_revision:before.contact_revision,action:'set_hold_tx',enabled:hold})});
   assert.ok([200,202].includes(sent.status),await sent.text());
   await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot()?.settings?.hold_tx===h,hold),'the change is shown',5000);
   const event=frames.find(f=>f.at>=changed);assert.ok(event&&event.at-changed<=2000,'pushed within the 1 s check');
   assert.deepEqual(event.data.changed,{settings:{hold_tx:hold}},'only what changed');
   assert.equal(requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at>=changed).length,0,'another client\'s change needs no GET /contact');
   // Two changes that cancel out inside one check leave no changed field; the revision still reaches the page.
-  const command=async(s,enabled)=>{const r=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled})});assert.ok([200,202].includes(r.status),await r.text());};
+  const command=async(s,enabled)=>{const r=await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled})});assert.ok([200,202].includes(r.status),await r.text());};
   await new Promise(r=>setTimeout(r,1200));
   await command(await snapshot(),!hold);await command(await snapshot(),hold);
   const latest=(await snapshot()).contact_revision;
@@ -484,7 +496,7 @@ test('TC-007-005 a stale safety revision is read at once and the CQ retried',{ti
   const [a,b]=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'&&JSON.parse(r.body).action==='enable_tx');
   await page.unroute('**/contact/command');
   const s=await snapshot();
-  await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
   await waitFor(async()=>(await snapshot()).transmit.arm_state!=='armed','disarmed after the case',10000);
   assert.ok(b.at-a.end<1000,`the retry ${Math.round(b.at-a.end)} ms after the refusal`);
   assert.deepEqual(page.errors,[]);
@@ -507,7 +519,7 @@ test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing fo
   await page.unroute('**/contact/command');
   const sent=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command'),abort=sent.findIndex(r=>JSON.parse(r.body).action==='abort');
   const s=await snapshot();
-  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
   assert.ok(sent[abort].at-esc<200,`the abort ${Math.round(sent[abort].at-esc)} ms after Esc`);
   assert.deepEqual(sent.slice(abort+1).map(r=>JSON.parse(r.body).action),[],'nothing the double-click queued follows the abort');
   assert.notEqual(s.transmit.arm_state,'armed','not armed after Esc');
@@ -526,7 +538,7 @@ test('TC-007-005 Esc during a Calling me reply sends no Enable Tx after the abor
   const from=requests.length;await li.first().dblclick();await new Promise(r=>setTimeout(r,200));await page.keyboard.press('Escape');
   await new Promise(r=>setTimeout(r,4000));await page.unroute('**/contact/command');
   const actions=requests.slice(from).filter(r=>r.method==='POST'&&r.path==='/contact/command').map(r=>JSON.parse(r.body).action),s=await snapshot();
-  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
   assert.ok(actions.includes('abort'),`the abort is sent: ${actions}`);
   assert.deepEqual(actions.slice(actions.indexOf('abort')+1),[],`nothing after the abort: ${actions}`);
   assert.notEqual(s.transmit.arm_state,'armed','not armed after Esc');
@@ -549,14 +561,14 @@ test('TC-007-005 CQ waits for an unanswered selection before it decides',{timeou
   if(asked)await page.locator('#op-confirm button[value=cancel]').click();
   await page.unroute('**/contact/command');
   const s=await snapshot();
-  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+  if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
   assert.ok(asked,`CQ asks before it abandons the selected contact: ${actions}`);
   assert.equal(actions.includes('enable_tx'),false,`nothing armed toward the row first: ${actions}`);
   await waitFor(async()=>!['replying','calling','report','signoff'].includes((await snapshot()).contact?.state),'idle again',10000);
   assert.deepEqual(page.errors,[]);
 });
 
-const idleAgain=async()=>{const s=await snapshot();if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
+const idleAgain=async()=>{const s=await snapshot();if(s.transmit.arm_state==='armed'||s.contact&&!['idle','cancelled','completed'].includes(s.contact.state))await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'abort'})});
   await waitFor(async()=>!['replying','calling','report','roger_report','rogers','signoff'].includes((await snapshot()).contact?.state)&&(await snapshot()).transmit.arm_state!=='armed','idle again',10000);};
 // A row's selection waits for an unanswered command: after F4
 // clears the running contact, a directed CQ asks for confirmation as with no contact.
@@ -606,7 +618,7 @@ test('TC-007-005 Esc during a Calling me Change contact sends no Enable Tx after
 // A read older than a pushed change does not replace it.
 // Proves: TC-007-005
 test('TC-007-005 an older GET /contact does not replace pushed state',{timeout:60000},async()=>{
-  const live=await snapshot();const watchdogs=async tx_calls=>{const r=await fetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
+  const live=await snapshot();const watchdogs=async tx_calls=>{const r=await stationFetch(origin+'/transmit/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:live.profile_id,boot_id:live.boot_id,command_id:crypto.randomUUID(),action:'set_watchdogs',tx_calls,tune_seconds:90})});assert.equal(r.status,200,await r.text());};
   let release,fetched;const held=new Promise(r=>{release=r;}),read=new Promise(r=>{fetched=r;});
   await page.route('**/contact',async route=>{const response=await route.fetch();fetched();await held;await route.fulfill({response});});
   try{
@@ -630,18 +642,18 @@ test('TC-007-005 a contact client loading after the first event has the state wi
     page.reload().catch(()=>{});
     await waitFor(async()=>await page.evaluate(()=>!!window.wstxContact?.snapshot()?.settings).catch(()=>false),'state from the first event',30000);
     const s=await snapshot(),hold=!s.settings.hold_tx;
-    const r=await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:hold})});assert.ok([200,202].includes(r.status),await r.text());
+    const r=await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:hold})});assert.ok([200,202].includes(r.status),await r.text());
     await waitFor(async()=>await page.evaluate(h=>window.wstxContact.snapshot()?.settings?.hold_tx===h,hold),'the next event',5000);
     assert.equal(await page.evaluate(()=>!!window.wstxContact.snapshot().transmit.capability),true,'a whole state');
   }finally{await page.unroute('**/contact.js');await page.unroute('**/contact');}
-  const s=await snapshot();await fetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:false})});
+  const s=await snapshot();await stationFetch(origin+'/contact/command',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:s.profile_id,boot_id:s.boot_id,command_id:crypto.randomUUID(),contact_revision:s.contact_revision,action:'set_hold_tx',enabled:false})});
 });
 
 // A read held across events does not lose a pushed change.
 // Proves: TC-007-005
 test('TC-007-005 a held read keeps the pushed changes around it',{timeout:60000},async()=>{
   const start=await snapshot();
-  const send=async(url,body)=>{const r=await fetch(origin+url,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:start.profile_id,boot_id:start.boot_id,command_id:crypto.randomUUID(),...body})});assert.ok([200,202].includes(r.status),await r.text());};
+  const send=async(url,body)=>{const r=await stationFetch(origin+url,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({v:1,profile_id:start.profile_id,boot_id:start.boot_id,command_id:crypto.randomUUID(),...body})});assert.ok([200,202].includes(r.status),await r.text());};
   const hold=async enabled=>send('/contact/command',{contact_revision:(await snapshot()).contact_revision,action:'set_hold_tx',enabled});
   const shown=expr=>page.evaluate(expr);
   let release,fetched,first=true;const held=new Promise(r=>{release=r;}),read=new Promise(r=>{fetched=r;});
@@ -666,7 +678,7 @@ test('TC-007-005 a held read keeps the pushed changes around it',{timeout:60000}
 // Proves: TC-007-005
 test('TC-007-005 the Tune countdown is paced by the display profile on the socket',{timeout:60000},async()=>{
   const types=['transmit.state','contact.state'];
-  const peer=async command=>{const ws=new WebSocket(origin.replace('http','ws')+'/ws','wstx.v1',{origin});const log=[];ws.on('message',d=>{const m=JSON.parse(String(d));if(types.includes(m.type))log.push({type:m.type,at:performance.now(),changed:m.data.changed});});await new Promise((ok,no)=>{ws.once('open',ok);ws.once('error',no);});ws.send(JSON.stringify({v:1,type:command,id:1}));return {ws,log};};
+  const peer=async command=>{const ws=new WebSocket(origin.replace('http','ws')+'/ws','wstx.v1',{origin,headers:{Cookie:cookie}});const log=[];ws.on('message',d=>{const m=JSON.parse(String(d));if(types.includes(m.type))log.push({type:m.type,at:performance.now(),changed:m.data.changed});});await new Promise((ok,no)=>{ws.once('open',ok);ws.once('error',no);});ws.send(JSON.stringify({v:1,type:command,id:1}));return {ws,log};};
   const countdown=c=>Object.keys(c).length===1&&c.watchdog&&Object.keys(c.watchdog).join()==='tune_remaining_seconds';
   const thin=await peer('spectrum.thin'),detail=await peer('spectrum.detail');
   const tune=async enabled=>{const r=await fetch(control+'/tune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});return r.json();};
@@ -696,7 +708,7 @@ test('operating selection is pushed: the event carries it, no timer read of GET 
   const loaded=performance.now();await page.reload();await page.locator('#connection[data-state=connected]').waitFor();
   await waitFor(()=>frames.some(f=>f.at>=loaded),'selection.state at the first step',5000);
   const first=frames.find(f=>f.at>=loaded);
-  const read=await (await fetch(origin+'/receive/selection')).json();
+  const read=await (await stationFetch(origin+'/receive/selection')).json();
   for(const key of ['profile_revision','generation','operating_revision','control','selection','available_bands','operation','cancellation','receive','radio'])assert.deepEqual(first.data.changed[key],read[key],`the first event has ${key} as the read gives it`);
   assert.equal(first.data.boot_id,read.boot_id);assert.ok(first.bytes<=2048);
   await waitFor(()=>page.evaluate(()=>document.querySelector('#operating-band').value==='20m'),'shown after the load',8000);
@@ -743,7 +755,7 @@ test('TC-085-005 the QSO pane says that a QSO with the station logged last was n
     await page.getByRole('button',{name:'Log QSO'}).click();
     await waitFor(async()=>(await snapshot()).contact?.state==='completed',`${call} closed by Log QSO`);
   };
-  const count=async call=>{let n=0;for(let cursor=0;;){const p=await (await fetch(`${origin}/contacts?cursor=${cursor}&limit=10`)).json();if(!p.records?.length)return n;n+=p.records.filter(r=>r.call===call).length;cursor+=p.records.length;}};
+  const count=async call=>{let n=0;for(let cursor=0;;){const p=await (await stationFetch(`${origin}/contacts?cursor=${cursor}&limit=10`)).json();if(!p.records?.length)return n;n+=p.records.filter(r=>r.call===call).length;cursor+=p.records.length;}};
   const notice=page.locator('#contact-logged');
   await logged('DL7XYZ');
   await notice.filter({hasText:'Logged DL7XYZ'}).waitFor();

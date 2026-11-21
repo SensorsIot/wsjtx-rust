@@ -16,7 +16,7 @@ use wstx_rust::transmit::service::ArmState;
 
 #[cfg(test)]
 #[path = "../../log/udp_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 pub const TARGETS_MAX: usize = 16;
 pub const BODY_MAX: usize = 8192;
@@ -356,7 +356,7 @@ pub(crate) fn exchanges_of(record: &logbook::Record) -> (String, String) {
 /// Volatile per-target state (WstxUdpControl::TargetStatus) and its socket.
 #[derive(Default)]
 struct Runtime {
-    socket: Option<UdpSocket>,
+    socket: Option<Box<dyn TargetSocket>>,
     schema: u32,
     last_send: Option<i64>,
     error: Option<&'static str>,
@@ -392,6 +392,8 @@ pub(crate) struct Owner {
     inner: Mutex<Inner>,
     /// WSTX_UDP=off: no socket is opened and no name is claimed (isolated tests).
     disabled: bool,
+    /// The sending port every target's socket is opened through.
+    sockets: Arc<dyn Sockets>,
     /// The folder of the instance-name locks.
     lock_root: std::path::PathBuf,
     /// The lock of the claimed instance name, held while the owner (the process) lives.
@@ -408,6 +410,33 @@ fn now_ms(r: &recording::Recording) -> i64 {
     r.transmit
         .get()
         .map_or_else(wall_ms, |t| t.service.with(|c| c.hardware().now_utc_ms()))
+}
+/// One target's open socket, as the sending port gives it.
+pub(crate) trait TargetSocket: Send {
+    /// Sends one datagram to `to`.
+    fn send(&self, bytes: &[u8], to: SocketAddr) -> std::io::Result<usize>;
+    /// Takes one waiting datagram; WouldBlock when none waits.
+    fn receive(&self, buffer: &mut [u8]) -> std::io::Result<(usize, SocketAddr)>;
+}
+/// WstxUdp's sending port: the owner opens each enabled target's socket through it.
+pub(crate) trait Sockets: Send + Sync {
+    /// The socket of `t`; None: it could not be opened.
+    fn open(&self, t: &Target) -> Option<Box<dyn TargetSocket>>;
+}
+/// The real adapter: one operating-system UDP socket per target, non-blocking.
+pub(crate) struct SystemSockets;
+impl Sockets for SystemSockets {
+    fn open(&self, t: &Target) -> Option<Box<dyn TargetSocket>> {
+        open_socket(t).map(|s| Box::new(s) as Box<dyn TargetSocket>)
+    }
+}
+impl TargetSocket for UdpSocket {
+    fn send(&self, bytes: &[u8], to: SocketAddr) -> std::io::Result<usize> {
+        self.send_to(bytes, to)
+    }
+    fn receive(&self, buffer: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+        self.recv_from(buffer)
+    }
 }
 fn open_socket(t: &Target) -> Option<UdpSocket> {
     let bind: SocketAddr = match t.address.ip() {
@@ -443,13 +472,13 @@ fn open_socket(t: &Target) -> Option<UdpSocket> {
     socket.set_nonblocking(true).ok()?;
     Some(socket.into())
 }
-fn activate(t: &Target, disabled: bool) -> Runtime {
+fn activate(t: &Target, disabled: bool, sockets: &dyn Sockets) -> Runtime {
     let mut rt = Runtime {
         schema: nm::SCHEMA_OUT,
         ..Runtime::default()
     };
     if t.enabled && !disabled {
-        rt.socket = open_socket(t);
+        rt.socket = sockets.open(t);
         if rt.socket.is_none() {
             rt.error = Some("socket_unavailable");
         }
@@ -460,7 +489,7 @@ fn send(rt: &mut Runtime, to: SocketAddr, bytes: &[u8], now: i64) {
     let Some(socket) = &rt.socket else {
         return;
     };
-    match socket.send_to(bytes, to) {
+    match socket.send(bytes, to) {
         Ok(_) => {
             rt.last_send = Some(now);
             if rt.error == Some("send_failed") {
@@ -650,11 +679,13 @@ impl Owner {
     /// Loads udp.json of the selected profile (missing: the default list), fixes the
     /// instance name of a CAT or no-radio profile in `lock_root` (CL-112-01; a native Flex
     /// profile fixes it at its first ready session) and opens the sockets of the enabled
-    /// targets. Called after radio discovery (CL-044-15), before the server serves.
+    /// targets through `sockets`. Called after radio discovery (CL-044-15), before the server
+    /// serves.
     pub(crate) fn open(
         state: &ProfileState,
         disabled: bool,
         lock_root: &std::path::Path,
+        sockets: Arc<dyn Sockets>,
     ) -> Arc<Self> {
         let mut inner = Inner::default();
         let (read, base) = {
@@ -667,6 +698,7 @@ impl Owner {
         let owner = Self {
             inner: Mutex::new(Inner::default()),
             disabled,
+            sockets,
             lock_root: lock_root.to_owned(),
             held: Mutex::new(None),
         };
@@ -712,7 +744,11 @@ impl Owner {
             Err(_) => inner.error = Some("invalid_configuration"),
         }
         if let Some(c) = &inner.config {
-            inner.runtimes = c.targets.iter().map(|t| activate(t, disabled)).collect();
+            inner.runtimes = c
+                .targets
+                .iter()
+                .map(|t| activate(t, disabled, &*owner.sockets))
+                .collect();
         }
         *owner.lock() = inner;
         Arc::new(owner)
@@ -833,7 +869,7 @@ impl Owner {
             });
             match kept.and_then(|i| old_runtimes[i].take()) {
                 Some(rt) => runtimes.push(rt),
-                None => runtimes.push(activate(t, self.disabled)),
+                None => runtimes.push(activate(t, self.disabled, &*self.sockets)),
             }
         }
         if let (Some(o), Some(id)) = (&old, &inner.name) {
@@ -1017,7 +1053,7 @@ fn negotiate(inner: &mut Inner) {
         };
         let mut buffer = [0u8; nm::INBOUND_MAX_BYTES + 1];
         for _ in 0..DATAGRAMS_PER_STEP {
-            match socket.recv_from(&mut buffer) {
+            match socket.receive(&mut buffer) {
                 Ok((n, from)) => {
                     if from == t.address
                         && let Some(h) = nm::heartbeat_of(&buffer[..n])

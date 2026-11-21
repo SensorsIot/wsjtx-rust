@@ -379,7 +379,7 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-227-01'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "tests/station-settings.test.cjs"; }
     }
     verification 'TC-043-003' {
         doc /* The clock in words. */
@@ -409,10 +409,10 @@ package WstxSettings {
             test = "tests/ui-operating.test.cjs::"
                 + "Save FT8 decode windows reads and saves the station setting in Settings > "
                 + "Expert; "
-                + "tests/ui-operating.test.cjs::"
+                + "tests/station-settings.test.cjs::"
                 + "the UDP editor reads GET /udp when Settings opens and saves the edited "
                 + "targets with one PUT; "
-                + "tests/ui-operating.test.cjs::"
+                + "tests/station-settings.test.cjs::"
                 + "the UDP editor saves an IPv6 multicast target with hop limit and interface "
                 + "index; "
                 + "tests/ui-operating.test.cjs::"

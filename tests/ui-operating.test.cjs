@@ -7,7 +7,6 @@ const KEEP_SELECTION=Number.MAX_SAFE_INTEGER;
 const fs=require('node:fs/promises');
 const path=require('node:path');
 const os=require('node:os');
-const net=require('node:net');
 const {once}=require('node:events');
 const crypto=require('node:crypto');
 const {chromium}=require('playwright');
@@ -1207,53 +1206,6 @@ test('TC-044-005 radio settings writes wait for the confirmation dialog and a kn
   assert.deepEqual(errors,[]);
 });
 
-// Settings shows the PSK Reporter feed from one snapshot and pushed
-// events, against a local MQTT peer written from the 3.1.1 packet tables; nothing reaches the broker.
-// Proves: TC-039-021
-test('TC-039-021 Settings shows the PSK Reporter status, pushed, and saves the switch',{timeout:60000},async t=>{
-  const sockets=new Set(),received=[];let drop=false;
-  const broker=net.createServer(socket=>{sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));
-    if(drop){socket.destroy();return;}
-    let held=Buffer.alloc(0);
-    socket.on('data',data=>{held=Buffer.concat([held,data]);
-      while(held.length>=2&&held.length>=2+held[1]){const type=held[0],id=held.subarray(2,4);received.push(type);held=held.subarray(2+held[1]);
-        if(type===0x10)socket.write(Buffer.from([0x20,2,0,0]));
-        else if(type===0x82)socket.write(Buffer.from([0x90,3,id[0],id[1],0]));
-        else if(type===0xc0)socket.write(Buffer.from([0xd0,0]));}});});
-  await new Promise(resolve=>broker.listen(0,'127.0.0.1',resolve));
-  t.after(()=>{for(const s of sockets)s.destroy();broker.close();});
-  const publish=payload=>{const topic=Buffer.from('pskr/filter/v2/40m/FT8/HB9BLA/K1ABC/JN37/FN42/287/291'),body=Buffer.from(JSON.stringify(payload)),length=2+topic.length+body.length;
-    const header=length>127?[0x30,(length%128)|0x80,length>>7]:[0x30,length];for(const s of sockets)s.write(Buffer.concat([Buffer.from(header),Buffer.from([0,topic.length]),topic,body]));};
-  const requests=[];
-  const {page,app,errors}=await fixture(t,{width:1366,height:768},{env:{WSTX_PSKR:`tcp:127.0.0.1:${broker.address().port}`},beforeNavigate:page=>{page.on('request',r=>{const p=new URL(r.url()).pathname;if(p==='/pskr')requests.push(r.method());});}});
-  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
-  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();
-  const status=page.locator('#pskr-status'),box=page.locator('#pskr-enabled');
-  await page.locator('#pskr-enabled:enabled').waitFor();await box.scrollIntoViewIfNeeded();
-  assert.equal(await inViewport(page,'#pskr-enabled'),true,'the switch is in Settings > Logging');
-  assert.equal(await box.isChecked(),true,'on by default');
-  await status.filter({hasText:'Connected'}).waitFor({timeout:20000});
-  assert.equal(await status.textContent(),'Connected \u00b7 no spot yet');
-  publish({f:7075512,md:'FT8',rp:-5,t:Math.floor(Date.now()/1000)-180,sc:'HB9BLA',rc:'K1ABC',b:'40m'});
-  await status.filter({hasText:'last spot'}).waitFor({timeout:10000});
-  await page.locator('#pskr-status',{hasText:'last spot 3 min ago'}).waitFor({timeout:10000});
-  assert.deepEqual(requests,['GET'],'one snapshot; the rest is pushed');
-  // Off: saved, shown, and the peer sees the clean end.
-  await box.uncheck();await page.locator('#pskr-result',{hasText:'Saved'}).waitFor();
-  await status.filter({hasText:'Off'}).waitFor();
-  assert.equal((await (await fetch(app.origin+'/pskr')).json()).enabled,false,'the station stored it');
-  for(let i=0;i<100&&!received.includes(0xe0);i++)await page.waitForTimeout(50);
-  assert.equal(received.includes(0xe0),true,'a clean DISCONNECT');
-  assert.deepEqual([...new Set(received)].filter(type=>![0x10,0x82,0xc0,0xe0].includes(type)),[],'only the handshake, subscribe, ping and disconnect on the wire');
-  // On again, with the broker gone: a named status in Settings, no error anywhere else.
-  drop=true;for(const s of sockets)s.destroy();
-  await box.check();await status.filter({hasText:'Not connected'}).waitFor({timeout:30000});
-  assert.match(await status.textContent(),/^Not connected \u00b7 connection_(closed|lost) \u00b7 retrying$/);
-  // The PSK toggle is on the operating screen; a PSK Reporter state never is.
-  assert.doesNotMatch(await page.locator('#operating-workspace').textContent(),/connection_(closed|lost)|PSK Reporter/,'never an error on the operating screen');
-  assert.deepEqual(errors,[]);
-});
-
 // "Monitor off at startup" is a plain General setting.
 test('Monitor off at startup reads and saves the station setting without touching receive',{timeout:60000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
@@ -1311,89 +1263,6 @@ test('Save FT8 decode windows reads and saves the station setting in Settings > 
   await page.unroute('**/receive/diagnostics');
   assert.equal(posts.length,2,'one save plus the refused one');
   assert.deepEqual(requests.filter(r=>/^POST \/receive\/(start|stop|select)$/.test(r)),[],'no receive mutation');
-  assert.deepEqual(errors,[]);
-});
-
-// The UDP interface is a Logging & Reporting setting.
-// Proves: TC-227-002
-test('the UDP editor reads GET /udp when Settings opens and saves the edited targets with one PUT',{timeout:60000},async t=>{
-  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
-  const requests=[],puts=[];
-  page.on('request',r=>{const p=new URL(r.url()).pathname;requests.push(`${r.method()} ${p}`);if(r.method()==='PUT'&&p==='/udp')puts.push(JSON.parse(r.postData()));});
-  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});await page.waitForTimeout(500);
-  assert.equal(requests.some(r=>r.endsWith(' /udp')),false,'no /udp request before Settings opens');
-  const initial=await (await fetch(app.origin+'/udp')).json();
-  // The read stays held until the Logging tab is shown, so that no second read can replace a row while it is edited.
-  const hold=deferred();await page.route(url=>url.pathname==='/udp',async route=>{if(route.request().method()!=='GET')return route.fallback();await hold.promise;await route.continue();});
-  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();hold.resolve();
-  const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
-  assert.ok(requests.filter(r=>r==='GET /udp').length>=1,'read when the drawer opens');
-  // CL-112-01: the instance name is shown as text, with no input.
-  assert.equal(await page.locator('#udp-instance').textContent(),initial.instance_name);
-  assert.equal(initial.instance_name,'WSTX-Rust');
-  assert.equal(await page.locator('#udp-instance').evaluate(e=>e.tagName),'OUTPUT');
-  assert.equal(await page.locator('#settings-udp input').evaluateAll(list=>list.filter(i=>!i.closest('.udp-target')).length),0,'no input outside the targets');
-  const first=rows.nth(0);assert.equal(await first.locator('[data-f=address]').inputValue(),'127.0.0.1:2237');
-  assert.equal(await first.locator('[data-f=enabled]').isChecked(),true);
-  assert.deepEqual(await first.locator('[data-m]').evaluateAll(b=>b.filter(x=>x.checked).map(x=>x.dataset.m)),['heartbeat','status','decode','clear','qso_logged','close','logged_adif']);
-  assert.match(await first.locator('[data-f=status]').textContent(),/Inactive/,'WSTX_UDP=off opens no socket and the status says so');
-  assert.equal(await page.locator('#settings-udp [data-f=accept]').count(),0,'send-only: no Accept commands');
-  assert.match(await page.locator('#udp-note').textContent(),/Send-only/,'the note says so');
-  assert.doesNotMatch(await page.locator('#tab-logging').textContent(),/⟳/,'a setting, not a restart change');
-  // Edit: no Decode to the first target; add a multicast target.
-  await first.locator('[data-m=decode]').uncheck();
-  await page.locator('#udp-add').click();const added=rows.nth(1);
-  await added.locator('[data-f=address]').fill('239.255.0.1:2237');
-  await added.locator('[data-f=ttl]').fill('3');
-  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
-  const all=['heartbeat','status','decode','clear','qso_logged','close','logged_adif'];
-  const expected={targets:[
-    {address:'127.0.0.1:2237',enabled:true,multicast_ttl:1,multicast_interface:null,messages:all.filter(m=>m!=='decode')},
-    {address:'239.255.0.1:2237',enabled:true,multicast_ttl:3,multicast_interface:null,messages:all}]};
-  assert.deepEqual(puts,[{v:1,profile_id:initial.profile_id,boot_id:initial.boot_id,expected_revision:initial.revision,configuration:expected}],'exactly one exact PUT');
-  const saved=await (await fetch(app.origin+'/udp')).json();assert.deepEqual(saved.configuration,expected,'the station stored the edited list');assert.equal(saved.revision,initial.revision+1);
-  // A refused address keeps the edits and names the field.
-  await page.locator('#udp-add').click();await rows.nth(2).locator('[data-f=address]').fill('0.0.0.0:1');
-  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Not saved'}).waitFor();
-  assert.match(await page.locator('#udp-result').textContent(),/invalid_request \(targets\[2\]\.address\)/);
-  assert.equal(await rows.count(),3,'the edits are kept');
-  assert.equal(puts.length,2);
-  assert.deepEqual(requests.filter(r=>/^POST \/receive\/(start|stop|select)$/.test(r)),[],'no receive mutation');
-  assert.equal(requests.filter(r=>r==='GET /udp').length,1,'the opening and the Logging tab share one read');
-  assert.deepEqual(errors,[]);
-});
-
-// The UDP editor takes an IPv6 multicast group.
-// Proves: TC-227-002
-test('the UDP editor saves an IPv6 multicast target with hop limit and interface index',{timeout:60000},async t=>{
-  const {page,app,errors}=await fixture(t,{width:1366,height:768},{inputDevice:'test-only-unopened-input'});
-  const puts=[];
-  page.on('request',r=>{if(r.method()==='PUT'&&new URL(r.url()).pathname==='/udp')puts.push(JSON.parse(r.postData()));});
-  await page.waitForFunction(()=>!!window.wstxContact,null,{timeout:30000});
-  const initial=await (await fetch(app.origin+'/udp')).json();
-  // The read stays held until the Logging tab is shown, so that no second read can replace a row while it is edited.
-  const hold=deferred();let reads=0;await page.route(url=>url.pathname==='/udp',async route=>{if(route.request().method()!=='GET')return route.fallback();reads++;await hold.promise;await route.continue();});
-  await page.locator('#open-server-settings').click();await page.locator('#tab-logging').click();hold.resolve();
-  const rows=page.locator('#udp-targets .udp-target');await rows.first().waitFor();
-  const row=rows.nth(0);
-  await row.locator('[data-f=address]').fill('[ff12::5754:5358]:2237');
-  assert.match(await row.locator('[data-f=iface-note]').textContent(),/hop limit.*index.*link-local group needs one/s);
-  assert.equal(await row.locator('[data-f=iface]').getAttribute('placeholder'),'interface index');
-  // Without an interface the station refuses the link-local group and names the field.
-  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Not saved'}).waitFor();
-  assert.match(await page.locator('#udp-result').textContent(),/invalid_request \(targets\[0\]\.multicast_interface\)/);
-  await row.locator('[data-f=ttl]').fill('2');await row.locator('[data-f=iface]').fill('1');
-  await page.locator('#udp-save').click();await page.locator('#udp-result').filter({hasText:'Saved'}).waitFor();
-  const target={address:'[ff12::5754:5358]:2237',enabled:true,multicast_ttl:2,multicast_interface:'1',
-    messages:['heartbeat','status','decode','clear','qso_logged','close','logged_adif']};
-  assert.equal(puts.length,2);
-  assert.deepEqual(puts[1].configuration,{targets:[target]},'the TTL field is the hop limit, the interface its index');
-  const saved=await (await fetch(app.origin+'/udp')).json();
-  assert.deepEqual(saved.configuration.targets,[target]);assert.equal(saved.revision,initial.revision+1);
-  // A wider-scope group drops the link-local hint.
-  await row.locator('[data-f=address]').fill('[ff05::5754:5358]:2237');
-  assert.doesNotMatch(await row.locator('[data-f=iface-note]').textContent(),/needs one/);
-  assert.equal(reads,1,'the opening and the Logging tab share one read');
   assert.deepEqual(errors,[]);
 });
 

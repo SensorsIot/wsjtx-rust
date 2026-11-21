@@ -4,7 +4,7 @@
 // packed with the real codec and loopback UDP peers on ephemeral ports (never 2237). The
 // datagrams are read back with the independent big-endian reader below, not the encoder.
 use super::*;
-use crate::contact_http::tests::{Fixture, fixture, now_ms, period_text, record};
+use crate::contact_http::tests::{Fixture, fixture, https_fixture, now_ms, period_text, record};
 use crate::profile::tests::{Fault, FaultScope, Step};
 use crate::recording::tests::ScriptedSession;
 use axum::body::Body;
@@ -108,8 +108,60 @@ fn target_json(address: SocketAddr, messages: &[&str]) -> Value {
 fn locks(f: &Fixture) -> std::path::PathBuf {
     f.dir.join("udp-instance")
 }
+/// A sending port that records each datagram it is given and sends none (the release-only
+/// browser station's).
+#[cfg(not(debug_assertions))]
+#[derive(Clone, Default)]
+pub(crate) struct RecordingSockets(Arc<Mutex<Datagrams>>);
+/// Each datagram given to a recording socket, with its target.
+#[cfg(not(debug_assertions))]
+type Datagrams = Vec<(SocketAddr, Vec<u8>)>;
+#[cfg(not(debug_assertions))]
+struct RecordingSocket(Arc<Mutex<Datagrams>>);
+#[cfg(not(debug_assertions))]
+impl TargetSocket for RecordingSocket {
+    fn send(&self, bytes: &[u8], to: SocketAddr) -> std::io::Result<usize> {
+        self.0.lock().unwrap().push((to, bytes.to_vec()));
+        Ok(bytes.len())
+    }
+    fn receive(&self, _: &mut [u8]) -> std::io::Result<(usize, SocketAddr)> {
+        Err(std::io::ErrorKind::WouldBlock.into())
+    }
+}
+#[cfg(not(debug_assertions))]
+impl Sockets for RecordingSockets {
+    fn open(&self, _: &Target) -> Option<Box<dyn TargetSocket>> {
+        Some(Box::new(RecordingSocket(self.0.clone())))
+    }
+}
+#[cfg(not(debug_assertions))]
+impl RecordingSockets {
+    /// Each recorded datagram as (target, message type), in order (0 Heartbeat, 6 Close).
+    pub(crate) fn record(&self) -> Vec<(SocketAddr, u32)> {
+        let record = self.0.lock().unwrap();
+        record.iter().map(|(to, b)| (*to, head(b).1)).collect()
+    }
+}
+/// The real adapter's sockets, each also kept here by its target address so that a test can
+/// read the station socket's address and options.
+struct KeptSockets;
+static KEPT: Mutex<Vec<(SocketAddr, UdpSocket)>> = Mutex::new(Vec::new());
+impl Sockets for KeptSockets {
+    fn open(&self, t: &Target) -> Option<Box<dyn TargetSocket>> {
+        let socket = super::open_socket(t)?;
+        let kept = socket.try_clone().ok()?;
+        KEPT.lock().unwrap().push((t.address, kept));
+        Some(Box::new(socket))
+    }
+}
+/// The socket last opened for `target`.
+fn kept(target: SocketAddr) -> UdpSocket {
+    let kept = KEPT.lock().unwrap();
+    let (_, socket) = kept.iter().rev().find(|(a, _)| *a == target).unwrap();
+    socket.try_clone().unwrap()
+}
 fn open(f: &Fixture, disabled: bool) -> Arc<Owner> {
-    Owner::open(&f.state, disabled, &locks(f))
+    Owner::open(&f.state, disabled, &locks(f), Arc::new(KeptSockets))
 }
 /// Writes udp.json before the owner opens, so no default target is ever activated.
 fn install(f: &Fixture, targets: Vec<Value>) -> Arc<Owner> {
@@ -133,6 +185,9 @@ async fn call_with(
         .method(method)
         .uri(path)
         .header(header::ORIGIN, &f.origin);
+    if let Some(cookie) = &f.cookie {
+        request = request.header(header::COOKIE, cookie);
+    }
     let request = match body {
         Some(b) => {
             request = request.header(header::CONTENT_TYPE, media);
@@ -244,12 +299,8 @@ fn heartbeat_from_tool(schema: u32, id: &str) -> Vec<u8> {
     b
 }
 fn station_socket(owner: &Owner, i: usize) -> SocketAddr {
-    owner.lock().runtimes[i]
-        .socket
-        .as_ref()
-        .unwrap()
-        .local_addr()
-        .unwrap()
+    let target = owner.lock().config.as_ref().unwrap().targets[i].address;
+    kept(target).local_addr().unwrap()
 }
 // Proves: TC-012-001
 #[test]
@@ -455,7 +506,7 @@ async fn tc_012_002_outbound_messages_to_several_targets() {
 // Proves: TC-012-003
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_012_003_no_inbound_message_acts_on_the_station() {
-    let f = fixture("http://127.0.0.1:18402", true);
+    let f = https_fixture("https://127.0.0.1:18402", true).await;
     early_in_period(&f);
     let (a, x) = (peer(), peer());
     let owner = install(&f, vec![target_json(a.local_addr().unwrap(), &MESSAGES)]);
@@ -469,7 +520,6 @@ async fn tc_012_003_no_inbound_message_acts_on_the_station() {
     let first = drain(&a);
     assert_eq!(kinds(&first), [0, 2, 1], "Heartbeat, Decode, Status");
     let grid_before = status_fields(first.last().unwrap())["de_grid"].clone();
-    f.contact().grant.store(true, Ordering::SeqCst);
     operate(
         &f,
         "enable_tx",
@@ -1309,12 +1359,14 @@ async fn tc_012_006_ipv6_multicast_targets() {
 
     // The socket carries the hop limit and the interface.
     {
-        let inner = owner.lock();
-        let socket = socket2::SockRef::from(inner.runtimes[0].socket.as_ref().unwrap());
+        let targets = owner.lock().config.as_ref().unwrap().targets.clone();
+        let link = kept(targets[0].address);
+        let socket = socket2::SockRef::from(&link);
         assert_eq!(socket.multicast_hops_v6().unwrap(), 2);
         assert_eq!(socket.multicast_if_v6().unwrap(), LOOPBACK_INDEX);
         assert!(socket.multicast_loop_v6().unwrap());
-        let site = socket2::SockRef::from(inner.runtimes[1].socket.as_ref().unwrap());
+        let site = kept(targets[1].address);
+        let site = socket2::SockRef::from(&site);
         assert_eq!(site.multicast_hops_v6().unwrap(), 255);
     }
     let status = &v["status"];
@@ -1503,7 +1555,7 @@ fn control(f: &Fixture, mode: &str, endpoint: Option<&str>) {
 fn quiet_owner(f: &Fixture, root: &std::path::Path) -> Arc<Owner> {
     let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,"targets":[]});
     std::fs::write(f.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
-    Owner::open(&f.state, false, root)
+    Owner::open(&f.state, false, root, Arc::new(KeptSockets))
 }
 fn name_of(owner: &Owner, f: &Fixture) -> Value {
     owner.snapshot(&f.state.recording)["instance_name"].clone()
@@ -1626,7 +1678,7 @@ async fn tc_112_001_instance_name() {
         "targets":[target_json(a.local_addr().unwrap(), &MESSAGES)]});
     std::fs::write(g.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
     let unusable = g.dir.join("profile.json");
-    let owner = Owner::open(&g.state, false, &unusable);
+    let owner = Owner::open(&g.state, false, &unusable, Arc::new(KeptSockets));
     owner.step(&g.state);
     let sent = drain(&a);
     assert_eq!(kinds(&sent), [0, 1]);

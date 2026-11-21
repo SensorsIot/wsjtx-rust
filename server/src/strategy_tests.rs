@@ -2211,6 +2211,23 @@ async fn tc_039_030_today_and_from_to_read_the_log_of_the_window() {
     );
 }
 
+/// A Most Wanted source answering each download with the next queued reply.
+#[derive(Clone, Default)]
+struct ScriptedList(Arc<Mutex<std::collections::VecDeque<Result<String, String>>>>);
+impl ScriptedList {
+    fn queue(&self, reply: Result<String, String>) {
+        self.0.lock().unwrap().push_back(reply);
+    }
+}
+impl crate::most_wanted::ListSource for ScriptedList {
+    fn fetch(&self) -> Result<String, String> {
+        self.0
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| Err("no reply queued".into()))
+    }
+}
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_031_update_most_wanted_status_failures_and_mcp_refusal() {
     let f = station(true).await;
@@ -2233,6 +2250,8 @@ async fn tc_039_031_update_most_wanted_status_failures_and_mcp_refusal() {
         )
     );
     let owner = f.state.recording.contact.get().unwrap();
+    let replies = ScriptedList::default();
+    owner.strategy.set_list_source(Box::new(replies.clone()));
     // Status with the unknown number counted; a new owner reads the file.
     let today = utc_date();
     let today = format!(
@@ -2241,7 +2260,7 @@ async fn tc_039_031_update_most_wanted_status_failures_and_mcp_refusal() {
         today / 100 % 100,
         today % 100
     );
-    *owner.strategy.fetch.lock().unwrap() = Some(Ok("{\"1\":\"150\",\"2\":\"9999\"}".into()));
+    replies.queue(Ok("{\"1\":\"150\",\"2\":\"9999\"}".into()));
     let r = update().await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.json);
     assert_eq!(
@@ -2266,13 +2285,13 @@ async fn tc_039_031_update_most_wanted_status_failures_and_mcp_refusal() {
         Some(1)
     );
     // A failed fetch and a reply that is no list keep the list and name the reason.
-    *owner.strategy.fetch.lock().unwrap() = Some(Err("status 503".into()));
+    replies.queue(Err("status 503".into()));
     let d = update().await;
     assert_eq!(
         (d.status.as_u16(), d.json["error"].clone()),
         (502, json!({"code":"download_failed","reason":"status 503"}))
     );
-    *owner.strategy.fetch.lock().unwrap() = Some(Ok("<html>".into()));
+    replies.queue(Ok("<html>".into()));
     let d = update().await;
     assert_eq!(
         (d.status.as_u16(), d.json["error"]["reason"].clone()),
@@ -2742,7 +2761,7 @@ async fn tc_039_005_automation_never_resets_the_tx_watchdog() {
 
 /// A strategy run calling K1ABC at 1800 Hz on 40 m from Tx 1500 with the Tx watchdog at `limit`,
 /// with the feed `set` prepares once the run has its target. e is the even period of the CQ.
-async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Feed)) -> (Mcp, i64) {
+async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&BrokerFeed)) -> (Mcp, i64) {
     let f = station(true).await;
     f.state.recording.fixture_band("40m");
     f.state.recording.fixture_live_job("ft8");
@@ -2750,15 +2769,17 @@ async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&crate::pskr::Fee
     browser_watchdog(&f, limit).await;
     let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
+    let broker = crate::pskr::tests::FakeBroker::new();
     let feed = crate::pskr::Feed::start(
         &dir,
         &f.id,
         &f.boot,
-        None,
+        Some(broker.connector()),
         crate::pskr::FeedSession::BROKER,
         std::sync::Arc::new(crate::profile::Disk),
     );
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    let feed = BrokerFeed { feed, broker };
     let mut c = config(Some("Test calls"));
     set_repetitions(&mut c, calls);
     select(&f, c).await;
@@ -2782,7 +2803,7 @@ async fn tc_039_022_a_target_that_hears_us_does_not_outlive_the_run_bounds() {
         (9 * 3600, "run_limit"),
     ] {
         let (f, e) = run_at_limit(2, 2, |feed| {
-            feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+            feed.broker.publish(&spot("HB9BLA", 7_075_500, "40m", 60));
         })
         .await;
         // Heard and attended: it stays.
@@ -2810,7 +2831,7 @@ async fn tc_039_022_unattended_the_stop_at_n_is_back_without_a_publication() {
         (9 * 3600, "run_limit"),
     ] {
         let (f, e) = run_at_limit(2, 20, |feed| {
-            feed.inject(&spot("HB9BLA", 7_075_500, "40m", 60));
+            feed.broker.publish(&spot("HB9BLA", 7_075_500, "40m", 60));
         })
         .await;
         for own in [15_000, 45_000, 75_000] {
@@ -2852,7 +2873,7 @@ async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
         &dir,
         &f.id,
         &f.boot,
-        None,
+        Some(crate::pskr::tests::unreachable()),
         crate::pskr::FeedSession::BROKER,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -5854,19 +5875,55 @@ async fn tc_039_042_a_browser_auto_on_ends_a_watchdog_stop_and_arms() {
 }
 
 // ------------------------------------------------------------------ the run
-/// A PSK Reporter feed without a connection (hand-authored spots), on the 14074000 Hz dial.
-fn attach_feed(f: &Mcp) -> Arc<crate::pskr::Feed> {
+/// A PSK Reporter feed and the fake broker its session is connected to.
+pub(crate) struct BrokerFeed {
+    pub(crate) feed: Arc<crate::pskr::Feed>,
+    pub(crate) broker: crate::pskr::tests::FakeBroker,
+}
+impl std::ops::Deref for BrokerFeed {
+    type Target = crate::pskr::Feed;
+    fn deref(&self) -> &crate::pskr::Feed {
+        &self.feed
+    }
+}
+/// A PSK Reporter feed on a fake broker (hand-authored spots), on the 14074000 Hz dial.
+fn attach_feed(f: &Mcp) -> BrokerFeed {
+    attach_feed_on(
+        f,
+        crate::pskr::tests::FakeBroker::new(),
+        crate::pskr::FeedSession::BROKER,
+    )
+}
+/// `attach_feed` on a broker the feed is not connected to (its hearing stays unknown without
+/// a spot); a session ended after a spot connects again at once.
+fn attach_not_connected_feed(f: &Mcp) -> BrokerFeed {
+    attach_feed_on(
+        f,
+        crate::pskr::tests::FakeBroker::not_connected(),
+        crate::pskr::FeedSession {
+            backoff_first: Duration::ZERO,
+            backoff_max: Duration::ZERO,
+            ..crate::pskr::FeedSession::BROKER
+        },
+    )
+}
+fn attach_feed_on(
+    f: &Mcp,
+    broker: crate::pskr::tests::FakeBroker,
+    timing: crate::pskr::FeedSession,
+) -> BrokerFeed {
     let dir = std::env::temp_dir().join(format!("wstx-pskr-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
     let feed = crate::pskr::Feed::start(
         &dir,
         &f.id,
         &f.boot,
-        None,
-        crate::pskr::FeedSession::BROKER,
+        Some(broker.connector()),
+        timing,
         std::sync::Arc::new(crate::profile::Disk),
     );
     f.state.recording.pskr.set(feed.clone()).ok().unwrap();
+    let feed = BrokerFeed { feed, broker };
     if f.state.recording.cat_opener.get().is_none() {
         dial_20m(f);
     }
@@ -5917,7 +5974,7 @@ async fn leave_left(f: &Mcp) -> Value {
 struct Leaving {
     f: Mcp,
     e: i64,
-    feed: Arc<crate::pskr::Feed>,
+    feed: BrokerFeed,
     client: Option<crate::automation::ClientSession>,
 }
 async fn leaving(edit: impl FnOnce(&mut Value), first: &[(&str, f64, Option<f64>)]) -> Leaving {
@@ -5930,6 +5987,15 @@ async fn leaving_from(
     edit: impl FnOnce(&mut Value),
     first: &[(&str, f64, Option<f64>)],
 ) -> Leaving {
+    leaving_on(attach_feed, hold_tx, edit, first).await
+}
+/// `leaving_from` with the feed `attach` gives.
+async fn leaving_on(
+    attach: fn(&Mcp) -> BrokerFeed,
+    hold_tx: bool,
+    edit: impl FnOnce(&mut Value),
+    first: &[(&str, f64, Option<f64>)],
+) -> Leaving {
     let f = station(true).await;
     f.state.recording.fixture_band("20m");
     f.state.recording.fixture_live_job("ft8");
@@ -5938,7 +6004,7 @@ async fn leaving_from(
     if !hold_tx {
         hold_off(&f).await;
     }
-    let feed = attach_feed(&f);
+    let feed = attach(&f);
     let mut c = config(Some("Test calls"));
     set_repetitions(&mut c, 4);
     c["strategies"][0]["retry_minutes"] = json!(10);
@@ -6019,7 +6085,7 @@ async fn tc_039_043_a_silent_or_repeating_target_is_left_at_the_4th() {
 async fn tc_039_043_a_target_that_hears_us_is_left_at_2x_and_use_off_at_x() {
     let t = leaving(|_| {}, &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     assert_eq!(leave_left(f).await, json!(8));
     for k in 1..=7 {
         publish(f, rep(e, k), &[]);
@@ -6036,7 +6102,7 @@ async fn tc_039_043_a_target_that_hears_us_is_left_at_2x_and_use_off_at_x() {
 
     let t = leaving(|_| {}, &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     t.feed.switch_use(false);
     for k in 1..=3 {
         publish(f, rep(e, k), &[]);
@@ -6297,6 +6363,16 @@ async fn contest_leaving_from(
     edit: impl FnOnce(&mut Value),
     before: impl FnOnce(&Mcp, i64),
 ) -> Leaving {
+    contest_leaving_on(attach_feed, hold_tx, operation, edit, before).await
+}
+/// `contest_leaving_from` with the feed `attach` gives.
+async fn contest_leaving_on(
+    attach: fn(&Mcp) -> BrokerFeed,
+    hold_tx: bool,
+    operation: &str,
+    edit: impl FnOnce(&mut Value),
+    before: impl FnOnce(&Mcp, i64),
+) -> Leaving {
     let f = station(true).await;
     f.state.recording.fixture_live_job("ft8");
     let e = at_even(&f);
@@ -6308,7 +6384,7 @@ async fn contest_leaving_from(
     f.state.recording.fixture_band("20m");
     import_adi(&f, &logged_before("W1DUP", "EM12", e));
     browser_ok(&f, "set_activity", json!({"activity":"ww_digi"})).await;
-    let feed = attach_feed(&f);
+    let feed = attach(&f);
     let mut c = contest_config(e, operation, -1);
     edit(&mut c);
     select(&f, c).await;
@@ -6327,7 +6403,14 @@ const K1ABC_WW: (&str, f64, Option<f64>) = ("CQ WW K1ABC FN42", 1800.0, Some(-10
 const JA1XYZ_WW: (&str, f64, Option<f64>) = ("CQ WW JA1XYZ PM95", 1100.0, Some(-15.0));
 /// The S&P contest run calling K1ABC (new multiplier), the feed following it.
 async fn contest_calling(edit: impl FnOnce(&mut Value)) -> Leaving {
-    let t = contest_leaving("sp", edit).await;
+    contest_calling_on(attach_feed, edit).await
+}
+/// `contest_calling` with the feed `attach` gives.
+async fn contest_calling_on(
+    attach: fn(&Mcp) -> BrokerFeed,
+    edit: impl FnOnce(&mut Value),
+) -> Leaving {
+    let t = contest_leaving_on(attach, true, "sp", edit, |_, _| {}).await;
     publish(&t.f, t.e, &[K1ABC_WW]);
     t.f.tick();
     assert_eq!(contact(&t.f).await.0, json!("K1ABC"));
@@ -6352,7 +6435,7 @@ async fn tc_039_044_a_contest_leaves_at_2_and_at_4_with_a_spot() {
 
     let t = contest_calling(|_| {}).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     for k in 1..=3 {
         publish(f, rep(e, k), &[]);
         assert_eq!(contact(f).await.2, json!("armed"), "repetition {k}");
@@ -6378,7 +6461,7 @@ async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
     };
     let t = contest_calling(style).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     for k in 1..=10 {
         publish(f, rep(e, k), &[K1ABC_WW, dupe]);
         assert_eq!(
@@ -6392,7 +6475,7 @@ async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
 
     let t = contest_calling(style).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     for k in 1..=5 {
         publish(f, rep(e, k), &[K1ABC_WW]);
     }
@@ -6415,7 +6498,7 @@ async fn tc_039_044_a_heard_target_stays_until_a_more_valuable_station() {
 
     let t = contest_calling(style).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     publish(f, rep(e, 1), &[K1ABC_WW, JA1XYZ_WW]);
     assert_eq!(
         contact(f).await.0,
@@ -6946,7 +7029,7 @@ async fn tc_039_010_a_band_change_a_caller_on_my_slot_and_a_pounce() {
 /// prepares the feed. My odd period before the run transmits reads 0 everywhere (my Tx parity, not
 /// judged). The even rows of `slot_rows` move the quietest slot: 1400 at the 1st repetition,
 /// 1300 at the 2nd, tied with 1300 at the 3rd.
-async fn slot_check(set: impl FnOnce(&crate::pskr::Feed)) -> Leaving {
+async fn slot_check(set: impl FnOnce(&BrokerFeed)) -> Leaving {
     let t = leaving_from(false, |_| {}, &[K1ABC_CQ]).await;
     browser_watchdog(&t.f, 2).await;
     assert_eq!(frequencies(&t.f).await.1, json!(1500));
@@ -6983,24 +7066,25 @@ fn slot_rows(f: &Mcp, e: i64, k: i64) {
 // Proves: TC-039-022
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_022_the_slot_check_at_every_repetition() {
-    type Set = fn(&crate::pskr::Feed);
+    type Set = fn(&BrokerFeed);
     let table: [(&str, Set, bool); 7] = [
         ("no spot", |_| {}, false),
-        ("60 s", |feed| feed.inject(&heard_spot(60)), true),
-        ("590 s", |feed| feed.inject(&heard_spot(590)), true),
-        ("601 s", |feed| feed.inject(&heard_spot(601)), false),
+        ("60 s", |feed| feed.broker.publish(&heard_spot(60)), true),
+        ("590 s", |feed| feed.broker.publish(&heard_spot(590)), true),
+        ("601 s", |feed| feed.broker.publish(&heard_spot(601)), false),
         (
             "40 m",
             |feed| {
                 let t = crate::contact_http::tests::now_ms() / 1000 - 60;
-                feed.inject(&spot_of("HB9BLA", "K1ABC", 7_075_500, "40m", t));
+                feed.broker
+                    .publish(&spot_of("HB9BLA", "K1ABC", 7_075_500, "40m", t));
             },
             false,
         ),
         (
             "Use off",
             |feed| {
-                feed.inject(&heard_spot(60));
+                feed.broker.publish(&heard_spot(60));
                 feed.switch_use(false);
             },
             false,
@@ -7008,7 +7092,7 @@ async fn tc_039_022_the_slot_check_at_every_repetition() {
         (
             "feed off",
             |feed| {
-                feed.inject(&heard_spot(60));
+                feed.broker.publish(&heard_spot(60));
                 feed.switch(false);
             },
             false,
@@ -7078,7 +7162,7 @@ async fn tc_039_022_an_answer_keeps_the_slot() {
 async fn tc_039_033_unattended_x_is_never_doubled() {
     let mut t = leaving(|_| {}, &[K1ABC_CQ]).await;
     let e = t.e;
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     drop(t.client.take());
     let f = &t.f;
     f.tick();
@@ -7108,7 +7192,7 @@ async fn tc_039_033_unattended_x_is_never_doubled() {
 // Proves: TC-039-022
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
-    let t = leaving(|_| {}, &[K1ABC_CQ]).await;
+    let t = leaving_on(attach_not_connected_feed, true, |_| {}, &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
     assert_eq!(
         run_of(f).await["hearing"],
@@ -7116,7 +7200,8 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     );
     let now = crate::contact_http::tests::now_ms() / 1000;
     t.feed
-        .inject(&spot_of("HB9BLA", "K1ABC", 14_075_500, "20m", now - 60));
+        .broker
+        .publish(&spot_of("HB9BLA", "K1ABC", 14_075_500, "20m", now - 60));
     f.tick();
     assert_eq!(
         run_of(f).await["hearing"],
@@ -7151,7 +7236,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     let (f, e) = (&t.f, t.e);
     let odd = |s: i64| if s.div_euclid(15) % 2 == 1 { s } else { s - 15 };
     // 1320 Hz of my Tx parity excludes 1300; 1650 Hz of the other parity excludes nothing.
-    t.feed.inject(&spot_of(
+    t.feed.broker.publish(&spot_of(
         "DL1XYZ",
         "K1ABC",
         14_075_320,
@@ -7159,7 +7244,8 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
         odd(now) - 30,
     ));
     t.feed
-        .inject(&spot_of("G4ABC", "K1ABC", 14_075_650, "20m", odd(now) - 15));
+        .broker
+        .publish(&spot_of("G4ABC", "K1ABC", 14_075_650, "20m", odd(now) - 15));
     rows(f, e);
     publish(f, rep(e, 1), &[]);
     assert_eq!(
@@ -7170,7 +7256,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     // 27 offsets 90 Hz apart (the feed keeps at most 32 distinct (offset, parity) entries, newest
     // first): every candidate within 45 Hz of one.
     for hz in (300..=2650).step_by(90) {
-        t.feed.inject(&spot_of(
+        t.feed.broker.publish(&spot_of(
             "W1AW",
             "K1ABC",
             14_074_000 + hz,
@@ -7200,7 +7286,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     )
     .await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&spot_of(
+    t.feed.broker.publish(&spot_of(
         "DL1XYZ",
         "K1ABC",
         14_075_320,
@@ -7213,7 +7299,7 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     assert_eq!(frequencies(f).await.1, json!(1500), "repetition 1: no move");
     assert_eq!(run_of(f).await["slot_check"], check(1, false, 1500));
     for hz in (300..=2650).step_by(90) {
-        t.feed.inject(&spot_of(
+        t.feed.broker.publish(&spot_of(
             "W1AW",
             "K1ABC",
             14_074_000 + hz,
@@ -7230,7 +7316,8 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     assert_eq!(run_of(f).await["slot_check"], check(2, false, 1500));
     for hz in (2300..=2610).step_by(10) {
         t.feed
-            .inject(&spot_of("G4ABC", "K1ABC", 14_074_000 + hz, "20m", odd(now)));
+            .broker
+            .publish(&spot_of("G4ABC", "K1ABC", 14_074_000 + hz, "20m", odd(now)));
     }
     publish(f, rep(e, 3), &[]);
     assert_eq!(
@@ -7248,9 +7335,9 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
 // Proves: TC-097-013
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_013_no_wd_in_the_runs_own_contact_and_the_leave_count() {
-    let t = contest_calling(|_| {}).await;
+    let t = contest_calling_on(attach_not_connected_feed, |_| {}).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(596));
+    t.feed.broker.publish(&heard_spot(596));
     publish(f, rep(e, 1), &[K1ABC_WW]);
     assert_eq!(wd(f).await, Value::Null, "no WD in the run's own contact");
     assert_eq!(
@@ -7479,7 +7566,7 @@ async fn tc_039_049_the_slot_check_never_comes_within_50_hz_of_rx() {
 async fn tc_039_049_a_target_that_hears_us_or_has_answered_keeps_tx() {
     let t = held_run("ft8", None, &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     wf_row(f, e - 15_000, 0, &[], false);
     slot_rows(f, e, 1);
     publish(f, rep(e, 1), &[]);

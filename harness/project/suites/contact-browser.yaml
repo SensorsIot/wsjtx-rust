@@ -1,11 +1,14 @@
 - suite: contact-browser
   cost: 2
   run: cargo test --release --locked --bin wstx-rust contact_http::tests::contact_browser_ -- --nocapture
-  # No filter form: the run is exactly one test, so the whole suite is that test.
+  filter: >-
+    python harness/project/tools/filter_run.py contact-browser {filter}
+    @libtest cargo test --release --locked --bin wstx-rust contact_http::tests::contact_browser_ -- --nocapture
   paths:
   - server/
   - client/
   - tests/contact.test.cjs
+  - tests/station-settings.test.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -21,11 +24,16 @@
   - server/src/transmit_http.rs
   - server/src/transmit/
   - server/src/modes/transmit/
+  - server/src/operating/qso/pskr.rs
+  - server/src/operating/qso/pskr_tests.rs
+  - server/src/operating/qso/udp.rs
+  - server/src/log/udp_tests.rs
   - client/contact.js
   - client/logbook.js
   - client/recording.js
   - client/recording.css
   - tests/contact.test.cjs
+  - tests/station-settings.test.cjs
   - Cargo.toml
   - Cargo.lock
   - rust-toolchain.toml
@@ -36,4 +44,4 @@
   - client/index.html
   - client/authorization.js
   build: cargo test --release --locked --bin wstx-rust --no-run
-  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated Router with the contact engine, the transmit owner on a recording hardware double and hand-authored codec-packed result rows published by a test-only control peer. No transceiver, audio device, PTT or network service.
+  needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated Router with the contact engine, the transmit owner on a recording hardware double and hand-authored codec-packed result rows published by a test-only control peer; the PSK Reporter feed on a fake broker and the UDP owner on recording sockets, so nothing reaches the broker or a UDP port. No transceiver, audio device, PTT or network service.

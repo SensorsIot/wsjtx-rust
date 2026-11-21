@@ -63,12 +63,126 @@ impl HttpReply {
             .into()
     }
 }
-struct BrowserGrant {
+pub(crate) struct BrowserGrant {
     key: signature::EcdsaKeyPair,
     id: String,
     operation: String,
     scope: authorization::WireScope,
-    cookie: String,
+    pub(crate) cookie: String,
+}
+/// The routes of one station, called as a browser on its origin calls them.
+pub(crate) struct AppRoutes<'a>(pub(crate) &'a App);
+impl AppRoutes<'_> {
+    fn headers(&self, cookie: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ORIGIN, self.0.origin.parse().unwrap());
+        headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
+        headers.insert(header::ACCEPT_ENCODING, "gzip".parse().unwrap());
+        if let Some(cookie) = cookie {
+            headers.insert(header::COOKIE, cookie.parse().unwrap());
+        }
+        headers
+    }
+    async fn request(
+        &self,
+        method: axum::http::Method,
+        path: &str,
+        body: impl Into<axum::body::Body>,
+        headers: HeaderMap,
+    ) -> HttpReply {
+        let mut request = axum::http::Request::builder()
+            .method(method)
+            .uri(path)
+            .body(body.into())
+            .unwrap();
+        *request.headers_mut() = headers;
+        let response = router(self.0.clone()).oneshot(request).await.unwrap();
+        let (parts, body) = response.into_parts();
+        HttpReply {
+            status: parts.status,
+            headers: parts.headers,
+            body: axum::body::to_bytes(body, 8192).await.unwrap().to_vec(),
+        }
+    }
+    async fn post(&self, path: &str, value: Value, cookie: Option<&str>) -> HttpReply {
+        self.request(
+            axum::http::Method::POST,
+            path,
+            serde_json::to_vec(&value).unwrap(),
+            self.headers(cookie),
+        )
+        .await
+    }
+    /// A CL-022 grant through the station token, bootstrap-scope, enroll, challenge and proof.
+    pub(crate) async fn authorize(&self) -> BrowserGrant {
+        let response = self
+            .request(
+                axum::http::Method::POST,
+                "/session",
+                self.0.token.clone().unwrap(),
+                self.headers(None),
+            )
+            .await;
+        assert_eq!(response.status, StatusCode::NO_CONTENT);
+        let bootstrap = response.cookie();
+        assert!(bootstrap.starts_with("wstx_bootstrap_"));
+        let response = self
+            .post(
+                "/authorization/v1/bootstrap-scope",
+                json!({"version":1}),
+                Some(&bootstrap),
+            )
+            .await;
+        assert_eq!(response.status, StatusCode::OK);
+        assert_eq!(response.json().as_object().unwrap().len(), 2);
+        let scope: authorization::WireScope =
+            serde_json::from_value(response.json()["current_scope"].clone()).unwrap();
+        let key = authorization::authorization_tests::peer_key();
+        let mut id = [0; 32];
+        ring::rand::SystemRandom::new().fill(&mut id).unwrap();
+        let id = URL_SAFE_NO_PAD.encode(id);
+        let operation = profile::new_uuid().unwrap();
+        let response = self.post("/authorization/v1/enroll", json!({"version":1,"operation_id":operation,"scope":scope,"grant_id":id,"public_key":URL_SAFE_NO_PAD.encode(key.public_key().as_ref())}), Some(&bootstrap)).await;
+        assert_eq!(response.status, StatusCode::OK);
+        assert_eq!(response.json()["outcome"], "committed");
+        let mut grant = BrowserGrant {
+            key,
+            id,
+            operation,
+            scope,
+            cookie: String::new(),
+        };
+        grant.cookie = self.renew(&grant).await;
+        grant
+    }
+    async fn renew(&self, grant: &BrowserGrant) -> String {
+        let response = self
+            .post(
+                "/authorization/v1/challenge",
+                json!({"version":1,"grant_id":grant.id}),
+                None,
+            )
+            .await;
+        assert_eq!(response.status, StatusCode::OK);
+        let challenge = response.json();
+        let scope: authorization::WireScope =
+            serde_json::from_value(challenge["scope"].clone()).unwrap();
+        let scope = scope.in_validated_origin(&self.0.origin).unwrap();
+        let nonce = challenge["nonce"].as_str().unwrap();
+        let signature = authorization::authorization_tests::peer_sign(
+            &grant.key, &scope, &grant.id, nonce, None,
+        );
+        let response = self
+            .post(
+                "/authorization/v1/proof",
+                json!({"version":1,"grant_id":grant.id,"nonce":nonce,"signature":signature}),
+                None,
+            )
+            .await;
+        assert_eq!(response.status, StatusCode::NO_CONTENT);
+        assert!(response.body.is_empty());
+        response.cookie()
+    }
 }
 impl HttpFixture {
     fn new(origin: &str) -> Self {
@@ -139,14 +253,7 @@ impl HttpFixture {
         self.app.as_ref().unwrap()
     }
     fn headers(&self, cookie: Option<&str>) -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::ORIGIN, self.app().origin.parse().unwrap());
-        headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
-        headers.insert(header::ACCEPT_ENCODING, "gzip".parse().unwrap());
-        if let Some(cookie) = cookie {
-            headers.insert(header::COOKIE, cookie.parse().unwrap());
-        }
-        headers
+        AppRoutes(self.app()).headers(cookie)
     }
     async fn request(
         &self,
@@ -155,97 +262,18 @@ impl HttpFixture {
         body: impl Into<axum::body::Body>,
         headers: HeaderMap,
     ) -> HttpReply {
-        let mut request = axum::http::Request::builder()
-            .method(method)
-            .uri(path)
-            .body(body.into())
-            .unwrap();
-        *request.headers_mut() = headers;
-        let response = router(self.app().clone()).oneshot(request).await.unwrap();
-        let (parts, body) = response.into_parts();
-        HttpReply {
-            status: parts.status,
-            headers: parts.headers,
-            body: axum::body::to_bytes(body, 8192).await.unwrap().to_vec(),
-        }
+        AppRoutes(self.app())
+            .request(method, path, body, headers)
+            .await
     }
     async fn post(&self, path: &str, value: Value, cookie: Option<&str>) -> HttpReply {
-        self.request(
-            axum::http::Method::POST,
-            path,
-            serde_json::to_vec(&value).unwrap(),
-            self.headers(cookie),
-        )
-        .await
+        AppRoutes(self.app()).post(path, value, cookie).await
     }
     async fn authorize(&self) -> BrowserGrant {
-        let response = self
-            .request(
-                axum::http::Method::POST,
-                "/session",
-                self.app().token.clone().unwrap(),
-                self.headers(None),
-            )
-            .await;
-        assert_eq!(response.status, StatusCode::NO_CONTENT);
-        let bootstrap = response.cookie();
-        assert!(bootstrap.starts_with("wstx_bootstrap_"));
-        let response = self
-            .post(
-                "/authorization/v1/bootstrap-scope",
-                json!({"version":1}),
-                Some(&bootstrap),
-            )
-            .await;
-        assert_eq!(response.status, StatusCode::OK);
-        assert_eq!(response.json().as_object().unwrap().len(), 2);
-        let scope: authorization::WireScope =
-            serde_json::from_value(response.json()["current_scope"].clone()).unwrap();
-        let key = authorization::authorization_tests::peer_key();
-        let mut id = [0; 32];
-        ring::rand::SystemRandom::new().fill(&mut id).unwrap();
-        let id = URL_SAFE_NO_PAD.encode(id);
-        let operation = profile::new_uuid().unwrap();
-        let response = self.post("/authorization/v1/enroll", json!({"version":1,"operation_id":operation,"scope":scope,"grant_id":id,"public_key":URL_SAFE_NO_PAD.encode(key.public_key().as_ref())}), Some(&bootstrap)).await;
-        assert_eq!(response.status, StatusCode::OK);
-        assert_eq!(response.json()["outcome"], "committed");
-        let mut grant = BrowserGrant {
-            key,
-            id,
-            operation,
-            scope,
-            cookie: String::new(),
-        };
-        grant.cookie = self.renew(&grant).await;
-        grant
+        AppRoutes(self.app()).authorize().await
     }
     async fn renew(&self, grant: &BrowserGrant) -> String {
-        let response = self
-            .post(
-                "/authorization/v1/challenge",
-                json!({"version":1,"grant_id":grant.id}),
-                None,
-            )
-            .await;
-        assert_eq!(response.status, StatusCode::OK);
-        let challenge = response.json();
-        let scope: authorization::WireScope =
-            serde_json::from_value(challenge["scope"].clone()).unwrap();
-        let scope = scope.in_validated_origin(&self.app().origin).unwrap();
-        let nonce = challenge["nonce"].as_str().unwrap();
-        let signature = authorization::authorization_tests::peer_sign(
-            &grant.key, &scope, &grant.id, nonce, None,
-        );
-        let response = self
-            .post(
-                "/authorization/v1/proof",
-                json!({"version":1,"grant_id":grant.id,"nonce":nonce,"signature":signature}),
-                None,
-            )
-            .await;
-        assert_eq!(response.status, StatusCode::NO_CONTENT);
-        assert!(response.body.is_empty());
-        response.cookie()
+        AppRoutes(self.app()).renew(grant).await
     }
 }
 impl Drop for HttpFixture {
