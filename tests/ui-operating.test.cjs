@@ -362,6 +362,15 @@ function contactSnapshot(base,{contact=null,transmit={},settings={},log=null}={}
     contact,watchdog:{tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:0,busy_with:null,paused_calls:0}};
 }
 const partner=(state='replying',extra={})=>({id:crypto.randomUUID(),origin:'selected_row',dx_call:'K1ABC',dx_grid:'FN42',report_sent:'-12',report_rcvd:null,state,next_slot:'tx1',tx4:'rrr',messages:['K1ABC HB9BLA JN47','K1ABC HB9BLA -12','K1ABC HB9BLA R-12','K1ABC HB9BLA RRR','K1ABC HB9BLA 73','CQ HB9BLA JN47'],start_utc:null,end_utc:null,saved:false,...extra});
+// A halt outcome as recording.js sends it for a skipped halt; the page then reads GET /contact itself.
+const halted=page=>page.evaluate(()=>dispatchEvent(new CustomEvent('keyboard-halt',{detail:{reply:null}})));
+// Makes the page read GET /contact and resolves once it shows the snapshot of that read.
+async function reread(page){
+  const request=page.waitForRequest(r=>r.method()==='GET'&&new URL(r.url()).pathname==='/contact');
+  await halted(page);
+  const body=await (await (await request).response()).text();
+  await page.waitForFunction(b=>JSON.stringify(window.wstxContact.snapshot())===JSON.stringify(JSON.parse(b)),body);
+}
 // Records a page's contact commands and answers them like the station (202) without effects.
 async function contactCommands(page,commands){await page.route('**/contact/command',async route=>{commands.push(JSON.parse(route.request().postData()));await route.fulfill({status:202,json:{v:1,accepted:true}});});}
 
@@ -377,7 +386,7 @@ test('Auto Seq off is shown on the QSO pane and an RR73 offers 73 next',{timeout
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot(),null,{timeout:25000});
   const iw9fra=['IW9FRA HB9BLA JN37','IW9FRA HB9BLA +10','IW9FRA HB9BLA R+10','IW9FRA HB9BLA RR73','IW9FRA HB9BLA 73','CQ HB9BLA JN37'];
-  const show=async next=>{contact=next;await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(s=>window.wstxContact.snapshot().contact?.suggested_slot===s,next.suggested_slot);};
+  const show=async next=>{contact=next;await reread(page);await page.waitForFunction(s=>window.wstxContact.snapshot().contact?.suggested_slot===s,next.suggested_slot);};
   await show(partner('roger_report',{dx_call:'IW9FRA',dx_grid:'JM68',report_sent:'+10',report_rcvd:'+10',next_slot:'tx3',tx4:'rr73',messages:iw9fra,suggested_slot:null}));
   assert.equal(await shown(page,'#qso-autoseq'),true,'Auto Seq off is on the pane');
   assert.match(await page.locator('#qso-autoseq-text').textContent(),/^Auto Seq off/);
@@ -444,7 +453,7 @@ test('the compact QSO pane shows only the running QSO and clears when it ends',{
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===8&&window.wstxContact?.snapshot(),null,{timeout:25000});
   const others=()=>page.locator('#qso-others tr').evaluateAll(rows=>rows.map(tr=>[tr.dataset.kind,[...tr.cells].map(td=>td.textContent)]));
-  const show=async(next,tx={},l=null)=>{contact=next;transmit=tx;log=l;await page.evaluate(()=>window.wstxContact.load());};
+  const show=async(next,tx={},l=null)=>{contact=next;transmit=tx;log=l;await reread(page);};
   const waitCommands=async n=>{for(let i=0;i<60&&commands.length<n;i++)await page.waitForTimeout(50);};
   // Absent: a dialogue history pane, LAST row and crowding badge.
   for(const selector of ['#rx-pane','#rx-pane-rows','#contact-last','#qso-crowd','#rx-pane-erase'])assert.equal(await page.locator(selector).count(),0,`${selector} is gone`);
@@ -538,7 +547,7 @@ test('the compact QSO pane shows only the running QSO and clears when it ends',{
   // loaded before the 202 arrives: no "accepted" result of the ended QSO stays.
   const done={...running,state:'completed',next_slot:'tx6',saved:true};
   const logged={contact_id:running.id,call:'IW9FRA',outcome:'saved',error:null};
-  const early=async route=>{commands.push(JSON.parse(route.request().postData()));contact=done;transmit={arm_state:'disarmed'};log=logged;await page.evaluate(()=>window.wstxContact.load());await new Promise(r=>setTimeout(r,300));await route.fulfill({status:202,json:{v:1,accepted:true}});};
+  const early=async route=>{commands.push(JSON.parse(route.request().postData()));contact=done;transmit={arm_state:'disarmed'};log=logged;await reread(page);await new Promise(r=>setTimeout(r,300));await route.fulfill({status:202,json:{v:1,accepted:true}});};
   await page.route('**/contact/command',early);
   m=commands.length;await page.locator('#contact-log').click();await waitCommands(m+1);
   assert.deepEqual(commands.slice(m).map(c=>c.action),['open_log']);
@@ -605,7 +614,7 @@ test('TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the r
     entry(4,'tx','CT1BFP HB9BLA RR73'),entry(5,'rx','<...> CT1BFP 73',9,2),entry(6,'tx','TNX 73 GL')];
   contact=partner('signoff',{dx_call:'CT1BFP',dx_grid:'IM59',report_sent:'+08',report_rcvd:'-02',messages:['CT1BFP HB9BLA JN37','CT1BFP HB9BLA +08','CT1BFP HB9BLA R+08','CT1BFP HB9BLA RR73','CT1BFP HB9BLA 73','CQ HB9BLA JN37'],
     suggested_slot:null,last_rcvd:{text:'<...> CT1BFP 73',snr:9,period_utc_ms:p0+75000,count:2},dialogue});
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   await page.waitForFunction(()=>document.querySelectorAll('#qso-dialogue tr').length===7&&document.querySelector('#qso-others tr[data-kind=warn]'));
   assert.deepEqual(await cells('#qso-dialogue tr'),[['22:51:00','CQ HB9BLA','JN37','','',''],['22:51:15','HB9BLA ◂ CT1BFP','IM59','','+8',''],['22:51:30','CT1BFP ◂ HB9BLA','+08','','+8',''],
     ['22:51:45','HB9BLA ◂ CT1BFP','R-02','','+7','−2'],['22:52:00','CT1BFP ◂ HB9BLA','RR73','','+7','−2'],['22:52:15','<...> ◂ CT1BFP','73','×2','+9','−2'],['22:52:30','','TNX 73 GL','','+9','−2']]);
@@ -712,12 +721,12 @@ test('the busy marker follows WD:n and the leave label',{timeout:40000},async t=
   await page.waitForFunction(text=>document.querySelector('#contact-watchdog').textContent===text,busy,{timeout:10000});
   assert.match(await page.locator('#station-tx').textContent(),/ · WD:6 · K1ABC busy with W9XYZ, not counted \(2\/6\)/);
   watchdog={...watchdog,busy_with:null,paused_calls:0};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   assert.equal(await page.locator('#contact-watchdog').textContent(),'WD:6');
   // A run's own contact: the leave label carries it.
   watchdog={...watchdog,tx_remaining_calls:null,busy_with:'W9XYZ',paused_calls:1};
   run={id:crypto.randomUUID(),state:'contact_active',contact_id:contact.id,leave:{mode:'calls',remaining:4,busy:true,paused:1,staying:false}};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   await page.evaluate(()=>new Promise(done=>{addEventListener('wstx-automation',()=>done(),{once:true});dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:0,run_revision:99}}}}));}));
   await page.waitForFunction(()=>document.querySelector('#contact-watchdog').textContent.startsWith('Leave in'),null,{timeout:10000});
   assert.equal(await page.locator('#contact-watchdog').textContent(),'Leave in 4 calls · K1ABC busy with W9XYZ, not counted (1/6)');
@@ -743,7 +752,7 @@ test('the leave label stands where WD:n stood in a run\'s own contact',{timeout:
   const shows=async(wd,leave,text)=>{
     watchdog={...watchdog,tx_remaining_calls:wd};
     run=leave&&{id:'7d1f6c2e-0000-4000-8000-000000000097',state:'contact_active',contact_id:contact.id,leave:{busy:false,paused:0,staying:false,...leave}};
-    await page.evaluate(()=>window.wstxContact.load());
+    await reread(page);
     await page.evaluate(r=>new Promise(done=>{addEventListener('wstx-automation',()=>done(),{once:true});dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type:'automation.state',data:{policy_revision:0,run_revision:r}}}}));}),revision++);
     await page.waitForFunction(x=>document.querySelector('#contact-watchdog').textContent===x,text,{timeout:10000}).catch(()=>{});
     assert.equal(await page.locator('#contact-watchdog').textContent(),text);
@@ -787,27 +796,27 @@ test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherw
   await page.screenshot({path:'test-results/ui-operating/qso-tx-now-1366x768.png'});
   // The transmit view's text of this period is what is on the air (here not the next one).
   transmit={arm_state:'armed',last_text:'K1ABC HB9BLA -05',last_period_utc:even-4000};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next],['▶ TX now:','K1ABC HB9BLA -05']);
   // Tune is a tone: "TX now: Tune" with the Tune time left, never a message.
   transmit={arm_state:'armed',tune:true};watchdog={tx_remaining_calls:6,tx_expired:false,tune_remaining_seconds:80};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   r=await tickAndRead(page,offset,true);
   assert.deepEqual([r.label,r.next,r.countdown],['▶ TX now:','Tune','80 s left']);
   // The Tx watchdog's stop states its rule.
   transmit={arm_state:'disarmed'};watchdog={tx_remaining_calls:0,tx_expired:true,tune_remaining_seconds:0};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   assert.match(await page.locator('#contact-watchdog').textContent(),/^Tx watchdog: same message sent \d+ times$/);
   // TC-039-022 with CL-097-04: null is no WD (a run's own contact
   // shows its leave label instead; without a run nothing); a number is WD:n again.
   transmit={arm_state:'armed'};watchdog={tx_remaining_calls:null,tx_expired:false,tune_remaining_seconds:0};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   assert.equal(await page.locator('#contact-watchdog').textContent(),'');
   watchdog={tx_remaining_calls:3,tx_expired:false,tune_remaining_seconds:0};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   assert.equal(await page.locator('#contact-watchdog').textContent(),'WD:3');
-  transmit={arm_state:'armed'};watchdog=null;await page.evaluate(()=>window.wstxContact.load());
+  transmit={arm_state:'armed'};watchdog=null;await reread(page);
   clock.offset=offset+11000;r=await tickAndRead(page,offset+11000,false);
   assert.deepEqual([r.label,r.next],['▸ next:','CQ HB9BLA JN47']);
   assert.match(r.countdown,/^Tx in \d+ s$/);assert.equal(Number(r.countdown.split(' ')[2]),15,'between periods: the next even period in 15 s');
@@ -1399,7 +1408,7 @@ test('band, mode and Apply ask before restarting receive during a QSO',{timeout:
     p.on('request',r=>{if(r.method()==='PUT'&&new URL(r.url()).pathname==='/profile')puts.push(r);});
   }});
   await page.waitForFunction(()=>!!window.wstxContact?.snapshot()&&operatingState&&!document.querySelector('#operating-band').disabled,null,{timeout:25000});
-  contact=partner('report');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='report');
+  contact=partner('report');await reread(page);await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='report');
   await page.selectOption('#operating-band','20m');
   await page.locator('#op-confirm[open]').waitFor();assert.match(await page.locator('#op-confirm-text').textContent(),/restarts receive and interrupts the QSO/);
   await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
@@ -1412,7 +1421,7 @@ test('band, mode and Apply ask before restarting receive during a QSO',{timeout:
   await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);assert.equal(puts.length,0,'Apply waits for the confirmation');
   await page.locator('#settings-general .op-apply').click();await page.locator('#op-confirm-ok').click();
   await page.locator('#general-apply-result').filter({hasText:/Saved revision/}).waitFor();assert.equal(puts.length,1);
-  contact=null;await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!window.wstxContact.snapshot().contact);
+  contact=null;await reread(page);await page.waitForFunction(()=>!window.wstxContact.snapshot().contact);
   await page.locator('#callsign').fill('HB9BLA');await page.locator('#settings-general .op-apply').click();
   await page.locator('#general-apply-result').filter({hasText:/Saved revision 2/}).waitFor();assert.equal(await page.locator('#op-confirm').evaluate(d=>d.open),false,'without a QSO Apply needs no confirmation');
   assert.deepEqual(errors,[]);
@@ -1466,7 +1475,7 @@ async function waterfallMappingPass(page,commands,settings,label){
   const axis=async()=>{const b=await page.evaluate(()=>{const r=document.querySelector('#waterfall').getBoundingClientRect();return {x:r.left,w:r.width};});return hz=>b.x+hz*b.w/3000;};
   const tickX=f=>page.evaluate(f=>{const s=document.querySelectorAll('#frequency-ruler > span')[f/100],r=s.getBoundingClientRect();return r.left+.5;},f);
   const centre=key=>page.evaluate(key=>{const r=document.querySelector(`#waterfall-wrap .ct-${key}`).getBoundingClientRect();return r.left+r.width/2;},key);
-  const confirm=async(rx,tx)=>{settings.rx_hz=rx;settings.tx_hz=tx;await page.evaluate(()=>window.wstxContact.load());
+  const confirm=async(rx,tx)=>{settings.rx_hz=rx;settings.tx_hz=tx;await reread(page);
     await page.waitForFunction(([rx,tx])=>document.querySelector('#waterfall-wrap .ct-rx').dataset.hz===String(rx)&&document.querySelector('#waterfall-wrap .ct-txm').dataset.hz===String(tx),[rx,tx]);};
   await page.waitForTimeout(150);
   let x=await axis();
@@ -1655,7 +1664,7 @@ test('TC-082-004 open slot marks always on the waterfall',{timeout:180000},async
     assert.equal(reads(),readsBefore,'no request after an event and no timer request');
     // Pointer: the same set_frequency requests with marks as without them.
     const actions=async()=>{
-      await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>document.querySelector('#waterfall-wrap .ct-txm').dataset.hz==='1200');
+      await reread(page);await page.waitForFunction(()=>document.querySelector('#waterfall-wrap .ct-txm').dataset.hz==='1200');
       const wf=await page.locator('#waterfall').boundingBox(),y=wf.y+wf.height*.6,x=hz=>wf.x+hz*wf.width/3000,n=commands.length;
       const wait=async k=>{for(let i=0;i<60&&commands.length<n+k;i++)await page.waitForTimeout(50);assert.equal(commands.length,n+k);};
       await page.mouse.dblclick(x(1025),y);await wait(1);
@@ -1749,7 +1758,7 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   // CQ with no contact arms (a new own CQ); with an active contact it asks first.
   let m=commands.length;await page.locator('#qso-cq').click();for(let i=0;i<40&&commands.length<m+1;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.enabled,c.safety_revision]),[['enable_tx',true,7]]);
-  contact=partner('replying');await page.evaluate(()=>window.wstxContact.load());await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'K1ABC'}).waitFor();
+  contact=partner('replying');await reread(page);await page.locator('#rx-focus .op-contact-identity strong').filter({hasText:'K1ABC'}).waitFor();
   // No RR73 or 73 button; the fold-out Now of a Tx line chooses it
   // next and turns Enable Tx on, as WSJT-X Next/Now. No Reply button either:
   // the double-click above replies.
@@ -1762,13 +1771,13 @@ test('QSO pane buttons and a double-click start transmission; Band Activity keep
   m=commands.length;await now('tx5').click();for(let i=0;i<60&&commands.length<m+2;i++)await page.waitForTimeout(50);
   assert.deepEqual(commands.slice(m).map(c=>[c.action,c.slot??c.enabled,c.safety_revision]),[['choose_next','tx5',undefined],['enable_tx',true,7]],'Now Tx5 on a contact in progress: Tx5 next, then transmit');
   // On a completed contact Enable Tx would start a fresh CQ, so Now is off.
-  contact=partner('completed');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
+  contact=partner('completed');await reread(page);await page.waitForFunction(()=>document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
   assert.deepEqual([await now('tx4').isDisabled(),await now('tx5').isDisabled()],[true,true],'Now disabled on a completed contact');
   m=commands.length;await now('tx4').click({force:true});await now('tx5').click({force:true});
   await now('tx5').evaluate(b=>{b.disabled=false;b.click();b.disabled=true;});await page.waitForTimeout(500);
   assert.deepEqual(commands.slice(m),[],'a completed contact sends no choose_next or enable_tx');
   await page.locator('#qso-more summary').click();
-  contact=partner('replying');await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
+  contact=partner('replying');await reread(page);await page.waitForFunction(()=>!document.querySelector('#contact-messages .ct-now[data-slot=tx5]').disabled);
   m=commands.length;await page.locator('#qso-cq').click();await page.locator('#op-confirm[open]').waitFor();
   assert.match(await page.locator('#op-confirm-text').textContent(),/Abandon the QSO with K1ABC/);await page.locator('#op-confirm button[value=cancel]').click();await page.waitForTimeout(300);
   assert.equal(commands.length,m,'cancelled CQ sends nothing');
@@ -2304,7 +2313,7 @@ test('completed QSOs log without a review and the open Logbook lists them live',
  const profile=await (await fetch(app.origin+'/profile')).json();
  // Log QSO is offered while the QSO runs; it logs and closes it (the station completes it).
  const contact=partner('completed',{report_rcvd:'-05'});
- snapshot={contact:{...contact,state:'rogers',next_slot:'tx4'},log:null};await page.evaluate(()=>window.wstxContact.load());
+ snapshot={contact:{...contact,state:'rogers',next_slot:'tx4'},log:null};await reread(page);
  await page.waitForFunction(()=>window.wstxContact.snapshot().contact?.state==='rogers');
  assert.equal(await page.locator('#operating-workspace').isVisible(),true,'no review page opens at completion');
  assert.equal(await page.locator('#log-review, #log-review-form, [id^=log-field-]').count(),0,'no review form is on the page');
@@ -2314,7 +2323,7 @@ test('completed QSOs log without a review and the open Logbook lists them live',
  assert.deepEqual(commands.map(c=>c.action),['open_log'],'Log QSO is one open_log command');
  assert.deepEqual(Object.keys(commands[0]).sort(),['action','boot_id','command_id','contact_revision','profile_id','v']);
  assert.equal(await page.locator('#operating-workspace').isVisible(),true,'Log QSO opens no form');
- snapshot={contact,log:{contact_id:contact.id,call:'K1ABC',outcome:'unsaved',error:'storage_unavailable'}};await page.evaluate(()=>window.wstxContact.load());
+ snapshot={contact,log:{contact_id:contact.id,call:'K1ABC',outcome:'unsaved',error:'storage_unavailable'}};await reread(page);
  await page.locator('#contact-logged',{hasText:'Not logged K1ABC \u00b7 storage unavailable \u00b7 retrying'}).waitFor();
  await page.locator('#station-bar [data-region="logbook"]').click();
  await page.locator('#log-history-status',{hasText:'No contacts saved yet'}).waitFor();
@@ -2322,7 +2331,7 @@ test('completed QSOs log without a review and the open Logbook lists them live',
  const record={contact_id:contact.id,call:'K1ABC',gridsquare:'FN42',mode:'FT8',submode:null,rst_sent:'-12',rst_rcvd:'-05',qso_date:'20261031',time_on:'123015',qso_date_off:'20261031',time_off:'123200',band:'20m',freq:'14.075500',station_callsign:'HB9BLA',my_gridsquare:'JN47AA',tx_pwr:null,comment:null};
  const saved=await fetch(app.origin+'/contacts',{method:'POST',headers:{'Content-Type':'application/json',Origin:app.origin},body:JSON.stringify({v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,command_id:crypto.randomUUID(),record})});
  assert.equal(saved.status,201,await saved.text());
- snapshot={contact:{...contact,saved:true},log:{contact_id:contact.id,call:'K1ABC',outcome:'saved',error:null}};await page.evaluate(()=>window.wstxContact.load());
+ snapshot={contact:{...contact,saved:true},log:{contact_id:contact.id,call:'K1ABC',outcome:'saved',error:null}};await reread(page);
  await page.locator('#log-history li',{hasText:'K1ABC'}).waitFor({timeout:5000});
  assert.match(await page.locator('#log-history-status').innerText(),/1 contact/);
  assert.equal(await page.locator('#contact-logged').textContent(),'\u2713 Logged K1ABC');
@@ -2773,7 +2782,7 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
  await page.screenshot({path:'test-results/ui-operating/band-activity-marks-idle-1440.png'});
 
  // The contact with K1PT is prepared (replying): its rows of both periods on top, then the red stripe.
- contact=partner('replying',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
+ contact=partner('replying',{dx_call:'K1PT'});await reread(page);
  await page.locator('#band-activity tr.ba-partner-stripe').waitFor();
  const partnerRows=[['HB9BLA K1PT FN42','ba-partner',none,null,null],['CQ K1PT FN42','ba-partner',none,null,null],['stripe','','rgb(255, 64, 64)']];
  assert.deepEqual(await rows(),[...partnerRows,...idle.filter(r=>!/K1PT/.test(r[0]))],'the partner rows of both periods first, newest first, then the stripe; no slot colour on them, also to my call');
@@ -2798,7 +2807,7 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
  assert.deepEqual(await byText('CQ OA4DX FH17'),['CQ OA4DX FH17','',newDxcc,null,'New DXCC · New on 40m'],'the strongest enabled call slot');
  assert.deepEqual(await byText('K9XX YO3ABC -07'),['K9XX YO3ABC -07','ba-sender',none,['YO3ABC',newDxcc],'New DXCC · New on 40m']);
  // Logged (completed): no stripe and no marker remain.
- contact=partner('completed',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
+ contact=partner('completed',{dx_call:'K1PT'});await reread(page);
  await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-partner-stripe'));
  assert.equal(await page.locator('#band-activity tr.ba-partner').count(),0);
  assert.equal((await byText('HB9BLA K1PT FN42'))[1],'ba-tome','the former partner calling me is a calls-me row again');
@@ -3150,10 +3159,10 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
   assert.equal(await background('CQ WW K1ABC'),none,'QSOs outside the period colour nothing');
   assert.doesNotMatch(await page.locator('#band-activity tr[data-sequence]',{hasText:'CQ WW K1ABC'}).getAttribute('aria-description')??'',/New call/);
   // The partner of a manual QSO is listed first while its contact stands.
-  contact=partner('replying',{dx_call:'K1PT'});await page.evaluate(()=>window.wstxContact.load());
+  contact=partner('replying',{dx_call:'K1PT'});await reread(page);
   await page.locator('#band-activity tr.ba-partner-stripe').waitFor();
   assert.equal((await shown())[0][0],'CQ WW K1PT FN42');
-  contact=null;await page.evaluate(()=>window.wstxContact.load());
+  contact=null;await reread(page);
   await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-partner-stripe'));
   assert.equal((await shown()).length,3,'the rest stays hidden');
   assert.equal(await page.inputValue('#strategy-name'),'contest:ww_digi');
@@ -3313,10 +3322,10 @@ test('Auto and PSK follow only the push, one POST per click, their disabled stat
   assert.deepEqual(await toggle(psk),{pressed:'false',disabled:true,title:'PSK Reporter is off in Settings',background:TOGGLE_OFF});
   await push.pskr({enabled:true});await page.waitForFunction(()=>!document.querySelector('#qso-pskr').disabled);
   // Without transmit capability Auto cannot be switched on: "Receive only".
-  s.transmit={capability:'unsupported'};await page.evaluate(()=>window.wstxContact.load());
+  s.transmit={capability:'unsupported'};await reread(page);
   await page.waitForFunction(()=>document.querySelector('#qso-auto').disabled);
   assert.deepEqual(await toggle(auto),{pressed:'false',disabled:true,title:'Receive only',background:TOGGLE_OFF});
-  s.transmit={};await page.evaluate(()=>window.wstxContact.load());await page.waitForFunction(()=>!document.querySelector('#qso-auto').disabled);
+  s.transmit={};await reread(page);await page.waitForFunction(()=>!document.querySelector('#qso-auto').disabled);
   // None: one PUT; the station turns Auto off; Auto is disabled again.
   await push.strategy({auto:true});await page.waitForFunction(()=>document.querySelector('#qso-auto').getAttribute('aria-pressed')==='true');
   mark=s.requests.length;await page.selectOption('#strategy-name','');await settle(s.puts,2);
@@ -3335,7 +3344,7 @@ test('TC-081-006 the Auto button says that Auto off finishes a QSO already start
   const {page,errors,s,push,status}=await strategydefStation(t,{width:1366,height:768});
   const auto=page.locator('#qso-auto');
   s.contact=partner('roger_report',{report_rcvd:'-05',next_slot:'tx3'});s.transmit={arm_state:'armed'};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   await page.waitForFunction(()=>window.wstxContact.snapshot()?.contact?.dx_call==='K1ABC');
   await push.strategy({configuration:{...s.view.configuration,active:'Casual'},auto:true});
   await push.run(strategyRunOf('contact_active',{selected:{source_id:'s',job_id:'j',generation:1,sequence:3,call:'K1ABC'}}));
@@ -4387,10 +4396,10 @@ test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot sho
   await page.evaluate(()=>stationData('waterfall',true));
   // A malformed contact snapshot (an unknown key) is named too and clears with a valid one.
   await page.route('**/contact',route=>route.fulfill({json:{...contactSnapshot({profile_id:'x',boot_id:'y'}),extra:1}}));
-  await page.evaluate(()=>window.wstxContact.load());await notice.filter({hasText:'(contact)'}).waitFor();
+  await halted(page);await notice.filter({hasText:'(contact)'}).waitFor();
   const base=await page.evaluate(()=>({profile_id:profileData.profile_id,boot_id:profileData.boot_id}));
   await page.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact})}));
-  await page.evaluate(()=>window.wstxContact.load());await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
+  await reread(page);await page.locator('#station-notice[hidden]').waitFor({state:'attached'});
   // The station is updated while calling CQ: no reload, the chip; its click reloads.
   const {state,restart}=await updatedStation(page,app,dir,t);
   // A page read during the restart is answered with the new boot only, once the test has read it.
@@ -4514,10 +4523,10 @@ test('TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen',{timeo
   // During a QSO with PJ4/K1ABC (Rx 1000, Tx 1300 Hz): its own rows are the partner's, so only
   // K1ABC's row stays, ⚠ at 1300 Hz near my Tx.
   contact={...cq,origin:'selected_row',dx_call:'PJ4/K1ABC',state:'replying',next_slot:'tx1',messages:['<PJ4/K1ABC> HB9BLA','<PJ4/K1ABC> HB9BLA -12',null,null,null,'CQ HB9BLA JN47']};settings={rx_hz:1000,tx_hz:1300};
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   await page.waitForFunction(()=>document.querySelector('#qso-others tr')?.dataset.kind==='warn'||document.querySelectorAll('#qso-others tr').length===0,null,{timeout:10000});
   assert.deepEqual(await others(),['<HB9BLA> K1ABC -12']);
-  contact=cq;settings={};await page.evaluate(()=>window.wstxContact.load());
+  contact=cq;settings={};await reread(page);
   await page.locator('#qso-more summary').click();
   const tx5=page.locator('#contact-messages .ct-text[data-slot=tx5]');
   assert.equal(await tx5.isEnabled(),true,'Tx5 takes free text without a message');
@@ -4576,7 +4585,7 @@ test('TC-024-009 the contest choice and its Exchange entry',{timeout:40000},asyn
   let sent=await sentAll(1);
   assert.deepEqual([sent[0].activity,sent[0].exchange],['field_day','1A EMA']);
   Object.assign(settings,{activity:'field_day',exchange:'1A EMA'});
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   await page.waitForFunction(()=>window.wstxContact.snapshot().settings.activity==='field_day');
   assert.equal(await page.locator('#contact-serial').textContent(),'','no serial for Field Day');
   await page.locator('#contact-exchange').fill('2B WI');
@@ -4604,7 +4613,7 @@ test('TC-024-013 the Hound choice in the QSO fold-out',{timeout:40000},async t=>
   const choice=page.locator('#contact-activity');
   assert.deepEqual(await choice.locator('option').evaluateAll(o=>o.slice(-2).map(x=>[x.value,x.textContent])),[['rtty','RTTY Roundup'],['hound','Hound']]);
   Object.assign(settings,{activity:'none'});
-  await page.evaluate(()=>window.wstxContact.load());
+  await reread(page);
   await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='none');
   await choice.selectOption('hound');
   for(let i=0;i<40&&!commands.some(c=>c.action==='set_activity');i++)await page.waitForTimeout(50);
@@ -4641,7 +4650,7 @@ test('TC-099-003 the EU VHF choice in the QSO fold-out',{timeout:40000},async t=
   assert.equal(await page.locator('#contact-serial').textContent(),'Serial 0012');
   const toNone=async()=>{
     Object.assign(settings,{activity:'none'});
-    await page.evaluate(()=>{document.activeElement?.blur();return window.wstxContact.load();});
+    await page.evaluate(()=>document.activeElement?.blur());await reread(page);
     await page.waitForFunction(()=>document.querySelector('#contact-activity')?.value==='none');
   };
   await toNone();
@@ -4789,17 +4798,17 @@ test('no arming path sends enable_tx while the transmit capability is unavailabl
   await page.locator('tr[data-sequence="0"] td').nth(4).click({button:'right'});
   assert.equal(await page.locator('#ba-menu [data-menu=reply]').isDisabled(),true,'the menu offers no Reply');
   await page.locator('#activity-heading').click();await page.locator('#ba-menu').waitFor({state:'hidden'});
-  contact=partner('replying',{suggested_slot:null});settings={auto_seq:false};revision++;await page.evaluate(()=>window.wstxContact.load());
+  contact=partner('replying',{suggested_slot:null});settings={auto_seq:false};revision++;await reread(page);
   await page.waitForFunction(()=>window.wstxContact.snapshot().settings.auto_seq===false);
   assert.equal(await shown(page,'#qso-autoseq-on'),false,'Auto Seq on is not offered');
-  contact={...contact,suggested_slot:'tx5'};revision++;await page.evaluate(()=>window.wstxContact.load());
+  contact={...contact,suggested_slot:'tx5'};revision++;await reread(page);
   await page.locator('#qso-suggest:not([hidden])').click();
   assert.deepEqual(await sent(1),['choose_next'],'the offered next message does not arm');
-  contact={...contact,suggested_slot:null};revision++;await page.evaluate(()=>window.wstxContact.load());
-  capability='available';revision++;await page.evaluate(()=>window.wstxContact.load());
+  contact={...contact,suggested_slot:null};revision++;await reread(page);
+  capability='available';revision++;await reread(page);
   await page.waitForFunction(()=>window.wstxContact.snapshot().transmit.capability==='available');
   assert.equal(await shown(page,'#qso-autoseq-on'),true,'offered again when available');
-  contact=null;settings={};revision++;await page.evaluate(()=>window.wstxContact.load());
+  contact=null;settings={};revision++;await reread(page);
   await page.waitForFunction(()=>!window.wstxContact.snapshot().contact);commands.splice(0);
   await page.locator('tr[data-sequence="0"] td').nth(4).dblclick();
   assert.deepEqual(await sent(2),['select_row','enable_tx'],'available: the double-click arms');
@@ -4922,16 +4931,16 @@ test('TC-037-002 the error field lists only current problems with their time and
   assert.ok([`since ${before}`,`since ${hhmm()}`].includes(list[0][2]),list[0][2]);
   assert.equal(await none.isVisible(),false);
   // A transmit refusal the operator must fix appears; a transient one does not.
-  transmit={refusal:'radio_lost'};await page.evaluate(()=>window.wstxContact.load());await show();
+  transmit={refusal:'radio_lost'};await reread(page);await show();
   assert.deepEqual((await entries()).map(e=>e[1]).sort(),['✖ CAT radio unavailable','✖ Tx refused · radio lost']);
-  transmit={refusal:'busy'};await page.evaluate(()=>window.wstxContact.load());await show();
+  transmit={refusal:'busy'};await reread(page);await show();
   assert.deepEqual((await entries()).map(e=>e[0]),['cat'],'a transient refusal is no entry');
-  transmit={refusal:'ptt_timeout'};await page.evaluate(()=>window.wstxContact.load());await show();
+  transmit={refusal:'ptt_timeout'};await reread(page);await show();
   // The CAT condition clears: its entry goes without any operator action, the refusal stays.
   await page.evaluate(()=>{catStatus={condition:'ready'};});await show();
   assert.deepEqual((await entries()).map(e=>e[1]),['✖ Tx refused · ptt timeout']);
   assert.equal(await page.locator('#error-field').getByRole('button',{name:/acknowledge|dismiss|clear|^ok$/i}).count(),0,'no acknowledge control');
-  transmit={refusal:null};await page.evaluate(()=>window.wstxContact.load());await show();
+  transmit={refusal:null};await reread(page);await show();
   assert.deepEqual(await entries(),[],'no history: a cleared problem leaves nothing');
   assert.equal(await none.isVisible(),true);
   // Connection loss.
@@ -5055,7 +5064,7 @@ test('TC-037-003 the QSO pane has a fixed height with a QSO section and a Callin
     await contactCommands(p,[]);
   }});
   await page.waitForFunction(()=>document.querySelectorAll("tr[data-period=latest]").length===10&&window.wstxContact?.snapshot(),null,{timeout:25000});
-  const show=async(next,tx={})=>{contact=next;transmit=tx;await page.evaluate(()=>window.wstxContact.load());};
+  const show=async(next,tx={})=>{contact=next;transmit=tx;await reread(page);};
   // The same period gains the callers of my call (a later result page of the published view).
   // PushedStationState: the station announces the publication with receive.state.
   const addCallers=async()=>{records=[...cqs,...callers];Object.assign(state.job,{next_sequence:records.length,available_count:records.length,latest_decode:{...state.job.latest_decode,id:2,next_sequence:records.length}});

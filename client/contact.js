@@ -1162,7 +1162,7 @@ serverForm.addEventListener('submit',async event=>{
   event.preventDefault();event.stopImmediatePropagation();
   if(await confirmAction('Applying these settings may restart receive and interrupt the QSO in progress. Apply now?','Apply')){applyConfirmed=true;serverForm.requestSubmit();}
 },true);
-window.wstxContact=Object.freeze({load,snapshot:()=>snap});
+window.wstxContact=Object.freeze({snapshot:()=>snap});
 stateShow();
 })();
 // WstxBandActivityPane::StrategyElement: the strategy element (selector, editor, Value), the marks and value order in
