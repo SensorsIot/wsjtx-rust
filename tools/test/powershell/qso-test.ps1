@@ -1,10 +1,13 @@
 # QSO test driver (harness/project/docs/Project-Specifics.md, QSO tests): one QSO test on the
 # simulator profile SIM-IC7300 that answers a CQ under the operator's bounds, and its verdict.
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/qso-test.ps1 -Holder <run> -Issue <n> -Item <k>
-# Order: the attempts of the item (at most 3); the profile guard (GET /transmit profile_id is
-# SIM-IC7300's, its CAT port and baud from control.endpoint, never COM3); the Tx watchdog (6 or
-# below); radio-preflight.ps1 at 0128 with read-back (-Minutes 90 on that port) and GET /radio
-# ready within 60 s; the SWR key (the radio.tx_level pushes during 3 s of Tune); the preflight
+# Order: the profile guard (GET /transmit profile_id is SIM-IC7300's, its CAT port and baud
+# from control.endpoint, never COM3); the deployed revision (the one x-wstx-source-commit of
+# GET /, 40 lowercase hex, else refused); the attempts of the item on that revision and radio
+# (at most 3); the Tx watchdog (6 or below); radio-preflight.ps1 at 0128 with read-back
+# (-Minutes 90 on that port) and GET /radio ready within 60 s; /ws with the subprotocol
+# wstx.v1 and the subscription spectrum.off, confirmed within 5 s (a failure there is not
+# tested, before Tune); the SWR key (the radio.tx_level pushes during 3 s of Tune); the preflight
 # at 0255; phase 1 (a target from the decode data, Hold Tx Freq on and a clear tx_hz, at most 4
 # calls to one station and 10 transmissions, a first call within 30 minutes); phase 2 (the QSO
 # to the 73 under the station's rules, the backstop 30 minutes from the first call). At every
@@ -16,12 +19,14 @@
 # transmission limit lets the send that reaches it end before the abort, before the next own
 # period.
 # The verdict (passed, failed or not_tested, with what was observed) is appended to
-# qso-tests.jsonl beside preflight.jsonl. Exit 0 passed, 1 failed, 3 not tested, 2 refused
-# before anything was touched (arguments, profile, endpoint), 4 a 4th attempt on the item,
-# refused: the operator decides.
-# Seams: the driver's clock and push reader (Qso-Now, Qso-Sleep, Qso-OpenPushes,
-# Qso-ReceivePushes, Qso-ClosePushes) are defined before the station client is dot-sourced, so
-# a scripted client (-AgentClient) may replace them; -Preflight names the preflight script.
+# qso-tests.jsonl beside preflight.jsonl, with the revision and the radio. Exit 0 passed, 1
+# failed, 3 not tested, 2 refused before anything was touched (arguments, profile, endpoint, no
+# deployed revision), 4 a 4th attempt on the item, revision and radio, refused: the operator
+# decides.
+# Seams: the driver's clock, push reader and revision read (Qso-Now, Qso-Sleep,
+# Qso-OpenPushes, Qso-ReceivePushes, Qso-ClosePushes, Qso-Revision) are defined before the
+# station client is dot-sourced, so a scripted client (-AgentClient) may replace any of them;
+# -Preflight names the preflight script.
 param([string]$Holder, [string]$Issue, [string]$Item, [string]$Station, [string]$StateDir,
       [string]$AgentClient, [string]$Preflight)
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
@@ -51,36 +56,100 @@ function P($o, [string]$Path) {
 # --- Seams: the clock and the radio.tx_level pushes of the station's /ws ---
 function Qso-Now { [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
 function Qso-Sleep([long]$Ms) { if ($Ms -gt 0) { Start-Sleep -Milliseconds $Ms } }
-$script:Ws = $null; $script:WsTask = $null; $script:WsBuf = $null; $script:WsText = $null
-# Opens /ws with the agent session and subscribes (spectrum.off: no spectrum, the state events).
+$script:Ws = $null; $script:WsTask = $null; $script:WsBuf = $null; $script:WsText = $null; $script:WsKept = $null
+$WsConnectMs = 10000; $WsSubscribeMs = 5000; $WsSubscriptionId = 1
+# The cause of a failed task: each exception below the AggregateException, type and message,
+# down to the innermost.
+function Ws-Cause($e) {
+  $parts = New-Object Collections.ArrayList
+  while ($null -ne $e) {
+    if ($e -isnot [AggregateException]) { [void]$parts.Add("$($e.GetType().Name): $($e.Message)") }
+    $e = $e.InnerException
+  }
+  if (-not $parts.Count) { return 'no cause given' }
+  $parts -join ' <- '
+}
+# One whole text message from /ws within $Ms, or $null when none arrived in time. A close or a
+# broken connection throws, its reason starting with $What.
+function Ws-Read([string]$What, [int]$Ms) {
+  $watch = [Diagnostics.Stopwatch]::StartNew()
+  for (;;) {
+    if ($null -eq $script:WsTask) { $script:WsTask = $script:Ws.ReceiveAsync([ArraySegment[byte]]::new($script:WsBuf), [Threading.CancellationToken]::None) }
+    $left = [int][Math]::Max(0, $Ms - $watch.ElapsedMilliseconds)
+    if ([Threading.Tasks.Task]::WaitAny([Threading.Tasks.Task[]]@($script:WsTask), $left) -lt 0) { return $null }
+    $task = $script:WsTask; $script:WsTask = $null
+    if ($task.IsFaulted -or $task.IsCanceled) { throw "${What}: the connection broke ($(Ws-Cause $task.Exception))" }
+    $r = $task.Result
+    if ($r.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close) { throw "${What}: the station closed the connection (close $($r.CloseStatus) '$($r.CloseStatusDescription)')" }
+    $script:WsText.Write($script:WsBuf, 0, $r.Count)
+    if (-not $r.EndOfMessage) { continue }
+    $text = [Text.Encoding]::UTF8.GetString($script:WsText.ToArray()); $script:WsText.SetLength(0)
+    return $text
+  }
+}
+function Ws-Push($m) { if ($m -and (P $m 'type') -eq 'radio.tx_level') { [pscustomobject]@{ at = (Qso-Now); data = (P $m 'data') } } }
+# Opens /ws as the station's browser does (the subprotocol wstx.v1, the session cookies, the
+# Origin of the station URL) and subscribes with spectrum.off (no spectrum, the state events):
+# it returns once spectrum.subscription with its integer id and profile off has arrived. Every
+# failure throws a reason that starts "the /ws connection" or "the /ws subscription" and names
+# the innermost cause or the station's error code.
 function Qso-OpenPushes($c) {
   $ws = New-Object System.Net.WebSockets.ClientWebSocket
-  $ws.Options.Cookies = $c.Session.Cookies
-  $ws.Options.SetRequestHeader('Origin', $AgentUrl)
-  if (-not $ws.ConnectAsync([Uri](($AgentUrl -replace '^http', 'ws') + '/ws'), [Threading.CancellationToken]::None).Wait(10000)) { throw 'the /ws connection did not open within 10 s' }
-  $hello = [Text.Encoding]::UTF8.GetBytes('{"v":1,"type":"spectrum.off","id":"qso-test"}')
-  if (-not $ws.SendAsync([ArraySegment[byte]]::new($hello), [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).Wait(5000)) { throw 'the /ws subscription was not sent within 5 s' }
   $script:Ws = $ws; $script:WsBuf = New-Object byte[] 65536; $script:WsText = New-Object IO.MemoryStream; $script:WsTask = $null
+  $script:WsKept = New-Object Collections.ArrayList
+  $ws.Options.AddSubProtocol('wstx.v1')
+  if ($c.Session) { $ws.Options.Cookies = $c.Session.Cookies }
+  $ws.Options.SetRequestHeader('Origin', $AgentUrl)
+  $uri = [Uri](($AgentUrl -replace '^http', 'ws') + '/ws')
+  $connect = $ws.ConnectAsync($uri, [Threading.CancellationToken]::None)
+  if ([Threading.Tasks.Task]::WaitAny([Threading.Tasks.Task[]]@($connect), $WsConnectMs) -lt 0) { throw "the /ws connection: the upgrade of $uri was not answered within $($WsConnectMs / 1000) s" }
+  if ($connect.IsFaulted -or $connect.IsCanceled) { throw "the /ws connection to $uri failed ($(Ws-Cause $connect.Exception))" }
+  if ($ws.SubProtocol -ne 'wstx.v1') { throw "the /ws connection: the upgrade answered the subprotocol '$($ws.SubProtocol)', not wstx.v1" }
+  $hello = [Text.Encoding]::UTF8.GetBytes('{"v":1,"type":"spectrum.off","id":' + $WsSubscriptionId + '}')
+  $watch = [Diagnostics.Stopwatch]::StartNew()
+  $send = $ws.SendAsync([ArraySegment[byte]]::new($hello), [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None)
+  if ([Threading.Tasks.Task]::WaitAny([Threading.Tasks.Task[]]@($send), $WsSubscribeMs) -lt 0) { throw "the /ws subscription was not sent within $($WsSubscribeMs / 1000) s" }
+  if ($send.IsFaulted -or $send.IsCanceled) { throw "the /ws subscription could not be sent ($(Ws-Cause $send.Exception))" }
+  for (;;) {
+    $text = Ws-Read 'the /ws subscription' ([int][Math]::Max(0, $WsSubscribeMs - $watch.ElapsedMilliseconds))
+    if ($null -eq $text) { throw "the /ws subscription: no spectrum.subscription within $($WsSubscribeMs / 1000) s of the send" }
+    $m = try { $text | ConvertFrom-Json } catch { $null }
+    if (-not $m) { continue }
+    $type = P $m 'type'; $id = P $m 'id'
+    if ($type -eq 'error' -and ($null -eq $id -or "$id" -eq "$WsSubscriptionId")) { throw "the /ws subscription was refused: error $(P $m 'data.code')" }
+    if ($type -eq 'spectrum.subscription' -and "$id" -eq "$WsSubscriptionId") {
+      if ((P $m 'data.profile') -ne 'off') { throw "the /ws subscription: profile $(P $m 'data.profile'), not off" }
+      Say "the /ws subscription is confirmed (spectrum.subscription $id, profile off)"
+      return
+    }
+    $push = Ws-Push $m
+    if ($push) { [void]$script:WsKept.Add($push) }
+  }
 }
 # The radio.tx_level pushes received until the time $Until (ms), each with its receive time.
 function Qso-ReceivePushes([long]$Until) {
   $out = New-Object Collections.ArrayList
+  if ($script:WsKept) { foreach ($p in $script:WsKept) { [void]$out.Add($p) }; $script:WsKept.Clear() }
   for (;;) {
     $left = $Until - (Qso-Now)
     if ($left -le 0) { break }
-    if ($null -eq $script:WsTask) { $script:WsTask = $script:Ws.ReceiveAsync([ArraySegment[byte]]::new($script:WsBuf), [Threading.CancellationToken]::None) }
-    if (-not $script:WsTask.Wait([int][Math]::Min($left, 1000))) { continue }
-    $r = $script:WsTask.Result; $script:WsTask = $null
-    if ($r.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close) { throw 'the /ws connection closed' }
-    $script:WsText.Write($script:WsBuf, 0, $r.Count)
-    if (-not $r.EndOfMessage) { continue }
-    $text = [Text.Encoding]::UTF8.GetString($script:WsText.ToArray()); $script:WsText.SetLength(0)
+    $text = Ws-Read 'the /ws connection' ([int][Math]::Min($left, 1000))
+    if ($null -eq $text) { continue }
     $m = try { $text | ConvertFrom-Json } catch { $null }
-    if ($m -and (P $m 'type') -eq 'radio.tx_level') { [void]$out.Add([pscustomobject]@{ at = (Qso-Now); data = (P $m 'data') }) }
+    $push = Ws-Push $m
+    if ($push) { [void]$out.Add($push) }
   }
   $out.ToArray()
 }
 function Qso-ClosePushes { if ($script:Ws) { try { $script:Ws.Abort(); $script:Ws.Dispose() } catch { Say "note: /ws close: $($_.Exception.Message)" }; $script:Ws = $null } }
+# The x-wstx-source-commit values of GET / of the station (Agent-Get returns only a JSON body).
+function Qso-Revision($c) {
+  $page = Invoke-WebRequest -UseBasicParsing -Uri "$AgentUrl/" -WebSession $c.Session -TimeoutSec 10
+  $v = $page.Headers['x-wstx-source-commit']
+  if ($null -eq $v) { return }
+  # Windows PowerShell joins a repeated header with commas.
+  foreach ($x in @($v)) { foreach ($part in ([string]$x).Split(',')) { $part.Trim() } }
+}
 
 # --- Run state ---
 $script:C = $null; $script:SimId = $null; $script:Own = $null; $script:Port = $null; $script:Baud = $null
@@ -214,7 +283,15 @@ function Restore-Power {
 
 # --- The SWR key ---
 function Swr-Key {
-  Qso-OpenPushes $script:C
+  # A /ws that does not open or subscribe ends the run before Tune: not a missing reading, and
+  # nothing for the operator.
+  $why = $null
+  try { Qso-OpenPushes $script:C } catch { $why = [string]$_.Exception.Message }
+  if ($null -ne $why) {
+    Qso-ClosePushes
+    if ($why -notlike 'the /ws*') { $why = "the /ws connection: $why" }
+    Not-Tested $why
+  }
   $early = @(); $during = @(); $on = $null; $off = $null
   try {
     $early = @(Qso-ReceivePushes ((Qso-Now) + 1000))
@@ -604,19 +681,6 @@ if (-not $Preflight) { $Preflight = Join-Path $PSScriptRoot 'radio-preflight.ps1
 [void][IO.Directory]::CreateDirectory($StateDir)
 $records = Join-Path $StateDir 'qso-tests.jsonl'
 
-# Attempts of this item: a 4th is refused.
-$attempt = 1
-if (Test-Path -LiteralPath $records) {
-  foreach ($line in [IO.File]::ReadAllLines($records)) {
-    if (-not $line.Trim()) { continue }
-    $r = $line | ConvertFrom-Json
-    if ([string](P $r 'issue') -eq $Issue -and [string](P $r 'item') -eq $Item) { $attempt++ }
-  }
-}
-if ($attempt -gt $Attempts) {
-  Write-Output "QSO-TEST REFUSED #$Issue item $Item has had $Attempts attempts: a 4th is the operator's decision; ask the operator"; exit 4
-}
-
 # The profile guard: SIM-IC7300's id and CAT port, read as station-switch.ps1 reads them.
 $profilePath = Join-Path $Station "profiles\$SimProfile\profile.json"
 try {
@@ -634,7 +698,31 @@ $t0 = Agent-Get $script:C '/transmit'
 if ((P $t0 'profile_id') -ne $script:SimId) {
   Write-Output "QSO-TEST ERROR the station runs profile $(P $t0 'profile_id'), not $SimProfile ($($script:SimId)): agents key only the simulator; nothing touched"; exit 2
 }
-Say "#$Issue item $Item, attempt $attempt of ${Attempts}: $SimProfile on $($script:Port) at $($script:Baud), own call $($script:Own)"
+$radio = [string](P $t0 'profile_id')
+
+# The deployed revision: exactly one x-wstx-source-commit of 40 lowercase hex.
+try { $reported = @(Qso-Revision $script:C | Where-Object { $null -ne $_ }) }
+catch { Write-Output "QSO-TEST ERROR GET / of the station failed ($($_.Exception.Message)): nothing touched"; exit 2 }
+if ($reported.Count -ne 1 -or [string]$reported[0] -cnotmatch '^[0-9a-f]{40}$') {
+  Write-Output "QSO-TEST ERROR the station reports no deployed revision (x-wstx-source-commit: $(if ($reported.Count) { "'$($reported -join "', '")'" } else { 'none' })): a live acceptance runs only on a deployed revision; nothing touched"; exit 2
+}
+$revision = [string]$reported[0]
+
+# Attempts of this item on this revision and radio: a 4th is refused. A record of another
+# revision or radio, or one without a revision, does not count.
+$attempt = 1
+if (Test-Path -LiteralPath $records) {
+  foreach ($line in [IO.File]::ReadAllLines($records)) {
+    if (-not $line.Trim()) { continue }
+    $r = $line | ConvertFrom-Json
+    if ([string](P $r 'issue') -eq $Issue -and [string](P $r 'item') -eq $Item -and [string](P $r 'revision') -ceq $revision -and [string](P $r 'radio') -ceq $radio) { $attempt++ }
+  }
+}
+$shortRev = $revision.Substring(0, 9)
+if ($attempt -gt $Attempts) {
+  Write-Output "QSO-TEST REFUSED #$Issue item $Item has had $Attempts attempts on revision $shortRev and radio ${radio}: a 4th is the operator's decision; ask the operator"; exit 4
+}
+Say "#$Issue item $Item, attempt $attempt of $Attempts on revision $shortRev and radio ${radio}: $SimProfile on $($script:Port) at $($script:Baud), own call $($script:Own)"
 
 try {
   $script:TxCalls = [int](P $t0 'watchdog.tx_calls')
@@ -658,10 +746,10 @@ Stop-Order
 
 $verdict = if ($script:Wrong.Count -or $script:Backstop) { 'failed' } elseif ($script:NotTested.Count -or -not $script:Passed) { 'not_tested' } else { 'passed' }
 if ($verdict -eq 'not_tested' -and -not $script:NotTested.Count) { [void]$script:NotTested.Add('no QSO reached the pass conditions') }
-if ($verdict -eq 'not_tested' -and $attempt -ge $Attempts) { [void]$script:AskOperator.Add("#$Issue item $Item left not tested $attempt times") }
+if ($verdict -eq 'not_tested' -and $attempt -ge $Attempts) { [void]$script:AskOperator.Add("#$Issue item $Item left not tested $attempt times on revision $shortRev and radio $radio") }
 $record = [ordered]@{
   time = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
-  issue = $Issue; item = $Item; holder = $Holder; attempt = $attempt; verdict = $verdict
+  issue = $Issue; item = $Item; holder = $Holder; revision = $revision; radio = $radio; attempt = $attempt; verdict = $verdict
   wrong_actions = @($script:Wrong); backstop = $script:Backstop; not_tested = @($script:NotTested)
   last_disarm_cause = $script:Cause; failure = $script:Failure; refusal = $script:Refusal
   observations = @($script:Notes); ask_operator = @($script:AskOperator)

@@ -6,11 +6,20 @@ pushes and the clock are driven by a scenario this test writes. The radio prefli
 scripted script that records its arguments. Nothing reaches a station, radio or network.
 Each run's log holds the commands, the keyed periods and the preflight calls; the verdict is
 the line the driver appends to qso-tests.jsonl.
+
+The driver's own /ws seams run against a station-like WebSocket endpoint in this file
+(TC-192-03), on the loopback interface only; attempts per revision and radio are TC-192-04.
 """
+import base64
+import hashlib
 import json
 import os
+import socket
+import struct
 import sys
 import tempfile
+import threading
+import time
 import unittest
 
 # The one copy of the PowerShell runner is tools/deploy/tests/pwsh.py.
@@ -29,6 +38,10 @@ SOURCE = "44444444-4444-4444-8444-444444444444"
 JOB = "55555555-5555-4555-8555-555555555555"
 OWN = "HB9BLA"
 SIM_ENDPOINT = "icom7300://COM4?baud=115200&radio=94&controller=e0"
+# Two deployed revisions (x-wstx-source-commit of GET /) and the real radio's profile.
+REV_A = "0123456789abcdef0123456789abcdef01234567"
+REV_B = "fedcba9876543210fedcba9876543210fedcba98"
+REAL_RADIO = "ic7300"
 # Startup on the scripted clock: GET /radio ready 2 s after each preflight, 1 s of pushes
 # before Tune, 3 s of Tune: the 0255 read-back is at 8 s and the polls fall on whole seconds.
 T255 = 8_000
@@ -249,6 +262,7 @@ function Qso-ReceivePushes([long]$Until) {
   $out.ToArray()
 }
 function Qso-ClosePushes { }
+function Qso-Revision($c) { foreach ($v in $global:FScn.revision) { $v } }
 """
 
 PREFLIGHT = r"""
@@ -284,6 +298,7 @@ class Scenario:
     def __init__(self, tx_calls=6, ready_ms=2000):
         self.d = {
             "t0": T0, "mode": "ft8", "source_id": SOURCE, "job_id": JOB, "radio_ready_ms": ready_ms,
+            "revision": [REV_A],
             "transmit": {"v": 1, "profile_id": SIM_ID, "boot_id": BOOT,
                          "transmit": {"capability": "available", "arm_state": "disarmed", "last_disarm_cause": "startup",
                                       "last_arm_cause": None, "tune": False, "pending_sequence": None, "last_text": None,
@@ -382,7 +397,9 @@ def standard(scenario=None, call="K1ABC"):
     return s.cq(call, range(0, 2_100_000, 30_000))
 
 
-class DriverTests(unittest.TestCase):
+class DriverBase(unittest.TestCase):
+    """The scripted station, the scripted preflight and the run helpers; no test of its own."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.state = os.path.join(self.tmp.name, "state")
@@ -455,6 +472,8 @@ class DriverTests(unittest.TestCase):
         self.assertTrue(any(text in w for w in v["wrong_actions"]), f"{text!r} not in {v['wrong_actions']}\n{out}")
         return v
 
+
+class DriverTests(DriverBase):
     # --- Profile guard, power, Tx frequency and the pass ---
 
     # Proves: TC-171-05
@@ -1028,18 +1047,525 @@ class DriverTests(unittest.TestCase):
     def test_the_third_attempt_runs_and_the_fourth_is_refused_naming_the_operator(self):
         with open(os.path.join(self.state, "qso-tests.jsonl"), "w", encoding="utf-8") as f:
             for attempt in (1, 2):
-                f.write(json.dumps({"issue": "192", "item": "4", "attempt": attempt, "verdict": "not_tested"}) + "\n")
-                f.write(json.dumps({"issue": "192", "item": "5", "attempt": attempt, "verdict": "not_tested"}) + "\n")
+                for item in ("4", "5"):
+                    f.write(json.dumps({"issue": "192", "item": item, "revision": REV_A, "radio": SIM_ID,
+                                        "attempt": attempt, "verdict": "not_tested"}) + "\n")
         s = standard()
         s.disarm("band_changed")
         rc, out = self.run_driver(s, item="4")
         self.assertEqual(rc, 3, out)
-        self.assertEqual(self.verdict()["attempt"], 3)
+        v = self.verdict()
+        self.assertEqual((v["attempt"], v["revision"], v["radio"]), (3, REV_A, SIM_ID))
         self.assertIn("ASK THE OPERATOR", out, "a third not tested goes to the operator")
         rc, out = self.run_driver(s, item="4")
         self.assertEqual(rc, 4, out)
         self.assertIn("operator", out)
         self.assertEqual(self.events(), [], "a refused attempt touches nothing")
+
+
+class AttemptTests(DriverBase):
+    """Attempts per deployed revision and radio (TC-192-04): the scripted client replaces the
+    revision seam, and qso-tests.jsonl is prepared. Each run ends quickly after the 0128
+    preflight (GET /radio never reads ready), so a run that is not refused calls the preflight."""
+
+    def prepare(self, *rows):
+        """rows: (revision, radio, item, count); revision None writes the form without one."""
+        lines = []
+        for revision, radio, item, count in rows:
+            for n in range(count):
+                r = {"issue": "192", "item": item, "attempt": n + 1, "verdict": "not_tested"}
+                if revision is not None:
+                    r.update({"revision": revision, "radio": radio})
+                lines.append(json.dumps(r))
+        path = os.path.join(self.state, "qso-tests.jsonl")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("".join(line + "\n" for line in lines))
+        return lines
+
+    def records(self):
+        path = os.path.join(self.state, "qso-tests.jsonl")
+        with open(path, encoding="utf-8") as f:
+            return [line.rstrip("\n") for line in f if line.strip()]
+
+    def attempt(self, revision=REV_A, radio=SIM_ID):
+        s = Scenario(ready_ms=None)
+        s.d["revision"] = revision if isinstance(revision, list) else [revision]
+        if radio != SIM_ID:
+            # The station reports the other radio's profile: the guard would refuse it, so the
+            # profile file names that radio as SIM-IC7300's for this count-only case.
+            self.write_profile(profile_id=radio)
+            for view in ("transmit", "contact", "automation"):
+                s.d[view]["profile_id"] = radio
+        return self.run_driver(s, item="4")
+
+    def assert_attempt(self, rc, out, n, revision=REV_A, radio=SIM_ID):
+        v = self.assert_not_tested(rc, out, "did not read ready")
+        self.assertEqual((v["attempt"], v["revision"], v["radio"]), (n, revision, radio), out)
+        self.assertIn("0128", [p["what"] for p in self.preflights()], "the preflight is called")
+        return v
+
+    # Proves: TC-192-04
+    def test_attempts_count_per_revision(self):
+        self.prepare((REV_A, SIM_ID, "4", 2))
+        rc, out = self.attempt()
+        self.assert_attempt(rc, out, 3)
+
+    # Proves: TC-192-04
+    def test_a_new_revision_starts_at_0(self):
+        self.prepare((REV_A, SIM_ID, "4", 3))
+        rc, out = self.attempt(REV_B)
+        self.assert_attempt(rc, out, 1, REV_B)
+
+    # Proves: TC-192-04
+    def test_an_older_revision_is_ignored(self):
+        self.prepare((REV_A, SIM_ID, "4", 3), (REV_B, SIM_ID, "4", 1))
+        rc, out = self.attempt(REV_B)
+        self.assert_attempt(rc, out, 2, REV_B)
+
+    # Proves: TC-192-04
+    def test_attempts_count_per_radio(self):
+        self.prepare((REV_A, REAL_RADIO, "4", 3))
+        rc, out = self.attempt()
+        self.assert_attempt(rc, out, 1)
+        self.prepare((REV_A, SIM_ID, "4", 3), (REV_A, REAL_RADIO, "4", 2))
+        rc, out = self.attempt()
+        self.assertEqual(rc, 4, out)
+
+    # Proves: TC-192-04
+    def test_the_real_radio_counts_its_own_attempts(self):
+        self.prepare((REV_A, SIM_ID, "4", 3))
+        rc, out = self.attempt(radio=REAL_RADIO)
+        self.assert_attempt(rc, out, 1, radio=REAL_RADIO)
+
+    # Proves: TC-192-04
+    def test_a_4th_attempt_on_the_same_revision_and_radio_is_refused_before_the_preflight(self):
+        before = self.prepare((REV_A, SIM_ID, "4", 3))
+        rc, out = self.attempt()
+        self.assertEqual(rc, 4, out)
+        line = [x for x in out.splitlines() if "QSO-TEST REFUSED" in x]
+        self.assertEqual(len(line), 1, out)
+        # The issue is the -Issue argument of run_driver.
+        for part in ("#" + "192 item 4", REV_A[:9], SIM_ID, "operator"):
+            self.assertIn(part, line[0])
+        self.assertNotIn(REV_A[:10], line[0], "the revision is named by its first 9 characters")
+        self.assertEqual(self.events("preflight"), [])
+        self.assertEqual(self.commands(), [])
+        self.assertEqual(self.records(), before, "no record written")
+
+    # Proves: TC-192-04
+    def test_records_without_a_revision_never_count_and_stay_unchanged(self):
+        before = self.prepare((None, None, "4", 3))
+        rc, out = self.attempt()
+        self.assert_attempt(rc, out, 1)
+        self.assertEqual(self.records()[:3], before, "the old records are kept as they were")
+
+    # Proves: TC-192-04
+    def test_records_of_another_item_do_not_count(self):
+        self.prepare((REV_A, SIM_ID, "5", 3))
+        rc, out = self.attempt()
+        self.assert_attempt(rc, out, 1)
+
+    # Proves: TC-192-04
+    def test_the_ask_line_counts_per_revision_and_radio(self):
+        self.prepare((REV_A, SIM_ID, "4", 2))
+        rc, out = self.attempt()
+        self.assert_attempt(rc, out, 3)
+        self.assertIn("left not tested 3 times", out)
+        self.prepare((REV_A, SIM_ID, "4", 3), (REV_B, SIM_ID, "4", 1))
+        rc, out = self.attempt(REV_B)
+        self.assert_attempt(rc, out, 2, REV_B)
+        self.assertNotIn("left not tested", out)
+        rc, out = self.attempt(REV_B)
+        self.assert_attempt(rc, out, 3, REV_B)
+        self.assertIn("left not tested 3 times", out)
+
+    # Proves: TC-192-04
+    def test_a_station_without_a_deployed_revision_is_refused(self):
+        for name, header in (("missing", []), ("unknown", ["unknown"]), ("twice", [REV_A, REV_A]),
+                             ("39 hex", [REV_A[:39]]), ("40 uppercase hex", [REV_A.upper()])):
+            with self.subTest(header=name):
+                before = self.prepare((REV_A, SIM_ID, "4", 1))
+                rc, out = self.attempt(header)
+                self.assertEqual(rc, 2, out)
+                self.assertIn("no deployed revision", out)
+                self.assertEqual(self.events("preflight"), [])
+                self.assertEqual(self.commands(), [])
+                self.assertEqual(self.records(), before, "no record written")
+
+
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+WS_COOKIE = ("wstx_session", "test-session")
+MAX_ID = 9_007_199_254_740_991
+
+
+class StationEndpoint:
+    """A loopback WebSocket endpoint with the station's /ws rules, stated here in one place
+    from server/src/main.rs:
+    - upgrade: an Origin other than the station's is 403; no session cookie is 401; no
+      Sec-WebSocket-Protocol wstx.v1 is 400; otherwise 101 with the protocol wstx.v1;
+    - reply: a message whose id is not a JSON integer from 0 to 2^53 - 1, or that has other
+      than three keys, is error {code invalid_request}; v other than 1 is unsupported_version;
+      any other type is unknown_command;
+    - connection: unknown_command for spectrum.off becomes spectrum.subscription with that id
+      and profile off and subscribes the socket, or error {code unavailable} without a
+      recording; radio.tx_level reaches only a subscribed socket.
+    Per case: `upgrade_delay` and `answer_delay` (s) delay the 101 and the subscription answer
+    (None: never answered); `status` forces the upgrade status; `refuse` forces an error code
+    for the subscription; `unavailable` is the no-recording mode; `close_after_upgrade` sends a
+    close frame at once; `pushes` are (delay after the answer in s, message) sent once
+    subscribed."""
+
+    def __init__(self, upgrade_delay=0.0, answer_delay=0.0, status=None, refuse=None, unavailable=False,
+                 close_after_upgrade=False, pushes=()):
+        self.upgrade_delay, self.answer_delay, self.status = upgrade_delay, answer_delay, status
+        self.refuse, self.unavailable, self.close_after_upgrade = refuse, unavailable, close_after_upgrade
+        self.pushes = list(pushes)
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen(4)
+        self.url = "http://127.0.0.1:%d" % self.listener.getsockname()[1]
+        self.headers = None          # the upgrade request's headers, names in lower case
+        self.connect_at = None       # wall-clock ms of the TCP accept
+        self.messages = []           # (wall-clock ms, parsed message) received
+        self.answered = None         # the upgrade status sent
+        self.stop = threading.Event()
+        self.conns = []
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def close(self):
+        self.stop.set()
+        for s in [self.listener] + self.conns:
+            try:
+                s.close()
+            except OSError:
+                pass
+
+    def serve(self):
+        while not self.stop.is_set():
+            try:
+                conn, _ = self.listener.accept()
+            except OSError:
+                return
+            self.conns.append(conn)
+            if self.connect_at is None:
+                self.connect_at = time.time() * 1000
+            threading.Thread(target=self.handle, args=(conn,), daemon=True).start()
+
+    def recv_exact(self, conn, n):
+        data = b""
+        while len(data) < n:
+            chunk = conn.recv(n - len(data))
+            if not chunk:
+                raise ConnectionError("peer closed")
+            data += chunk
+        return data
+
+    def send_frame(self, conn, opcode, payload):
+        n = len(payload)
+        head = bytes([0x80 | opcode]) + (bytes([n]) if n < 126 else bytes([126]) + struct.pack(">H", n))
+        conn.sendall(head + payload)
+
+    def send_json(self, conn, message):
+        self.send_frame(conn, 1, json.dumps(message, separators=(",", ":")).encode())
+
+    def read_frame(self, conn):
+        b0, b1 = self.recv_exact(conn, 2)
+        n = b1 & 0x7F
+        if n == 126:
+            n = struct.unpack(">H", self.recv_exact(conn, 2))[0]
+        elif n == 127:
+            n = struct.unpack(">Q", self.recv_exact(conn, 8))[0]
+        mask = self.recv_exact(conn, 4) if b1 & 0x80 else b"\0\0\0\0"
+        data = bytes(c ^ mask[i % 4] for i, c in enumerate(self.recv_exact(conn, n)))
+        return b0 & 0x0F, data
+
+    def upgrade_status(self, headers):
+        if headers.get("origin") != self.url:
+            return 403
+        cookies = dict(p.strip().split("=", 1) for p in headers.get("cookie", "").split(";") if "=" in p)
+        if cookies.get(WS_COOKIE[0]) != WS_COOKIE[1]:
+            return 401
+        if headers.get("sec-websocket-protocol") != "wstx.v1":
+            return 400
+        return 101
+
+    def reply(self, message):
+        """The answer to one client message, or None for no answer."""
+        mid = message.get("id") if isinstance(message, dict) else None
+        valid = isinstance(mid, int) and not isinstance(mid, bool) and 0 <= mid <= MAX_ID
+        rid = mid if valid else None
+        if not isinstance(message, dict) or not valid or len(message) != 3 or "v" not in message \
+                or not isinstance(message.get("type"), str):
+            return {"v": 1, "type": "error", "id": rid, "data": {"code": "invalid_request"}}
+        if message["v"] != 1:
+            return {"v": 1, "type": "error", "id": rid, "data": {"code": "unsupported_version"}}
+        if message["type"] != "spectrum.off":
+            return {"v": 1, "type": "error", "id": rid, "data": {"code": "unknown_command"}}
+        if self.refuse or self.unavailable:
+            return {"v": 1, "type": "error", "id": rid, "data": {"code": self.refuse or "unavailable"}}
+        return {"v": 1, "type": "spectrum.subscription", "id": rid, "data": {"profile": "off"}}
+
+    def handle(self, conn):
+        try:
+            raw = b""
+            while b"\r\n\r\n" not in raw:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    return
+                raw += chunk
+            lines = raw.split(b"\r\n\r\n", 1)[0].decode("latin-1").split("\r\n")
+            self.headers = {k.strip().lower(): v.strip() for k, v in (h.split(":", 1) for h in lines[1:] if ":" in h)}
+            if self.upgrade_delay is None:
+                self.stop.wait(60)
+                return
+            self.stop.wait(self.upgrade_delay)
+            status = self.status or self.upgrade_status(self.headers)
+            self.answered = status
+            if status != 101:
+                text = {400: "Bad Request", 401: "Unauthorized", 403: "Forbidden"}.get(status, "Error")
+                conn.sendall(("HTTP/1.1 %d %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n" % (status, text)).encode())
+                return
+            accept = base64.b64encode(hashlib.sha1((self.headers["sec-websocket-key"] + WS_GUID).encode()).digest()).decode()
+            conn.sendall(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                          "Sec-WebSocket-Accept: %s\r\nSec-WebSocket-Protocol: wstx.v1\r\n\r\n" % accept).encode())
+            if self.close_after_upgrade:
+                self.send_frame(conn, 8, struct.pack(">H", 1000) + b"going away")
+                self.stop.wait(3)
+                return
+            while not self.stop.is_set():
+                opcode, data = self.read_frame(conn)
+                if opcode == 8:
+                    self.send_frame(conn, 8, data[:2])
+                    return
+                if opcode != 1:
+                    continue
+                message = json.loads(data.decode())
+                self.messages.append((time.time() * 1000, message))
+                answer = self.reply(message)
+                if answer is None:
+                    continue
+                if answer["type"] == "spectrum.subscription":
+                    if self.answer_delay is None:
+                        continue
+                    self.stop.wait(self.answer_delay)
+                    self.send_json(conn, answer)
+                    threading.Thread(target=self.send_pushes, args=(conn,), daemon=True).start()
+                else:
+                    self.send_json(conn, answer)
+        except (OSError, ConnectionError, ValueError):
+            return
+
+    def send_pushes(self, conn):
+        start = time.time()
+        try:
+            for delay, message in sorted(self.pushes, key=lambda p: p[0]):
+                if self.stop.wait(max(0.0, start + delay - time.time())):
+                    return
+                self.send_json(conn, message)
+        except OSError:
+            return
+
+
+WS_CLIENT = r"""
+# Scripted station client for the /ws cases of test_qso_test.py: the station URL is the test
+# endpoint, the session holds its cookie, and the /ws seams stay as the driver defines them.
+$AgentUrl = $env:QSO_WS_URL
+function global:Ws-Log([hashtable]$E) {
+  $E['ms'] = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  [IO.File]::AppendAllText($env:QSO_LOG, (([pscustomobject]$E | ConvertTo-Json -Compress -Depth 8) + "`n"))
+}
+function Open-AgentSession {
+  $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+  $s.Cookies.Add((New-Object Net.Cookie('wstx_session', 'test-session', '/', '127.0.0.1')))
+  [pscustomobject]@{ Session = $s }
+}
+function Agent-Get($c, [string]$Route) {
+  $sim = $env:QSO_SIM_ID; $boot = '33333333-3333-4333-8333-333333333333'
+  switch -regex ($Route) {
+    '^/transmit$' { return [pscustomobject]@{ v = 1; profile_id = $sim; boot_id = $boot; ptt = 'released'; transmitting = $false; outcomes = @()
+        transmit = [pscustomobject]@{ arm_state = 'disarmed'; last_disarm_cause = 'startup'; last_period_utc = $null; tune = $false; last_text = $null; refusal = $null }
+        watchdog = [pscustomobject]@{ tx_calls = 6 } } }
+    '^/contact$' { return [pscustomobject]@{ v = 1; profile_id = $sim; boot_id = $boot; contact_revision = 1; contact = $null; log = $null
+        transmit = [pscustomobject]@{ safety_revision = 7 }; settings = [pscustomobject]@{ hold_tx = $false; rx_hz = 1200; tx_hz = 1500 }
+        watchdog = [pscustomobject]@{ busy_with = $null } } }
+    '^/radio$' { return [pscustomobject]@{ state = 'ready'; profile_id = $sim } }
+    '^/automation$' { return [pscustomobject]@{ v = 1; profile_id = $sim; run = $null; free_tx_slots = $null } }
+    '^/receive' { return [pscustomobject]@{ v = 1; source = $null; job = $null } }
+  }
+  throw "scripted client: no route $Route"
+}
+function Agent-Post($c, [string]$Route, $Body) {
+  Ws-Log @{ kind = 'command'; route = $Route; action = [string]$Body['action']; enabled = $Body['enabled'] }
+  [pscustomobject]@{ Status = 202; Body = [pscustomobject]@{ accepted = $true } }
+}
+function Qso-Revision($c) { '0123456789abcdef0123456789abcdef01234567' }
+"""
+
+WS_PREFLIGHT = r"""
+param([string]$Holder, [string]$PowerBcd, [int]$Minutes = 30, [switch]$Status, [switch]$Release, [switch]$Restore,
+      [switch]$NoWrite, [string]$Port, [string]$Baud, [string]$StateDir, [string]$Station, [string]$AgentClient)
+$what = if ($Status) { 'status' } elseif ($Release) { 'release' } elseif ($Restore) { 'restore' } else { $PowerBcd }
+Ws-Log @{ kind = 'preflight'; what = $what }
+if ($Status) { if ($global:WsLease) { "lease: held by $($global:WsLease) until 2099-01-01T00:00:00Z" } else { 'lease: free' }; exit 0 }
+if ($Release) { $global:WsLease = $null; exit 0 }
+# The 0255 write fails, so a run that passes the SWR key ends there, before any call.
+if ($what -eq '0255') { 'PREFLIGHT FAIL scripted 0255'; exit 1 }
+if ($Restore) { $global:WsLease = $null } else { $global:WsLease = $Holder }
+"PREFLIGHT PASS scripted $what"
+exit 0
+"""
+
+
+def tx_level(po=40, swr=17):
+    return {"v": 1, "type": "radio.tx_level",
+            "data": {"meters": {"alc": 0, "po_pct": po, "swr_x10": swr}, "warnings": []}}
+
+
+class WsTests(unittest.TestCase):
+    """The driver's own /ws seams (Qso-OpenPushes, Qso-ReceivePushes, Qso-ClosePushes) against
+    StationEndpoint (TC-192-03), timed by the test's wall clock."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state = os.path.join(self.tmp.name, "state")
+        self.station = os.path.join(self.tmp.name, "station")
+        self.log = os.path.join(self.tmp.name, "run.log")
+        self.client = os.path.join(self.tmp.name, "client.ps1")
+        self.preflight_tool = os.path.join(self.tmp.name, "preflight.ps1")
+        os.makedirs(self.state)
+        folder = os.path.join(self.station, "profiles", "SIM-IC7300")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "profile.json"), "w", encoding="utf-8") as f:
+            json.dump({"profile_id": SIM_ID, "callsign": OWN, "control": {"endpoint": SIM_ENDPOINT}}, f)
+        for path, text in ((self.client, WS_CLIENT), (self.preflight_tool, WS_PREFLIGHT)):
+            with open(path, "w", encoding="utf-8-sig") as f:
+                f.write(text)
+        self.endpoint = None
+
+    def tearDown(self):
+        if self.endpoint:
+            self.endpoint.close()
+        self.tmp.cleanup()
+
+    def run_driver(self, endpoint):
+        self.endpoint = endpoint
+        rc, out = pwsh.run(DRIVER, ["-Holder", "run7", "-Issue", "192", "-Item", "4", "-Station", self.station,
+                                    "-StateDir", self.state, "-AgentClient", self.client, "-Preflight", self.preflight_tool],
+                           env={"QSO_WS_URL": endpoint.url, "QSO_SIM_ID": SIM_ID, "QSO_LOG": self.log}, timeout=120)
+        return rc, out
+
+    def events(self, kind):
+        if not os.path.exists(self.log):
+            return []
+        with open(self.log, encoding="utf-8") as f:
+            return [r for r in (json.loads(line) for line in f if line.strip()) if r["kind"] == kind]
+
+    def verdict(self):
+        with open(os.path.join(self.state, "qso-tests.jsonl"), encoding="utf-8") as f:
+            return [json.loads(line) for line in f if line.strip()][-1]
+
+    def end_ms(self):
+        """When the driver gave up: its restore preflight, the first step after the end."""
+        return [e["ms"] for e in self.events("preflight") if e["what"] == "restore"][0]
+
+    def subscription_ms(self):
+        return [t for t, m in self.endpoint.messages if m.get("type") == "spectrum.off"][0]
+
+    def assert_ended_before_tune(self, rc, out, start):
+        """Not tested before Tune: no 0255 write, nothing keyed, no ask line; the reason starts
+        with `start` and is returned."""
+        self.assertEqual(rc, 3, out)
+        v = self.verdict()
+        self.assertEqual(v["verdict"], "not_tested", out)
+        reasons = [r for r in v["not_tested"] if r.startswith(start)]
+        self.assertEqual(len(reasons), 1, f"{start!r} not leading any of {v['not_tested']}\n{out}")
+        self.assertNotIn("Exception calling", reasons[0], "only the outer AggregateException text")
+        self.assertNotIn("no fresh reading", " ".join(v["not_tested"]))
+        self.assertEqual([c for c in self.events("command") if c["action"] == "tune"], [], "Tune was started")
+        self.assertNotIn("0255", [p["what"] for p in self.events("preflight")])
+        self.assertEqual(v["transmissions"], [])
+        self.assertEqual(v["ask_operator"], [])
+        self.assertNotIn("ASK THE OPERATOR", out)
+        return reasons[0]
+
+    # Proves: TC-192-03
+    def test_the_handshake_and_subscription_follow_the_station_rules_and_pushes_arrive(self):
+        pushes = [(0.2, {"v": 1, "type": "clock.time", "data": {"utc_ms": 1}}),
+                  (0.4, {"v": 1, "type": "heartbeat", "data": {}}),
+                  (2.5, tx_level(po=40, swr=17))]
+        rc, out = self.run_driver(StationEndpoint(answer_delay=0.0, pushes=pushes))
+        ep = self.endpoint
+        self.assertEqual(ep.answered, 101, out)
+        self.assertEqual(ep.headers.get("sec-websocket-protocol"), "wstx.v1")
+        self.assertEqual(ep.headers.get("origin"), ep.url)
+        self.assertIn("%s=%s" % WS_COOKIE, ep.headers.get("cookie", ""))
+        subs = [m for _, m in ep.messages if m.get("type") == "spectrum.off"]
+        self.assertEqual(len(subs), 1, out)
+        self.assertEqual(sorted(subs[0]), ["id", "type", "v"])
+        self.assertIsInstance(subs[0]["id"], int)
+        self.assertNotIsInstance(subs[0]["id"], bool)
+        self.assertIn("subscription is confirmed", out)
+        tune = [c for c in self.events("command") if c["action"] == "tune"]
+        self.assertTrue(tune and tune[0]["ms"] >= self.subscription_ms(), "Tune only after the subscription")
+        # The push sent during Tune is the key's one fresh reading; clock.time and heartbeat are dropped.
+        v = self.verdict()
+        self.assertEqual((v["swr_x10"], v["po_pct"]), (17, [40]), out)
+        self.assertIn("SWR key: 1 fresh readings", out)
+        self.assertIn("0255", [p["what"] for p in self.events("preflight")], "the key passed on to 0255")
+
+    # Proves: TC-192-03
+    def test_an_upgrade_answered_after_about_8_s_goes_on_to_the_subscription(self):
+        rc, out = self.run_driver(StationEndpoint(upgrade_delay=8.0, pushes=[(2.5, tx_level())]))
+        self.assertEqual(self.endpoint.answered, 101, out)
+        self.assertEqual(len([m for _, m in self.endpoint.messages if m.get("type") == "spectrum.off"]), 1, out)
+        self.assertIn("subscription is confirmed", out)
+
+    # Proves: TC-192-03
+    def test_an_upgrade_never_answered_ends_not_tested_after_10_s(self):
+        rc, out = self.run_driver(StationEndpoint(upgrade_delay=None))
+        self.assert_ended_before_tune(rc, out, "the /ws connection")
+        waited = self.end_ms() - self.endpoint.connect_at
+        self.assertGreaterEqual(waited, 10_000, out)
+        self.assertLessEqual(waited, 15_000, out)
+
+    # Proves: TC-192-03
+    def test_a_subscription_answered_after_about_4_s_goes_on(self):
+        rc, out = self.run_driver(StationEndpoint(answer_delay=4.0, pushes=[(2.5, tx_level())]))
+        self.assertIn("subscription is confirmed", out)
+        self.assertIn("0255", [p["what"] for p in self.events("preflight")], out)
+
+    # Proves: TC-192-03
+    def test_a_subscription_never_answered_ends_not_tested_after_5_s(self):
+        rc, out = self.run_driver(StationEndpoint(answer_delay=None))
+        reason = self.assert_ended_before_tune(rc, out, "the /ws subscription")
+        self.assertIn("subscription", reason)
+        waited = self.end_ms() - self.subscription_ms()
+        self.assertGreaterEqual(waited, 5_000, out)
+        self.assertLessEqual(waited, 8_000, out)
+
+    # Proves: TC-192-03
+    def test_an_upgrade_answered_400_names_the_websocket_exception(self):
+        rc, out = self.run_driver(StationEndpoint(status=400))
+        reason = self.assert_ended_before_tune(rc, out, "the /ws connection")
+        self.assertIn("WebSocketException", reason)
+
+    # Proves: TC-192-03
+    def test_a_subscription_refused_invalid_request_or_unavailable_names_the_code(self):
+        for endpoint, code in ((StationEndpoint(refuse="invalid_request"), "invalid_request"),
+                               (StationEndpoint(unavailable=True), "unavailable")):
+            with self.subTest(code=code):
+                rc, out = self.run_driver(endpoint)
+                reason = self.assert_ended_before_tune(rc, out, "the /ws subscription")
+                self.assertIn(code, reason)
+                endpoint.close()
+                os.unlink(os.path.join(self.state, "qso-tests.jsonl"))
+                os.unlink(self.log)
+
+    # Proves: TC-192-03
+    def test_a_close_after_the_upgrade_names_the_close(self):
+        rc, out = self.run_driver(StationEndpoint(close_after_upgrade=True))
+        reason = self.assert_ended_before_tune(rc, out, "the /ws subscription")
+        self.assertIn("closed", reason)
 
 
 if __name__ == "__main__":

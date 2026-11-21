@@ -746,11 +746,19 @@ are its items 3 to 11; the numbers follow #192:
     passed: the cases of items 3, 5, 7 and 8, and every `last_disarm_cause` other than
     contact_completed and the driver's own abort, with the cause and the newest outcomes
     failure recorded.
-11. **Records and retries.** Each verdict is appended to `qso-tests.jsonl` beside
-    `preflight.jsonl` under the issue and item. Not tested leaves the item open, with no
-    revert and no escapes row, retried at another time or band; at most 3 attempts per item,
-    a 4th is refused and names the operator. Beyond C of #171 the operator is asked only for
-    a high SWR, no Po or no fresh reading, and for an item left not tested 3 times.
+11. **Records and retries** (2026-11-21). Each verdict is appended to `qso-tests.jsonl`
+    beside `preflight.jsonl` under the issue and item, with the deployed revision (the
+    `x-wstx-source-commit` of `GET /`) and the radio (the `profile_id` of `GET /transmit`).
+    Not tested leaves the item open, with no revert and no escapes row, retried at another
+    time or band. At most 3 attempts per item per deployed revision and per radio: the
+    simulator and the real IC-7300 each have their own 3, and a newly deployed revision starts
+    at 0. The records of earlier revisions, and those without a revision, stay in the file and
+    do not count. A 4th attempt on the same revision and radio is refused before the preflight
+    and names the operator, who decides it. A station that reports no deployed revision (no
+    `x-wstx-source-commit`, more than one, `unknown`, or not 40 lowercase hex) is refused
+    before anything is touched, with no attempt counted. Beyond C of #171 the operator is
+    asked only for a high SWR, no Po or no fresh reading, and for an item left not tested 3
+    times on one revision and radio.
 
 **Stated limits.** The decode data does not mark a Fox's own plain CQ or the contests with
 the standard exchange (ARRL Digi, WW Digi); the driver cannot recognise either, and the
