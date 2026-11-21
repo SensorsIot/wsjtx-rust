@@ -18,7 +18,7 @@ use wstx_rust::transmit::Parity;
 
 #[cfg(test)]
 #[path = "pskr_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 const FILE: &str = "pskr.json";
 const FILE_LIMIT: u64 = 1024;
@@ -512,14 +512,16 @@ pub(crate) fn tls_connect(
         .map_err(|_| "tls_failed")?;
     Ok(Box::new(rustls::StreamOwned::new(connection, stream)))
 }
+/// The broker adapter: TLS to the PSK Reporter broker, its chain checked against ISRG_ROOTS.
+pub(crate) fn broker_connector() -> Connector {
+    Box::new(|timing: &FeedSession| tls_connect(HOST, TLS_PORT, ISRG_ROOTS, timing))
+}
 /// The connector of the running station. WSTX_PSKR=off opens no connection, so isolated
 /// tests of the executable never reach the broker; WSTX_PSKR=tcp:<loopback>:<port> speaks
 /// plain MQTT to a local test peer, and nothing else can replace the broker.
 pub(crate) fn station_connector(setting: Option<&str>) -> Option<Connector> {
     match setting {
-        None => Some(Box::new(|timing: &FeedSession| {
-            tls_connect(HOST, TLS_PORT, ISRG_ROOTS, timing)
-        })),
+        None => Some(broker_connector()),
         Some(value) => {
             let address: SocketAddr = value.strip_prefix("tcp:")?.parse().ok()?;
             address.ip().is_loopback().then(|| -> Connector {
@@ -687,12 +689,6 @@ impl Feed {
     /// The target the feed follows (its receiver subscription), if any.
     pub(crate) fn target(&self) -> Option<String> {
         self.shared.lock().target.clone()
-    }
-    /// Test seam: a payload as the session accepts it.
-    #[cfg(test)]
-    pub(crate) fn inject(&self, payload: &str) {
-        let my_call = self.shared.lock().my_call.clone().unwrap();
-        accept(&self.shared, &my_call, payload.as_bytes());
     }
     /// My call and the current target, from the station step. Changing the target replaces
     /// its subscription and forgets what the previous target decoded.

@@ -2001,8 +2001,8 @@ pub(crate) struct Owner {
     /// WstxMostWanted::MostWantedListRule: a leaf lock over the parsed list; the file is read
     /// off the station step (`most_wanted_load`), the step only clones the Arc.
     most_wanted: Mutex<MostWantedState>,
-    /// Test seam: the reply of the next Download now in place of the HTTP fetch.
-    pub(crate) fetch: Mutex<Option<Result<String, String>>>,
+    /// Where Download now reads the list, filled once by the entry point.
+    list_source: std::sync::OnceLock<Box<dyn crate::most_wanted::ListSource>>,
 }
 #[derive(Default)]
 struct MostWantedState {
@@ -2134,6 +2134,10 @@ impl Owner {
         self.revision_seen
             .load(std::sync::atomic::Ordering::Acquire)
     }
+    /// The Most Wanted source of this station; the first one set stays.
+    pub(crate) fn set_list_source(&self, source: Box<dyn crate::most_wanted::ListSource>) {
+        let _ = self.list_source.set(source);
+    }
     /// The list already read, for the station step (no file access).
     pub(crate) fn most_wanted_read(&self) -> Option<std::sync::Arc<crate::most_wanted::List>> {
         self.most_wanted
@@ -2248,11 +2252,10 @@ impl Owner {
         Self::envelope_shape(&body, &[])?;
         Self::envelope_context(state, &body)?;
         let text = self
-            .fetch
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
-            .unwrap_or_else(crate::most_wanted::fetch)
+            .list_source
+            .get()
+            .ok_or_else(|| "no list source".to_owned())
+            .and_then(|source| source.fetch())
             .map_err(|reason| ("download_failed", Some(reason)))?;
         let list = crate::most_wanted::List::parse(&text, &date_text(utc_date())).ok_or((
             "download_failed",

@@ -419,10 +419,23 @@ pub(crate) struct Fixture {
     pub(crate) clock: Arc<DrivenClock>,
     /// The live inputs the station's receive starts open.
     pub(crate) inputs: Arc<crate::receive_http_tests::QueuedInputs>,
+    /// The station's routes as its listener serves them.
+    pub(crate) app: App,
+    /// The CL-022 grant cookie every call carries, on an https:// origin.
+    pub(crate) cookie: Option<String>,
 }
 pub(crate) fn fixture(origin: &str, transmit: bool) -> Fixture {
     let (dir, _) = profile_directory(origin, transmit, "JN47AA");
     start_station(dir, origin, transmit)
+}
+/// The station token of an https:// fixture.
+const STATION_TOKEN: &str = "DisposableFixtureToken01234567890";
+/// A station on the https:// `origin` with its CL-022 authority, holding a grant it took at
+/// start through the authorization routes; every call carries the grant's cookie.
+pub(crate) async fn https_fixture(origin: &str, transmit: bool) -> Fixture {
+    let mut f = fixture(origin, transmit);
+    f.take_grant().await;
+    f
 }
 /// A newly created disposable profile directory of HB9BLA at `locator` (profile.json
 /// only), with its profile id; nothing is started on it.
@@ -434,7 +447,9 @@ pub(crate) fn profile_directory(
     let dir = std::env::temp_dir().join(format!("wstx-contact-{}", profile::new_uuid().unwrap()));
     std::fs::create_dir(&dir).unwrap();
     let id = profile::new_uuid().unwrap();
-    let bind = origin.trim_start_matches("http://");
+    let bind = origin
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
     let doc = json!({"schema_version":1,"profile_id":id,"revision":0,"display_name":"Contact fixture",
         "callsign":"HB9BLA","locator":locator,"endpoint":{"bind":bind,"origin":null},"connection_type":"standard",
         "audio":{"input_device":null,"output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
@@ -461,7 +476,8 @@ fn start_station_on(
     files: StationFiles,
 ) -> Fixture {
     let boot = profile::new_uuid().unwrap();
-    let (store, _) = profile::Store::open(&dir, files.store.clone()).unwrap();
+    let (mut store, _) = profile::Store::open(&dir, files.store.clone()).unwrap();
+    let authorization = authorization_http::Service::initialize(&mut store, origin).unwrap();
     let id = store.document.profile_id.clone();
     let clock = DrivenClock::new();
     let recording = recording::Recording::open(
@@ -493,9 +509,12 @@ fn start_station_on(
     let _ = recording
         .contact
         .set(contact_http::Station::start(&store, clock.clone()));
+    if authorization.is_some() {
+        recording.initialize_profile_revision(store.document.revision);
+    }
     let state = Arc::new(ProfileState {
         store: Mutex::new(store),
-        authorization: Mutex::new(None),
+        authorization: Mutex::new(authorization),
         boot: boot.clone(),
         recording,
         logbook: Arc::new(crate::logbook::Logbook::open(&dir, files.logbook.clone())),
@@ -504,12 +523,14 @@ fn start_station_on(
         origin: origin.to_string(),
         profile: Some(state.clone()),
         profile_id: Some(id.clone()),
-        token: None,
+        token: origin.starts_with("https://").then(|| STATION_TOKEN.into()),
         connections: Arc::new(Semaphore::new(16)),
         login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
     };
     Fixture {
-        router: router(app),
+        router: router(app.clone()),
+        app,
+        cookie: None,
         state,
         origin: origin.to_string(),
         id,
@@ -522,6 +543,11 @@ fn start_station_on(
     }
 }
 impl Fixture {
+    /// Takes a CL-022 grant through the authorization routes; later calls carry its cookie.
+    pub(crate) async fn take_grant(&mut self) {
+        let grant = crate::auth_tests::AppRoutes(&self.app).authorize().await;
+        self.cookie = Some(grant.cookie);
+    }
     /// The station's clocks move past the backoff of a failed log write.
     pub(crate) fn pass_log_retry(&self) {
         self.clock.advance(LOG_RETRY);
@@ -533,8 +559,11 @@ impl Fixture {
         let origin = self.origin.clone();
         let transmit = !self.bench.unsupported.load(Ordering::SeqCst);
         let files = self.files.clone();
+        let cookie = self.cookie.take();
         drop(self);
-        start_station_on(dir, &origin, transmit, files)
+        let mut f = start_station_on(dir, &origin, transmit, files);
+        f.cookie = cookie;
+        f
     }
     pub(crate) fn contact(&self) -> Arc<contact_http::Station> {
         self.state.recording.contact.get().unwrap().clone()
@@ -571,6 +600,13 @@ impl Fixture {
         }
         for (k, v) in headers {
             request = request.header(*k, *v);
+        }
+        if let Some(cookie) = &self.cookie
+            && !headers
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("cookie"))
+        {
+            request = request.header(header::COOKIE, cookie);
         }
         let request = match body {
             Some(b) => {
@@ -1033,7 +1069,7 @@ async fn contact_command_wire_is_strict_replays_receipts_and_checks_revisions() 
 // Proves: TC-007-003
 #[tokio::test]
 async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms() {
-    let f = fixture("http://127.0.0.1:18001", true);
+    let f = https_fixture("https://127.0.0.1:18001", true).await;
     let r = &f.state.recording;
     let (source, job, generation) = r.fixture_live_job("ft8");
     let now = now_ms();
@@ -1145,16 +1181,28 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
         .await;
     assert_eq!((s, code(&v).0), (StatusCode::CONFLICT, "contact_active"));
     // Plaintext has no CL-022 grant: Enable Tx is transmit_unavailable.
-    let (s, v) = f
+    let plain = fixture("http://127.0.0.1:18001", true);
+    let (p_source, p_job, p_generation) = plain.state.recording.fixture_live_job("ft8");
+    let p_seq = plain.state.recording.fixture_publish_period(
+        &period_text(even),
+        vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
+    );
+    plain.tick();
+    let p_row =
+        json!({"source_id":p_source,"job_id":p_job,"generation":p_generation,"sequence":p_seq[0]});
+    let (s, v) = plain
+        .send("select_row", json!({"row":p_row,"replace":false}))
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{v}");
+    let (s, v) = plain
         .send("enable_tx", json!({"enabled":true,"safety_revision":3}))
         .await;
     assert_eq!(
         (s, code(&v).0),
         (StatusCode::CONFLICT, "transmit_unavailable")
     );
-    // With the test-only grant the explicit Enable Tx arms and one request is pending
+    // With the grant the explicit Enable Tx arms and one request is pending
     // for the next odd period with the Tx1 text.
-    f.contact().grant.store(true, Ordering::SeqCst);
     for (wrong, field) in [
         (json!(2), "safety_revision"),
         (Value::Null, "safety_revision"),
@@ -1261,8 +1309,7 @@ async fn selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms
 // Proves: TC-111-011
 #[tokio::test]
 async fn receive_only_station_selects_and_logs_and_refuses_every_transmit_action() {
-    let f = fixture("http://127.0.0.1:18001", false);
-    f.contact().grant.store(true, Ordering::SeqCst);
+    let f = https_fixture("https://127.0.0.1:18001", false).await;
     let (s, v) = f
         .send(
             "enter_dx",
@@ -1695,17 +1742,14 @@ async fn contact_browser_operating_flow() {
 #[cfg(not(debug_assertions))]
 async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     let filter: Vec<String> = filter.iter().map(|f| f.to_string()).collect();
+    let tls = BrowserTls::new().await;
     let listener = wstx_test_tools::ports::browser_listener();
     let address = listener.local_addr().unwrap();
-    let origin = format!("http://{address}");
+    let origin = format!("https://{address}");
     let f = Arc::new(fixture(&origin, true));
-    f.contact().grant.store(true, Ordering::SeqCst);
     let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
     let _ = (&source, &job, generation);
-    let router = f.router.clone();
-    let service = tokio::spawn(async move {
-        axum::serve(listener, router).await.unwrap();
-    });
+    let service = tls.serve(listener, f.router.clone()).await;
     // The station-wide contact step, as main() runs it.
     let ticker = {
         let f = f.clone();
@@ -1818,6 +1862,8 @@ async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
             )
             .env("WSTX_CONTACT_FIXTURE_ORIGIN", origin)
             .env("WSTX_CONTACT_FIXTURE_CONTROL", control_origin)
+            .env("WSTX_CONTACT_FIXTURE_TOKEN", STATION_TOKEN)
+            .env("NODE_EXTRA_CA_CERTS", &tls.pem)
             .output()
             .unwrap()
     })
@@ -1827,6 +1873,222 @@ async fn contact_browser_station(filter: &[&str]) -> std::process::Output {
     service.abort();
     control_service.abort();
     outcome
+}
+
+/// A disposable certificate of 127.0.0.1 for a browser station, its PEM in a file that node
+/// trusts through NODE_EXTRA_CA_CERTS; the file goes with it.
+#[cfg(not(debug_assertions))]
+struct BrowserTls {
+    config: axum_server::tls_rustls::RustlsConfig,
+    pem: std::path::PathBuf,
+}
+#[cfg(not(debug_assertions))]
+impl BrowserTls {
+    async fn new() -> Self {
+        let generated = std::process::Command::new("node")
+            .args(["--eval","require('selfsigned').generate([{name:'commonName',value:'127.0.0.1'}],{days:1,keySize:2048,extensions:[{name:'basicConstraints',cA:true},{name:'subjectAltName',altNames:[{type:7,ip:'127.0.0.1'},{type:2,value:'localhost'}]}]}).then(c=>process.stdout.write(JSON.stringify({cert:c.cert,key:c.private})))"])
+            .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
+            .output()
+            .unwrap();
+        assert!(
+            generated.status.success(),
+            "certificate fixture generator failed"
+        );
+        let cert: Value = serde_json::from_slice(&generated.stdout).unwrap();
+        let (cert, key) = (
+            cert["cert"].as_str().unwrap().to_owned(),
+            cert["key"].as_str().unwrap().to_owned(),
+        );
+        let pem =
+            std::env::temp_dir().join(format!("wstx-browser-{}.pem", profile::new_uuid().unwrap()));
+        std::fs::write(&pem, &cert).unwrap();
+        let config =
+            axum_server::tls_rustls::RustlsConfig::from_pem(cert.into_bytes(), key.into_bytes())
+                .await
+                .unwrap();
+        Self { config, pem }
+    }
+    /// Serves `router` over TLS on `listener`, as the station's listener does.
+    async fn serve(
+        &self,
+        listener: tokio::net::TcpListener,
+        router: Router,
+    ) -> tokio::task::JoinHandle<()> {
+        let server = crate::link_log::Server::new(
+            listener.into_std().unwrap(),
+            Some(self.config.clone()),
+            None,
+        )
+        .unwrap();
+        tokio::spawn(async move {
+            server.serve(router).await.unwrap();
+        })
+    }
+}
+#[cfg(not(debug_assertions))]
+impl Drop for BrowserTls {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.pem);
+    }
+}
+
+/// Runs tests/station-settings.test.cjs in the real browser, each test against its own
+/// station (each saves a station setting the others would read). The PSK Reporter feed is on
+/// a fake broker and the UDP owner on recording sockets: nothing reaches the broker or a UDP
+/// port. A UDP save's record holds the Close and Heartbeat it causes. Mandatory release
+/// execution is registered as the contact-browser suite.
+#[cfg(not(debug_assertions))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn contact_browser_settings() {
+    let (pskr, edit, multicast) = tokio::join!(
+        settings_browser_station("^TC-039-021 "),
+        settings_browser_station("^the UDP editor reads "),
+        settings_browser_station("^the UDP editor saves an IPv6 "),
+    );
+    let runs = [
+        ("TC-039-021", pskr),
+        ("UDP editor", edit),
+        ("UDP editor IPv6", multicast),
+    ];
+    for (label, (outcome, _)) in &runs {
+        println!("{label}:\n{}", String::from_utf8_lossy(&outcome.stdout));
+    }
+    let sent = |record: &[(SocketAddr, u32)], to: &str, kind: u32| {
+        record.contains(&(to.parse().unwrap(), kind))
+    };
+    for (label, (outcome, record)) in &runs {
+        let stdout = String::from_utf8_lossy(&outcome.stdout);
+        assert!(
+            outcome.status.success(),
+            "{label}:\n{stdout}\n{}",
+            String::from_utf8_lossy(&outcome.stderr)
+        );
+        // A filter that matched nothing would pass vacuously.
+        assert!(
+            stdout.contains("\u{2139} pass 1"),
+            "{label}: not exactly one test\n{stdout}"
+        );
+        // Every station heartbeats its default target into the record, never onto a port.
+        assert!(sent(record, "127.0.0.1:2237", 0), "{label}: {record:?}");
+    }
+    // The added multicast target is activated: its Heartbeat.
+    assert!(
+        sent(&runs[1].1.1, "239.255.0.1:2237", 0),
+        "{:?}",
+        runs[1].1.1
+    );
+    // The replaced target gets its Close, the IPv6 group its Heartbeat.
+    assert!(sent(&runs[2].1.1, "127.0.0.1:2237", 6), "{:?}", runs[2].1.1);
+    assert!(
+        sent(&runs[2].1.1, "[ff12::5754:5358]:2237", 0),
+        "{:?}",
+        runs[2].1.1
+    );
+}
+
+/// One isolated station (router, contact and UDP steps, control peer) running the
+/// tests/station-settings.test.cjs tests named by `pattern`; its UDP record as (to, type).
+#[cfg(not(debug_assertions))]
+async fn settings_browser_station(pattern: &str) -> (std::process::Output, Vec<(SocketAddr, u32)>) {
+    let listener = wstx_test_tools::ports::browser_listener();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let f = Arc::new(fixture(&origin, true));
+    let broker = crate::pskr::tests::FakeBroker::new();
+    let feed = crate::pskr::Feed::start(
+        &f.dir,
+        &f.id,
+        &f.boot,
+        Some(broker.connector()),
+        crate::pskr::FeedSession::BROKER,
+        Arc::new(crate::profile::Disk),
+    );
+    let _ = f.state.recording.pskr.set(feed);
+    let sockets = crate::udp::tests::RecordingSockets::default();
+    let owner = crate::udp::Owner::open(
+        &f.state,
+        false,
+        &f.dir.join("udp-instance"),
+        Arc::new(sockets.clone()),
+    );
+    let _ = f.state.recording.udp.set(owner);
+    let router = f.router.clone();
+    let service = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+    // The station-wide contact and UDP steps, as main() runs them.
+    let ticker = {
+        let f = f.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let state = f.state.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    contact_http::station_tick(&state);
+                    crate::udp::station_tick(&state);
+                })
+                .await;
+            }
+        })
+    };
+    // Test-only control peer of the fake broker.
+    let control = wstx_test_tools::ports::browser_listener();
+    let control_origin = format!("http://{}", control.local_addr().unwrap());
+    let (publisher, dropper, reader) = (broker.clone(), broker.clone(), broker);
+    let control_app = Router::new()
+        .route(
+            "/publish",
+            post(move |Json(body): Json<Value>| {
+                let broker = publisher.clone();
+                async move {
+                    let payload = body.to_string();
+                    tokio::task::spawn_blocking(move || broker.publish(&payload))
+                        .await
+                        .unwrap();
+                    Json(json!({}))
+                }
+            }),
+        )
+        .route(
+            "/drop",
+            post(move || {
+                let broker = dropper.clone();
+                async move {
+                    broker.drop_all();
+                    Json(json!({}))
+                }
+            }),
+        )
+        .route(
+            "/received",
+            get(move || {
+                let broker = reader.clone();
+                async move { Json(json!(broker.received())) }
+            }),
+        );
+    let control_service = tokio::spawn(async move {
+        axum::serve(control, control_app).await.unwrap();
+    });
+    let pattern = format!("--test-name-pattern={pattern}");
+    let outcome = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("node")
+            .args(["--test", "--test-concurrency=1", &pattern])
+            .arg("tests/station-settings.test.cjs")
+            .current_dir(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .parent()
+                    .unwrap(),
+            )
+            .env("WSTX_SETTINGS_FIXTURE_ORIGIN", origin)
+            .env("WSTX_SETTINGS_FIXTURE_CONTROL", control_origin)
+            .output()
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    ticker.abort();
+    service.abort();
+    control_service.abort();
+    (outcome, sockets.record())
 }
 
 // ---------------------------------------------------------------- FT4
@@ -1906,7 +2168,7 @@ async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mo
 // Proves: TC-007-008
 #[tokio::test]
 async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cancels_only_its_own() {
-    let f4 = fixture("http://127.0.0.1:18012", true);
+    let f4 = https_fixture("https://127.0.0.1:18012", true).await;
     let f8 = fixture("http://127.0.0.1:18013", true);
     let even = now_ms().div_euclid(30_000) * 30_000;
     for f in [&f4, &f8] {
@@ -1963,7 +2225,6 @@ async fn simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cance
         (Some("completed"), Some("completed"))
     );
     // Only the FT4 station arms, on K1ABC selected again (a new contact).
-    f4.contact().grant.store(true, Ordering::SeqCst);
     let (s, v) = f4
         .send("select_row", json!({"row":rows[0],"replace":false}))
         .await;
@@ -2163,8 +2424,7 @@ async fn published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73
 // Proves: TC-007-008
 #[tokio::test]
 async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
-    let f = fixture("http://127.0.0.1:18017", true);
-    f.contact().grant.store(true, Ordering::SeqCst);
+    let f = https_fixture("https://127.0.0.1:18017", true).await;
     let r = &f.state.recording;
     let service = &r.transmit.get().unwrap().service;
     let (source, job, generation) = r.fixture_live_job("ft4");
@@ -2548,7 +2808,7 @@ async fn hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields
 #[tokio::test]
 async fn a_priori_context_follows_profile_and_contact() {
     use decoder::QsoProgress;
-    let f = fixture("http://127.0.0.1:18017", true);
+    let f = https_fixture("https://127.0.0.1:18017", true).await;
     let r = &f.state.recording;
     let (source, job, generation) = r.fixture_live_job("ft8");
     f.tick();
@@ -2590,7 +2850,6 @@ async fn a_priori_context_follows_profile_and_contact() {
     f.tick();
     assert_eq!(f.contact().a_priori().progress, QsoProgress::RogerReport);
     // Enable Tx on: the station is operating, every type of the state runs.
-    f.contact().grant.store(true, Ordering::SeqCst);
     let safety = f.snapshot().await["transmit"]["safety_revision"].clone();
     let (s, v) = f
         .send(
@@ -2895,7 +3154,7 @@ async fn tc_110_003_a_failed_save_refuses_the_change_and_changes_nothing() {
 // Proves: TC-050-004, TC-111-002, TC-111-019
 #[tokio::test]
 async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station() {
-    let f = fixture("http://127.0.0.1:18001", true);
+    let f = https_fixture("https://127.0.0.1:18001", true).await;
     let r = &f.state.recording;
     r.fixture_band("20m");
     let (source, job, generation) = r.fixture_live_job("ft8");
@@ -2908,7 +3167,6 @@ async fn tc_111_starts_are_single_commands_and_a_band_change_stops_the_station()
         vec![record("CQ K1ABC FN42", 1234.6, Some(-12.4))],
     );
     f.tick();
-    f.contact().grant.store(true, Ordering::SeqCst);
     let row = json!({"source_id":source,"job_id":job,"generation":generation,"sequence":seq[0]});
     let shown = f.snapshot().await["transmit"]["safety_revision"].clone();
     assert_eq!(shown, json!(3));
@@ -3106,7 +3364,12 @@ fn udp_target_85(f: &Fixture) -> std::net::UdpSocket {
         serde_json::to_vec(&doc).unwrap(),
     )
     .unwrap();
-    let owner = crate::udp::Owner::open(&f.state, false, &f.dir.join("udp-instance"));
+    let owner = crate::udp::Owner::open(
+        &f.state,
+        false,
+        &f.dir.join("udp-instance"),
+        Arc::new(crate::udp::SystemSockets),
+    );
     assert!(f.state.recording.udp.set(owner.clone()).is_ok());
     owner.step(&f.state);
     datagrams_85(&peer);
@@ -3145,7 +3408,6 @@ struct Air85<'a> {
 impl<'a> Air85<'a> {
     fn new(f: &'a Fixture) -> Self {
         let job = f.state.recording.fixture_live_job("ft8");
-        f.contact().grant.store(true, Ordering::SeqCst);
         // An even FT8 period (a multiple of 30 s).
         let p0 = now_ms().div_euclid(30_000) * 30_000 + 60_000;
         let mut air = Self {
@@ -3240,7 +3502,7 @@ async fn qso_from_cq_85(air: &mut Air85<'_>, n: i64, call: &str) -> i64 {
 // Proves: TC-085-001, TC-085-002, TC-085-005
 #[tokio::test]
 async fn tc_085_001_the_same_station_in_a_row_is_not_logged() {
-    let f = fixture("http://127.0.0.1:18085", true);
+    let f = https_fixture("https://127.0.0.1:18085", true).await;
     let target = udp_target_85(&f);
     let mut air = Air85::new(&f);
     // (g) An empty log: the first QSO is logged (guard).

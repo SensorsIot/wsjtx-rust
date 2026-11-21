@@ -401,9 +401,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             recording.sync_transmit_mode();
             // WstxQsoPart::QsoService: one contact engine per station, consuming the transmit
             // owner.
-            let _ = recording
-                .contact
-                .set(contact_http::Station::start(&store, station_clock));
+            let contact = contact_http::Station::start(&store, station_clock);
+            // WstxClubLog::MostWantedQuery: Download now asks Club Log.
+            contact
+                .strategy
+                .set_list_source(Box::new(most_wanted::ClubLog));
+            let _ = recording.contact.set(contact);
             // FR-023: a native profile starts its own direct radio session; a standard
             // profile never opens a native socket.
             if let Some(native) = &store.document.native {
@@ -482,7 +485,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .join("WstxRust")
                 .join("udp-instance");
             let owner = tokio::task::spawn_blocking(move || {
-                udp::Owner::open(&opened, disabled, &instance_locks)
+                udp::Owner::open(
+                    &opened,
+                    disabled,
+                    &instance_locks,
+                    Arc::new(udp::SystemSockets),
+                )
             })
             .await?;
             let _ = state.recording.udp.set(owner);

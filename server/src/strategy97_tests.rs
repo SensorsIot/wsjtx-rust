@@ -1260,7 +1260,7 @@ async fn calls(
 async fn tc_097_009_a_the_spot_ageing_past_600_s_brings_the_leaving_back_to_calls() {
     let t = leaving(|_| {}, &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(598));
+    t.feed.broker.publish(&heard_spot(598));
     for k in 1..=4 {
         publish(f, rep(e, k), &[]);
         assert_eq!(run_of(f).await["leave"]["remaining"], json!(8 - k), "{k}");
@@ -1338,7 +1338,7 @@ async fn tc_097_009_c_contest_style_change_points_and_the_stay() {
 
     let t = leaving(contest_style(0, 2), &[K1ABC_CQ]).await;
     let (f, e) = (&t.f, t.e);
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     let start = frequencies(f).await.1;
     let seen = calls(f, e, 1, 20, &[K1ABC_CQ]).await;
     assert!(seen.iter().all(|s| s.1 && s.0 == start), "stays 20 periods");
@@ -1347,7 +1347,7 @@ async fn tc_097_009_c_contest_style_change_points_and_the_stay() {
     for (heard, moves) in [(0, false), (1, true)] {
         let t = leaving(contest_style(heard, 2), &[K1ABC_CQ]).await;
         let (f, e) = (&t.f, t.e);
-        t.feed.inject(&heard_spot(60));
+        t.feed.broker.publish(&heard_spot(60));
         let start = frequencies(f).await.1;
         calls(f, e, 1, 2, &[K1ABC_CQ]).await;
         let seen = calls(f, e, 3, 4, &[K1ABC_CQ, better]).await;
@@ -1418,7 +1418,7 @@ async fn tc_097_009_f_unattended_until_logged_and_contest_end_at_the_stop_at_n()
     ] {
         let mut t = leaving(edit, &[K1ABC_CQ]).await;
         let e = t.e;
-        t.feed.inject(&heard_spot(60));
+        t.feed.broker.publish(&heard_spot(60));
         drop(t.client.take());
         let f = &t.f;
         f.tick();
@@ -1548,7 +1548,7 @@ async fn tc_097_010_the_run_moves_tx_per_psk_case() {
     for (age, case) in [(120, "not_heard"), (599, "not_heard"), (601, "no_reports")] {
         let t = leaving(|_| {}, &[K1ABC_CQ]).await;
         let (f, e) = (&t.f, t.e);
-        t.feed.inject(&reports_spot(age));
+        t.feed.broker.publish(&reports_spot(age));
         publish(f, rep(e, 1), &[]);
         let s = run_of(f).await["slot_check"].clone();
         assert_eq!(
@@ -1573,7 +1573,7 @@ async fn tc_097_010_the_run_moves_tx_per_psk_case() {
         &[K1ABC_CQ],
     )
     .await;
-    t.feed.inject(&reports_spot(120));
+    t.feed.broker.publish(&reports_spot(120));
     assert_eq!(
         moved_at(&t.f, t.e, 1, 3, &[]).await,
         [false, true, false],
@@ -1587,7 +1587,7 @@ async fn tc_097_010_the_run_moves_tx_per_psk_case() {
     .await;
     let (f, e) = (&t.f, t.e);
     assert_eq!(moved_at(f, e, 1, 1, &[]).await, [true], "no_reports");
-    t.feed.inject(&heard_spot(60));
+    t.feed.broker.publish(&heard_spot(60));
     assert_eq!(moved_at(f, e, 2, 3, &[]).await, [false, false], "heard");
     // No move after his answer.
     let t = leaving(

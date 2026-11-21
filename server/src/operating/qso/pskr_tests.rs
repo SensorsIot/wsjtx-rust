@@ -374,7 +374,246 @@ impl Drop for Dir {
     }
 }
 fn local_connector(port: u16) -> Connector {
-    station_connector(Some(&format!("tcp:127.0.0.1:{port}"))).unwrap()
+    Box::new(move |timing: &FeedSession| {
+        let stream = super::tcp("127.0.0.1", port, timing)?;
+        Ok(Box::new(stream) as Box<dyn Transport>)
+    })
+}
+
+/// A connector failing every attempt, as an unreachable broker does.
+pub(crate) fn unreachable() -> Connector {
+    Box::new(|_: &FeedSession| Err("connect_failed"))
+}
+
+/// A broker in memory, one connection at a time: it answers CONNECT, SUBSCRIBE, UNSUBSCRIBE
+/// and PINGREQ as the loopback peer of `session_against_a_local_peer` does and records the
+/// packet types it receives.
+#[derive(Clone, Default)]
+pub(crate) struct FakeBroker(Arc<BrokerShared>);
+#[derive(Default)]
+struct BrokerShared {
+    state: Mutex<BrokerState>,
+    changed: Condvar,
+}
+#[derive(Default)]
+struct BrokerState {
+    /// The current connection; an older one reads its end.
+    connection: u64,
+    inbound: Vec<u8>,
+    outbound: VecDeque<u8>,
+    /// The current session has subscribed.
+    subscribed: bool,
+    dropped: bool,
+    /// The first byte (packet type and flags) of each packet received.
+    received: Vec<u8>,
+    /// PUBLISH packets written.
+    published: u64,
+    /// (the PUBLISH packets the session has taken, the read that took the last of them).
+    taken: (u64, u64),
+    /// Reads the session has begun.
+    reads: u64,
+    /// Not connected: CONNACK only while a publish waits, the connection ended once it is taken.
+    not_connected: bool,
+    /// A CONNECT of the current connection waits for its CONNACK.
+    held: bool,
+    /// A publish waits to be taken.
+    publishing: bool,
+}
+const CONNACK: [u8; 4] = [0x20, 2, 0, 0];
+struct FakeTransport {
+    broker: Arc<BrokerShared>,
+    connection: u64,
+    poll: Duration,
+}
+impl BrokerShared {
+    fn lock(&self) -> std::sync::MutexGuard<'_, BrokerState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+impl Read for FakeTransport {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let mut s = self.broker.lock();
+        s.reads += 1;
+        let read = s.reads;
+        // A publish waits for this read to begin.
+        self.broker.changed.notify_all();
+        if s.outbound.is_empty() && !s.dropped && s.connection == self.connection {
+            s = self
+                .broker
+                .changed
+                .wait_timeout(s, self.poll)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+        if s.dropped || s.connection != self.connection {
+            return Ok(0);
+        }
+        if s.outbound.is_empty() {
+            return Err(ErrorKind::WouldBlock.into());
+        }
+        let n = buf.len().min(s.outbound.len());
+        for (to, from) in buf.iter_mut().zip(s.outbound.drain(..n)) {
+            *to = from;
+        }
+        if s.outbound.is_empty() && s.taken.0 < s.published {
+            s.taken = (s.published, read);
+        }
+        self.broker.changed.notify_all();
+        Ok(n)
+    }
+}
+impl Write for FakeTransport {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut s = self.broker.lock();
+        if s.dropped || s.connection != self.connection {
+            return Err(ErrorKind::BrokenPipe.into());
+        }
+        s.inbound.extend_from_slice(buf);
+        loop {
+            let mut header = 1;
+            let mut length = 0usize;
+            let complete = loop {
+                let Some(&byte) = s.inbound.get(header) else {
+                    break false;
+                };
+                length += usize::from(byte & 0x7f) << (7 * (header - 1));
+                header += 1;
+                if byte & 0x80 == 0 {
+                    break s.inbound.len() >= header + length;
+                }
+            };
+            if !complete {
+                break;
+            }
+            let bytes: Vec<u8> = s.inbound.drain(..header + length).collect();
+            let (first, body) = (bytes[0], &bytes[header..]);
+            let answer: Vec<u8> = match first {
+                0x10 if s.not_connected && !s.publishing => {
+                    s.held = true;
+                    vec![]
+                }
+                0x10 => CONNACK.to_vec(),
+                0x82 => {
+                    s.subscribed = true;
+                    vec![0x90, 3, body[0], body[1], 0]
+                }
+                0xa2 => vec![0xb0, 2, body[0], body[1]],
+                0xc0 => vec![0xd0, 0],
+                _ => vec![],
+            };
+            s.received.push(first);
+            s.outbound.extend(answer);
+        }
+        self.broker.changed.notify_all();
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+impl FakeBroker {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+    /// A broker the feed is not connected to: it answers CONNECT only while a publish waits
+    /// and ends that connection once the session has taken the spot, so the feed shows
+    /// connecting or an error, never connected, except while a spot is handed over.
+    pub(crate) fn not_connected() -> Self {
+        let broker = Self::default();
+        broker.0.lock().not_connected = true;
+        broker
+    }
+    /// A connector reaching this broker; each attempt replaces the current connection, and
+    /// after `drop_all` every attempt is closed at once, as a broker dropping it does.
+    pub(crate) fn connector(&self) -> Connector {
+        let broker = self.0.clone();
+        Box::new(move |timing: &FeedSession| {
+            let mut s = broker.lock();
+            s.connection += 1;
+            s.inbound.clear();
+            s.outbound.clear();
+            s.subscribed = false;
+            s.held = false;
+            let connection = s.connection;
+            broker.changed.notify_all();
+            Ok(Box::new(FakeTransport {
+                broker: broker.clone(),
+                connection,
+                poll: timing.poll,
+            }) as Box<dyn Transport>)
+        })
+    }
+    /// Writes one PUBLISH once the session has subscribed, and returns when the session has
+    /// taken it and asked for its next read.
+    pub(crate) fn publish(&self, payload: &str) {
+        let mut s = self.0.lock();
+        s.publishing = true;
+        if s.held {
+            s.held = false;
+            s.outbound.extend(CONNACK);
+            self.0.changed.notify_all();
+        }
+        while !s.subscribed || s.dropped {
+            s = self.0.changed.wait(s).unwrap_or_else(|e| e.into_inner());
+        }
+        let mut body = Vec::new();
+        text(&mut body, "pskr/filter/v2/fake");
+        body.extend_from_slice(payload.as_bytes());
+        s.outbound.extend(packet(0x30, &body));
+        s.published += 1;
+        let sent = s.published;
+        self.0.changed.notify_all();
+        while !(s.taken.0 >= sent && s.reads > s.taken.1) {
+            s = self.0.changed.wait(s).unwrap_or_else(|e| e.into_inner());
+        }
+        s.publishing = false;
+        if s.not_connected {
+            // The session reads its end; its next attempt waits for a CONNACK again.
+            s.connection += 1;
+            s.subscribed = false;
+            self.0.changed.notify_all();
+        }
+    }
+    /// Ends the connection; every later attempt fails with its connection closed.
+    pub(crate) fn drop_all(&self) {
+        self.0.lock().dropped = true;
+        self.0.changed.notify_all();
+    }
+    /// The packet types received (each packet's first byte), in order.
+    pub(crate) fn received(&self) -> Vec<u8> {
+        self.0.lock().received.clone()
+    }
+}
+
+// The fake broker answers the session as the loopback peer does, hands it a spot only once
+// it has subscribed, records the packet types and, once dropped, closes every connection.
+#[test]
+fn the_fake_broker_answers_records_and_drops() {
+    let dir = Dir::new();
+    let broker = FakeBroker::new();
+    let feed = Feed::start(
+        &dir.0,
+        "p",
+        "b00t",
+        Some(broker.connector()),
+        FAST,
+        std::sync::Arc::new(crate::profile::Disk),
+    );
+    feed.observe(Some("HB9BLA"), None);
+    broker.publish(&fresh_spot("HB9BLA", "W1AW"));
+    assert!(
+        !feed.view()["last_spot_utc_s"].is_null(),
+        "taken before publish returned"
+    );
+    assert_eq!(feed.view()["state"], "connected");
+    assert_eq!(&broker.received()[..2], &[0x10, 0x82], "CONNECT, SUBSCRIBE");
+    broker.drop_all();
+    until("closed", || {
+        matches!(
+            feed.view()["error"].as_str(),
+            Some("connection_closed" | "connection_lost")
+        )
+    });
 }
 /// A broker's side of one connection: read one MQTT packet, as (first byte, body).
 fn read_packet(stream: &mut TcpStream) -> Option<(u8, Vec<u8>)> {
@@ -550,7 +789,7 @@ fn session_against_a_local_peer() {
             &dir.0,
             "p",
             "b00t",
-            None,
+            Some(unreachable()),
             FAST,
             std::sync::Arc::new(crate::profile::Disk)
         )
@@ -730,7 +969,7 @@ fn the_setting_defaults_on_and_survives() {
         &dir.0,
         "p",
         "b",
-        None,
+        Some(unreachable()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -743,7 +982,7 @@ fn the_setting_defaults_on_and_survives() {
             &dir.0,
             "p",
             "b",
-            None,
+            Some(unreachable()),
             FAST,
             std::sync::Arc::new(crate::profile::Disk)
         )
@@ -754,7 +993,7 @@ fn the_setting_defaults_on_and_survives() {
         &dir.0,
         "q",
         "b",
-        None,
+        Some(unreachable()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     )
@@ -767,7 +1006,7 @@ fn the_setting_defaults_on_and_survives() {
             &dir.0,
             "p",
             "b",
-            None,
+            Some(unreachable()),
             FAST,
             std::sync::Arc::new(crate::profile::Disk)
         )
@@ -860,7 +1099,7 @@ async fn http_routes_read_and_switch_the_feed() {
         &dir.0,
         &f.id,
         &f.boot,
-        None,
+        Some(unreachable()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -959,11 +1198,12 @@ fn tc_039_048_decoded_offsets_are_kept_per_parity() {
         "newest first, the same offset once per parity"
     );
     let dir = Dir::new();
+    let broker = FakeBroker::new();
     let feed = Feed::start(
         &dir.0,
         "p",
         "b",
-        None,
+        Some(broker.connector()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -974,7 +1214,7 @@ fn tc_039_048_decoded_offsets_are_kept_per_parity() {
     } else {
         now - 15
     };
-    feed.inject(&payload("DL1XYZ", "K1ABC", 14_075_200, odd_now, None));
+    broker.publish(&payload("DL1XYZ", "K1ABC", 14_075_200, odd_now, None));
     let of = |p: Parity| feed.decoded_of_parity("FT8", "20m", 14_074_000, (300, 2650), p);
     assert_eq!((of(Parity::Odd), of(Parity::Even)), (vec![1200], vec![]));
     // Use off: no offsets at all.
@@ -997,7 +1237,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         &dir.0,
         "p",
         "b",
-        None,
+        Some(unreachable()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1021,7 +1261,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         &dir.0,
         "p",
         "b",
-        None,
+        Some(unreachable()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     )
@@ -1035,7 +1275,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
         &dir.0,
         "p",
         "b",
-        None,
+        Some(unreachable()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1060,7 +1300,7 @@ fn tc_039_048_the_use_setting_is_kept_in_schema_2() {
             &dir.0,
             "p",
             "b",
-            None,
+            Some(unreachable()),
             FAST,
             std::sync::Arc::new(crate::profile::Disk),
         )
@@ -1087,7 +1327,7 @@ async fn tc_039_048_post_pskr_use_saves_and_refuses() {
         &f.dir,
         &f.id,
         &f.boot,
-        None,
+        Some(unreachable()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1280,11 +1520,12 @@ async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use()
     );
     assert_eq!(target_offsets(r, mode, Parity::Odd), None, "no feed");
     assert!(!use_on(r));
+    let broker = FakeBroker::new();
     let feed = Feed::start(
         &f.dir,
         &f.id,
         &f.boot,
-        None,
+        Some(broker.connector()),
         FAST,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -1296,14 +1537,14 @@ async fn tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use()
     } else {
         now - 15
     };
-    feed.inject(&payload(
+    broker.publish(&payload(
         "HB9BLA",
         "K1ABC",
         14_075_500,
         now - 60,
         Some("-12"),
     ));
-    feed.inject(&payload("DL1XYZ", "K1ABC", 14_075_200, odd, None));
+    broker.publish(&payload("DL1XYZ", "K1ABC", 14_075_200, odd, None));
     // Without a station band nothing is known.
     assert_eq!(
         target_hearing(r, Some("K1ABC"), mode),

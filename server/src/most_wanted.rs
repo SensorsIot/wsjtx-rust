@@ -89,10 +89,17 @@ fn known_numbers() -> std::collections::HashSet<u16> {
 pub fn adif_number(entity: &str) -> Option<u16> {
     table().get(entity).copied()
 }
-/// Download now, once on the operator's click: the list text of SOURCE_URL
-/// (most_wanted_query).
-pub fn fetch() -> Result<String, String> {
-    fetch_url(most_wanted_query::SOURCE_URL)
+/// Where Download now asks for the list text, once per operator click.
+pub trait ListSource: Send + Sync {
+    /// The list text of one download; Err names the reason.
+    fn fetch(&self) -> Result<String, String>;
+}
+/// The station's source: one GET of SOURCE_URL (most_wanted_query).
+pub struct ClubLog;
+impl ListSource for ClubLog {
+    fn fetch(&self) -> Result<String, String> {
+        fetch_url(most_wanted_query::SOURCE_URL)
+    }
 }
 
 /// cty.dat entity full name -> ADIF DXCC number, from AD1C's cty.csv of 2026-11 (its third

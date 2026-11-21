@@ -587,7 +587,7 @@ async fn tc_081_003_an_mcp_stop_and_the_time_limit_finish_the_qso() {
 /// TC-081-004: "Test calls" with repetitions 4 and the Tx watchdog at 2 (the browser's), a spot of my
 /// call at K1ABC 60 s old (he hears us: the leave rule would double x to 8), Tx 1500 held (K1ABC at
 /// 1800); the feed follows K1ABC.
-async fn watched() -> (Station81, Arc<crate::pskr::Feed>) {
+async fn watched() -> (Station81, crate::strategy::tests::BrokerFeed) {
     let t = station81(Some(2)).await;
     let (f, e) = (&t.f, t.e);
     let feed = attach_feed(f);
@@ -596,7 +596,7 @@ async fn watched() -> (Station81, Arc<crate::pskr::Feed>) {
     select(f, c).await;
     publish(f, e, &[K1ABC]);
     f.tick();
-    feed.inject(&heard_spot(60));
+    feed.broker.publish(&heard_spot(60));
     assert_eq!(feed.target().as_deref(), Some("K1ABC"));
     transmit_own_period(f, e + 15_000).await;
     publish(f, e + 30_000, &[his("HB9BLA K1ABC -05")]);

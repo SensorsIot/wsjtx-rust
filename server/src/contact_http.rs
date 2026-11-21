@@ -120,9 +120,6 @@ pub(crate) struct Station {
     pub(crate) strategy: crate::strategy::Owner,
     /// Set by a strategy run around its own select_row (CqTargetList admission).
     pub(crate) strategy_select: std::sync::atomic::AtomicBool,
-    /// Test seam only: stands in for the CL-022 grant a plaintext test router lacks.
-    #[cfg(test)]
-    pub(crate) grant: std::sync::atomic::AtomicBool,
 }
 type Tx = Core<Box<dyn Hardware>>;
 /// A lock its holding thread takes again at once: the run's own commands run inside its hold.
@@ -418,8 +415,6 @@ impl Station {
             automation: crate::automation::Owner::new(clock),
             strategy: crate::strategy::Owner::default(),
             strategy_select: std::sync::atomic::AtomicBool::new(false),
-            #[cfg(test)]
-            grant: std::sync::atomic::AtomicBool::new(false),
         })
     }
     pub(crate) fn revision(&self) -> u64 {
@@ -1334,8 +1329,7 @@ pub async fn command(
     // principal comes from the credential: an MCP client's transport is never the
     // browser, whichever route carried it; an unreadable one is never an operator.
     let access = authorization_http::operating_access_async(&headers, &app).await;
-    #[allow(unused_mut)]
-    let mut granted = matches!(access, Ok(Some(_)));
+    let granted = matches!(access, Ok(Some(_)));
     let principal = match &access {
         Ok(Some(a)) => a.principal,
         Ok(None) => authorization::Principal::Browser,
@@ -1344,10 +1338,6 @@ pub async fn command(
     let (Ok(station), Some(state)) = (station_of(&r), app.profile.clone()) else {
         return refusal("not_found", None);
     };
-    #[cfg(test)]
-    {
-        granted |= station.grant.load(Ordering::Acquire);
-    }
     // Only a human action in the browser is an operator action for the Tx
     // watchdog; an MCP tool call runs like automation (no reset, arms only within it).
     let outcome =
