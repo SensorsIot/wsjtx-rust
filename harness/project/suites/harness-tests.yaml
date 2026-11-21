@@ -1,0 +1,19 @@
+# The tests of the project harness (harness/project/tests/): the registry's filter forms
+# and filter_run.py, the role context and the station-switch guard.
+- suite: harness-tests
+  cost: 2
+  run: python -m unittest discover -s harness/project/tests -v
+  filter: >-
+    python harness/project/tools/filter_run.py harness-tests {filter}
+    @unittest python -m unittest discover -s harness/project/tests -v
+  paths:
+  - harness/project/suites/
+  - harness/project/tools/
+  - harness/project/tests/
+  - .claude/agents/
+  - rust-toolchain.toml
+  select:
+  - harness/project/tools/
+  - harness/project/tests/
+  - .claude/agents/
+  needs: "Python 3.12 with PyYAML, the pinned Rust toolchain (cargo) and Node 24. Windows PC. test_filter_forms.py reads every suite file and builds a fixture Cargo crate, a node --test file and a unittest module in a temporary folder, on which it runs filter_run.py. test_role_context.py and test_station_switch_guard.py judge tool calls with the tracked role files .claude/agents/*.md through install_skills.guard of the pinned harness; they run no command and no PowerShell script, switch no station and start no emulator. No station, radio or network."

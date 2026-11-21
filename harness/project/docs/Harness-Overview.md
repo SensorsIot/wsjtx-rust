@@ -47,8 +47,8 @@ Everything under `harness/` is the harness (HOW); everything else is product.
     `node --test` reporter that counts the tests it ran;
   - `tests/`: the tests of the project's role additions (`test_role_context.py`,
     `test_station_switch_guard.py`) and of the filter forms and `filter_run.py`
-    (`test_filter_forms.py`), run with
-    `python -m unittest discover -s harness/project/tests`;
+    (`test_filter_forms.py`), run by the suite `harness-tests`
+    (`python -m unittest discover -s harness/project/tests`);
   - `mcp/station.json`: the station tester's MCP servers (`alex.launcher.mcp.station`);
   - `docs/`: [Agent working rules](Agent-Working-Rules.md), [Do-Not-Do](Do-Not-Do.md),
     [Finished model](Finished-Model.md), this overview,

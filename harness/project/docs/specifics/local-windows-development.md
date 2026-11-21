@@ -75,16 +75,17 @@ sibling suite owns through the partition, and where `run` already selects by a n
   and `independent-vector-tool/test_cache.py` of `decoder-correctness`. Whole-suite runs
   and the gate run them.
 - Suites without a form, each with its reason in its entry; `--filter` on them is refused
-  with the gate's "has no filter form" message. `live-receive-integration`,
-  `contact-browser` and `radio-selection-thin`: the run is exactly one test, so the whole
-  suite is that test. `sysml-equivalence` and `source-model-traces`: the run is a model
+  with the gate's "has no filter form" message. `live-receive-integration` and
+  `radio-selection-thin`: the run is exactly one test, so the whole suite is that test. `sysml-equivalence` and `source-model-traces`: the run is a model
   check with no tests to select. `decoder-quality`: `windows_resource_job.py resolve` binds
   every ordinary pass of `decoder_signal` into one artifact, so a partial run cannot be
   resolved. `radio-bounds`: the run is the 14 `realtime_bound_` tests, measured alone; a
-  whole run takes seconds, so a part of it saves nothing.
+  whole run takes seconds, so a part of it saves nothing. `rust-clippy-release`: the run is
+  a lint with no tests to select.
 
 `harness/project/tests/test_filter_forms.py` holds the list of suites with and without a
-form and checks that each form runs exactly the steps of its `run`.
+form and checks that each form runs exactly the steps of its `run`. The suite
+`harness-tests` runs it, with the other tests of `harness/project/tests/`.
 
 Runtime oracles are selected by changed implementation and executable tests. Source edits
 also select the fast binding check `source-model-traces`, without a dependency that runs the
