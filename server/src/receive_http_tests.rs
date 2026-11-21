@@ -472,6 +472,7 @@ impl KeptPageBoot {
         dir: &std::path::Path,
         origin: &str,
         profile_id: &str,
+        inputs: usize,
     ) -> Self {
         let boot = profile::new_uuid().unwrap();
         let (store, _) =
@@ -483,9 +484,10 @@ impl KeptPageBoot {
             std::sync::Arc::new(crate::profile::Disk),
         );
         // The busy recording in every FT8 period: each period's rows move to the kept period.
-        // Two, because the page starts receive twice: the second start raises the generation
-        // above the new boot's 0, as any band change on the running station does.
-        let inputs = (0..2)
+        // One input per receive start the driver makes; the restart driver starts twice, so
+        // that the second start raises the generation above the new boot's 0, as any band
+        // change on the running station does.
+        let inputs = (0..inputs)
             .map(|_| {
                 let mut input =
                     BusyPeriodInput::load(Arc::new(std::sync::atomic::AtomicU64::new(0)));
@@ -577,7 +579,7 @@ fn live_native_page_kept_across_restart() {
         })
         .collect();
     std::fs::write(dir.join(crate::logbook::FILE_NAME), adi).unwrap();
-    let mut boot = KeptPageBoot::start(listener, &dir, &origin, &profile_id);
+    let mut boot = KeptPageBoot::start(listener, &dir, &origin, &profile_id, 2);
     let control = dir.join("page-control");
     std::fs::create_dir(&control).unwrap();
     let output = std::fs::File::create(control.join("node.log")).unwrap();
@@ -615,7 +617,7 @@ fn live_native_page_kept_across_restart() {
                 }
             };
             std::fs::write(control.join("restarted"), "").unwrap();
-            boot = KeptPageBoot::start(listener, &dir, &origin, &profile_id);
+            boot = KeptPageBoot::start(listener, &dir, &origin, &profile_id, 2);
         }
         std::thread::sleep(Duration::from_millis(50));
     };
@@ -624,6 +626,50 @@ fn live_native_page_kept_across_restart() {
     std::fs::remove_dir_all(dir).unwrap();
     assert!(status.success(), "{log}");
     assert!(restarted, "the driver never asked for the restart\n{log}");
+    println!("{log}");
+}
+
+// One page kept open while a second page, in its own browser context and on its own socket,
+// selects the band the station already receives on, as the live page check does. The driver
+// tests/frontend/receive-page-follow.test.cjs holds the oracle. Four inputs: the driver starts
+// receive twice (page A starts 20m, page B selects 20m), so two are left to spare.
+#[cfg(all(windows, not(debug_assertions)))]
+#[test]
+fn live_native_page_follows_another_selection() {
+    let dir = std::env::temp_dir().join(format!("wstx-follow-{}", profile::new_uuid().unwrap()));
+    std::fs::create_dir(&dir).unwrap();
+    let listener = wstx_test_tools::ports::first_allowed(
+        || std::net::TcpListener::bind("127.0.0.1:0").unwrap(),
+        |l| l.local_addr().unwrap().port(),
+    );
+    let address = listener.local_addr().unwrap();
+    let origin = format!("http://{address}");
+    let profile_id = profile::new_uuid().unwrap();
+    let doc = json!({"schema_version":1,"profile_id":profile_id,"revision":0,"display_name":"Followed page fixture",
+        "callsign":"HB9BLA","locator":"JN37VL","endpoint":{"bind":address.to_string(),"origin":null},"connection_type":"standard",
+        "audio":{"input_device":"explicit-test-native-input","output_device":null},"control":{"mode":"disabled","endpoint":null,"ptt":"disabled"}});
+    std::fs::write(dir.join("profile.json"), serde_json::to_vec(&doc).unwrap()).unwrap();
+    let boot = KeptPageBoot::start(listener, &dir, &origin, &profile_id, 4);
+    let control = dir.join("page-control");
+    std::fs::create_dir(&control).unwrap();
+    let output = std::fs::File::create(control.join("node.log")).unwrap();
+    let status = std::process::Command::new("node")
+        .args(["--test", "tests/frontend/receive-page-follow.test.cjs"])
+        .current_dir(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap(),
+        )
+        .env("WSTX_PAGE_ORIGIN", &origin)
+        .env("WSTX_PAGE_CONTROL", &control)
+        .stdout(output.try_clone().unwrap())
+        .stderr(output)
+        .status()
+        .unwrap();
+    let log = std::fs::read_to_string(control.join("node.log")).unwrap();
+    boot.stop();
+    std::fs::remove_dir_all(dir).unwrap();
+    assert!(status.success(), "{log}");
     println!("{log}");
 }
 

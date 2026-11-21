@@ -18,6 +18,9 @@
 # why, never PASS, and the restart follows. After a selection that took it waits until the check
 # has seen the raised generation with new rows, at most -WaitSeconds from the 202. Just before
 # Ctrl+C it reads the idle conditions again: a station in use then is not stopped (BUSY).
+# The station keeps one session per grant, so on the old boot the page and this script share one:
+# a login of this script after the page got its session would end the page's reads, and with them
+# its view of the raised generation. After a new login the page gets the new session.
 # Stop and start as in radio-preflight.ps1: Ctrl+C, then the scheduled task.
 # From its first idle read until the new boot answers it holds the station's update.lock, so
 # station-update.ps1 and radio-preflight.ps1 refuse to start in that window.
@@ -73,7 +76,7 @@ function Station-Busy {
   }
   $procs = @(Station-Procs)
   if ($procs.Count -ne 1) { return "$($procs.Count) station processes are running" }
-  # One session for the whole wait: a login every 10 s runs into the station's login limit.
+  # The page's session for the whole wait: a login every 10 s runs into the station's login limit.
   $read = {
     if (-not $script:Session) { $script:Session = Open-AgentSession }
     @((Agent-Get $script:Session '/transmit'), (Agent-Get $script:Session '/contact').contact, (Agent-Get $script:Session '/automation').run)
@@ -83,6 +86,8 @@ function Station-Busy {
     $script:Session = $null
     try { $transmit, $contact, $run = & $read } catch { return "its state cannot be read ($($_.Exception.GetType().Name))" }
   }
+  # A new login ended the page's session: the page gets the new one.
+  if (-not [object]::ReferenceEquals($script:Session, $script:PageSession)) { Hand-Session }
   if ([string]$transmit.transmit.arm_state -ne 'disarmed') { return "transmit is $($transmit.transmit.arm_state)" }
   if ([string]$transmit.ptt -ne 'released' -or $transmit.transmitting) { return "PTT is $($transmit.ptt), transmitting: $($transmit.transmitting)" }
   if ($contact -and [string]$contact.state -notin @('idle', 'completed', 'cancelled')) { return "a contact is $($contact.state)" }
@@ -158,8 +163,14 @@ function Session-Line($session) {
   $cookies = @($session.Session.Cookies.GetCookies($AgentUrl) | Where-Object { $_.Name -like 'wstx_session_*' } | ForEach-Object { @{ name = $_.Name; value = $_.Value } })
   @{ cookies = $cookies } | ConvertTo-Json -Compress -Depth 3
 }
+# The station keeps one session per grant, so a later login ends the earlier one. On the old boot
+# the page and this script share one session: the page holds the one this script reads with.
+function Hand-Session {
+  $script:PageSession = $script:Session
+  $node.StandardInput.WriteLine((Session-Line $script:Session)); $node.StandardInput.Flush()
+}
 
-$node = $null; $control = $null; $script:Session = $null; $script:Lock = $null; $code = 2; $word = 'ERROR'; $why = 'the check did not finish'
+$node = $null; $control = $null; $script:Session = $null; $script:PageSession = $null; $script:Lock = $null; $code = 2; $word = 'ERROR'; $why = 'the check did not finish'
 try {
   # Only this script and the check: the station starts from its task, outside this priority.
   [Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
@@ -181,7 +192,7 @@ try {
   $start.EnvironmentVariables['WSTX_LIVE_PAGE_CONTROL'] = $control
   $start.EnvironmentVariables['WSTX_LIVE_PAGE_WAIT_SECONDS'] = [string]$WaitSeconds
   $node = [Diagnostics.Process]::Start($start)
-  $node.StandardInput.WriteLine((Session-Line (Open-AgentSession))); $node.StandardInput.Flush()
+  $script:Session = Open-AgentSession; Hand-Session
 
   $restartDone = $false
   while (-not $node.HasExited) {

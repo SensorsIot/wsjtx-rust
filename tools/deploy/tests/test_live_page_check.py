@@ -23,14 +23,20 @@ const fs=require('node:fs'),path=require('node:path'),readline=require('node:rea
 const control=process.env.WSTX_LIVE_PAGE_CONTROL,log=what=>fs.appendFileSync(process.env.LPC_LOG,what+'\n');
 console.log('CHECK CWD '+process.cwd()+' FILE '+__filename);
 fs.writeFileSync(path.join(control,'restart'),'');
-let sessions=0;const unexercised=[];
+let stopping=false,held=null;const unexercised=[];
+// The station keeps one session per grant: the page's session is current only while no later
+// login of the agent replaced it.
+const current=()=>held==='secret'+fs.readFileSync(process.env.LPC_LOGINS,'utf8').trim();
 readline.createInterface({input:process.stdin}).on('line',line=>{
   const m=JSON.parse(line.replace(/^﻿/,''));
   console.log('CHECK GOT '+Object.keys(m).join(','));
   if(m.abort)process.exit(3);
+  if(m.cookies)held=m.cookies[0].value;
+  if(m.stopping){stopping=true;console.log('CHECK PAGE SESSION AT THE STOP '+(current()?'current':'replaced'));}
   if(m.unexercised){console.log('CHECK UNEXERCISED '+m.unexercised);unexercised.push(m.unexercised);}
   if(m.selected){
     console.log('CHECK SELECTED generation '+m.selected.generation+' ms '+m.selected.ms);
+    console.log('CHECK PAGE SESSION AT THE SELECTION '+(current()?'current':'replaced'));
     // While the page waits for the raised generation, the station may come into use.
     const later=JSON.parse(process.env.LPC_LATER||'{}');
     if(later.lease)fs.writeFileSync(process.env.LPC_LEASE,JSON.stringify(later.lease));
@@ -40,22 +46,26 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
     setTimeout(()=>{log('rows');console.log('CHECK ROWS');fs.writeFileSync(path.join(control,'rows'),'');},delay);
   }
   // Once the new boot answers, the restart has given the update lock back.
-  if(m.cookies&&++sessions===2){try{fs.closeSync(fs.openSync(process.env.LPC_LOCK,'r+'));console.log('CHECK LOCK free');}catch{console.log('CHECK LOCK held');}process.exit(unexercised.length?4:0);}
+  if(m.cookies&&stopping){try{fs.closeSync(fs.openSync(process.env.LPC_LOCK,'r+'));console.log('CHECK LOCK free');}catch{console.log('CHECK LOCK held');}process.exit(unexercised.length?4:0);}
 });
 """
 
 AGENT_CLIENT = r"""
 $AgentUrl = 'https://localhost:9'
-$global:LpcCommand = $null; $global:LpcPosts = 0; $global:LpcRevision = 0
+$global:LpcCommand = $null; $global:LpcPosts = 0; $global:LpcRevision = 0; $global:LpcFailed = $false
 function Log($what) { Add-Content -LiteralPath $env:LPC_LOG -Value $what }
+# Each login replaces the agent's earlier session, as the station keeps one per grant.
 function Open-AgentSession {
+  $n = [int]([IO.File]::ReadAllText($env:LPC_LOGINS).Trim()) + 1
+  [IO.File]::WriteAllText($env:LPC_LOGINS, [string]$n)
   $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-  $s.Cookies.Add((New-Object Net.Cookie 'wstx_session_p', 'secret', '/', 'localhost'))
+  $s.Cookies.Add((New-Object Net.Cookie 'wstx_session_p', "secret$n", '/', 'localhost'))
   [pscustomobject]@{ Session = $s }
 }
 function Agent-Get($c, [string]$Route) {
   $state = [IO.File]::ReadAllText($env:LPC_STATE) | ConvertFrom-Json
   if ($state.PSObject.Properties['unreadable']) { throw [Net.WebException]::new('down') }
+  if ($state.PSObject.Properties['fail_once'] -and -not $global:LpcFailed) { $global:LpcFailed = $true; throw [Net.WebException]::new('lost') }
   switch ($Route) {
     '/transmit' { [pscustomobject]@{ ptt = $state.ptt; transmitting = $state.transmitting; transmit = [pscustomobject]@{ arm_state = $state.arm } } }
     '/contact' { [pscustomobject]@{ contact = $state.contact } }
@@ -134,6 +144,7 @@ class LivePageCheckTests(unittest.TestCase):
         self.log = os.path.join(self.tmp.name, "log.txt")
         open(self.log, "w").close()
         self.posts = os.path.join(self.tmp.name, "posts.txt")
+        self.logins = os.path.join(self.tmp.name, "logins.txt")
         self.state = os.path.join(self.tmp.name, "state.json")
         self.check = os.path.join(self.tmp.name, "check.cjs")
         with open(self.check, "w", encoding="utf-8") as f:
@@ -149,9 +160,11 @@ class LivePageCheckTests(unittest.TestCase):
         with open(self.state, "w", encoding="utf-8") as f:
             json.dump(state, f)
         open(self.posts, "w").close()
-        args = ["-WaitSeconds", "1", "-Station", self.station, "-AgentClient", self.client,
+        with open(self.logins, "w") as f:
+            f.write("0")
+        args =["-WaitSeconds", "1", "-Station", self.station, "-AgentClient", self.client,
                 "-Repo", self.repo, "-Shared", self.shared] + (["-Check", self.check] if check else [])
-        env = {"LPC_LOG": self.log, "LPC_STATE": self.state, "LPC_POSTS": self.posts,
+        env = {"LPC_LOG": self.log, "LPC_STATE": self.state, "LPC_POSTS": self.posts, "LPC_LOGINS": self.logins,
                "LPC_LOCK": os.path.join(self.station, "logs", "update.lock"),
                "LPC_LEASE": os.path.join(self.radio, "lease.json"),
                "LPC_PROCS": os.path.join(self.station, "procs2"),
@@ -229,6 +242,27 @@ class LivePageCheckTests(unittest.TestCase):
         self.assertEqual(log, ["select", "rows", "ctrlc", "start-locked"], out)
         ms = int(out.split("CHECK SELECTED generation 1 ms ")[1].split()[0])
         self.assertTrue(0 <= ms <= 1000, out)
+
+    def test_the_page_holds_the_session_the_script_reads_and_selects_with(self):
+        """The station keeps one session per grant: a login of the script after the page got its
+        session ends the page's, and a page without its session cannot read the raised generation."""
+        rc, out, log = self.run_check(FREE)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("CHECK PAGE SESSION AT THE SELECTION current", out)
+        self.assertIn("CHECK PAGE SESSION AT THE STOP current", out)
+        with open(self.logins, encoding="utf-8") as f:
+            self.assertEqual(f.read().strip(), "2", "one login on the old boot, one on the new")
+        self.assertNotIn("secret", out)
+
+    def test_a_new_login_after_a_lost_read_hands_the_page_the_new_session(self):
+        rc, out, log = self.run_check(dict(FREE, fail_once=True))
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(log, ["select", "rows", "ctrlc", "start-locked"], out)
+        self.assertEqual(self.got(out), ["CHECK GOT cookies", "CHECK GOT cookies", "CHECK GOT selected",
+                                         "CHECK GOT stopping", "CHECK GOT cookies"], out)
+        self.assertIn("CHECK PAGE SESSION AT THE SELECTION current", out)
+        self.assertIn("CHECK PAGE SESSION AT THE STOP current", out)
+        self.assertNotIn("secret", out)
 
     def test_spectrum_receive(self):
         self.assert_not_exercised(with_selection(receive={"job_id": "j1", "mode": "spectrum", "state": "running"}),

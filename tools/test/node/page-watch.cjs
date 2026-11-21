@@ -35,6 +35,9 @@ function watchPage(page){
     state:document.querySelector('#connection')?.dataset.state,
     job:typeof live==='undefined'?null:live?.job?.id??null,
     generation:typeof live==='undefined'?null:live?.generation??null,
+    jobState:typeof live==='undefined'?null:live?.job?.state??null,
+    status:document.querySelector('#receive-status')?.textContent??null,
+    notice:document.querySelector('#station-notice')?(!document.querySelector('#station-notice').hidden):null,
   }));
   const sample=async()=>{
     const seen=await read();

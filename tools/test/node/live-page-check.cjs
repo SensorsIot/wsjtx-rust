@@ -5,7 +5,9 @@
 //   powershell -File tools/deploy/live-page-check.ps1 -Repo <root> -Shared <git common dir>\harness-parallel -AgentClient <client>
 // That script stops and starts the station when this asks for it, in the file <control>/restart,
 // and hands the session on stdin, one JSON line each, so that it is on no command line or disk:
-//   {"cookies":[{"name","value"}]}  at the start, and again once the new boot answers
+//   {"cookies":[{"name","value"}]}  at the start, again when a new login of that script replaced
+//                                   it before the stop (the station keeps one session per grant,
+//                                   and the page shares that script's), and once the new boot answers
 //   {"selected":{"generation","ms"}} it made its band selection at that generation: this waits
 //                                   up to ms for a higher generation with new rows on the page,
 //                                   then writes the file <control>/rows
@@ -57,14 +59,30 @@ function exerciseMissing(unexercised,oldGeneration,newGeneration,workedKept){
 function raisedWithRows(seen,generation,known){
   return Number.isInteger(seen.generation)&&seen.generation>generation&&seen.rows.some(r=>!known.has(rowKey(r)));
 }
+// What each side showed when the wait for rows ran out, in one line and without a session value:
+// the station's generation and job state (null: it could not be read), then the page's
+// generation and job state, its receive status text and whether its station-data notice is shown.
+function waitSides(station,seen){
+  const side=station?`station generation ${station.generation}, job ${station.job??'none'}`:'the station could not be read';
+  const status=String(seen.status??'none').replace(/\s+/g,' ').trim();
+  return `${side}; page generation ${seen.generation??'none'}, job ${seen.jobState??'none'}; receive status "${status}"; station-data notice ${seen.notice===true?'shown':seen.notice===false?'not shown':'absent'}`;
+}
+// The station's side for that line, or null when it cannot be read.
+async function readStation(station){
+  try{const s=await station();return s&&Number.isInteger(s.generation)?s:null;}catch{return null;}
+}
 // From the restart request to the stop or the abort. Each message may take as long as the idle
 // wait, the selection's retries and its result together (3 x -WaitSeconds), plus a margin.
-async function awaitStop({watch,lines,control,clean,wait,pause}){
+// `station` reads GET /receive/selection `generation` and GET /receive `job.state` as
+// {generation,job}; it is read only for the reason of a wait that runs out.
+// `renew` takes a session that replaced the page's before the stop.
+async function awaitStop({watch,lines,control,clean,wait,pause,station=async()=>null,renew=async()=>{}}){
   const unexercised=[];
   let message,last;
   for(;;){
     message=undefined;
     await watch.until('the restart is not answered',seen=>{clean('waiting for the restart');last=seen;return (message=lines.poll());},3*wait+3*MINUTES);
+    if(message.cookies){await renew(message.cookies);continue;}
     if(message.unexercised){unexercised.push(message.unexercised);continue;}
     if(!message.selected)return {message,last,unexercised};
     const {generation,ms}=message.selected,end=Date.now()+ms;
@@ -72,7 +90,7 @@ async function awaitStop({watch,lines,control,clean,wait,pause}){
     const known=new Set(watch.tips.keys());
     for(;;){
       if(raisedWithRows(last,generation,known))break;
-      if(Date.now()>=end){unexercised.push(`no rows of a generation above ${generation} on the page within ${Math.round(ms/1000)} s of the band selection`);break;}
+      if(Date.now()>=end){unexercised.push(`no rows of a generation above ${generation} on the page within ${Math.round(ms/1000)} s of the band selection: ${waitSides(await readStation(station),last)}`);break;}
       await pause(500);
       last=await watch.sample();clean('waiting for the raised generation');
     }
@@ -104,7 +122,13 @@ async function run({origin,control,lines}){
     const before={periods:watch.periods.size,moved:watch.moved()};
 
     fs.writeFileSync(path.join(control,'restart'),'');
-    let {message,last,unexercised}=await awaitStop({watch,lines,control,clean,wait:WAIT,pause:ms=>page.waitForTimeout(ms)});
+    // Two reads with the session of this browser context, for the reason of a wait that runs out.
+    const station=()=>page.evaluate(async()=>{
+      const get=async p=>{const r=await fetch(p,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json();};
+      const [selection,receive]=await Promise.all([get('/receive/selection'),get('/receive')]);
+      return {generation:selection.generation,job:receive.job?.state??null};
+    });
+    let {message,last,unexercised}=await awaitStop({watch,lines,control,clean,wait:WAIT,pause:ms=>page.waitForTimeout(ms),station,renew:setCookies});
     if(message.abort)return {status:'busy',why:message.abort};
     const gone=await watch.until('the page sees the station gone',seen=>{if(seen.state==='connected'&&seen.boot===firstBoot)last=seen;return seen.state!=='connected'||seen.boot!==firstBoot;},60000);
     // Every row the old boot showed, up to its last period: a page that misses the restart keeps those.
