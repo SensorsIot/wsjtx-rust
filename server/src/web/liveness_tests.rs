@@ -39,11 +39,48 @@ pub(crate) fn upgrade_request(origin: &str, extra: &str) -> String {
 }
 
 /// A peer on a held transport. Its reader answers each Ping with a Pong only when `answers`;
-/// it hands on every text message and reports when the station closed the transport.
-struct Peer {
+/// it hands on every text message, records the instant on the runtime clock at which each text
+/// frame arrived (over a held transport: the instant the station handed it over) and reports when
+/// the station closed the transport.
+pub(crate) struct Peer {
     writer: Arc<tokio::sync::Mutex<WriteHalf<DuplexStream>>>,
-    texts: mpsc::UnboundedReceiver<Value>,
+    pub(crate) texts: mpsc::UnboundedReceiver<Value>,
+    received: Received,
     closed: oneshot::Receiver<Driven>,
+}
+/// Each text frame a peer received, with its receipt instant.
+type Received = Arc<std::sync::Mutex<Vec<(Driven, Value)>>>;
+impl Peer {
+    /// The text frames of `kind` received at or after `since`, with their receipt instants.
+    pub(crate) fn received_since(&self, kind: &str, since: Driven) -> Vec<(Driven, Value)> {
+        self.received
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(at, v)| v["type"] == kind && *at >= since)
+            .cloned()
+            .collect()
+    }
+    /// The receipt instants of the text frames of `kind`, as offsets from `start` in ms.
+    fn received_ms(&self, kind: &str, start: Driven) -> Vec<u64> {
+        self.received_since(kind, start)
+            .iter()
+            .map(|(at, _)| (*at - start).as_millis() as u64)
+            .collect()
+    }
+}
+/// The longest interval between consecutive heartbeats (the first from the connect at 0) and the
+/// offset at which it ended, the earliest on a tie.
+fn longest_heartbeat(heartbeats: &[u64]) -> Option<(u64, u64)> {
+    let mut longest: Option<(u64, u64)> = None;
+    let mut last = 0;
+    for &at in heartbeats {
+        if longest.is_none_or(|(ms, _)| at - last > ms) {
+            longest = Some((at - last, at));
+        }
+        last = at;
+    }
+    longest
 }
 impl Peer {
     async fn open(
@@ -51,10 +88,19 @@ impl Peer {
         origin: &str,
         answers: bool,
     ) -> Peer {
+        Self::open_with(listener, origin, "", answers).await
+    }
+    /// `open` with the upgrade's `extra` header lines (each ending in CRLF).
+    pub(crate) async fn open_with(
+        listener: &mpsc::UnboundedSender<DuplexStream>,
+        origin: &str,
+        extra: &str,
+        answers: bool,
+    ) -> Peer {
         let (mut client, server) = tokio::io::duplex(1 << 20);
         listener.send(server).unwrap();
         client
-            .write_all(upgrade_request(origin, "").as_bytes())
+            .write_all(upgrade_request(origin, extra).as_bytes())
             .await
             .unwrap();
         let mut buffer = Vec::new();
@@ -76,21 +122,23 @@ impl Peer {
         let writer = Arc::new(tokio::sync::Mutex::new(writer));
         let (texts_tx, texts) = mpsc::unbounded_channel();
         let (closed_tx, closed) = oneshot::channel();
+        let received = Received::default();
         tokio::spawn(read_frames(
             reader,
             buffer,
             writer.clone(),
             answers,
-            texts_tx,
+            (texts_tx, received.clone()),
             closed_tx,
         ));
         Peer {
             writer,
             texts,
+            received,
             closed,
         }
     }
-    async fn send(&self, value: Value) {
+    pub(crate) async fn send(&self, value: Value) {
         let frame = client_frame(1, value.to_string().as_bytes());
         self.writer.lock().await.write_all(&frame).await.unwrap();
     }
@@ -100,7 +148,7 @@ async fn read_frames(
     mut buffer: Vec<u8>,
     writer: Arc<tokio::sync::Mutex<WriteHalf<DuplexStream>>>,
     answers: bool,
-    texts: mpsc::UnboundedSender<Value>,
+    (texts, received): (mpsc::UnboundedSender<Value>, Received),
     closed: oneshot::Sender<Driven>,
 ) {
     loop {
@@ -108,7 +156,12 @@ async fn read_frames(
             buffer.drain(..length);
             match opcode {
                 1 => {
-                    let _ = texts.send(serde_json::from_slice(&payload).unwrap());
+                    let value: Value = serde_json::from_slice(&payload).unwrap();
+                    received
+                        .lock()
+                        .unwrap()
+                        .push((Driven::now(), value.clone()));
+                    let _ = texts.send(value);
                 }
                 9 if answers => {
                     let pong = client_frame(10, &payload);
@@ -190,7 +243,6 @@ async fn silent_peer_is_removed_at_the_next_heartbeat_after_15_s() {
     let origin = app.origin.clone();
     let (listener, accepted) = mpsc::unbounded_channel();
     let service = tokio::spawn(axum::serve(Held(accepted), router(app)).into_future());
-    let closes_before = SOCKET_CLOSES.lock().unwrap().len();
     let start = Driven::now();
 
     // Peer A subscribes Thin, then neither reads its messages nor answers Ping.
@@ -238,13 +290,17 @@ async fn silent_peer_is_removed_at_the_next_heartbeat_after_15_s() {
         after > Duration::from_secs(15) && after <= Duration::from_secs(20),
         "A removed after {after:?}, not in (15 s, 20 s]"
     );
-    let reasons: Vec<Value> = SOCKET_CLOSES.lock().unwrap()[closes_before..]
-        .iter()
-        .map(|close| close["reason"].clone())
-        .collect();
-    assert!(
-        reasons.contains(&json!("no pong for 15 s")),
-        "close reasons {reasons:?}"
+    // A, which never answered a Ping, receives heartbeats at +5000, +10000 and +15000 and is
+    // closed at +20000: the heartbeat tick that first lies more than 15 s after its connect.
+    assert_eq!(
+        a.received_ms("heartbeat", start),
+        [5000, 10000, 15000],
+        "A's heartbeats"
+    );
+    assert_eq!(
+        after,
+        Duration::from_secs(20),
+        "A closed at the +20000 tick"
     );
 
     let (answered, b) = healthy.await.unwrap();
@@ -286,26 +342,16 @@ async fn silent_peer_is_removed_at_the_next_heartbeat_after_15_s() {
     let _ = std::fs::remove_dir_all(root);
 }
 
-fn utc_now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
-
-// Evidence (no promise; the record of TC-009-005 case 7's failure output). Each socket the
-// station ends leaves its reason, begin and end, last heartbeat write and longest heartbeat
-// interval, in UTC ms: the begin's system UTC plus the driven runtime's elapsed time. Hand values
-// from connection(): the first heartbeat tick is consumed at the begin, writes follow every
-// 5000 ms, removal at the first tick more than 15000 ms after the last Pong.
+// Evidence (no promise). Each peer's own client record of a socket the station ends: its
+// heartbeats, its longest heartbeat interval and its close, on the one driven runtime clock from
+// its connect. Hand values from connection(): the first heartbeat tick is consumed at the begin,
+// writes follow every 5000 ms, removal at the first tick more than 15000 ms after the last Pong.
 #[tokio::test(start_paused = true)]
 async fn station_records_each_ended_socket_on_the_one_utc_clock() {
     let (app, root) = plaintext_station("socket-record");
     let origin = app.origin.clone();
     let (listener, accepted) = mpsc::unbounded_channel();
     let service = tokio::spawn(axum::serve(Held(accepted), router(app)).into_future());
-    let closes_before = SOCKET_CLOSES.lock().unwrap().len();
-    let wall_before = utc_now_ms();
     let start = Driven::now();
 
     // (a) Peer A of TC-021-008: subscribes Thin and never answers Ping.
@@ -316,7 +362,7 @@ async fn station_records_each_ended_socket_on_the_one_utc_clock() {
         "spectrum.subscription"
     );
     // (b) A peer that answers every Ping and closes itself at driven +12000.
-    let b = Peer::open(&listener, &origin, true).await;
+    let mut b = Peer::open(&listener, &origin, true).await;
     assert_eq!(Driven::now(), start, "the peers connect at driven time 0");
     tokio::time::sleep_until(start + Duration::from_millis(12000)).await;
     b.writer
@@ -325,72 +371,34 @@ async fn station_records_each_ended_socket_on_the_one_utc_clock() {
         .write_all(&client_frame(8, &[]))
         .await
         .unwrap();
-    tokio::time::timeout(Duration::from_secs(25), &mut a.closed)
+    let a_closed = tokio::time::timeout(Duration::from_secs(25), &mut a.closed)
         .await
         .expect("the silent peer A is still open")
         .unwrap();
-    // The station records the end after the transport closed: let its task finish.
-    tokio::time::sleep(Duration::from_millis(1)).await;
-    let wall_after = utc_now_ms();
+    let b_closed = tokio::time::timeout(Duration::from_secs(25), &mut b.closed)
+        .await
+        .expect("the self-closing peer is still open")
+        .unwrap();
+    let ms = |at: Driven| (at - start).as_millis() as u64;
 
-    // Records of this test: begun inside its wall-clock span. A concurrent test's socket begun in
-    // the same span differs in its driven offsets, so each case is found by its own reason.
-    let records: Vec<Value> = SOCKET_CLOSES.lock().unwrap()[closes_before..]
-        .iter()
-        .filter(|r| {
-            r["begin_utc_ms"]
-                .as_u64()
-                .is_some_and(|b| b >= wall_before && b <= wall_after)
-        })
-        .cloned()
-        .collect();
-    let offset = |record: &Value, field: &str| {
-        let begin = record["begin_utc_ms"].as_u64().unwrap();
-        record[field].as_u64().map(|t| t as i64 - begin as i64)
-    };
-    let found = |reason: &str, end: &dyn Fn(i64) -> bool| {
-        records
-            .iter()
-            .find(|r| r["reason"] == reason && offset(r, "utc_ms").is_some_and(end))
-            .unwrap_or_else(|| panic!("no record {reason:?} with its end; records {records:?}"))
-            .clone()
-    };
-
-    // (a) heartbeat writes at +5000, +10000 and +15000; removed at the +20000 tick.
-    let silent = found("no pong for 15 s", &|end| end == 20000);
+    // (a) heartbeats at +5000, +10000 and +15000; removed at the +20000 tick.
+    let silent = a.received_ms("heartbeat", start);
+    assert_eq!(silent, [5000, 10000, 15000], "A's heartbeats");
+    assert_eq!(ms(a_closed), 20000, "A's close");
     assert_eq!(
-        offset(&silent, "last_heartbeat_utc_ms"),
-        Some(15000),
-        "{silent}"
+        longest_heartbeat(&silent),
+        Some((5000, 5000)),
+        "the earliest of the equal intervals"
     );
-    assert_eq!(silent["longest_heartbeat_ms"], 5000, "{silent}");
-    assert_eq!(
-        offset(&silent, "longest_heartbeat_end_utc_ms"),
-        Some(5000),
-        "the earliest of the equal intervals: {silent}"
+    // (b) heartbeats at +5000 and +10000; the peer's own close at +12000 ends it.
+    let closing = b.received_ms("heartbeat", start);
+    assert_eq!(closing, [5000, 10000], "the self-closing peer's heartbeats");
+    assert!(
+        (12000..15000).contains(&ms(b_closed)),
+        "closed at {}",
+        ms(b_closed)
     );
-    // (b) writes at +5000 and +10000; the peer's own close at +12000 ends it.
-    let closed = found("peer closed or receive error", &|end| {
-        (12000..15000).contains(&end)
-    });
-    assert_eq!(
-        offset(&closed, "last_heartbeat_utc_ms"),
-        Some(10000),
-        "{closed}"
-    );
-    assert_eq!(closed["longest_heartbeat_ms"], 5000, "{closed}");
-    assert_eq!(
-        offset(&closed, "longest_heartbeat_end_utc_ms"),
-        Some(5000),
-        "{closed}"
-    );
-    // (c) `reason` and `utc_ms` keep their names and meaning: why, and the end on the UTC clock.
-    for record in [&silent, &closed] {
-        assert!(record["reason"].is_string(), "{record}");
-        let begin = record["begin_utc_ms"].as_u64().unwrap();
-        assert!(begin >= wall_before && begin <= wall_after, "{record}");
-        assert!(record["utc_ms"].as_u64().unwrap() >= begin, "{record}");
-    }
+    assert_eq!(longest_heartbeat(&closing), Some((5000, 5000)));
     drop((a, b));
     service.abort();
     let _ = std::fs::remove_dir_all(root);

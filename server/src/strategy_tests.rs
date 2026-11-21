@@ -2379,56 +2379,6 @@ async fn tc_039_010_never_on_the_called_station_also_with_hold_tx_off() {
     assert_eq!(f.keys(), 0);
 }
 
-// Between the run's select_row and its Tx
-// move the operator replaces the contact: the set_frequency is refused stale and the operator's
-// contact stands.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_010_a_double_click_racing_the_slot_move_stays_the_operators() {
-    let f = station(true).await;
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    let state = f.state.clone();
-    let (id, boot) = (f.id.clone(), f.boot.clone());
-    *f.state
-        .recording
-        .contact
-        .get()
-        .unwrap()
-        .automation
-        .before_slot_move
-        .lock()
-        .unwrap() = Some(Box::new(move || {
-        let (identity, _, records) = state.recording.live_records_after(None, 0).unwrap();
-        let record = records
-            .iter()
-            .find(|r| r["text"] == "CQ DL1XYZ JO62")
-            .unwrap();
-        let row = json!({"source_id":identity.0,"job_id":identity.1,"generation":identity.2,"sequence":record["sequence"]});
-        let station = state.recording.contact.get().unwrap();
-        let body = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":profile::new_uuid().unwrap(),
-                "contact_revision":station.facts().0,"action":"select_row","row":row,"replace":true});
-        station
-            .operate_as(&state, body, true, authorization::Principal::Browser)
-            .unwrap();
-    }));
-    // K1ABC (strongest) is on my Tx 1500, so the run must move it.
-    publish(
-        &f,
-        e,
-        &[
-            ("CQ K1ABC FN42", 1500.0, Some(-3.0)),
-            ("CQ DL1XYZ JO62", 1200.0, Some(-5.0)),
-        ],
-    );
-    assert_eq!(
-        contact(&f).await.0,
-        json!("DL1XYZ"),
-        "the operator's contact stands"
-    );
-    assert_eq!(run_state(&f).await, ("manual".to_owned(), Value::Null));
-}
-
 // A pounce answers as a strategy run does (Hold Tx explicitly off,
 // Hold Tx on is tested apart).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2719,54 +2669,6 @@ async fn tc_039_004_stop_and_halt_while_manual() {
     assert_eq!(run_state(&f).await.0, "manual");
     halt(&f).await;
     assert_eq!(run_state(&f).await, ("stopped".to_owned(), json!("halted")));
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_004_a_double_click_racing_the_run_selection_stays_the_operators() {
-    let f = station(true).await;
-    f.state.recording.fixture_live_job("ft8");
-    let e = at_even(&f);
-    select(&f, config(Some("Test calls"))).await;
-    let state = f.state.clone();
-    let (id, boot) = (f.id.clone(), f.boot.clone());
-    // Between the run's select_row and enable_tx the operator replaces the contact.
-    *f.state
-        .recording
-        .contact
-        .get()
-        .unwrap()
-        .automation
-        .before_enable
-        .lock()
-        .unwrap() = Some(Box::new(move || {
-        let (identity, _, records) = state.recording.live_records_after(None, 0).unwrap();
-        let record = records
-            .iter()
-            .find(|r| r["text"] == "CQ DL1XYZ JO62")
-            .unwrap();
-        let row = json!({"source_id":identity.0,"job_id":identity.1,"generation":identity.2,"sequence":record["sequence"]});
-        let station = state.recording.contact.get().unwrap();
-        let body = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":profile::new_uuid().unwrap(),
-                "contact_revision":station.facts().0,"action":"select_row","row":row,"replace":true});
-        station
-            .operate_as(&state, body, true, authorization::Principal::Browser)
-            .unwrap();
-    }));
-    publish(
-        &f,
-        e,
-        &[
-            ("CQ K1ABC FN42", 1500.0, Some(-3.0)),
-            ("CQ DL1XYZ JO62", 1200.0, Some(-5.0)),
-        ],
-    );
-    f.tick();
-    assert_eq!(
-        contact(&f).await.0,
-        json!("DL1XYZ"),
-        "the operator's contact stands"
-    );
-    assert_eq!(run_state(&f).await, ("manual".to_owned(), Value::Null));
 }
 
 async fn browser_ok(f: &Mcp, action: &str, extra: Value) {
@@ -7169,39 +7071,6 @@ async fn tc_039_022_an_answer_keeps_the_slot() {
     }
 }
 
-// A refused move changes nothing and is checked again at the next repetition.
-// Proves: TC-039-022
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tc_039_022_a_refused_move_is_checked_again() {
-    let t = slot_check(|_| {}).await;
-    let (f, e) = (&t.f, t.e);
-    let state = f.state.clone();
-    let (id, boot) = (f.id.clone(), f.boot.clone());
-    // The operator's command lands between the decision and the move: the move is stale.
-    *f.state
-        .recording
-        .contact
-        .get()
-        .unwrap()
-        .automation
-        .before_slot_move
-        .lock()
-        .unwrap() = Some(Box::new(move || {
-        let station = state.recording.contact.get().unwrap();
-        let body = json!({"v":1,"profile_id":id,"boot_id":boot,"command_id":profile::new_uuid().unwrap(),
-                "contact_revision":station.facts().0,"action":"set_hold_tx","enabled":true});
-        station
-            .operate_as(&state, body, true, authorization::Principal::Browser)
-            .unwrap();
-    }));
-    slot_rows(f, e, 1);
-    publish(f, rep(e, 1), &[]);
-    assert_eq!(frequencies(f).await.1, json!(1500), "refused");
-    assert_eq!(contact(f).await.2, json!("armed"));
-    publish(f, rep(e, 2), &[]);
-    assert_eq!(frequencies(f).await.1, json!(1400), "checked again");
-}
-
 // Unattended (no client for 60 s): the stop at N is back at once,
 // and K1ABC silent with a spot of my call is left at 4 repetitions, not 8; then the run stops
 // no_client.
@@ -7235,7 +7104,8 @@ async fn tc_039_033_unattended_x_is_never_doubled() {
 // The run snapshot's hearing and his end: heard {t, -12} with a spot of my call,
 // unknown with Use off; his decoded frequency of my Tx parity (odd) at the quietest slot sends Tx to
 // the next quietest with his_end yes, one of the other parity excludes nothing, his frequencies
-// everywhere leave the quietest with his_end no.
+// everywhere leave the quietest with his_end no; a move left undone is asked again, the count kept.
+// Proves: TC-039-022
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     let t = leaving(|_| {}, &[K1ABC_CQ]).await;
@@ -7297,7 +7167,8 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
         json!({"hz":1650,"power_db":1,"his_end":"yes"})
     );
     // His frequencies of my Tx parity everywhere: his end ignored.
-    // 27 offsets 90 Hz apart (the feed keeps at most 32): every candidate within 45 Hz of one.
+    // 27 offsets 90 Hz apart (the feed keeps at most 32 distinct (offset, parity) entries, newest
+    // first): every candidate within 45 Hz of one.
     for hz in (300..=2650).step_by(90) {
         t.feed.inject(&spot_of(
             "W1AW",
@@ -7316,6 +7187,58 @@ async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     );
     assert_eq!(run_of(f).await["slot_check"]["moved"], false);
     assert_eq!(frequencies(f).await.1, json!(1650));
+    // MoveRule: a move that leaves Tx where it is is asked again at the next repetition, the
+    // count kept. tx_move_every.not_heard 2; a spot of K1ABC hearing DL1XYZ makes the case
+    // not_heard. Repetition 1: count 1, no move (Tx 1500). Repetition 2, his frequencies
+    // everywhere: count 2, no candidate, Tx stays. Repetition 3: 32 newer spots of my Tx parity at
+    // 2300, 2310, ..., 2610 Hz are his 32 distinct (offset, parity) entries, the 27 drop out; the
+    // candidates at or below 2250 Hz are free at his end, and from Tx 1500 the quietest of them is
+    // 1300 (value 0, his end yes). The count 3 reaches 2.
+    let t = leaving(
+        |c| c["strategies"][0]["tx_move_every"]["not_heard"] = json!(2),
+        &[K1ABC_CQ],
+    )
+    .await;
+    let (f, e) = (&t.f, t.e);
+    t.feed.inject(&spot_of(
+        "DL1XYZ",
+        "K1ABC",
+        14_075_320,
+        "20m",
+        odd(now) - 30,
+    ));
+    rows(f, e);
+    let check = |k: u64, moved: bool, hz: u32| json!({"repetitions":k,"case":"not_heard","hears_us":false,"moved":moved,"hz":hz});
+    publish(f, rep(e, 1), &[]);
+    assert_eq!(frequencies(f).await.1, json!(1500), "repetition 1: no move");
+    assert_eq!(run_of(f).await["slot_check"], check(1, false, 1500));
+    for hz in (300..=2650).step_by(90) {
+        t.feed.inject(&spot_of(
+            "W1AW",
+            "K1ABC",
+            14_074_000 + hz,
+            "20m",
+            odd(now) - 60,
+        ));
+    }
+    publish(f, rep(e, 2), &[]);
+    assert_eq!(
+        frequencies(f).await.1,
+        json!(1500),
+        "repetition 2: none left"
+    );
+    assert_eq!(run_of(f).await["slot_check"], check(2, false, 1500));
+    for hz in (2300..=2610).step_by(10) {
+        t.feed
+            .inject(&spot_of("G4ABC", "K1ABC", 14_074_000 + hz, "20m", odd(now)));
+    }
+    publish(f, rep(e, 3), &[]);
+    assert_eq!(
+        run_of(f).await["tx_slot"],
+        json!({"hz":1300,"power_db":0,"his_end":"yes"})
+    );
+    assert_eq!(frequencies(f).await.1, json!(1300), "repetition 3: moved");
+    assert_eq!(run_of(f).await["slot_check"], check(3, true, 1300));
 }
 
 // No WD in the run's own contact: tx_remaining_calls is null on

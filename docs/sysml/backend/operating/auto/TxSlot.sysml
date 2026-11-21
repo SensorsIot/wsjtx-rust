@@ -59,7 +59,7 @@ package WstxTxSlot {
         @TestedBy {
             test = "server/src/strategy_tests.rs::tc_039_022_the_slot_check_at_every_repetition; "
                 + "server/src/strategy_tests.rs::tc_039_022_an_answer_keeps_the_slot; "
-                + "server/src/strategy_tests.rs::tc_039_022_a_refused_move_is_checked_again";
+                + "server/src/strategy_tests.rs::tc_039_048_the_run_shows_the_hearing_and_his_end";
         }
     }
 

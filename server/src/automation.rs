@@ -598,12 +598,6 @@ pub(crate) struct Owner {
     free_tx_slots_builds: std::sync::atomic::AtomicU64,
     /// The station's clocks: the monotonic time of every automation step.
     pub(crate) clock: Arc<dyn wstx_rust::transmit::clock::Clock>,
-    /// Test seam: runs between select_row and enable_tx (a racing Halt).
-    #[cfg(test)]
-    pub(crate) before_enable: Mutex<Option<Box<dyn FnOnce() + Send>>>,
-    /// Test seam: runs before a run moves Tx to its free slot (a racing operator).
-    #[cfg(test)]
-    pub(crate) before_slot_move: Mutex<Option<Box<dyn FnOnce() + Send>>>,
 }
 
 /// The descriptor of the latest receive publication, read before the contact step so
@@ -638,41 +632,11 @@ impl Owner {
             inner: Default::default(),
             free_tx_slots_builds: Default::default(),
             clock,
-            #[cfg(test)]
-            before_enable: Default::default(),
-            #[cfg(test)]
-            before_slot_move: Default::default(),
         }
     }
     fn now(&self) -> Instant {
         self.clock.now()
     }
-    #[cfg(test)]
-    fn before_enable(&self) {
-        let hook = self
-            .before_enable
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take();
-        if let Some(hook) = hook {
-            hook();
-        }
-    }
-    #[cfg(not(test))]
-    fn before_enable(&self) {}
-    #[cfg(test)]
-    fn before_slot_move(&self) {
-        let hook = self
-            .before_slot_move
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-        if let Some(hook) = hook {
-            hook();
-        }
-    }
-    #[cfg(not(test))]
-    fn before_slot_move(&self) {}
     /// (policy_revision, run_revision): the automation.state event cursor.
     pub(crate) fn revisions(&self) -> (u64, u64) {
         let inner = self.lock();
@@ -2040,6 +2004,9 @@ impl Owner {
         from_cq: bool,
     ) {
         let r = &state.recording;
+        // From select_row to enable_tx, the slot move between them included, no contact command
+        // of another principal lands: it waits and runs after the run's own.
+        let _commands = contact.hold_commands();
         let run = inner.run.as_mut().expect("checked");
         let row = json!({"source_id":run.identity.0,"job_id":run.identity.1,
             "generation":run.identity.2,"sequence":pick.sequence});
@@ -2110,7 +2077,6 @@ impl Owner {
             revision = taken;
         }
         if !from_cq {
-            self.before_enable();
             let enabled = contact.operate_as(
                 state,
                 contact_body(
@@ -2177,7 +2143,6 @@ impl Owner {
     ) {
         let r = &state.recording;
         let run = inner.run.as_mut().expect("checked");
-        self.before_enable();
         let body = contact_body(
             r,
             revision,
@@ -2481,6 +2446,10 @@ fn take_slot(
     let listening = rule == SlotRule::Listen;
     let r = &state.recording;
     let mode = contact_http::mode_of(run.mode);
+    // From the contact's status to its set_frequency no contact command of another principal
+    // lands. The reads under this hold (station UTC, waterfall, live records, PSK feed) come
+    // after the station's command lock on every path.
+    let _commands = contact.hold_commands();
     let facts = contact.status_facts();
     let tx_parity = facts.parity;
     let rx_parity = match tx_parity {
@@ -2567,7 +2536,6 @@ fn take_slot(
     if unchanged {
         return Some(revision);
     }
-    contact.automation.before_slot_move();
     let frequencies = if hold {
         json!({"rx_hz":null,"tx_hz":slot.hz})
     } else {

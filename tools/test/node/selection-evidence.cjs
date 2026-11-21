@@ -81,13 +81,13 @@ function cadenceSocketSegment(sockets,baseline){
 }
 // The evidence a failed Thin or Off window prints (stdout, so the gate log keeps it) and the
 // report keeps. One clock, UTC ms: Node times are performance.now() values converted by the stated
-// origin (performance.timeOrigin), page times are Date.now(); the station's own socket records are
-// printed by the Rust test. Frames count before a close C when C-12000 <= t <= C (clientSilenceMs).
+// origin (performance.timeOrigin), page times are Date.now(). Frames count before a close C when
+// C-12000 <= t <= C (clientSilenceMs).
 const clientSilenceMs=12000;
 function evidenceUtc(timeOrigin,t){return t===null||t===undefined?null:Math.round((timeOrigin+t)*1000)/1000;}
 function evidenceWindow(timeOrigin,w,now){return {kind:'window',profile:w.profile,startUtc:evidenceUtc(timeOrigin,w.start),endUtc:evidenceUtc(timeOrigin,w.end??now)};}
 function failureEvidence({timeOrigin,now,windows,browsers}){
-  const lines=['WSTX_EVIDENCE a Thin or Off window failed: from the lines below and the WSTX_STATION_SOCKET lines'];
+  const lines=['WSTX_EVIDENCE a Thin or Off window failed: from the lines below'];
   const out=value=>lines.push('WSTX_EVIDENCE '+JSON.stringify(value)),utc=t=>evidenceUtc(timeOrigin,t);
   const bounds=windows.map(w=>evidenceWindow(timeOrigin,w,now));for(const w of bounds)out(w);
   const inWindow=t=>t!==null&&bounds.some(w=>w.startUtc!==null&&t>=w.startUtc&&t<=w.endUtc);

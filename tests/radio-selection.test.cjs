@@ -553,7 +553,7 @@ function liveSelectionFixture(){
       if(profile==='thin')assert.ok(polling.every(p=>p.frames>0),'real optional live spectrum was present, not an idle body-size exercise');
       if(profile==='off'){assert.equal(offProofs.length,2);for(const [index,ack]of offProofs.entries()){assert.ok(ack.ackAt<=start);assert.deepEqual(optionalAfterOff(observations[index].wireFrames,ack),[],'no optional frame after its correlated Off ACK');assert.equal(polling[index].frames,0,'no optional spectrum during actual Off window');}}
       report.phases[profile]={...report.phases[profile],state:'passed',seconds,statusMs:latencies,polling,commands,endedUtc:new Date().toISOString()};activePhase=null;await save();console.log(`Actual ${profile} workload completed ${seconds.toFixed(3)}s`);
-      // The window's bounds on the UTC clock of the station's socket records, in every run.
+      // The window's bounds on the UTC clock, in every run.
       phaseWindow.end=performance.now();underWay=null;console.log('WSTX_SELECTION_WINDOW '+JSON.stringify(evidenceWindow(performance.timeOrigin,phaseWindow)));
     }
     await measure('thin',[['mode','ft4','ft4',7047500],['band','20m','ft4',14080000]]);

@@ -402,20 +402,16 @@ fn transmit_owner_admits_and_times_by_the_air_clock() {
     );
 }
 
-/// The clock.state writes of the station `boot` handed to each socket at or after `since`, in
-/// order, by socket number.
+/// The clock.state frames each peer received at or after `since`, with their receipt instants
+/// (over a held transport: the instants the station handed them over).
 fn handed_writes(
-    boot: &str,
+    peers: &[crate::liveness_tests::Peer],
     since: tokio::time::Instant,
-) -> std::collections::BTreeMap<u64, Vec<(tokio::time::Instant, Value)>> {
-    let mut sockets = std::collections::BTreeMap::<u64, Vec<_>>::new();
-    for (socket, at, text) in crate::CLOCK_WRITES.lock().unwrap().iter() {
-        let event: Value = serde_json::from_str(text).unwrap();
-        if *at >= since && event["data"]["boot_id"] == boot {
-            sockets.entry(*socket).or_default().push((*at, event));
-        }
-    }
-    sockets
+) -> Vec<Vec<(tokio::time::Instant, Value)>> {
+    peers
+        .iter()
+        .map(|p| p.received_since("clock.state", since))
+        .collect()
 }
 
 // clock.state over the actual status WebSocket of a receive-only and a
@@ -423,12 +419,12 @@ fn handed_writes(
 // with exactly the keys of CL-043-01 within 512 bytes; none while nothing changes or for an
 // SNTP move within 500 ms; one for +525 and for +530, handed to each socket within 1 s; quick
 // changes coalesced, handed to each socket at least eventDelayMs apart; drift_high and back;
-// clock_revision equal to GET /clock's. Timing on the station's writes, count, order and
-// content at receipt.
+// clock_revision equal to GET /clock's. The peers run over held transports on the paused runtime
+// clock: timing on each peer's receipt instants, count, order and content at receipt.
 // Proves: TC-092-009
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(start_paused = true)]
 async fn clock_state_is_pushed_to_every_profile() {
-    use crate::strategy::tests::{Peer, serve};
+    use crate::liveness_tests::{Held, Peer};
     for transmit in [false, true] {
         let f = crate::mcp_tests::station(transmit).await;
         let (ntp, rounds) = RoundSource::start();
@@ -442,31 +438,36 @@ async fn clock_state_is_pushed_to_every_profile() {
         f.state
             .recording
             .fixture_capture_clock(Some(true), Some(Some(12.0)));
-        let (address, server) = serve(&f).await;
-        let mut peers: Vec<Peer> = tokio::task::block_in_place(|| {
-            ["spectrum.detail", "spectrum.thin"]
-                .iter()
-                .map(|s| Peer::open(address, &f, s))
-                .collect()
-        });
+        let (listener, accepted) = tokio::sync::mpsc::unbounded_channel();
+        let server =
+            tokio::spawn(axum::serve(Held(accepted), crate::router(f.app.clone())).into_future());
+        let cookie = format!("Cookie: {}\r\n", f.cookie());
+        let mut peers = Vec::new();
+        for (id, subscription) in ["spectrum.detail", "spectrum.thin"].iter().enumerate() {
+            let peer = Peer::open_with(&listener, &f.app.origin, &cookie, true).await;
+            peer.send(json!({"v":1,"type":subscription,"id":id + 1}))
+                .await;
+            peers.push(peer);
+        }
         let sockets = peers.len();
-        // Clock events received by each peer within `wait`.
-        let mut events = |wait: Duration| -> Vec<Vec<Value>> {
-            let deadline = Instant::now() + wait;
-            let mut got = vec![vec![]; peers.len()];
-            while Instant::now() < deadline {
-                for (i, p) in peers.iter_mut().enumerate() {
-                    for m in tokio::task::block_in_place(|| p.read(Duration::from_millis(20))) {
+        // Clock events received by each peer within `wait` of the runtime clock.
+        async fn events(peers: &mut [Peer], wait: Duration) -> Vec<Vec<Value>> {
+            tokio::time::sleep(wait).await;
+            peers
+                .iter_mut()
+                .map(|p| {
+                    let mut got = vec![];
+                    while let Ok(m) = p.texts.try_recv() {
                         if m["type"] == "clock.state" {
-                            got[i].push(m);
+                            got.push(m);
                         }
                     }
-                }
-            }
-            got
-        };
+                    got
+                })
+                .collect()
+        }
         let current = async || f.browser("GET", "/clock", None).await.json;
-        let first = events(Duration::from_millis(1500));
+        let first = events(&mut peers, Duration::from_millis(1500)).await;
         let view = current().await;
         for got in &first {
             assert_eq!(got.len(), 1, "one event after subscribing: {got:?}");
@@ -498,10 +499,16 @@ async fn clock_state_is_pushed_to_every_profile() {
             );
         }
         // Nothing changes for 10 s, then SNTP +12 -> +40 (synchronized): no event.
-        assert!(events(Duration::from_secs(10)).iter().all(Vec::is_empty));
+        assert!(
+            events(&mut peers, Duration::from_secs(10))
+                .await
+                .iter()
+                .all(Vec::is_empty)
+        );
         rounds.give(false, Some(measured(40)));
         assert!(
-            events(Duration::from_millis(1500))
+            events(&mut peers, Duration::from_millis(1500))
+                .await
                 .iter()
                 .all(Vec::is_empty)
         );
@@ -509,7 +516,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         for offset in [525, 530] {
             let set = tokio::time::Instant::now();
             rounds.give(false, Some(measured(offset)));
-            let got = events(Duration::from_millis(1500));
+            let got = events(&mut peers, Duration::from_millis(1500)).await;
             let view = current().await;
             for got in &got {
                 assert_eq!(got.len(), 1, "{offset}: {got:?}");
@@ -518,9 +525,9 @@ async fn clock_state_is_pushed_to_every_profile() {
                 assert_eq!(event["data"]["clock"]["ntp_offset_ms"], offset);
                 assert_eq!(event["data"]["clock_revision"], view["clock_revision"]);
             }
-            let handed = handed_writes(&f.boot, set);
+            let handed = handed_writes(&peers, set);
             assert_eq!(handed.len(), sockets, "{offset}: {handed:?}");
-            for writes in handed.values() {
+            for writes in &handed {
                 assert_eq!(writes.len(), 1, "{offset}: {writes:?}");
                 let (at, event) = &writes[0];
                 assert_eq!(event["data"]["clock"]["ntp_offset_ms"], offset);
@@ -532,12 +539,14 @@ async fn clock_state_is_pushed_to_every_profile() {
             }
         }
         // Three changes within 300 ms: coalesced, the last delivered, handed to each socket at
-        // least eventDelayMs apart.
+        // least eventDelayMs apart. The first is handed over at its 250 ms tick, before the other
+        // two arrive (at +260 and +290), so that the next write is the paced one.
         let set = tokio::time::Instant::now();
         let mut got = vec![vec![]; 2];
-        for (offset, wait) in [(540, 100), (550, 100), (560, 2500)] {
+        for (offset, wait) in [(540, 260), (550, 30), (560, 2500)] {
             rounds.give(false, Some(measured(offset)));
-            for (all, more) in got.iter_mut().zip(events(Duration::from_millis(wait))) {
+            let more = events(&mut peers, Duration::from_millis(wait)).await;
+            for (all, more) in got.iter_mut().zip(more) {
                 all.extend(more);
             }
         }
@@ -548,9 +557,10 @@ async fn clock_state_is_pushed_to_every_profile() {
             assert_eq!(last["data"]["clock"]["ntp_offset_ms"], 560);
             assert_eq!(last["data"]["clock_revision"], view["clock_revision"]);
         }
-        let handed = handed_writes(&f.boot, set);
+        let handed = handed_writes(&peers, set);
         assert_eq!(handed.len(), sockets, "{handed:?}");
-        for writes in handed.values() {
+        for writes in &handed {
+            assert!(!writes.is_empty(), "{handed:?}");
             for w in writes.windows(2) {
                 let gap = w[1].0.duration_since(w[0].0);
                 assert!(
@@ -563,7 +573,7 @@ async fn clock_state_is_pushed_to_every_profile() {
         f.state
             .recording
             .fixture_capture_clock(Some(true), Some(Some(1500.0)));
-        let got = events(Duration::from_millis(1500));
+        let got = events(&mut peers, Duration::from_millis(1500)).await;
         for got in &got {
             assert_eq!(
                 got.last().unwrap()["data"]["clock"]["capture_warning"],
@@ -574,7 +584,7 @@ async fn clock_state_is_pushed_to_every_profile() {
             .recording
             .fixture_capture_clock(Some(true), Some(Some(12.0)));
         rounds.give(false, Some(measured(12)));
-        let got = events(Duration::from_millis(1500));
+        let got = events(&mut peers, Duration::from_millis(1500)).await;
         let view = current().await;
         for got in &got {
             let last = got.last().unwrap();

@@ -962,16 +962,25 @@ async fn tc_020_003_a_halt_racing_the_arming_halts_and_never_keys() {
     let e = at_even(&f);
     run(&f, config_json(), "ft8").await;
     let before = halts(&f);
-    let recording = f.state.recording.clone();
-    *owner(&f).automation.before_enable.lock().unwrap() = Some(Box::new(move || {
-        recording
-            .transmit
-            .get()
-            .unwrap()
-            .service
-            .halt("00000000-0000-4000-8000-0000000000aa");
-    }));
-    publish(&f, e, &[("CQ W1AW FN31", 900.0, Some(-3.0))]);
+    // The gate holds the first context read off the transmit owner's thread once the run's
+    // select_row is accepted: after the run's halt check, before its enable_tx arms.
+    let station = owner(&f);
+    let selected_from = station.revision();
+    f.bench
+        .arm_context(move || station.revision() > selected_from);
+    let state = f.state.clone();
+    let records = vec![record("CQ W1AW FN31", 900.0, Some(-3.0))];
+    let ticking = tokio::task::spawn_blocking(move || {
+        state
+            .recording
+            .fixture_publish_period(&period_text(e), records);
+        contact_http::station_tick(&state);
+    });
+    f.bench.context_held().await;
+    let halt = f.browser("POST", "/transmit/halt", Some(json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"command_id":profile::new_uuid().unwrap()}))).await;
+    assert_eq!(halt.status, StatusCode::ACCEPTED);
+    f.bench.release_context();
+    ticking.await.unwrap();
     assert_eq!(run_state(&f).await, ("stopped".into(), json!("halted")));
     let c = f.read("contact").await;
     assert_eq!(c["transmit"]["arm_state"], "disarmed", "{c}");
