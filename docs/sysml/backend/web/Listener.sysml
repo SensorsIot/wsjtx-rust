@@ -73,7 +73,19 @@ package WstxListener {
                 + "tests/radio-selection.test.cjs::"
                 + "H1 authentication errors mutations static and HEAD bypass negotiation; "
                 + "server/src/transmit/transmit_http_tests.rs::"
-                + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms";
+                + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms; "
+                + "server/src/auth_tests.rs::"
+                + "profile_credentials_require_one_selected_cookie_across_all_header_fields; "
+                + "server/src/auth_tests.rs::"
+                + "http_auth_origin_tls_precede_credentials_and_strict_body_bounds_have_no_commit; "
+                + "server/src/auth_tests.rs::"
+                + "http_auth_status_requires_post_and_wrong_origin_is_forbidden_before_auth; "
+                + "server/src/auth_tests.rs::"
+                + "commission_http_strict_negatives_never_change_acknowledgement_or_files; "
+                + "server/src/auth_tests.rs::"
+                + "status_strict_request_bounds_have_zero_effects; "
+                + "server/src/receive/receive_startup_tests.rs::"
+                + "startup_http_view_and_monitor_off_update";
         }
     }
     verification 'TC-003-002' {
@@ -276,7 +288,21 @@ package WstxListener {
                 + "tests/radio-selection.test.cjs::"
                 + "strict TLS unions, early identity barriers and manual preferred defaults; "
                 + "server/src/transmit/transmit_http_tests.rs::"
-                + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms";
+                + "transmit_wire_is_exact_halt_is_always_admitted_and_plaintext_never_arms; "
+                + "server/src/auth_tests.rs::"
+                + "plaintext_profile_operating_routes_and_ws_require_runtime_token; "
+                + "server/src/auth_tests.rs::"
+                + "http_auth_origin_tls_precede_credentials_and_strict_body_bounds_have_no_commit; "
+                + "server/src/auth_tests.rs::"
+                + "http_auth_status_requires_post_and_wrong_origin_is_forbidden_before_auth; "
+                + "server/src/auth_tests.rs::"
+                + "commission_http_strict_negatives_never_change_acknowledgement_or_files; "
+                + "server/src/auth_tests.rs::"
+                + "deprecated_connect_and_disconnect_validate_then_refuse_with_zero_io; "
+                + "server/src/auth_tests.rs::"
+                + "status_strict_request_bounds_have_zero_effects; "
+                + "server/src/receive/receive_startup_tests.rs::"
+                + "startup_http_view_and_monitor_off_update";
         }
     }
     verification 'TC-021-008' {

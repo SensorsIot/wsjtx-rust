@@ -123,7 +123,8 @@ package WstxMessagePayload {
         objective { verify 'CL-024-01'; }
         @TestedBy {
             test = "server/src/modes/decoder/hashes_test.rs; "
-                + "server/tests/transmit_service.rs";
+                + "server/tests/transmit_service.rs; "
+                + "server/src/auth_tests.rs::profile_save_sets_my_call_for_the_hash_table";
         }
     }
 

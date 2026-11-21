@@ -41,9 +41,13 @@ package WstxSupervisorPart {
                 + "client/src/supervisor/.";
         }
         @DetailTests {
-            tests = "server/src/mcp_tests.rs; tests/mcp/mcp.test.cjs";
+            tests = "server/src/mcp_tests.rs; tests/mcp/mcp.test.cjs; "
+                + "server/src/auth_tests.rs; server/src/frontend/authorization_tests.rs; "
+                + "server/src/selection_http_tests.rs";
             covers = "the MCP client token: its creation, listing, hashed record, audit and "
-                + "revocation, and its refusal on the browser routes";
+                + "revocation, and its refusal on the browser routes; "
+                + "the authorization of a browser by grant and commissioning, its routes and "
+                + "its setup budget; the pacing and the size of the selection's events";
         }
         attribute records : StartupRecords {
             doc /* Its records, as the last MemorySnapshot of the profile gave them. */ }

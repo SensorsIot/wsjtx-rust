@@ -217,6 +217,7 @@ impl Drop for Input {
 
 // This is a mandatory cost2 release
 // fixture, with actual native queue timing, Rust modem, typed actor, TLS and browsers.
+// Proves: TC-009-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_native_selection_tls_thin_and_off() {
     rustls::crypto::ring::default_provider()

@@ -249,7 +249,8 @@ package WstxOperatingSelection {
                 + "tests/radio-selection.test.cjs::"
                 + "strict TLS unions, early identity barriers and manual preferred defaults; "
                 + "tests/radio-selection.test.cjs::"
-                + "browser preferred selection and Stop fence a genuinely delayed POST";
+                + "browser preferred selection and Stop fence a genuinely delayed POST; "
+                + "server/src/selection_http_tests.rs::live_native_selection_tls_thin_and_off";
         }
     }
 
