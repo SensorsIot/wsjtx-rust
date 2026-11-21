@@ -5,7 +5,50 @@ use crate::*;
 use axum::extract::RawQuery;
 use recording_http::authorize;
 use selection_http::{empty, error};
+use std::sync::atomic::AtomicBool;
 use wstx_rust::flex::{Session, Snapshot, State as SessionState};
+
+/// The station's FlexRadio session, as the station uses it: its snapshot and pushed revision,
+/// its grant, tuning its own slice and opening its native receive input.
+pub(crate) trait NativeSession: Send + Sync {
+    fn snapshot(&self) -> Snapshot;
+    fn ready(&self) -> bool;
+    fn revision(&self) -> u64;
+    fn set_allowed(&self, allowed: bool);
+    fn tune(
+        &self,
+        frequency_hz: u64,
+        deadline: Instant,
+        cancelled: &Arc<AtomicBool>,
+    ) -> Result<u64, wstx_rust::flex::Error>;
+    /// The live receive input over the session's own DAX stream.
+    fn input(self: Arc<Self>) -> Result<Box<dyn recording::LiveInput>, source::SourceError>;
+}
+impl NativeSession for Session {
+    fn snapshot(&self) -> Snapshot {
+        Session::snapshot(self)
+    }
+    fn ready(&self) -> bool {
+        Session::ready(self)
+    }
+    fn revision(&self) -> u64 {
+        Session::revision(self)
+    }
+    fn set_allowed(&self, allowed: bool) {
+        Session::set_allowed(self, allowed);
+    }
+    fn tune(
+        &self,
+        frequency_hz: u64,
+        deadline: Instant,
+        cancelled: &Arc<AtomicBool>,
+    ) -> Result<u64, wstx_rust::flex::Error> {
+        Session::tune(self, frequency_hz, deadline, cancelled)
+    }
+    fn input(self: Arc<Self>) -> Result<Box<dyn recording::LiveInput>, source::SourceError> {
+        Ok(Box::new(wstx_rust::flex::NativeInput::new(self)?))
+    }
+}
 
 fn pushed(profile: &str, boot: &str, s: &Snapshot) -> Value {
     let radio = s.radio.as_ref().map(|r| {
@@ -22,7 +65,10 @@ fn pushed(profile: &str, boot: &str, s: &Snapshot) -> Value {
 }
 
 /// The radio.native event: one peer's snapshot, then each change of the pushed state.
-pub(crate) fn event(recording: &recording::Recording, session: &Session) -> (u64, String) {
+pub(crate) fn event(
+    recording: &recording::Recording,
+    session: &dyn NativeSession,
+) -> (u64, String) {
     // The revision first: a change racing this read is pushed once more, never lost.
     let revision = session.revision();
     let data = pushed(&recording.profile, &recording.boot, &session.snapshot());
@@ -34,7 +80,7 @@ pub(crate) fn event(recording: &recording::Recording, session: &Session) -> (u64
 
 /// The radio object of /receive/selection for a native profile. The fact shape is the CAT
 /// one: the slice status is the radio's read-back of the frequency, and only that fact exists.
-pub(crate) fn selection_radio(session: &Session, boot_at: Instant) -> Value {
+pub(crate) fn selection_radio(session: &dyn NativeSession, boot_at: Instant) -> Value {
     let s = session.snapshot();
     let ready = s.state == SessionState::Ready;
     let state = match s.state {

@@ -306,7 +306,17 @@ fn transmit_owner_on_the_air_records_the_tx_period_and_suspends_the_level() {
         r.state.lock().unwrap().operating_mode = mode;
         let bench = crate::contact_http::tests::Bench::default();
         bench.frozen.store(ms(now), Ordering::SeqCst);
-        let station = crate::transmit_http::Station::start_with(Box::new(bench)).unwrap();
+        let station_clock = wstx_rust::transmit::air::StationClock::new(
+            crate::contact_http::tests::RoundSource::idle(),
+            crate::contact_http::tests::DrivenClock::new(),
+            Box::new(|| wstx_rust::transmit::clock::WindowsTime::Running),
+        );
+        let station = crate::transmit_http::Station::start(
+            station_clock,
+            crate::transmit_http::Shared::default(),
+            Box::new(bench),
+        )
+        .unwrap();
         let _ = r.transmit.set(station.clone());
         let context = {
             let mut s = r.state.lock().unwrap();

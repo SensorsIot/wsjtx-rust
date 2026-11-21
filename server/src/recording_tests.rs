@@ -2,6 +2,68 @@
 use super::*;
 use crate::contact_http::tests::DrivenClock;
 use profile::tests::{Fault, FaultScope, FaultyFiles, Step};
+
+/// A FlexRadio session whose snapshot the test sets; it reaches no radio. It starts as a
+/// newly started session does (unauthorized, revision 1, not allowed); tuning answers
+/// not ready and its receive input is unavailable.
+pub(crate) struct ScriptedSession {
+    snapshot: Mutex<wstx_rust::flex::Snapshot>,
+    revision: std::sync::atomic::AtomicU64,
+    allowed: AtomicBool,
+}
+impl ScriptedSession {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self {
+            snapshot: Mutex::new(wstx_rust::flex::Snapshot {
+                state: wstx_rust::flex::State::Unauthorized,
+                error: None,
+                radio_code: None,
+                session: 0,
+                radio: None,
+                slice: None,
+                counters: wstx_rust::flex::session::Counters::default(),
+                last_peak: None,
+                vita_tsi: None,
+                vita_offset_ms: None,
+                jitter_mean_ms: None,
+                jitter_max_ms: None,
+                retry_after_ms: None,
+            }),
+            revision: std::sync::atomic::AtomicU64::new(1),
+            allowed: AtomicBool::new(false),
+        })
+    }
+    /// Changes the snapshot and raises the pushed revision.
+    pub(crate) fn set(&self, change: impl FnOnce(&mut wstx_rust::flex::Snapshot)) {
+        change(&mut self.snapshot.lock().unwrap());
+        self.revision.fetch_add(1, Ordering::AcqRel);
+    }
+}
+impl crate::flex_http::NativeSession for ScriptedSession {
+    fn snapshot(&self) -> wstx_rust::flex::Snapshot {
+        self.snapshot.lock().unwrap().clone()
+    }
+    fn ready(&self) -> bool {
+        self.snapshot.lock().unwrap().state == wstx_rust::flex::State::Ready
+    }
+    fn revision(&self) -> u64 {
+        self.revision.load(Ordering::Acquire)
+    }
+    fn set_allowed(&self, allowed: bool) {
+        self.allowed.store(allowed, Ordering::Release);
+    }
+    fn tune(
+        &self,
+        _: u64,
+        _: Instant,
+        _: &Arc<AtomicBool>,
+    ) -> std::result::Result<u64, wstx_rust::flex::Error> {
+        Err(wstx_rust::flex::Error::NotReady)
+    }
+    fn input(self: Arc<Self>) -> std::result::Result<Box<dyn LiveInput>, source::SourceError> {
+        Err(source::SourceError::Unavailable)
+    }
+}
 #[path = "transmit/recording_tx_tests.rs"]
 mod tx;
 
@@ -3554,7 +3616,7 @@ fn a_selection_refused_by_the_selection_rule_changes_nothing() {
         "selection_unavailable",
     );
     refused(band(&r), true, "radio_unavailable");
-    assert!(r.flex.set(wstx_rust::flex::Session::double()).is_ok());
+    assert!(r.flex.set(ScriptedSession::new()).is_ok());
     refused(band(&r), false, "radio_unavailable");
 }
 

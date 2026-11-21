@@ -297,6 +297,52 @@ impl Station {
 fn period(n: i64) -> i64 {
     P0 + n * 15 * SECOND
 }
+/// (period start, Tx offset) of every waveform the fake played, in order: the play's UTC
+/// start rounded down to the station mode's period, and the frequency of the waveform's
+/// tone 0 in whole Hz, read from its 48 kHz samples.
+fn started_hz(s: &Station) -> Vec<(i64, u32)> {
+    let period_ms = match s.mode {
+        Mode::Ft8 => 15_000,
+        Mode::Ft4 => 7_500,
+    };
+    s.fake
+        .0
+        .audio
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(at, samples, _)| (at - at.rem_euclid(period_ms), lowest_tone_hz(samples)))
+        .collect()
+}
+/// The frequency of a frequency-shift keyed waveform's lowest tone (tone 0, sent in every
+/// FT8 and FT4 sync array), rounded to whole Hz. Each 5 ms window of steady amplitude gives
+/// the frequency of a sine fitted to it (x[n-1] + x[n+1] = 2 cos(w) x[n]); between tones
+/// the frequency lies above tone 0, so the lowest window frequency is tone 0's.
+fn lowest_tone_hz(samples: &[f32]) -> u32 {
+    const RATE: f64 = 48_000.0;
+    const WINDOW: usize = 240;
+    const STEP: usize = 48;
+    let fits: Vec<(f64, f64)> = (1..samples.len().saturating_sub(WINDOW + 1))
+        .step_by(STEP)
+        .map(|start| {
+            let (mut energy, mut cross) = (0.0f64, 0.0f64);
+            for n in start..start + WINDOW {
+                let x = f64::from(samples[n]);
+                energy += x * x;
+                cross += x * (f64::from(samples[n - 1]) + f64::from(samples[n + 1]));
+            }
+            let cosine = (cross / (2.0 * energy)).clamp(-1.0, 1.0);
+            (energy, cosine.acos() * RATE / std::f64::consts::TAU)
+        })
+        .collect();
+    let loudest = fits.iter().map(|(e, _)| *e).fold(0.0, f64::max);
+    let lowest = fits
+        .iter()
+        .filter(|(e, _)| *e >= 0.9 * loudest)
+        .map(|(_, hz)| *hz)
+        .fold(f64::INFINITY, f64::min);
+    lowest.round() as u32
+}
 
 // A fresh station holds Tx: a selection
 // moves Rx only, and only an explicit choice switches that off.
@@ -751,7 +797,7 @@ fn partner_working_another_call_moves_a_manual_contact_clear_of_him() {
             );
             s.run(period(3) + 3 * SECOND);
             assert_eq!(
-                s.engine.started_hz.last(),
+                started_hz(&s).last(),
                 Some(&(period(3), 950)),
                 "the call goes on from the split frequency"
             );
@@ -915,7 +961,7 @@ fn tc_097_012_b_a_busy_station_near_my_tx_moves_tx_clear_of_him() {
     assert!(s.armed());
     s.run(P0 + 4 * len(Mode::Ft4));
     assert_eq!(
-        s.engine.started_hz.last(),
+        started_hz(&s).last(),
         Some(&(P0 + 3 * len(Mode::Ft4), 1380))
     );
 }
@@ -1109,12 +1155,12 @@ fn tc_097_017_c_a_move_before_or_after_the_audio_start() {
     let mut s = calling_ke1j(Mode::Ft8, 6);
     ke1j_says(&mut s, 0, 200, "W9XYZ KE1J -07", 1510.0);
     s.run(period(1) + 3 * SECOND);
-    assert_eq!(s.engine.started_hz, [(period(1), 1410)], "before");
+    assert_eq!(started_hz(&s), [(period(1), 1410)], "before");
     let mut s = calling_ke1j(Mode::Ft8, 6);
     ke1j_says(&mut s, 0, 1_000, "W9XYZ KE1J -07", 1510.0);
     s.run(period(3) + 3 * SECOND);
     assert_eq!(
-        s.engine.started_hz,
+        started_hz(&s),
         [(period(1), 1500), (period(3), 1410)],
         "after"
     );

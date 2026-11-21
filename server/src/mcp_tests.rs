@@ -5,7 +5,7 @@
 // messages of MCP 2026-07-28 and 2025-11-25. Expected values come from the hand-authored
 // fixture rows, the fixture's own identities and the WstxMcp tables, not from MCP output.
 use super::*;
-use crate::contact_http::tests::{Bench, DrivenClock, now_ms, period_text, record};
+use crate::contact_http::tests::{Bench, DrivenClock, RoundSource, now_ms, period_text, record};
 use axum::body::Body;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::{rand::SecureRandom, signature::KeyPair};
@@ -77,9 +77,19 @@ pub(crate) async fn station_prepared(
     recording.initialize_profile_revision(store.document.revision);
     let bench = Bench::default();
     bench.unsupported.store(!transmit, Ordering::SeqCst);
-    let _ = recording
-        .transmit
-        .set(transmit_http::Station::start_with(Box::new(bench.clone())).unwrap());
+    let station_clock = wstx_rust::transmit::air::StationClock::new(
+        RoundSource::idle(),
+        DrivenClock::new(),
+        Box::new(|| wstx_rust::transmit::clock::WindowsTime::Running),
+    );
+    let _ = recording.transmit.set(
+        transmit_http::Station::start(
+            station_clock,
+            transmit_http::Shared::default(),
+            Box::new(bench.clone()),
+        )
+        .unwrap(),
+    );
     let _ = recording
         .contact
         .set(contact_http::Station::start(&store, clock.clone()));

@@ -506,7 +506,7 @@ fn detection_never_opens_station_port_and_proposes_the_station_radio() {
         HashMap::from([(5, (0xa4, 115200))]),
         vec![7],
     );
-    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
+    hardware_of(&f.state.recording, hw.clone());
     let v = radio_setup::detect(&f.state).unwrap();
     assert_eq!(
         *hw.opened.lock().unwrap(),
@@ -602,7 +602,7 @@ fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
         HashMap::from([(4, (0x94, 19200))]),
         vec![],
     );
-    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
+    hardware_of(&f.state.recording, hw.clone());
     let v = radio_setup::detect(&f.state).unwrap();
     assert_eq!(
         v["proposal"]["control"]["endpoint"],
@@ -618,7 +618,7 @@ fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
         HashMap::from([(4, (0x94, 19200)), (6, (0x94, 9600))]),
         vec![],
     );
-    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+    hardware_of(&f.state.recording, hw);
     let v = radio_setup::detect(&f.state).unwrap();
     assert_eq!(
         (v["supported_radios"].as_u64(), v["proposal"].is_null()),
@@ -631,7 +631,7 @@ fn detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it() {
 async fn http_detect_and_settings_routes_refuse_like_operating_mutations() {
     let f = fixture("http://127.0.0.1:18046", false);
     let hw = double(vec![], HashMap::new(), vec![]);
-    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+    hardware_of(&f.state.recording, hw);
     let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":true});
     let (s, v, _, _) = f.call("POST", "/radio/detect", Some(body.clone())).await;
     assert_eq!(s, StatusCode::OK, "{v}");
@@ -904,7 +904,7 @@ async fn audio_endpoints_list_names_remember_saved_names_and_name_the_receive_in
             double(vec![], HashMap::new(), vec![]).endpoints.clone(),
         )),
     });
-    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
+    hardware_of(&f.state.recording, hw.clone());
     let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
@@ -1016,7 +1016,7 @@ async fn list_answer(endpoints: Vec<AudioEndpoint>) -> (StatusCode, Value) {
         ports: vec![],
         endpoints: Mutex::new(Some(endpoints)),
     });
-    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw);
+    hardware_of(&f.state.recording, hw);
     let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
     let _ = std::fs::remove_dir_all(&f.dir);
     (s, v)
@@ -1172,8 +1172,55 @@ fn saved_with(f: &Fixture, port: u16, ptt: &str) {
     });
     store.save(settings).unwrap();
 }
-fn hardware_of(f: &Fixture, hw: &Arc<Double>) {
-    *f.state.recording.radio_setup.hardware.lock().unwrap() = Some(hw.clone());
+/// The detection port of a recording, forwarding to a fake a later call replaces.
+struct Forward(Mutex<Arc<dyn radio_setup::Hardware>>);
+impl Forward {
+    fn to(&self) -> Arc<dyn radio_setup::Hardware> {
+        self.0.lock().unwrap().clone()
+    }
+}
+impl radio_setup::Hardware for Forward {
+    fn ports(&self) -> Result<Vec<PortInfo>, cat::Error> {
+        self.to().ports()
+    }
+    fn endpoints(&self) -> Result<Vec<AudioEndpoint>, cat::Error> {
+        self.to().endpoints()
+    }
+    fn open(
+        &self,
+        port: u16,
+        deadline: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<Box<dyn Transport>, cat::Error> {
+        self.to().open(port, deadline, cancel)
+    }
+    fn reserve(&self, port: u16) -> bool {
+        self.to().reserve(port)
+    }
+}
+/// Every forwarding port handed to a recording, while that recording lives.
+static FORWARDS: Mutex<Vec<std::sync::Weak<Forward>>> = Mutex::new(Vec::new());
+/// Fills the detection port of `recording` with `hw`: the first call fills the port with
+/// a forwarding fake, each later call replaces the fake it forwards to.
+pub(crate) fn hardware_of(recording: &recording::Recording, hw: Arc<dyn radio_setup::Hardware>) {
+    let mut forwards = FORWARDS.lock().unwrap();
+    forwards.retain(|w| w.strong_count() > 0);
+    if let Some(held) = recording.radio_setup.hardware.get() {
+        let held = Arc::as_ptr(held).cast::<()>();
+        let forward = forwards
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .find(|f| Arc::as_ptr(f).cast::<()>() == held)
+            .expect("the detection port holds a forwarding fake");
+        *forward.0.lock().unwrap() = hw;
+        return;
+    }
+    let forward = Arc::new(Forward(Mutex::new(hw)));
+    forwards.push(Arc::downgrade(&forward));
+    assert!(
+        recording.radio_setup.hardware.set(forward).is_ok(),
+        "one detection port per recording"
+    );
 }
 fn saved_control(f: &Fixture) -> (profile::ControlSelection, u64) {
     let store = f.state.store.lock().unwrap();
@@ -1197,7 +1244,7 @@ fn discovery_keeps_a_saved_radio_that_answers() {
         HashMap::from([(3, (0x94, 19200)), (5, (0x94, 19200))]),
         vec![],
     );
-    hardware_of(&f, &hw);
+    hardware_of(&f.state.recording, hw.clone());
     assert_eq!(radio_setup::discover_on_start(&f.state), None);
     assert_eq!(saved_control(&f), before);
     assert_eq!(
@@ -1230,7 +1277,7 @@ fn discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held
         HashMap::from([(6, (0x94, 19200))]),
         vec![3, 4],
     );
-    hardware_of(&f, &hw);
+    hardware_of(&f.state.recording, hw.clone());
     let line = radio_setup::discover_on_start(&f.state).unwrap();
     assert_eq!(
         line,
@@ -1280,7 +1327,7 @@ fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() 
         HashMap::new(),
         vec![4],
     );
-    hardware_of(&f, &hw);
+    hardware_of(&f.state.recording, hw.clone());
     assert_eq!(radio_setup::discover_on_start(&f.state), None);
     assert_eq!(saved_control(&f), before);
     // An operator's saved Disabled opens nothing.
@@ -1296,7 +1343,7 @@ fn discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled() 
         HashMap::from([(3, (0x94, 19200))]),
         vec![],
     );
-    hardware_of(&f, &hw);
+    hardware_of(&f.state.recording, hw.clone());
     assert_eq!(radio_setup::discover_on_start(&f.state), None);
     assert!(hw.opened.lock().unwrap().is_empty());
 }
@@ -1326,7 +1373,7 @@ fn discovery_sets_up_a_profile_never_saved() {
         HashMap::from([(5, (0xa4, 115200)), (6, (0x94, 9600))]),
         vec![],
     );
-    hardware_of(&f, &hw);
+    hardware_of(&f.state.recording, hw.clone());
     assert!(radio_setup::discover_on_start(&f.state).is_some());
     let (control, revision) = saved_control(&f);
     assert_eq!(revision, 1);
@@ -1351,7 +1398,7 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
     );
     let a = fixture("http://127.0.0.1:18052", false);
     radio_setup::confirm_keying(&a.state);
-    hardware_of(&a, &hw);
+    hardware_of(&a.state.recording, hw.clone());
     assert!(
         radio_setup::discover_on_start(&a.state)
             .unwrap()
@@ -1359,7 +1406,7 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
     );
     let b = fixture("http://127.0.0.1:18053", false);
     radio_setup::confirm_keying(&b.state);
-    hardware_of(&b, &hw);
+    hardware_of(&b.state.recording, hw.clone());
     assert!(
         radio_setup::discover_on_start(&b.state)
             .unwrap()
@@ -1369,7 +1416,7 @@ fn a_second_station_passes_over_a_radio_the_first_reserved() {
     let c = fixture("http://127.0.0.1:18054", false);
     radio_setup::confirm_keying(&c.state);
     saved_on(&c, 3);
-    hardware_of(&c, &hw);
+    hardware_of(&c.state.recording, hw.clone());
     assert_eq!(radio_setup::discover_on_start(&c.state), None);
     assert_eq!(saved_control(&c).0.endpoint.as_deref(), Some("COM3"));
 }
@@ -1385,7 +1432,7 @@ async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
         HashMap::from([(3, (0x94, 19200))]),
         vec![],
     );
-    hardware_of(&f, &hw);
+    hardware_of(&f.state.recording, hw.clone());
     let keying = || {
         let v: Value =
             serde_json::from_str(&crate::radio_level::event(&f.state.recording).1).unwrap();
@@ -1429,7 +1476,7 @@ fn silent_ports_stay_within_the_budget() {
         HashMap::new(),
         vec![],
     );
-    hardware_of(&f, &hw);
+    hardware_of(&f.state.recording, hw.clone());
     let started = Instant::now();
     assert_eq!(
         radio_setup::discover_within(&f.state, Duration::from_millis(200)),
@@ -1488,11 +1535,11 @@ fn discovery_opens_nothing_on_a_native_profile_or_an_endpoint_radio_control_does
             .state
             .recording
             .flex
-            .set(wstx_rust::flex::Session::double())
+            .set(crate::recording::tests::ScriptedSession::new())
             .is_ok()
     );
     let hw = radio();
-    hardware_of(&native, &hw);
+    hardware_of(&native.state.recording, hw.clone());
     assert_eq!(radio_setup::discover_on_start(&native.state), None);
     assert!(hw.opened.lock().unwrap().is_empty());
     let foreign = fixture("http://127.0.0.1:18063", false);
@@ -1508,7 +1555,7 @@ fn discovery_opens_nothing_on_a_native_profile_or_an_endpoint_radio_control_does
         store.save(settings).unwrap();
     }
     let hw = radio();
-    hardware_of(&foreign, &hw);
+    hardware_of(&foreign.state.recording, hw.clone());
     assert_eq!(radio_setup::discover_on_start(&foreign.state), None);
     assert!(hw.opened.lock().unwrap().is_empty());
     assert_eq!(
@@ -1527,7 +1574,7 @@ async fn detect_without_the_keying_confirmation_opens_no_port() {
         HashMap::from([(3, (0x94, 19200))]),
         vec![],
     );
-    hardware_of(&f, &hw);
+    hardware_of(&f.state.recording, hw.clone());
     let body = json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"keying_inhibit_confirmed":false});
     let (s, v, _, _) = f.call("POST", "/radio/detect", Some(body)).await;
     assert_eq!(
@@ -1536,4 +1583,38 @@ async fn detect_without_the_keying_confirmation_opens_no_port() {
     );
     assert!(hw.opened.lock().unwrap().is_empty());
     assert!(hw.writes.lock().unwrap().is_empty());
+}
+
+// A station whose detection port nobody filled lists and opens nothing: detection, the
+// endpoint listing and discovery are unavailable, and the endpoint names come only from the
+// record file.
+#[tokio::test]
+async fn radio_setup_without_its_hardware_port_lists_and_opens_nothing() {
+    let f = fixture("http://127.0.0.1:18065", false);
+    radio_setup::confirm_keying(&f.state);
+    saved_on(&f, 3);
+    f.state.store.lock().unwrap().document.audio.input_device = Some(CAPTURE.into());
+    std::fs::write(
+        f.dir.join(radio_setup::NAMES_FILE),
+        serde_json::to_vec(&json!({"schema_version":1,"names":{CAPTURE:"Microphone (Old radio)"}}))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(radio_setup::detect(&f.state), Err("radio_unavailable"));
+    let (s, v, _, _) = f.call("GET", "/audio/endpoints", None).await;
+    assert_eq!(
+        (s, v["error"]["code"].as_str()),
+        (StatusCode::CONFLICT, Some("audio_unavailable"))
+    );
+    assert_eq!(
+        radio_setup::discover_within(&f.state, Duration::from_millis(200)),
+        None
+    );
+    radio_setup::startup_names(&f.state);
+    assert_eq!(
+        f.state.recording.radio_setup.name(CAPTURE).as_deref(),
+        Some("Microphone (Old radio)")
+    );
+    assert_eq!(f.state.recording.radio_setup.name(RENDER), None);
+    let _ = std::fs::remove_dir_all(&f.dir);
 }

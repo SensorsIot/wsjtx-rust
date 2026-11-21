@@ -325,6 +325,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
             })
             .await?;
+            // The ports and audio endpoints radio detection reads.
+            #[cfg(windows)]
+            let _ = recording
+                .radio_setup
+                .hardware
+                .set(std::sync::Arc::new(radio_setup::Native));
             // The station's CAT serial line, leased under its radio-ownership folder.
             #[cfg(windows)]
             let _ = recording.cat_opener.set(std::sync::Arc::new(
@@ -359,8 +365,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Box::new(wstx_rust::transmit::clock::windows_time),
             );
             let _ = recording.clock.set(clock.clone());
-            let transmit = transmit_http::Station::start(clock.station.clone())
-                .map_err(|_| error("resource_unavailable", ""))?;
+            // The transmit adapter: PTT through the CAT actor, audio to the output device.
+            let shared = transmit_http::Shared::default();
+            let hardware = transmit_http::StationHardware::new(clock.station.clone(), &shared);
+            let transmit =
+                transmit_http::Station::start(clock.station.clone(), shared, Box::new(hardware))
+                    .map_err(|_| error("resource_unavailable", ""))?;
             // Process exit and panics stop output and release a keyed CI-V switch once; the
             // exit then sends Close to the UDP targets (CL-112-06).
             let guard = transmit.clone();
@@ -1412,7 +1422,7 @@ async fn connection(
                     }
                 }
                 if let Some(session)=r.flex.get() && session.revision()!=native_seen {
-                    let (revision,text)=flex_http::event(r,session);
+                    let (revision,text)=flex_http::event(r,&**session);
                     match optional_write(&mut socket,Message::Text(text.into())) {
                         Ok(None)=>{},
                         Ok(Some(flushed))=>{native_seen=revision;if !flushed {optional_since=Some(Instant::now());continue;}},

@@ -1,3 +1,4 @@
+use crate::flex_http::NativeSession;
 pub use crate::source::{SampleBlock, SourceDescriptor};
 use crate::{audio, decoder, receive, source};
 use crate::{profile, selection, spectrum};
@@ -23,7 +24,7 @@ pub(crate) mod diagnostics;
 pub(crate) mod startup;
 #[cfg(test)]
 #[path = "recording_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 /// WstxRecordingTransfer::RecordingLimits: the one sample rate of a recording, the largest
 /// recording file, its most samples and chunks, and the times of an import.
@@ -286,7 +287,7 @@ pub struct Recording {
     /// process.
     pub(crate) contact: std::sync::OnceLock<Arc<crate::contact_http::Station>>,
     /// FR-023 native session of a native profile, started once by the process.
-    pub(crate) flex: std::sync::OnceLock<Arc<wstx_rust::flex::Session>>,
+    pub(crate) flex: std::sync::OnceLock<Arc<dyn NativeSession>>,
     /// Who is connected, for the rule without a client.
     pub(crate) clients: crate::automation::Clients,
     /// WstxHoldTx::SlotLevel: the per-period waterfall power of the live receive.
@@ -841,16 +842,9 @@ impl Recording {
             if !session.ready() {
                 return Err("radio_unavailable");
             }
-            let input = wstx_rust::flex::NativeInput::new(session.clone()).map_err(audio_error)?;
-            return self.receive_start_checked(
-                profile,
-                boot,
-                generation,
-                device,
-                mode,
-                Box::new(input),
-                guard,
-            );
+            let input = session.clone().input().map_err(audio_error)?;
+            return self
+                .receive_start_checked(profile, boot, generation, device, mode, input, guard);
         }
         #[cfg(windows)]
         let input = audio::AudioController::new(device.clone()).map_err(audio_error)?;
@@ -1777,7 +1771,7 @@ impl Recording {
             .collect();
         let bound = selection::bound_snapshot(r.cached.as_ref(), o.profile_revision);
         let radio = match self.flex.get() {
-            Some(session) => crate::flex_http::selection_radio(session, o.boot_at),
+            Some(session) => crate::flex_http::selection_radio(&**session, o.boot_at),
             None => json!({"connection_generation":r.generation,
                 "state":bound.as_ref().map(|v|selection::state_name(v.state)).unwrap_or(if r.connecting{"connecting"}else if r.error.is_some(){"unavailable"}else{"closed"}),
                 "error":bound.as_ref().and_then(|v|v.last_error.map(selection::radio_error)).or(r.error),

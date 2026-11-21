@@ -36,7 +36,7 @@ pub(crate) trait Hardware: Send + Sync {
     fn reserve(&self, port: u16) -> bool;
 }
 #[cfg(windows)]
-struct Native;
+pub(crate) struct Native;
 /// The radios this process discovered; the locks end with the process.
 #[cfg(windows)]
 static RESERVED: Mutex<Vec<std::fs::File>> = Mutex::new(Vec::new());
@@ -126,15 +126,15 @@ pub(crate) fn native_endpoints() -> Result<Vec<AudioEndpoint>, cat::Error> {
 }
 
 /// Per-station detection state: one detection at a time, the known endpoint names
-/// (CL-044-07) and the test seam.
+/// (CL-044-07) and the detection hardware the entry point fills.
 #[derive(Default)]
 pub(crate) struct Owner {
     pub(crate) busy: AtomicBool,
     /// Endpoint ID to display name: the latest listing's endpoints and the remembered
     /// names of the saved endpoints.
     names: Mutex<std::collections::HashMap<String, String>>,
-    #[cfg(test)]
-    pub(crate) hardware: Mutex<Option<Arc<dyn Hardware>>>,
+    /// The detection hardware; empty: detection answers radio_unavailable.
+    pub(crate) hardware: std::sync::OnceLock<Arc<dyn Hardware>>,
 }
 impl Owner {
     /// CL-044-07: the known name of an endpoint, for GET /receive audio.device_name.
@@ -142,14 +142,7 @@ impl Owner {
         self.names.lock().ok()?.get(id).cloned()
     }
     fn hardware(&self) -> Option<Arc<dyn Hardware>> {
-        #[cfg(test)]
-        if let Some(h) = self.hardware.lock().unwrap().clone() {
-            return Some(h);
-        }
-        #[cfg(windows)]
-        return Some(Arc::new(Native));
-        #[cfg(not(windows))]
-        None
+        self.hardware.get().cloned()
     }
 }
 struct Busy<'a>(&'a AtomicBool);
