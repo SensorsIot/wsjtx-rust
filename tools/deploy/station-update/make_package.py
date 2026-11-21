@@ -54,7 +54,8 @@ import yaml
 REPO = r"D:\Github\wsjtx-rust"
 BUILD_ROOT = r"C:\wstx-build"
 MECHANISM_DIR = "tools/deploy/station-update"
-MECHANISM_FILES = ("tools/deploy/agent-client.ps1", "tools/deploy/station-probe.ps1", "tools/deploy/live-page-check.ps1")
+MECHANISM_FILES = ("tools/deploy/agent-client.ps1", "tools/deploy/station-probe.ps1", "tools/deploy/live-page-check.ps1",
+                   "tools/deploy/station-process.ps1")
 POWERSHELL = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), r"System32\WindowsPowerShell\v1.0\powershell.exe")
 USAGE = "usage: make_package.py <commit> [--dry-run]"
 VERDICT = re.compile(r"harness gate: \d+ suites, green")

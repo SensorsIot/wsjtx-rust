@@ -9,7 +9,9 @@
   - tools/deploy/tests/pwsh.py
   - tools/deploy/agent-client.ps1
   - tools/deploy/station-update/launcher.ps1
+  - tools/deploy/station-process.ps1
   select:
   - tools/test/powershell/
   - tools/deploy/tests/pwsh.py
+  - tools/deploy/station-process.ps1
   needs: "Python 3.12, Windows PowerShell 5.1 and git with the checkout. Windows PC. Every serial port, station process, scheduled task, station HTTP call and emulator process is a mock function in a temporary sandbox. No station, radio, emulator or network service."

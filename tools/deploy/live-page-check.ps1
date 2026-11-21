@@ -3,9 +3,10 @@
 # watched the page for several periods. It keys nothing.
 #   live-page-check.ps1 -Repo <repository root> -Shared <git common dir>\harness-parallel
 #                       -AgentClient <agent-client.ps1> [-WaitSeconds 300] [-Station <folder>]
-# It derives no path from its own location, so it runs from a station package as well: the check
-# is <Repo>\tools\test\node\live-page-check.cjs (with the repository's node_modules), the radio lease is
-# <Shared>\radio\lease.json.
+# It takes station-process.ps1 (the station's process list, Ctrl+C helper and task settle) from
+# beside itself and every other path from its parameters, so it runs from a station package as
+# well: the check is <Repo>\tools\test\node\live-page-check.cjs (with the repository's
+# node_modules), the radio lease is <Shared>\radio\lease.json.
 # The restart happens only while /transmit is disarmed, not transmitting and PTT released, /contact
 # has no running contact, /automation has no active run, no update runs and nobody holds the radio
 # lease; otherwise it waits up to -WaitSeconds and gives up with the station untouched.
@@ -34,30 +35,8 @@ param([Parameter(Mandatory)][string]$Repo, [Parameter(Mandatory)][string]$Shared
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
 
 function Now { [DateTime]::UtcNow }
-function Station-Procs {
-  @(Get-CimInstance Win32_Process -Filter "Name='wstx-rust.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Station, [StringComparison]::OrdinalIgnoreCase) })
-}
-# GenerateConsoleCtrlEvent reaches the attached console's whole group, so a helper process does it.
-function Send-CtrlC([int]$TargetPid) {
-  $code = @"
-Add-Type -Namespace W -Name C -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool FreeConsole(); [DllImport("kernel32.dll")] public static extern bool AttachConsole(uint p); [DllImport("kernel32.dll")] public static extern bool SetConsoleCtrlHandler(System.IntPtr h, bool a); [DllImport("kernel32.dll")] public static extern bool GenerateConsoleCtrlEvent(uint e, uint g);'
-[W.C]::FreeConsole() | Out-Null
-if (-not [W.C]::AttachConsole($TargetPid)) { exit 3 }
-[W.C]::SetConsoleCtrlHandler([IntPtr]::Zero, `$true) | Out-Null
-if (-not [W.C]::GenerateConsoleCtrlEvent(0, 0)) { exit 4 }
-Start-Sleep -Milliseconds 500
-exit 0
-"@
-  $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
-  (Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-NonInteractive', '-EncodedCommand', $enc) -WindowStyle Hidden -PassThru -Wait).ExitCode
-}
-# The task's launcher outlives the process for a moment; the next start must not race it.
-function Settle-Task {
-  try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop } catch { Write-Output "note: Stop-ScheduledTask: $($_.Exception.Message)" }
-  $deadline = (Now).AddSeconds(10)
-  while ((Get-ScheduledTask -TaskName $TaskName).State -eq 'Running' -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
-  Start-Sleep -Milliseconds 800
-}
+# Station-Procs, Send-CtrlC and Settle-Task come from station-process.ps1 beside this script,
+# dot-sourced inside the try below.
 # Why the station cannot be restarted now, or $null. An unreadable state counts as in use.
 # It takes the update lock and keeps it while the station is free ($script:Lock), so that no
 # update or preflight starts between this check and the new boot.
@@ -149,7 +128,7 @@ function Selection-Result([string]$Command, [DateTime]$Until) {
 function Send-Line($message) { $node.StandardInput.WriteLine(($message | ConvertTo-Json -Compress -Depth 3)); $node.StandardInput.Flush() }
 function Restart-Station {
   $process = @(Station-Procs)[0]
-  $rc = Send-CtrlC ([int]$process.ProcessId)
+  $rc = (Send-CtrlC ([int]$process.ProcessId)).Rc
   $deadline = (Now).AddSeconds(32)
   while (@(Station-Procs).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 200 }
   if (@(Station-Procs).Count -gt 0) { throw "THE STATION still runs, state unknown, check it: 32 s after Ctrl+C (helper exit $rc), not restarted" }
@@ -179,8 +158,11 @@ try {
   $RadioDir = Join-Path $Shared 'radio'
   if (-not [IO.Path]::IsPathRooted($Check)) { $Check = Join-Path $Repo $Check }
   . $AgentClient
+  . (Join-Path $PSScriptRoot 'station-process.ps1')
   $control = Join-Path ([IO.Path]::GetTempPath()) "wstx-page-check-$([guid]::NewGuid().ToString('N'))"
   [void][IO.Directory]::CreateDirectory($control)
+  # The Ctrl+C helper's error file lies in the control folder, which the finally removes.
+  $CtrlErrFile = Join-Path $control 'ctrl.txt'
 
   $start = New-Object Diagnostics.ProcessStartInfo
   $start.FileName = (Get-Command node).Source

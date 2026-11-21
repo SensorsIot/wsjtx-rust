@@ -17,6 +17,7 @@ import unittest
 import pwsh
 
 SCRIPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "live-page-check.ps1")
+PROCESS = os.path.join(os.path.dirname(SCRIPT), "station-process.ps1")
 
 FAKE_CHECK = r"""
 const fs=require('node:fs'),path=require('node:path'),readline=require('node:readline');
@@ -95,17 +96,24 @@ function Agent-Post($c, [string]$Route, $Body) {
 """
 
 
-def prelude(station):
+def prelude(station, helper_fails=False):
+    """With `helper_fails` the Ctrl+C helper exits 3 after writing 6 to the error file its code
+    names ($f, noted in LPC_FPATH), and the station stays up."""
     exe = pwsh.ps_quote(os.path.join(station, "0d7d5c922", "wstx-rust.exe"))
     down = pwsh.ps_quote(os.path.join(station, "down"))
     procs = pwsh.ps_quote(os.path.join(station, "procs2"))
     lock = pwsh.ps_quote(os.path.join(station, "logs", "update.lock"))
+    helper = ("$code = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([string]$ArgumentList[-1])); "
+              "$f = if ($code -match '\\$f=''([^'']*)''') { $Matches[1] } else { '' }; "
+              "Set-Content -LiteralPath $env:LPC_FPATH -Value $f; if ($f) { [IO.File]::WriteAllText($f, '6') }; "
+              "[pscustomobject]@{ExitCode=3}" if helper_fails else
+              f"Set-Content -LiteralPath {down} -Value ''; [pscustomobject]@{{ExitCode=0}}")
     return f"""
 function Log($what) {{ Add-Content -LiteralPath $env:LPC_LOG -Value $what }}
 function Get-CimInstance {{ param($ClassName,$Filter)
   if (-not (Test-Path -LiteralPath {down})) {{ [pscustomobject]@{{ProcessId=4242; ExecutablePath={exe}}} }}
   if (Test-Path -LiteralPath {procs}) {{ [pscustomobject]@{{ProcessId=4243; ExecutablePath={exe}}} }} }}
-function Start-Process {{ param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru,[switch]$Wait) Log 'ctrlc'; Set-Content -LiteralPath {down} -Value ''; [pscustomobject]@{{ExitCode=0}} }}
+function Start-Process {{ param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru,[switch]$Wait) Log 'ctrlc'; {helper} }}
 function Stop-ScheduledTask {{ param($TaskName,$ErrorAction) }}
 function Get-ScheduledTask {{ param($TaskName) [pscustomobject]@{{State='Ready'}} }}
 function Start-ScheduledTask {{ param($TaskName)
@@ -156,7 +164,7 @@ class LivePageCheckTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_check(self, state, script=SCRIPT, check=True, later=None, rows_after=None):
+    def run_check(self, state, script=SCRIPT, check=True, later=None, rows_after=None, helper_fails=False):
         with open(self.state, "w", encoding="utf-8") as f:
             json.dump(state, f)
         open(self.posts, "w").close()
@@ -168,8 +176,9 @@ class LivePageCheckTests(unittest.TestCase):
                "LPC_LOCK": os.path.join(self.station, "logs", "update.lock"),
                "LPC_LEASE": os.path.join(self.radio, "lease.json"),
                "LPC_PROCS": os.path.join(self.station, "procs2"),
-               "LPC_LATER": json.dumps(later or {}), "LPC_ROWS_AFTER": str(rows_after or 0)}
-        rc, out = pwsh.run(script, args, prelude(self.station), env=env)
+               "LPC_LATER": json.dumps(later or {}), "LPC_ROWS_AFTER": str(rows_after or 0),
+               "LPC_FPATH": os.path.join(self.tmp.name, "fpath.txt")}
+        rc, out = pwsh.run(script, args, prelude(self.station, helper_fails), env=env)
         with open(self.log, encoding="utf-8") as f:
             return rc, out, f.read().split()
 
@@ -345,6 +354,7 @@ class LivePageCheckTests(unittest.TestCase):
         os.makedirs(package)
         script = os.path.join(package, "live-page-check.ps1")
         shutil.copyfile(SCRIPT, script)
+        shutil.copyfile(PROCESS, os.path.join(package, "station-process.ps1"))
         os.makedirs(os.path.join(self.repo, "tools", "test", "node"))
         checker = os.path.join(self.repo, "tools", "test", "node", "live-page-check.cjs")
         shutil.copyfile(self.check, checker)
@@ -360,6 +370,58 @@ class LivePageCheckTests(unittest.TestCase):
         rc, out, log = self.run_check(FREE, script=script, check=False)
         self.assertEqual(rc, 3, out)
         self.assertIn("qso-test holds the radio lease", out)
+
+    def scratch_script(self, old, new):
+        """A copy of the page check with `old` replaced by `new`, station-process.ps1 beside it."""
+        with open(SCRIPT, encoding="utf-8") as f:
+            text = f.read()
+        self.assertEqual(text.count(old), 1, old)
+        folder = os.path.join(self.tmp.name, "scratch")
+        os.makedirs(folder, exist_ok=True)
+        shutil.copyfile(PROCESS, os.path.join(folder, "station-process.ps1"))
+        path = os.path.join(folder, "live-page-check.ps1")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text.replace(old, new))
+        return path
+
+    def helper_fails_case(self, script=SCRIPT):
+        open(self.log, "w").close()
+        rc, out, log = self.run_check(FREE, script=script, helper_fails=True)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("THE STATION still runs, state unknown, check it: 32 s after Ctrl+C (helper exit 3), not restarted", out)
+        self.assertIn("LIVE PAGE CHECK ERROR", out)
+        with open(os.path.join(self.tmp.name, "fpath.txt"), encoding="utf-8-sig") as f:
+            fpath = f.read().strip()
+        control = os.path.dirname(fpath)
+        self.assertTrue(os.path.basename(control).startswith("wstx-page-check-"), fpath)
+        self.assertEqual(os.path.normcase(os.path.dirname(control)), os.path.normcase(tempfile.gettempdir()), fpath)
+        self.assertFalse(os.path.exists(control), "the control folder is removed")
+        self.assertEqual(os.listdir(os.path.join(self.station, "logs")), ["update.lock"])
+
+    # Proves: TC-317-05
+    def test_a_failed_helper_leaves_the_station_running_and_writes_nothing_to_its_logs(self):
+        self.helper_fails_case()
+        for name, old, new in (("message from the object", "$rc = (Send-CtrlC ([int]$process.ProcessId)).Rc",
+                                "$rc = Send-CtrlC ([int]$process.ProcessId)"),
+                               ("CtrlErrFile not set", "  $CtrlErrFile = Join-Path $control 'ctrl.txt'\n", ""),
+                               ("error file under the station logs", "$CtrlErrFile = Join-Path $control 'ctrl.txt'",
+                                "$CtrlErrFile = Join-Path $Station 'logs\\ctrl.txt'")):
+            with self.subTest(name):
+                with self.assertRaises(AssertionError):
+                    self.helper_fails_case(self.scratch_script(old, new))
+
+    # Proves: TC-317-05
+    def test_a_package_folder_without_station_process_ps1_ends_before_any_stop(self):
+        package = os.path.join(self.tmp.name, "pkg", "deploy", "tools", "deploy")
+        os.makedirs(package)
+        script = os.path.join(package, "live-page-check.ps1")
+        shutil.copyfile(SCRIPT, script)
+        rc, out, log = self.run_check(FREE, script=script)
+        self.assertEqual(rc, 2, out)
+        self.assertIn("LIVE PAGE CHECK ERROR", out)
+        self.assertIn("station-process.ps1", out)
+        self.assertNotIn("ctrlc", log, out)
+        self.assertFalse([entry for entry in log if entry.startswith("start")], out)
 
     def test_armed(self):
         self.assert_busy(dict(FREE, arm="armed"), "transmit is armed")

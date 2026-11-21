@@ -52,7 +52,7 @@ $Url='https://192.168.0.37:18081'
 $GitHubRepo='SensorsIot/wsjtx-rust'
 $Shared=Join-Path $Repo '.git\harness-parallel'
 # The mechanism files in pin order (Project-Specifics.md, Deploy pins).
-$MechanismPaths=@('tools/deploy/station-update/station-update.ps1','tools/deploy/station-update/make_package.py','tools/deploy/station-update/launcher.ps1','tools/deploy/agent-client.ps1','tools/deploy/station-probe.ps1','tools/deploy/live-page-check.ps1')
+$MechanismPaths=@('tools/deploy/station-update/station-update.ps1','tools/deploy/station-update/make_package.py','tools/deploy/station-update/launcher.ps1','tools/deploy/agent-client.ps1','tools/deploy/station-probe.ps1','tools/deploy/live-page-check.ps1','tools/deploy/station-process.ps1')
 $LauncherPin='tools/deploy/station-update/launcher.ps1'
 $BusyWaitSeconds=300; $BusyPollSeconds=10
 $activePath=Join-Path $Station 'active.json'
@@ -63,6 +63,8 @@ $stamp=(Now).ToString('yyyyMMddTHHmmssZ')
 $log=Join-Path $Station "logs\update-$stamp.log"
 $saved=Join-Path $Station "logs\update-$stamp-profile"
 $savedLauncher=Join-Path $Station "logs\update-$stamp-launcher.ps1"
+# The Ctrl+C helper's error file (station-process.ps1, Send-CtrlC).
+$CtrlErrFile=Join-Path $Station "logs\update-$stamp-ctrl.txt"
 $script:Lock=$null; $script:Session=$null; $script:launcherWritten=$false
 # The stops of this run: one Station stop line each for the record; a forced stop waits for the
 # next ready start to read its PTT release; a release that was not confirmed ends all stopping.
@@ -81,7 +83,9 @@ function Safe-Child($Root,$Path) {
   }
   return $p
 }
-function Station-Processes { @(Get-CimInstance Win32_Process -Filter "Name='wstx-rust.exe'" | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith("$Station\",[StringComparison]::OrdinalIgnoreCase) }) }
+# Station-Procs, Send-CtrlC and Settle-Task: the package's station-process.ps1 beside this
+# folder, loaded before any write; without it the update ends here, the station untouched.
+. "$PSScriptRoot\..\station-process.ps1"
 function Assert-Setup {
   $args0=[string](Get-ScheduledTask -TaskName $TaskName).Actions[0].Arguments
   if ($args0 -notlike "*-File*$Station\launcher.ps1*") { throw 'setup-once.ps1 has not been run (task does not use launcher.ps1).' }
@@ -91,41 +95,7 @@ function Firewall-Scope {
   "$($r.Enabled)|$($r.Direction)|$($r.Action)|$($a.LocalAddress)|$($a.RemoteAddress)|$($p.Protocol)|$($p.LocalPort)"
 }
 $ExpectedScope='True|Inbound|Allow|192.168.0.37|192.168.0.6|TCP|18081'
-function Send-CtrlC([int]$TargetPid,[int]$CtrlEvent=0) {
-  # A separate process attaches to the station's console and raises Ctrl+C there; the
-  # station's exit guard stops audio and sends the off-only PTT release. Exit 3: AttachConsole
-  # failed; exit 4: GenerateConsoleCtrlEvent failed; the helper then writes the Windows error
-  # (GetLastError) of that call to $errFile.
-  $errFile=Join-Path $Station "logs\update-$stamp-ctrl.txt"
-  if (Test-Path -LiteralPath $errFile) { Remove-Item -LiteralPath $errFile -Force }
-  $errQ=$errFile -replace "'","''"
-  $code=@"
-Add-Type -Namespace W -Name C -MemberDefinition '[DllImport("kernel32.dll")] public static extern bool FreeConsole(); [DllImport("kernel32.dll", SetLastError=true)] static extern bool AttachConsole(uint p); [DllImport("kernel32.dll")] public static extern bool SetConsoleCtrlHandler(System.IntPtr h, bool a); [DllImport("kernel32.dll", SetLastError=true)] static extern bool GenerateConsoleCtrlEvent(uint e, uint g); public static int Attach(uint p) { return AttachConsole(p) ? -1 : System.Runtime.InteropServices.Marshal.GetLastWin32Error(); } public static int Raise(uint e) { return GenerateConsoleCtrlEvent(e, 0) ? -1 : System.Runtime.InteropServices.Marshal.GetLastWin32Error(); }'
-`$f='$errQ'
-[W.C]::FreeConsole() | Out-Null
-`$e=[W.C]::Attach($TargetPid)
-if (`$e -ge 0) { [IO.File]::WriteAllText(`$f, [string]`$e); exit 3 }
-[W.C]::SetConsoleCtrlHandler([IntPtr]::Zero, `$true) | Out-Null
-`$e=[W.C]::Raise($CtrlEvent)
-if (`$e -ge 0) { [IO.File]::WriteAllText(`$f, [string]`$e); exit 4 }
-Start-Sleep -Milliseconds 500
-exit 0
-"@
-  $enc=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
-  $p=Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile','-NonInteractive','-EncodedCommand',$enc) -WindowStyle Hidden -PassThru -Wait
-  $rc=[int]$p.ExitCode
-  $n=$null
-  if (Test-Path -LiteralPath $errFile) {
-    $t=([IO.File]::ReadAllText($errFile)).Trim()
-    if ($t -match '^[0-9]+$') { $n=$t }
-    Remove-Item -LiteralPath $errFile -Force
-  }
-  $call=$null; if ($rc -eq 3) { $call='AttachConsole' } elseif ($rc -eq 4) { $call='GenerateConsoleCtrlEvent' }
-  $err=''
-  if ($rc -ne 0) { $err=$(if ($call) { "$call error " } else { 'error ' })+$(if ($call -and $n) { $n } else { 'unknown' }) }
-  return [pscustomobject]@{ Rc=$rc; Delivered=($rc -eq 0); Error=$err }
-}
-# The helper's result as a stop line names it: helper exit <rc>[, <call> error <n>].
+# The helper's result (Send-CtrlC, station-process.ps1) as a stop line names it: helper exit <rc>[, <call> error <n>].
 function Signal-Text($s) { "helper exit $($s.Rc)"+$(if ($s.Error) { ", $($s.Error)" } else { '' }) }
 function Delivery($s) { if ($s -and $s.Delivered) { 'delivered' } else { 'not delivered' } }
 # The transmit state just before a forced stop, from one GET /transmit; -Rollback has no agent client.
@@ -169,22 +139,22 @@ function Confirm-Release {
 }
 function Stop-Station {
   $sent=@{}
-  foreach ($q in @(Station-Processes)) {
+  foreach ($q in @(Station-Procs)) {
     $id=[int]$q.ProcessId; $s=Send-CtrlC $id; $sent[$id]=$s
     if ($s.Delivered) { Step "graceful stop (Ctrl+C) sent to PID ${id}: $(Signal-Text $s)" }
     else { Step "graceful stop (Ctrl+C) NOT DELIVERED to PID ${id}: $(Signal-Text $s)" }
   }
   $deadline=(Now).AddSeconds(8)
-  while (@(Station-Processes).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 300 }
+  while (@(Station-Procs).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 300 }
   $broke=@{}
-  foreach ($q in @(Station-Processes)) {
+  foreach ($q in @(Station-Procs)) {
     $id=[int]$q.ProcessId; $b=Send-CtrlC $id 1; $broke[$id]=$b
     if ($sent.ContainsKey($id) -and $sent[$id].Delivered) { Step "Ctrl+C delivered, PID $id still runs after 8 s; Ctrl+Break sent: $(Signal-Text $b)" }
     else { Step "Ctrl+Break sent to PID $id after an undelivered Ctrl+C: $(Signal-Text $b)" }
   }
   $deadline=(Now).AddSeconds(8)
-  while (@(Station-Processes).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 300 }
-  $left=@(Station-Processes)
+  while (@(Station-Procs).Count -gt 0 -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 300 }
+  $left=@(Station-Procs)
   $forced=$null
   foreach ($q in $left) {
     $id=[int]$q.ProcessId
@@ -200,10 +170,8 @@ function Stop-Station {
     $script:ForcedPending=[pscustomobject]@{ Index=$script:StopLines.Count-1; Text="Station stop: $forced" }
   } else { $script:StopLines+='Station stop: graceful' }
   if ($left.Count -gt 0) { Start-Sleep -Seconds 2 }
-  if (@(Station-Processes).Count -ne 0) { throw 'station process did not exit' }
-  try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop } catch { Step "note: Stop-ScheduledTask: $($_.Exception.Message)" }
-  $deadline=(Now).AddSeconds(10)
-  while ((Get-ScheduledTask -TaskName $TaskName).State -eq 'Running' -and (Now) -lt $deadline) { Start-Sleep -Milliseconds 300 }
+  if (@(Station-Procs).Count -ne 0) { throw 'station process did not exit' }
+  foreach ($note in @(Settle-Task)) { Step $note }
   if ((Get-ScheduledTask -TaskName $TaskName).State -eq 'Running') { throw 'task still Running after the station exited; a restart would be ignored' }
 }
 function Start-Ready($commit) {
@@ -301,7 +269,7 @@ function Busy-Reason {
     catch { return 'the radio lease cannot be read' }
     if ($until -gt (Now)) { return "$($lease.holder) holds the radio lease until $($lease.expires)" }
   }
-  $procs=@(Station-Processes)
+  $procs=@(Station-Procs)
   if ($procs.Count -ne 1) { return "$($procs.Count) station processes are running" }
   try { $s=Read-State }
   catch {
@@ -489,7 +457,7 @@ try {
   Step "FAILED at step '$stepName': $($_.Exception.Message)"
   if ($switched) { Switch-Back $commit $current $true }
   else {
-    try { if (@(Station-Processes).Count -eq 0) { $r=Start-Ready $current; Step "restarted unchanged $($current.Substring(0,9)), PID $($r.process_id)" } }
+    try { if (@(Station-Procs).Count -eq 0) { $r=Start-Ready $current; Step "restarted unchanged $($current.Substring(0,9)), PID $($r.process_id)" } }
     catch { Step "STATION DOWN: restart of $($current.Substring(0,9)) failed: $($_.Exception.Message)"; throw }
   }
   exit 1

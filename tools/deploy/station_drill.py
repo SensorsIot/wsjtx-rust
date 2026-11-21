@@ -1,6 +1,6 @@
 """Show each refusal of station-update.ps1 happening before the destination changes.
 
-usage: python tools/deploy/station_drill.py [--script <station-update.ps1>] [--keep <dir>]
+usage: python tools/deploy/station_drill.py [--script <station-update.ps1>] [--process <station-process.ps1>] [--keep <dir>]
 
 Runs the install script against a sandbox station (LOCALAPPDATA points into a temporary
 directory) with every command that reaches the system replaced by a mock: the scheduled
@@ -10,8 +10,11 @@ GitHub, cr_state.py) record a sentinel and throw. Before running, the drill refu
 that uses a command, .NET type or call target it has not classified, `$ExecutionContext`, an
 environment variable other than LOCALAPPDATA, or a literal absolute path other than the
 repository (whose git is mocked; the drill passes a sandbox -Repo) and the protected
-deploy-authority root. The one call without a static name it accepts is the dot-source of
-`$AgentClient`, the package's agent client: in the drill that is the sandbox's fake client.
+deploy-authority root. It classifies the commands of station-process.ps1, which the script
+dot-sources, with the script's own. The two calls without a static name it accepts are the
+dot-source of `$AgentClient`, the package's agent client (in the drill the sandbox's fake
+client), and the dot-source of the package's station-process.ps1 in the one form the script
+uses; the sandbox package carries the real station-process.ps1.
 This keeps the commands the drill knows away from the live station; it is no sandbox against
 code written to escape it, so read a changed script's diff before drilling it.
 
@@ -41,6 +44,8 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "station-update", "station-update.ps1")
+# The station's process list, Ctrl+C helper and task settle, which the update dot-sources.
+PROCESS = os.path.join(HERE, "station-process.ps1")
 POWERSHELL = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), r"System32\WindowsPowerShell\v1.0\powershell.exe")
 CURRENT = "c" * 40
 COMMIT = "1234567890" + "ab" * 15
@@ -50,7 +55,7 @@ TASK = "WSTX Rust Station HB9BLA"
 # The mechanism files in pin order (harness/project/docs/Project-Specifics.md, Deploy pins).
 MECHANISM = ("tools/deploy/station-update/station-update.ps1", "tools/deploy/station-update/make_package.py",
              "tools/deploy/station-update/launcher.ps1", "tools/deploy/agent-client.ps1",
-             "tools/deploy/station-probe.ps1", "tools/deploy/live-page-check.ps1")
+             "tools/deploy/station-probe.ps1", "tools/deploy/live-page-check.ps1", "tools/deploy/station-process.ps1")
 LAUNCHER = b"# drill: station launcher\n"
 
 # Every Verb-Noun command the script may use. Mocked ones are replaced in the prelude; the
@@ -62,8 +67,8 @@ MOCKED = {"Get-ScheduledTask", "Start-ScheduledTask", "Stop-ScheduledTask", "Get
 LOCAL = {"Set-StrictMode", "Join-Path", "Split-Path", "Test-Path", "Get-Item", "Get-FileHash", "Get-ChildItem",
          "Copy-Item", "New-Item", "Remove-Item", "Rename-Item", "Get-Content", "Add-Content", "ConvertFrom-Json",
          "ConvertTo-Json", "Resolve-Path", "Write-Output", "Where-Object", "Out-Null", "Sort-Object",
-         "Push-Location", "Pop-Location", "ForEach-Object", "(dot-source-agent-client)",
-         "Safe-Child", "Station-Processes", "Assert-Setup", "Firewall-Scope", "Send-CtrlC", "Stop-Station",
+         "Push-Location", "Pop-Location", "ForEach-Object", "(dot-source-agent-client)", "(dot-source-station-process)",
+         "Safe-Child", "Station-Procs", "Settle-Task", "Assert-Setup", "Firewall-Scope", "Send-CtrlC", "Stop-Station",
          "Start-Ready", "Write-Active", "Save-Profile", "Restore-Profile", "Restore-Launcher", "Switch-Back", "Step",
          "Hash", "Now", "Specifics-Path", "Read-Pins", "Pins-Text", "Issue-Skip", "Take-Lock", "Read-State", "Station-Busy",
          "Busy-Reason", "Clean", "Last-Line", "Move-Installed", "Issues-Named", "Signal-Text", "Delivery",
@@ -196,11 +201,13 @@ if ($errs.Count) { 'PARSE-ERROR'; exit 1 }
 $L = [System.Management.Automation.Language.Ast].Assembly
 function All($type) { $t = $L.GetType("System.Management.Automation.Language.$type"); $ast.FindAll({ param($n) $t.IsInstanceOfType($n) }.GetNewClosure(), $true) }
 # Every command, also inside "$(...)" of a string; `& $path`, `& "...exe"` or `. $x` has no
-# static name and is refused, except `. $AgentClient` (the package's agent client).
+# static name and is refused, except `. $AgentClient` (the package's agent client) and
+# `. "$PSScriptRoot\..\station-process.ps1"` (the package's station-process.ps1), each in exactly that form.
 foreach ($c in All 'CommandAst') {
   $n = $c.GetCommandName()
   if ($n) { $n }
   elseif ($c.InvocationOperator -eq 'Dot' -and $c.CommandElements.Count -eq 1 -and $c.CommandElements[0] -is [System.Management.Automation.Language.VariableExpressionAst] -and $c.CommandElements[0].VariablePath.UserPath -eq 'AgentClient') { '(dot-source-agent-client)' }
+  elseif ($c.InvocationOperator -eq 'Dot' -and $c.CommandElements.Count -eq 1 -and $c.CommandElements[0] -is [System.Management.Automation.Language.ExpandableStringExpressionAst] -and $c.CommandElements[0].Extent.Text -ceq '"$PSScriptRoot\..\station-process.ps1"') { '(dot-source-station-process)' }
   else { '(call-without-name)' }
 }
 foreach ($t in @(All 'TypeExpressionAst') + @(All 'TypeConstraintAst')) { '[' + $t.TypeName.FullName + ']' }
@@ -219,23 +226,29 @@ foreach ($s in @(All 'StringConstantExpressionAst') + @(All 'ExpandableStringExp
 """
 
 
-def classify(script):
-    """Return what the script uses (by the PowerShell parser) that the drill has not classified.
+def classify(script, process=PROCESS):
+    """Return what the script and the station-process.ps1 it dot-sources use (by the PowerShell
+    parser) that the drill has not classified.
 
     The text of a here-string is not code: the Ctrl+C helper inside one runs only through
     Start-Process, which is mocked; the variables expanded into it are checked.
     """
-    proc = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", TOKENIZE], capture_output=True, text=True,
-                          env=dict(os.environ, DRILL_SCRIPT=script), timeout=60)
-    names = proc.stdout.split()
-    if proc.returncode != 0 or not names or "PARSE-ERROR" in names:
-        return ["(the script does not parse)"]
-    return sorted({n for n in names if n not in MOCKED | LOCAL | TYPES})
+    unknown = set()
+    for path in (script, process):
+        proc = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", TOKENIZE], capture_output=True, text=True,
+                              env=dict(os.environ, DRILL_SCRIPT=path), timeout=60)
+        names = proc.stdout.split()
+        if proc.returncode != 0 or not names or "PARSE-ERROR" in names:
+            return ["(the script does not parse)" if path == script else "(station-process.ps1 does not parse)"]
+        unknown |= {n for n in names if n not in MOCKED | LOCAL | TYPES}
+    return sorted(unknown)
 
 
 class Sandbox:
-    def __init__(self, root, script):
+    def __init__(self, root, script, process=PROCESS):
         self.root = root
+        with open(process, "rb") as f:
+            self.process_bytes = f.read()
         self.local = os.path.join(root, "LocalAppData")
         self.station = os.path.join(self.local, "WstxRust", "station")
         self.repo = os.path.join(root, "repo")
@@ -264,10 +277,11 @@ class Sandbox:
                    {"version": CURRENT[:9], "source_commit": CURRENT, "previous": previous, "switched_utc": "2026-11-01T00:00:00Z"})
 
     def mechanism(self):
-        """The bytes of each mechanism file the package carries, as make_package.py copies them."""
+        """The bytes of each mechanism file the package carries, as make_package.py copies them;
+        station-process.ps1 is the real one, so the update runs the shared functions."""
         return {MECHANISM[0]: self.script_bytes, MECHANISM[1]: b"# drill: make_package.py\n", MECHANISM[2]: LAUNCHER,
                 MECHANISM[3]: FAKE_AGENT_CLIENT.encode("utf-8"), MECHANISM[4]: b"# drill: station-probe.ps1\n",
-                MECHANISM[5]: b"# drill: live-page-check.ps1\n"}
+                MECHANISM[5]: b"# drill: live-page-check.ps1\n", MECHANISM[6]: self.process_bytes}
 
     def package(self, commit=COMMIT, exe=b"candidate image"):
         """Write a package as make_package.py does."""
@@ -442,9 +456,11 @@ def lease(s):
 
 
 def working_folder_copy(s):
-    """A copy of the script outside the package, edited, as in a working folder."""
+    """A copy of the script outside the package, edited, as in a working folder, with the
+    station-process.ps1 a working folder holds beside it."""
     s.run_script = os.path.join(s.root, "working-folder", "station-update.ps1")
     write(s.run_script, s.script_bytes + b"\n# edited in the working folder\n")
+    write(os.path.join(s.root, "station-process.ps1"), s.process_bytes)
 
 
 def package_file_edited(s):
@@ -598,9 +614,9 @@ AMENDMENT_MARK = "verify-approval.ps1"
 STOP_SENTINELS = ("Start-Process", "Stop-ScheduledTask")
 
 
-def run_case(root, script, case):
+def run_case(root, script, case, process=PROCESS):
     name, change, env, expect, outcome = case
-    s = Sandbox(root, script)
+    s = Sandbox(root, script, process)
     change(s)
     before = s.snapshot()
     dry = outcome in ("dry-run accepted", "LIMIT accepted")
@@ -643,13 +659,13 @@ def run_case(root, script, case):
     return problems, out
 
 
-def run_cases(script, cases, base, report=print):
+def run_cases(script, cases, base, report=print, process=PROCESS):
     """Run each case in its own sandbox under base; returns the number that differ."""
     failures = 0
     for i, case in enumerate(cases):
         root = os.path.join(base, f"case{i:02d}")
         os.makedirs(root, exist_ok=True)
-        problems, out = run_case(root, script, case)
+        problems, out = run_case(root, script, case, process)
         verdict = "ok  " if not problems else "FAIL"
         report(f"{verdict} {case[4]:<21} {case[0]}" + ("" if not problems else f": {'; '.join(problems)}"))
         if problems:
@@ -661,19 +677,22 @@ def run_cases(script, cases, base, report=print):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--script", help="station-update.ps1 to drill (default: tools/deploy/station-update/station-update.ps1)")
+    parser.add_argument("--process", help="station-process.ps1 the package carries (default: tools/deploy/station-process.ps1)")
     parser.add_argument("--keep", help="keep the sandboxes in this directory")
     a = parser.parse_args(argv)
     try:
         script = a.script or SCRIPT
+        process = a.process or PROCESS
         open(script, "rb").close()
+        open(process, "rb").close()
     except OSError as e:
-        print(f"DRILL ERROR cannot read the install script: {e}")
+        print(f"DRILL ERROR cannot read the install script or station-process.ps1: {e}")
         return 2
-    unknown = classify(script)
+    unknown = classify(script, process)
     if unknown:
-        print(f"DRILL ERROR {script} uses commands the drill has not classified: {', '.join(unknown)}; extend MOCKED or LOCAL after review")
+        print(f"DRILL ERROR {script} or {process} uses commands the drill has not classified: {', '.join(unknown)}; extend MOCKED or LOCAL after review")
         return 2
-    print(f"drill of {script}\nsha256 {sha256(script)}")
+    print(f"drill of {script}\nsha256 {sha256(script)}\nwith {process}\nsha256 {sha256(process)}")
     with open(script, encoding="utf-8-sig") as f:
         amended = AMENDMENT_MARK in f.read()
     cases = CASES + IDLE_CASES + PIN_CASES + (APPROVAL_CASES if amended else [])
@@ -681,7 +700,7 @@ def main(argv=None):
         print("authority amendment not in the script: approval cases not applicable (deploy authority off)")
     base = a.keep or tempfile.mkdtemp(prefix="station-drill-")
     try:
-        failures = run_cases(script, cases, base)
+        failures = run_cases(script, cases, base, process=process)
     finally:
         if not a.keep:
             shutil.rmtree(base, ignore_errors=True)

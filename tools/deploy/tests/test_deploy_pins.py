@@ -72,6 +72,10 @@ class DeployPinTests(unittest.TestCase):
         self.assertEqual(pinned, order, "pin order is not the order station-update.ps1 reads")
         self.assertEqual(tuple(order), station_drill.MECHANISM)
 
+    # Proves: TC-317-09
+    def test_the_last_pin_is_station_process_ps1(self):
+        self.assertEqual(pins()[-1][1], "tools/deploy/station-process.ps1")
+
     def test_mechanism_files_are_not_text(self):
         out = git("check-attr", "text", "--", *station_drill.MECHANISM).decode().splitlines()
         self.assertEqual([line.rsplit(": ", 1)[1] for line in out], ["unset"] * len(station_drill.MECHANISM), out)
