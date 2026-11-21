@@ -415,15 +415,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // profile never opens a native socket.
             if let Some(native) = &store.document.native {
                 let mut config = wstx_rust::flex::Config::default();
-                if let Ok(value) = env::var("WSTX_FLEX_DISCOVERY") {
-                    config.discovery = value
-                        .parse()
-                        .map_err(|_| error("invalid_runtime_configuration", ""))?;
+                if let Some(address) = native.discovery() {
+                    config.discovery = address;
                 }
-                if let Ok(value) = env::var("WSTX_FLEX_REGISTER_PORT") {
-                    let port = value
-                        .parse()
-                        .map_err(|_| error("invalid_runtime_configuration", ""))?;
+                if let Some(port) = native.register_port {
                     config.register_ports = [port, port];
                 }
                 let session = wstx_rust::flex::Session::start(native.intent(), config)
@@ -455,9 +450,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let named = state.clone();
             tokio::task::spawn_blocking(move || {
                 // CL-044-15: the next free radio, before the CAT lifecycle first ticks.
-                if !env::var("WSTX_RADIO_DISCOVERY").is_ok_and(|v| v == "off")
-                    && let Some(line) = radio_setup::discover_on_start(&named)
-                {
+                if let Some(line) = radio_setup::discover_on_start(&named) {
                     eprintln!("{line}");
                 }
                 radio_setup::startup_names(&named);
@@ -481,7 +474,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             // WstxUdp: the station's UDP interface and its step. The name is fixed here,
             // after radio discovery.
-            let disabled = udp::disabled_by_environment();
             let opened = state.clone();
             let instance_locks = env::var_os("LOCALAPPDATA")
                 .map(PathBuf::from)
@@ -489,24 +481,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .join("WstxRust")
                 .join("udp-instance");
             let owner = tokio::task::spawn_blocking(move || {
-                udp::Owner::open(
-                    &opened,
-                    disabled,
-                    &instance_locks,
-                    Arc::new(udp::SystemSockets),
-                )
+                udp::Owner::open(&opened, &instance_locks, Arc::new(udp::SystemSockets))
             })
             .await?;
             let _ = state.recording.udp.set(owner);
             // WstxHearingFeed::HearingFeed: read-only; its thread waits on the network, nothing
-            // else does. WSTX_PSKR=off opens no connection (isolated tests of the executable).
+            // else does.
             let feed_base = selected.clone().ok_or("profile directory absent")?;
-            let feed_setting = env::var("WSTX_PSKR").ok();
             let feed = pskr::Feed::start(
                 &feed_base,
                 &state.recording.profile,
                 &state.recording.boot,
-                pskr::station_connector(feed_setting.as_deref()),
+                pskr::broker_connector(),
                 pskr::FeedSession::BROKER,
                 files.clone(),
             );

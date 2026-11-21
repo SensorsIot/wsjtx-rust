@@ -138,7 +138,7 @@ package WstxProfileAccess {
         @NotStated {
             what = "the control interface of the adapter that defines this "
                 + "configuration: WstxRadioControl::NativeControlPort names no item "
-                + "that carries it, so its three values are defined here";
+                + "that carries it, so its five values are defined here";
         }
         attribute clientId : String {
             doc /* The identity under which this station registers with the radio: a
@@ -150,6 +150,14 @@ package WstxProfileAccess {
         attribute radioAddress : String[0..1] {
             doc /* Where the radio is reached when it cannot be found by itself: an IPv4
                  address and a port other than 0. Absent: the radio is looked for. */
+        }
+        attribute registerPort : Integer[0..1] {
+            doc /* The radio's UDP port that a Registration from a saved address goes to,
+                 from 1 to 65535. Absent: the radio's two ports. */
+        }
+        attribute discoveryAddress : String[0..1] {
+            doc /* The IPv4 address and port, other than 0, where Announcements are
+                 listened for. Absent: every address of the PC on port 4992. */
         }
     }
 
@@ -235,8 +243,8 @@ package WstxProfileAccess {
              A key that is absent, given twice or not named, a value of another type
              and a value outside its rule make the file no valid profile. null is
              written for an absent inputDevice, outputDevice, control endpoint and
-             origin; radio, native and radioAddress are left out when absent, and a
-             null in their place is not valid. */
+             origin; radio, native, radioAddress, registerPort and discoveryAddress are
+             left out when absent, and a null in their place is not valid. */
         attribute schemaVersion : Integer = 1 {
             doc /* 1 with the connection type 'standard', 2 with nativeFlex. */
         }

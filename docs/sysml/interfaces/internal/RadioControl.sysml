@@ -170,6 +170,12 @@ package WstxRadioControl {
             doc /* The output power of each band that radio control sets on the radio
                  (WstxRadioSetup::ManagedPower), at most one entry for a band. A band
                  without one leaves the radio's power as it is. */ }
+        attribute discoverAtStart : Boolean = true {
+            doc /* Whether radio control makes sure at station start which radio is the
+                 profile's (DiscoverRadio). False: the profile's control stays as saved,
+                 whatever answers on its port. Kept in radio-discovery.json of the
+                 profile's folder; a file that cannot be read, or one of another profile,
+                 reads as false. */ }
     }
     attribute def BandPower {
         doc /* The output power of one band. */

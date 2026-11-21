@@ -382,16 +382,9 @@ struct Inner {
     /// The last operating selection band seen (CL-112-04: a change sends Clear).
     band: Option<&'static str>,
 }
-/// WSTX_UDP=off: the station opens no socket and claims no instance name (isolated tests of
-/// the executable never reach port 2237).
-pub(crate) fn disabled_by_environment() -> bool {
-    std::env::var("WSTX_UDP").is_ok_and(|v| v == "off")
-}
 /// The UDP interface of one station.
 pub(crate) struct Owner {
     inner: Mutex<Inner>,
-    /// WSTX_UDP=off: no socket is opened and no name is claimed (isolated tests).
-    disabled: bool,
     /// The sending port every target's socket is opened through.
     sockets: Arc<dyn Sockets>,
     /// The folder of the instance-name locks.
@@ -472,12 +465,12 @@ fn open_socket(t: &Target) -> Option<UdpSocket> {
     socket.set_nonblocking(true).ok()?;
     Some(socket.into())
 }
-fn activate(t: &Target, disabled: bool, sockets: &dyn Sockets) -> Runtime {
+fn activate(t: &Target, sockets: &dyn Sockets) -> Runtime {
     let mut rt = Runtime {
         schema: nm::SCHEMA_OUT,
         ..Runtime::default()
     };
-    if t.enabled && !disabled {
+    if t.enabled {
         rt.socket = sockets.open(t);
         if rt.socket.is_none() {
             rt.error = Some("socket_unavailable");
@@ -683,7 +676,6 @@ impl Owner {
     /// serves.
     pub(crate) fn open(
         state: &ProfileState,
-        disabled: bool,
         lock_root: &std::path::Path,
         sockets: Arc<dyn Sockets>,
     ) -> Arc<Self> {
@@ -697,7 +689,6 @@ impl Owner {
         };
         let owner = Self {
             inner: Mutex::new(Inner::default()),
-            disabled,
             sockets,
             lock_root: lock_root.to_owned(),
             held: Mutex::new(None),
@@ -747,19 +738,15 @@ impl Owner {
             inner.runtimes = c
                 .targets
                 .iter()
-                .map(|t| activate(t, disabled, &*owner.sockets))
+                .map(|t| activate(t, &*owner.sockets))
                 .collect();
         }
         *owner.lock() = inner;
         Arc::new(owner)
     }
-    /// The instance name of `base` (WSTX_UDP=off: the base form, nothing claimed).
+    /// The instance name of `base`, claimed in the lock root.
     fn claim(&self, base: &str) -> String {
-        if self.disabled {
-            base.into()
-        } else {
-            claim(&self.lock_root, base, &self.held)
-        }
+        claim(&self.lock_root, base, &self.held)
     }
     /// A native Flex profile fixes its name when its session is first ready (CL-112-01).
     fn name_flex(&self, inner: &mut Inner, r: &recording::Recording) {
@@ -869,7 +856,7 @@ impl Owner {
             });
             match kept.and_then(|i| old_runtimes[i].take()) {
                 Some(rt) => runtimes.push(rt),
-                None => runtimes.push(activate(t, self.disabled, &*self.sockets)),
+                None => runtimes.push(activate(t, &*self.sockets)),
             }
         }
         if let (Some(o), Some(id)) = (&old, &inner.name) {

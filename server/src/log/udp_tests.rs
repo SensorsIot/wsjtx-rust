@@ -108,17 +108,12 @@ fn target_json(address: SocketAddr, messages: &[&str]) -> Value {
 fn locks(f: &Fixture) -> std::path::PathBuf {
     f.dir.join("udp-instance")
 }
-/// A sending port that records each datagram it is given and sends none (the release-only
-/// browser station's).
-#[cfg(not(debug_assertions))]
+/// A sending port that records each datagram it is given and sends none.
 #[derive(Clone, Default)]
 pub(crate) struct RecordingSockets(Arc<Mutex<Datagrams>>);
 /// Each datagram given to a recording socket, with its target.
-#[cfg(not(debug_assertions))]
 type Datagrams = Vec<(SocketAddr, Vec<u8>)>;
-#[cfg(not(debug_assertions))]
 struct RecordingSocket(Arc<Mutex<Datagrams>>);
-#[cfg(not(debug_assertions))]
 impl TargetSocket for RecordingSocket {
     fn send(&self, bytes: &[u8], to: SocketAddr) -> std::io::Result<usize> {
         self.0.lock().unwrap().push((to, bytes.to_vec()));
@@ -128,13 +123,11 @@ impl TargetSocket for RecordingSocket {
         Err(std::io::ErrorKind::WouldBlock.into())
     }
 }
-#[cfg(not(debug_assertions))]
 impl Sockets for RecordingSockets {
     fn open(&self, _: &Target) -> Option<Box<dyn TargetSocket>> {
         Some(Box::new(RecordingSocket(self.0.clone())))
     }
 }
-#[cfg(not(debug_assertions))]
 impl RecordingSockets {
     /// Each recorded datagram as (target, message type), in order (0 Heartbeat, 6 Close).
     pub(crate) fn record(&self) -> Vec<(SocketAddr, u32)> {
@@ -160,14 +153,18 @@ fn kept(target: SocketAddr) -> UdpSocket {
     let (_, socket) = kept.iter().rev().find(|(a, _)| *a == target).unwrap();
     socket.try_clone().unwrap()
 }
-fn open(f: &Fixture, disabled: bool) -> Arc<Owner> {
-    Owner::open(&f.state, disabled, &locks(f), Arc::new(KeptSockets))
+fn open(f: &Fixture) -> Arc<Owner> {
+    Owner::open(&f.state, &locks(f), Arc::new(KeptSockets))
+}
+/// An owner whose sockets record each datagram and send none (no datagram reaches a port).
+fn recorded(f: &Fixture, sockets: &RecordingSockets) -> Arc<Owner> {
+    Owner::open(&f.state, &locks(f), Arc::new(sockets.clone()))
 }
 /// Writes udp.json before the owner opens, so no default target is ever activated.
 fn install(f: &Fixture, targets: Vec<Value>) -> Arc<Owner> {
     let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,"targets":targets});
     std::fs::write(f.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let owner = open(f, false);
+    let owner = open(f);
     assert!(f.state.recording.udp.set(owner.clone()).is_ok());
     owner
 }
@@ -679,7 +676,7 @@ async fn tc_012_004_a_file_saved_with_accept_commands_keeps_loading() {
     let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,
         "instance_name":"My station","targets":[saved]});
     std::fs::write(f.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
-    let owner = open(&f, false);
+    let owner = open(&f);
     assert!(f.state.recording.udp.set(owner.clone()).is_ok());
     let snap = owner.snapshot(&f.state.recording);
     assert_eq!(snap["configuration_error"], Value::Null, "{snap}");
@@ -778,8 +775,9 @@ fn config_body(f: &Fixture, revision: u64, targets: Value) -> Value {
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_012_004_target_configuration_and_persistence() {
     let f = fixture("http://127.0.0.1:18403", false);
-    // WSTX_UDP=off semantics: the default list is shown, no socket is opened.
-    let owner = open(&f, true);
+    // The default list is shown; its sockets only record, so nothing reaches port 2237.
+    let sockets = RecordingSockets::default();
+    let owner = recorded(&f, &sockets);
     assert!(f.state.recording.udp.set(owner.clone()).is_ok());
     let (s, v) = call(&f, "GET", "/udp", None).await;
     assert_eq!(s, StatusCode::OK);
@@ -796,7 +794,6 @@ async fn tc_012_004_target_configuration_and_persistence() {
             Value::Null
         )
     );
-    assert_eq!(v["status"][0]["active"], false);
     assert!(
         !f.dir.join(FILE_NAME).exists(),
         "the default is not written"
@@ -815,8 +812,13 @@ async fn tc_012_004_target_configuration_and_persistence() {
         v["configuration"]["targets"][1]["messages"],
         json!(["heartbeat", "status", "logged_adif"])
     );
+    let default: SocketAddr = "127.0.0.1:2237".parse().unwrap();
+    assert!(
+        sockets.record().contains(&(default, 6)),
+        "the removed default target was given its Close, on the recording port"
+    );
     let saved = v["configuration"].clone();
-    let reopened = open(&f, true).snapshot(&f.state.recording);
+    let reopened = recorded(&f, &sockets).snapshot(&f.state.recording);
     assert_eq!(
         (
             reopened["revision"].clone(),
@@ -972,7 +974,7 @@ async fn tc_012_004_target_configuration_and_persistence() {
     // An invalid udp.json: configuration null, no socket, until a valid PUT.
     let g = fixture("http://127.0.0.1:18404", false);
     std::fs::write(g.dir.join(FILE_NAME), b"{\"schema_version\":1}").unwrap();
-    let broken = open(&g, false);
+    let broken = open(&g);
     let v = broken.snapshot(&g.state.recording);
     assert_eq!(
         (
@@ -1331,7 +1333,7 @@ async fn tc_012_006_ipv6_multicast_targets() {
     let (s, v) = call(&f, "PUT", "/udp", Some(serde_json::to_vec(&body).unwrap())).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["configuration"]["targets"], targets, "saved as given");
-    let reopened = open(&f, true).snapshot(&f.state.recording);
+    let reopened = recorded(&f, &RecordingSockets::default()).snapshot(&f.state.recording);
     assert_eq!(reopened["configuration"]["targets"], targets);
 
     // An IPv6 unicast target keeps the IPv4 interface form (a saved file loads).
@@ -1555,7 +1557,7 @@ fn control(f: &Fixture, mode: &str, endpoint: Option<&str>) {
 fn quiet_owner(f: &Fixture, root: &std::path::Path) -> Arc<Owner> {
     let doc = json!({"schema_version":1,"profile_id":f.id,"revision":0,"targets":[]});
     std::fs::write(f.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
-    Owner::open(&f.state, false, root, Arc::new(KeptSockets))
+    Owner::open(&f.state, root, Arc::new(KeptSockets))
 }
 fn name_of(owner: &Owner, f: &Fixture) -> Value {
     owner.snapshot(&f.state.recording)["instance_name"].clone()
@@ -1583,8 +1585,7 @@ fn flex_ready(session: &ScriptedSession, letter: &str) {
 
 // The instance name: base forms, numbering on a clash, a
 // released name taken again (dropped, and a killed process), an unusable lock folder, the name
-// on every datagram and in GET /udp, no change by a radio change while running, WSTX_UDP=off
-// claims nothing.
+// on every datagram and in GET /udp, no change by a radio change while running.
 // Proves: TC-112-001
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_001_instance_name() {
@@ -1678,7 +1679,7 @@ async fn tc_112_001_instance_name() {
         "targets":[target_json(a.local_addr().unwrap(), &MESSAGES)]});
     std::fs::write(g.dir.join(FILE_NAME), serde_json::to_vec(&doc).unwrap()).unwrap();
     let unusable = g.dir.join("profile.json");
-    let owner = Owner::open(&g.state, false, &unusable, Arc::new(KeptSockets));
+    let owner = Owner::open(&g.state, &unusable, Arc::new(KeptSockets));
     owner.step(&g.state);
     let sent = drain(&a);
     assert_eq!(kinds(&sent), [0, 1]);
@@ -1759,12 +1760,6 @@ async fn tc_112_001_instance_name() {
     flex_ready(&other, "A");
     second.step(&m.state);
     assert_eq!(name_of(&second, &m), "WSTX-Rust - FLEX-6600 A 2");
-
-    // (h) WSTX_UDP=off: no lock file is created.
-    let n = fixture("http://127.0.0.1:18416", false);
-    let off = open(&n, true);
-    assert_eq!(name_of(&off, &n), "WSTX-Rust");
-    assert!(!locks(&n).exists(), "nothing claimed");
 }
 
 // Status dial frequency (CAT, else the selection, else 0) and

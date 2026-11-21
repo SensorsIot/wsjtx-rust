@@ -55,14 +55,14 @@ package WstxStartup {
              Then the functions start, transmit disarmed. On a profile of a radio's
              native connection the adapter of that connection starts with the profile's
              NativeIntent; an intent the adapter does not take ends the start with
-             resourceUnavailable, and an environment variable of the adapter
-             (WstxFlexSession) that cannot be read with invalidRuntimeConfiguration. A
-             profile of the sound device connection starts no such adapter.
+             resourceUnavailable. A profile of the sound device connection starts no
+             such adapter.
              Radio control makes sure which radio is the profile's (DiscoverRadio) before
              the radio connection is first opened and before transmit takes its level,
-             unless WSTX_RADIO_DISCOVERY is off. A RadioDiscovered is saved as the
-             profile's control (SaveProfile), with the input and the output device audio
-             lists for that radio when there is exactly one of each and none otherwise,
+             unless the profile's RadioConfig::discoverAtStart is false. A
+             RadioDiscovered is saved as the profile's control (SaveProfile), with the
+             input and the output device audio lists for that radio when there is
+             exactly one of each and none otherwise,
              and without audio drives (WstxTransmitControl::TransmitConfig::levels); the line
              radio discovery:, the port, the model in brackets and is this station's radio
              is written to the output of the process.

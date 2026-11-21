@@ -5,7 +5,7 @@
 use super::*;
 use crate::contact_http::tests::{Fixture, fixture};
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use wstx_rust::radio_control::{
     self as cat,
     executor::{Opener, Transport},
@@ -1384,6 +1384,87 @@ fn discovery_sets_up_a_profile_never_saved() {
     assert_eq!(control.ptt, "cat");
     assert_eq!(*hw.opened.lock().unwrap(), vec![5, 6], "no FTDI board");
     only_id_reads(&hw);
+}
+
+/// A detection port that counts its port listings and forwards to a double.
+struct Counting {
+    inner: Arc<Double>,
+    listed: AtomicUsize,
+}
+impl radio_setup::Hardware for Counting {
+    fn ports(&self) -> Result<Vec<PortInfo>, cat::Error> {
+        self.listed.fetch_add(1, Ordering::SeqCst);
+        self.inner.ports()
+    }
+    fn endpoints(&self) -> Result<Vec<AudioEndpoint>, cat::Error> {
+        self.inner.endpoints()
+    }
+    fn open(
+        &self,
+        port: u16,
+        deadline: Instant,
+        cancel: &AtomicBool,
+    ) -> Result<Box<dyn Transport>, cat::Error> {
+        self.inner.open(port, deadline, cancel)
+    }
+    fn reserve(&self, port: u16) -> bool {
+        self.inner.reserve(port)
+    }
+}
+
+// RadioConfig::discoverAtStart, kept in radio-discovery.json: false, a file of another
+// profile and a broken file list and open nothing; without a file the next free radio is
+// saved.
+#[test]
+fn discovery_off_at_start_keeps_the_profile_radio_and_opens_nothing() {
+    let f = fixture("http://127.0.0.1:18066", false);
+    radio_setup::confirm_keying(&f.state);
+    saved_on(&f, 3);
+    let before = saved_control(&f);
+    // COM3, the saved port, is silent; an IC-7300 answers on COM5.
+    let hw = double(
+        vec![port(3, "USB\\HUB\\A"), port(5, "USB\\HUB\\IC7300")],
+        HashMap::from([(5, (0x94, 19200))]),
+        vec![],
+    );
+    let counting = Arc::new(Counting {
+        inner: hw.clone(),
+        listed: AtomicUsize::new(0),
+    });
+    hardware_of(&f.state.recording, counting.clone());
+    let file = f.dir.join(radio_setup::DISCOVERY_FILE);
+    let other = profile::new_uuid().unwrap();
+    for (content, case) in [
+        (
+            json!({"schema_version":1,"profile_id":f.id,"at_start":false}).to_string(),
+            "at_start false",
+        ),
+        (
+            json!({"schema_version":1,"profile_id":other,"at_start":true}).to_string(),
+            "another profile's file",
+        ),
+        ("{".to_string(), "a broken file"),
+    ] {
+        std::fs::write(&file, content).unwrap();
+        assert_eq!(radio_setup::discover_on_start(&f.state), None, "{case}");
+        assert_eq!(saved_control(&f), before, "{case}");
+        assert_eq!(
+            counting.listed.load(Ordering::SeqCst),
+            0,
+            "{case}: no listing"
+        );
+        assert!(hw.opened.lock().unwrap().is_empty(), "{case}: no open");
+    }
+    std::fs::remove_file(&file).unwrap();
+    assert_eq!(
+        radio_setup::discover_on_start(&f.state).as_deref(),
+        Some("radio discovery: COM5 (IC-7300) is this station's radio"),
+        "no file: discovery saves the free radio"
+    );
+    assert_eq!(
+        saved_control(&f).0.endpoint.as_deref(),
+        Some("icom7300://COM5?baud=19200&radio=94&controller=e0")
+    );
 }
 
 // A radio chosen but not yet confirmed counts as taken:

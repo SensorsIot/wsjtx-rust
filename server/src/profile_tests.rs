@@ -519,6 +519,48 @@ fn native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged() {
     assert_eq!(cat.validate_native(), Err("control.ptt"));
 }
 
+// native.register_port and native.discovery_address: kept as saved, refused outside their
+// rule, and absent when not saved.
+#[test]
+fn native_register_and_discovery_settings_are_kept_and_refused_outside_their_rule() {
+    let accept = |value: &serde_json::Value| {
+        serde_json::from_value::<ProfileDocument>(value.clone())
+            .map_err(|_| outcome("invalid_profile"))
+            .and_then(|d| d.validate().map(|_| d))
+    };
+    let mut set = native_document();
+    set["native"]["register_port"] = 4993.into();
+    set["native"]["discovery_address"] = "127.0.0.1:4992".into();
+    let loaded = accept(&set).unwrap();
+    let native = loaded.native.clone().unwrap();
+    assert_eq!(native.register_port, Some(4993));
+    assert_eq!(native.discovery(), Some("127.0.0.1:4992".parse().unwrap()));
+    assert_eq!(serde_json::to_value(&loaded).unwrap(), set, "written back");
+    for (key, bad) in [
+        ("register_port", serde_json::json!(0)),
+        ("register_port", serde_json::json!(65536)),
+        ("register_port", serde_json::Value::Null),
+        ("register_port", serde_json::json!("4993")),
+        ("discovery_address", serde_json::json!("127.0.0.1:0")),
+        ("discovery_address", serde_json::json!("localhost:4992")),
+        ("discovery_address", serde_json::Value::Null),
+    ] {
+        let mut value = native_document();
+        value["native"][key] = bad.clone();
+        assert_eq!(
+            accept(&value).err(),
+            Some(outcome("invalid_profile")),
+            "{key} {bad}"
+        );
+    }
+    let absent = accept(&native_document()).unwrap();
+    let native = absent.native.clone().unwrap();
+    assert_eq!((native.register_port, native.discovery()), (None, None));
+    let written = serde_json::to_value(&absent).unwrap();
+    assert!(written["native"].get("register_port").is_none());
+    assert!(written["native"].get("discovery_address").is_none());
+}
+
 // Creation persists only the intent and a fresh client identity, and
 // no writer can give the native profile a device or CAT selection afterwards.
 // Proves: TC-023-007

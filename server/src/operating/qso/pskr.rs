@@ -516,24 +516,6 @@ pub(crate) fn tls_connect(
 pub(crate) fn broker_connector() -> Connector {
     Box::new(|timing: &FeedSession| tls_connect(HOST, TLS_PORT, ISRG_ROOTS, timing))
 }
-/// The connector of the running station. WSTX_PSKR=off opens no connection, so isolated
-/// tests of the executable never reach the broker; WSTX_PSKR=tcp:<loopback>:<port> speaks
-/// plain MQTT to a local test peer, and nothing else can replace the broker.
-pub(crate) fn station_connector(setting: Option<&str>) -> Option<Connector> {
-    match setting {
-        None => Some(broker_connector()),
-        Some(value) => {
-            let address: SocketAddr = value.strip_prefix("tcp:")?.parse().ok()?;
-            address.ip().is_loopback().then(|| -> Connector {
-                Box::new(move |timing: &FeedSession| {
-                    let host = address.ip().to_string();
-                    let stream = tcp(&host, address.port(), timing)?;
-                    Ok(Box::new(stream) as Box<dyn Transport>)
-                })
-            })
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Link {
@@ -557,8 +539,6 @@ struct Inner {
     revision: u64,
     hearing: Hearing,
     stopping: bool,
-    /// A thread exists to connect.
-    connects: bool,
     /// Bumped by each change of the switch: a session of an earlier one ends, even when the
     /// switch is back on before it looks.
     switched: u64,
@@ -632,13 +612,12 @@ impl Drop for Feed {
     }
 }
 impl Feed {
-    /// The saved setting, on by default. Without a
-    /// connector no thread starts: the setting still works, the link stays off.
+    /// The saved setting, on by default. Its thread waits while the setting is off.
     pub(crate) fn start(
         directory: &Path,
         profile: &str,
         boot: &str,
-        connector: Option<Connector>,
+        connector: Connector,
         timing: FeedSession,
         files: Arc<dyn profile::Files>,
     ) -> Arc<Self> {
@@ -666,18 +645,15 @@ impl Feed {
                 revision: 0,
                 hearing: Hearing::default(),
                 stopping: false,
-                connects: connector.is_some(),
                 switched: 0,
             }),
             wake: Condvar::new(),
         });
-        if let Some(connector) = connector {
-            let (worker_shared, tail) = (shared.clone(), boot.to_owned());
-            // No thread means an always-off feed: nothing depends on this one.
-            let _ = std::thread::Builder::new()
-                .name("pskr".into())
-                .spawn(move || worker(&worker_shared, &connector, timing, &tail));
-        }
+        let (worker_shared, tail) = (shared.clone(), boot.to_owned());
+        // No thread means an always-off feed: nothing depends on this one.
+        let _ = std::thread::Builder::new()
+            .name("pskr".into())
+            .spawn(move || worker(&worker_shared, &connector, timing, &tail));
         Arc::new(Self {
             shared,
             directory: directory.to_path_buf(),
@@ -811,11 +787,7 @@ impl Feed {
                 i.last_spot_s = None;
                 i.switched += 1;
                 i.error = None;
-                i.link = if enabled && i.connects {
-                    Link::Connecting
-                } else {
-                    Link::Off
-                };
+                i.link = if enabled { Link::Connecting } else { Link::Off };
             }
         }
         self.shared.wake.notify_all();

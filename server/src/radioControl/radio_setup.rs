@@ -431,8 +431,40 @@ fn identify(
 /// becomes the profile's radio, with its audio endpoints, and that radio's stored Tx level
 /// goes with the old one. It changes control, so the receive-only confirmation applies
 /// to the new radio before CAT opens. An operator's saved Disabled stays. Returns what changed.
+/// With the profile's RadioConfig::discoverAtStart false, nothing is listed or opened.
 pub(crate) fn discover_on_start(state: &ProfileState) -> Option<String> {
+    if !discover_at_start(state) {
+        return None;
+    }
     discover_within(state, DETECT_BUDGET)
+}
+/// RadioConfig::discoverAtStart, kept in this file of the profile's folder.
+pub(crate) const DISCOVERY_FILE: &str = "radio-discovery.json";
+/// RadioConfig::discoverAtStart while no file is saved.
+const DISCOVER_AT_START: bool = true;
+const DISCOVERY_MAX: u64 = 512;
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DiscoveryRecord {
+    schema_version: u32,
+    profile_id: String,
+    at_start: bool,
+}
+/// The saved discoverAtStart: true without a file; false for a file that cannot be read,
+/// is of another form, or names another profile.
+pub(crate) fn discover_at_start(state: &ProfileState) -> bool {
+    let read = match state.store.lock() {
+        Ok(store) => store.read_document_file(DISCOVERY_FILE, DISCOVERY_MAX),
+        Err(_) => return false,
+    };
+    match read {
+        Ok(None) => DISCOVER_AT_START,
+        Ok(Some(bytes)) => serde_json::from_slice::<DiscoveryRecord>(&bytes)
+            .ok()
+            .filter(|r| r.schema_version == 1 && r.profile_id == state.recording.profile)
+            .is_some_and(|r| r.at_start),
+        Err(_) => false,
+    }
 }
 pub(crate) fn discover_within(state: &ProfileState, budget: Duration) -> Option<String> {
     // Opening a port can pulse DTR/RTS (CL-044-01): nothing opens without the confirmation.

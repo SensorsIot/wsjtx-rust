@@ -32,9 +32,7 @@ package WstxUdpSender {
              its schema and its status. Every other target is closed
              (WstxUdp::CloseRule) and opened again.
              A multicast target is sent to with its TTL or hop limit, through its
-             interface, and with multicast loopback on.
-             With the environment variable WSTX_UDP set to off the station opens no
-             socket; the list is shown as before. */
+             interface, and with multicast loopback on. */
     }
 
     verification 'TC-012-004' {

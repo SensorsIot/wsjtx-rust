@@ -235,6 +235,26 @@ package WstxFlexSession {
         attribute radioAddress : String[0..1] {
             doc /* The address and port of the one radio to connect to (a saved
                  address). Absent: the adapter finds a radio by its Announcement. */ }
+        attribute registerPort : Integer[0..1] {
+            doc /* The radio's UDP port that a Registration from a saved address goes to,
+                 from 1 to 65535. Absent: the radio's two ports. */
+            @CodeDiffers {
+                what = "The value is kept in profile::Native::register_port of "
+                    + "server/src/profile.rs and reaches the session through "
+                    + "flex::Config::register_ports (server/src/main.rs), not through "
+                    + "flex::Intent.";
+            }
+        }
+        attribute discoveryAddress : String[0..1] {
+            doc /* The IPv4 address and port, other than 0, where Announcements are
+                 listened for. Absent: every address of the PC on port 4992. */
+            @CodeDiffers {
+                what = "The value is kept in profile::Native::discovery_address of "
+                    + "server/src/profile.rs and reaches the session through "
+                    + "flex::Config::discovery (server/src/main.rs), not through "
+                    + "flex::Intent.";
+            }
+        }
     }
 
     attribute def RadioChoice {
@@ -243,8 +263,8 @@ package WstxFlexSession {
              listens for no Announcement. RadioFacts then come from the radio's answer to
              Command::info, asked after ApiAdmission.
              Without it the adapter listens for Announcements, on every address of the PC
-             unless the environment variable WSTX_FLEX_DISCOVERY names another address
-             and port, and several stations of one PC listen at the same time.
+             unless NativeIntent::discoveryAddress names another address and port,
+             and several stations of one PC listen at the same time.
              It takes the first radio whose Announcement::availableClients is not 0, at
              the address and port the Announcement names.
              An attempt listens for listenSeconds. One in which only radios without a
@@ -255,9 +275,8 @@ package WstxFlexSession {
              (Command::clientUdpport) and no address: the radio sends to the address the
              control connection comes from.
              On a saved address the adapter sends a Registration from that port right
-             after, and again every keepAliveSeconds; the environment variable
-             WSTX_FLEX_REGISTER_PORT names one port of the radio in place of the
-             source's two. */
+             after, and again every keepAliveSeconds; NativeIntent::registerPort names
+             one port of the radio in place of the source's two. */
         attribute listenSeconds : Integer = 3;
         attribute keepAliveSeconds : Integer = 5;
     }

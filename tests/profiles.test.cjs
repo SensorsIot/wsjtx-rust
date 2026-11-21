@@ -9,9 +9,9 @@ const os = require('node:os');
 const net = require('node:net');
 const http = require('node:http');
 const https = require('node:https');
-const {spawn, execFileSync} = require('node:child_process');
+const {execFileSync} = require('node:child_process');
 const {once} = require('node:events');
-const {listenBrowser, stationEnv} = require('../tools/test/node/support.cjs');
+const {listenBrowser, stationEnv, spawnStation} = require('../tools/test/node/support.cjs');
 const crypto = require('node:crypto');
 const {chromium} = require('playwright');
 const selfsigned = require('selfsigned');
@@ -80,7 +80,7 @@ async function ports(n) {
   finally {await Promise.all(held.map(s => new Promise(resolve => s.close(resolve))));}
 }
 function launch(args, env = {}, cwd) {
-  const child = spawn(exe, args, {cwd, env: stationEnv(env), windowsHide: true});
+  const child = spawnStation(exe, args, {cwd, env: stationEnv(env), windowsHide: true});
   let output = ''; child.stdout.on('data', b => {output = (output + b).slice(-16384);}); child.stderr.on('data', b => {output = (output + b).slice(-16384);});
   const done = once(child, 'exit');
   return {child, get output() {return output;}, done, async close() {if (child.exitCode === null && child.signalCode === null) {child.kill(); await done;}}};

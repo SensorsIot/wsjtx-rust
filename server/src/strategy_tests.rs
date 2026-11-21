@@ -2774,7 +2774,7 @@ async fn run_at_limit(limit: u64, calls: u64, set: impl FnOnce(&BrokerFeed)) -> 
         &dir,
         &f.id,
         &f.boot,
-        Some(broker.connector()),
+        broker.connector(),
         crate::pskr::FeedSession::BROKER,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -2873,7 +2873,7 @@ async fn tc_039_022_only_a_strategy_run_subscribes_to_its_target() {
         &dir,
         &f.id,
         &f.boot,
-        Some(crate::pskr::tests::unreachable()),
+        crate::pskr::tests::unreachable(),
         crate::pskr::FeedSession::BROKER,
         std::sync::Arc::new(crate::profile::Disk),
     );
@@ -5918,7 +5918,7 @@ fn attach_feed_on(
         &dir,
         &f.id,
         &f.boot,
-        Some(broker.connector()),
+        broker.connector(),
         timing,
         std::sync::Arc::new(crate::profile::Disk),
     );
