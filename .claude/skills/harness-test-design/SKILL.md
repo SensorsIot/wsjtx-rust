@@ -13,7 +13,7 @@ Filesystem path relative to this entrypoint: `../../../harness/general/core/skil
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=f61eda1bab8a4429390fe774c2c88ba9846c350bcc349b3166846e6371753e86 -->
+<!-- canonical-source-sha256=f94e7c5a02c46c471765703450583211629c2bee63ef15a9257d0929bab621f4 -->
 <!-- source harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests sha256=e50146b2b979540e767db7d86450406f1636d49064ed8b9feb9337a96e5f4e5c -->
 
 ## This project
@@ -69,4 +69,4 @@ If the source is missing, stop and report it; do not substitute another checkout
   enumeration literal below the clauses, by `@CodeDiffers` on the element, saying what the
   code does today. Where the code matches, there is no `@CodeDiffers`.
 
-<!-- harness-forwarder-v1 sha256=dd624d7af083e0260f6dae40c9f27810ab0f55ed62b1406c5f45cd634e1d7f97 -->
+<!-- harness-forwarder-v1 sha256=5dfd878eaca3b4a991b7f00660e6e7cd8acb74e8de9d9d6e35370d589c4e52b2 -->

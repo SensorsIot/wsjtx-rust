@@ -12,7 +12,7 @@ Filesystem path relative to this entrypoint: `../../../harness/general/core/skil
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=0a0b3184a056f0d64fde303184a316e4978d3441685a7b8b96ad6ee4e5fb21f8 -->
+<!-- canonical-source-sha256=e5398b820263380613cddb4406e2d8e6842cd68e35ee07d19225d8bf5632faeb -->
 <!-- source harness/project/docs/Finished-Model.md sha256=e75191b61a3c478903bac2e471994199991cf5078994d694cd1f477bc7cadcd5 -->
 
 ## This project
@@ -300,4 +300,4 @@ How a statement gets into the model. These rules apply wherever the model is wri
 - **A9 Names.** A name that no longer says what the thing is, is renamed, and what cites it
   is changed in the same change.
 
-<!-- harness-forwarder-v1 sha256=3e461ea0846ae4220b8ebf2bf6614873c69d84696ec946b91abf4d8b72796376 -->
+<!-- harness-forwarder-v1 sha256=5e2332dbad61e508f91dea406568467e774ce683c58a68d7d77590d9da45650a -->
