@@ -578,8 +578,9 @@ struct Inner {
     /// builds again.
     free_tx_slots: Option<(u64, Value)>,
     free_tx_slots_key: Option<FreeKey>,
-    /// The latest complete publication of a counted period's decodes the value was built on.
-    free_tx_slots_decoded: Option<u64>,
+    /// The latest complete publication of a counted period's decodes the value was built on:
+    /// (id, next_sequence), so that its late window's growth under the same id builds again.
+    free_tx_slots_decoded: Option<(u64, u64)>,
 }
 /// What one open-slot build judges: the live job, its mode, a QSO, the judged parity,
 /// the period in progress and the band change the periods count from.
@@ -775,7 +776,8 @@ impl Owner {
         // Rebuild on decodes: the build at a period start counts the
         // period just ended before its decodes exist; the publication of a counted period's
         // decodes builds again; so does the complete publication of the period in progress of
-        // the judged parity, which makes it due.
+        // the judged parity, which makes it due. The late window republishes a period's view
+        // under the same id with next_sequence grown (PeriodViews): that growth builds again.
         let published = published_start(r);
         let counted = freeslot::recent_starts(mode, rx, (now, published));
         let decoded = r
@@ -786,7 +788,7 @@ impl Owner {
                     .and_then(crate::contact::parse_utc)
                     .is_some_and(|s| s >= since && counted.contains(&s))
             })
-            .map(|p| p.0);
+            .map(|p| (p.0, p.2));
         let fresh_decodes = decoded.is_some() && decoded != inner.free_tx_slots_decoded;
         if fresh_decodes {
             inner.free_tx_slots_decoded = decoded;
