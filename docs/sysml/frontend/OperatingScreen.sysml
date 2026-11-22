@@ -305,7 +305,8 @@ package WstxOperatingScreen {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-010-14'; }
-        @TestedBy { test = "server/src/contact_http_tests.rs; tests/contact.test.cjs"; }
+        @TestedBy { test = "server/src/operating/qso/contact_http_tests.rs; "
+            + "tests/contact.test.cjs"; }
     }
     verification 'TC-021-007' {
         doc /* A lost link, the bounded retries and the fresh reads. */

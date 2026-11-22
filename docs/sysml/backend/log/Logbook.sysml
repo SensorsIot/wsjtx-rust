@@ -31,7 +31,7 @@ package WstxLogbook {
              record it cannot store for a later attempt (Logbook, DirectLog,
              SaveContact). */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/contact_http.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/contact_http.rs"; }
     }
     #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-010-04'; }
 
@@ -147,7 +147,7 @@ package WstxLogbook {
         @TestedBy {
             test = "server/src/log/udp_tests.rs::"
                 + "tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_target; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "direct_log_record_fields_from_the_confirmed_dial; "
                 + "server/src/logbook_tests.rs::"
                 + "save_is_exactly_once_and_injected_failures_leave_no_torn_file; "
@@ -197,7 +197,7 @@ package WstxLogbook {
              with the same station on the same band and in the same mode
              (SameStationAgain). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/contact_http.rs"; }
+        @ImplementedIn { module = "server/src/operating/qso/contact_http.rs"; }
     }
     #derivation connection { end #original ::> 'FR-011'; end #derive ::> 'CL-085-01'; }
 
@@ -234,11 +234,11 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-085-01'; }
         @TestedBy {
-            test = "server/src/contact_http_tests.rs::"
+            test = "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_001_the_same_station_in_a_row_is_not_logged; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_001_log_qso_pending_records_and_restart; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_001_g_auto_answers_the_station_logged_last_and_nothing_is_logged";
         }
     }
@@ -251,11 +251,11 @@ package WstxLogbook {
         objective { verify 'CL-085-01'; }
         @TestedBy {
             test = "server/src/logbook_tests.rs::tc_085_002_terms_of_the_same_station_again; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_001_the_same_station_in_a_row_is_not_logged; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_001_log_qso_pending_records_and_restart; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_003_the_newest_record_whatever_wrote_it";
         }
     }
@@ -267,9 +267,9 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-085-01'; }
         @TestedBy {
-            test = "server/src/contact_http_tests.rs::"
+            test = "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_001_log_qso_pending_records_and_restart; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_003_the_newest_record_whatever_wrote_it";
         }
     }

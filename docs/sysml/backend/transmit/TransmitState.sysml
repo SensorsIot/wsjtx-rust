@@ -95,7 +95,7 @@ package WstxTransmitState {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-03'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_013_of_two_stops_in_one_step_the_first_of_the_order_is_shown; "
                 + "server/tests/transmit_service.rs::"
                 + "tx_watchdog_stop_never_keys_and_tune_ends_at_its_limit; "
@@ -203,7 +203,7 @@ package WstxTransmitState {
                 + "pending_request_is_replaced_until_audio_start_then_queued_for_the_next_period; "
                 + "server/tests/transmit_service.rs::"
                 + "a_request_for_another_period_while_keyed_before_audio_is_queued_not_refused; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "the_owner_never_keys_a_request_of_another_station_mode_without_a_contact_step; "
                 + "server/tests/transmit_service.rs::"
                 + "restart_never_resumes_an_armed_station_or_its_request; "
@@ -435,7 +435,7 @@ package WstxTransmitState {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-06'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_010_tune_is_independent_of_the_transmit_state; "
                 + "server/tests/transmit_service.rs::"
                 + "tx_watchdog_stop_never_keys_and_tune_ends_at_its_limit; "

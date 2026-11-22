@@ -12,23 +12,21 @@ package WstxQsoPart {
     private import WstxModeProcessing::PackProcessing;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
-    private import WstxModelNotes::CodeDiffers;
 
     part def QsoService {
         doc /* Level 3 of the operating chain: the contact, made by hand or started by Auto,
              and where it transmits. */
         @ImplementedIn {
-            module = "server/src/contact.rs; server/src/contact_http.rs; "
+            module = "server/src/operating/qso/contact.rs; "
+                + "server/src/operating/qso/contact_http.rs; "
                 + "server/src/operating/qso/freeslot.rs";
         }
-        @CodeDiffers {
-            what = "Its code stands in server/src/contact.rs, server/src/contact_http.rs, outside "
-                + "server/src/operating/qso/ and client/src/operating/qso/.";
-        }
         @DetailTests {
-            tests = "server/src/contact_tests.rs; server/src/operating/qso/freeslot_tests.rs; "
-                + "server/src/mcp/endpoint_tests.rs; server/src/contact_http_tests.rs; "
-                + "server/src/transmit_state_tests.rs";
+            tests = "server/src/operating/qso/contact_tests.rs; "
+                + "server/src/operating/qso/freeslot_tests.rs; "
+                + "server/src/mcp/endpoint_tests.rs; "
+                + "server/src/operating/qso/contact_http_tests.rs; "
+                + "server/src/operating/qso/transmit_state_tests.rs";
             covers = "the contact engine, the quiet-space function and the waterfall's periods; "
                 + "Auto Seq and Call 1st saved in their own file, also through the MCP tool; "
                 + "the transmit state at the contact engine";

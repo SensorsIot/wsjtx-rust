@@ -273,7 +273,7 @@ package WstxHoldTx {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-08'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "hold_tx_is_on_by_default_and_a_selection_keeps_tx";
         }
     }

@@ -14,7 +14,9 @@ mod cat_lifecycle;
 mod cat_lifecycle_tests;
 #[path = "clock/clock_http.rs"]
 mod clock_http;
+#[path = "operating/qso/contact.rs"]
 mod contact;
+#[path = "operating/qso/contact_http.rs"]
 mod contact_http;
 mod dxcc;
 #[path = "flexAdapter/flex_http.rs"]

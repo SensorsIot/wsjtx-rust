@@ -73,7 +73,7 @@ package WstxAutoControl {
                  Hound. */
             @CodeDiffers {
                 what = "The code reads the contact's activity (StatusFacts::activity in "
-                    + "server/src/contact_http.rs).";
+                    + "server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute band : String[0..1] {
@@ -92,7 +92,7 @@ package WstxAutoControl {
                  does not transmit in. Absent while none is in progress. */
             @CodeDiffers {
                 what = "The code reads the contact's Tx parity (StatusFacts::parity in "
-                    + "server/src/contact_http.rs).";
+                    + "server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute operatorContact : Boolean {

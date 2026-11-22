@@ -29,7 +29,7 @@
   - server/src/receive/receive_http.rs
   - server/src/receive/receive_diagnostics.rs
   - server/src/supervisor/receive_startup.rs
-  - server/src/contact_http.rs
+  - server/src/operating/qso/contact_http.rs
   - server/src/logbook.rs
   - server/src/logbook_http.rs
   - server/src/strategy.rs

@@ -17,9 +17,9 @@
   select:
   - server/src/main.rs
   - server/src/web/listener.rs
-  - server/src/contact.rs
-  - server/src/contact_http.rs
-  - server/src/contact_http_tests.rs
+  - server/src/operating/qso/contact.rs
+  - server/src/operating/qso/contact_http.rs
+  - server/src/operating/qso/contact_http_tests.rs
   - server/src/logbook.rs
   - server/src/logbook_http.rs
   - server/src/transmit/transmit_http.rs

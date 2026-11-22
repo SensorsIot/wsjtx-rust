@@ -176,13 +176,14 @@ package WstxSpecialActivities {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-02'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73; "
-                + "server/src/contact_tests.rs::na_vhf_moves_to_rogers_on_r_grid; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::na_vhf_moves_to_rogers_on_r_grid; "
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "arrl_digi_with_a_nonstandard_own_call_and_back_to_none; "
-                + "server/src/contact_tests.rs::set_activity_regenerates_the_running_contact; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
+                + "set_activity_regenerates_the_running_contact; "
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "set_activity_reads_back_and_reaches_udp_status";
         }
     }
@@ -194,14 +195,15 @@ package WstxSpecialActivities {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-03'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "field_day_cq_answers_the_exchange_and_logs_the_contest_fields; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "rtty_roundup_answers_cq_ru_with_tx2_and_logs_rst_stx_and_state; "
-                + "server/src/contact_tests.rs::ft4_rtty_selection_right_after_rr73_prefixes_tu; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
+                + "ft4_rtty_selection_right_after_rr73_prefixes_tu; "
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "contest_exchanges_are_validated_and_rows_of_another_family_are_other; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "contest_activity_with_its_exchange_reads_back_and_reaches_udp_status";
         }
     }
@@ -213,18 +215,20 @@ package WstxSpecialActivities {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-099-02'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::tc_099_002_eu_vhf_run_and_reply_through_the_log; "
-                + "server/src/contact_tests.rs::tc_099_002_eu_vhf_in_ft4; "
-                + "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
+                + "tc_099_002_eu_vhf_run_and_reply_through_the_log; "
+                + "server/src/operating/qso/contact_tests.rs::tc_099_002_eu_vhf_in_ft4; "
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_099_002_eu_vhf_messages_count_only_by_both_hashes_in_eu_vhf; "
-                + "server/src/contact_tests.rs::tc_099_002_eu_vhf_refusals_change_nothing; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
+                + "tc_099_002_eu_vhf_refusals_change_nothing; "
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_099_002_eu_vhf_rows_are_selectable_and_edits_must_pack; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_099_002_eu_vhf_refuses_a_pair_of_calls_over_16_characters; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_099_002_eu_vhf_sends_the_first_six_locator_characters; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "eu_vhf_reads_back_refuses_with_its_fields_and_reaches_udp_status";
         }
     }
@@ -236,15 +240,15 @@ package WstxSpecialActivities {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-04'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "a_hound_calls_at_a_random_offset_and_answers_the_fox_report_on_its_frequency; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_hound_answers_a_0_1_report_moves_300_hz_on_a_repeat_and_logs_the_0_1_rr73; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_hound_refuses_wrong_period_rows_other_hounds_other_slots_and_ft4; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_hound_ignores_rr73_of_other_stations_and_replies_nothing_while_tuning; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_003_a_stale_safety_revision_prepares_nothing_and_a_hound_calls_no_cq";
         }
     }
@@ -256,7 +260,7 @@ package WstxSpecialActivities {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-04'; }
         @TestedBy {
-            test = "server/src/contact_http_tests.rs::"
+            test = "server/src/operating/qso/contact_http_tests.rs::"
                 + "hound_reads_back_reaches_udp_status_and_the_row_reader_keeps_0_1_fields";
         }
     }
@@ -268,7 +272,7 @@ package WstxSpecialActivities {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-04'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "a_hound_works_a_scripted_fox_over_an_audio_loopback";
         }
     }
@@ -280,9 +284,9 @@ package WstxSpecialActivities {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-10'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "hound_reply_timeout_hound_watchdog_and_tx_watchdog; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_016_the_hound_stops_300_s_after_its_last_start";
         }
     }
@@ -294,7 +298,7 @@ package WstxSpecialActivities {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-085-03'; }
         @TestedBy {
-            test = "server/src/contact_http_tests.rs::"
+            test = "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_004_the_contest_serial_counts_only_on_accepted";
         }
     }

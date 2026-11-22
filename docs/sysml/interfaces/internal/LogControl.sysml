@@ -518,7 +518,7 @@ package WstxLogControl {
         out item resend : ResendLast {
             @CodeDiffers {
                 what = "The code has no such command; Log QSO logs the current contact (open_log "
-                    + "in server/src/contact_http.rs).";
+                    + "in server/src/operating/qso/contact_http.rs).";
             }
         }
         in item saveAnswer : SaveAnswer {

@@ -19,7 +19,8 @@ package WstxLogPart {
             module = "server/src/logbook.rs; server/src/dxcc.rs; server/src/logbook_http.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/contact_http.rs, server/src/dxcc.rs, "
+            what = "Its code stands in server/src/operating/qso/contact_http.rs, "
+                + "server/src/dxcc.rs, "
                 + "server/src/logbook.rs, server/src/logbook_http.rs, outside server/src/log/ and "
                 + "client/src/log/.";
         }

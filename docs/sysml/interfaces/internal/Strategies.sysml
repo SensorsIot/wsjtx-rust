@@ -335,7 +335,7 @@ package WstxStrategies {
                  is chosen is the contact's and Auto's. */
             @CodeDiffers {
                 what = "The code holds no CQ words of a contest; the CQ word of the contest's "
-                    + "activity counts (Activity::cq in server/src/contact.rs).";
+                    + "activity counts (Activity::cq in server/src/operating/qso/contact.rs).";
             }
         }
         attribute bands : String[1..*] { doc /* ADIF band names in lower case. */ }

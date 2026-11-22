@@ -171,23 +171,23 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-06'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
            + "tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browser_does; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_008_001_clicks_on_the_partner_and_enable_tx_while_armed_restart_nothing; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_008_001_a_partner_row_with_another_snr_restarts_nothing; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_008_001_a_partner_row_keeps_an_edited_message_and_its_count; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_008_001_a_pending_send_beyond_a_lowered_limit_is_never_keyed; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_008_001_going_back_to_a_message_at_its_limit_cancels_the_pending_send; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_008_001_identical_cqs_stop_and_an_answered_cq_starts_again; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit";
         }
     }
@@ -199,7 +199,7 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-21'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "tc_039_022_only_the_runs_own_contact_sends_past_the_limit";
         }
     }
@@ -211,15 +211,15 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-03'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "abort_stops_the_transmission_now_and_cancels_without_a_halt; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "auto_seq_off_cancel_halt_and_watchdog_while_calling; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_non_disarming_refusal_is_not_resubmitted_every_step; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_contact_cancelled_after_the_roger_report_is_not_handed_over; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_second_request_replaces_the_pending_one_and_one_message_is_sent";
         }
     }
@@ -231,11 +231,11 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-111-02'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_002_what_is_not_a_start_never_transmits; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_001_d_a_kept_qso_is_silent_until_reply_on_the_partners_row_continues_it; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_111_starts_are_single_commands_and_a_band_change_stops_the_station";
         }
     }
@@ -247,9 +247,9 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-111-02'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_003_call_cq_on_an_own_cq_kept_off; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_late_start_keyed_before_audio_queues_the_next_own_period_without_disarming";
         }
     }
@@ -261,7 +261,7 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-02'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_013_a_stop_wins_over_a_start_in_one_step";
         }
     }
@@ -273,13 +273,13 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-111-07'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_011_a_start_that_cannot_transmit_prepares_and_stays_off; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_011_a_start_the_transmit_owner_cannot_arm_is_refused; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_011_reset_while_on_but_unable_to_transmit_is_refused; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "receive_only_station_selects_and_logs_and_refuses_every_transmit_action";
         }
     }
@@ -291,11 +291,11 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-111-08'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_012_reset_starts_the_count_anew_and_continues_after_the_limit; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_003_reset_repetitions_in_each_state; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_012_where_reset_is_refused";
         }
     }
@@ -307,15 +307,15 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-02'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_003_reply_in_each_state; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_003_call_cq_in_each_state; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_003_call_dx_in_each_state; "
-                + "server/src/transmit_state_tests.rs::"
+                + "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_003_send_next_in_each_state; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_111_starts_are_single_commands_and_a_band_change_stops_the_station";
         }
     }
@@ -327,7 +327,7 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-05'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_006_a_start_never_becomes_a_cq";
         }
     }
@@ -339,7 +339,7 @@ package WstxQsoTransmit {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-22'; }
         @TestedBy {
-            test = "server/src/transmit_state_tests.rs::"
+            test = "server/src/operating/qso/transmit_state_tests.rs::"
                 + "tc_111_001_d_a_kept_qso_is_silent_until_reply_on_the_partners_row_continues_it";
         }
     }

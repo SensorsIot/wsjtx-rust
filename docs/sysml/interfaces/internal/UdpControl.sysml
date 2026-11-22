@@ -90,20 +90,21 @@ package WstxUdpControl {
             doc /* The report of the contact. */
             @CodeDiffers {
                 what = "The code gives one report: the contact's, else the one set for the "
-                    + "station (StatusFacts::report in server/src/contact_http.rs).";
+                    + "station (StatusFacts::report in server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute stationReport : Integer {
             doc /* The report set for the station. */
             @CodeDiffers {
                 what = "The code gives one report: the contact's, else the one set for the "
-                    + "station (StatusFacts::report in server/src/contact_http.rs).";
+                    + "station (StatusFacts::report in server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute rxOffsetHz : Integer {
             doc /* The receive offset of the contact settings. */
             @CodeDiffers {
-                what = "The code names it rx_hz (StatusFacts in server/src/contact_http.rs).";
+                what = "The code names it rx_hz (StatusFacts in "
+                    + "server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute txOffsetHz : Integer { doc /* The transmit offset of the contact settings. */ }

@@ -64,7 +64,7 @@ package WstxListener {
                 + "TLS login, unauthorized/origin denial, plaintext refusal; "
                 + "server/src/logbook_http_tests.rs::"
                 + "cty_upload_replaces_the_country_table_and_refusals_change_nothing; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
                 + "tests/profiles.test.cjs::"
                 + "same-host four-port TLS cookies, reconnect, negatives and rotation; "
@@ -276,7 +276,7 @@ package WstxListener {
                 + "protocol_returns_specified_response_and_errors; "
                 + "server/src/logbook_http_tests.rs::"
                 + "save_contact_refusals_byte_cap_and_command_receipts; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
                 + "tests/profiles.test.cjs::"
                 + "same-host four-port TLS cookies, reconnect, negatives and rotation; "
@@ -334,7 +334,8 @@ package WstxListener {
         objective { verify 'CL-003-08'; }
         @TestedBy {
             test = "tests/contact.test.cjs; tests/ui-operating.test.cjs; "
-                + "server/src/contact_http_tests.rs; server/src/receive/receive_http_tests.rs; "
+                + "server/src/operating/qso/contact_http_tests.rs; "
+                + "server/src/receive/receive_http_tests.rs; "
                 + "tests/radio-selection.test.cjs::"
                 + "a status on the same socket reads no receive snapshot "
                 + "unless the state is in doubt; "
@@ -373,7 +374,7 @@ package WstxListener {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-08'; }
         @TestedBy {
-            test = "server/src/contact_http_tests.rs::"
+            test = "server/src/operating/qso/contact_http_tests.rs::"
                 + "contact_snapshot_is_exact_identity_coded_and_bounded";
         }
     }

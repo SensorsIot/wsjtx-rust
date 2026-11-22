@@ -286,11 +286,11 @@ package WstxOperatingSelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-011-02'; }
         @TestedBy {
-            test = "server/src/contact_http_tests.rs::"
+            test = "server/src/operating/qso/contact_http_tests.rs::"
             + "ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "a_mode_selection_is_busy_while_ptt_is_keyed_and_while_transmitting; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_contact";
         }
     }
