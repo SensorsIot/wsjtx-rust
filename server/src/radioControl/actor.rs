@@ -150,6 +150,8 @@ impl Actor {
             current_cancel.clone(),
             keyed.clone(),
         );
+        #[cfg(test)]
+        let paused = pause::take();
         let worker = thread::Builder::new()
             .name("cat-io".into())
             .spawn(move || {
@@ -185,7 +187,11 @@ impl Actor {
                             state.facts.stale();
                             let _ = state.publish();
                         }
+                        #[cfg(test)]
+                        pause::at(&paused, pause::Point::FailurePublished);
                         busy.store(0, Ordering::Release);
+                        #[cfg(test)]
+                        pause::at(&paused, pause::Point::LeaseReleased);
                         return;
                     }
                 };
@@ -194,6 +200,8 @@ impl Actor {
                     busy.store(0, Ordering::Release);
                     return;
                 }
+                #[cfg(test)]
+                pause::at(&paused, pause::Point::ReadyPublished);
                 busy.store(0, Ordering::Release);
                 let mut last_poll = Instant::now();
                 while !stop.load(Ordering::Acquire) {
@@ -470,6 +478,12 @@ impl Actor {
             .map(|s| s.clone())
             .map_err(|_| Error::Unavailable)
     }
+    /// Test-only: the lease's value (0 free, 1 ordinary, 2 and 3 reservation, 4 hold).
+    #[cfg(test)]
+    #[allow(dead_code)] // used by the radio_control integration test
+    pub fn lease(&self) -> u8 {
+        self.lease.load(Ordering::Acquire)
+    }
     pub fn execute(&self, request: Request) -> Result<Observation> {
         self.execute_inner(request, None)
     }
@@ -596,6 +610,52 @@ impl Drop for Actor {
             && let Some(worker) = self.thread.take()
         {
             let _ = worker.join();
+        }
+    }
+}
+/// Test-only seam: pauses the I/O thread of the next actor this thread begins at one
+/// point of its connect's end, so that a test holds that window open without a race.
+#[cfg(test)]
+#[allow(dead_code)] // used by the radio_control integration test
+pub mod pause {
+    use std::cell::RefCell;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum Point {
+        /// Right after ready is published.
+        ReadyPublished,
+        /// Right after a failed connect's end (unavailable, closed or closing) is published.
+        FailurePublished,
+        /// After a failed connect has released the lease, before the receivers are dropped.
+        LeaseReleased,
+    }
+    /// Pauses at `point`: sets `entered`, then waits for `release`, at most 10 s.
+    pub struct Pause {
+        pub point: Point,
+        pub entered: Arc<AtomicBool>,
+        pub release: Arc<AtomicBool>,
+    }
+    thread_local! {
+        static NEXT: RefCell<Option<Pause>> = const { RefCell::new(None) };
+    }
+    /// The next `Actor::begin` on this thread pauses its I/O thread as `pause` says.
+    pub fn next_actor(pause: Pause) {
+        NEXT.with(|next| *next.borrow_mut() = Some(pause));
+    }
+    pub(super) fn take() -> Option<Pause> {
+        NEXT.with(|next| next.borrow_mut().take())
+    }
+    pub(super) fn at(pause: &Option<Pause>, point: Point) {
+        let Some(pause) = pause.as_ref().filter(|p| p.point == point) else {
+            return;
+        };
+        pause.entered.store(true, Ordering::Release);
+        let start = Instant::now();
+        while !pause.release.load(Ordering::Acquire) && start.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 }
