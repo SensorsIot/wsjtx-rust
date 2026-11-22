@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use wstx_rust::transmit::service::Hardware;
 // The tests of WstxAutoMode::StartedQsoRule run on this file's station helpers.
-#[path = "operating/qso/autofinish_tests.rs"]
+#[path = "operating/auto/autofinish_tests.rs"]
 mod autofinish;
 // The tests of WstxHoldTx::QuietSpace and WstxCqWhenIdle::CqRule for the newest period run on
 // this file's station helpers.

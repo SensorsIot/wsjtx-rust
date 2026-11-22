@@ -20,7 +20,7 @@
   - server/src/main.rs
   - server/src/web/listener.rs
   - server/src/mcp/endpoint.rs
-  - server/src/automation.rs
+  - server/src/operating/auto/automation.rs
   - server/src/operating/qso/freeslot.rs
   - server/src/supervisor/authorization.rs
   - server/src/supervisor/authorization_http.rs

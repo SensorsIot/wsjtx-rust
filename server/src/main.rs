@@ -5,6 +5,7 @@ mod auth_tests;
 mod authorization;
 #[path = "supervisor/authorization_http.rs"]
 mod authorization_http;
+#[path = "operating/auto/automation.rs"]
 mod automation;
 #[path = "radioControl/cat_lifecycle.rs"]
 mod cat_lifecycle;

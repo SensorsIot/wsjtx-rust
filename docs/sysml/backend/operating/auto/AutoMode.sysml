@@ -161,7 +161,7 @@ package WstxAutoMode {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-081-01'; }
         @TestedBy {
-            test = "server/src/operating/qso/autofinish_tests.rs::"
+            test = "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_001_auto_off_in_a_started_qso_finishes_it_and_logs_it_once";
         }
     }
@@ -173,9 +173,9 @@ package WstxAutoMode {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-081-01'; }
         @TestedBy {
-            test = "server/src/operating/qso/autofinish_tests.rs::"
+            test = "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_002_a_reply_on_the_air_is_a_started_qso; "
-                + "server/src/operating/qso/autofinish_tests.rs::"
+                + "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_002_b_c_d_no_started_qso_ends_at_once_and_its_period_on_the_air_finishes";
         }
     }
@@ -187,9 +187,9 @@ package WstxAutoMode {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-081-01'; }
         @TestedBy {
-            test = "server/src/operating/qso/autofinish_tests.rs::"
+            test = "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_003_none_another_strategy_and_auto_off_twice_finish_the_qso; "
-                + "server/src/operating/qso/autofinish_tests.rs::"
+                + "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_003_a_contest_deselected_or_its_period_end_finishes_the_qso";
         }
     }
@@ -201,9 +201,9 @@ package WstxAutoMode {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-081-01'; }
         @TestedBy {
-            test = "server/src/operating/qso/autofinish_tests.rs::"
+            test = "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_004_a_b_the_finishing_qso_keeps_the_tx_watchdog_limit; "
-                + "server/src/operating/qso/autofinish_tests.rs::"
+                + "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_004_c_a_message_past_the_limit_is_not_sent_again_after_the_auto_off";
         }
     }
@@ -215,11 +215,11 @@ package WstxAutoMode {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-081-01'; }
         @TestedBy {
-            test = "server/src/operating/qso/autofinish_tests.rs::"
+            test = "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_005_halt_abort_and_a_double_click_end_a_finishing_qso_at_once; "
-                + "server/src/operating/qso/autofinish_tests.rs::"
+                + "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_005_band_mode_and_grant_end_a_finishing_qso_at_once; "
-                + "server/src/operating/qso/autofinish_tests.rs::"
+                + "server/src/operating/auto/autofinish_tests.rs::"
                 + "tc_081_005_h_the_runs_leaving_ends_a_started_qso_at_once";
         }
     }

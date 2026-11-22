@@ -82,7 +82,8 @@ package WstxAutoControl {
         attribute repetitionLimit : Integer {
             doc /* The contact's repetition limit: how often one message is sent. */
             @CodeDiffers {
-                what = "The code reads tx_calls of the transmit view (server/src/automation.rs).";
+                what = "The code reads tx_calls of the transmit view "
+                    + "(server/src/operating/auto/automation.rs).";
             }
         }
         attribute contactParity : PeriodParity[0..1] {
@@ -98,7 +99,7 @@ package WstxAutoControl {
             doc /* A contact or a CQ that Auto did not start is in progress. */
             @CodeDiffers {
                 what = "The code sees an operator's contact on the engine and puts the run in its "
-                    + "state manual (RunState::Manual in server/src/automation.rs).";
+                    + "state manual (RunState::Manual in server/src/operating/auto/automation.rs).";
             }
         }
     }
@@ -170,14 +171,14 @@ package WstxAutoControl {
             doc /* Present while Auto waits for a reason. */
             @CodeDiffers {
                 what = "The code names it reason, a key that also holds why a run stopped "
-                    + "(the run of server/src/automation.rs).";
+                    + "(the run of server/src/operating/auto/automation.rs).";
             }
         }
         attribute offReason : OffReason[0..1] {
             doc /* Present while Auto is off after it was on. */
             @CodeDiffers {
                 what = "The code names it reason, a key that also holds why a run waits "
-                    + "(the run of server/src/automation.rs).";
+                    + "(the run of server/src/operating/auto/automation.rs).";
             }
         }
         attribute left : Leaving[0..1] {
@@ -189,7 +190,7 @@ package WstxAutoControl {
                  while there is none. */
             @CodeDiffers {
                 what = "The code gives no periods left; it counts empty_publications against "
-                    + "cq_wait_periods (server/src/automation.rs).";
+                    + "cq_wait_periods (server/src/operating/auto/automation.rs).";
             }
         }
     }

@@ -468,7 +468,8 @@ package WstxStrategies {
             doc /* A contest is in force. */
             @CodeDiffers {
                 what = "The code gives the contact no contest activity; Auto waits while the "
-                    + "contact's activity is not the contest's (server/src/automation.rs).";
+                    + "contact's activity is not the contest's "
+                    + "(server/src/operating/auto/automation.rs).";
             }
         }
         attribute activity : Activity[0..1] {
