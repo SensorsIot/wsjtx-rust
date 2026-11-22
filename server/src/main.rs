@@ -18,6 +18,7 @@ mod clock_http;
 mod contact;
 #[path = "operating/qso/contact_http.rs"]
 mod contact_http;
+#[path = "log/dxcc.rs"]
 mod dxcc;
 #[path = "flexAdapter/flex_http.rs"]
 mod flex_http;
@@ -38,7 +39,9 @@ mod listener;
 #[cfg(test)]
 #[path = "web/liveness_tests.rs"]
 mod liveness_tests;
+#[path = "log/logbook.rs"]
 mod logbook;
+#[path = "log/logbook_http.rs"]
 mod logbook_http;
 #[path = "mcp/endpoint.rs"]
 mod mcp;

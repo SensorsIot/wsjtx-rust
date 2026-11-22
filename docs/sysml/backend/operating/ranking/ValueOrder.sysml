@@ -412,7 +412,7 @@ package WstxValueOrder {
              sender's entity, what is new about the sender against the logbook, and
              whether the sender has been worked (DecodedEntity). */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/dxcc.rs"; }
+        @ImplementedIn { module = "server/src/log/dxcc.rs"; }
     }
     #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-055-02'; }
 
@@ -463,15 +463,15 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-055-02'; }
         @TestedBy {
-            test = "server/src/dxcc_tests.rs::"
+            test = "server/src/log/dxcc_tests.rs::"
                 + "tc_055_002_receive_results_carry_entity_and_new_flags; "
-                + "server/src/dxcc_tests.rs::"
+                + "server/src/log/dxcc_tests.rs::"
                 + "tc_055_006_non_cq_senders_carry_entity_and_flags; "
-                + "server/src/dxcc_tests.rs::"
+                + "server/src/log/dxcc_tests.rs::"
                 + "tc_055_002_every_decoded_sender_call_resolves; "
-                + "server/src/dxcc_tests.rs::"
+                + "server/src/log/dxcc_tests.rs::"
                 + "tc_011_003_receive_results_carry_the_worked_status; "
-                + "server/src/dxcc_tests.rs::"
+                + "server/src/log/dxcc_tests.rs::"
                 + "tc_055_002_new_dxcc_band_continent_and_zone_against_the_log";
         }
     }

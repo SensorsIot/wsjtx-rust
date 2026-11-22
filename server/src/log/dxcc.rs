@@ -18,7 +18,7 @@ pub const FILE_NAME: &str = "cty.dat";
 /// An uploaded cty.dat is at most this large (the shipped file is 354405 bytes; AD1C's
 /// big variant is below 1 MiB as well).
 pub const FILE_BYTES_MAX: usize = 1_048_576;
-const BUNDLED: &str = include_str!("../third-party/cty/cty.dat");
+const BUNDLED: &str = include_str!("../../third-party/cty/cty.dat");
 pub const CONTINENTS: [&str; 7] = ["AF", "AN", "AS", "EU", "NA", "OC", "SA"];
 
 #[derive(Debug)]

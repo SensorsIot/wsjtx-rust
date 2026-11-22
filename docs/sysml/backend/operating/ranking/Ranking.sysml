@@ -20,7 +20,7 @@ package WstxRankingPart {
             module = "server/src/operating/ranking/most_wanted.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/dxcc.rs, outside "
+            what = "Its code stands in server/src/log/dxcc.rs, outside "
                 + "server/src/operating/ranking/ and client/src/operating/ranking/.";
         }
         @DetailTests {

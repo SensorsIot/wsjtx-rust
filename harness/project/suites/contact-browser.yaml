@@ -20,8 +20,8 @@
   - server/src/operating/qso/contact.rs
   - server/src/operating/qso/contact_http.rs
   - server/src/operating/qso/contact_http_tests.rs
-  - server/src/logbook.rs
-  - server/src/logbook_http.rs
+  - server/src/log/logbook.rs
+  - server/src/log/logbook_http.rs
   - server/src/transmit/transmit_http.rs
   - server/src/clock/
   - server/src/transmit/recording_tx_tests.rs

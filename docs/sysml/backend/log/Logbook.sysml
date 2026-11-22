@@ -149,17 +149,17 @@ package WstxLogbook {
                 + "tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_target; "
                 + "server/src/operating/qso/contact_http_tests.rs::"
                 + "direct_log_record_fields_from_the_confirmed_dial; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "save_is_exactly_once_and_injected_failures_leave_no_torn_file; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "review_validation_refuses_each_invalid_field_with_its_key; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "unreadable_stored_log_is_unavailable_and_left_untouched; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "invalid_stored_log_is_unavailable_and_never_rewritten; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "save_contact_refusals_byte_cap_and_command_receipts; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "unreadable_contacts_file_makes_save_storage_unavailable";
         }
     }
@@ -171,9 +171,9 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-04'; }
         @TestedBy {
-            test = "server/src/logbook_tests.rs::"
+            test = "server/src/log/logbook_tests.rs::"
                 + "adi_record_is_written_in_wsjtx_field_order_with_exact_lengths_and_round_trips; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "stored_log_with_former_verbatim_qsl_fields_stays_readable";
         }
     }
@@ -185,8 +185,8 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-04'; }
         @TestedBy {
-            test = "server/src/logbook_tests.rs::contest_fields_and_rtty_rst_are_validated; "
-                + "server/src/logbook_http_tests.rs::"
+            test = "server/src/log/logbook_tests.rs::contest_fields_and_rtty_rst_are_validated; "
+                + "server/src/log/logbook_http_tests.rs::"
                 + "save_contact_refusals_byte_cap_and_command_receipts";
         }
     }
@@ -250,7 +250,7 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-085-01'; }
         @TestedBy {
-            test = "server/src/logbook_tests.rs::tc_085_002_terms_of_the_same_station_again; "
+            test = "server/src/log/logbook_tests.rs::tc_085_002_terms_of_the_same_station_again; "
                 + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_085_001_the_same_station_in_a_row_is_not_logged; "
                 + "server/src/operating/qso/contact_http_tests.rs::"
@@ -427,45 +427,45 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-18'; }
         @TestedBy {
-            test = "server/src/logbook_tests.rs::"
+            test = "server/src/log/logbook_tests.rs::"
                 + "update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_source; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
        + "update_consolidates_within_two_minutes_and_existing_records_win_and_repeat_adds_nothing; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "update_skips_invalid_records_drops_invalid_fields_and_refuses_a_broken_file; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "adi_limits_admit_exact_maximum_and_refuse_one_over; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "import_of_exactly_sixty_four_mebibytes_is_admitted_and_published; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "adi_import_over_http_reserves_chunks_retries_and_fails_atomically; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "import_retry_by_id_and_sha256_has_no_second_effect_and_mismatch_is_refused; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "update_drops_contest_values_that_save_would_refuse_and_keeps_conforming_ones; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "update_keeps_each_confirmation_field_and_the_export_round_trips_them; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "update_rerun_upgrades_confirmations_of_present_records_and_never_removes_one; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
          + "update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_the_index; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock; "
                 + "server/src/log/udp_tests.rs::"
                 + "tc_011_002_update_logbook_adds_records_without_any_udp_datagram; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "history_pages_have_stable_indexes_and_stay_within_the_byte_bound; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "update_refuses_a_broken_tag_a_header_without_eoh_and_a_long_name_whole; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "an_update_whose_write_fails_stores_none_of_its_records; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "history_and_export_routes_follow_the_wire_contract; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "adi_parser_accepts_header_case_variants_and_line_breaks_between_fields; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "adi_parser_refuses_malformed_length_character_and_missing_fields_with_context; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "export_over_http_is_streamed_in_chunks_without_content_length";
         }
     }
@@ -510,17 +510,17 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-13'; }
         @TestedBy {
-            test = "server/src/logbook_tests.rs::"
+            test = "server/src/log/logbook_tests.rs::"
                 + "worked_before_matches_call_case_insensitively_and_band_with_mode; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_source; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "worked_set_reports_worked_and_confirmed_per_entity_band_and_mode; "
-                + "server/src/dxcc_tests.rs::"
+                + "server/src/log/dxcc_tests.rs::"
                 + "tc_055_002_new_dxcc_band_continent_and_zone_against_the_log; "
-                + "server/src/dxcc_tests.rs::"
+                + "server/src/log/dxcc_tests.rs::"
                 + "tc_039_030_worked_set_keeps_call_grid_prefix_standing_and_gridless_calls; "
-                + "server/src/dxcc_tests.rs::tc_039_030_wpx_prefix_table";
+                + "server/src/log/dxcc_tests.rs::tc_039_030_wpx_prefix_table";
         }
     }
 
@@ -533,9 +533,9 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-13'; }
         @TestedBy {
-            test = "server/src/logbook_tests.rs::"
+            test = "server/src/log/logbook_tests.rs::"
                 + "worked_window_reads_only_the_dated_records_and_is_cached_per_revision; "
-                + "server/src/logbook_tests.rs::"
+                + "server/src/log/logbook_tests.rs::"
                 + "worked_latest_returns_the_last_set_and_builds_off_the_caller";
         }
     }

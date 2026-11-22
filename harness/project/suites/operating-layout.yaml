@@ -30,8 +30,8 @@
   - server/src/receive/receive_diagnostics.rs
   - server/src/supervisor/receive_startup.rs
   - server/src/operating/qso/contact_http.rs
-  - server/src/logbook.rs
-  - server/src/logbook_http.rs
+  - server/src/log/logbook.rs
+  - server/src/log/logbook_http.rs
   - server/src/strategy.rs
   - server/src/contest.rs
   - server/src/operating/qso/freeslot.rs

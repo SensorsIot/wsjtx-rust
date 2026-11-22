@@ -62,7 +62,7 @@ package WstxListener {
         @TestedBy {
             test = "tests/communication.test.cjs::"
                 + "TLS login, unauthorized/origin denial, plaintext refusal; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "cty_upload_replaces_the_country_table_and_refusals_change_nothing; "
                 + "server/src/operating/qso/contact_http_tests.rs::"
                 + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
@@ -274,7 +274,7 @@ package WstxListener {
                 + "TC-021-005: actual-server correlation, negative cases and size boundaries; "
                 + "server/src/web/listener_tests.rs::"
                 + "protocol_returns_specified_response_and_errors; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "save_contact_refusals_byte_cap_and_command_receipts; "
                 + "server/src/operating/qso/contact_http_tests.rs::"
                 + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "

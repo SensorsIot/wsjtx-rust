@@ -62,10 +62,10 @@ package WstxCountryFile {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-055-01'; }
         @TestedBy {
-            test = "server/src/dxcc_tests.rs::"
+            test = "server/src/log/dxcc_tests.rs::"
                 + "tc_055_001_effective_prefix_matches_wsjtx_unit_vectors; "
-                + "server/src/dxcc_tests.rs::tc_055_001_known_answers_from_the_bundled_file; "
-                + "server/src/dxcc_tests.rs::tc_055_001_overrides_and_refused_files";
+                + "server/src/log/dxcc_tests.rs::tc_055_001_known_answers_from_the_bundled_file; "
+                + "server/src/log/dxcc_tests.rs::tc_055_001_overrides_and_refused_files";
         }
     }
 
@@ -93,9 +93,9 @@ package WstxCountryFile {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-055-03'; }
         @TestedBy {
-            test = "server/src/logbook_http_tests.rs::"
+            test = "server/src/log/logbook_http_tests.rs::"
                 + "cty_upload_replaces_the_country_table_and_refusals_change_nothing; "
-                + "server/src/dxcc_tests.rs::tc_055_002_worked_set_follows_each_uploaded_table";
+                + "server/src/log/dxcc_tests.rs::tc_055_002_worked_set_follows_each_uploaded_table";
         }
     }
 }
