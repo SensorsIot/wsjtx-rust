@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 use super::*;
 #[cfg(not(debug_assertions))]
+use crate::listener::*;
+#[cfg(not(debug_assertions))]
 use wstx_test_tools::native_ft8_fixture::{
     NATIVE_FRAMES, NativeFt8Fixture, TRAILING_SILENT_FRAMES,
 };

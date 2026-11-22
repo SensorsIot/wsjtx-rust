@@ -6,6 +6,7 @@
     @libtest cargo test --release --locked --bin wstx-rust receive_http_tests::live_native_ -- --nocapture --skip receive_http_tests::live_native_busy_period_rows_promptly
   paths:
   - server/src/main.rs
+  - server/src/web/listener.rs
   - server/src/profile.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
@@ -35,6 +36,7 @@
   - package-lock.json
   select:
   - server/src/main.rs
+  - server/src/web/listener.rs
   - server/src/profile.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs

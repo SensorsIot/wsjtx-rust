@@ -16,6 +16,7 @@
   - package-lock.json
   select:
   - server/src/main.rs
+  - server/src/web/listener.rs
   - server/src/contact.rs
   - server/src/contact_http.rs
   - server/src/contact_http_tests.rs
@@ -30,10 +31,10 @@
   - server/src/operating/qso/pskr_tests.rs
   - server/src/operating/qso/udp.rs
   - server/src/log/udp_tests.rs
-  - client/contact.js
-  - client/logbook.js
-  - client/recording.js
-  - client/recording.css
+  - client/src/frontend/contact.js
+  - client/src/frontend/logbook.js
+  - client/src/frontend/recording.js
+  - client/src/frontend/recording.css
   - tests/contact.test.cjs
   - tests/station-settings.test.cjs
   - Cargo.toml
@@ -42,8 +43,8 @@
   - server/Cargo.toml
   - package.json
   - package-lock.json
-  - client/app.js
-  - client/index.html
-  - client/authorization.js
+  - client/src/frontend/app.js
+  - client/src/frontend/index.html
+  - client/src/frontend/authorization.js
   build: cargo test --release --locked --bin wstx-rust --no-run
   needs: Pinned Rust, Node 24 and Playwright Chromium. Windows PC; actual isolated Router with the contact engine, the transmit owner on a recording hardware double and hand-authored codec-packed result rows published by a test-only control peer; the PSK Reporter feed on a fake broker and the UDP owner on recording sockets, so nothing reaches the broker or a UDP port. No transceiver, audio device, PTT or network service.

@@ -26,7 +26,8 @@
   # do not run beside it.
   timing_inputs:
   - server/src/main.rs
-  - server/src/http_compression.rs
+  - server/src/web/listener.rs
+  - server/src/web/content_coding.rs
   - server/src/station/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
@@ -48,9 +49,9 @@
   - server/src/receive/receive.rs
   - server/src/receive/receive_http.rs
   - server/src/receive/spectrum.rs
-  - client/app.js
-  - client/index.html
-  - client/recording.js
+  - client/src/frontend/app.js
+  - client/src/frontend/index.html
+  - client/src/frontend/recording.js
   - tests/radio-selection.test.cjs
   - tools/test/node/selection-evidence.cjs
   - tools/test/node/support.cjs

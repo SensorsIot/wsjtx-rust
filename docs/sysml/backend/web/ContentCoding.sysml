@@ -44,11 +44,11 @@ Gzip only when Accept-Encoding selects it, the form of a coded answer, and the a
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-09'; }
         @TestedBy {
-            test = "server/src/web/http_compression_tests.rs::"
+            test = "server/src/web/content_coding_tests.rs::"
                 + "h1_exact_vary_merge_framing_and_validator_rules; "
-                + "server/src/web/http_compression_tests.rs::"
+                + "server/src/web/content_coding_tests.rs::"
                 + "h1_exclusions_preserve_original_before_forbidden_negotiation; "
-                + "server/src/web/http_compression_tests.rs::"
+                + "server/src/web/content_coding_tests.rs::"
                 + "static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwise; "
                 + "tests/radio-selection.test.cjs::"
                 + "H1 raw TLS gzip snapshots preserve bounded JSON; "

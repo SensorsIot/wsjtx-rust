@@ -27,7 +27,7 @@ package WstxQsoPart {
         }
         @DetailTests {
             tests = "server/src/contact_tests.rs; server/src/operating/qso/freeslot_tests.rs; "
-                + "server/src/mcp_tests.rs; server/src/contact_http_tests.rs; "
+                + "server/src/mcp/endpoint_tests.rs; server/src/contact_http_tests.rs; "
                 + "server/src/transmit_state_tests.rs";
             covers = "the contact engine, the quiet-space function and the waterfall's periods; "
                 + "Auto Seq and Call 1st saved in their own file, also through the MCP tool; "

@@ -6,6 +6,7 @@ use super::*;
 use crate::cat_lifecycle::{Gate, Key};
 use crate::cat_lifecycle_tests::{Device, ENDPOINT, attach_peer};
 use crate::contact_http::tests::{DrivenClock, RoundSource};
+use crate::listener::*;
 use axum::body::Body;
 use tower::ServiceExt;
 use wstx_rust::radio_control as cat;

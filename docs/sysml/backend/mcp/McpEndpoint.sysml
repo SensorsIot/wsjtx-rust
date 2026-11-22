@@ -52,7 +52,7 @@ package WstxMcpEndpoint {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-012-01'; verify 'CL-012-02'; }
         @TestedBy {
-            test = "server/src/mcp_tests.rs::"
+            test = "server/src/mcp/endpoint_tests.rs::"
                 + "tc_020_001_mcp_observes_the_browser_state_in_both_protocol_eras; "
                 + "tests/mcp/mcp.test.cjs::"
                 + "an MCP client with its own MCP client token observes the browser state "
@@ -68,7 +68,7 @@ package WstxMcpEndpoint {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-012-01'; verify 'CL-012-02'; }
         @TestedBy {
-            test = "server/src/mcp_tests.rs::"
+            test = "server/src/mcp/endpoint_tests.rs::"
         + "tc_020_002_invalid_unauthorized_and_wrong_station_requests_are_refused_before_effects";
         }
     }

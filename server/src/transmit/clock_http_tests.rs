@@ -6,6 +6,7 @@
 // WebSocket to every profile. Expected values come from the model's rule and texts.
 use super::*;
 use crate::contact_http::tests::{DrivenClock, RoundSource};
+use crate::listener::*;
 use axum::body::Body;
 use std::time::{Duration, SystemTime};
 use tower::ServiceExt;
@@ -439,8 +440,9 @@ async fn clock_state_is_pushed_to_every_profile() {
             .recording
             .fixture_capture_clock(Some(true), Some(Some(12.0)));
         let (listener, accepted) = tokio::sync::mpsc::unbounded_channel();
-        let server =
-            tokio::spawn(axum::serve(Held(accepted), crate::router(f.app.clone())).into_future());
+        let server = tokio::spawn(
+            axum::serve(Held(accepted), crate::listener::router(f.app.clone())).into_future(),
+        );
         let cookie = format!("Cookie: {}\r\n", f.cookie());
         let mut peers = Vec::new();
         for (id, subscription) in ["spectrum.detail", "spectrum.thin"].iter().enumerate() {
@@ -564,7 +566,7 @@ async fn clock_state_is_pushed_to_every_profile() {
             for w in writes.windows(2) {
                 let gap = w[1].0.duration_since(w[0].0);
                 assert!(
-                    gap >= Duration::from_millis(crate::socket_protocol::EVENT_DELAY_MS),
+                    gap >= Duration::from_millis(crate::listener::socket_protocol::EVENT_DELAY_MS),
                     "{gap:?}: {writes:?}"
                 );
             }

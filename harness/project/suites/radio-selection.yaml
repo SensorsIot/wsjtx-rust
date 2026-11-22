@@ -24,7 +24,8 @@
   select:
   - docs/sysml/
   - server/src/main.rs
-  - server/src/http_compression.rs
+  - server/src/web/listener.rs
+  - server/src/web/content_coding.rs
   - server/src/station/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs
@@ -51,8 +52,8 @@
   - server/src/receive/receive_http.rs
   - server/src/audio/source.rs
   - server/src/auth_tests.rs
-  - client/recording.js
-  - client/recording.css
+  - client/src/frontend/recording.js
+  - client/src/frontend/recording.css
   - tests/radio-selection.test.cjs
   - tools/test/node/selection-evidence.cjs
   - tools/test/node/support.cjs
@@ -64,9 +65,9 @@
   - server/Cargo.toml
   - package.json
   - package-lock.json
-  - client/app.js
-  - client/index.html
-  - client/authorization.js
+  - client/src/frontend/app.js
+  - client/src/frontend/index.html
+  - client/src/frontend/authorization.js
   build:
   - cargo build --workspace --locked
   - cargo test --release --locked --bin wstx-rust --no-run

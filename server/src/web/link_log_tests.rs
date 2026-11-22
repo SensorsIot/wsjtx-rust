@@ -11,6 +11,7 @@
 // wstx_test_tools::link_estimate.
 use super::*;
 use crate::link_log::{FILE, Log, Mode, PeriodClock};
+use crate::listener::*;
 use crate::liveness_tests::{plaintext_station, upgrade_request};
 use std::{
     collections::{BTreeMap, HashSet},

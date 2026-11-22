@@ -21,11 +21,12 @@
   - package-lock.json
   select:
   - server/src/main.rs
+  - server/src/web/listener.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/recording_http.rs
-  - client/recording.js
-  - client/recording.css
+  - client/src/frontend/recording.js
+  - client/src/frontend/recording.css
   - tests/recording.test.cjs
   - tools/recording-fixtures.cjs
   - fixtures/decoder/manifest.json
@@ -44,8 +45,8 @@
   - server/Cargo.toml
   - package.json
   - package-lock.json
-  - client/app.js
-  - client/index.html
-  - client/authorization.js
+  - client/src/frontend/app.js
+  - client/src/frontend/index.html
+  - client/src/frontend/authorization.js
   build: cargo build --workspace --locked
   needs: Node 24, npm ci, Chromium and WSTX_SAMPLE_DIR with verified original recordings. Windows PC; isolated import/job/storage tests.

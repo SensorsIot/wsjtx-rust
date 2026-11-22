@@ -99,7 +99,7 @@ test('Failure evidence of a Thin or Off window lists each socket, stale and clos
 
 test('no timer reads the selection: source and caller fault controls',async t=>{
   await t.test('actual source: every selection read has an explicit caller, an unknown stack is refused',async()=>{
-    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../../../client/recording.js'))),origin='https://station-A';
+    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../../../client/src/frontend/recording.js'))),origin='https://station-A';
     const initiator=line=>({type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:line}]}});
     assert.ok(mapping.explicitLines.length>0,'the reconnect and explicit reads stay');
     for(const line of mapping.explicitLines)assert.equal(cadenceCaller(initiator(line),origin,mapping),'explicit/reconciliation');
@@ -110,7 +110,7 @@ test('no timer reads the selection: source and caller fault controls',async t=>{
     wrapped.stack.callFrames[1].functionName='other';assert.throws(()=>cadenceCaller(wrapped,origin,mapping));
   });
   await t.test('caller mapping is derived from the source and line-ending neutral',async()=>{
-    const lf=(await fs.readFile(path.join(__dirname,'../../../client/recording.js'),'utf8')).replace(/\r\n/g,'\n'),crlf=lf.replace(/\n/g,'\r\n');
+    const lf=(await fs.readFile(path.join(__dirname,'../../../client/src/frontend/recording.js'),'utf8')).replace(/\r\n/g,'\n'),crlf=lf.replace(/\n/g,'\r\n');
     const lines=({fetchLine,explicitLines})=>({fetchLine,explicitLines}),base=lines(cadenceSource(Buffer.from(lf)));
     assert.notEqual(lf,crlf);assert.deepEqual(lines(cadenceSource(Buffer.from(crlf))),base);
     // A change that only moves lines (a comment above the fetch) moves the mapping with it.
@@ -154,7 +154,7 @@ test('no timer reads the selection: source and caller fault controls',async t=>{
   // A Cold-load selection read can hit the page's own 10 s timeout (net::ERR_ABORTED) before
   // the baseline; the page supersedes it, so it does not fail the join.
   await t.test('Cold selection read the page timed out before baseline is superseded, not a failure',async()=>{
-    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../../../client/recording.js'))),origin='https://station-A';
+    const mapping=cadenceSource(await fs.readFile(path.join(__dirname,'../../../client/src/frontend/recording.js'))),origin='https://station-A';
     const initiator={type:'script',stack:{callFrames:[{url:origin+'/recording.js',functionName:'operatingSync',lineNumber:mapping.fetchLine},{url:origin+'/recording.js',lineNumber:mapping.explicitLines[0]}]}};
     const uuid='00000000-0000-4000-8000-000000000001',unknown={value:null,query_sequence:null,observed_at_ms:null,confirmed:false};
     const snapshot={v:1,profile_id:uuid,boot_id:uuid,profile_revision:3,generation:11,operating_revision:7,snapshot_sequence:21,monotonic_ms:100,control:'manual',selection:{mode:'ft8',band:null,nominal_hz:null,origin:'unknown',confirmed_command_id:null},available_bands:[],operation:null,cancellation:null,receive:{job_id:null,mode:null,state:null,audio_state:'closed',owner_released:true},radio:{connection_generation:0,state:'closed',error:null,observations:{frequency:unknown,mode:unknown,data:unknown,rx_tx:unknown,split:unknown}}};

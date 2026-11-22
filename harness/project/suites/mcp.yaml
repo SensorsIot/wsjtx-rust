@@ -18,12 +18,13 @@
   - package-lock.json
   select:
   - server/src/main.rs
-  - server/src/mcp.rs
+  - server/src/web/listener.rs
+  - server/src/mcp/endpoint.rs
   - server/src/automation.rs
   - server/src/operating/qso/freeslot.rs
   - server/src/authorization.rs
   - server/src/authorization_http.rs
-  - client/authorization.js
+  - client/src/frontend/authorization.js
   - tests/mcp/mcp.test.cjs
   - tools/test/node/support.cjs
   - tools/test/blocked-ports.json

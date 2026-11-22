@@ -14,15 +14,10 @@ package WstxBrowserClientPart {
              state only (M5.2) and decides nothing of it; what it keeps of its own is the
              operator's display choices (FrontendConfig). */
         @ImplementedIn {
-            module = "client/index.html; client/app.js; client/contact.js; client/recording.js; "
-                + "client/logbook.js; client/style.css; client/recording.css; "
-                + "client/authorization.js";
-        }
-        @CodeDiffers {
-            what = "Its code stands in client/app.js, client/authorization.js, client/contact.js, "
-                + "client/index.html, client/logbook.js, client/recording.css, "
-                + "client/recording.js, client/style.css, outside server/src/frontend/ and "
-                + "client/src/frontend/.";
+            module = "client/src/frontend/index.html; client/src/frontend/app.js; "
+                + "client/src/frontend/contact.js; client/src/frontend/recording.js; "
+                + "client/src/frontend/logbook.js; client/src/frontend/style.css; "
+                + "client/src/frontend/recording.css; client/src/frontend/authorization.js";
         }
         @DetailTests {
             tests = "tests/communication.test.cjs; tests/profiles.test.cjs; "

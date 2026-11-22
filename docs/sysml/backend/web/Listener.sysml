@@ -272,7 +272,8 @@ package WstxListener {
         @TestedBy {
             test = "tests/communication.test.cjs::"
                 + "TC-021-005: actual-server correlation, negative cases and size boundaries; "
-                + "server/src/protocol_tests.rs::protocol_returns_specified_response_and_errors; "
+                + "server/src/web/listener_tests.rs::"
+                + "protocol_returns_specified_response_and_errors; "
                 + "server/src/logbook_http_tests.rs::"
                 + "save_contact_refusals_byte_cap_and_command_receipts; "
                 + "server/src/contact_http_tests.rs::"
@@ -321,7 +322,7 @@ package WstxListener {
                 + "a_socket_that_takes_no_output_for_2_s_is_closed_and_delays_no_other; "
                 + "server/src/web/socket_bounds_tests.rs::"
                 + "a_socket_whose_event_stays_unflushed_for_2_s_is_closed; "
-                + "server/src/protocol_tests.rs::"
+                + "server/src/web/listener_tests.rs::"
                 + "optional_readiness_skips_without_waiting_and_retains_at_most_one_frame";
         }
     }
@@ -382,7 +383,7 @@ package WstxListener {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-02'; }
-        @TestedBy { test = "tests/recording.test.cjs; server/src/protocol_tests.rs"; }
+        @TestedBy { test = "tests/recording.test.cjs; server/src/web/listener_tests.rs"; }
     }
     verification 'TC-010-005' {
         doc /* The detailed rows on the wire and their refusals. */
@@ -392,7 +393,7 @@ package WstxListener {
         objective { verify 'CL-003-02'; }
         @TestedBy {
             test = "tests/recording.test.cjs; tests/ui-operating.test.cjs; "
-                + "server/src/protocol_tests.rs";
+                + "server/src/web/listener_tests.rs";
         }
     }
     verification 'TC-033-001' {
@@ -401,7 +402,7 @@ package WstxListener {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-033-01'; }
-        @TestedBy { test = "server/src/protocol_tests.rs"; }
+        @TestedBy { test = "server/src/web/listener_tests.rs"; }
     }
     verification 'TC-051-001' {
         doc /* The page and station.status carry the client's build. */
@@ -409,7 +410,7 @@ package WstxListener {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-051-01'; }
-        @TestedBy { test = "tests/communication.test.cjs; server/src/protocol_tests.rs"; }
+        @TestedBy { test = "tests/communication.test.cjs; server/src/web/listener_tests.rs"; }
     }
     verification 'TC-080-001' {
         doc /* The link byte log. */

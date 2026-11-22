@@ -471,8 +471,8 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
     );
     let cookie = format!(
         "{}={}",
-        crate::cookie_name(&app),
-        crate::cookie_value(&app, app.token.as_deref().unwrap())
+        crate::listener::cookie_name(&app),
+        crate::listener::cookie_value(&app, app.token.as_deref().unwrap())
     );
     for (uri, cap) in [
         ("/profile", 8192),
@@ -482,7 +482,7 @@ async fn h1_six_production_handlers_have_exact_bounded_json_bodies() {
         ("/receive/selection", 3072),
         (query.as_str(), 16384),
     ] {
-        let response = crate::router(app.clone())
+        let response = crate::listener::router(app.clone())
             .oneshot(
                 Request::builder()
                     .uri(uri)
@@ -527,21 +527,33 @@ async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwis
         login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
     };
     for (path, source) in [
-        ("/app.js", include_str!("../../../client/app.js")),
+        (
+            "/app.js",
+            include_str!("../../../client/src/frontend/app.js"),
+        ),
         (
             "/authorization.js",
-            include_str!("../../../client/authorization.js"),
+            include_str!("../../../client/src/frontend/authorization.js"),
         ),
         (
             "/recording.js",
-            include_str!("../../../client/recording.js"),
+            include_str!("../../../client/src/frontend/recording.js"),
         ),
-        ("/logbook.js", include_str!("../../../client/logbook.js")),
-        ("/contact.js", include_str!("../../../client/contact.js")),
-        ("/style.css", include_str!("../../../client/style.css")),
+        (
+            "/logbook.js",
+            include_str!("../../../client/src/frontend/logbook.js"),
+        ),
+        (
+            "/contact.js",
+            include_str!("../../../client/src/frontend/contact.js"),
+        ),
+        (
+            "/style.css",
+            include_str!("../../../client/src/frontend/style.css"),
+        ),
         (
             "/recording.css",
-            include_str!("../../../client/recording.css"),
+            include_str!("../../../client/src/frontend/recording.css"),
         ),
     ] {
         for (accept, gzip) in [
@@ -554,7 +566,7 @@ async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwis
             if let Some(accept) = accept {
                 request = request.header("accept-encoding", accept);
             }
-            let response = crate::router(app.clone())
+            let response = crate::listener::router(app.clone())
                 .oneshot(request.body(Body::empty()).unwrap())
                 .await
                 .unwrap();

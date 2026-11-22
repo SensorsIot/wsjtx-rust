@@ -1983,7 +1983,9 @@ async fn tc_039_033_a_real_status_websocket_keeps_a_strategy_and_its_close_ends_
     let address = listener.local_addr().unwrap();
     let app = f.app.clone();
     let server = tokio::spawn(async move {
-        axum::serve(listener, crate::router(app)).await.unwrap();
+        axum::serve(listener, crate::listener::router(app))
+            .await
+            .unwrap();
     });
     let (origin, cookie) = (f.app.origin.clone(), f.cookie());
     let (stream, line) = tokio::task::spawn_blocking(move || {
@@ -8470,7 +8472,9 @@ pub(crate) async fn serve(f: &Mcp) -> (std::net::SocketAddr, tokio::task::JoinHa
     let address = listener.local_addr().unwrap();
     let app = f.app.clone();
     let server = tokio::spawn(async move {
-        axum::serve(listener, crate::router(app)).await.unwrap();
+        axum::serve(listener, crate::listener::router(app))
+            .await
+            .unwrap();
     });
     (address, server)
 }
