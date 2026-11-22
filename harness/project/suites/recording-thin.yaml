@@ -30,7 +30,7 @@
   - server/src/web/listener.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
-  - server/src/recording_http.rs
+  - server/src/profile/recording_http.rs
   - server/src/receive/spectrum.rs
   - server/src/web/content_coding.rs
   - client/src/frontend/app.js

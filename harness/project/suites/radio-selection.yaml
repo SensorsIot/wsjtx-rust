@@ -26,9 +26,9 @@
   - server/src/main.rs
   - server/src/web/listener.rs
   - server/src/web/content_coding.rs
-  - server/src/station/selection.rs
-  - server/src/selection_http.rs
-  - server/src/selection_http_tests.rs
+  - server/src/supervisor/selection.rs
+  - server/src/supervisor/selection_http.rs
+  - server/src/supervisor/selection_http_tests.rs
   - server/src/radioControl/mod.rs
   - server/src/radioControl/actor.rs
   - server/src/radioControl/catalogue.rs

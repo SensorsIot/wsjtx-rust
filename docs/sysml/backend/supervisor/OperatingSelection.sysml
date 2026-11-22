@@ -98,7 +98,7 @@ package WstxOperatingSelection {
              One selection runs at a time; no command waits in a queue.
              The state is given as SelectionState at every change. */
         @CodeDiffers {
-            what = "server/src/selection_http.rs takes no nominalHz in a SelectBand: a "
+            what = "server/src/supervisor/selection_http.rs takes no nominalHz in a SelectBand: a "
                 + "request with one is refused with invalidRequest; and "
                 + "server/src/receive/recording.rs refuses no frequency outside "
                 + "RadioStatus::txRanges.";
@@ -252,7 +252,8 @@ package WstxOperatingSelection {
                 + "strict TLS unions, early identity barriers and manual preferred defaults; "
                 + "tests/radio-selection.test.cjs::"
                 + "browser preferred selection and Stop fence a genuinely delayed POST; "
-                + "server/src/selection_http_tests.rs::live_native_selection_tls_thin_and_off";
+                + "server/src/supervisor/selection_http_tests.rs::"
+                + "live_native_selection_tls_thin_and_off";
         }
     }
 
@@ -263,17 +264,17 @@ package WstxOperatingSelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-16'; }
         @TestedBy {
-            test = "server/src/radio_level_tests.rs::"
+            test = "server/src/transmit/radio_level_tests.rs::"
                 + "a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "realtime_bound_a_band_change_waits_for_the_lease_of_a_poll_and_is_accepted; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
         + "realtime_bound_a_lease_that_stays_held_refuses_busy_at_the_bound_and_changes_nothing; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
             + "realtime_bound_a_transmit_hold_refuses_a_band_change_at_once_and_changes_nothing";
         }
     }
@@ -285,11 +286,11 @@ package WstxOperatingSelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-011-02'; }
         @TestedBy {
-            test = "server/src/contact_http_tests.rs::"
+            test = "server/src/operating/qso/contact_http_tests.rs::"
             + "ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "a_mode_selection_is_busy_while_ptt_is_keyed_and_while_transmitting; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_contact";
         }
     }

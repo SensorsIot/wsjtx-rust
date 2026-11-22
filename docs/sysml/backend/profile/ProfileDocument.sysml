@@ -194,9 +194,9 @@ package WstxProfileDocument {
         objective { verify 'CL-005-02'; verify 'CL-005-05'; verify 'CL-044-05'; }
         @TestedBy {
             test = "tests/profiles.test.cjs; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "settings_validation_uses_utf8_bytes_and_independent_audio_control_domains";
         }
     }
@@ -209,15 +209,15 @@ package WstxProfileDocument {
         objective { verify 'CL-005-02'; verify 'CL-005-04'; verify 'CL-005-05'; }
         @TestedBy {
             test = "tests/profiles.test.cjs; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "storage_commit_point_and_os_ownership_survive_reopen; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "save_failures_and_interruptions_preserve_the_defined_commit_point; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "an_open_it_cannot_carry_out_is_refused_and_changes_no_file; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "a_creation_whose_file_cannot_be_written_is_resource_unavailable; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged";
         }
     }
@@ -230,7 +230,7 @@ package WstxProfileDocument {
         objective { verify 'CL-005-01'; verify 'CL-005-04'; }
         @TestedBy {
             test = "tests/profiles.test.cjs; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "storage_commit_point_and_os_ownership_survive_reopen";
         }
     }
@@ -293,7 +293,7 @@ package WstxProfileDocument {
         objective { verify 'CL-005-07'; }
         @TestedBy {
             test = "tests/profiles.test.cjs; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "settings_validation_uses_utf8_bytes_and_independent_audio_control_domains";
         }
     }
@@ -376,7 +376,7 @@ package WstxProfileDocument {
         doc /* Profile MUST fetch the Most Wanted list of Club Log when the supervisor
              asks for it and keep the last good list for the operator (MostWantedFetch). */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/most_wanted.rs"; }
+        @ImplementedIn { module = "server/src/operating/ranking/most_wanted.rs"; }
     }
     #derivation connection { end #original ::> 'FR-016'; end #derive ::> 'CL-039-30'; }
 
@@ -443,9 +443,9 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-30'; }
         @TestedBy {
-            test = "server/src/most_wanted_tests.rs::"
+            test = "server/src/operating/ranking/most_wanted_tests.rs::"
                 + "tc_039_031_parser_refuses_all_but_the_exact_list; "
-                + "server/src/most_wanted_tests.rs::tc_039_031_response_body";
+                + "server/src/operating/ranking/most_wanted_tests.rs::tc_039_031_response_body";
         }
     }
 
@@ -456,7 +456,7 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-01'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::tc_039_001_configuration_is_exact";
+            test = "server/src/operating/strategy_tests.rs::tc_039_001_configuration_is_exact";
         }
     }
 
@@ -467,7 +467,7 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-01'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::tc_039_003_store_routes_and_evaluate";
+            test = "server/src/operating/strategy_tests.rs::tc_039_003_store_routes_and_evaluate";
         }
     }
 
@@ -478,13 +478,13 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-01'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_097_002_a_file_of_schema_1_2_or_3_cannot_be_used_and_is_left_as_it_is; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_002_a_strategy_without_its_cq_wait_cannot_be_used; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_002_built_in_names_read_renamed_and_active_never_survives_a_restart; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored";
         }
     }
@@ -512,11 +512,11 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-01'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_001_schema_4_every_key_at_its_bounds_and_one_refusal_per_field; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_001_a_put_is_read_back_and_an_oversized_body_is_refused; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_032_the_builtin_table_and_what_a_configuration_may_say";
         }
     }
@@ -607,11 +607,11 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-013-08'; }
         @TestedBy {
-            test = "server/src/profile_tests.rs::"
+            test = "server/src/profile/profile_tests.rs::"
                 + "native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "native_profile_creation_persists_intent_without_runtime_handles; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "a_native_save_names_each_device_and_radio_control_value";
         }
     }

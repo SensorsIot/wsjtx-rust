@@ -23,7 +23,8 @@ package WstxQsoControl {
         out item resetRepetitions : ResetRepetitions;
         out item cancelContact : CancelContact {
             @CodeDiffers {
-                what = "The code names it cancel (Command::Cancel in server/src/contact.rs).";
+                what = "The code names it cancel (Command::Cancel in "
+                    + "server/src/operating/qso/contact.rs).";
             }
         }
         out item abort : Abort;
@@ -217,7 +218,7 @@ package WstxQsoControl {
         attribute reportDb : Integer {
             @CodeDiffers {
                 what = "The code names it report (the action set_report in "
-                    + "server/src/contact_http.rs).";
+                    + "server/src/operating/qso/contact_http.rs).";
             }
         }
     }
@@ -300,7 +301,8 @@ package WstxQsoControl {
                  (WstxQsoTransmit::BlockedStartRule). */
             @CodeDiffers {
                 what = "The receipt of an accepted command names no reason; the refusal of the "
-                    + "snapshot's transmit view gives it (server/src/contact_http.rs).";
+                    + "snapshot's transmit view gives it "
+                    + "(server/src/operating/qso/contact_http.rs).";
             }
         }
     }
@@ -344,7 +346,7 @@ package WstxQsoControl {
             doc /* The report sent to the next partner. */
             @CodeDiffers {
                 what = "The code names it report (the settings of the snapshot in "
-                    + "server/src/contact_http.rs).";
+                    + "server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute rxHz : Integer;
@@ -364,7 +366,7 @@ package WstxQsoControl {
                  (WstxQsoTransmit::RepetitionLimit). */
             @CodeDiffers {
                 what = "The code names it tx_remaining_calls (the watchdog of the snapshot in "
-                    + "server/src/contact_http.rs).";
+                    + "server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute expired : Boolean {
@@ -416,7 +418,8 @@ package WstxQsoControl {
         attribute reportDb : Integer[0..1] {
             doc /* The report the partner sent in this contact. Absent before it. */
             @CodeDiffers {
-                what = "The code names it report_rcvd (Facts in server/src/contact_http.rs).";
+                what = "The code names it report_rcvd (Facts in "
+                    + "server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute busyWith : String[0..1] {

@@ -26,7 +26,7 @@ package WstxReceivePart {
         }
         @DetailTests {
             tests = "server/src/receive/recording_tests.rs; server/tests/receive_integration.rs; "
-                + "server/src/contact_http_tests.rs";
+                + "server/src/operating/qso/contact_http_tests.rs";
             covers = "the conversion of a time to UTC text; the limits of a block the "
                 + "window buffer takes; the call hash table shared with transmit";
         }

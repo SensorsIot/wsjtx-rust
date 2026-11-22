@@ -199,7 +199,7 @@ package WstxLogControl {
             doc /* Where the part begins in the file. */
             @CodeDiffers {
                 what = "The code takes the place from the Content-Range header of the part "
-                    + "(import in server/src/logbook_http.rs).";
+                    + "(import in server/src/log/logbook_http.rs).";
             }
         }
         attribute totalBytes : Integer;
@@ -302,7 +302,7 @@ package WstxLogControl {
         enum invalidRequest;
         enum tooLarge {
             @CodeDiffers {
-                what = "The code names it request_too_large (server/src/logbook_http.rs).";
+                what = "The code names it request_too_large (server/src/log/logbook_http.rs).";
             }
         }
         enum importFailed;
@@ -349,7 +349,7 @@ package WstxLogControl {
             doc /* The record at which it was found, counted from 0; absent when it
                  concerns the whole file. */
             @CodeDiffers {
-                what = "The code names it record (server/src/logbook.rs).";
+                what = "The code names it record (server/src/log/logbook.rs).";
             }
         }
         attribute field : String[0..1] {
@@ -362,7 +362,7 @@ package WstxLogControl {
         attribute count : Integer;
         attribute firstRecordIndex : Integer {
             @CodeDiffers {
-                what = "The code names it record (server/src/logbook.rs).";
+                what = "The code names it record (server/src/log/logbook.rs).";
             }
         }
     }
@@ -484,7 +484,7 @@ package WstxLogControl {
         out item readImport : ReadImport {
             @CodeDiffers {
                 what = "The code reads an update by GET on its id (import in "
-                    + "server/src/logbook_http.rs).";
+                    + "server/src/log/logbook_http.rs).";
             }
         }
         out item export : ExportLog;
@@ -496,34 +496,34 @@ package WstxLogControl {
         out item sent : SentMessage;
         out item readHistory : ReadHistory {
             @CodeDiffers {
-                what = "The code names it history (server/src/logbook_http.rs).";
+                what = "The code names it history (server/src/log/logbook_http.rs).";
             }
         }
         out item readCountryFile : ReadCountryFile {
             @CodeDiffers {
-                what = "The code reads it by GET /dxcc (dxcc in server/src/logbook_http.rs).";
+                what = "The code reads it by GET /dxcc (dxcc in server/src/log/logbook_http.rs).";
             }
         }
         out item replaceCountryFile : ReplaceCountryFile {
             @CodeDiffers {
                 what = "The code takes a file the operator uploads by PUT /dxcc (dxcc_put in "
-                    + "server/src/logbook_http.rs).";
+                    + "server/src/log/logbook_http.rs).";
             }
         }
         out item lookUp : EntityRequest {
             @CodeDiffers {
-                what = "The code names it lookup (Table::lookup in server/src/dxcc.rs).";
+                what = "The code names it lookup (Table::lookup in server/src/log/dxcc.rs).";
             }
         }
         out item resend : ResendLast {
             @CodeDiffers {
                 what = "The code has no such command; Log QSO logs the current contact (open_log "
-                    + "in server/src/contact_http.rs).";
+                    + "in server/src/operating/qso/contact_http.rs).";
             }
         }
         in item saveAnswer : SaveAnswer {
             @CodeDiffers {
-                what = "The code answers by the response of save (server/src/logbook_http.rs).";
+                what = "The code answers by the response of save (server/src/log/logbook_http.rs).";
             }
         }
         in item resent : Resent {
@@ -536,7 +536,7 @@ package WstxLogControl {
         in item history : HistoryPage;
         in item countryFile : CountryFileState {
             @CodeDiffers {
-                what = "The code gives it by dxcc_view (server/src/logbook_http.rs).";
+                what = "The code gives it by dxcc_view (server/src/log/logbook_http.rs).";
             }
         }
         in item entity : EntityAnswer;

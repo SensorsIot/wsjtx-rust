@@ -133,10 +133,11 @@ package WstxCatControl {
         objective { verify 'CL-008-06'; }
         @TestedBy {
             test = "server/tests/radioControl/radio_control.rs; "
-                + "server/src/radio_level_tests.rs::a_transmit_hold_refuses_the_lease_at_once; "
+                + "server/src/transmit/radio_level_tests.rs::"
+                + "a_transmit_hold_refuses_the_lease_at_once; "
                 + "server/tests/transmit_service.rs::"
                 + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "realtime_bound_a_transmit_hold_refuses_the_lease_at_once";
         }
     }
@@ -278,16 +279,16 @@ package WstxCatControl {
                 + "closing_a_keyed_connection_sends_one_off_only_switch_and_timeouts_close; "
                 + "server/tests/transmit_service.rs::"
                 + "a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "meters_are_read_only_under_the_transmit_hold_in_the_manual_frames; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection; "
-                + "server/src/radio_level_tests.rs::meter_scales_follow_the_manual_table; "
+                + "server/src/transmit/radio_level_tests.rs::meter_scales_follow_the_manual_table; "
                 + "server/tests/transmit_service.rs::"
                 + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing; "
                 + "server/tests/transmit_service.rs::"
                 + "realtime_bound_a_halt_aborts_a_key_waiting_for_the_cat_owner_without_bytes; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
         + "realtime_bound_a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection";
         }
     }

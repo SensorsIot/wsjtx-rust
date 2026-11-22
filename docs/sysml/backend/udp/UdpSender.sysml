@@ -41,7 +41,7 @@ package WstxUdpSender {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-02'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 
     requirement 'CL-112-01' {
@@ -67,6 +67,6 @@ package WstxUdpSender {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-01'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 }

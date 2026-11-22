@@ -62,9 +62,9 @@ package WstxListener {
         @TestedBy {
             test = "tests/communication.test.cjs::"
                 + "TLS login, unauthorized/origin denial, plaintext refusal; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "cty_upload_replaces_the_country_table_and_refusals_change_nothing; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
                 + "tests/profiles.test.cjs::"
                 + "same-host four-port TLS cookies, reconnect, negatives and rotation; "
@@ -84,7 +84,7 @@ package WstxListener {
                 + "commission_http_strict_negatives_never_change_acknowledgement_or_files; "
                 + "server/src/auth_tests.rs::"
                 + "status_strict_request_bounds_have_zero_effects; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_http_view_and_monitor_off_update";
         }
     }
@@ -274,9 +274,9 @@ package WstxListener {
                 + "TC-021-005: actual-server correlation, negative cases and size boundaries; "
                 + "server/src/web/listener_tests.rs::"
                 + "protocol_returns_specified_response_and_errors; "
-                + "server/src/logbook_http_tests.rs::"
+                + "server/src/log/logbook_http_tests.rs::"
                 + "save_contact_refusals_byte_cap_and_command_receipts; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "contact_command_wire_is_strict_replays_receipts_and_checks_revisions; "
                 + "tests/profiles.test.cjs::"
                 + "same-host four-port TLS cookies, reconnect, negatives and rotation; "
@@ -302,7 +302,7 @@ package WstxListener {
                 + "deprecated_connect_and_disconnect_validate_then_refuse_with_zero_io; "
                 + "server/src/auth_tests.rs::"
                 + "status_strict_request_bounds_have_zero_effects; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_http_view_and_monitor_off_update";
         }
     }
@@ -334,7 +334,8 @@ package WstxListener {
         objective { verify 'CL-003-08'; }
         @TestedBy {
             test = "tests/contact.test.cjs; tests/ui-operating.test.cjs; "
-                + "server/src/contact_http_tests.rs; server/src/receive/receive_http_tests.rs; "
+                + "server/src/operating/qso/contact_http_tests.rs; "
+                + "server/src/receive/receive_http_tests.rs; "
                 + "tests/radio-selection.test.cjs::"
                 + "a status on the same socket reads no receive snapshot "
                 + "unless the state is in doubt; "
@@ -349,7 +350,7 @@ package WstxListener {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-08'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_082_003_free_tx_slots_on_the_socket_and_in_the_snapshot_without_a_run";
         }
     }
@@ -360,9 +361,9 @@ package WstxListener {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-08'; }
         @TestedBy {
-            test = "server/src/transmit/clock_http_tests.rs::"
+            test = "server/src/clock/clock_http_tests.rs::"
                 + "clock_state_is_pushed_to_every_profile; "
-                + "server/src/transmit/clock_http_tests.rs::"
+                + "server/src/clock/clock_http_tests.rs::"
                 + "a_revision_never_carries_older_clock_values";
         }
     }
@@ -373,7 +374,7 @@ package WstxListener {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-08'; }
         @TestedBy {
-            test = "server/src/contact_http_tests.rs::"
+            test = "server/src/operating/qso/contact_http_tests.rs::"
                 + "contact_snapshot_is_exact_identity_coded_and_bounded";
         }
     }

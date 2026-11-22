@@ -296,27 +296,27 @@ package WstxStandardQso {
             verify 'CL-010-01'; verify 'CL-010-02'; verify 'CL-010-12'; verify 'CL-010-11';
         }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "selecting_a_cq_row_prepares_the_independent_message_set_without_any_request; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "other_stations_wrong_period_and_previous_partner_rows_change_nothing; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tx1_skip_report_override_and_manual_entry_follow_the_domains; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_manual_entry_of_the_same_partner_sets_exactly_the_grid_entered; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "auto_seq_off_offers_tx5_after_the_partners_rr73_and_choosing_it_completes; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "ft8_rrr_or_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "choose_next_without_a_contact_or_for_a_slot_without_text_is_refused; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "receive_only_station_prepares_and_logs_but_refuses_transmit; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged";
         }
     }
@@ -328,21 +328,21 @@ package WstxStandardQso {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-02'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "tc_007_010_a_the_partners_rr73_after_my_rrr_sends_73_once_and_logs_once; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_007_010_b_the_partners_rrr_after_my_rrr_sends_73_once_and_logs_once; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
             + "tc_007_010_d_rogers_in_replying_and_report_send_73_once_and_log_without_rst_rcvd; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
             + "tc_007_010_e_rr73_while_my_next_tx4_is_pending_before_and_after_its_audio_start; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
             + "tc_007_010_f_auto_seq_off_offers_tx5_after_rogers_in_rogers_replying_and_report; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_007_010_g_only_the_partners_counted_rogers_lead_to_one_73; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_007_010_h_ww_digi_rr73_after_my_rrr_sends_73_once_and_logs_once; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_007_010_i_a_halted_73_keeps_signoff_and_enable_tx_sends_it_once";
         }
     }
@@ -354,9 +354,9 @@ package WstxStandardQso {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-17'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "call_first_answers_the_first_caller_of_my_cq_in_the_next_own_period; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running";
         }
     }
@@ -368,13 +368,13 @@ package WstxStandardQso {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-04'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
     + "changing_the_contact_while_armed_keeps_enable_tx_and_the_next_period_calls_the_new_station; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_period; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_111_starts_are_single_commands_and_a_band_change_stops_the_station";
         }
     }
@@ -386,7 +386,7 @@ package WstxStandardQso {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-06'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "the_contact_dialogue_holds_the_exchanged_messages_in_order";
         }
     }
@@ -398,21 +398,21 @@ package WstxStandardQso {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-011-03'; verify 'CL-011-04'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
             + "ft4_responder_transmits_in_odd_7_5_s_periods_and_completes_with_an_ft4_log_offer; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "ft4_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
         + "ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
         + "simultaneous_ft4_and_ft8_stations_stay_isolated_and_a_mode_switch_cancels_only_its_own";
         }
     }
@@ -424,13 +424,13 @@ package WstxStandardQso {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-039-24'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_099_002_cq_test_needs_no_confirmation_in_eu_vhf; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
             + "tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser_confirms; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "a_reply_to_a_cq_not_for_the_station_needs_the_confirmation";
         }
     }
@@ -442,11 +442,11 @@ package WstxStandardQso {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-06'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_011_a_busy_target_pauses_the_runs_count; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_011_i_busy_holds_across_a_further_station_and_ends_with_his_free_text";
         }
     }
@@ -458,7 +458,7 @@ package WstxStandardQso {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-06'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "tc_097_012_a_manual_call_to_a_busy_station_keeps_calling_uncounted";
         }
     }
@@ -470,13 +470,13 @@ package WstxStandardQso {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-06'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "tc_097_017_a_busy_starts_and_ends_by_his_own_messages; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "tc_097_017_d_get_contact_carries_the_busy_partner";
         }
     }

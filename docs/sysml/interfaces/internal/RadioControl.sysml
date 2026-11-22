@@ -184,7 +184,7 @@ package WstxRadioControl {
             doc /* In percent of the radio's full power, from 1 to 100. */
             @CodeDiffers {
                 what = "The code keeps no power of a band: Radio::power_limit_pct of "
-                    + "server/src/profile.rs is one limit of the Tx level for every band.";
+                    + "server/src/profile/profile.rs is one limit of the Tx level for every band.";
             }
         }
     }
@@ -680,7 +680,8 @@ package WstxRadioControl {
         out item assignment : ControlAssignment {
             @CodeDiffers {
                 what = "The supervisor gives no assignment: cat_tick in "
-                    + "server/src/authorization_http.rs reads the saved profile at every tick "
+                    + "server/src/supervisor/authorization_http.rs reads the saved "
+                    + "profile at every tick "
                     + "and hands its gate to Recording::cat_maintain.";
             }
         }

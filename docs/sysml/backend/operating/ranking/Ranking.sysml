@@ -17,15 +17,16 @@ package WstxRankingPart {
              records an alert for each station worth calling. It starts no contact and
              transmits nothing. */
         @ImplementedIn {
-            module = "server/src/most_wanted.rs";
+            module = "server/src/operating/ranking/most_wanted.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/dxcc.rs, server/src/most_wanted.rs, outside "
+            what = "Its code stands in server/src/log/dxcc.rs, outside "
                 + "server/src/operating/ranking/ and client/src/operating/ranking/.";
         }
         @DetailTests {
-            tests = "server/src/strategy_tests.rs; server/src/strategy97_tests.rs; "
-                + "server/src/contest_tests.rs";
+            tests = "server/src/operating/strategy_tests.rs; "
+                + "server/src/operating/strategy97_tests.rs; "
+                + "server/src/operating/contest_tests.rs";
             covers = "the verdicts and the value order of the decoded stations";
         }
         port control : ~RankingControlPort;

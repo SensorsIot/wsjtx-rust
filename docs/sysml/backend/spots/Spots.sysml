@@ -9,7 +9,6 @@ package WstxSpotsPart {
     private import WstxDecodes::DecodesPort;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
-    private import WstxModelNotes::CodeDiffers;
 
     part def SpotsService {
         doc /* Tells the station who hears it. It reads the spots of the PSK Reporter feed
@@ -18,14 +17,10 @@ package WstxSpotsPart {
              what that station hears. It reports the stations the station decodes to PSK
              Reporter. */
         @ImplementedIn {
-            module = "server/src/operating/qso/pskr.rs";
-        }
-        @CodeDiffers {
-            what = "Its code stands in server/src/operating/qso/pskr.rs, outside "
-                + "server/src/spots/ and client/src/spots/.";
+            module = "server/src/spots/pskr.rs";
         }
         @DetailTests {
-            tests = "server/src/operating/qso/pskr_tests.rs";
+            tests = "server/src/spots/pskr_tests.rs";
             covers = "the broker a test names in the environment, on a loopback address only; "
                 + "the routes of the two switches and the file that keeps them";
         }

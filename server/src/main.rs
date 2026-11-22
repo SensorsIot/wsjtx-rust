@@ -1,18 +1,24 @@
 #![forbid(unsafe_code)]
 #[cfg(test)]
 mod auth_tests;
+#[path = "supervisor/authorization.rs"]
 mod authorization;
+#[path = "supervisor/authorization_http.rs"]
 mod authorization_http;
+#[path = "operating/auto/automation.rs"]
 mod automation;
 #[path = "radioControl/cat_lifecycle.rs"]
 mod cat_lifecycle;
 #[cfg(test)]
 #[path = "radioControl/cat_lifecycle_tests.rs"]
 mod cat_lifecycle_tests;
-#[path = "transmit/clock_http.rs"]
+#[path = "clock/clock_http.rs"]
 mod clock_http;
+#[path = "operating/qso/contact.rs"]
 mod contact;
+#[path = "operating/qso/contact_http.rs"]
 mod contact_http;
+#[path = "log/dxcc.rs"]
 mod dxcc;
 #[path = "flexAdapter/flex_http.rs"]
 mod flex_http;
@@ -33,15 +39,18 @@ mod listener;
 #[cfg(test)]
 #[path = "web/liveness_tests.rs"]
 mod liveness_tests;
+#[path = "log/logbook.rs"]
 mod logbook;
+#[path = "log/logbook_http.rs"]
 mod logbook_http;
 #[path = "mcp/endpoint.rs"]
 mod mcp;
 #[cfg(test)]
 #[path = "mcp/endpoint_tests.rs"]
 mod mcp_tests;
+#[path = "profile/profile.rs"]
 mod profile;
-#[path = "operating/qso/pskr.rs"]
+#[path = "spots/pskr.rs"]
 mod pskr;
 #[path = "radioControl/radio_agc.rs"]
 mod radio_agc;
@@ -50,6 +59,7 @@ mod radio_http;
 #[cfg(test)]
 #[path = "radioControl/radio_http_tests.rs"]
 mod radio_http_tests;
+#[path = "transmit/radio_level.rs"]
 mod radio_level;
 #[path = "radioControl/radio_setup.rs"]
 mod radio_setup;
@@ -65,23 +75,30 @@ mod receive_http;
 mod receive_http_tests;
 #[path = "receive/recording.rs"]
 mod recording;
+#[path = "profile/recording_http.rs"]
 mod recording_http;
-#[path = "station/selection.rs"]
+#[path = "supervisor/selection.rs"]
 mod selection;
+#[path = "supervisor/selection_http.rs"]
 mod selection_http;
 #[cfg(all(test, not(debug_assertions)))]
+#[path = "supervisor/selection_http_tests.rs"]
 mod selection_http_tests;
 #[cfg(test)]
 #[path = "web/socket_bounds_tests.rs"]
 mod socket_bounds_tests;
 use wstx_rust::{audio, decoder, source};
+#[path = "operating/contest.rs"]
 mod contest;
+#[path = "operating/ranking/most_wanted.rs"]
 mod most_wanted;
 #[path = "receive/spectrum.rs"]
 mod spectrum;
+#[path = "operating/strategy.rs"]
 mod strategy;
+#[path = "transmit/transmit_http.rs"]
 mod transmit_http;
-#[path = "operating/qso/udp.rs"]
+#[path = "udp/udp.rs"]
 mod udp;
 use axum::{Json, body::Bytes};
 use axum::{

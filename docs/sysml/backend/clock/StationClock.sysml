@@ -104,7 +104,7 @@ package WstxStationClock {
              WarningRule). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/transmit/clock.rs; server/src/transmit/air.rs; "
+            module = "server/src/clock/clock.rs; server/src/clock/air.rs; "
                 + "server/src/main.rs";
         }
     }
@@ -160,7 +160,7 @@ package WstxStationClock {
         objective { verify 'CL-043-01'; verify 'CL-043-03'; }
         @TestedBy {
             test = "server/tests/transmit_air_clock.rs; "
-                + "server/src/transmit/clock_http_tests.rs::no_clock_source_setting";
+                + "server/src/clock/clock_http_tests.rs::no_clock_source_setting";
         }
     }
 
@@ -181,7 +181,7 @@ package WstxStationClock {
         objective { verify 'CL-043-03'; verify 'CL-009-05'; }
         @TestedBy {
             test = "server/tests/transmit_air_clock.rs; "
-                + "server/src/transmit/clock_http_tests.rs::"
+                + "server/src/clock/clock_http_tests.rs::"
                 + "warnings_windows_time_capture_and_revision; "
                 + "server/src/transmit/transmit_http_tests.rs::"
                 + "transmit_wire_shows_the_sntp_clock_measurement";

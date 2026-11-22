@@ -8,7 +8,6 @@ package WstxAutoPart {
     private import WstxHearing::TargetHearingPort;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
-    private import WstxModelNotes::CodeDiffers;
 
     part def AutoService {
         doc /* Level 2 of the operating chain: while Auto is on it calls the most valuable
@@ -16,14 +15,11 @@ package WstxAutoPart {
              station by the rules of the active strategy. Where Tx goes is qso's. It stores
              nothing. */
         @ImplementedIn {
-            module = "server/src/automation.rs";
-        }
-        @CodeDiffers {
-            what = "Its code stands in server/src/automation.rs, outside "
-                + "server/src/operating/auto/ and client/src/operating/auto/.";
+            module = "server/src/operating/auto/automation.rs";
         }
         @DetailTests {
-            tests = "server/src/automation_tests.rs; server/src/operating/qso/autofinish_tests.rs";
+            tests = "server/src/operating/auto/automation_tests.rs; "
+                + "server/src/operating/auto/autofinish_tests.rs";
             covers = "the steps of Auto; the finishing guard of a started QSO";
         }
         port control : ~AutoControlPort;

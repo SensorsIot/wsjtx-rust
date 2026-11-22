@@ -47,9 +47,9 @@ package WstxStrategySelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-11'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_032_the_builtin_table_and_what_a_configuration_may_say; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored";
         }
     }
@@ -61,7 +61,7 @@ package WstxStrategySelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-11'; verify 'CL-063-03'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_003_the_five_built_ins_the_contest_built_ins_and_active";
         }
     }
@@ -97,7 +97,7 @@ package WstxStrategySelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-063-01'; }
         @TestedBy {
-            test = "server/src/contest_tests.rs::"
+            test = "server/src/operating/contest_tests.rs::"
                 + "tc_063_001_the_profile_table_holds_the_rule_facts";
         }
     }
@@ -109,7 +109,8 @@ package WstxStrategySelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-063-01'; }
         @TestedBy {
-            test = "server/src/contest_tests.rs::tc_063_002_the_period_comes_from_the_rule";
+            test = "server/src/operating/contest_tests.rs::"
+                + "tc_063_002_the_period_comes_from_the_rule";
         }
     }
 
@@ -120,9 +121,9 @@ package WstxStrategySelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-063-01'; }
         @TestedBy {
-            test = "server/src/contest_tests.rs::"
+            test = "server/src/operating/contest_tests.rs::"
                 + "tc_063_003_the_list_names_each_profile_with_its_period; "
-                + "server/src/strategy_tests.rs::tc_063_003_the_contests_route";
+                + "server/src/operating/strategy_tests.rs::tc_063_003_the_contests_route";
         }
     }
 
@@ -173,12 +174,13 @@ package WstxStrategySelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-063-03'; verify 'CL-097-10'; }
         @TestedBy {
-            test = "server/src/contest_tests.rs::tc_063_007_a_selection_is_parsed_exactly; "
-                + "server/src/contest_tests.rs::"
+            test = "server/src/operating/contest_tests.rs::"
+                + "tc_063_007_a_selection_is_parsed_exactly; "
+                + "server/src/operating/contest_tests.rs::"
                 + "tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmation; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_063_007_a_contest_selection_store_and_evaluation; "
-                + "server/src/strategy_tests.rs::tc_039_003_store_routes_and_evaluate";
+                + "server/src/operating/strategy_tests.rs::tc_039_003_store_routes_and_evaluate";
         }
     }
 

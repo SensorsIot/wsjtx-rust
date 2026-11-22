@@ -22,7 +22,7 @@ use wstx_rust::transmit::air;
 pub(crate) mod diagnostics;
 #[path = "../radioControl/radio_connection.rs"]
 mod radio_connection;
-#[path = "receive_startup.rs"]
+#[path = "../supervisor/receive_startup.rs"]
 pub(crate) mod startup;
 #[cfg(test)]
 #[path = "recording_tests.rs"]

@@ -22,21 +22,21 @@
   select:
   - server/src/main.rs
   - server/src/web/listener.rs
-  - server/src/profile.rs
+  - server/src/profile/profile.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/receive/receive.rs
   - server/src/receive/receive_http.rs
   - server/src/receive/receive_diagnostics.rs
-  - server/src/receive/receive_startup.rs
-  - server/src/contact_http.rs
-  - server/src/logbook.rs
-  - server/src/logbook_http.rs
-  - server/src/strategy.rs
-  - server/src/contest.rs
+  - server/src/supervisor/receive_startup.rs
+  - server/src/operating/qso/contact_http.rs
+  - server/src/log/logbook.rs
+  - server/src/log/logbook_http.rs
+  - server/src/operating/strategy.rs
+  - server/src/operating/contest.rs
   - server/src/operating/qso/freeslot.rs
-  - server/src/operating/qso/udp.rs
-  - server/src/transmit_http.rs
+  - server/src/udp/udp.rs
+  - server/src/transmit/transmit_http.rs
   - client/src/frontend/app.js
   - client/src/frontend/index.html
   - client/src/frontend/style.css

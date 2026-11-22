@@ -17,20 +17,24 @@
   select:
   - server/src/main.rs
   - server/src/web/listener.rs
-  - server/src/contact.rs
-  - server/src/contact_http.rs
-  - server/src/contact_http_tests.rs
-  - server/src/logbook.rs
-  - server/src/logbook_http.rs
-  - server/src/transmit_http.rs
-  - server/src/transmit/
+  - server/src/operating/qso/contact.rs
+  - server/src/operating/qso/contact_http.rs
+  - server/src/operating/qso/contact_http_tests.rs
+  - server/src/log/logbook.rs
+  - server/src/log/logbook_http.rs
+  - server/src/transmit/transmit_http.rs
+  - server/src/clock/
+  - server/src/transmit/recording_tx_tests.rs
+  - server/src/transmit/schedule.rs
+  - server/src/transmit/service.rs
+  - server/src/transmit/transmit_http_tests.rs
   - server/src/audio/playback.rs
   - server/src/radioControl/codec.rs
   - server/src/modes/transmit/
-  - server/src/operating/qso/pskr.rs
-  - server/src/operating/qso/pskr_tests.rs
-  - server/src/operating/qso/udp.rs
-  - server/src/log/udp_tests.rs
+  - server/src/spots/pskr.rs
+  - server/src/spots/pskr_tests.rs
+  - server/src/udp/udp.rs
+  - server/src/udp/udp_tests.rs
   - client/src/frontend/contact.js
   - client/src/frontend/logbook.js
   - client/src/frontend/recording.js

@@ -385,7 +385,7 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-055-04'; }
-        @TestedBy { test = "server/src/dxcc_tests.rs; tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "server/src/log/dxcc_tests.rs; tests/ui-operating.test.cjs"; }
     }
     verification 'TC-050-002' {
         doc /* WSJT-X's highlight colours and the station's differences. */

@@ -56,10 +56,11 @@ package WstxIgnoreLists {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-042-02'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::tc_042_002_ignored_senders_never_match; "
-                + "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
+                + "tc_042_002_ignored_senders_never_match; "
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_042_002_session_list_expiry_renewal_capacity_and_band_change; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_042_002_ignore_route_store_and_band_change";
         }
     }
@@ -71,11 +72,11 @@ package WstxIgnoreLists {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-042-02'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_125_001_entries_match_the_whole_call; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_125_001_session_patterns_and_the_station_skip_matches; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_125_001_a_contest_strategy_skips_a_sender_matched_by_a_pattern";
         }
     }

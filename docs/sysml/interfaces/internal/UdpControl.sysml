@@ -62,7 +62,7 @@ package WstxUdpControl {
             doc /* The station's name, WstxProfileAccess::ProfileConfig::displayName. */
             @CodeDiffers {
                 what = "The code puts the profile's display_name into configuration_name "
-                    + "(status_of in server/src/operating/qso/udp.rs).";
+                    + "(status_of in server/src/udp/udp.rs).";
             }
         }
         attribute callsign : String[0..1] { doc /* The profile's call; absent without one. */ }
@@ -74,14 +74,14 @@ package WstxUdpControl {
             doc /* The band of the operating selection; absent while it names none. */
             @CodeDiffers {
                 what = "The code reads it by operating_band of the recording "
-                    + "(server/src/operating/qso/udp.rs).";
+                    + "(server/src/udp/udp.rs).";
             }
         }
         attribute selectionHz : Integer[0..1] {
             doc /* The nominal frequency of the operating selection. */
             @CodeDiffers {
                 what = "The code reads it by operating_nominal_hz of the recording (status_of in "
-                    + "server/src/operating/qso/udp.rs).";
+                    + "server/src/udp/udp.rs).";
             }
         }
         attribute dxCall : String[0..1] { doc /* The contact's partner call. */ }
@@ -90,20 +90,21 @@ package WstxUdpControl {
             doc /* The report of the contact. */
             @CodeDiffers {
                 what = "The code gives one report: the contact's, else the one set for the "
-                    + "station (StatusFacts::report in server/src/contact_http.rs).";
+                    + "station (StatusFacts::report in server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute stationReport : Integer {
             doc /* The report set for the station. */
             @CodeDiffers {
                 what = "The code gives one report: the contact's, else the one set for the "
-                    + "station (StatusFacts::report in server/src/contact_http.rs).";
+                    + "station (StatusFacts::report in server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute rxOffsetHz : Integer {
             doc /* The receive offset of the contact settings. */
             @CodeDiffers {
-                what = "The code names it rx_hz (StatusFacts in server/src/contact_http.rs).";
+                what = "The code names it rx_hz (StatusFacts in "
+                    + "server/src/operating/qso/contact_http.rs).";
             }
         }
         attribute txOffsetHz : Integer { doc /* The transmit offset of the contact settings. */ }
@@ -116,7 +117,7 @@ package WstxUdpControl {
             doc /* The contact's Tx watchdog has stopped it, until the next start. */
             @CodeDiffers {
                 what = "The code names it tx_expired (status_of in "
-                    + "server/src/operating/qso/udp.rs).";
+                    + "server/src/udp/udp.rs).";
             }
         }
         attribute decoding : Boolean { doc /* Receive decodes a window now. */ }
@@ -142,7 +143,7 @@ package WstxUdpControl {
             doc /* The time of the last datagram sent, in milliseconds of UTC since 1970.
                  Absent until one is sent. */
             @CodeDiffers {
-                what = "The code names it last_send_utc_ms (server/src/operating/qso/udp.rs).";
+                what = "The code names it last_send_utc_ms (server/src/udp/udp.rs).";
             }
         }
         attribute error : TargetError[0..1] { doc /* Absent while none holds. */ }
@@ -165,7 +166,7 @@ package WstxUdpControl {
         out item processEnds : ProcessEnds {
             @CodeDiffers {
                 what = "The code sends Close from its exit guard (exit in "
-                    + "server/src/operating/qso/udp.rs).";
+                    + "server/src/udp/udp.rs).";
             }
         }
         in item report : UdpSnapshot;

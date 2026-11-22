@@ -178,22 +178,22 @@ package WstxStartup {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-045-02'; verify 'CL-045-03'; }
         @TestedBy {
-            test = "server/src/receive/receive_startup_tests.rs::"
+            test = "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_resume_starts_stored_band_and_mode; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_resume_retries_transient_selection_refusals; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_resume_cat_unavailable_falls_back_to_plain_receive; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_resume_never_arms_or_keys; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_resume_off_or_stopped_stays_off; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_resume_skips_what_a_command_started_and_never_ends_the_process; "
                 + "tests/flexAdapter/native-flex.test.cjs::"
                 + "CL-045-02 a native station resumes its receive at startup, waiting a "
                 + "bounded time for its session; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_file_invalid_or_foreign_is_ignored";
         }
     }
@@ -204,7 +204,7 @@ package WstxStartup {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-045-01'; }
         @TestedBy {
-            test = "server/src/receive/receive_startup_tests.rs::"
+            test = "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_choice_round_trips_and_stop_clears";
         }
     }

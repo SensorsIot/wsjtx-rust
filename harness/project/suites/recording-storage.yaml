@@ -24,7 +24,7 @@
   - server/src/web/listener.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
-  - server/src/recording_http.rs
+  - server/src/profile/recording_http.rs
   - client/src/frontend/recording.js
   - client/src/frontend/recording.css
   - tests/recording.test.cjs

@@ -73,21 +73,21 @@ package WstxLeave {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-04'; verify 'CL-119-04'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_043_a_silent_or_repeating_target_is_left_at_the_4th; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_043_a_target_that_hears_us_is_left_at_2x_and_use_off_at_x; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_043_a_repeated_report_is_progress_and_never_leaves; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_043_a_caller_repeating_its_first_call_is_left_at_the_4th; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_043_a_more_valuable_cq_waits_for_the_exit; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_043_the_quiet_time_excludes_selection_and_answering; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_043_one_repetition_leaves_at_the_first; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_043_band_mode_auto_off_and_halt_end_the_contact_at_once";
         }
     }
@@ -99,13 +99,13 @@ package WstxLeave {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-04'; verify 'CL-119-04'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_044_a_contest_leaves_at_2_and_at_4_with_a_spot; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_044_a_heard_target_stays_until_a_more_valuable_station; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_044_run_leaves_a_silent_caller_and_keeps_it_quiet; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_044_period_end_and_deselect_end_the_contact_at_once";
         }
     }
@@ -117,13 +117,13 @@ package WstxLeave {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-04'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_009_a_the_spot_ageing_past_600_s_brings_the_leaving_back_to_calls; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_009_b_until_logged_leaves_only_when_gone_10_minutes; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_009_c_contest_style_change_points_and_the_stay; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_009_d_e_an_answer_resets_and_the_retry_pause";
         }
     }
@@ -135,9 +135,9 @@ package WstxLeave {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-04'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_097_013_no_wd_in_the_runs_own_contact_and_the_leave_count; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_013_get_transmit_null_only_in_the_attended_runs_own_contact";
         }
     }

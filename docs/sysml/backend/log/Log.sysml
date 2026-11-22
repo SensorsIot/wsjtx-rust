@@ -16,15 +16,15 @@ package WstxLogPart {
              The logbook and the operator's country file lie in the shack's folder,
              shared by the shack's stations. */
         @ImplementedIn {
-            module = "server/src/logbook.rs; server/src/dxcc.rs; server/src/logbook_http.rs";
+            module = "server/src/log/logbook.rs; server/src/log/dxcc.rs; "
+                + "server/src/log/logbook_http.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/contact_http.rs, server/src/dxcc.rs, "
-                + "server/src/logbook.rs, server/src/logbook_http.rs, outside server/src/log/ and "
-                + "client/src/log/.";
+            what = "Its code stands in server/src/operating/qso/contact_http.rs, outside "
+                + "server/src/log/ and client/src/log/.";
         }
         @DetailTests {
-            tests = "server/src/logbook_http_tests.rs";
+            tests = "server/src/log/logbook_http_tests.rs";
             covers = "the log routes of a station without a profile; the log routes' admission "
                 + "by the grant or the runtime token and their publication only under a "
                 + "current grant";

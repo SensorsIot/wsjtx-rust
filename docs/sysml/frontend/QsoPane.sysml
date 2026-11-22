@@ -225,7 +225,8 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-04'; }
-        @TestedBy { test = "server/src/contact_http_tests.rs; tests/contact.test.cjs"; }
+        @TestedBy { test = "server/src/operating/qso/contact_http_tests.rs; "
+            + "tests/contact.test.cjs"; }
     }
     verification 'TC-060-001' {
         doc /* The dialogue table. */
@@ -249,7 +250,8 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-05'; }
-        @TestedBy { test = "tests/contact.test.cjs; server/src/contact_http_tests.rs"; }
+        @TestedBy { test = "tests/contact.test.cjs; "
+            + "server/src/operating/qso/contact_http_tests.rs"; }
     }
     verification 'TC-050-009' {
         doc /* The message lines: Auto Seq off, the next message, the log, PSK Reporter's lines. */

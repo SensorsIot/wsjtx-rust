@@ -93,17 +93,17 @@ package WstxMessageChoice {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-05'; }
         @TestedBy {
-            test = "server/src/contact_tests.rs::"
+            test = "server/src/operating/qso/contact_tests.rs::"
                 + "a_standard_call_works_a_nonstandard_partner_to_the_log; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_nonstandard_own_call_answers_a_standard_caller_to_the_log; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "nonstandard_entries_and_free_text_are_validated; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "call_first_skips_hashed_and_nonstandard_callers; "
-                + "server/src/contact_tests.rs::"
+                + "server/src/operating/qso/contact_tests.rs::"
                 + "a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged; "
-                + "server/src/contact_http_tests.rs::"
+                + "server/src/operating/qso/contact_http_tests.rs::"
                 + "the_contact_step_gives_the_hash_table_the_dx_call";
         }
     }

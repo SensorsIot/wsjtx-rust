@@ -5,6 +5,7 @@ pub mod audio;
 pub mod decoder;
 #[path = "flexAdapter/mod.rs"]
 pub mod flex;
+#[path = "udp/network_message.rs"]
 pub mod network_message;
 #[path = "audio/playback.rs"]
 pub mod playback;

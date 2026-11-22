@@ -13,11 +13,11 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use wstx_rust::transmit::service::Hardware;
 // The tests of WstxAutoMode::StartedQsoRule run on this file's station helpers.
-#[path = "operating/qso/autofinish_tests.rs"]
+#[path = "auto/autofinish_tests.rs"]
 mod autofinish;
 // The tests of WstxHoldTx::QuietSpace and WstxCqWhenIdle::CqRule for the newest period run on
 // this file's station helpers.
-#[path = "operating/qso/newest_rx_tests.rs"]
+#[path = "qso/newest_rx_tests.rs"]
 mod newest_rx;
 
 fn rows(list: &[(&str, Option<f64>)]) -> Vec<Value> {
