@@ -172,7 +172,7 @@ meter:
   # The day Alex runs under the current rules; the queue history and the refusal log start
   # there. The improvement run (Jonah) follows 10 changes Alex pulled from Define to Land since
   # then; `report_cr.py --meter` counts them.
-  rules_start: 2026-11-14
+  rules_start: 2026-11-22
   prices:
     claude-opus-5-5: {input: 4, output: 20, cache_read: 0.20}
     claude-sonnet-5-5: {input: 2, output: 10, cache_read: 0.10}
@@ -186,13 +186,15 @@ alex:
   buffer_per_coder: 2
   fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60, test: 120}
   spend_per_day_usd: 200
-  # The operator's work order; with only_first, Alex takes no other issue.
-  first: [119, 129, 109, 106, 107, 132, 166, 270, 64, 77, 86, 95, 100, 101, 103, 113, 120, 121, 122, 123, 124, 149, 165, 167, 189, 195, 200, 210, 211, 212, 213, 214, 215, 216, 225, 226, 227, 228, 229, 236, 250, 251, 252, 253, 254, 255, 256, 258, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 298, 314, 321, 322, 335]
-  only_first: true
+  # The operator's priority front; with only_first false Alex takes every open CR he may pull (After: first).
+  first: [119, 129, 109, 106, 107, 132]
+  only_first: false
+  decide: true
   skip_labels: []
   restrictions:
     - until_accepted: 239
-      brief: "Live tests key the simulator: the IC-7300 emulator (SIM-IC7300) and the band simulator. The real IC-7300 is keyed once the operator has decided so in wsjtx-rust#239."
+      lifted_at_station: true
+      brief: "Live tests key the simulator: the IC-7300 emulator (SIM-IC7300) and the band simulator. In a station session, with the operator at the station, the real IC-7300 may be keyed (wsjtx-rust#239)."
   # The station tester's MCP servers: the band simulator only; each station run starts and stops
   # its own IC-7300 emulator on COM5 with tools/test/powershell/emulator.ps1 (one owner of the port).
   launcher: {command: claude, permission_mode: auto, model: claude-opus-5-5, mcp: {station: harness/project/mcp/station.json}}
