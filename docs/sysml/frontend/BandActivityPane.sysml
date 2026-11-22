@@ -160,7 +160,8 @@ package WstxBandActivityPane {
              without a verdict (no decoded payload, or a sender that is not a call), in
              publication sequence.
              A row to the station's call has no place of its own: it stands where its verdict
-             stands. */
+             stands. Under a strategy of class contest the rows to the station's call stand
+             first, after the partner rows, then the others in this order. */
     }
 
     requirement 'CL-050-02' {

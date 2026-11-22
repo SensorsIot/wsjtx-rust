@@ -3042,8 +3042,8 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
   for(let i=0;i<60&&!evaluations.length;i++)await page.waitForTimeout(50);
   assert.deepEqual(evaluations.map(b=>[b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[0,6,null,false]]);
   await page.waitForFunction(()=>[...document.querySelectorAll('#band-activity tr[data-sequence]')].filter(r=>getComputedStyle(r).display!=='none').length===3);
-  // The row to my call stays although it is a dupe, at its verdict's place; the all-time colours and reasons are off.
-  assert.deepEqual(await shown(),[['CQ WW JA1XYZ PM95','ba-strategy ba-contest-mult'],['CQ WW K1ABC FN42','ba-strategy'],['HB9BLA W1OLD EM12','ba-tome ba-dupe']]);
+  // The row to my call stays although it is a dupe; the all-time colours and reasons are off.
+  assert.deepEqual(await shown(),[['HB9BLA W1OLD EM12','ba-tome ba-dupe'],['CQ WW JA1XYZ PM95','ba-strategy ba-contest-mult'],['CQ WW K1ABC FN42','ba-strategy']]);
   assert.equal(await background('CQ WW K1ABC'),none,'QSOs outside the period colour nothing');
   assert.doesNotMatch(await page.locator('#band-activity tr[data-sequence]',{hasText:'CQ WW K1ABC'}).getAttribute('aria-description')??'',/New call/);
   // The partner of a manual QSO is listed first while its contact stands.

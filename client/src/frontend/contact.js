@@ -1335,7 +1335,8 @@ function decorate(){
   }
   // WstxBandActivityPane::StrategyOrdering: in the value sort each period block stands as the partner
   // rows, then the rows with a verdict in the station's order, then the rows without one in
-  // publication sequence; a row to my call stands where its verdict stands. A column click sorts by
+  // publication sequence; a row to my call stands where its verdict stands, except under a contest
+  // strategy, where the rows to my call stand first after the partner rows. A column click sorts by
   // the column until Value is chosen again (the marks and the filter stay).
   if(!on||!valueSort())return;
   reordering=true;
@@ -1346,7 +1347,9 @@ function decorate(){
     const partners=block.filter(tr=>tr.classList.contains('ba-partner')),rest=block.filter(tr=>!partners.includes(tr));
     const judged=rest.filter(tr=>verdictOf(tr)).sort((a,b)=>verdictOf(a).index-verdictOf(b).index);
     const unjudged=rest.filter(tr=>!verdictOf(tr)).sort((a,b)=>Number(a.dataset.sequence)-Number(b.dataset.sequence));
-    const order=[...partners,...judged,...unjudged];
+    // Under a contest strategy the rows to my call stay on top, below the partner rows.
+    const tome=selection()?[...judged,...unjudged].filter(tr=>tr.classList.contains('ba-tome')):[];
+    const order=[...partners,...tome,...judged.filter(tr=>!tome.includes(tr)),...unjudged.filter(tr=>!tome.includes(tr))];
     // Rows already in place are not moved (a moved row loses the keyboard focus).
     if(order.every((tr,i)=>tr===block[i]))return;
     for(const tr of order)tbody.insertBefore(tr,anchor);
