@@ -24,6 +24,11 @@
   - server/src/web/listener.rs
   - server/src/profile/profile.rs
   - server/src/receive/recording.rs
+  - server/src/receive/receive_job.rs
+  - server/src/receive/live_receive.rs
+  - server/src/receive/spectrum_rows.rs
+  - server/src/profile/recording.rs
+  - server/src/supervisor/operating_selection.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/receive/receive.rs
   - server/src/receive/receive_http.rs
