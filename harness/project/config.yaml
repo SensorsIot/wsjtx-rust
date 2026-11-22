@@ -179,11 +179,12 @@ meter:
     claude-haiku-5-5: {input: 0.10, output: 0.50, cache_read: 0.01}
     claude-fable-5-2: {input: 8, output: 40, cache_read: 0.20}
 
-# Alex, the coordinator's state machine (harness core/docs/Alex.md, "The numbers").
 # Define writes into the model in a workspace of its own, only under these paths (harness#208).
-# define.model_check follows once model_bindings.py reports satisfied_by, guard, accept and automated.
 define:
   scope: [docs/sysml, tools/sysml]
+  model_check: "python tools/sysml.py check {rev}"
+
+# Alex, the coordinator's state machine (harness core/docs/Alex.md, "The numbers").
 alex:
   machines: {define: 2, check: 1, implement: 2, review: 1, coordinate: 1, test: 2}
   limits: {ready: 3, queued_landed: 2}
