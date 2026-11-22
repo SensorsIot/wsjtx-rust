@@ -81,6 +81,15 @@ class ModelBindingsTest(unittest.TestCase):
         self.assertFalse(mb.left_to_accept([(1, "developmentPc")]))
         self.assertFalse(mb.left_to_accept([]))
 
+    def test_each_level_keeps_its_cost_and_location_and_says_whether_it_needs_the_station(self):
+        self.assertEqual(mb.live_levels([(1, "developmentPc"), (3, "simulator"), (4, "station"), (5, "flexRadio")]),
+                         [{"cost": 1, "location": "developmentPc", "station": False},
+                          {"cost": 3, "location": "simulator", "station": True},
+                          {"cost": 4, "location": "station", "station": True},
+                          {"cost": 5, "location": "flexRadio", "station": True}])
+        self.assertEqual(mb.live_levels([]), [])
+
+
 
 if __name__ == "__main__":
     unittest.main()

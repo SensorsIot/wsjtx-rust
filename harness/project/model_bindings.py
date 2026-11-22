@@ -17,7 +17,9 @@ A requirement's `digest` is the hash of its declaration without comments, `@Stat
 `@ImplementedIn`, white space folded: what it promises, not how far it is built. Its
 `satisfied_by` is the part its `subject` names (M6.2, M6.3), for an FR the part of its
 `satisfy` in Shack.sysml. A case is left to Accept (`accept`) when one of its `@TestLevel`
-locations is real equipment: station or flexRadio.
+locations is real equipment: station or flexRadio. Its `levels` are its `@TestLevel` pairs, each
+with `station` true where the test needs the station (the simulators or the real equipment:
+station, simulator, flexRadio) and false on the development PC.
 Prints the JSON that candidate.py describes.
 """
 import argparse
@@ -109,6 +111,14 @@ def digests(models):
     return out
 
 
+STATION_LOCATIONS = {"station", "simulator", "flexRadio"}
+
+
+def live_levels(levels):
+    """[{cost, location, station}] of a case's @TestLevel (cost, location) pairs."""
+    return [{"cost": cost, "location": place, "station": place in STATION_LOCATIONS} for cost, place in levels]
+
+
 def left_to_accept(levels):
     """True when one of a case's @TestLevel (cost, location) pairs is on real equipment."""
     return any(place in REAL_EQUIPMENT for _cost, place in levels)
@@ -152,7 +162,8 @@ def bindings(rev):
             if entry["kind"] == "verification":
                 cases[identifier] = {"automated": entry["state"] in ("partial", "implemented"),
                                      "verifies": entry["refs"], "paths": [], "tests": [], "unresolved": [],
-                                     "accept": left_to_accept(entry["levels"])}
+                                     "accept": left_to_accept(entry["levels"]),
+                                     "levels": live_levels(entry["levels"])}
             else:
                 promises[identifier] = {"implementation": [], "digest": digest[identifier]}
                 if identifier in satisfied:
