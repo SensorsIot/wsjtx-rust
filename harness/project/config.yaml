@@ -190,7 +190,6 @@ alex:
   limits: {ready: 3, queued_landed: 2}
   buffer_per_coder: 2
   fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60, test: 120}
-  spend_per_day_usd: 200
   # The operator's priority front; with only_first false Alex takes every open CR he may pull (After: first).
   first: [119, 129, 211, 109, 106, 107, 132]
   only_first: false
