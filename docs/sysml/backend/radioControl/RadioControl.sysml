@@ -31,7 +31,8 @@ package WstxRadioControlPart {
         }
         @DetailTests {
             tests = "server/tests/radioControl/radio_control.rs; "
-                + "server/src/radioControl/setup_tests.rs";
+                + "server/src/radioControl/setup_tests.rs; "
+                + "server/src/radioControl/radio_connection_tests.rs";
             covers = "the making of the native port values inside the exchange thread; "
                 + "the refusal of an incomplete connection identity before a port is "
                 + "opened; the text form of a menu value and its coding; the built-in "

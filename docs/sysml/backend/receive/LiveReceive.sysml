@@ -117,17 +117,17 @@ package WstxLiveReceive {
                 + "receive_windows_follow_mode_boundaries_independent_of_packet_partition; "
                 + "server/tests/receive_integration.rs::"
                 + "receive_known_gap_resets_support_preserving_global_positions; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "latest_decode_relative_station_timing_uses_mode_origin_and_source_clock; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "ft8_snr_period_start_follows_the_utc_period_grid; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "latest_decode_replaces_period_atomically_including_empty_and_all_retained_rows; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "latest_decode_actual_overrun_stays_partial_then_completes_the_next_period; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
             + "latest_decode_cancel_and_failure_preserve_published_period_without_new_identity; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate; "
                 + "server/tests/audio_receive.rs::"
                 + "live_provider_known_gap_resets_history_without_renumbering_samples; "
@@ -183,21 +183,21 @@ package WstxLiveReceive {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-007-05'; }
         @TestedBy {
-            test = "server/src/receive/recording_tests.rs::"
+            test = "server/src/receive/live_receive_tests.rs::"
                 + "live_window_schedule_follows_the_utc_period_grid; "
                 + "server/tests/receive_integration.rs::"
                 + "receive_schedule_completes_windows_at_period_residues; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "late_window_waits_for_the_prompt_decode_without_overrun; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "late_window_republishes_its_period_view_with_late_starters; "
                 + "server/tests/receive_integration.rs::"
                 + "receive_reschedule_moves_completions_without_dropping_or_repeating; "
                 + "server/tests/receive_integration.rs::"
                 + "receive_clock_steps_keep_each_period_window_once_and_in_order; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "live_ft8_period_start_and_window_diagnostics_follow_the_air_clock_correction; "
                 + "server/src/receive/receive_http_tests.rs::live_native_busy_period_rows_promptly";
         }
@@ -253,6 +253,6 @@ package WstxLiveReceive {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-061-04'; }
-        @TestedBy { test = "server/src/transmit/recording_tx_tests.rs"; }
+        @TestedBy { test = "server/src/receive/recording_tx_tests.rs"; }
     }
 }

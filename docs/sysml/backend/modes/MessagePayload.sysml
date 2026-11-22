@@ -134,7 +134,7 @@ package WstxMessagePayload {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-01'; }
-        @TestedBy { test = "server/src/receive/recording_tests.rs"; }
+        @TestedBy { test = "server/src/receive/live_receive_tests.rs"; }
     }
 
     verification 'TC-024-010' {

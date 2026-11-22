@@ -77,9 +77,9 @@ package WstxSpectrum {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-03'; }
         @TestedBy {
-            test = "server/src/receive/recording_tests.rs::"
+            test = "server/src/receive/spectrum_rows_tests.rs::"
                 + "both_fft_paths_agree_with_direct_dft_and_analytic_dbfs; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/spectrum_rows_tests.rs::"
                 + "replay_window_start_and_partial_last_row_follow_source_clock";
         }
     }
@@ -91,7 +91,7 @@ package WstxSpectrum {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-03'; }
         @TestedBy {
-            test = "server/src/receive/recording_tests.rs::"
+            test = "server/src/receive/spectrum_rows_tests.rs::"
                 + "detailed_native_bins_and_power_rows_follow_independent_dft";
         }
     }

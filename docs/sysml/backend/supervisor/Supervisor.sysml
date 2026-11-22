@@ -32,7 +32,8 @@ package WstxSupervisorPart {
             module = "server/src/supervisor/selection.rs; server/src/supervisor/selection_http.rs; "
                 + "server/src/supervisor/receive_startup.rs; "
                 + "server/src/supervisor/authorization.rs; "
-                + "server/src/supervisor/authorization_http.rs";
+                + "server/src/supervisor/authorization_http.rs; "
+                + "server/src/supervisor/operating_selection.rs";
         }
         @CodeDiffers {
             what = "Its code stands in server/src/main.rs, outside server/src/supervisor/ and "
@@ -41,7 +42,8 @@ package WstxSupervisorPart {
         @DetailTests {
             tests = "server/src/mcp/endpoint_tests.rs; tests/mcp/mcp.test.cjs; "
                 + "server/src/auth_tests.rs; server/src/supervisor/authorization_tests.rs; "
-                + "server/src/supervisor/selection_http_tests.rs";
+                + "server/src/supervisor/selection_http_tests.rs; "
+                + "server/src/supervisor/operating_selection_tests.rs";
             covers = "the MCP client token: its creation, listing, hashed record, audit and "
                 + "revocation, and its refusal on the browser routes; "
                 + "the authorization of a browser by grant and commissioning, its routes and "

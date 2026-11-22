@@ -22,10 +22,12 @@ package WstxReceivePart {
         @ImplementedIn {
             module = "server/src/receive/recording.rs; server/src/receive/receive.rs; "
                 + "server/src/receive/spectrum.rs; server/src/receive/receive_diagnostics.rs; "
-                + "server/src/receive/receive_http.rs";
+                + "server/src/receive/receive_http.rs; server/src/receive/receive_job.rs; "
+                + "server/src/receive/live_receive.rs; server/src/receive/spectrum_rows.rs";
         }
         @DetailTests {
-            tests = "server/src/receive/recording_tests.rs; server/tests/receive_integration.rs; "
+            tests = "server/src/receive/receive_job_tests.rs; "
+                + "server/src/receive/live_receive_tests.rs; server/tests/receive_integration.rs; "
                 + "server/src/operating/qso/contact_http_tests.rs";
             covers = "the conversion of a time to UTC text; the limits of a block the "
                 + "window buffer takes; the call hash table shared with transmit";
