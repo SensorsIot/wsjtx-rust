@@ -172,10 +172,18 @@ impl Actor {
                         deadline,
                     )
                 })();
+                // The connect's lease (1) ends no later than its end becomes visible. Only
+                // the connect's own lease is released: a request reads the state first and
+                // takes no ordinary lease before ready, so a later release cannot take one
+                // that is not the connect's.
+                let end_connect = || {
+                    let _ = busy.compare_exchange(1, 0, Ordering::AcqRel, Ordering::Acquire);
+                };
                 let mut executor = match connected {
                     Ok(value) => value,
                     Err(error) => {
                         if let Ok(mut state) = shared.lock() {
+                            end_connect();
                             state.state = if error == Error::FailedClose {
                                 State::Closing
                             } else if stop.load(Ordering::Acquire) {
@@ -189,20 +197,22 @@ impl Actor {
                         }
                         #[cfg(test)]
                         pause::at(&paused, pause::Point::FailurePublished);
-                        busy.store(0, Ordering::Release);
+                        end_connect();
                         #[cfg(test)]
                         pause::at(&paused, pause::Point::LeaseReleased);
                         return;
                     }
                 };
-                if executor.attach_snapshot(shared.clone()).is_err() {
+                if executor
+                    .attach_snapshot_releasing(shared.clone(), end_connect)
+                    .is_err()
+                {
                     let _ = executor.close();
-                    busy.store(0, Ordering::Release);
+                    end_connect();
                     return;
                 }
                 #[cfg(test)]
                 pause::at(&paused, pause::Point::ReadyPublished);
-                busy.store(0, Ordering::Release);
                 let mut last_poll = Instant::now();
                 while !stop.load(Ordering::Acquire) {
                     // Transmit-switch exchanges of the transmit hold come first; while the
@@ -396,6 +406,7 @@ impl Actor {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
+        self.require_ready()?;
         let (expected, occupied) = if reservation.is_some() {
             (2, 3)
         } else {
@@ -408,6 +419,8 @@ impl Actor {
             .compare_exchange(expected, occupied, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
+            // The holder may have ended the connection meanwhile; then it is unavailable.
+            self.require_ready()?;
             if Instant::now() >= deadline || self.shutdown.load(Ordering::Acquire) {
                 return Err(Error::Busy);
             }
@@ -430,7 +443,10 @@ impl Actor {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match result.recv_timeout(remaining.max(Duration::from_millis(50))) {
                 Ok(value) => return value,
-                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(Error::Unavailable),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    self.give_back(occupied, expected);
+                    return Err(Error::Unavailable);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if Instant::now() >= deadline + Duration::from_secs(2) {
                         return Err(Error::Timeout);
@@ -466,6 +482,21 @@ impl Actor {
     /// True after a key request until a release is confirmed by readback.
     pub fn ptt_indeterminate(&self) -> bool {
         self.keyed.load(Ordering::Acquire)
+    }
+    /// WstxCatControl::ControlExchange: a state other than ready is unavailable, whatever
+    /// still holds radio control; this answer comes before busy and sends nothing.
+    fn require_ready(&self) -> Result<()> {
+        match self.snapshot.lock().map(|s| s.state) {
+            Ok(State::Ready) => Ok(()),
+            _ => Err(Error::Unavailable),
+        }
+    }
+    /// Gives back a lease this request took for a command radio control never carried
+    /// out (its response channel closed unanswered): the I/O thread's `Lease` never ran.
+    fn give_back(&self, occupied: u8, expected: u8) {
+        let _ =
+            self.lease
+                .compare_exchange(occupied, expected, Ordering::AcqRel, Ordering::Acquire);
     }
     fn release_hold(&self) {
         let _ = self
@@ -524,14 +555,21 @@ impl Actor {
         if Instant::now() >= request.deadline {
             return Err(Error::Timeout);
         }
+        self.require_ready()?;
         let (expected, occupied) = if reservation.is_some() {
             (2, 3)
         } else {
             (0, 1)
         };
-        self.lease
+        if self
+            .lease
             .compare_exchange(expected, occupied, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| Error::Busy)?;
+            .is_err()
+        {
+            // The holder may have ended the connection meanwhile; then it is unavailable.
+            self.require_ready()?;
+            return Err(Error::Busy);
+        }
         let deadline = request.deadline;
         let cancel = request.cancelled.clone();
         let (response, result) = mpsc::sync_channel(1);
@@ -561,7 +599,10 @@ impl Actor {
             }
             match result.recv_timeout(remaining.min(Duration::from_millis(50))) {
                 Ok(value) => return value,
-                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(Error::Unavailable),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    self.give_back(occupied, expected);
+                    return Err(Error::Unavailable);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
         }

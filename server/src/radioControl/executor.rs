@@ -206,10 +206,21 @@ impl<T: Transport> Executor<T> {
             .map(|s| s.clone())
             .map_err(|_| Error::Unavailable)
     }
+    #[cfg(test)]
     pub(super) fn attach_snapshot(&mut self, shared: Arc<Mutex<Snapshot>>) -> Result<()> {
+        self.attach_snapshot_releasing(shared, || {})
+    }
+    /// As `attach_snapshot`; `release` runs under the shared lock before the connect's end
+    /// becomes visible, so no reader sees ready while the connect still holds radio control.
+    pub(super) fn attach_snapshot_releasing(
+        &mut self,
+        shared: Arc<Mutex<Snapshot>>,
+        release: impl FnOnce(),
+    ) -> Result<()> {
         let mut candidate = self.snapshot()?;
         {
             let mut current = shared.lock().map_err(|_| Error::Unavailable)?;
+            release();
             candidate.publication = current.publication;
             candidate.publish()?;
             if current.closing_requested {
