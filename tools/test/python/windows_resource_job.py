@@ -49,6 +49,10 @@ ORDINARY = (
     "live_busy_period_publishes_every_decode_promptly",
     "busy_period_decode_is_identical_and_faster_on_more_threads",
     "recorded_corpus_reaches_jt9_deep_decodes",
+    "resource_repeatability_check_accepts_tolerance_edges",
+    "resource_repeatability_check_rejects_each_break",
+    "resource_baseline_key_identifies_request",
+    "resource_scalar_detail_check_uses_detail_tolerances",
 )
 ORDINARY_ARGV = (
     "cargo", "test", "--release", "--locked", "--test", "decoder_signal",
@@ -264,8 +268,9 @@ def source_inventory(source):
         names.append(name)
         if "#[ignore" in attributes:
             ignored.append(name)
-    require(len(names) == 16 and len(set(names)) == 16 and
-            set(names) == set(ORDINARY) | {MATRIX, *IGNORED} and
+    expected = set(ORDINARY) | {MATRIX, *IGNORED}
+    require(len(names) == len(expected) and len(set(names)) == len(names) and
+            set(names) == expected and
             set(ignored) == set(IGNORED), "source_inventory_mismatch")
     return {"names": sorted(names), "ignored": sorted(ignored)}
 

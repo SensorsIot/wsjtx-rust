@@ -351,15 +351,16 @@ class ArtifactTests(ApiFreeCase):
     def coverage_lines():
         return [*(f"test {name} ... ok\n".encode() for name in guardian.ORDINARY),
                 *(f"test {name} ... ignored, fixed reason\n".encode() for name in guardian.IGNORED),
-                b"test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 1 filtered out; "
-                b"finished in 1.00s\n"]
+                f"test result: ok. {len(guardian.ORDINARY)} passed; 0 failed; "
+                f"{len(guardian.IGNORED)} ignored; 0 measured; 1 filtered out; "
+                "finished in 1.00s\n".encode()]
 
     def producer(self, artifact=None, build=True, coverage=None):
         return b"".join([
             guardian.json_bytes({"reason": "compiler-message", "message": {"level": "note"}}),
             guardian.json_bytes(self.artifact() if artifact is None else artifact),
             guardian.json_bytes({"reason": "build-finished", "success": build}),
-            b"\nrunning 16 tests\n", *(self.coverage_lines() if coverage is None else coverage),
+            f"\nrunning {len(guardian.ORDINARY) + len(guardian.IGNORED)} tests\n".encode(), *(self.coverage_lines() if coverage is None else coverage),
         ])
 
     def resolve(self, stream, receipt=None):
@@ -378,10 +379,12 @@ class ArtifactTests(ApiFreeCase):
         self.assertEqual(json.loads(path.read_bytes()), receipt)
         self.assertEqual(receipt["artifact_sha256"], guardian.digest(self.executable))
         self.assertEqual(receipt["ordinary_argv"], list(guardian.ORDINARY_ARGV))
-        self.assertEqual(receipt["coverage"]["summary"], [14, 0, 1, 0, 1])
+        self.assertEqual(receipt["coverage"]["summary"],
+                         [len(guardian.ORDINARY), 0, len(guardian.IGNORED), 0, 1])
         self.assertEqual(set(receipt["coverage"]["outcomes"]),
                          set(guardian.ORDINARY) | set(guardian.IGNORED))
-        self.assertEqual(len(receipt["inventory"]["names"]), 16)
+        self.assertEqual(len(receipt["inventory"]["names"]),
+                         len(guardian.ORDINARY) + 1 + len(guardian.IGNORED))
         self.assertEqual(set(receipt["inventory"]["ignored"]), set(guardian.IGNORED))
         self.assertIn("tools/test/python/windows_process_metrics.py", receipt["source_pins"])
         self.assertIn("tools/test/python/test_windows_process_metrics.py", receipt["source_pins"])
@@ -431,7 +434,9 @@ class ArtifactTests(ApiFreeCase):
         variants = [valid[:-1], valid[1:], [valid[0], *valid],
                     [valid[0].replace(b"ok", b"FAILED"), *valid[1:]],
                     [b"test unreviewed ... ok\n", *valid],
-                    [*valid[:-1], valid[-1].replace(b"14 passed", b"13 passed")],
+                    [*valid[:-1], valid[-1].replace(
+                        f"{len(guardian.ORDINARY)} passed".encode(),
+                        f"{len(guardian.ORDINARY) - 1} passed".encode())],
                     [*valid[:-1], valid[-1].replace(b"1 filtered", b"2 filtered")]]
         for coverage in variants:
             with self.subTest(coverage=coverage[:1]):
@@ -449,15 +454,32 @@ class ArtifactTests(ApiFreeCase):
 
     def test_source_inventory_refuses_extra_missing_duplicate_or_unignored_worker(self):
         original = self.source.read_text(encoding="utf-8")
-        for text in (original + "#[test]\nfn added() {}\n",
-                     original.replace("fn quality_corpus()", "fn independent_waveforms_decode()"),
-                     original.replace('#[ignore = "fixed source inventory"]\n', "", 1),
-                     original.replace('#![cfg(not(debug_assertions))]', "")):
+        for text, operation in (
+                (original + "#[test]\nfn added() {}\n", "source_inventory_mismatch"),
+                (original.replace("fn quality_corpus()", "fn independent_waveforms_decode()"),
+                 "source_inventory_mismatch"),
+                (original.replace('#[ignore = "fixed source inventory"]\n', "", 1),
+                 "source_inventory_mismatch"),
+                (original.replace('#![cfg(not(debug_assertions))]', ""), "missing_release_guard")):
             with self.subTest(source=text[-50:]):
                 self.source.write_text(text, encoding="utf-8")
-                with self.assertRaises(guardian.JobError):
+                with self.assertRaises(guardian.JobError) as caught:
                     guardian.source_inventory(self.source)
+                self.assertEqual(caught.exception.operation, operation)
         self.source.write_text(original, encoding="utf-8")
+
+    def test_source_inventory_accepts_the_repository_decoder_signal_tests(self):
+        source = Path(__file__).resolve().parents[3] / "server/tests/decoder_signal.rs"
+        inventory = guardian.source_inventory(source)
+        self.assertEqual(set(inventory["names"]),
+                         set(guardian.ORDINARY) | {guardian.MATRIX, *guardian.IGNORED})
+        extra = source.read_text(encoding="utf-8") + "#[test]\nfn unknown_fifth() {}\n"
+        with tempfile.TemporaryDirectory() as folder:
+            copy = Path(folder) / "decoder_signal.rs"
+            copy.write_text(extra, encoding="utf-8")
+            with self.assertRaises(guardian.JobError) as caught:
+                guardian.source_inventory(copy)
+        self.assertEqual(caught.exception.operation, "source_inventory_mismatch")
 
     def test_executable_and_source_changes_between_artifact_and_eof_refuse(self):
         owner = self
@@ -513,7 +535,8 @@ class ArtifactTests(ApiFreeCase):
             lambda value: value.update(inventory={"names": [], "ignored": []}),
             lambda value: value.update(source_pins={}),
             lambda value: value.update(input_environment={}),
-            lambda value: value.update(coverage={"outcomes": {}, "summary": [14, 0, 1, 0, 1]}),
+            lambda value: value.update(coverage={"outcomes": {}, "summary": [
+                len(guardian.ORDINARY), 0, len(guardian.IGNORED), 0, 1]}),
             lambda value: value.update(handoff_nonce="not a nonce"),
             lambda value: value.update(stream_sha256="0" * 64),
             lambda value: value.update(artifact_sha256="0" * 64),
@@ -665,8 +688,10 @@ class CaseTranscriptTests(ApiFreeCase):
     def parse(case, events):
         transcript = guardian.CaseTranscript(case)
         transcript.accept("stdout", f"test {guardian.CASES[case]} ... ok\n".encode())
-        transcript.accept("stdout", b"test result: ok. 1 passed; 0 failed; 0 ignored; "
-                                    b"0 measured; 15 filtered out; finished in 1.00s\n")
+        filtered = len(guardian.ORDINARY) + len(guardian.IGNORED)
+        transcript.accept("stdout", "test result: ok. 1 passed; 0 failed; 0 ignored; "
+                                    f"0 measured; {filtered} filtered out; "
+                                    "finished in 1.00s\n".encode())
         for prefix, value in events:
             transcript.accept("stderr", prefix.encode() + b" " + guardian.json_bytes(value))
         return transcript.finish()
