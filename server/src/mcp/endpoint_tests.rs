@@ -6,6 +6,7 @@
 // fixture rows, the fixture's own identities and the WstxMcp tables, not from MCP output.
 use super::*;
 use crate::contact_http::tests::{Bench, DrivenClock, RoundSource, now_ms, period_text, record};
+use crate::listener::*;
 use axum::body::Body;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ring::{rand::SecureRandom, signature::KeyPair};

@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 use super::*;
+use crate::listener::*;
 use source::{SampleSource, SourceDescriptor, SourceError, SourcePoll, SourceTiming};
 use std::{
     io::{BufRead, BufReader, Read, Write},

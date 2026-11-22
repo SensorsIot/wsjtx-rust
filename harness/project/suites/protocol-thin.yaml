@@ -22,8 +22,9 @@
   timing: true
   timing_inputs:
   - server/src/main.rs
+  - server/src/web/listener.rs
   - server/src/web/link_log.rs
-  - server/src/http_compression.rs
+  - server/src/web/content_coding.rs
   - client/app.js
   - client/index.html
   - client/style.css

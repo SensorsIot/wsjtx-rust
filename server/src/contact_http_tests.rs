@@ -3,6 +3,7 @@
 // hardware doubles (no audio, PTT or radio) and hand-authored decoded rows packed with the real
 // codec.
 use super::*;
+use crate::listener::*;
 use axum::body::Body;
 use profile::tests::{Fault, FaultScope, StationFiles, Step};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};

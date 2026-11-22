@@ -4,6 +4,7 @@
 //! size/media/syntax, version/UUIDs/integers, profile, boot, state. Every log mutation
 //! publishes its atomic replace only under the authorization lock with the operating
 //! grant (HTTPS) or runtime token (plaintext) rechecked.
+use crate::listener::*;
 use crate::logbook::{self, Record, SaveOutcome, StoreError};
 use crate::*;
 use axum::extract::{Path, RawQuery};
@@ -13,7 +14,7 @@ use std::collections::HashMap;
 
 /// SaveContact body cap: a 1024-character comment stays admissible with worst-case
 /// two-byte JSON escaping of every character.
-pub const SAVE_BODY_MAX: usize = crate::limits::RECORD_BYTES;
+pub const SAVE_BODY_MAX: usize = crate::listener::limits::RECORD_BYTES;
 
 pub fn error(code: &str, field: Option<&str>) -> Response {
     let status = match code {

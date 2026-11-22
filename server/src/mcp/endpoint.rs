@@ -9,6 +9,7 @@
 //! transmit authority. Authorization is `Authorization: Bearer <MCP client token>` only:
 //! cookies sent to /mcp are never read, and a browser grant transport or the
 //! station access token is refused, so MCP never acts as the browser operator.
+use crate::listener::*;
 use crate::*;
 use axum::extract::RawQuery;
 use axum::http::Method;
@@ -360,7 +361,7 @@ async fn call_tool(
     let Ok(request) = request else {
         return unavailable;
     };
-    let Ok(response) = crate::router(app.clone()).oneshot(request).await;
+    let Ok(response) = crate::listener::router(app.clone()).oneshot(request).await;
     let status = response.status().as_u16();
     match axum::body::to_bytes(response.into_body(), STATION_BYTES_MAX).await {
         Ok(bytes) if bytes.is_empty() => (status, Value::Null),

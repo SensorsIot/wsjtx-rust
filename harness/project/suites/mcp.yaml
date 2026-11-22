@@ -18,6 +18,7 @@
   - package-lock.json
   select:
   - server/src/main.rs
+  - server/src/web/listener.rs
   - server/src/mcp/endpoint.rs
   - server/src/automation.rs
   - server/src/operating/qso/freeslot.rs

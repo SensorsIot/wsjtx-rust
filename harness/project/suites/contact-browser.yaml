@@ -16,6 +16,7 @@
   - package-lock.json
   select:
   - server/src/main.rs
+  - server/src/web/listener.rs
   - server/src/contact.rs
   - server/src/contact_http.rs
   - server/src/contact_http_tests.rs

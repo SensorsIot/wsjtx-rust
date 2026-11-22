@@ -26,7 +26,8 @@
   # do not run beside it.
   timing_inputs:
   - server/src/main.rs
-  - server/src/http_compression.rs
+  - server/src/web/listener.rs
+  - server/src/web/content_coding.rs
   - server/src/station/selection.rs
   - server/src/selection_http.rs
   - server/src/selection_http_tests.rs

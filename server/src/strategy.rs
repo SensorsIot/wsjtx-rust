@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 pub(crate) mod tests;
 
 pub const FILE_NAME: &str = "strategy.json";
-pub const BODY_MAX: usize = crate::limits::SETTINGS_BYTES;
+pub const BODY_MAX: usize = crate::listener::limits::SETTINGS_BYTES;
 pub const STRATEGIES_MAX: usize = 16;
 pub const EVALUATE_MAX: u64 = 2048;
 /// WstxRankingControl::RankingLimits: the ignore list bounds.

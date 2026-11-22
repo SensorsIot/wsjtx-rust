@@ -21,6 +21,7 @@
   - package-lock.json
   select:
   - server/src/main.rs
+  - server/src/web/listener.rs
   - server/src/web/link_log.rs
   - client/app.js
   - client/index.html

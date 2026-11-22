@@ -233,7 +233,7 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-054-01'; }
-        @TestedBy { test = "server/src/protocol_tests.rs; tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "server/src/web/listener_tests.rs; tests/ui-operating.test.cjs"; }
     }
     verification 'TC-061-008' {
         doc /* A transmitted period is a thin band, and the ruler stays true. */
