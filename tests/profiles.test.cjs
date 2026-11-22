@@ -296,7 +296,7 @@ test('token login retries a slow or failed setup step without another press', {t
     await page.clock.runFor(1999); assert.equal(await fetched(page, '/session'), 2, 'no third attempt before the 2 s pause');
     await page.clock.runFor(1); assert.equal(await fetched(page, '/session'), 3, 'third attempt after the 2 s pause');
     // Once the third attempt has failed, no timer may start another one, up to the 45 s login bound.
-    // The retry text is also in #login-error (client/app.js:175); it changes when the third attempt
+    // The retry text is also in #login-error (client/src/frontend/app.js:175); it changes when the third attempt
     // ends, to the refusal or to a further retry. Waiting for the refusal first would turn a fourth
     // attempt into a hang (its pause never runs on the stopped clock) instead of a count failure.
     await page.waitForFunction(() => !document.querySelector('#login-error').textContent.includes('(attempt 3 of'), null, {timeout: 10000});
@@ -694,7 +694,7 @@ test('actual browser reports corrupt and erased retained credentials', {timeout:
 });
 // Executes the actual authorization owner against independent platform boundaries; the browser cases separately prove real authority.
 test('authorization owner distinguishes credential lookup and retained failures', {timeout: 45000}, async t => {
-  const vm = require('node:vm'), source = await fs.readFile(path.resolve('client/authorization.js'), 'utf8');
+  const vm = require('node:vm'), source = await fs.readFile(path.resolve('client/src/frontend/authorization.js'), 'utf8');
   const pair = await crypto.webcrypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign', 'verify']);
   const origin = 'https://localhost:18443', scope = {profile_id: uuid(1), radio_id: uuid(2), safety_revision: 1};
   const credential = {version: 1, origin, key: pair.privateKey, public_key: Buffer.from(await crypto.webcrypto.subtle.exportKey('raw', pair.publicKey)).toString('base64url'),
@@ -862,7 +862,7 @@ test('authorization owner distinguishes credential lookup and retained failures'
     checked++;
   }
   // Exercise the actual UI consumers too: manager-only fixtures cannot prove their epoch ownership fences.
-  const appSource = await fs.readFile(path.resolve('client/app.js'), 'utf8');
+  const appSource = await fs.readFile(path.resolve('client/src/frontend/app.js'), 'utf8');
   let consumerChecked = 0;
   for (const mode of ['owned-pending', 'busy', 'old-reject-ready', 'old-reject-recovering', 'old-resolve-ready', 'old-event', 'current-event']) {
     const handlers = new Map(), listeners = new Map(), nodes = new Map();

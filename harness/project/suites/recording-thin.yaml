@@ -33,9 +33,9 @@
   - server/src/recording_http.rs
   - server/src/receive/spectrum.rs
   - server/src/web/content_coding.rs
-  - client/app.js
-  - client/index.html
-  - client/recording.js
+  - client/src/frontend/app.js
+  - client/src/frontend/index.html
+  - client/src/frontend/recording.js
   - tests/recording.test.cjs
   - tools/test/node/support.cjs
   - tools/test/blocked-ports.json

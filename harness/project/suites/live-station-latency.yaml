@@ -9,7 +9,7 @@
   - server/src/receive/receive_http_tests.rs
   - server/src/audio/
   - server/src/modes/decoder/
-  - client/recording.js
+  - client/src/frontend/recording.js
   - tests/frontend/receive-latency.test.cjs
   - Cargo.toml
   - Cargo.lock

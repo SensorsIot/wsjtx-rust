@@ -26,16 +26,16 @@
   - server/src/radioControl/radio_connection.rs
   - server/src/selection_http.rs
   - server/src/receive/receive_startup.rs
-  - client/recording.js
+  - client/src/frontend/recording.js
   - server/src/authorization.rs
   - server/src/authorization_http.rs
   - server/src/radioControl/radio_setup.rs
   - server/src/main.rs
   - server/src/web/listener.rs
   - server/src/receive/receive_http.rs
-  - client/app.js
-  - client/contact.js
-  - client/index.html
+  - client/src/frontend/app.js
+  - client/src/frontend/contact.js
+  - client/src/frontend/index.html
   - tests/flexAdapter/native-flex.test.cjs
   - tools/test/node/flex-emulator.cjs
   - tools/test/node/flex-live-check.cjs

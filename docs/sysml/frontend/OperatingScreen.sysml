@@ -116,7 +116,7 @@ package WstxOperatingScreen {
         @FollowsSource { reference = "WSJT-X at the behaviour baseline: keyboard shortcuts"; }
         @CodeDiffers {
             what = "Alt+T and Alt+Q act also while a text field has the focus (the keydown "
-                + "handler in client/contact.js).";
+                + "handler in client/src/frontend/contact.js).";
         }
         attribute txStepFt8Hz : Integer = 60;
         attribute txStepFt4Hz : Integer = 90;
@@ -217,7 +217,8 @@ package WstxOperatingScreen {
             what = "Only the receive, selection, contact and result views and the waterfall "
                 + "frames are checked against their form. Other views, such as /pskr, and the "
                 + "answers to commands are taken without that check: a contact command "
-                + "answered 200 or 202 shows accepted whatever its body (client/contact.js).";
+                + "answered 200 or 202 shows accepted whatever its body "
+                + "(client/src/frontend/contact.js).";
         }
     }
 
@@ -238,8 +239,8 @@ package WstxOperatingScreen {
         @CodeDiffers {
             what = "A value not known is shown as Unavailable: the abilities in Settings > "
                 + "Expert before their views arrive, the Transmission line there always, and "
-                + "the QSO pane's badge before the first contact view (client/recording.js, "
-                + "client/contact.js).";
+                + "the QSO pane's badge before the first contact view "
+                + "(client/src/frontend/recording.js, client/src/frontend/contact.js).";
         }
     }
 

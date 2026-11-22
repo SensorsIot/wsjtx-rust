@@ -527,21 +527,33 @@ async fn static_assets_gzip_when_selected_and_keep_exact_identity_bytes_otherwis
         login_attempts: Arc::new(Mutex::new((Instant::now(), 0))),
     };
     for (path, source) in [
-        ("/app.js", include_str!("../../../client/app.js")),
+        (
+            "/app.js",
+            include_str!("../../../client/src/frontend/app.js"),
+        ),
         (
             "/authorization.js",
-            include_str!("../../../client/authorization.js"),
+            include_str!("../../../client/src/frontend/authorization.js"),
         ),
         (
             "/recording.js",
-            include_str!("../../../client/recording.js"),
+            include_str!("../../../client/src/frontend/recording.js"),
         ),
-        ("/logbook.js", include_str!("../../../client/logbook.js")),
-        ("/contact.js", include_str!("../../../client/contact.js")),
-        ("/style.css", include_str!("../../../client/style.css")),
+        (
+            "/logbook.js",
+            include_str!("../../../client/src/frontend/logbook.js"),
+        ),
+        (
+            "/contact.js",
+            include_str!("../../../client/src/frontend/contact.js"),
+        ),
+        (
+            "/style.css",
+            include_str!("../../../client/src/frontend/style.css"),
+        ),
         (
             "/recording.css",
-            include_str!("../../../client/recording.css"),
+            include_str!("../../../client/src/frontend/recording.css"),
         ),
     ] {
         for (accept, gzip) in [

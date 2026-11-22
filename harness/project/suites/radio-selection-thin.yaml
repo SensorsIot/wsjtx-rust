@@ -49,9 +49,9 @@
   - server/src/receive/receive.rs
   - server/src/receive/receive_http.rs
   - server/src/receive/spectrum.rs
-  - client/app.js
-  - client/index.html
-  - client/recording.js
+  - client/src/frontend/app.js
+  - client/src/frontend/index.html
+  - client/src/frontend/recording.js
   - tests/radio-selection.test.cjs
   - tools/test/node/selection-evidence.cjs
   - tools/test/node/support.cjs

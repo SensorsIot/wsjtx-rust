@@ -16,13 +16,13 @@ pub(crate) mod socket_protocol {
 pub(crate) fn router(state: App) -> Router {
     Router::new()
         .route("/", get(index))
-        .route("/authorization.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/authorization.js")) }))
-        .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/app.js")) }))
-        .route("/recording.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/recording.js")) }))
-        .route("/recording.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../../client/recording.css")) }))
-        .route("/contact.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/contact.js")) }))
-        .route("/logbook.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/logbook.js")) }))
-        .route("/style.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../../client/style.css")) }))
+        .route("/authorization.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/src/frontend/authorization.js")) }))
+        .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/src/frontend/app.js")) }))
+        .route("/recording.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/src/frontend/recording.js")) }))
+        .route("/recording.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../../client/src/frontend/recording.css")) }))
+        .route("/contact.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/src/frontend/contact.js")) }))
+        .route("/logbook.js", get(|| async { ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8")], include_str!("../../../client/src/frontend/logbook.js")) }))
+        .route("/style.css", get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], include_str!("../../../client/src/frontend/style.css")) }))
         .route("/session", post(session).layer(axum::extract::DefaultBodyLimit::max(limits::CONTROL_BYTES)))
         .route("/authorization/v1/bootstrap-scope", post(authorization_http::bootstrap_scope))
         .route("/authorization/v1/enroll", post(authorization_http::enroll))
@@ -120,7 +120,7 @@ fn source_commit(raw: Option<&'static str>) -> &'static str {
 }
 async fn index(State(app): State<App>) -> impl IntoResponse {
     let commit = source_commit(option_env!("WSTX_SOURCE_COMMIT"));
-    ([("x-wstx-source-commit", commit)], Html(include_str!("../../../client/index.html").replace(
+    ([("x-wstx-source-commit", commit)], Html(include_str!("../../../client/src/frontend/index.html").replace(
         "</head>", if app.profile.is_some() { "<link rel=\"stylesheet\" href=\"/recording.css\"><script src=\"/recording.js\" defer></script></head>" } else { "</head>" }
     ).replace(
         "<script src=\"/app.js\" defer></script>",
@@ -292,14 +292,14 @@ fn client_build() -> &'static str {
     BUILD.get_or_init(|| {
         let mut digest = ring::digest::Context::new(&ring::digest::SHA256);
         for asset in [
-            include_str!("../../../client/index.html"),
-            include_str!("../../../client/authorization.js"),
-            include_str!("../../../client/app.js"),
-            include_str!("../../../client/recording.js"),
-            include_str!("../../../client/recording.css"),
-            include_str!("../../../client/contact.js"),
-            include_str!("../../../client/logbook.js"),
-            include_str!("../../../client/style.css"),
+            include_str!("../../../client/src/frontend/index.html"),
+            include_str!("../../../client/src/frontend/authorization.js"),
+            include_str!("../../../client/src/frontend/app.js"),
+            include_str!("../../../client/src/frontend/recording.js"),
+            include_str!("../../../client/src/frontend/recording.css"),
+            include_str!("../../../client/src/frontend/contact.js"),
+            include_str!("../../../client/src/frontend/logbook.js"),
+            include_str!("../../../client/src/frontend/style.css"),
         ] {
             digest.update(asset.as_bytes());
         }

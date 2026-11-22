@@ -48,7 +48,7 @@ test('TC-021-005: actual-server correlation, negative cases and size boundaries'
   const app = await server(); t.after(() => app.close());
   const a = await peer(app.origin), b = await peer(app.origin); t.after(() => {a.terminate(); b.terminate();});
   // ClientBuild oracle: SHA-256 over the client files in route order, first 16 hex digits.
-  const build = require('node:crypto').createHash('sha256').update(Buffer.concat(await Promise.all(['index.html', 'authorization.js', 'app.js', 'recording.js', 'recording.css', 'contact.js', 'logbook.js', 'style.css'].map(f => fs.readFile(path.join(__dirname, '../client', f)))))).digest('hex').slice(0, 16);
+  const build = require('node:crypto').createHash('sha256').update(Buffer.concat(await Promise.all(['index.html', 'authorization.js', 'app.js', 'recording.js', 'recording.css', 'contact.js', 'logbook.js', 'style.css'].map(f => fs.readFile(path.join(__dirname, '../client/src/frontend', f)))))).digest('hex').slice(0, 16);
   const expected = id => ({v: 1, type: 'station.status', id, data: {version: '0.1.0', radio: 'unconfigured', build}});
   assert.match(await (await fetch(app.origin + '/')).text(), new RegExp(`<body data-profile="false" data-build="${build}">`), 'the page carries the build it was served with');
   const [ra, rb] = await Promise.all([request(a, '{"v":1,"type":"station.get","id":12}'), request(b, '{"v":1,"type":"station.get","id":24}')]);

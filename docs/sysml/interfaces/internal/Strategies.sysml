@@ -119,22 +119,22 @@ package WstxStrategies {
         doc /* The sounds of the station's alerts, distinct from one another. */
         enum oldPhone {
             @CodeDiffers {
-                what = "The code's alerts have one tone (tone in client/contact.js).";
+                what = "The code's alerts have one tone (tone in client/src/frontend/contact.js).";
             }
         }
         enum bell {
             @CodeDiffers {
-                what = "The code's alerts have one tone (tone in client/contact.js).";
+                what = "The code's alerts have one tone (tone in client/src/frontend/contact.js).";
             }
         }
         enum chime {
             @CodeDiffers {
-                what = "The code's alerts have one tone (tone in client/contact.js).";
+                what = "The code's alerts have one tone (tone in client/src/frontend/contact.js).";
             }
         }
         enum beep {
             @CodeDiffers {
-                what = "The code's alerts have one tone (tone in client/contact.js).";
+                what = "The code's alerts have one tone (tone in client/src/frontend/contact.js).";
             }
         }
     }
