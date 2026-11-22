@@ -25,6 +25,15 @@ CASE = """
         @TestedBy { test = "server/tests/clock.rs"; }
     }
 """
+PLANNED = """
+    verification 'TC-043-002' {
+        doc /* The offset estimate. */
+        subject clock : ClockService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::planned; }
+        objective { verify 'CL-043-02'; }
+    }
+"""
 MODEL = {
     "Requirements.sysml": """// Canonical authority: SysML
 package WstxRequirements {
@@ -131,6 +140,10 @@ class ClauseTests(unittest.TestCase):
         """TV-038 (TR-11): a skeleton case, a target clause without case and an interface clause from an end's FR."""
         self.assertEqual(self.faults(), [])
 
+    def test_a_planned_case_skeleton_without_a_bound_test_is_accepted(self):
+        """TV-038 (TR-11, M6.5): a planned case of a target clause stands without @TestedBy until its test is written."""
+        self.assertEqual(self.faults([(FUNCTION_KEY, CASE, CASE + PLANNED)]), [])
+
     def test_debugging_clause_without_step_is_accepted(self):
         """TV-039 (TR-11): a clause of a debugging function carries no use-case step."""
         self.assertEqual(self.faults([
@@ -171,6 +184,9 @@ class ClauseTests(unittest.TestCase):
             "extra feature": (
                 [(FUNCTION_KEY, "        @TestLevel", "        attribute toleranceMs : Integer = 5;\n        @TestLevel")],
                 [f"TC-043-001 holds attribute toleranceMs: {FUNCTION_KEY}:23"]),
+            "implemented clause with only a planned case": (
+                [(FUNCTION_KEY, CASE, PLANNED.replace("CL-043-02", "CL-043-01"))],
+                [f"CL-043-01 is implemented and has no bound case: {FUNCTION_KEY}:6"]),
             "implemented clause without case": (
                 [(FUNCTION_KEY, CASE, "")],
                 [f"CL-043-01 is implemented and has no case: {FUNCTION_KEY}:6"]),
@@ -185,6 +201,11 @@ class ClauseTests(unittest.TestCase):
         for label, (changes, expected) in faults.items():
             with self.subTest(label):
                 self.assertEqual(self.faults(changes), expected)
+        for state in ("partial", "implemented"):
+            with self.subTest(f"{state} case without a bound test"):
+                unbound = PLANNED.replace("planned", state)
+                with self.assertRaisesRegex(ValueError, "lacks implementation/test binding: TC-043-002"):
+                    self.faults([(FUNCTION_KEY, CASE, CASE + unbound)])
 
 
 if __name__ == "__main__":

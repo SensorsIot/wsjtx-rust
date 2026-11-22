@@ -2406,7 +2406,7 @@ def clause_faults(model: Model, entries: dict, served=None, ends=None) -> list[t
             if subject is None:
                 faults.append(("TR-11", key, element.line, f"{identity} names no subject"))
             if identity.startswith("TC-"):
-                case_form(key, element, identity, faults)
+                case_form(key, element, identity, faults, entries.get(identity, {}).get("state") == "planned")
                 continue
             if not (folder and not own or key.startswith("interfaces/")):
                 faults.append(("TR-11", key, element.line, f"{identity} outside a function or interface file"))
@@ -2432,24 +2432,28 @@ def clause_faults(model: Model, entries: dict, served=None, ends=None) -> list[t
             if identity not in carried and not has_annotation(element, "Debugging"):
                 faults.append(("TR-11", key, element.line, f"{identity} is carried by no use-case step"))
     for identity, entry in entries.items():
-        if identity.startswith("CL-") and entry["state"] == "implemented" and not entry["cases"]:
-            faults.append(("TR-11", entry["file"], entry["line"], f"{identity} is implemented and has no case"))
+        if identity.startswith("CL-") and entry["state"] == "implemented":
+            if not entry["cases"]:
+                faults.append(("TR-11", entry["file"], entry["line"], f"{identity} is implemented and has no case"))
+            elif all(entries[case]["state"] == "planned" for case in entry["cases"]):
+                faults.append(("TR-11", entry["file"], entry["line"], f"{identity} is implemented and has no bound case"))
     return faults
 
 
 CASE_ANNOTATIONS = {"TestLevel", "Automation", "TestedBy"}
 
 
-def case_form(key: str, element: Element, identity: str, faults: list):
+def case_form(key: str, element: Element, identity: str, faults: list, planned: bool = False):
     """M6.5: a case is its identity, a one-line title, `subject`, `verify` in its objective,
-    `@TestLevel`, `@Automation` and `@TestedBy`."""
+    `@TestLevel`, `@Automation` and `@TestedBy`; a planned case (its test not yet written) may
+    stand without `@TestedBy`."""
     for child in element.children:
         if child.kind == "subject" or child.kind == "@" and child.name in CASE_ANNOTATIONS:
             continue
         if child.kind == "objective" and all(grand.kind == "verify" for grand in child.children) and not child.docs:
             continue
         faults.append(("TR-11", key, child.line, f"{identity} holds {child.kind} {child.name or ''}".rstrip()))
-    for name in sorted(CASE_ANNOTATIONS):
+    for name in sorted(CASE_ANNOTATIONS - ({"TestedBy"} if planned else set())):
         if not has_annotation(element, name):
             faults.append(("TR-11", key, element.line, f"{identity} has no @{name}"))
     docs = [text for _offset, text, kind in element.docs if kind == "doc"]
