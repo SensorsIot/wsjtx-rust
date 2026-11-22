@@ -21,7 +21,8 @@ package WstxProfilePart {
             module = "server/src/profile.rs; server/src/recording_http.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/main.rs, server/src/most_wanted.rs, "
+            what = "Its code stands in server/src/main.rs, "
+                + "server/src/operating/ranking/most_wanted.rs, "
                 + "server/src/profile.rs, server/src/radioControl/setup.rs, "
                 + "server/src/radioControl/radio_setup.rs, server/src/receive/recording.rs, "
                 + "server/src/recording_http.rs, outside server/src/profile/ and "

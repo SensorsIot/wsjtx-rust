@@ -376,7 +376,7 @@ package WstxProfileDocument {
         doc /* Profile MUST fetch the Most Wanted list of Club Log when the supervisor
              asks for it and keep the last good list for the operator (MostWantedFetch). */
         @Status { build = ImplementationState::partial; }
-        @ImplementedIn { module = "server/src/most_wanted.rs"; }
+        @ImplementedIn { module = "server/src/operating/ranking/most_wanted.rs"; }
     }
     #derivation connection { end #original ::> 'FR-016'; end #derive ::> 'CL-039-30'; }
 
@@ -443,9 +443,9 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-30'; }
         @TestedBy {
-            test = "server/src/most_wanted_tests.rs::"
+            test = "server/src/operating/ranking/most_wanted_tests.rs::"
                 + "tc_039_031_parser_refuses_all_but_the_exact_list; "
-                + "server/src/most_wanted_tests.rs::tc_039_031_response_body";
+                + "server/src/operating/ranking/most_wanted_tests.rs::tc_039_031_response_body";
         }
     }
 

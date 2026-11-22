@@ -84,6 +84,7 @@ mod selection_http_tests;
 mod socket_bounds_tests;
 use wstx_rust::{audio, decoder, source};
 mod contest;
+#[path = "operating/ranking/most_wanted.rs"]
 mod most_wanted;
 #[path = "receive/spectrum.rs"]
 mod spectrum;
