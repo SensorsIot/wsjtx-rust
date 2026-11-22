@@ -104,6 +104,7 @@ async fn tc_089_002_a_held_slot_check_counts_the_newest_period() {
 // P + 14.1 s with a station decoded at 1200 Hz in P: one build at once, at_utc_ms P + 14.1 s, P
 // counted (3), 1160..1240 closed: [[300, 1200], [1250, 2700]].
 // Proves: TC-089-001
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_003_the_marks_count_the_publication_of_the_period_in_progress_in_a_qso() {
     let f = station(true).await;
@@ -151,6 +152,7 @@ async fn tc_089_003_the_marks_count_the_publication_of_the_period_in_progress_in
 // parity flips: even, e - 30 and e - 60 s (2), the odd decode closes nothing:
 // [[300, 2700]].
 // Proves: TC-089-001
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_089_003_listening_counts_the_period_in_progress_once_completely_published() {
     let f = station(true).await;

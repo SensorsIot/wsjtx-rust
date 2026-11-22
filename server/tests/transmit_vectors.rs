@@ -347,6 +347,7 @@ fn deviation(ours: &[f64], reference: &[f64]) -> f64 {
 }
 
 // Proves: TC-005-001
+// Timing: signal
 #[test]
 fn tc_005_001_waveform_matches_zero_noise_ft8sim_within_tolerance() {
     const TOLERANCE: f64 = 0.003;
@@ -377,6 +378,7 @@ fn tc_005_001_waveform_matches_zero_noise_ft8sim_within_tolerance() {
 }
 
 // Proves: TC-005-001
+// Timing: signal
 #[test]
 fn tc_005_001_48k_waveform_and_ramps() {
     let tones = encode("CQ HB9BLA JN47").unwrap().tones;
@@ -428,6 +430,7 @@ fn tc_005_001_waveform_refusals() {
 }
 
 // Proves: TC-005-001
+// Timing: signal
 #[test]
 fn tc_005_001_receive_decoder_recovers_generated_waveforms() {
     let decoder = Decoder::new();
@@ -465,6 +468,7 @@ fn tc_005_001_receive_decoder_recovers_generated_waveforms() {
 }
 
 // Proves: TC-006-001
+// Timing: signal
 #[test]
 fn tc_006_001_period_selection_and_parity() {
     // 2026-10-31T12:00:00Z is an even period (multiple of 30 s).
@@ -489,6 +493,7 @@ fn tc_006_001_period_selection_and_parity() {
 }
 
 // Proves: TC-006-001
+// Timing: signal
 #[test]
 fn tc_006_001_start_plan_late_start_and_refusals() {
     let p: i64 = 1_793_448_015_000;

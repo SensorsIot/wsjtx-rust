@@ -447,6 +447,7 @@ fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_sourc
 // The consolidation key is call + band + effective mode + start
 // within 120 s; the stored station record wins byte for byte; repeatable and incremental.
 // Proves: TC-011-002
+// Timing: timer
 #[test]
 fn update_consolidates_within_two_minutes_and_existing_records_win_and_repeat_adds_nothing() {
     let dir = Dir::new();

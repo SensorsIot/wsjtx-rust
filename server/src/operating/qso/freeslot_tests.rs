@@ -295,6 +295,7 @@ fn close(a: f64, b: f64) -> bool {
 // gap is not filled by an older one, after two minutes without one none counts, and from a band
 // change on only later ones.
 // Proves: TC-039-010
+// Timing: timer
 #[test]
 fn tc_039_010_the_counted_periods_are_my_recent_rx_periods() {
     let job = ("job", 1);
@@ -658,6 +659,7 @@ fn tc_066_002_only_my_rx_parity_is_judged() {
 // change, and in a period older than the window while the window holds two received ones, it
 // leaves nothing out and 1500 stays.
 // Proves: TC-066-002
+// Timing: timer
 #[test]
 fn tc_066_002_decodes_of_periods_that_do_not_count_leave_nothing_out() {
     let five: Vec<Period> = (1..=5).rev().map(|b| period(b, false, 30, &[])).collect();
@@ -911,6 +913,7 @@ fn tc_082_001_other_parity_and_uncounted_decodes_close_nothing_the_busiest_perio
 // The value of one build has exactly {at_utc_ms, mode, rx_parity,
 // qso, periods, open} with the ranges as [lo_hz, hi_hz] integer pairs (WstxQsoControl::OpenSlots):
 // no run_id, listening, slots or per-slot numbers.
+// Timing: timer
 #[test]
 fn tc_082_001_the_value_of_a_build() {
     assert_eq!(
@@ -984,6 +987,7 @@ fn judge_p(
 // is in progress, at P + 20 s: P + 30 s has not started, so it is not due and its decode at 1200
 // closes nothing; P has ended: P .. P - 90 s count.
 // Proves: TC-089-001
+// Timing: timer
 #[test]
 fn tc_089_001_the_newest_rx_period_counts_once_its_complete_publication_is_there() {
     let w = with_p(&[row(30, None)]);

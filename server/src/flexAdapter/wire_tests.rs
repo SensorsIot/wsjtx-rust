@@ -22,6 +22,7 @@ fn info_reply_of_a_real_radio_gives_its_facts() {
 // One DAX packet exactly as a real FLEX-6600 sent it. It
 // carries no address or serial. Expected values were read from the capture with a separate tool.
 // Proves: TC-023-001
+// Timing: signal
 #[test]
 fn dax_packet_of_a_real_radio_decodes() {
     let raw = bytes(include_str!("../../../fixtures/flex/dax_rx_6600.hex").trim());

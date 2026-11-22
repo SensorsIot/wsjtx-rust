@@ -202,6 +202,7 @@ fn nothing_is_keyed_or_played_without_explicit_armed_authority() {
 }
 
 // Proves: TC-008-003
+// Timing: signal
 #[test]
 fn ptt_is_keyed_at_period_start_with_readback_before_audio_at_planned_sample() {
     let f = Fake::new();
@@ -252,6 +253,7 @@ fn ptt_is_keyed_at_period_start_with_readback_before_audio_at_planned_sample() {
 }
 
 // Proves: TC-008-003
+// Timing: signal
 #[test]
 fn late_start_skips_the_elapsed_prefix_and_stale_or_unsynchronized_requests_are_refused() {
     let f = Fake::new();
@@ -834,6 +836,7 @@ fn ci_v_ptt_bytes_readback_and_hold_exclude_polling() {
 }
 
 // Proves: TC-009-007
+// Timing: radio
 #[test]
 fn closing_a_keyed_connection_sends_one_off_only_switch_and_timeouts_close() {
     let (actor, state) = radio();
@@ -1064,6 +1067,7 @@ fn settle(ms: u64) {
 // The release never depends on the
 // device reporting the end.
 // Proves: TC-008-005
+// Timing: timer
 #[test]
 fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls() {
     for stuck in [AudioPoll::Playing, AudioPoll::Idle] {
@@ -1093,6 +1097,7 @@ fn ptt_is_released_at_the_hard_deadline_when_the_device_never_finishes_or_stalls
 // still inside the release bound, completes normally; the station stays armed and its
 // next request plays.
 // Proves: TC-008-003
+// Timing: timer
 #[test]
 fn a_late_completion_report_inside_the_bound_completes_and_stays_armed() {
     let end = P + 500 + 12_640;
@@ -1146,6 +1151,7 @@ fn a_finished_device_completes_even_when_the_owner_step_runs_after_the_deadline(
 // + 1 000 ms = P + 14 140 <= P + 14 500, FT4 P + 6 340 <= P + 7 000, also after a late
 // start), the transmission fails audioStalled and the station disarms.
 // Proves: TC-008-005
+// Timing: timer
 #[test]
 fn a_device_that_stops_consuming_half_way_is_stalled_and_released_by_the_bound() {
     let ft4 = |seq| Request {
@@ -1382,6 +1388,7 @@ fn arm_is_refused_while_ptt_is_indeterminate_and_submit_checks_the_safety_revisi
 }
 
 // Proves: TC-008-004
+// Timing: timer
 #[test]
 fn render_drain_stops_topping_up_and_watchdog_flags_a_stall() {
     use wstx_rust::playback::{Fill, Progress, Renderer, Source, plan_fill};
@@ -1470,6 +1477,7 @@ fn render_model(capacity: u32, delay: impl Fn(i64) -> i64) -> (i64, i64, i64) {
 // delayed 40 ms once a second; a 20 ms buffer underruns then and its end report slips
 // by about 400 ms.
 // Proves: TC-008-004
+// Timing: signal
 #[test]
 fn the_render_buffer_absorbs_render_delays_without_delaying_the_start_or_the_end() {
     let load = |period: i64| if period % 1_000 == 500 { 40 } else { 0 };

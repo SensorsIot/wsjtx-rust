@@ -238,6 +238,7 @@ pub(crate) fn plaintext_station(name: &str) -> (App, std::path::PathBuf) {
 // (15 s, 20 s], never earlier); another peer's station.get every 5 s is answered within 2 s
 // throughout and after; a peer answering every Ping stays open through 60 s.
 // Proves: TC-021-008
+// Timing: display
 #[tokio::test(start_paused = true)]
 async fn silent_peer_is_removed_at_the_next_heartbeat_after_15_s() {
     let (app, root) = plaintext_station("liveness");
@@ -347,6 +348,7 @@ async fn silent_peer_is_removed_at_the_next_heartbeat_after_15_s() {
 // heartbeats, its longest heartbeat interval and its close, on the one driven runtime clock from
 // its connect. Hand values from connection(): the first heartbeat tick is consumed at the begin,
 // writes follow every 5000 ms, removal at the first tick more than 15000 ms after the last Pong.
+// Timing: display
 #[tokio::test(start_paused = true)]
 async fn station_records_each_ended_socket_on_the_one_utc_clock() {
     let (app, root) = plaintext_station("socket-record");

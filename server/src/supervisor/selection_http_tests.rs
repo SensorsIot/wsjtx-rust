@@ -465,6 +465,7 @@ async fn live_native_selection_commission_has_zero_native_effects() {
 // What selection.state carries and when: the top-level
 // fields that changed, the radio facts' new dates alone at most every 2 s on Detailed and every
 // 30 s below it, a new value at once.
+// Timing: display
 #[test]
 fn selection_state_paces_only_new_dates_of_the_radio_facts() {
     let fact = |value: Value, seq: u64, at: u64| json!({"value":value,"query_sequence":seq,"observed_at_ms":at,"confirmed":true});

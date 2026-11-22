@@ -288,6 +288,7 @@ class SettleTaskTests(unittest.TestCase):
         self.assertEqual(stop_fails["sleeps"], [800], stop_fails)
 
     # Proves: TC-317-04
+    # Timing: timer
     def test_the_settle_waits_for_the_task_at_most_10_s_then_pauses(self):
         self.check(PROCESS)
         text = read(PROCESS)

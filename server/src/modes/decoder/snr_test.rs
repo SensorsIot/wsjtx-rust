@@ -1,4 +1,5 @@
 use super::*;
+// Timing: signal
 #[test]
 fn ft8_period_follows_the_receive_period_grid() {
     // A known period start places every window's periods on its 180000-frame grid.

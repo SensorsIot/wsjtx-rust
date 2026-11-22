@@ -179,6 +179,7 @@ fn hears_us_expires_and_ignores_other_band_and_mode() {
 // RF to audio from the dial, newest first, distinct, inside the
 // range.
 // Proves: TC-039-020
+// Timing: timer
 #[test]
 fn decoded_offsets_come_from_the_dial_of_this_band_and_mode() {
     let mut h = Hearing::default();
@@ -341,6 +342,7 @@ fn next_packet_parses_and_bounds() {
 // The reconnect delay doubles to its bound and starts over only
 // after a healthy session.
 // Proves: TC-039-052
+// Timing: timer
 #[test]
 fn backoff_doubles_to_the_bound() {
     let mut b = Backoff::new(&FeedSession::BROKER);
@@ -1152,6 +1154,7 @@ fn tc_039_048_rp_is_read_as_the_reported_snr() {
 // His decoded offsets are kept once for each parity of the sender's t_tx; an
 // offset of the other parity excludes nothing of mine.
 // Proves: TC-039-048
+// Timing: timer
 #[test]
 fn tc_039_048_decoded_offsets_are_kept_per_parity() {
     // 1_000_005 s lies in FT8 period 66_667 (odd), 1_000_020 s in 66_668 (even), hand-divided by
@@ -1367,6 +1370,7 @@ async fn tc_039_048_post_pskr_use_saves_and_refuses() {
 // Use off unsubscribes the target and Use on subscribes it again; the hearing
 // state is heard (time and rp), no (connected and subscribed, no spot) or unknown.
 // Proves: TC-039-048
+// Timing: timer
 #[test]
 fn tc_039_048_use_drives_the_target_subscription_and_the_hearing_state() {
     let dir = Dir::new();

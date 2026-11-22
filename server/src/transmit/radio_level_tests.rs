@@ -229,6 +229,7 @@ fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
 
 // A meter read is bounded at 400 ms (the contract's number): on a station clock frozen at T,
 // the Tune display read hands the radio T + 400 ms with each meter frame.
+// Timing: radio
 #[test]
 fn the_meter_read_bound_is_400_ms_without_an_override() {
     let (f, r) = station(radio(fixed([0, 7])));

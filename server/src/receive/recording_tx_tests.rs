@@ -121,6 +121,7 @@ impl Recording {
 // The noted Tx period 12:00:15 gets no decode attempt and a
 // transmitted view; the receive period after it is decoded.
 // Proves: TC-061-005
+// Timing: signal
 #[test]
 fn tx_period_has_no_decode_attempt_and_publishes_a_transmitted_view() {
     let fixture = Fixture::new();

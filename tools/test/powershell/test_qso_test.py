@@ -713,6 +713,7 @@ class DriverTests(DriverBase):
         self.assertEqual(self.tx_for([[1000, 1080], [1100, 1160]], 1050.0), [1000])
 
     # Proves: TC-171-05
+    # Timing: timer
     def test_another_parity_a_null_build_or_no_open_range_gives_no_call_until_a_fitting_build(self):
         s = standard()
         s.d["builds"] = [{"from": 0, "build": None},
@@ -1489,6 +1490,7 @@ class WsTests(unittest.TestCase):
         return reasons[0]
 
     # Proves: TC-192-03
+    # Timing: timer
     def test_the_handshake_and_subscription_follow_the_station_rules_and_pushes_arrive(self):
         pushes = [(0.2, {"v": 1, "type": "clock.time", "data": {"utc_ms": 1}}),
                   (0.4, {"v": 1, "type": "heartbeat", "data": {}}),

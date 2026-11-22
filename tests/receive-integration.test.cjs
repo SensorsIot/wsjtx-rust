@@ -10,6 +10,7 @@ const expected=JSON.parse(process.env.WSTX_RECEIVE_FIXTURE_EXPECTED||'null');
 
 // A readable subset of the decoded rows is checked.
 // Proves: TC-007-012, TC-009-004, TC-055-007
+// Timing: display
 test('real native audio reaches Rust manager HTTP and literal browser callsign',{timeout:60000},async()=>{
   assert.ok(origin&&expected,'run through the Rust live native manager/browser test');
   const mode=expected.mode;assert.ok(['ft4','ft8'].includes(mode));

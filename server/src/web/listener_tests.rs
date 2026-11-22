@@ -136,6 +136,7 @@ fn protocol_returns_specified_response_and_errors() {
 
 // A delayed tick cannot produce an early accepted successor.
 // Proves: TC-010-005
+// Timing: display
 #[tokio::test(start_paused = true)]
 async fn detailed_late_tick_rearms_from_actual_acceptance() {
     use std::time::Duration;
@@ -160,6 +161,7 @@ async fn detailed_late_tick_rearms_from_actual_acceptance() {
 
 // Every retained Detailed row is sent once, in order, after a stall.
 // Proves: TC-054-001
+// Timing: display
 #[tokio::test(start_paused = true)]
 async fn detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up() {
     use std::time::Duration;
@@ -201,6 +203,7 @@ async fn detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up() {
 
 // Thin sends keep a 2 s grid instead of drifting by the tick delay.
 // Proves: TC-054-001
+// Timing: display
 #[test]
 fn thin_sends_are_anchored_to_the_previous_deadline() {
     use std::time::Duration;

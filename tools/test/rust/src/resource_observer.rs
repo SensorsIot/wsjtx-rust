@@ -132,6 +132,7 @@ pub fn poll_to_completion<F: std::future::Future>(
         }
     }
 }
+// Timing: compute
 #[test]
 fn cancel_point_answers_true_from_the_call_after_n() {
     fn shared<T: Sync>(_: &T) {}

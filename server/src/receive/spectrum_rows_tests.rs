@@ -50,6 +50,7 @@ fn both_fft_paths_agree_with_direct_dft_and_analytic_dbfs() {
 
 // Actual worker row boundary/right padding against original DFT.
 // Proves: TC-010-001
+// Timing: display
 #[test]
 fn replay_window_start_and_partial_last_row_follow_source_clock() {
     let f = Fixture::new();

@@ -591,6 +591,7 @@ fn station_failed_close_is_quarantined_and_never_reopened() {
 }
 
 // Proves: TC-022-009
+// Timing: radio
 #[test]
 fn station_revocation_or_invalid_commissioning_cancels_and_releases_then_no_io() {
     for gate in [
@@ -654,6 +655,7 @@ fn station_missing_preconditions_cause_zero_native_open() {
 }
 
 // Proves: TC-022-009
+// Timing: radio
 #[test]
 fn station_identity_change_mid_attempt_fences_late_result() {
     let s = Station::new(Device::Silent);
@@ -934,6 +936,7 @@ fn station_rf_work_shares_the_one_owner_without_lifecycle_interference() {
 // the lifecycle's release cancels that work, the owner closes within the 250 ms RF
 // release bound, and nothing reopens or replays it.
 // Proves: TC-022-009
+// Timing: radio
 #[test]
 fn station_revocation_during_rf_work_cancels_it_and_releases_without_reopen() {
     let s = Station::new(Device::Present);

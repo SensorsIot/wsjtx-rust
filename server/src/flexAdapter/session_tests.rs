@@ -163,6 +163,7 @@ fn view_tracks_ownership_and_removal_from_status_lines() {
 
 // The measurement is this host's clock minus the packet's own time, with
 // the sub-second part only where the timestamp kind carries real time.
+// Timing: signal
 #[test]
 fn vita_offset_measures_host_clock_minus_packet_time() {
     let packet = |tsf, integer_time, fractional_time| wire::Vita {

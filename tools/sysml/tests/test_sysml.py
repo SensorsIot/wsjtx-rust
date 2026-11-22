@@ -149,6 +149,7 @@ class ValidatorRunTests(unittest.TestCase):
             status = tool.main(["--cache-dir", str(self.root), *argv])
         return status, output.getvalue(), errors.getvalue()
 
+    # Timing: timer
     def test_limit_is_600_seconds(self):
         """TV-191 (TR-02): the Pilot run is started with a time limit of 600 s."""
         process = Process(stdout=MARKER + "\n")
@@ -263,6 +264,7 @@ class ValidatorRunTests(unittest.TestCase):
         self.assertNotIn("Semantic validation failed", output + errors)
         self.assertEqual(copy.read_bytes(), before)
 
+    # Timing: timer
     def test_export_run_unchanged(self):
         """TV-200 (TR-02): the Pilot export keeps its 900 s limit and its 1 GB heap and prints
         no duration line."""

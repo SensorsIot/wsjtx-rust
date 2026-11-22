@@ -84,6 +84,7 @@ fn audio_filter_response() {
 }
 // Rational count independent of callback partition, no padded edges.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn audio_partition_count_delay() {
     for rate in [44100, 48000] {
@@ -171,6 +172,7 @@ fn acknowledge(source: &mut LiveSource, p: EpochProposal, id: &str) {
 }
 // Actual epoch acknowledgement and gaps without invented samples.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn audio_epoch_known_unknown_gap_and_cancel() {
     let f = format(48000);
@@ -215,6 +217,7 @@ fn audio_epoch_known_unknown_gap_and_cancel() {
 }
 // Queue duration cap, explicit loss and bounded cancellation.
 // Proves: TC-002-001, TC-007-011
+// Timing: signal
 #[test]
 fn audio_queue_and_clock_bounds() {
     let q = PacketQueue::new(format(48000)).unwrap();
@@ -246,6 +249,7 @@ fn audio_queue_and_clock_bounds() {
 
 // Exact bounded packet ownership recycles across ring wraps.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn audio_native_packet_buffers_recycle_without_loss_or_counter_drift() {
     let format = format(48000);
@@ -289,6 +293,7 @@ fn audio_native_packet_buffers_recycle_without_loss_or_counter_drift() {
 
 // Impulse center and known-gap phase use an independent rational oracle.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn audio_impulse_and_large_gap_phase() {
     for rate in [44100, 48000] {
@@ -360,6 +365,7 @@ fn audio_overflow_and_duplicate_epoch() {
 }
 // Backoff and explicit stop never rely on UTC.
 // Proves: TC-002-003
+// Timing: timer
 #[test]
 fn audio_lifecycle_retries() {
     let mut lifecycle = Lifecycle::default();
@@ -698,6 +704,7 @@ fn audio_wave_format_validation() {
 
 // A failed bracket cannot conceal a later UTC jump.
 // Proves: TC-007-011
+// Timing: clock
 #[test]
 fn audio_clock_rejected_bracket_preserves_reference() {
     let a = ClockCorrelation::bracket(100, 1000, 102).unwrap();
@@ -856,6 +863,7 @@ fn drain(source: &mut LiveSource, blocks: &mut Vec<SampleBlock>) -> Vec<EpochPro
 // counted engine glitch on a continuous timeline: one source epoch, gap-free canonical
 // frames, no reset.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn audio_contiguous_engine_discontinuity_keeps_the_source_epoch() {
     let f = format(48000);
@@ -940,6 +948,7 @@ fn audio_unknown_loss_epochs_name_their_trigger() {
 // The 2 ms QPC bound for a contiguous flagged packet:
 // +-0.55 ms (the observed jitter) and exactly 2 ms are kept; 2.1 ms early or late is loss.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn audio_contiguous_flag_qpc_tolerance_boundary() {
     let f = format(48000);
@@ -1006,6 +1015,7 @@ fn audio_queue_full_epoch_names_its_trigger() {
 // accepted engine glitches are marked on the canonical timeline, so a window can count
 // them; a new epoch forgets them.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
     let f = format(48000);
@@ -1042,6 +1052,7 @@ fn audio_zero_filled_and_glitch_frames_are_marked_per_window() {
 // Sustained silence over more packets than the
 // mark limit (600 silent 480-frame packets after one signal packet) stays counted in full.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn audio_sustained_silence_is_counted_in_full() {
     let f = format(48000);

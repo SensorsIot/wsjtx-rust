@@ -41,6 +41,7 @@ test('evidence reader tolerates only a page-abandoned receive body that is read 
   assert.equal(errors.length,1,'a completed malformed body stays an evidence error');assert.match(errors[0],/^actual \/receive\/results response: /);
   assert.equal(seen.abandonedBodies.length,1,'a malformed body is never kept aside as abandoned');
 });
+// Timing: display
 test('network lifetime and correlated Off oracle reject true violations',()=>{
   // Frozen52311 CDP finished before the next admission; response.json callbacks overlapped.
   const transfers=[{route:'/receive/selection',started:245504.2448,ended:246268.4788},{route:'/receive/selection',started:246269.0282,ended:247211.7476}];
@@ -55,6 +56,7 @@ test('network lifetime and correlated Off oracle reject true violations',()=>{
 
 // Evidence (no promise): the failure output of a Thin or Off window, from fixed
 // sockets, stale records and frames. Each record appears exactly once, on the one UTC-ms clock.
+// Timing: display
 test('Failure evidence of a Thin or Off window lists each socket, stale and close once in UTC ms',async()=>{
   const parse=lines=>{assert.equal(lines[0],'WSTX_EVIDENCE a Thin or Off window failed: from the lines below');assert.equal(lines.filter(l=>l.includes('a Thin or Off window failed')).length,1,'one header line');return lines.slice(1).map(l=>{assert.match(l,/^WSTX_EVIDENCE \{/);return JSON.parse(l.slice('WSTX_EVIDENCE '.length));});};
   // Hand calculation: origin 1800000000000.5 ms; Node 1000 -> 1800000001000.5, 61000.25 -> 1800000061000.75.
