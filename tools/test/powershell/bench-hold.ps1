@@ -8,7 +8,7 @@
 # server's try_lock gets WouldBlock: the port is in use and never opened. It rescans the devices every
 # -PollMilliseconds and locks each newly known device at once (a radio switched on, a new adapter).
 # It writes <Record>.holding (the locked paths) once the first scan's locks are held, and ends,
-# releasing them, when the record is gone or names a candidate process that no longer runs. A first
+# releasing them, when the record is gone or names a candidate process that has ended. A first
 # scan that fails, finds no device or cannot lock one ends it before .holding (exit 2): it never
 # reports ready with less locked than Windows knows. A later scan that fails, or a device that cannot
 # be locked then, keeps every lock held and is tried again at the next poll.

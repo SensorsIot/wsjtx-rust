@@ -136,7 +136,7 @@ class EmulatorTests(unittest.TestCase):
         self.write_record()
         rc, out = self.run_tool("-Stop", procs=self.ours())
         self.assertEqual(rc, 2, out)
-        self.assertIn("the candidate bench of #7 owns the emulator", out)
+        self.assertIn("the candidate bench of #%d owns the emulator" % 7, out)
         self.assertEqual(self.system(), [])                       # nothing ended
         rc, out = self.run_tool("-Stop", "-Bench", procs=self.ours())
         self.assertEqual(rc, 0, out)

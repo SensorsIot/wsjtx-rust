@@ -24,13 +24,14 @@ TOOL = os.path.join(HERE, "candidate-bench.ps1")
 COMMIT = "c0ffee00" * 5
 CREATED = "2026-11-22T10:00:00Z"
 STAMP = "2026-11-22T10:00:00.0000000Z"
+ISSUE, OTHER, RUNNING = 7, 8, 9
 RADIO = "USB\\VID_10C4&PID_EA60\\IC-7300 03001234 A"
 
 
 def prelude(log, procs=(), candidate="listens", holder="holds", kill="works"):
     """`procs`: (pid, creation time, executable, command line) of the fake process table. `candidate`:
     "listens", "silent" (runs, no listening line), "gone" (no process after the start) or "unwritable"
-    (it runs and the record can no longer be written). `holder`: "holds" (reports its locks) or
+    (it runs and the record cannot be written). `holder`: "holds" (reports its locks) or
     "silent". `kill`: "works" or "fails" (taskkill leaves the process)."""
     rows = "\n".join(f"Add-Proc {pid} {pwsh.ps_quote(created)} {pwsh.ps_quote(exe)} {pwsh.ps_quote(cmd)}"
                      for pid, created, exe, cmd in procs)
@@ -86,7 +87,7 @@ class CandidateBenchTests(unittest.TestCase):
         t = self.tmp.name
         self.repo, self.live, self.build = os.path.join(t, "repo"), os.path.join(t, "live"), os.path.join(t, "build")
         self.station = os.path.join(t, "station")
-        self.worktree = os.path.join(self.repo, ".git", "harness-parallel", "worktrees", "issue-7-g2")
+        self.worktree = os.path.join(self.repo, ".git", "harness-parallel", "worktrees", f"issue-{ISSUE}-g2")
         os.makedirs(self.worktree)
         self.state({"7": {"path": self.worktree}})
         self.sim = os.path.join(self.station, "profiles", "SIM-IC7300")
@@ -98,7 +99,7 @@ class CandidateBenchTests(unittest.TestCase):
         with open(self.emulator, "w", encoding="utf-8") as f:
             f.write(f"Add-Content -LiteralPath {pwsh.ps_quote(self.log)} -Value ('emulator ' + ($args -join ' '))\n"
                     "Write-Output 'EMULATOR OK'\nexit 0\n")
-        self.exe = os.path.join(self.build, "issue-7-bench", "release", "wstx-rust.exe")
+        self.exe = os.path.join(self.build, f"issue-{ISSUE}-bench", "release", "wstx-rust.exe")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -166,7 +167,7 @@ class CandidateBenchTests(unittest.TestCase):
         scratch, appdata = os.path.join(self.bench(), "profile"), os.path.join(self.bench(), "appdata")
         self.assertEqual(self.system()[1:], [
             f"cargo build --release --locked --manifest-path {os.path.join(self.worktree, 'Cargo.toml')} "
-            f"| target {os.path.join(self.build, 'issue-7-bench')}",
+            f"| target {os.path.join(self.build, f'issue-{ISSUE}-bench')}",
             f"hold every port but COM4 | root {appdata}",  # every port Windows knows but the simulator's, in the candidate's data
             "emulator -Start",
             f'start {self.exe} --profile "{scratch}" | window Hidden | appdata {appdata} | other WSTX 0 | locks held True'])
@@ -232,7 +233,7 @@ class CandidateBenchTests(unittest.TestCase):
 
     def test_one_bench_at_a_time(self):
         self.record(9)
-        self.assertRefused(self.run_tool("-Start", "-Issue", "7", procs=self.running(9)), "the bench of #9 runs")
+        self.assertRefused(self.run_tool("-Start", "-Issue", "7", procs=self.running(9)), f"the bench of #{RUNNING} runs")
 
     def test_a_second_start_beside_a_running_start_is_refused(self):
         os.makedirs(self.live, exist_ok=True)
@@ -259,7 +260,7 @@ class CandidateBenchTests(unittest.TestCase):
         os.makedirs(other)
         self.state({"7": {"path": other}})
         self.assertRefused(self.run_tool("-Start", "-Issue", "7"), "is not its own issue worktree")
-        named8 = os.path.join(self.repo, ".git", "harness-parallel", "worktrees", "issue-8")
+        named8 = os.path.join(self.repo, ".git", "harness-parallel", "worktrees", f"issue-{OTHER}")
         os.makedirs(named8)
         self.state({"7": {"path": named8}})
         self.assertRefused(self.run_tool("-Start", "-Issue", "7"), "is not its own issue worktree")
@@ -294,7 +295,7 @@ class CandidateBenchTests(unittest.TestCase):
                 self.assertFalse(os.path.exists(os.path.join(self.bench(), "bench.json")))
 
     def test_a_failed_start_ends_the_candidate_it_started_by_its_own_pid(self):
-        # The record can no longer be written after the candidate started, so it does not name the
+        # The record cannot be written after the candidate started, so it does not name the
         # candidate: the start ends it by the pid it got from the start.
         rc, out = self.run_tool("-Start", "-Issue", "7", candidate="unwritable")
         self.assertEqual(rc, 2, out)
