@@ -2445,8 +2445,8 @@ CASE_ANNOTATIONS = {"TestLevel", "Automation", "TestedBy"}
 
 def case_form(key: str, element: Element, identity: str, faults: list, planned: bool = False):
     """M6.5: a case is its identity, a one-line title, `subject`, `verify` in its objective,
-    `@TestLevel`, `@Automation` and `@TestedBy`; a planned case (its test not yet written) may
-    stand without `@TestedBy`."""
+    `@TestLevel`, `@Automation` and `@TestedBy`; a planned case (its test not yet written) has
+    no `@TestedBy`."""
     for child in element.children:
         if child.kind == "subject" or child.kind == "@" and child.name in CASE_ANNOTATIONS:
             continue
@@ -2456,6 +2456,8 @@ def case_form(key: str, element: Element, identity: str, faults: list, planned: 
     for name in sorted(CASE_ANNOTATIONS - ({"TestedBy"} if planned else set())):
         if not has_annotation(element, name):
             faults.append(("TR-11", key, element.line, f"{identity} has no @{name}"))
+    if planned and has_annotation(element, "TestedBy"):
+        faults.append(("TR-11", key, element.line, f"{identity} is planned and has @TestedBy"))
     docs = [text for _offset, text, kind in element.docs if kind == "doc"]
     if len(docs) != 1 or len(element.docs) != 1:
         faults.append(("TR-11", key, element.line, f"{identity} has {len(element.docs)} titles"))

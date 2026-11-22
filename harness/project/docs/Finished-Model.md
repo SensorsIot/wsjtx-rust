@@ -183,7 +183,7 @@ and holds the parts ranking, auto and qso.
 - **M6.5** A test case stands beside its clause and verifies it. It is a skeleton and a
   title: its identity, a one-line title, `subject`, `verify`, `@TestLevel`, `@Automation`
   and `@TestedBy`; the bound test is the description of the test. A case whose test is not
-  yet written is `planned` and has no `@TestedBy`; a partial or implemented case is bound,
+  yet written is `planned` and has no `@TestedBy`; a partial or implemented case is bound
   only to tests that show what its clause promises. A clause without a case stands at target
   or partial; built and tested is `implemented`, and an implemented clause has a bound case. A clause that prevents something (a refusal, a
   disabled control, a MUST NOT) has a case bound to a negative test: a test that tries it

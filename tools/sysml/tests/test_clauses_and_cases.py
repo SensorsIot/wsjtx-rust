@@ -184,6 +184,10 @@ class ClauseTests(unittest.TestCase):
             "extra feature": (
                 [(FUNCTION_KEY, "        @TestLevel", "        attribute toleranceMs : Integer = 5;\n        @TestLevel")],
                 [f"TC-043-001 holds attribute toleranceMs: {FUNCTION_KEY}:23"]),
+            "planned case with a bound test": (
+                [(FUNCTION_KEY, "AutomationState::implemented", "AutomationState::planned")],
+                [f"CL-043-01 is implemented and has no bound case: {FUNCTION_KEY}:6",
+                 f"TC-043-001 is planned and has @TestedBy: {FUNCTION_KEY}:20"]),
             "implemented clause with only a planned case": (
                 [(FUNCTION_KEY, CASE, PLANNED.replace("CL-043-02", "CL-043-01"))],
                 [f"CL-043-01 is implemented and has no bound case: {FUNCTION_KEY}:6"]),
