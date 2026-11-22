@@ -11,6 +11,9 @@
 #                           never another process
 #   emulator.ps1 -Status    whether the recorded emulator runs, and any other emulator on COM5
 #   -DryRun (with -Start or -Stop) prints every step and changes nothing (it still reads the processes).
+# While a candidate bench owns the emulator (a record <RunRoot>\<n>\bench\bench.json with emulator true,
+# candidate-bench.ps1), -Stop refuses unless the bench itself stops it (-Bench): one bench's emulator is
+# never stopped by another run.
 # -Emulator is the emulator's project folder (its .venv\Scripts\python.exe and simulator.py).
 # The record (pid, creation time, command, run) is <git common dir>/harness-parallel/radio/
 # emulator.json, beside the radio lease (lease.json), so every worktree of the repository sees it.
@@ -18,8 +21,9 @@
 # NOT-RUNNING (-Status), DRY-RUN. Exit 2: EMULATOR ERROR, refused or failed; a start that fails
 # ends what it started and removes the record.
 [CmdletBinding(PositionalBinding = $false)]
-param([switch]$Start, [switch]$Stop, [switch]$Status, [switch]$DryRun,
+param([switch]$Start, [switch]$Stop, [switch]$Status, [switch]$DryRun, [switch]$Bench,
       [string]$Emulator = 'D:\Github\IC-7300 simulator', [string]$StateDir, [int]$ReadySeconds = 30,
+      [string]$RunRoot = 'D:\wstx-tmp\live',
       [Parameter(ValueFromRemainingArguments = $true)][string[]]$Rest)
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
 
@@ -101,8 +105,8 @@ function Ready-Run($artifacts, $before) {
 try {
   $given = @($PSBoundParameters.Keys | Where-Object { $_ -ne 'Rest' } | ForEach-Object { "-$_" }) + @($Rest | Where-Object { $_ })
   $modes = @(@('Start', 'Stop', 'Status') | Where-Object { $PSBoundParameters.ContainsKey($_) })
-  $unknown = @($PSBoundParameters.Keys | Where-Object { $_ -notin @('Start', 'Stop', 'Status', 'DryRun', 'Emulator', 'StateDir', 'ReadySeconds', 'Rest') }) + @($Rest | Where-Object { $_ })
-  if ($unknown -or $modes.Count -ne 1 -or -not $PSBoundParameters[$modes[0]] -or ($DryRun -and $Status)) {
+  $unknown = @($PSBoundParameters.Keys | Where-Object { $_ -notin @('Start', 'Stop', 'Status', 'DryRun', 'Bench', 'Emulator', 'StateDir', 'ReadySeconds', 'RunRoot', 'Rest') }) + @($Rest | Where-Object { $_ })
+  if ($unknown -or $modes.Count -ne 1 -or -not $PSBoundParameters[$modes[0]] -or ($DryRun -and $Status) -or ($Bench -and -not $Stop)) {
     Finish 2 'ERROR' "need exactly one of -Start, -Stop, -Status (-DryRun only with -Start or -Stop), not '$($given -join ' ')'"
   }
   if (-not $StateDir) { $StateDir = Join-Path (git -C $PSScriptRoot rev-parse --path-format=absolute --git-common-dir) 'harness-parallel\radio' }
@@ -119,6 +123,16 @@ try {
   }
 
   if ($Stop) {
+    if (-not $Bench -and (Test-Path -LiteralPath $RunRoot -PathType Container)) {
+      foreach ($dir in Get-ChildItem -LiteralPath $RunRoot -Directory) {
+        $benchRecord = Join-Path $dir.FullName 'bench\bench.json'
+        if (-not (Test-Path -LiteralPath $benchRecord -PathType Leaf)) { continue }
+        $owner = try { [IO.File]::ReadAllText($benchRecord) | ConvertFrom-Json } catch { $null }
+        if ($owner -and $owner.PSObject.Properties['emulator'] -and $owner.emulator) {
+          Finish 2 'ERROR' "the candidate bench of #$($dir.Name) owns the emulator: candidate-bench.ps1 -Stop -Issue $($dir.Name) stops it, nothing done"
+        }
+      }
+    }
     if (-not $DryRun) { Take-Lock; $record = Read-Record; $live = Live $record }
     if (-not $record) { Others @(); Finish 0 'NONE' "no record at $(Record-Path): nothing stopped" }
     if (-not $live) {

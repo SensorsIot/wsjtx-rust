@@ -223,6 +223,44 @@ says.
   receive-only setup confirmation ([CAT confirmation](#simulator-live-tests)), which the
   operator then gives again.
 
+### Candidate bench
+
+The function test of a CR runs before the merge queue, so its candidate is on no installed
+station (the deploy line installs only landed commits). A live test on the simulator therefore
+runs the candidate itself on a bench of its own,
+`tools/test/powershell/candidate-bench.ps1 -Start|-Stop|-Status -Issue <n>`:
+
+- **One bench at a time,** and none while the installed station runs the simulator profile:
+  the emulator's COM4 and the band simulator's audio cables have one user. One `-Start` runs at a
+  time (`D:\wstx-tmp\live\candidate-bench.lock`), and its record is written before the build.
+- **The candidate's own build:** the issue's worktree of its current generation (the workspace
+  records), built with `cargo build --release --locked` into `D:\wstx-build\issue-<n>-bench`.
+- **A scratch profile:** a copy of `profiles\SIM-IC7300` in `D:\wstx-tmp\live\<n>\bench\profile`,
+  bound to a free port on `127.0.0.1` (plain HTTP, loopback only), PSK Reporter off, no UDP target,
+  no radio discovery at start; its own station data (`LOCALAPPDATA`) beside it. A simulator profile
+  that names COM3 or another CAT port than COM4 is refused. The installed profiles are only read.
+- **No other port:** the candidate runs with its own station data, so it does not see the
+  installed station's radio locks. Before it starts, `tools/test/powershell/bench-hold.ps1` holds,
+  in the candidate's own station data and for the bench's whole life, the ownership lock
+  (`radio-ownership\<identity>\owner.lock`) of every COM port Windows knows (the Ports class,
+  present or not) but COM4, and rescans every second, locking each new one (a radio switched on, a
+  new adapter) at once. The server takes that lock before it opens a port (radio detection's probe,
+  the CAT open), finds it in use and never opens the port: no Detect and no applied endpoint reaches
+  COM3. No candidate starts while the first scan's locks are not held.
+- **The emulator** (`emulator.ps1`) belongs to the bench: `-Start` starts it after the locks and
+  `-Stop` stops it; while a bench owns it, `emulator.ps1 -Stop` of anyone else is refused.
+- **The record** `D:\wstx-tmp\live\<n>\bench\bench.json` names the candidate, its creation time, the
+  holder, the URL and the candidate commit. It lies in the tester's run folder, so `-Stop` and
+  `-Status` act only on a process that runs the bench's own build
+  (`D:\wstx-build\issue-<n>-bench\release\wstx-rust.exe`) since the recorded time.
+- **The page** is read and driven with `tools/test/node/bench-page.cjs`: a headless Chromium
+  (Playwright, the repository's `node_modules`) that opens only `http://127.0.0.1:<port>` and aborts
+  every request and WebSocket of the page to any other origin; the tester saves each case's page
+  (`.png` and the rendered `.html`) as its evidence.
+
+A test that needs the real IC-7300 is no bench test: it runs only in the operator's station
+session ([Keying the radio](#keying-the-radio)).
+
 ### Simulator live tests
 
 Live tests run against the FT-8 Band Simulator instead of the transceiver

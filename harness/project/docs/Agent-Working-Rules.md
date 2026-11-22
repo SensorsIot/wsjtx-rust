@@ -201,6 +201,8 @@ guard:
     - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File (D:/wstx-tmp/live/{issue}/[A-Za-z0-9_-]+|tools/test/powershell/radio-preflight|tools/test/powershell/qso-test|tools/deploy/live-page-check)\.ps1( .*)?'
     - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/station-switch\.ps1 -To (simulator|back)'
     - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/emulator\.ps1 -(Start|Stop|Status)'
+    - '(powershell|pwsh)(\.exe)? -NoProfile -ExecutionPolicy Bypass -File tools/test/powershell/candidate-bench\.ps1 -(Start|Stop|Status) -Issue {issue}'
+    - 'node D:/wstx-tmp/live/{issue}/[A-Za-z0-9_-]+\.cjs'
   writes: ["D:/wstx-tmp/live/{issue}/**"]
   reads: ["D:/wstx-tmp/live/{issue}/**"]
 ```
@@ -225,6 +227,19 @@ the real IC-7300 is on or off: switch the station to the simulator, start the em
 the station runs, test, halt, stop the emulator, switch the station back with `-To back`; a
 run that ends early still stops the emulator it started and switches back. It installs
 nothing and restarts the station only through those scripts.
+
+The function test (Implement, before the merge queue) tests the candidate itself, never the
+installed station, which runs only landed commits: on the
+[candidate bench](specifics/deployment-authority.md#candidate-bench) with exactly
+`… -File tools/test/powershell/candidate-bench.ps1 -Start -Issue <issue>` (the candidate's own
+build on a scratch simulator profile, on `127.0.0.1`, with the emulator and every other COM port
+locked away from it), test, then `candidate-bench.ps1 -Stop -Issue <issue>`; a run that ends
+early still stops it. The bench owns the emulator: the tester does not start or stop it around a
+bench. It does not switch the installed station. It reads and drives the page with a script of its own in its run
+folder, run as `node D:/wstx-tmp/live/<issue>/<name>.cjs`, which requires
+`D:/Github/wsjtx-rust/tools/test/node/bench-page.cjs` (a headless browser on the bench's
+`127.0.0.1` address only) and saves each case's page with its `evidence`. The station switch
+above stays for the acceptance on the installed revision.
 
 ### Role: prober
 
