@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
 #[cfg(test)]
 mod auth_tests;
+#[path = "supervisor/authorization.rs"]
 mod authorization;
+#[path = "supervisor/authorization_http.rs"]
 mod authorization_http;
 mod automation;
 #[path = "radioControl/cat_lifecycle.rs"]
@@ -66,10 +68,12 @@ mod receive_http_tests;
 #[path = "receive/recording.rs"]
 mod recording;
 mod recording_http;
-#[path = "station/selection.rs"]
+#[path = "supervisor/selection.rs"]
 mod selection;
+#[path = "supervisor/selection_http.rs"]
 mod selection_http;
 #[cfg(all(test, not(debug_assertions)))]
+#[path = "supervisor/selection_http_tests.rs"]
 mod selection_http_tests;
 #[cfg(test)]
 #[path = "web/socket_bounds_tests.rs"]

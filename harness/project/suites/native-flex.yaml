@@ -24,11 +24,11 @@
   - server/src/profile.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
-  - server/src/selection_http.rs
-  - server/src/receive/receive_startup.rs
+  - server/src/supervisor/selection_http.rs
+  - server/src/supervisor/receive_startup.rs
   - client/src/frontend/recording.js
-  - server/src/authorization.rs
-  - server/src/authorization_http.rs
+  - server/src/supervisor/authorization.rs
+  - server/src/supervisor/authorization_http.rs
   - server/src/radioControl/radio_setup.rs
   - server/src/main.rs
   - server/src/web/listener.rs

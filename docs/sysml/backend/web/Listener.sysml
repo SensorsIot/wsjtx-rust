@@ -84,7 +84,7 @@ package WstxListener {
                 + "commission_http_strict_negatives_never_change_acknowledgement_or_files; "
                 + "server/src/auth_tests.rs::"
                 + "status_strict_request_bounds_have_zero_effects; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_http_view_and_monitor_off_update";
         }
     }
@@ -302,7 +302,7 @@ package WstxListener {
                 + "deprecated_connect_and_disconnect_validate_then_refuse_with_zero_io; "
                 + "server/src/auth_tests.rs::"
                 + "status_strict_request_bounds_have_zero_effects; "
-                + "server/src/receive/receive_startup_tests.rs::"
+                + "server/src/supervisor/receive_startup_tests.rs::"
                 + "startup_http_view_and_monitor_off_update";
         }
     }

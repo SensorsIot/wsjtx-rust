@@ -680,7 +680,8 @@ package WstxRadioControl {
         out item assignment : ControlAssignment {
             @CodeDiffers {
                 what = "The supervisor gives no assignment: cat_tick in "
-                    + "server/src/authorization_http.rs reads the saved profile at every tick "
+                    + "server/src/supervisor/authorization_http.rs reads the saved "
+                    + "profile at every tick "
                     + "and hands its gate to Recording::cat_maintain.";
             }
         }

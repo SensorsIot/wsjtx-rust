@@ -27,8 +27,8 @@
   - server/src/radioControl/windows.rs
   - server/src/radio_level.rs
   - server/src/radio_level_tests.rs
-  - server/src/station/selection.rs
-  - server/src/selection_http.rs
+  - server/src/supervisor/selection.rs
+  - server/src/supervisor/selection_http.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/contact_http_tests.rs

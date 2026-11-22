@@ -11,7 +11,7 @@ use subtle::ConstantTimeEq;
 use crate::profile;
 
 #[cfg(test)]
-#[path = "frontend/authorization_tests.rs"]
+#[path = "authorization_tests.rs"]
 pub(crate) mod authorization_tests;
 
 const CAP: usize = 64;

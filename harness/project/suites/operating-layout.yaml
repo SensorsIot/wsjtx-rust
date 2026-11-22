@@ -28,7 +28,7 @@
   - server/src/receive/receive.rs
   - server/src/receive/receive_http.rs
   - server/src/receive/receive_diagnostics.rs
-  - server/src/receive/receive_startup.rs
+  - server/src/supervisor/receive_startup.rs
   - server/src/contact_http.rs
   - server/src/logbook.rs
   - server/src/logbook_http.rs

@@ -29,21 +29,19 @@ package WstxSupervisorPart {
              the start of the station, and the source from which every function learns
              what the profile says and what the other functions report. */
         @ImplementedIn {
-            module = "server/src/station/selection.rs; server/src/selection_http.rs; "
-                + "server/src/receive/receive_startup.rs; server/src/authorization.rs; "
-                + "server/src/authorization_http.rs";
+            module = "server/src/supervisor/selection.rs; server/src/supervisor/selection_http.rs; "
+                + "server/src/supervisor/receive_startup.rs; "
+                + "server/src/supervisor/authorization.rs; "
+                + "server/src/supervisor/authorization_http.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/authorization.rs, "
-                + "server/src/authorization_http.rs, server/src/main.rs, "
-                + "server/src/receive/receive_startup.rs, server/src/selection_http.rs, "
-                + "server/src/station/selection.rs, outside server/src/supervisor/ and "
+            what = "Its code stands in server/src/main.rs, outside server/src/supervisor/ and "
                 + "client/src/supervisor/.";
         }
         @DetailTests {
             tests = "server/src/mcp/endpoint_tests.rs; tests/mcp/mcp.test.cjs; "
-                + "server/src/auth_tests.rs; server/src/frontend/authorization_tests.rs; "
-                + "server/src/selection_http_tests.rs";
+                + "server/src/auth_tests.rs; server/src/supervisor/authorization_tests.rs; "
+                + "server/src/supervisor/selection_http_tests.rs";
             covers = "the MCP client token: its creation, listing, hashed record, audit and "
                 + "revocation, and its refusal on the browser routes; "
                 + "the authorization of a browser by grant and commissioning, its routes and "

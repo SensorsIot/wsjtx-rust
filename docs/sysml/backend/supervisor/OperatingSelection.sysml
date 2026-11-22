@@ -98,7 +98,7 @@ package WstxOperatingSelection {
              One selection runs at a time; no command waits in a queue.
              The state is given as SelectionState at every change. */
         @CodeDiffers {
-            what = "server/src/selection_http.rs takes no nominalHz in a SelectBand: a "
+            what = "server/src/supervisor/selection_http.rs takes no nominalHz in a SelectBand: a "
                 + "request with one is refused with invalidRequest; and "
                 + "server/src/receive/recording.rs refuses no frequency outside "
                 + "RadioStatus::txRanges.";
@@ -252,7 +252,8 @@ package WstxOperatingSelection {
                 + "strict TLS unions, early identity barriers and manual preferred defaults; "
                 + "tests/radio-selection.test.cjs::"
                 + "browser preferred selection and Stop fence a genuinely delayed POST; "
-                + "server/src/selection_http_tests.rs::live_native_selection_tls_thin_and_off";
+                + "server/src/supervisor/selection_http_tests.rs::"
+                + "live_native_selection_tls_thin_and_off";
         }
     }
 
