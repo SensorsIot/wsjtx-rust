@@ -173,7 +173,8 @@ package WstxRecordings {
              import that it does not carry out with the reason (ImportAdmission). */
         @Debugging;
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/receive/recording.rs; server/src/recording_http.rs"; }
+        @ImplementedIn { module = "server/src/receive/recording.rs; "
+            + "server/src/profile/recording_http.rs"; }
     }
     #derivation connection { end #original ::> 'FR-018'; end #derive ::> 'CL-006-06'; }
 

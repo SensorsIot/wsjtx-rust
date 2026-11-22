@@ -240,7 +240,7 @@ package WstxFlexSession {
                  from 1 to 65535. Absent: the radio's two ports. */
             @CodeDiffers {
                 what = "The value is kept in profile::Native::register_port of "
-                    + "server/src/profile.rs and reaches the session through "
+                    + "server/src/profile/profile.rs and reaches the session through "
                     + "flex::Config::register_ports (server/src/main.rs), not through "
                     + "flex::Intent.";
             }
@@ -250,7 +250,7 @@ package WstxFlexSession {
                  listened for. Absent: every address of the PC on port 4992. */
             @CodeDiffers {
                 what = "The value is kept in profile::Native::discovery_address of "
-                    + "server/src/profile.rs and reaches the session through "
+                    + "server/src/profile/profile.rs and reaches the session through "
                     + "flex::Config::discovery (server/src/main.rs), not through "
                     + "flex::Intent.";
             }

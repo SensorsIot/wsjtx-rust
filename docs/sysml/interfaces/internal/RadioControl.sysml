@@ -184,7 +184,7 @@ package WstxRadioControl {
             doc /* In percent of the radio's full power, from 1 to 100. */
             @CodeDiffers {
                 what = "The code keeps no power of a band: Radio::power_limit_pct of "
-                    + "server/src/profile.rs is one limit of the Tx level for every band.";
+                    + "server/src/profile/profile.rs is one limit of the Tx level for every band.";
             }
         }
     }

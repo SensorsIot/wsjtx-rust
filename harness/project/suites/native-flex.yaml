@@ -21,7 +21,7 @@
   - package-lock.json
   select:
   - server/src/flexAdapter/
-  - server/src/profile.rs
+  - server/src/profile/profile.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/supervisor/selection_http.rs

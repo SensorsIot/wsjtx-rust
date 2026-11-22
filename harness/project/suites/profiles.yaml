@@ -22,7 +22,7 @@
   select:
   - server/src/main.rs
   - server/src/web/listener.rs
-  - server/src/profile.rs
+  - server/src/profile/profile.rs
   - server/src/supervisor/authorization.rs
   - server/src/supervisor/authorization_http.rs
   - client/src/frontend/app.js

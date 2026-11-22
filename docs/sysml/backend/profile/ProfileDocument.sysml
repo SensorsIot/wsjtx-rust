@@ -194,9 +194,9 @@ package WstxProfileDocument {
         objective { verify 'CL-005-02'; verify 'CL-005-05'; verify 'CL-044-05'; }
         @TestedBy {
             test = "tests/profiles.test.cjs; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "settings_validation_uses_utf8_bytes_and_independent_audio_control_domains";
         }
     }
@@ -209,15 +209,15 @@ package WstxProfileDocument {
         objective { verify 'CL-005-02'; verify 'CL-005-04'; verify 'CL-005-05'; }
         @TestedBy {
             test = "tests/profiles.test.cjs; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "storage_commit_point_and_os_ownership_survive_reopen; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "save_failures_and_interruptions_preserve_the_defined_commit_point; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "an_open_it_cannot_carry_out_is_refused_and_changes_no_file; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "a_creation_whose_file_cannot_be_written_is_resource_unavailable; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged";
         }
     }
@@ -230,7 +230,7 @@ package WstxProfileDocument {
         objective { verify 'CL-005-01'; verify 'CL-005-04'; }
         @TestedBy {
             test = "tests/profiles.test.cjs; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "storage_commit_point_and_os_ownership_survive_reopen";
         }
     }
@@ -293,7 +293,7 @@ package WstxProfileDocument {
         objective { verify 'CL-005-07'; }
         @TestedBy {
             test = "tests/profiles.test.cjs; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "settings_validation_uses_utf8_bytes_and_independent_audio_control_domains";
         }
     }
@@ -607,11 +607,11 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-013-08'; }
         @TestedBy {
-            test = "server/src/profile_tests.rs::"
+            test = "server/src/profile/profile_tests.rs::"
                 + "native_schema_two_document_is_exact_and_standard_schema_one_is_unchanged; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "native_profile_creation_persists_intent_without_runtime_handles; "
-                + "server/src/profile_tests.rs::"
+                + "server/src/profile/profile_tests.rs::"
                 + "a_native_save_names_each_device_and_radio_control_value";
         }
     }

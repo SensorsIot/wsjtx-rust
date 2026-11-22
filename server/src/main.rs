@@ -48,6 +48,7 @@ mod mcp;
 #[cfg(test)]
 #[path = "mcp/endpoint_tests.rs"]
 mod mcp_tests;
+#[path = "profile/profile.rs"]
 mod profile;
 #[path = "spots/pskr.rs"]
 mod pskr;
@@ -74,6 +75,7 @@ mod receive_http;
 mod receive_http_tests;
 #[path = "receive/recording.rs"]
 mod recording;
+#[path = "profile/recording_http.rs"]
 mod recording_http;
 #[path = "supervisor/selection.rs"]
 mod selection;

@@ -18,18 +18,18 @@ package WstxProfilePart {
              it to receive as samples. What a setting or a record means is defined by
              the part that uses it. */
         @ImplementedIn {
-            module = "server/src/profile.rs; server/src/recording_http.rs";
+            module = "server/src/profile/profile.rs; server/src/profile/recording_http.rs";
         }
         @CodeDiffers {
             what = "Its code stands in server/src/main.rs, "
                 + "server/src/operating/ranking/most_wanted.rs, "
-                + "server/src/profile.rs, server/src/radioControl/setup.rs, "
+                + "server/src/radioControl/setup.rs, "
                 + "server/src/radioControl/radio_setup.rs, server/src/receive/recording.rs, "
-                + "server/src/recording_http.rs, outside server/src/profile/ and "
+                + "outside server/src/profile/ and "
                 + "client/src/profile/.";
         }
         @DetailTests {
-            tests = "server/src/profile_tests.rs";
+            tests = "server/src/profile/profile_tests.rs";
             covers = "the refusal of an open whose authorization record is missing or damaged";
         }
         attribute config : StationConfig {

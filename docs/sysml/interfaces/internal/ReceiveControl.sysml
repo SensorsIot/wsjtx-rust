@@ -283,7 +283,7 @@ package WstxReceiveControl {
         out item startReplay : StartReplay {
             @CodeDiffers {
                 what = "The code names it replay: the route POST /recording/replay (replay "
-                    + "in server/src/recording_http.rs).";
+                    + "in server/src/profile/recording_http.rs).";
             }
         }
         out item cancelJob : CancelJob;

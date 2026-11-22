@@ -22,7 +22,7 @@
   select:
   - server/src/main.rs
   - server/src/web/listener.rs
-  - server/src/profile.rs
+  - server/src/profile/profile.rs
   - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/receive/receive.rs
