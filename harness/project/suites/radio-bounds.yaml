@@ -11,7 +11,7 @@
   timing: true
   timing_inputs:
   - server/src/clock/
-  - server/src/transmit/recording_tx_tests.rs
+  - server/src/receive/recording_tx_tests.rs
   - server/src/transmit/schedule.rs
   - server/src/transmit/service.rs
   - server/src/transmit/transmit_http_tests.rs
@@ -34,6 +34,11 @@
   - server/src/supervisor/selection.rs
   - server/src/supervisor/selection_http.rs
   - server/src/receive/recording.rs
+  - server/src/receive/receive_job.rs
+  - server/src/receive/live_receive.rs
+  - server/src/receive/spectrum_rows.rs
+  - server/src/profile/recording.rs
+  - server/src/supervisor/operating_selection.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/operating/qso/contact_http_tests.rs
   - server/src/audio/

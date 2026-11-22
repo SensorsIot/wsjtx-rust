@@ -323,7 +323,9 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-010-09'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs; server/src/receive/recording_tests.rs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs; server/src/receive/live_receive_tests.rs";
+        }
     }
     verification 'TC-024-004' {
         doc /* Free text in Tx5 and rows to <MYCALL>. */

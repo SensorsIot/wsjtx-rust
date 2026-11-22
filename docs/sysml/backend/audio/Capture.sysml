@@ -146,7 +146,7 @@ package WstxCapture {
             test = "server/tests/audio_contract.rs::audio_queue_and_clock_bounds; "
                 + "server/tests/audio_contract.rs::"
                 + "audio_clock_rejected_bracket_preserves_reference; "
-                + "server/src/receive/recording_tests.rs::"
+                + "server/src/receive/live_receive_tests.rs::"
                 + "drifting_capture_clock_keeps_prompt_windows_on_the_utc_period; "
                 + "server/src/clock/clock_http_tests.rs::"
                 + "warnings_windows_time_capture_and_revision";

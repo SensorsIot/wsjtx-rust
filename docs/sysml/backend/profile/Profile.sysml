@@ -18,7 +18,8 @@ package WstxProfilePart {
              it to receive as samples. What a setting or a record means is defined by
              the part that uses it. */
         @ImplementedIn {
-            module = "server/src/profile/profile.rs; server/src/profile/recording_http.rs";
+            module = "server/src/profile/profile.rs; server/src/profile/recording_http.rs; "
+                + "server/src/profile/recording.rs";
         }
         @CodeDiffers {
             what = "Its code stands in server/src/main.rs, "

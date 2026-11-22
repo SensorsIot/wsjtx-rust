@@ -24,7 +24,7 @@
   - server/src/log/logbook_http.rs
   - server/src/transmit/transmit_http.rs
   - server/src/clock/
-  - server/src/transmit/recording_tx_tests.rs
+  - server/src/receive/recording_tx_tests.rs
   - server/src/transmit/schedule.rs
   - server/src/transmit/service.rs
   - server/src/transmit/transmit_http_tests.rs
