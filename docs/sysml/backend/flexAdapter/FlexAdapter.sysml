@@ -14,12 +14,11 @@ package WstxFlexAdapterPart {
              and one receive stream, gives the stream to audio as packets, tunes the slice
              for radio control, and reports the state of the session. */
         @ImplementedIn {
-            module = "server/src/flex/mod.rs; server/src/flexAdapter/session.rs; "
-                + "server/src/flexAdapter/wire.rs; server/src/flex_http.rs";
+            module = "server/src/flexAdapter/mod.rs; server/src/flexAdapter/session.rs; "
+                + "server/src/flexAdapter/wire.rs; server/src/flexAdapter/flex_http.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/flex/mod.rs, server/src/flex_http.rs, "
-                + "server/src/main.rs, outside server/src/flexAdapter/ and "
+            what = "Its code stands in server/src/main.rs, outside server/src/flexAdapter/ and "
                 + "client/src/flexAdapter/.";
         }
         @DetailTests {

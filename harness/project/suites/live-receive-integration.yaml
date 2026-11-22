@@ -3,11 +3,8 @@
   run: cargo test --release --locked --test audio_receive live_native_provider_decodes_independent_ft8_callsign -- --exact
   # No filter form: the run is exactly one test, so the whole suite is that test.
   paths:
-  - server/src/source.rs
-  - server/src/audio.rs
   - server/src/audio/
-  - server/src/receive.rs
-  - server/src/decoder/
+  - server/src/receive/receive.rs
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/audio_receive.rs
@@ -21,11 +18,8 @@
   - Cargo.lock
   - rust-toolchain.toml
   select:
-  - server/src/source.rs
-  - server/src/audio.rs
   - server/src/audio/
-  - server/src/receive.rs
-  - server/src/decoder/
+  - server/src/receive/receive.rs
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/audio_receive.rs

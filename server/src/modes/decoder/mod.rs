@@ -1,38 +1,23 @@
 #![forbid(unsafe_code)]
 //! Pure FT4/FT8 modem kernels. Samples use the canonical 12 kHz clock.
-#[path = "../modes/decoder/apriori.rs"]
 mod apriori;
-#[path = "../modes/decoder/baseband.rs"]
 mod baseband;
-#[path = "../modes/decoder/bitmetrics.rs"]
 mod bitmetrics;
-#[path = "../modes/decoder/channel.rs"]
 mod channel;
-#[path = "../modes/decoder/coarse_ft4.rs"]
 mod coarse_ft4;
-#[path = "../modes/decoder/fit.rs"]
 mod fit;
-#[path = "../modes/decoder/hashes.rs"]
 mod hashes;
 #[cfg(test)]
-#[path = "../modes/decoder/hashes_test.rs"]
 mod hashes_test;
-#[path = "../modes/decoder/history.rs"]
 mod history;
-#[path = "../modes/decoder/parallel.rs"]
 mod parallel;
 mod payload;
-#[path = "../modes/decoder/physical_ft4.rs"]
 mod physical_ft4;
-#[path = "../modes/decoder/physical_sync.rs"]
 mod physical_sync;
 mod search;
-#[path = "../modes/decoder/snr.rs"]
 mod snr;
 mod subtraction;
-#[path = "../modes/decoder/synchronization.rs"]
 mod synchronization;
-#[path = "../modes/decoder/waveform.rs"]
 mod waveform;
 pub use apriori::{APriori, QsoProgress};
 pub use channel::{Channel, ChannelWord};

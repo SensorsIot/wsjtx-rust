@@ -21,7 +21,7 @@
   - package-lock.json
   select:
   - server/src/main.rs
-  - server/src/recording.rs
+  - server/src/receive/recording.rs
   - server/src/radioControl/radio_connection.rs
   - server/src/recording_http.rs
   - client/recording.js

@@ -33,7 +33,6 @@
   reach:
     parsers: [text, json]
   paths:
-  - server/src/decoder/
   - server/src/modes/decoder/
   - server/src/lib.rs
   - server/tests/decoder_signal.rs
@@ -70,15 +69,15 @@
   - server/src/modes/decoder/coarse_ft4.rs
   - server/src/modes/decoder/fit.rs
   - server/src/modes/decoder/history.rs
-  - server/src/decoder/mod.rs
+  - server/src/modes/decoder/mod.rs
   - server/src/modes/decoder/parallel.rs
-  - server/src/decoder/payload.rs
+  - server/src/modes/decoder/payload.rs
   - server/src/modes/decoder/physical_ft4.rs
   - server/src/modes/decoder/physical_sync.rs
-  - server/src/decoder/search.rs
+  - server/src/modes/decoder/search.rs
   - server/src/modes/decoder/search_test.rs
   - server/src/modes/decoder/snr.rs
-  - server/src/decoder/subtraction.rs
+  - server/src/modes/decoder/subtraction.rs
   - server/src/modes/decoder/subtraction_test.rs
   - server/src/modes/decoder/synchronization.rs
   - server/src/modes/decoder/waveform.rs

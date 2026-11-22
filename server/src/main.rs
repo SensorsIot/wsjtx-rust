@@ -14,6 +14,7 @@ mod clock_http;
 mod contact;
 mod contact_http;
 mod dxcc;
+#[path = "flexAdapter/flex_http.rs"]
 mod flex_http;
 #[path = "operating/qso/freeslot.rs"]
 mod freeslot;
@@ -52,10 +53,14 @@ mod radio_setup;
 #[cfg(test)]
 #[path = "radioControl/radio_setup_tests.rs"]
 mod radio_setup_tests;
+#[path = "receive/receive.rs"]
 mod receive;
+#[path = "receive/receive_http.rs"]
 mod receive_http;
 #[cfg(test)]
+#[path = "receive/receive_http_tests.rs"]
 mod receive_http_tests;
+#[path = "receive/recording.rs"]
 mod recording;
 mod recording_http;
 #[path = "station/selection.rs"]
@@ -69,6 +74,7 @@ mod socket_bounds_tests;
 use wstx_rust::{audio, decoder, source};
 mod contest;
 mod most_wanted;
+#[path = "receive/spectrum.rs"]
 mod spectrum;
 mod strategy;
 mod transmit_http;

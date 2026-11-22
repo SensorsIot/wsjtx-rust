@@ -23,7 +23,7 @@ package WstxRecordings {
              its samples from it (WavForm, StoredRecording). */
         @Debugging;
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/recording.rs"; }
+        @ImplementedIn { module = "server/src/receive/recording.rs"; }
     }
     #derivation connection { end #original ::> 'FR-018'; end #derive ::> 'CL-006-01'; }
 
@@ -107,7 +107,7 @@ package WstxRecordings {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-01'; }
         @TestedBy {
-            test = "server/src/recording_tests.rs::"
+            test = "server/src/receive/recording_tests.rs::"
                 + "original_bytes_samples_blocks_and_restart_identity; "
                 + "tests/profile/recording-fixtures.test.cjs; tests/recording.test.cjs";
         }
@@ -120,7 +120,7 @@ package WstxRecordings {
              that fails, is cancelled or runs out of time (ImportLifecycle). */
         @Debugging;
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/recording.rs"; }
+        @ImplementedIn { module = "server/src/receive/recording.rs"; }
     }
     #derivation connection { end #original ::> 'FR-018'; end #derive ::> 'CL-006-05'; }
 
@@ -173,7 +173,7 @@ package WstxRecordings {
              import that it does not carry out with the reason (ImportAdmission). */
         @Debugging;
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/recording.rs; server/src/recording_http.rs"; }
+        @ImplementedIn { module = "server/src/receive/recording.rs; server/src/recording_http.rs"; }
     }
     #derivation connection { end #original ::> 'FR-018'; end #derive ::> 'CL-006-06'; }
 
@@ -207,20 +207,22 @@ package WstxRecordings {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-01'; verify 'CL-006-05'; verify 'CL-006-06'; }
         @TestedBy {
-            test = "server/src/recording_tests.rs::"
+            test = "server/src/receive/recording_tests.rs::"
                 + "byte_level_riff_limits_and_rejection_table; "
-                + "server/src/recording_tests.rs::parser_preserves_non_eof_os_read_errors; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::parser_preserves_non_eof_os_read_errors; "
+                + "server/src/receive/recording_tests.rs::"
                 + "import_failures_keep_old_source_and_quarantine_until_real_release; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "post_commit_failure_never_reverts_new_original_on_restart; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "deadlines_release_only_after_cleanup_and_startup_reconciles_quarantine; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit; "
-                + "server/src/recording_tests.rs::chunk_order_count_and_fmt_faults_are_refused; "
-                + "server/src/recording_tests.rs::a_cancelled_import_keeps_the_stored_recording; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
+                + "chunk_order_count_and_fmt_faults_are_refused; "
+                + "server/src/receive/recording_tests.rs::"
+                + "a_cancelled_import_keeps_the_stored_recording; "
+                + "server/src/receive/recording_tests.rs::"
                 + "import_commands_it_does_not_carry_out_are_refused_and_change_nothing; "
                 + "tests/recording.test.cjs";
         }

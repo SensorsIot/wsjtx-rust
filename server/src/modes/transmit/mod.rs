@@ -7,7 +7,6 @@
 pub mod air;
 #[path = "../../transmit/clock.rs"]
 pub mod clock;
-#[path = "../../transmit/pack.rs"]
 mod pack;
 #[path = "../../transmit/schedule.rs"]
 mod schedule;

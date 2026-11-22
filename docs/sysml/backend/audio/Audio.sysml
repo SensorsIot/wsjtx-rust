@@ -23,13 +23,12 @@ package WstxAudioPart {
              the same for both. A sound device is listed, opened and played to only on
              the first. */
         @ImplementedIn {
-            module = "server/src/audio.rs; server/src/transmit/playback.rs; server/src/source.rs; "
-                + "server/src/audio/windows.rs";
+            module = "server/src/audio/audio.rs; server/src/audio/playback.rs; "
+                + "server/src/audio/source.rs; server/src/audio/windows.rs";
         }
         @CodeDiffers {
-            what = "Its code stands in server/src/audio.rs, server/src/radioControl/setup.rs, "
-                + "server/src/radioControl/radio_setup.rs, server/src/source.rs, "
-                + "server/src/transmit/playback.rs, outside server/src/audio/ and "
+            what = "Its code stands in server/src/radioControl/setup.rs, "
+                + "server/src/radioControl/radio_setup.rs, outside server/src/audio/ and "
                 + "client/src/audio/.";
         }
         @DetailTests {

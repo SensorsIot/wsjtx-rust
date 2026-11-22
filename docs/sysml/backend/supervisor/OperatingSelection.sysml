@@ -100,7 +100,7 @@ package WstxOperatingSelection {
         @CodeDiffers {
             what = "server/src/selection_http.rs takes no nominalHz in a SelectBand: a "
                 + "request with one is refused with invalidRequest; and "
-                + "server/src/recording.rs refuses no frequency outside "
+                + "server/src/receive/recording.rs refuses no frequency outside "
                 + "RadioStatus::txRanges.";
         }
     }
@@ -226,23 +226,23 @@ package WstxOperatingSelection {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-07'; verify 'CL-008-10'; }
         @TestedBy {
-            test = "server/src/recording_tests.rs::"
+            test = "server/src/receive/recording_tests.rs::"
                 + "selection_cancel_tracks_its_worker_through_unknown_source_epoch; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "selection_old_command_cannot_cancel_unrelated_later_start; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "selection_unknown_band_and_safe_counter_refuse_without_effects; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "selection_release_timeout_retains_owner_and_never_commits_target; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "selection_manual_mode_switch_uses_same_owner_and_profile_change_blocks_restart; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "selection_profile_success_publishes_cancellation_before_new_reader; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "selection_profile_save_failure_preserves_existing_token; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "a_selection_refused_by_the_selection_rule_changes_nothing; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "a_cancel_it_does_not_carry_out_is_refused_and_changes_nothing; "
                 + "tests/radio-selection.test.cjs::"
                 + "authenticated TLS selection reports unknown nominal and early refusal; "
@@ -305,7 +305,7 @@ package WstxOperatingSelection {
                 + "station_port_released_by_other_program_reconnects_and_restores_selection; "
                 + "server/src/radioControl/cat_lifecycle_tests.rs::"
                 + "station_readback_adoption_needs_exact_operating_mode_entry_and_unknown_band; "
-                + "server/src/recording_tests.rs::"
+                + "server/src/receive/recording_tests.rs::"
                 + "the_dial_is_not_taken_while_a_selection_pends_or_on_another_revision";
         }
     }

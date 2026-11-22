@@ -333,7 +333,7 @@ package WstxListener {
         objective { verify 'CL-003-08'; }
         @TestedBy {
             test = "tests/contact.test.cjs; tests/ui-operating.test.cjs; "
-                + "server/src/contact_http_tests.rs; server/src/receive_http_tests.rs; "
+                + "server/src/contact_http_tests.rs; server/src/receive/receive_http_tests.rs; "
                 + "tests/radio-selection.test.cjs::"
                 + "a status on the same socket reads no receive snapshot "
                 + "unless the state is in doubt; "

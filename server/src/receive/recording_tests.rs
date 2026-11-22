@@ -64,7 +64,7 @@ impl crate::flex_http::NativeSession for ScriptedSession {
         Err(source::SourceError::Unavailable)
     }
 }
-#[path = "transmit/recording_tx_tests.rs"]
+#[path = "../transmit/recording_tx_tests.rs"]
 mod tx;
 
 fn live_ring(r: &Recording) -> (Job, decoder::Decode) {
@@ -3188,7 +3188,7 @@ fn late_window_republishes_its_period_view_with_late_starters() {
 /// AGC releasing) and before it, so the SNR depends on where the period starts.
 fn ft8_period_audio(frames: usize, period: usize) -> Vec<f32> {
     let vectors: Value = serde_json::from_str(include_str!(
-        "../../fixtures/decoder/independent-vectors/manifest.json"
+        "../../../fixtures/decoder/independent-vectors/manifest.json"
     ))
     .unwrap();
     let tones = vectors["vectors"]

@@ -54,7 +54,7 @@ package WstxMessageEncode {
              unaltered (PackMessage, Ft8WaveformContract). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/transmit/pack.rs; server/src/modes/transmit/mod.rs; "
+            module = "server/src/modes/transmit/pack.rs; server/src/modes/transmit/mod.rs; "
                 + "server/src/modes/transmit/waveform.rs";
         }
     }
@@ -82,7 +82,7 @@ package WstxMessageEncode {
              (PackMessage, Ft4WaveformContract). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/transmit/pack.rs; server/src/modes/transmit/mod.rs; "
+            module = "server/src/modes/transmit/pack.rs; server/src/modes/transmit/mod.rs; "
                 + "server/src/modes/transmit/waveform.rs";
         }
     }
