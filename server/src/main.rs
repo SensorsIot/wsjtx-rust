@@ -86,11 +86,13 @@ mod selection_http_tests;
 #[path = "web/socket_bounds_tests.rs"]
 mod socket_bounds_tests;
 use wstx_rust::{audio, decoder, source};
+#[path = "operating/contest.rs"]
 mod contest;
 #[path = "operating/ranking/most_wanted.rs"]
 mod most_wanted;
 #[path = "receive/spectrum.rs"]
 mod spectrum;
+#[path = "operating/strategy.rs"]
 mod strategy;
 #[path = "transmit/transmit_http.rs"]
 mod transmit_http;

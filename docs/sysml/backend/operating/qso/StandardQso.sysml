@@ -424,13 +424,13 @@ package WstxStandardQso {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-039-24'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_099_002_cq_test_needs_no_confirmation_in_eu_vhf; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
             + "tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser_confirms; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "a_reply_to_a_cq_not_for_the_station_needs_the_confirmation";
         }
     }
@@ -442,11 +442,11 @@ package WstxStandardQso {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-06'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_011_a_busy_target_pauses_the_runs_count; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_011_h_a_grid_to_another_starts_busy_and_his_73_ends_it; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_011_i_busy_holds_across_a_further_station_and_ends_with_his_free_text";
         }
     }

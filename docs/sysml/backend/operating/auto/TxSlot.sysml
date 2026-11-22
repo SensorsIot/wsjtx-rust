@@ -57,9 +57,11 @@ package WstxTxSlot {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-05'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::tc_039_022_the_slot_check_at_every_repetition; "
-                + "server/src/strategy_tests.rs::tc_039_022_an_answer_keeps_the_slot; "
-                + "server/src/strategy_tests.rs::tc_039_048_the_run_shows_the_hearing_and_his_end";
+            test = "server/src/operating/strategy_tests.rs::"
+                + "tc_039_022_the_slot_check_at_every_repetition; "
+                + "server/src/operating/strategy_tests.rs::tc_039_022_an_answer_keeps_the_slot; "
+                + "server/src/operating/strategy_tests.rs::"
+                + "tc_039_048_the_run_shows_the_hearing_and_his_end";
         }
     }
 
@@ -70,8 +72,9 @@ package WstxTxSlot {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-05'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::tc_097_010_the_run_moves_tx_per_psk_case; "
-                + "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
+                + "tc_097_010_the_run_moves_tx_per_psk_case; "
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_010_auto_slot_from_500_hz_upper_edge_ties_and_the_move_rule";
         }
     }

@@ -32,8 +32,8 @@
   - server/src/operating/qso/contact_http.rs
   - server/src/log/logbook.rs
   - server/src/log/logbook_http.rs
-  - server/src/strategy.rs
-  - server/src/contest.rs
+  - server/src/operating/strategy.rs
+  - server/src/operating/contest.rs
   - server/src/operating/qso/freeslot.rs
   - server/src/udp/udp.rs
   - server/src/transmit/transmit_http.rs

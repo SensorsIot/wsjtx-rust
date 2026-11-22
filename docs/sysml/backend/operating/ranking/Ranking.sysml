@@ -24,8 +24,9 @@ package WstxRankingPart {
                 + "server/src/operating/ranking/ and client/src/operating/ranking/.";
         }
         @DetailTests {
-            tests = "server/src/strategy_tests.rs; server/src/strategy97_tests.rs; "
-                + "server/src/contest_tests.rs";
+            tests = "server/src/operating/strategy_tests.rs; "
+                + "server/src/operating/strategy97_tests.rs; "
+                + "server/src/operating/contest_tests.rs";
             covers = "the verdicts and the value order of the decoded stations";
         }
         port control : ~RankingControlPort;

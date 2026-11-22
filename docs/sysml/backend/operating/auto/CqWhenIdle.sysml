@@ -54,11 +54,11 @@ package WstxCqWhenIdle {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-08'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_045_cq_when_no_target_calls_answers_and_calls_a_candidate; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_045_the_cqs_slot_is_judged_in_my_rx_parity; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_045_a_caller_is_answered_from_the_cqs_slot";
         }
     }
@@ -70,7 +70,7 @@ package WstxCqWhenIdle {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-08'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_063_010_run_calls_cq_and_answers_the_most_valuable_caller";
         }
     }
@@ -82,8 +82,9 @@ package WstxCqWhenIdle {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-08'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::tc_097_018_cq_after_exactly_the_cq_wait; "
-                + "server/src/strategy97_tests.rs::tc_097_018_the_cq_wait_starts_again";
+            test = "server/src/operating/strategy97_tests.rs::"
+                + "tc_097_018_cq_after_exactly_the_cq_wait; "
+                + "server/src/operating/strategy97_tests.rs::tc_097_018_the_cq_wait_starts_again";
         }
     }
 
@@ -112,7 +113,7 @@ package WstxCqWhenIdle {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-097-08'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_015_the_contest_built_in_and_a_saved_contest_strategy_run";
         }
     }

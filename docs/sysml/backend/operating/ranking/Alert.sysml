@@ -55,7 +55,7 @@ package WstxAlert {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-042-04'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_042_006_alert_records_one_alert_per_call_and_band_and_never_transmits";
         }
     }

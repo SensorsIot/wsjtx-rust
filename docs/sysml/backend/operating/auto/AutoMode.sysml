@@ -55,11 +55,11 @@ package WstxAutoMode {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-039-22'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_042_auto_starts_and_ends_the_run_and_a_selection_only_marks; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_042_a_silent_contest_switches_auto_on_without_a_confirmation; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_042_a_browser_auto_on_ends_a_watchdog_stop_and_arms";
         }
     }
@@ -107,7 +107,7 @@ package WstxAutoMode {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-119-05'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_063_011_the_safety_of_a_contest_run_stays_on_the_server";
         }
     }
@@ -119,9 +119,9 @@ package WstxAutoMode {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-119-05'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_033_without_a_client_for_60_s_nothing_new_and_the_exchange_ends; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_033_waiting_stops_at_60_s_and_a_client_or_reload_keeps_it";
         }
     }

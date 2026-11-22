@@ -456,7 +456,7 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-01'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::tc_039_001_configuration_is_exact";
+            test = "server/src/operating/strategy_tests.rs::tc_039_001_configuration_is_exact";
         }
     }
 
@@ -467,7 +467,7 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-01'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::tc_039_003_store_routes_and_evaluate";
+            test = "server/src/operating/strategy_tests.rs::tc_039_003_store_routes_and_evaluate";
         }
     }
 
@@ -478,13 +478,13 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-01'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_097_002_a_file_of_schema_1_2_or_3_cannot_be_used_and_is_left_as_it_is; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_002_a_strategy_without_its_cq_wait_cannot_be_used; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_002_built_in_names_read_renamed_and_active_never_survives_a_restart; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored";
         }
     }
@@ -512,11 +512,11 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-01'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_001_schema_4_every_key_at_its_bounds_and_one_refusal_per_field; "
-                + "server/src/strategy97_tests.rs::"
+                + "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_001_a_put_is_read_back_and_an_oversized_body_is_refused; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_032_the_builtin_table_and_what_a_configuration_may_say";
         }
     }

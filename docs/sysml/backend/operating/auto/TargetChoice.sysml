@@ -87,23 +87,23 @@ package WstxTargetChoice {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-039-05'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_selecting_starts_a_run_that_calls_by_value_and_never_calls_cq; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_a_run_goes_on_after_each_qso_without_a_limit; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_halt_turns_auto_off_keeps_the_selection_and_esc_and_a_cancel_do_not; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_a_strategy_stays_selected_across_receive_and_without_a_grant; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_callers_come_first_and_a_cancelled_station_never_again; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_a_station_left_is_not_answered_in_its_quiet_time; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_a_station_completed_on_one_band_is_called_on_another; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_a_station_completed_on_one_band_is_answered_on_another; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_004_a_retune_leaves_the_quiet_time_behind_not_the_operators_give_up";
         }
     }
@@ -115,7 +115,7 @@ package WstxTargetChoice {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-039-05'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
             + "tc_063_009_search_and_pounce_calls_the_most_valuable_and_waits_for_what_it_needs";
         }
     }

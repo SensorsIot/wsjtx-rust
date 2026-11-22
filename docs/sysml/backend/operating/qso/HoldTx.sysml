@@ -122,7 +122,7 @@ package WstxHoldTx {
                 + "tc_039_010_the_counted_periods_are_my_recent_rx_periods; "
                 + "server/src/operating/qso/freeslot_tests.rs::"
                 + "tc_039_010_a_slot_reads_its_bins_above_the_floor; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_010_the_run_calls_from_the_quietest_slot_of_its_rx_parity";
         }
     }

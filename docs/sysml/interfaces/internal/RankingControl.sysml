@@ -88,13 +88,13 @@ package WstxRankingControl {
         attribute firstDate : String[0..1] {
             doc /* With fromTo: a day of the calendar from 1930 to 2099, as YYYYMMDD. */
             @CodeDiffers {
-                what = "The code names it from (worked_since in server/src/strategy.rs).";
+                what = "The code names it from (worked_since in server/src/operating/strategy.rs).";
             }
         }
         attribute lastDate : String[0..1] {
             doc /* With fromTo: as firstDate, and not before it. */
             @CodeDiffers {
-                what = "The code names it to (worked_since in server/src/strategy.rs).";
+                what = "The code names it to (worked_since in server/src/operating/strategy.rs).";
             }
         }
     }
@@ -122,12 +122,12 @@ package WstxRankingControl {
              RankingLimits::countriesMax in each list. An entry may stand twice. */
         attribute included : CountryEntry[0..*] {
             @CodeDiffers {
-                what = "The code names it include (lists_of in server/src/strategy.rs).";
+                what = "The code names it include (lists_of in server/src/operating/strategy.rs).";
             }
         }
         attribute excluded : CountryEntry[0..*] {
             @CodeDiffers {
-                what = "The code names it exclude (lists_of in server/src/strategy.rs).";
+                what = "The code names it exclude (lists_of in server/src/operating/strategy.rs).";
             }
         }
     }
@@ -136,12 +136,12 @@ package WstxRankingControl {
              50 states and DC, each once in a list. */
         attribute included : String[0..51] {
             @CodeDiffers {
-                what = "The code names it include (lists_of in server/src/strategy.rs).";
+                what = "The code names it include (lists_of in server/src/operating/strategy.rs).";
             }
         }
         attribute excluded : String[0..51] {
             @CodeDiffers {
-                what = "The code names it exclude (lists_of in server/src/strategy.rs).";
+                what = "The code names it exclude (lists_of in server/src/operating/strategy.rs).";
             }
         }
     }
@@ -156,12 +156,12 @@ package WstxRankingControl {
              the contact's and Auto's. */
         attribute included : String[0..*] {
             @CodeDiffers {
-                what = "The code names it include (lists_of in server/src/strategy.rs).";
+                what = "The code names it include (lists_of in server/src/operating/strategy.rs).";
             }
         }
         attribute excluded : String[0..*] {
             @CodeDiffers {
-                what = "The code names it exclude (lists_of in server/src/strategy.rs).";
+                what = "The code names it exclude (lists_of in server/src/operating/strategy.rs).";
             }
         }
     }
@@ -178,7 +178,8 @@ package WstxRankingControl {
         attribute regionContinents : Continent[0..7] {
             doc /* With selected: one at least, each once. */
             @CodeDiffers {
-                what = "The code names it continents, inside region (server/src/strategy.rs).";
+                what = "The code names it continents, inside region "
+                    + "(server/src/operating/strategy.rs).";
             }
         }
         attribute minSnrDb : Integer[0..1] {
@@ -217,7 +218,8 @@ package WstxRankingControl {
         attribute ignoreListMax : Integer = 100 {
             doc /* Entries in the ignore list. */
             @CodeDiffers {
-                what = "The code keeps two lists in server/src/strategy.rs: a saved list of at "
+                what = "The code keeps two lists in server/src/operating/strategy.rs: a saved list "
+                    + "of at "
                     + "most IGNORE_CALLS_MAX 100 calls (parse_config) and a session list of "
                     + "SESSION_IGNORE_MAX 64, whose 65th entry drops the oldest (Session::add).";
             }
@@ -267,7 +269,7 @@ package WstxRankingControl {
                  WstxProfileAccess::ShackConfig::cqWords. */
             @CodeDiffers {
                 what = "The code has no CQ words of the station; the included CQ targets of the "
-                    + "active strategy are its CQ words (server/src/strategy.rs).";
+                    + "active strategy are its CQ words (server/src/operating/strategy.rs).";
             }
         }
         attribute wanted : WantedEntry[0..*] ordered {
@@ -350,7 +352,7 @@ package WstxRankingControl {
                  says whether the period is complete. */
             @CodeDiffers {
                 what = "The reply names no period view; the request names the job by source_id "
-                    + "and job_id (server/src/strategy.rs).";
+                    + "and job_id (server/src/operating/strategy.rs).";
             }
         }
         attribute verdicts : Verdict[0..*] ordered;
@@ -473,7 +475,7 @@ package WstxRankingControl {
         enum ignoreListFull {
             @CodeDiffers {
                 what = "The code refuses no entry: a full session list drops its oldest entry "
-                    + "(Session::add in server/src/strategy.rs).";
+                    + "(Session::add in server/src/operating/strategy.rs).";
             }
         }
     }
@@ -500,19 +502,19 @@ package WstxRankingControl {
         out item clearIgnore : ClearIgnoreList {
             @CodeDiffers {
                 what = "The code has no such command; a change of the station band empties the "
-                    + "session list (Session::observe_band in server/src/strategy.rs).";
+                    + "session list (Session::observe_band in server/src/operating/strategy.rs).";
             }
         }
         out item readState : ReadRankingState {
             @CodeDiffers {
                 what = "The code reads the lists by GET /strategy (snapshot in "
-                    + "server/src/strategy.rs).";
+                    + "server/src/operating/strategy.rs).";
             }
         }
         out item readAlerts : ReadAlerts {
             @CodeDiffers {
                 what = "The code reads them by GET /strategy/alerts (alerts_route in "
-                    + "server/src/strategy.rs).";
+                    + "server/src/operating/strategy.rs).";
             }
         }
         out item clearAlerts : ClearAlerts;

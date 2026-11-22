@@ -50,7 +50,7 @@ package WstxContestRanking {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-063-02'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_063_004_the_directive_table_in_a_contest_activity";
         }
     }
@@ -106,7 +106,7 @@ package WstxContestRanking {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-063-09'; }
         @TestedBy {
-            test = "server/src/contest_tests.rs::tc_063_005_the_points_rules_by_hand";
+            test = "server/src/operating/contest_tests.rs::tc_063_005_the_points_rules_by_hand";
         }
     }
 
@@ -178,12 +178,12 @@ package WstxContestRanking {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-063-04'; verify 'CL-063-09'; }
         @TestedBy {
-            test = "server/src/contest_tests.rs::"
+            test = "server/src/operating/contest_tests.rs::"
                 + "tc_063_006_only_the_period_counts_and_each_dupe_rule; "
-                + "server/src/contest_tests.rs::tc_063_006_verdicts_callable_by_value; "
-                + "server/src/contest_tests.rs::"
+                + "server/src/operating/contest_tests.rs::tc_063_006_verdicts_callable_by_value; "
+                + "server/src/operating/contest_tests.rs::"
                 + "tc_063_006_a_field_day_exchange_to_my_call_is_a_caller; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_063_007_a_contest_selection_store_and_evaluation";
         }
     }

@@ -15,7 +15,7 @@ package WstxAutoControl {
         enum switchOff {
             @CodeDiffers {
                 what = "The code switches Auto off by auto false (auto_request in "
-                    + "server/src/strategy.rs).";
+                    + "server/src/operating/strategy.rs).";
             }
         }
         enum halt;
@@ -33,7 +33,7 @@ package WstxAutoControl {
         enum noStrategy {
             @CodeDiffers {
                 what = "The code refuses with not_configured and the field strategy (auto_request "
-                    + "in server/src/strategy.rs).";
+                    + "in server/src/operating/strategy.rs).";
             }
         }
         enum notConfirmed;
@@ -53,7 +53,7 @@ package WstxAutoControl {
             @CodeDiffers {
                 what = "The code keeps no acknowledgement: each switch on under a forbidding "
                     + "contest needs automation_confirmed (auto_request in "
-                    + "server/src/strategy.rs).";
+                    + "server/src/operating/strategy.rs).";
             }
         }
     }

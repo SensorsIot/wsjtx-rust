@@ -35,20 +35,21 @@ package WstxStrategies {
              class has every one of them. */
         attribute leaveMode : LeaveMode {
             @CodeDiffers {
-                what = "The code names it mode, inside leave (server/src/strategy.rs).";
+                what = "The code names it mode, inside leave (server/src/operating/strategy.rs).";
             }
         }
         attribute leaveCalls : Integer[0..1] {
             doc /* With calls: the calls without an answer, 1 to 20. */
             @CodeDiffers {
-                what = "The code names it calls, inside leave (server/src/strategy.rs).";
+                what = "The code names it calls, inside leave (server/src/operating/strategy.rs).";
             }
         }
         attribute leaveCallsHeard : Integer[0..1] {
             doc /* With calls: the calls while the station is heard there, from
                  leaveCalls to 40. */
             @CodeDiffers {
-                what = "The code names it calls_heard, inside leave (server/src/strategy.rs).";
+                what = "The code names it calls_heard, inside leave "
+                    + "(server/src/operating/strategy.rs).";
             }
         }
         attribute goneMinutes : Integer[0..1] {
@@ -60,21 +61,22 @@ package WstxStrategies {
                  the station: 0 never, 1 at every call, n at every n-th call, up to
                  20. */
             @CodeDiffers {
-                what = "The code names it heard, inside tx_move_every (server/src/strategy.rs).";
+                what = "The code names it heard, inside tx_move_every "
+                    + "(server/src/operating/strategy.rs).";
             }
         }
         attribute moveEveryNotHeard : Integer {
             doc /* The same while it reports and does not hear the station. */
             @CodeDiffers {
                 what = "The code names it not_heard, inside tx_move_every "
-                    + "(server/src/strategy.rs).";
+                    + "(server/src/operating/strategy.rs).";
             }
         }
         attribute moveEveryNoReports : Integer {
             doc /* The same while it does not report, or that is unknown. */
             @CodeDiffers {
                 what = "The code names it no_reports, inside tx_move_every "
-                    + "(server/src/strategy.rs).";
+                    + "(server/src/operating/strategy.rs).";
             }
         }
         attribute cqWhenIdle : Boolean {
@@ -90,7 +92,7 @@ package WstxStrategies {
                  It is held also while cqWhenIdle is off. */
             @CodeDiffers {
                 what = "The code has no CQ pause and no such key (STRATEGY_KEYS in "
-                    + "server/src/strategy.rs).";
+                    + "server/src/operating/strategy.rs).";
             }
         }
     }
@@ -103,7 +105,8 @@ package WstxStrategies {
                  case, and is not the name of a built-in one. */ }
         attribute strategyClass : StrategyClass {
             @CodeDiffers {
-                what = "The code names it class (STRATEGY_KEYS in server/src/strategy.rs).";
+                what = "The code names it class (STRATEGY_KEYS in "
+                    + "server/src/operating/strategy.rs).";
             }
         }
         attribute ranking : RankingKeys;
@@ -486,13 +489,13 @@ package WstxStrategies {
         out item readStrategies : ReadStrategies {
             @CodeDiffers {
                 what = "The code reads the state by GET /strategy (snapshot in "
-                    + "server/src/strategy.rs).";
+                    + "server/src/operating/strategy.rs).";
             }
         }
         out item readContests : ReadContests {
             @CodeDiffers {
                 what = "The code reads them by GET /strategy/contests (contests_route in "
-                    + "server/src/strategy.rs).";
+                    + "server/src/operating/strategy.rs).";
             }
         }
         in item strategies : StrategiesState;

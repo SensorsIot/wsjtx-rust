@@ -350,7 +350,7 @@ package WstxListener {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-08'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_082_003_free_tx_slots_on_the_socket_and_in_the_snapshot_without_a_run";
         }
     }

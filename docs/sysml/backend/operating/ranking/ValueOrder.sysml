@@ -123,11 +123,11 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-03'; verify 'CL-039-02'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_002_continent_and_directed_cq_rule; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_002_verdicts_grey_reasons_and_treat_73; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_002_my_continent_from_config_call_and_locator";
         }
     }
@@ -174,7 +174,7 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-042-01'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_030_each_goal_in_both_needed_settings";
         }
     }
@@ -186,7 +186,7 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-042-01'; verify 'CL-097-02'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_005_what_must_be_new_per_and_means_by_hand";
         }
     }
@@ -279,7 +279,7 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-02'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_004_off_the_strategy_bands_nothing_is_ranked";
         }
     }
@@ -291,17 +291,17 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-02'; verify 'CL-042-01'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_030_a_missing_grid_is_unknown_never_new; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_030_region_min_snr_for_an_eu_and_a_non_eu_profile; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
             + "tc_039_030_a_caller_beats_a_most_wanted_station_and_ignores_goal_region_and_snr; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_030_value_order_with_and_without_a_list; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_030_worked_window_from_dated_records; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_030_today_and_from_to_read_the_log_of_the_window";
         }
     }
@@ -313,7 +313,7 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-02'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_006_country_state_and_cq_target_lists";
         }
     }
@@ -325,7 +325,7 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-02'; verify 'CL-097-03'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_007_callers_of_my_call_pass_the_filters";
         }
     }
@@ -385,9 +385,9 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-03'; verify 'CL-039-02'; }
         @TestedBy {
-            test = "server/src/strategy_tests.rs::"
+            test = "server/src/operating/strategy_tests.rs::"
                 + "tc_039_040_the_filter_and_the_value_order; "
-                + "server/src/strategy_tests.rs::"
+                + "server/src/operating/strategy_tests.rs::"
                 + "tc_039_040_each_needed_first_criterion_with_its_own_log";
         }
     }
@@ -399,9 +399,9 @@ package WstxValueOrder {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-097-03'; }
         @TestedBy {
-            test = "server/src/strategy97_tests.rs::"
+            test = "server/src/operating/strategy97_tests.rs::"
                 + "tc_097_008_snr_bucket_hears_us_and_the_new_criteria; "
-                + "server/src/contest_tests.rs::"
+                + "server/src/operating/contest_tests.rs::"
                 + "tc_097_008_a_contest_strategy_with_callers_off_ranks_no_caller";
         }
     }
