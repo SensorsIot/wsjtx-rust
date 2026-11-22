@@ -2001,8 +2001,8 @@ MODEL_TREE = {
                             "RadioControl", "Keying", "Decodes", "DisplayData", "StationTime", "OperatingChain",
                             "Hearing", "AudioStreams", "ModeProcessing", "ProfileAccess", "RecordingTransfer",
                             "UdpControl", "WebControl"),
-    "interfaces/external": ("OperatorInteraction", "Mcp", "Cat", "RadioProperties", "FlexApi", "SoundDevice", "Udp",
-                            "PskReporter", "ClubLog", "CountryFiles", "TimeSource"),
+    "interfaces/external": ("ExternalPort", "OperatorInteraction", "Mcp", "Cat", "RadioProperties", "FlexApi",
+                            "SoundDevice", "Udp", "PskReporter", "ClubLog", "CountryFiles", "TimeSource"),
     "backend/supervisor": ("Supervisor*", "OperatingSelection", "StationAuthority", "Startup", "SettingsCheck"),
     "backend/web": ("Web*", "Listener", "ContentCoding"),
     "backend/mcp": ("Mcp*", "McpEndpoint"),
@@ -2805,6 +2805,49 @@ def served_and_ends(deployment: Deployment, model: Model) -> tuple[dict, dict]:
 
 
 ENTRY_COMMANDS = ("createEntry", "updateEntry", "deleteEntry")
+
+
+def specializations(model: Model, kind: str, root: str) -> dict[str, Element]:
+    """{name: definition} of the definitions of `kind` that specialize `root`, directly or
+    through one another."""
+    found, grew = {}, True
+    defs = [element for element in model.elements() if element.kind == kind and element.name]
+    while grew:
+        grew = False
+        for element in defs:
+            if element.name in found:
+                continue
+            parents = re.findall(r"(?::>|\bspecializes\b)\s*(?:\w+::)*(\w+)", element.head)
+            if any(parent == root or parent in found for parent in parents):
+                found[element.name], grew = element, True
+    return found
+
+
+def boundary_faults(model: Model) -> list[tuple]:
+    """TR-23 for M5.11: a transition guard reads no attribute of a status that specializes
+    InterfaceStatus other than its availability; `status` is out on a port definition that
+    specializes ExternalPort, and nothing else redefines or derives it."""
+    faults = []
+    statuses = specializations(model, "item def", "InterfaceStatus")
+    reasons = {child.name for status in statuses.values() for child in status.children
+               if child.kind == "attribute" and child.name and child.name != "availability"}
+    for element in model.elements():
+        if element.kind == "transition" and reasons:
+            guard = re.search(r"\bif\b(.*?)(?:\bdo\b|\bthen\b|$)", element.head, re.S)
+            if guard and (read := next((name for name in sorted(reasons) if re.search(r"\b" + name + r"\b", guard[1])), None)):
+                faults.append(("TR-23", element.key, element.line, f"transition guard reads {read} of a status"))
+    ports = specializations(model, "port def", "ExternalPort")
+    for element in model.elements():
+        redefined = re.search(r"(?::>>|\bredefines\b)\s*(\w+)", element.head)
+        if element.kind != "item" or "status" not in (element.name, redefined and redefined[1]):
+            continue
+        owner = element.parent
+        if owner is not None and owner.kind == "port def" and (owner.name in ports or owner.name == "ExternalPort"):
+            if not re.match(r"\s*(?:\w+\s+)*?out\b", element.head) or re.search(r"\bderived\b", element.head):
+                faults.append(("TR-23", element.key, element.line, f"status of {owner.name} is not out"))
+        elif re.search(r":>>|\bredefines\b|\bderived\b", element.head):
+            faults.append(("TR-23", element.key, element.line, "status redefined outside an ExternalPort port definition"))
+    return faults
 
 
 def agent_faults(model: Model) -> list[tuple]:
@@ -4900,7 +4943,7 @@ def model_check(tree: Tree, cache: Path) -> int:
     faults += tree_faults(tree.models, model) + layer_faults(model) + content_faults(model)
     faults += clause_faults(model, entries, served, ends) + role_faults(deployment) + agent_faults(model)
     faults += context_faults(deployment) + connection_faults(deployment) + reuse_faults(entries, used, present)
-    faults += writing_faults(model)
+    faults += writing_faults(model) + boundary_faults(model)
     refuse(fault_lines(faults))
     print(f"Model rules passed: {len(model.files)} model files.")
     return 0

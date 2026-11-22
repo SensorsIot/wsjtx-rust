@@ -56,8 +56,8 @@ docs/sysml/
 │   │               RadioControl, Keying, Decodes, DisplayData, StationTime, OperatingChain,
 │   │               Hearing, AudioStreams, ModeProcessing, ProfileAccess, RecordingTransfer,
 │   │               UdpControl, WebControl
-│   └── external/   OperatorInteraction, Mcp, Cat, RadioProperties, FlexApi, SoundDevice,
-│                   Udp, PskReporter, ClubLog, CountryFiles, TimeSource
+│   └── external/   ExternalPort, OperatorInteraction, Mcp, Cat, RadioProperties, FlexApi,
+│                   SoundDevice, Udp, PskReporter, ClubLog, CountryFiles, TimeSource
 ├── backend/
 │   ├── supervisor/     Supervisor*, OperatingSelection, StationAuthority, Startup,
 │   │                   SettingsCheck
@@ -164,6 +164,10 @@ and holds the parts ranking, auto and qso.
   their browsers. An agent is a program that operates a station through its MCP. It gives
   every command the browser gives except saving the station config and saving the shack's
   settings: the station's setup is the operator's. The word "user" does not occur.
+- **M5.11** A port definition specializes `ExternalPort` only where its interface crosses a
+  process, device or network boundary and something reacts to its status. A transition guard
+  reads a status's availability, never its reason. `status` is `out` on the port definition
+  that specializes `ExternalPort`; nothing else redefines or derives it.
 
 ## M6. Requirements, clauses and tests
 
@@ -246,8 +250,8 @@ and holds the parts ranking, auto and qso.
 
 | Check | Covers |
 |---|---|
-| `python tools/sysml.py check`, in the gate | M1.5 (no retired identity), M2.1, M2.3, M3, M4.1 to M4.3, M4.9, M5.5, M5.8, M5.10, M6.1, M6.2, M6.4, M6.5 (form, a bound partial or implemented case, an implemented clause has a bound case), M6.6, M6.7, M6.9 to M6.13, M7.1, M7.3 to M7.6 |
-| The reviewer's reading of the candidate | M0.2, M0.3, M1.1 to M1.4, M5.1 to M5.4, M5.6, M5.7, M5.9, M6.3, M6.5 (a preventing clause has a negative test), M6.8, M7.2 |
+| `python tools/sysml.py check`, in the gate | M1.5 (no retired identity), M2.1, M2.3, M3, M4.1 to M4.3, M4.9, M5.5, M5.8, M5.10, M5.11 (the guard and the status direction), M6.1, M6.2, M6.4, M6.5 (form, a bound partial or implemented case, an implemented clause has a bound case), M6.6, M6.7, M6.9 to M6.13, M7.1, M7.3 to M7.6 |
+| The reviewer's reading of the candidate | M0.2, M0.3, M1.1 to M1.4, M5.1 to M5.4, M5.6, M5.7, M5.9, M5.11 (only where something reacts), M6.3, M6.5 (a preventing clause has a negative test), M6.8, M7.2 |
 
 ## Authoring
 
