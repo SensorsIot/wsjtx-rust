@@ -724,6 +724,7 @@ async fn finishing() -> Station81 {
 // QSO likewise, the contact cancelled, no halt; (c) a double-click of W1AW calling my call replaces
 // K1ABC's contact and calls W1AW; K1ABC is never logged.
 // Proves: TC-081-005
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_081_005_halt_abort_and_a_double_click_end_a_finishing_qso_at_once() {
     // (a)

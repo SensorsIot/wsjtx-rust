@@ -30,6 +30,7 @@ fn reply(first: u8, stratum: u8, origin: u64, receive: u64, transmit: u64) -> Ve
 const SERVER_V4: u8 = 0b00_100_100; // LI 0, version 4, mode 4
 
 // Proves: TC-006-003
+// Timing: clock
 #[test]
 fn offset_and_round_trip_follow_the_rfc_formula() {
     // T1 100.000 s, T2 100.600, T3 100.601, T4 100.021 (hand calculation):
@@ -191,6 +192,7 @@ fn jumping_now() -> SystemTime {
 }
 
 // Proves: TC-006-003
+// Timing: clock
 #[test]
 fn a_clock_step_during_the_exchange_does_not_distort_the_offset() {
     // The responder answers 3 s ahead of the request's transmit timestamp. If the

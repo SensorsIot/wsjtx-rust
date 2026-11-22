@@ -220,6 +220,7 @@ test('retained HTTPS browser authorization', {timeout: 45000}, async t => {
 // The page's clock is driven (Playwright page.clock fakes setTimeout and AbortSignal.timeout),
 // so each bound of the setup retry (10 s attempt, 1 s/2 s pauses, 3 attempts, 45 s login) is watched
 // crossing in one run without real waiting.
+// Timing: display
 test('token login retries a slow or failed setup step without another press', {timeout: 60000}, async t => {
   const {profiles} = await fixture(t, true);
   // Each case has its own context, so its own page clock; installed before the page loads.
@@ -583,6 +584,7 @@ test('real proof cookie waits for browser delivery', {timeout: 45000}, async t =
 });
 
 // Actual record corruption/erasure is distinct from server-grant revocation.
+// Timing: display
 test('actual browser reports corrupt and erased retained credentials', {timeout: 45000}, async t => {
   const {profiles} = await fixture(t, true); let completed = 0;
   for (const mode of [1, 2]) { // Corrupt present record FIRST; erased record second, in independent profile/process buckets.
@@ -693,6 +695,7 @@ test('actual browser reports corrupt and erased retained credentials', {timeout:
   assert.equal(completed, 2); t.diagnostic(JSON.stringify({storage_modes_completed: completed}));
 });
 // Executes the actual authorization owner against independent platform boundaries; the browser cases separately prove real authority.
+// Timing: display
 test('authorization owner distinguishes credential lookup and retained failures', {timeout: 45000}, async t => {
   const vm = require('node:vm'), source = await fs.readFile(path.resolve('client/src/frontend/authorization.js'), 'utf8');
   const pair = await crypto.webcrypto.subtle.generateKey({name: 'ECDSA', namedCurve: 'P-256'}, false, ['sign', 'verify']);
@@ -1345,6 +1348,7 @@ async function unknownSave(page, p) {
 
 // A control save drops the session while its 200 reply is on the way.
 // Proves: TC-073-001
+// Timing: display
 test('TC-073-001: Apply of a CAT change on a selected HTTPS profile reports the committed save', {timeout: 60000}, async t => {
   const {p, page, sessions, scopes} = await selectedPage(t);
   const before = (await Promise.all(scopes)).at(-1);

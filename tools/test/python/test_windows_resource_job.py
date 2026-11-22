@@ -788,6 +788,7 @@ class MatrixQualificationTests(ApiFreeCase):
         self.assertEqual(result["measured_worker_completions"], 400 + 2 * 40)
         self.assertEqual(result["inconclusive_configurations"], [])
 
+    # Timing: compute
     def test_three_unqualified_attempts_are_inconclusive_not_failed(self):
         # The guardian side of CL-007-04 (inconclusive outcome).
         result = self.parse("matrix", self.matrix_events({5: [self.SLOW] * 3}))

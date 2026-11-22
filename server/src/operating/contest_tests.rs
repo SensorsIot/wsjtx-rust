@@ -170,6 +170,7 @@ fn tc_063_001_the_profile_table_holds_the_rule_facts() {
 }
 
 // Proves: TC-063-002
+// Timing: timer
 #[test]
 fn tc_063_002_the_period_comes_from_the_rule() {
     // From before each 2026 occurrence.
@@ -244,6 +245,7 @@ fn tc_063_002_the_period_comes_from_the_rule() {
 }
 
 // Proves: TC-063-003
+// Timing: timer
 #[test]
 fn tc_063_003_the_list_names_each_profile_with_its_period() {
     let list = profiles_json(at("2026-08-01T00:00:00Z"));
@@ -379,6 +381,7 @@ fn tc_063_005_the_points_rules_by_hand() {
 }
 
 // Proves: TC-063-006
+// Timing: timer
 #[test]
 fn tc_063_006_only_the_period_counts_and_each_dupe_rule() {
     let s = ww();
@@ -709,6 +712,7 @@ fn tc_063_007_a_selection_is_parsed_exactly() {
 // The confirmation goes with Auto on (POST /strategy/auto,
 // strategy_tests.rs); a selection asks nothing, and colouring and automation_confirmed are
 // refused on PUT with their field.
+// Timing: timer
 #[test]
 fn tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmation() {
     // A selection is {profile, start, end}; operation, repetitions and quiet_minutes

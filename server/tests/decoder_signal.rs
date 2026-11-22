@@ -418,6 +418,7 @@ fn quality_corpus() {
 }
 
 // Proves: TC-004-003
+// Timing: compute
 #[test]
 fn cooperative_quanta_and_partial_cancellation() {
     use std::{
@@ -482,6 +483,7 @@ const FT4_SCALAR_FREQUENCY_TOLERANCE_HZ: f64 = 0.5;
 const GAIN_FREQUENCY_TOLERANCE_HZ: f64 = 0.1;
 // Detail test of WstxDecode::DecodeWindow: the agreement of the planned and the scalar
 // transform, and the independence of the frames from the input gain.
+// Timing: signal
 #[test]
 fn planned_scalar_and_gain_invariance() {
     let root = prepared("quality");
@@ -1837,6 +1839,7 @@ fn resource_official_comparison(records: &[Decode], oracle: &Value, context: &st
 
 // Explicit diagnostic selection is required; no total busy-window SLA is added.
 // Proves: TC-004-002, TC-004-003
+// Timing: compute
 #[test]
 #[ignore = "explicit resource diagnostic: genuine30s public async windows; selected root CPU budget, no new total deadline"]
 fn resource_busy_live_overlap_and_pending_cancel() {
@@ -2035,6 +2038,7 @@ fn physical_noise_reproduction_has_no_frame() {
 }
 
 // Proves: TC-004-001
+// Timing: signal
 #[test]
 fn same_frequency_preserves_two_temporal_frames() {
     let root = prepared("frozen");
@@ -2116,6 +2120,7 @@ fn busy_prompt_window() -> Vec<f32> {
 // UTC-aligned FT8 prompt window (15 s of audio completing at period start + 13.8 s)
 // publishes every decode within the 1.0 s modem share of the 1.2 s budget to +15.0 s.
 // Proves: TC-004-002
+// Timing: compute
 #[test]
 fn live_busy_period_publishes_every_decode_promptly() {
     use std::task::{Context, Waker};

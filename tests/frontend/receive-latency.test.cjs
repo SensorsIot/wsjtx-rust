@@ -9,6 +9,7 @@ const origin=process.env.WSTX_LATENCY_ORIGIN;
 
 // The browser-side timeline of the Detailed Band Activity.
 // Proves: TC-057-001
+// Timing: display
 test('TC-057-001 busy live period painted in Band Activity (Detailed) timeline',{timeout:200000},async()=>{
   assert.ok(origin,'run through the Rust live busy-period test');
   const browser=await chromium.launch();

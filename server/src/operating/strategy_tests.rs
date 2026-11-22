@@ -565,6 +565,7 @@ fn tc_039_030_value_order_with_and_without_a_list() {
 }
 
 // Proves: TC-039-030
+// Timing: timer
 #[test]
 fn tc_039_030_worked_window_from_dated_records() {
     let table = crate::dxcc::Table::default();
@@ -7192,6 +7193,7 @@ async fn tc_039_033_unattended_x_is_never_doubled() {
 // the next quietest with his_end yes, one of the other parity excludes nothing, his frequencies
 // everywhere leave the quietest with his_end no; a move left undone is asked again, the count kept.
 // Proves: TC-039-022
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_048_the_run_shows_the_hearing_and_his_end() {
     let t = leaving_on(attach_not_connected_feed, true, |_| {}, &[K1ABC_CQ]).await;
@@ -8569,6 +8571,7 @@ fn unfreeze(f: &Mcp) {
 // [[300, 2000], [2050, 2700]], the same at e + 45 s; at e + 60 s 4 periods, [[300, 2000],
 // [2050, 2400], [2450, 2700]], the same at e + 75 s. Enable Tx off at e + 76 s: at once qso false
 // (rx_parity odd, the period in progress).
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_082_002_my_own_cq_holds_its_rx_parity_over_its_transmissions() {
     let f = station(true).await;
@@ -8655,6 +8658,7 @@ async fn tc_082_002_my_own_cq_holds_its_rx_parity_over_its_transmissions() {
 // [[300, 2400], [2450, 2700]]; the publication of e + 105 s's decodes builds at once (e + 120.5 s),
 // qso true and rx_parity odd, 1160..1240 closed: [[300, 1200], [1250, 2400],
 // [2450, 2700]].
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_082_002_a_manual_qso_holds_its_rx_parity_and_its_decodes_build_at_once() {
     let f = station(true).await;
@@ -8810,6 +8814,7 @@ async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_nu
 // peer, and none of run_id, slots, rise_db, level_db, floor_db or listening in an event. The 48-range
 // value with two UUIDs and a 13-digit at_utc_ms is at most 1024 bytes.
 // Proves: TC-082-003
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_082_003_free_tx_slots_on_the_socket_and_in_the_snapshot_without_a_run() {
     let f = station(true).await;

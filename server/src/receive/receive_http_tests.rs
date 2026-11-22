@@ -1055,6 +1055,7 @@ impl StationMetrics {
 // receive-owner release <=250ms after Stop, on the actual manager, provider and decoder.
 // Exclusive resource window only (station capture paused, no concurrent builds).
 // Proves: TC-004-003
+// Timing: compute
 #[cfg(all(windows, not(debug_assertions)))]
 #[test]
 #[ignore = "exclusive resource window: station process delta and owner release"]

@@ -147,6 +147,7 @@ fn ingest_provider(
 
 // Native callback partitions cannot move the first15-second analysis boundary.
 // Proves: TC-002-001
+// Timing: signal
 #[test]
 fn live_provider_analysis_boundary_is_native_packet_partition_invariant() {
     for partitions in [&[8192][..], &[441, 1024, 37, 1920][..]] {
@@ -182,6 +183,7 @@ fn live_provider_analysis_boundary_is_native_packet_partition_invariant() {
 }
 
 // Proves: TC-002-001, TC-007-012
+// Timing: signal
 #[test]
 fn live_provider_known_gap_resets_history_without_renumbering_samples() {
     let mut provider = Provider::new();
@@ -265,6 +267,7 @@ fn live_provider_unknown_loss_requires_ack_and_rejects_old_window_context() {
 // Mandatory release execution is registered as live-receive-integration. Debug
 // retains the three cheaper actual-provider boundary tests above.
 // Proves: TC-002-001
+// Timing: signal
 #[cfg(not(debug_assertions))]
 #[tokio::test(flavor = "current_thread")]
 async fn live_native_provider_decodes_independent_ft8_callsign() {

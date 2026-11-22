@@ -667,6 +667,7 @@ const GREEN='rgb(48, 208, 80)',RED='rgb(255, 64, 64)';
 // clock), not the browser's wall clock, and is red in my Tx periods and while transmitting,
 // green in receive periods.
 // Proves: TC-050-003
+// Timing: display
 test('TC-050-003 the period bar follows the station clock and is red in my Tx periods and green otherwise',{timeout:40000},async t=>{
   const clock={offset:0};
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -778,6 +779,7 @@ test('the leave label stands where WD:n stood in a run\'s own contact',{timeout:
 // message line is "▶ TX now" while the station transmits and "▸ next" otherwise; an empty
 // Others list says "nobody calling".
 // Proves: TC-050-005
+// Timing: display
 test('TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next otherwise, and nobody calling',{timeout:40000},async t=>{
   const clock={offset:0};let transmit={arm_state:'armed'},watchdog=null;
   const {page,errors}=await fixture(t,{width:1366,height:768},{beforeNavigate:async(p,app)=>{
@@ -2704,6 +2706,7 @@ test('TC-050-008 Band Activity marks: partner first with the stripe, calls me, C
 // state and measurement from a GET /transmit fixture (no CAT, PTT or audio: the profile's
 // CAT PTT setting is set in the page only, the server keeps transmit unsupported).
 // Proves: TC-043-003
+// Timing: clock
 test('transmit status shows the SNTP clock measurement',{timeout:45000},async t=>{
   let view;
   const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(p,app)=>{
@@ -2786,6 +2789,7 @@ test('TC-043-003 the clock view in Settings and the clock entries from clock.sta
 // Windows Time and the accepted wording without evidence; no GET /clock outside Settings, no
 // source select, no Clock unknown or disagreement text anywhere.
 // Proves: TC-092-005
+// Timing: clock
 test('TC-092-005 clock entries in the error field and the clock status line',{timeout:90000},async t=>{
   const {page,app,errors}=await fixture(t,{width:1366,height:768});
   const requests=[];
@@ -4871,6 +4875,7 @@ test('TC-037-002 a long problem scrolls inside the error field on screen and the
 // revision, at most twice, after the contract's wait of up to 2.5 s for a newer revision (ContactStateEvent):
 // the first click on the fallback (GET /contact after 2.5 s on the paused page clock), the second on the event.
 // Every wait is on an event with a 10 s hang guard; no fourth enable_tx is shown by the command order.
+// Timing: display
 test('CQ retries a stale_revision refusal with the reloaded snapshot',{timeout:40000},async t=>{
   const commands=[],arrivals=[];let revision=3,stale=0;
   const arrival=n=>(arrivals[n]??=deferred()).promise;

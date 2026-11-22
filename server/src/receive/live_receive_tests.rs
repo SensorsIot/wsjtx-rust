@@ -1,6 +1,7 @@
 use super::*;
 
 // Source clock metadata never invents external accuracy.
+// Timing: clock
 #[test]
 fn live_clock_filetime_mapping_handles_epoch_leap_and_range() {
     assert_eq!(
@@ -17,6 +18,7 @@ fn live_clock_filetime_mapping_handles_epoch_leap_and_range() {
 
 // Independent hand-calculated UTC/frame vectors.
 // Proves: TC-007-006
+// Timing: signal
 #[test]
 fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
     for (mode, starts, period) in [
@@ -126,6 +128,7 @@ fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
 
 // Actual numerical silence completes; result inputs are explicit manager fixtures.
 // Proves: TC-007-006
+// Timing: signal
 #[test]
 fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_rows() {
     let fixture = Fixture::new();
@@ -186,6 +189,7 @@ fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_row
 
 // Actual cooperative numerical/manager overrun, not a pre-labelled wire response.
 // Proves: TC-007-006
+// Timing: signal
 #[test]
 fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
     let fixture = Fixture::new();
@@ -455,6 +459,7 @@ fn live_window_schedule_follows_the_utc_period_grid() {
 }
 
 // Hand-calculated FT8 period starts for the SNR measurement
+// Timing: signal
 #[test]
 fn ft8_snr_period_start_follows_the_utc_period_grid() {
     let timing = |anchor: Option<&str>| source::SourceTiming {
@@ -501,6 +506,7 @@ fn ft8_snr_period_start_follows_the_utc_period_grid() {
 
 // Re-anchoring keeps ordinary frames in the prompt window
 // through more than 1 s of cumulative capture-clock drift and a clock step.
+// Timing: signal
 #[test]
 fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
     // 2000 ppm slow over 600 s accumulates 1.2 s, plus the 0.4 s step at 300 s.
@@ -538,6 +544,7 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
 // clock 2 s ahead, prompt windows complete at +13.8 s of corrected UTC through 300 ppm of
 // drift, none is lost or repeated, and the estimator is fed DT against the uncorrected
 // system clock whatever correction is applied (no feedback loop).
+// Timing: clock
 #[test]
 fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate() {
     let (_fixture, r, clock, time, job, _) = air_station();
@@ -684,6 +691,7 @@ fn new_and_grown_views_signal_the_publication_watch() {
 // view under the same id: nothing new publishes nothing, a late starter (DT +1.2 s) only grows
 // next_sequence, so the browser keeps its rows and cursor.
 // Proves: TC-004-004
+// Timing: signal
 #[test]
 fn late_window_republishes_its_period_view_with_late_starters() {
     let fixture = Fixture::new();
@@ -767,6 +775,7 @@ fn late_window_republishes_its_period_view_with_late_starters() {
 // The live worker with a correlated UTC clock names
 // the period start to the decoder, so the published FT8 SNR equals the file decode of the
 // same period-aligned audio.
+// Timing: signal
 #[test]
 fn live_ft8_snr_measures_from_the_utc_period_start() {
     let fixture = Fixture::new();
@@ -826,6 +835,7 @@ fn live_ft8_snr_measures_from_the_utc_period_start() {
 // correction), the same timing the published records use. The system clock here is 2 s
 // slow (anchor 11:59:58 at frame 0) and the correction +2 s puts station UTC 12:00:00 there,
 // so the expected values are those of the uncorrected test above.
+// Timing: signal
 #[test]
 fn live_ft8_period_start_and_window_diagnostics_follow_the_air_clock_correction() {
     let fixture = Fixture::new();

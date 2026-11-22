@@ -10,6 +10,7 @@ const {randomUUID} = require('node:crypto');
 const {FlexEmulator} = require('./flex-emulator.cjs');
 const {run: liveCheck} = require('./flex-live-check.cjs');
 
+// Timing: signal
 test('the live check script decodes real FT8 through the real packet form with some loss and leaves nothing behind', {timeout: 120000}, async t => {
   const vectors = process.env.WSTX_DECODER_VECTORS;
   assert.ok(vectors, 'WSTX_DECODER_VECTORS names the verified vector cache');

@@ -159,6 +159,7 @@ fn rejected_publications_do_not_consume_history_or_invoke_limit_callbacks() {
     assert_eq!((state.available_count(), state.encoded_bytes()), (0, 0));
 }
 
+// Timing: signal
 #[test]
 fn ft8_snr_period_start_is_frame_zero_for_recordings_and_named_live() {
     // Finite decodes take periods from frame 0; live waits for the receive clock.

@@ -425,6 +425,7 @@ fn selecting_a_cq_row_prepares_the_independent_message_set_without_any_request()
     assert_eq!(report_from_snr(-70.0), -50);
 }
 
+// Timing: timer
 #[test]
 fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73() {
     let mut s = station();
@@ -481,6 +482,7 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
     );
 }
 
+// Timing: timer
 #[test]
 fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73() {
     for rr73 in [false, true] {
@@ -553,6 +555,7 @@ fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73
     }
 }
 
+// Timing: timer
 #[test]
 fn repeats_resend_and_a_report_from_rogers_returns_to_tx3() {
     let mut s = station();
@@ -770,6 +773,7 @@ fn tx1_skip_report_override_and_manual_entry_follow_the_domains() {
 // disarm: Tx moves to the nearest candidate at least 100 Hz from his frequency, 950 (1050 - 100
 // = 950 at 50 Hz; at 51 Hz 1051 - 100 = 951, the grid's 950), Rx stays 1000, Enable Tx stays on
 // and the transmission on the air finishes; in replying and in the Tx1-skipped report.
+// Timing: timer
 #[test]
 fn partner_working_another_call_moves_a_manual_contact_clear_of_him() {
     for skipped in [false, true] {
@@ -1041,6 +1045,7 @@ fn tc_097_017_a_his_free_text_within_10_hz_in_his_period_ends_busy() {
 // into that period: the send is planned late, keyed and paused (counted stays 6). Published 1.3 s
 // into it: the Tx watchdog stopped it at 1.2 s (Enable Tx off, txWatchdog), nothing keyed.
 // Proves: TC-097-017
+// Timing: timer
 #[test]
 fn tc_097_017_b_the_stop_point_decides_which_send_a_busy_start_counts_for() {
     for (at, keyed) in [(1_100, true), (1_300, false)] {
@@ -1153,6 +1158,7 @@ fn tc_097_017_c_the_split_frequency_table() {
 // His decode before the audio start of my next send moves the
 // pending request (the send plays from the new offset); one after the audio start lets that send
 // finish at the old offset and the next goes from the new one. FT8 audio starts 0.5 s in.
+// Timing: timer
 #[test]
 fn tc_097_017_c_a_move_before_or_after_the_audio_start() {
     let mut s = calling_ke1j(Mode::Ft8, 6);
@@ -1270,6 +1276,7 @@ fn a_contact_cancelled_after_the_roger_report_is_not_handed_over() {
 // qso keeps at most one request pending: another message chosen while one waits replaces it,
 // and its period sends only the new message, once.
 // Proves: TC-007-004
+// Timing: timer
 #[test]
 fn a_second_request_replaces_the_pending_one_and_one_message_is_sent() {
     let mut s = station();
@@ -1369,6 +1376,7 @@ fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
 // while we repeated R+06 (partner messages), and J88IH sent one report while the operator
 // clicked in the page: 13 R-07 at limit 6 (browser requests).
 // Proves: TC-008-001
+// Timing: timer
 #[test]
 fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browser_does() {
     let mut s = station();
@@ -1469,6 +1477,7 @@ fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browse
 // and has no Tx watchdog count: tx_remaining_calls is null while armed for it (never the
 // leave count, never the limit minus the Rep); the same contact without the exemption stops at N,
 // and another contact's exemption does not help it.
+// Timing: timer
 #[test]
 fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
     let mut s = station();
@@ -1505,6 +1514,7 @@ fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
 // A different message starts at 1 again, also when the
 // partner advances just before the send beyond the limit is due.
 // Proves: TC-008-001
+// Timing: timer
 #[test]
 fn tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message() {
     let mut s = station();
@@ -1542,6 +1552,7 @@ fn tc_008_001_the_partner_advancing_at_the_limit_sends_the_next_message() {
 // Selecting a row of the current partner and Enable Tx
 // while armed are clicks: neither restarts the count.
 // Proves: TC-008-001
+// Timing: timer
 #[test]
 fn tc_008_001_clicks_on_the_partner_and_enable_tx_while_armed_restart_nothing() {
     let mut s = station();
@@ -1581,6 +1592,7 @@ fn tc_008_001_clicks_on_the_partner_and_enable_tx_while_armed_restart_nothing() 
 // Selecting the partner's row at another SNR keeps the report
 // sent, so the message and its count stay.
 // Proves: TC-008-001
+// Timing: timer
 #[test]
 fn tc_008_001_a_partner_row_with_another_snr_restarts_nothing() {
     let mut s = station();
@@ -1616,6 +1628,7 @@ fn tc_008_001_a_partner_row_with_another_snr_restarts_nothing() {
 // Selecting the partner's row keeps a message already sent as
 // edited, so its count stays.
 // Proves: TC-008-001
+// Timing: timer
 #[test]
 fn tc_008_001_a_partner_row_keeps_an_edited_message_and_its_count() {
     let mut s = station();
@@ -1679,6 +1692,7 @@ fn tc_008_001_a_partner_row_keeps_the_tx4_form() {
 
 // A limit lowered under a pending send stops before it keys.
 // Proves: TC-008-001
+// Timing: timer
 #[test]
 fn tc_008_001_a_pending_send_beyond_a_lowered_limit_is_never_keyed() {
     let mut s = station();
@@ -1707,6 +1721,7 @@ fn tc_008_001_a_pending_send_beyond_a_lowered_limit_is_never_keyed() {
 // When the message at its limit becomes due again, the other
 // message still pending is not keyed.
 // Proves: TC-008-001
+// Timing: timer
 #[test]
 fn tc_008_001_going_back_to_a_message_at_its_limit_cancels_the_pending_send() {
     let mut s = station();
@@ -1849,6 +1864,7 @@ fn receive_only_station_prepares_and_logs_but_refuses_transmit() {
 
 // Tune with the transmit state off, and the guard of TC-111-010 (f): the Tune watchdog.
 // Proves: TC-008-001
+// Timing: timer
 #[test]
 fn tc_008_001_tx_watchdog_counts_unanswered_calls_and_tune_ends_at_its_limit() {
     let mut s = station();
@@ -2103,6 +2119,7 @@ fn an_operator_disarm_is_not_reported_as_a_refused_transmission() {
 
 // CQ keeps calling, armed, when every
 // transmission's end is reported 900 ms late (inside the release bound).
+// Timing: timer
 #[test]
 fn cq_keeps_calling_armed_when_the_device_reports_each_end_900_ms_late() {
     let mut s = station();
@@ -2209,6 +2226,7 @@ fn enable_tx_arms_with_the_revision_the_operator_saw_and_9_refuses_a_changed_one
 }
 
 // Slot choices never reopen a finished contact.
+// Timing: timer
 #[test]
 fn choosing_a_slot_on_a_finished_contact_never_changes_its_state() {
     let mut s = station();
@@ -2259,6 +2277,7 @@ fn ft4_station() -> Station {
     s
 }
 
+// Timing: timer
 #[test]
 fn ft4_responder_transmits_in_odd_7_5_s_periods_and_completes_with_an_ft4_log_offer() {
     let mut s = ft4_station();
@@ -2322,6 +2341,7 @@ fn ft4_responder_transmits_in_odd_7_5_s_periods_and_completes_with_an_ft4_log_of
     );
 }
 
+// Timing: timer
 #[test]
 fn ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz() {
     let mut s = ft4_station();
@@ -2378,6 +2398,7 @@ fn ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz() {
     assert_eq!(fields.mode, Mode::Ft4);
 }
 
+// Timing: timer
 #[test]
 fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
     // An armed FT8 responder with a pending request and a 2940 Hz Tx offset.
@@ -2775,6 +2796,7 @@ fn ft8_rrr_or_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once()
 // contact closes it: completed with Tx6, Enable Tx off (contactCompleted), nothing
 // transmitted in the next period, one record (the Log QSO), and the partner's later
 // RR73/73 neither advances nor logs it again.
+// Timing: timer
 #[test]
 fn log_qso_closes_a_running_contact_so_nothing_stays_queued_or_logs_twice() {
     let mut s = station();
@@ -2824,6 +2846,7 @@ fn log_qso_closes_a_running_contact_so_nothing_stays_queued_or_logs_twice() {
 // last_rcvd): the latest counted partner message to my call with its rounded SNR; an
 // identical repeat counts up (xN), a new text starts again at 1; a selected row to my call
 // is the first one; a new contact starts empty.
+// Timing: timer
 #[test]
 fn the_last_partner_message_counts_identical_repeats() {
     let mut s = station();
@@ -2878,6 +2901,7 @@ fn the_last_partner_message_counts_identical_repeats() {
 // Calling another station (US5WFL, then YO3GNF) while Enable Tx is on keeps it on, and the next
 // own period calls the new station; nothing more goes to the old partner.
 // Proves: TC-050-004
+// Timing: timer
 #[test]
 fn changing_the_contact_while_armed_keeps_enable_tx_and_the_next_period_calls_the_new_station() {
     let mut s = station();
@@ -2942,6 +2966,7 @@ fn callers(s: &mut Station, first: i64, second: i64) -> (Vec<Row>, Vec<Row>) {
 // answers the first caller of the period in decode order at once, with Enable Tx kept;
 // the later callers change nothing.
 // Proves: TC-010-010
+// Timing: timer
 #[test]
 fn call_first_answers_the_first_caller_of_my_cq_in_the_next_own_period() {
     let mut s = station();
@@ -2984,6 +3009,7 @@ fn call_first_answers_the_first_caller_of_my_cq_in_the_next_own_period() {
 // exchanges to my call (R+report, RRR, RR73, 73: WSJT-X AutoRespondPeriod.cpp
 // continuingExchange), the CQ keeps running; set_call_first changes the setting.
 // Proves: TC-010-010
+// Timing: timer
 #[test]
 fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
     assert!(Settings::default().call_first, "Call 1st is on by default");
@@ -3038,6 +3064,7 @@ fn call_first_off_auto_seq_off_or_a_sign_off_keep_the_cq_running() {
 // its audio starts (FT8 audio delay 500 ms) replaces that period's request: the new
 // contact's Tx1 goes out in the same period and Enable Tx stays on.
 // Proves: TC-050-004
+// Timing: timer
 #[test]
 fn a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_period() {
     let mut s = station();
@@ -3073,6 +3100,7 @@ fn a_switch_in_the_keyed_window_before_audio_sends_the_new_contact_in_that_perio
 // The keyed period's message still goes out, the new contact's Tx1 is queued for its next
 // period and Enable Tx stays on: the core never refuses busy for that timing.
 // Proves: TC-050-004
+// Timing: timer
 #[test]
 fn a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period() {
     let mut s = station();
@@ -3103,6 +3131,7 @@ fn a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period
 // starts the audio, and its lead already lies past the period's start window, the next
 // own period's request is queued behind the keyed one; Enable Tx stays on (the debug-load
 // failure of selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms).
+// Timing: timer
 #[test]
 fn a_late_start_keyed_before_audio_queues_the_next_own_period_without_disarming() {
     let mut s = station();
@@ -3134,6 +3163,7 @@ fn a_late_start_keyed_before_audio_queues_the_next_own_period_without_disarming(
 // contact's transmissions as sent, oldest first, repeats counted, bounded; a new contact
 // starts empty and a cancel empties it.
 // Proves: TC-050-006
+// Timing: timer
 #[test]
 fn the_contact_dialogue_holds_the_exchanged_messages_in_order() {
     let mut s = station();
@@ -3264,6 +3294,7 @@ fn set(s: &Station) -> Vec<String> {
 // A standard station works a nonstandard CQ caller
 // with WSJT-X's compound message set and sequences it to the log.
 // Proves: TC-024-003
+// Timing: timer
 #[test]
 fn a_standard_call_works_a_nonstandard_partner_to_the_log() {
     let mut s = station();
@@ -3334,6 +3365,7 @@ fn a_standard_call_works_a_nonstandard_partner_to_the_log() {
 // A nonstandard own call calls CQ without a grid and
 // answers a standard caller with its hashed own call.
 // Proves: TC-024-003
+// Timing: timer
 #[test]
 fn a_nonstandard_own_call_answers_a_standard_caller_to_the_log() {
     let mut s = station();
@@ -3537,6 +3569,7 @@ fn call_first_skips_hashed_and_nonstandard_callers() {
 // A free-text Tx5 on an own CQ is sent once like a 73:
 // the contact completes and, without a partner, nothing goes to the log.
 // Proves: TC-024-003, TC-007-001
+// Timing: timer
 #[test]
 fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
     let mut s = station();
@@ -3557,6 +3590,7 @@ fn a_free_text_tx5_on_an_own_cq_is_sent_once_and_never_logged() {
 // WW Digi: CQ WW, a caller's grid answered with R+grid,
 // RR73 answered with 73 and the contact logged with the grid and no reports.
 // Proves: TC-024-005
+// Timing: timer
 #[test]
 fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
     let mut s = station();
@@ -3628,6 +3662,7 @@ fn ww_digi_answers_a_caller_grid_with_r_grid_and_logs_on_rr73() {
 // NA VHF: answering a CQ TEST, the CQer's R+grid
 // moves to Tx4 and the partner's 73 completes the contact.
 // Proves: TC-024-005
+// Timing: timer
 #[test]
 fn na_vhf_moves_to_rogers_on_r_grid() {
     let mut s = station();
@@ -3811,6 +3846,7 @@ fn adif_of(c: &Contact) -> String {
 // Field Day as the CQer: CQ FD, the caller's exchange
 // answered with R + my exchange, RR73 answered with 73, logged with the ADIF contest fields.
 // Proves: TC-024-008
+// Timing: timer
 #[test]
 fn field_day_cq_answers_the_exchange_and_logs_the_contest_fields() {
     let mut s = station();
@@ -3870,6 +3906,7 @@ fn field_day_cq_answers_the_exchange_and_logs_the_contest_fields() {
 // starts with Tx2 (Tx1 disabled), "5n9 serial", the TU; R exchange moves to Tx4, the log
 // has the 5n9 RSTs, STX and STATE, and the next contact sends the next serial.
 // Proves: TC-024-008
+// Timing: timer
 #[test]
 fn rtty_roundup_answers_cq_ru_with_tx2_and_logs_rst_stx_and_state() {
     let mut s = station();
@@ -4106,6 +4143,7 @@ fn exchanges(s: &Station) -> (Option<String>, Option<String>) {
 // SRX, the exchanged RS and the 6-character grid; then as the replier to a CQ TEST from Tx1,
 // the exchange answered with Tx3 and the next serial.
 // Proves: TC-099-002
+// Timing: timer
 #[test]
 fn tc_099_002_eu_vhf_run_and_reply_through_the_log() {
     let mut s = station();
@@ -4220,6 +4258,7 @@ fn tc_099_002_eu_vhf_run_and_reply_through_the_log() {
 // The same run in FT4: Tx4 is RR73 and its transmission
 // completes the contact.
 // Proves: TC-099-002
+// Timing: timer
 #[test]
 fn tc_099_002_eu_vhf_in_ft4() {
     let mut s = ft4_station();
@@ -4775,6 +4814,7 @@ impl Station {
 // at a random 1000..2998 Hz offset when its offset is below 999 Hz, answers the Fox's
 // report with Tx3 on the Fox's frequency, repeats it on Fox-300 Hz and logs on RR73.
 // Proves: TC-024-011
+// Timing: timer
 #[test]
 fn a_hound_calls_at_a_random_offset_and_answers_the_fox_report_on_its_frequency() {
     let mut s = station();
@@ -4878,6 +4918,7 @@ fn a_hound_calls_at_a_random_offset_and_answers_the_fox_report_on_its_frequency(
 // on its frequency, the repeat goes to Fox+300 Hz (Fox at or below 600 Hz), a repeated Fox
 // report returns to the Fox's frequency, and the 0.1 RR73 to my call completes and logs.
 // Proves: TC-024-011
+// Timing: timer
 #[test]
 fn a_hound_answers_a_0_1_report_moves_300_hz_on_a_repeat_and_logs_the_0_1_rr73() {
     let mut s = hound_station();
@@ -5613,6 +5654,7 @@ fn tc_007_010_c_a_halted_tx4_rr73_then_the_partners_rr73_sends_73_once() {
 // A partner who signs off before any report reached me:
 // RR73 in replying (after my Tx1), RRR in report (after my Tx2 to a CQ caller).
 // Proves: TC-007-010
+// Timing: timer
 #[test]
 fn tc_007_010_d_rogers_in_replying_and_report_send_73_once_and_log_without_rst_rcvd() {
     // replying: I answer K1ABC's CQ (he is even, I am odd).
@@ -5785,6 +5827,7 @@ fn tc_007_010_g_only_the_partners_counted_rogers_lead_to_one_73() {
 // WW Digi: my Tx4 RRR after the partner's R grid, then his
 // RR73: one 73, completed, one log.
 // Proves: TC-007-010
+// Timing: timer
 #[test]
 fn tc_007_010_h_ww_digi_rr73_after_my_rrr_sends_73_once_and_logs_once() {
     let mut s = station();
@@ -5879,6 +5922,7 @@ fn station_started_with_saved(auto_seq: bool, call_first: bool) -> Station {
 
 // The restored Call 1st governs the own
 // CQ: off keeps calling (WstxStandardQso::CallFirstRule), on answers the first caller as TC-010-010 (a).
+// Timing: timer
 #[test]
 fn tc_110_004_the_restored_call_first_governs_the_own_cq() {
     for (call_first, state, sent) in [

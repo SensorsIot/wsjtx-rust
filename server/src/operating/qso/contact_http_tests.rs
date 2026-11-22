@@ -1670,6 +1670,7 @@ fn contact_state_carries_only_what_the_peer_lacks() {
 }
 // Below Detailed a running Tune countdown alone goes at most every 5 s.
 // Proves: TC-007-005
+// Timing: display
 #[test]
 fn pushed_state_paces_a_countdown_by_display_profile() {
     use std::time::Duration;
@@ -2111,6 +2112,7 @@ async fn select_mode(f: &Fixture, mode: &str) -> (StatusCode, Value) {
 // (WstxTransmitControl::StationMode) and a mode selection is refused busy while transmit
 // keys the radio (ModeChange; WSJT-X updateModeControlLock).
 // Proves: TC-007-008, TC-011-004
+// Timing: timer
 #[tokio::test]
 async fn ft4_live_job_sets_the_contact_mode_and_tick_period_and_tune_blocks_a_mode_change() {
     let f = fixture("http://127.0.0.1:18011", true);
@@ -2331,6 +2333,7 @@ async fn a_mode_selection_is_busy_while_ptt_is_keyed_and_while_transmitting() {
 // StationOperatingMode persists across a receive stop: an
 // FT4 contact is kept when FT4 receive (started outside the operating selection) stops.
 // Proves: TC-011-004
+// Timing: timer
 #[tokio::test]
 async fn the_operating_mode_persists_across_a_receive_stop_and_keeps_the_ft4_contact() {
     let f = fixture("http://127.0.0.1:18015", false);
@@ -2422,6 +2425,7 @@ async fn published_ft4_partner_records_advance_the_contact_to_signoff_after_rr73
 // odd period; Hold Tx keeps my Tx at 2439 Hz. Expected: Tx1, R+10, R+10, 73, completed,
 // logged once (contacts.adi) with Enable Tx off.
 // Proves: TC-007-008
+// Timing: timer
 #[tokio::test]
 async fn armed_ft4_station_answers_the_partners_rr73_with_73_and_logs_once() {
     let f = https_fixture("https://127.0.0.1:18017", true).await;
@@ -4141,6 +4145,7 @@ fn a_transmit_revision_never_carries_older_fields() {
 // reaches 600 s, clock_warning is ntp_unreachable exactly when clock_measurement.age_ms is
 // beyond 600000.
 // Proves: TC-007-005
+// Timing: display
 #[test]
 fn transmit_view_shows_one_sntp_snapshot() {
     let (ntp, rounds) = RoundSource::start();

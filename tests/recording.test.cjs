@@ -140,6 +140,7 @@ test('TC-018-001/003 import preserves source, jobs change, cancel releases and r
 });
 // Cost level 2: actual boundary and priority vectors.
 // Proves: TC-018-002
+// Timing: display
 test('TC-018-002/003 HTTP admission, malformed chunks, busy and partial cancellation',{timeout:30000},async t=>{
   const f=await fixture(t),s=await f.snapshot(),body=f.body(s),unknown=crypto.randomUUID();
   assert.equal((await f.req('/recording/imports','POST',body,{Origin:'http://foreign.invalid'})).value.error.code,'forbidden_origin');
@@ -235,6 +236,7 @@ test('TC-010-003 late recording asset bootstraps an already connected station on
 });
 // Real browser canvas data and desktop/narrow accessible layout.
 // Proves: TC-010-003
+// Timing: display
 test('TC-010-003 calibrated real spectrum, source rows and accessible splitter',{timeout:30000},async t=>{
   const f=await fixture(t);await f.upload(wav(2));const p=await page(f);const frames=[];
   p.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='spectrum.frame')frames.push(m);}catch{}}));
@@ -279,6 +281,7 @@ test('TC-018-001 one real FT8 and one real FT4 original import unchanged',{timeo
 
 // Four Windows processes with actual maximum-source work.
 // Proves: TC-004-003, TC-018-003
+// Timing: compute
 test('four stations retain isolated identities and release cancellation within 250 ms',{timeout:30000},async t=>{
   const stations=await Promise.all(Array.from({length:4},()=>fixture(t))),maxFrames=recordingLimit('importMaxFrames');
   await Promise.all(stations.map(f=>f.upload(wav(120))));const jobs=await Promise.all(stations.map(f=>f.replay()));
@@ -497,6 +500,7 @@ test('TC-010-005 review short source rejects inverted out-of-source interval',{t
 });
 // Actual Detailed cadence and independent control responsiveness.
 // Proves: TC-010-005
+// Timing: display
 test('TC-010-005 review real Detailed peer cadence and control priority',{timeout:10000},async t=>{
   const f=await fixture(t);await f.upload(wav(3));
   const ws=new WebSocket(f.origin.replace('http','ws')+'/ws','wstx.v1',{origin:f.origin});await once(ws,'open');t.after(()=>ws.close());

@@ -69,6 +69,7 @@ fn windows(mode: Mode, frames: u64, partitions: &[usize]) -> Vec<(u64, Vec<f32>)
 }
 
 // Integer sample clock fixes window edges.
+// Timing: signal
 #[test]
 fn receive_windows_follow_mode_boundaries_independent_of_packet_partition() {
     for (mode, step, span) in [(Mode::Ft8, 180000, 360000), (Mode::Ft4, 90000, 180000)] {
@@ -88,6 +89,7 @@ fn receive_windows_follow_mode_boundaries_independent_of_packet_partition() {
 }
 
 // A known gap never becomes decoder padding.
+// Timing: signal
 #[test]
 fn receive_known_gap_resets_support_preserving_global_positions() {
     let mut buffer = WindowBuffer::new(Mode::Ft4, descriptor()).unwrap();
@@ -181,6 +183,7 @@ fn receive_input_limits_and_initial_discontinuity_are_explicit() {
 
 // Scheduled residues fix completion and length.
 // Proves: TC-004-004
+// Timing: signal
 #[test]
 fn receive_schedule_completes_windows_at_period_residues() {
     // FT8 prompt/late residues for a UTC anchor 7.5 s into a period at frame 1000:
@@ -239,6 +242,7 @@ fn receive_schedule_completes_windows_at_period_residues() {
 // A re-anchored schedule moves completions without dropping
 // or repeating a window, for a forward shift and a backward step.
 // Proves: TC-004-004
+// Timing: signal
 #[test]
 fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
     let schedule = |shift: i64| {
@@ -285,6 +289,7 @@ fn receive_reschedule_moves_completions_without_dropping_or_repeating() {
 // UTC steps of +2 s, -2 s and +8 s taken 0.06 s before a
 // prompt completion: every period's prompt and late window complete exactly once, in order.
 // Proves: TC-004-004
+// Timing: signal
 #[test]
 fn receive_clock_steps_keep_each_period_window_once_and_in_order() {
     let schedule = [(76600, 180000, false), (99400, 180000, true)];

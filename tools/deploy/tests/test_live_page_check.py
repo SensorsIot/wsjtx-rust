@@ -244,6 +244,7 @@ class LivePageCheckTests(unittest.TestCase):
         lines = out.splitlines()
         self.assertLess(lines.index("CHECK ROWS"), lines.index("CHECK GOT stopping"), out)
 
+    # Timing: timer
     def test_the_wait_for_rows_is_bounded_from_the_202_and_the_restart_follows_it(self):
         """The page check waits at most the ms it is handed, -WaitSeconds counted from the 202; its
         verdict on rows that never came is tools/test/node/live-page-check.test.cjs's."""

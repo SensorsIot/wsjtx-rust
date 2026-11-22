@@ -1802,6 +1802,7 @@ async fn tc_112_002_status_dial_and_report() {
 // Decode delta time rounded to one decimal as Band Activity
 // shows it; a live record without a period start gives no Decode and is never sent later.
 // Proves: TC-112-003
+// Timing: timer
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_003_decode_delta_time() {
     for (dt, tenths) in [
@@ -2222,6 +2223,7 @@ async fn tc_112_005_qso_logged_exchanges() {
 // The exit guard: the transmit release first within its bound,
 // then one Close under the instance name to each active target that selects close.
 // Proves: TC-112-006
+// Timing: display
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_006_close_at_shutdown() {
     let f = fixture("http://127.0.0.1:18422", true);

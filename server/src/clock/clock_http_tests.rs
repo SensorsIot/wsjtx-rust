@@ -162,6 +162,7 @@ const VIEW_KEYS: [&str; 10] = [
 // GET /transmit without clock_source, twelve stations at +1555 ms over two periods, POST
 // /clock an unknown route.
 // Proves: TC-043-003
+// Timing: clock
 #[tokio::test]
 async fn clock_view_wire_with_and_without_a_43_file() {
     for file in [false, true] {

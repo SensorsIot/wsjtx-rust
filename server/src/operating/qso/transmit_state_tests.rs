@@ -1043,6 +1043,7 @@ fn count_of(s: &Station, text: &str) -> usize {
 // Limit 2. Reset while the state is on starts the count
 // anew; after the limit's stop it starts the count anew and sends the message due next.
 // Proves: TC-111-012
+// Timing: timer
 #[test]
 fn tc_111_012_reset_starts_the_count_anew_and_continues_after_the_limit() {
     const TX1: &str = "K1ABC HB9BLA JN47";

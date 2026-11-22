@@ -84,6 +84,7 @@ test('TC-021-006: real browser, two clients, desktop and mobile layout', async t
 });
 
 // Cost level 2: browser and controllable local proxy.
+// Timing: display
 test('TC-021-007: dropped connection, bounded retries, fresh snapshot', async t => {
   const proxy = await link({host: '127.0.0.1', port: 1}, {rate: 1000000, latency: 0});
   t.after(() => proxy.close());
@@ -287,6 +288,7 @@ test('Stale path labels: every stale call of the served client names its path', 
 // Evidence, real Chromium against the station: the station side closes the page's
 // socket, every station message is held while the page clock runs 13000 ms, and a message of
 // another version arrives. Each makes the page stale once, naming its path.
+// Timing: display
 test('Stale path labels: socket closed, silence watchdog and rejected message in real Chromium', {timeout: 60000}, async t => {
   const app = await server(); t.after(() => app.close());
   async function stalePage(clock) {

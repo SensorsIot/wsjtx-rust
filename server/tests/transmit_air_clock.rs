@@ -50,6 +50,7 @@ fn crowd(shift: i64) -> Vec<i64> {
 // One vote per station (the median of its raw DT plus the
 // correction), the median of all votes without trimming, plus and minus beyond 100 ms.
 // Proves: TC-043-001, TC-092-001
+// Timing: clock
 #[test]
 fn votes_median_and_sides_of_known_dt_distributions() {
     let at = |raw: &[i64], correction: i64| {
@@ -167,6 +168,7 @@ fn observations_exclude_own_echo_weak_and_implausible_decodes() {
 
 // The crowds of TC-043-001 over successive FT8 periods.
 // Proves: TC-043-001
+// Timing: clock
 #[test]
 fn crowds_move_the_correction_to_the_middle_and_keep_it() {
     // 2 s ahead: median +2025 -> -1000 (unsynchronized, 2025 > 1000); votes then median
@@ -258,6 +260,7 @@ fn crowds_move_the_correction_to_the_middle_and_keep_it() {
 
 // System clock steps with correction -2000 ms.
 // Proves: TC-043-001
+// Timing: clock
 #[test]
 fn system_clock_steps_keep_station_utc_continuous() {
     let corrected = || {
@@ -298,6 +301,7 @@ fn system_clock_steps_keep_station_utc_continuous() {
 
 // The evidence rule, case by case from start (correction 0).
 // Proves: TC-092-001
+// Timing: clock
 #[test]
 fn evidence_rule_of_the_clock_from_the_air() {
     let fresh = |raw: &[i64]| {
@@ -540,6 +544,7 @@ fn heard(clock: &StationClock, driven: &Driven, k: i64, period_ms: i64, raw: &[i
 // The 2 s ahead crowd gives the same correction and state with SNTP
 // +12 ms, -1900 ms and none (never applied); only the warning differs.
 // Proves: TC-043-001
+// Timing: clock
 #[test]
 fn sntp_is_never_applied_and_only_warns() {
     let mut seen = vec![];
@@ -596,6 +601,7 @@ fn closed_loop(offset: i64, periods: i64) -> (Vec<i64>, Vec<ClockState>) {
 // +425, then 4 plus 4 minus); +0.6 s at +550 (12 of 13 minus, 7th vote -550, then mixed); 0
 // keeps 0 (5 of 13 plus); +2 s and +3 s decode at most three stations: 0, synchronized.
 // Proves: TC-043-002
+// Timing: clock
 #[test]
 fn applied_correction_converges_without_oscillation() {
     for (offset, settled_at) in [(-2000, -2000), (1500, 1425), (600, 550)] {
@@ -645,6 +651,7 @@ fn applied_correction_converges_without_oscillation() {
 // five at -339 and one at +100 (5 of 6 = 83 %): median -339, +339; then 2 and no stations:
 // +339 kept; synchronized and every start planned in each window, pc_clock_off throughout.
 // Proves: TC-092-002
+// Timing: clock
 #[test]
 fn replay_of_the_ft4_refusals_of_2026_11_09() {
     let (ntp, rounds) = monitor();

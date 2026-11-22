@@ -1544,6 +1544,7 @@ async fn discovery_opens_nothing_until_detect_radio_stored_the_confirmation() {
 // The whole discovery stays inside its budget however
 // many silent ports there are.
 // Proves: TC-044-020
+// Timing: radio
 #[test]
 fn silent_ports_stay_within_the_budget() {
     let f = fixture("http://127.0.0.1:18056", false);

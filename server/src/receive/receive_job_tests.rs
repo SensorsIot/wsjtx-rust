@@ -463,6 +463,7 @@ fn processing_failure_with_eos_cannot_complete_before_or_after_release() {
 
 // A worker preempted across a pacing deadline releases the slot.
 // Proves: TC-018-003
+// Timing: display
 #[test]
 fn crossing_pacing_deadline_completes_and_releases_worker_slot() {
     let f = Fixture::new();

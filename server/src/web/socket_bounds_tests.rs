@@ -274,6 +274,7 @@ async fn a_socket_beyond_16_is_refused_with_503_and_the_16_keep_answering() {
 // station.get at +5500 and +6500 ms, while A is open, are each answered at the driven instant
 // they were sent; B still answers at +8000 ms.
 // Proves: TC-021-008
+// Timing: display
 #[tokio::test(start_paused = true)]
 async fn a_socket_that_takes_no_output_for_2_s_is_closed_and_delays_no_other() {
     let station = Station::start("stalled-write");
@@ -324,6 +325,7 @@ async fn a_socket_that_takes_no_output_for_2_s_is_closed_and_delays_no_other() {
 // its first optional event at S, and it stays unflushed. A's transport is closed in
 // [S + 2000, S + 2500) ms (hand value S + 2000), before its heartbeat at +5000 ms.
 // Proves: TC-021-008
+// Timing: display
 #[tokio::test(start_paused = true)]
 async fn a_socket_whose_event_stays_unflushed_for_2_s_is_closed() {
     let station = Station::start("stalled-flush");

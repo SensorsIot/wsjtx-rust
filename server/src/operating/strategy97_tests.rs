@@ -1277,6 +1277,7 @@ async fn tc_097_009_a_the_spot_ageing_past_600_s_brings_the_leaving_back_to_call
 // (his) leaves {K1ABC, gone}. His answer -05 at t0 + 30 s, then silent: not left at t0 + 10 min
 // (9 min 30 s after it), left at t0 + 10 min 30 s.
 // Proves: TC-097-009
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_009_b_until_logged_leaves_only_when_gone_10_minutes() {
     let t = leaving(until_logged, &[K1ABC_CQ]).await;
@@ -1319,6 +1320,7 @@ async fn tc_097_009_b_until_logged_leaves_only_when_gone_10_minutes() {
 // (+5 dB under order [snr]) from the 3rd period: heard 0 never moves, left at the 5th; heard 1
 // moves at the 3rd and 4th, left at the 5th. no_reports 0: never moves, left at the 3rd.
 // Proves: TC-097-009
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_009_c_contest_style_change_points_and_the_stay() {
     let better = ("CQ N1NEW FN31", 1300.0, Some(5.0));
@@ -1542,6 +1544,7 @@ async fn moved_at(
 // after it. A busy-paused call between two calls (k 2, busy_pause on) is not counted toward k: the
 // move comes at the 3rd call. Hold Tx on moves Tx alone (Rx stays 1800), off both.
 // Proves: TC-097-010
+// Timing: timer
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_097_010_the_run_moves_tx_per_psk_case() {
     // 599, not 600: the spot is aged against the wall clock, which ticks on before the check.

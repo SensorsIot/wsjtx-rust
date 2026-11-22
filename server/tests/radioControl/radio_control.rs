@@ -1010,6 +1010,7 @@ fn partial_writes_and_failed_close_keep_truthful_connection_state() {
 }
 
 // Proves: TC-009-001
+// Timing: radio
 #[test]
 fn polling_has_one_cycle_per_second_and_fragmentation_never_renews_deadline() {
     let (executor, state) = service(vec![

@@ -246,6 +246,7 @@ test('TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx
   assert.deepEqual(page.errors,[]);
 });
 
+// Timing: display
 test('TC-010-009 UTC clock, Tx progress and Rx level from station.tick',{timeout:30000},async()=>{
   const label=page.locator('#radio-toolbar .op-period > span');
   await label.filter({hasText:/^UTC \d\d:\d\d:\d\d$/}).waitFor();
@@ -469,6 +470,7 @@ test('TC-007-005 an own contact command reads no GET /contact; a refusal still s
 // The next command does not wait for the 1 s contact.state:
 // it goes with the receipt's revision as soon as the previous reply is in (a LAN fixture: well under 200 ms).
 // Proves: TC-007-005
+// Timing: display
 test('TC-007-005 a command right after another goes at once with the receipt revision',{timeout:90000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
   const gaps=[];
@@ -487,6 +489,7 @@ test('TC-007-005 a command right after another goes at once with the receipt rev
 // A stale safety_revision is no contact revision: the client reads the
 // snapshot at once and the explicit CQ retries with the station's safety revision (expected well under 1 s).
 // Proves: TC-007-005
+// Timing: display
 test('TC-007-005 a stale safety revision is read at once and the CQ retried',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot()&&!document.querySelector('#qso-cq').disabled);await new Promise(r=>setTimeout(r,1500));
   let refused=false;
@@ -505,6 +508,7 @@ test('TC-007-005 a stale safety revision is read at once and the CQ retried',{ti
 // Esc during a stale-revision retry of a double-click goes at
 // once, and nothing the double-click queued (its retry, its Enable Tx) follows it.
 // Proves: TC-007-005
+// Timing: display
 test('TC-007-005 Esc during a stale-revision retry aborts at once and nothing follows it',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
   let refusedAt=null;
@@ -676,6 +680,7 @@ test('TC-007-005 a held read keeps the pushed changes around it',{timeout:60000}
 // On the actual socket: a running Tune's countdown alone at most once per
 // 5 s on Thin and about once per second on Detailed.
 // Proves: TC-007-005
+// Timing: display
 test('TC-007-005 the Tune countdown is paced by the display profile on the socket',{timeout:60000},async()=>{
   const types=['transmit.state','contact.state'];
   const peer=async command=>{const ws=new WebSocket(origin.replace('http','ws')+'/ws','wstx.v1',{origin,headers:{Cookie:cookie}});const log=[];ws.on('message',d=>{const m=JSON.parse(String(d));if(types.includes(m.type))log.push({type:m.type,at:performance.now(),changed:m.data.changed});});await new Promise((ok,no)=>{ws.once('open',ok);ws.once('error',no);});ws.send(JSON.stringify({v:1,type:command,id:1}));return {ws,log};};
@@ -699,6 +704,7 @@ test('TC-007-005 the Tune countdown is paced by the display profile on the socke
 // The socket's first event holds the whole snapshot, a later one what changed, and the browser
 // shows a change from outside without any timer read on Detailed or Thin.
 // Proves: TC-007-005
+// Timing: display
 test('operating selection is pushed: the event carries it, no timer read of GET /receive/selection',{timeout:90000},async()=>{
   const frames=[];page.on('websocket',ws=>ws.on('framereceived',e=>{try{const m=JSON.parse(e.payload);if(m.type==='selection.state')frames.push({at:performance.now(),data:m.data,bytes:Buffer.byteLength(e.payload)});}catch{}}));
   const reads=(a,b=Infinity)=>requests.filter(r=>r.method==='GET'&&r.path==='/receive/selection'&&r.at>=a&&r.at<b);
