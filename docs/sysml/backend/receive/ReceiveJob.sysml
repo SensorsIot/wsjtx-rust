@@ -109,7 +109,10 @@ package WstxReceiveJob {
                 + "live_second_epoch_source_uuid_failure_releases_original_admission; "
                 + "server/src/receive/receive_job_tests.rs::"
                 + "a_replay_start_it_does_not_admit_is_refused_and_changes_nothing; "
-                + "tests/recording.test.cjs";
+                + "tests/recording.test.cjs::"
+                + "review: missing original, corrupt metadata and manifest remain recoverable; "
+                + "tests/recording.test.cjs::"
+                + "four stations retain isolated identities and release cancellation within 250 ms";
         }
     }
 
@@ -251,6 +254,19 @@ package WstxReceiveJob {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-052-01'; }
-        @TestedBy { test = "server/src/receive/receive_diagnostics_tests.rs"; }
+        @TestedBy {
+            test = "server/src/receive/receive_diagnostics_tests.rs::"
+                + "window_zero_counts_follow_the_early_buffer; "
+                + "server/src/receive/receive_diagnostics_tests.rs::"
+                + "window_dump_is_a_12_khz_pcm16_wav; "
+                + "server/src/receive/receive_diagnostics_tests.rs::"
+                + "window_dump_setting_defaults_off_and_persists; "
+                + "server/src/receive/receive_diagnostics_tests.rs::"
+                + "window_dump_writes_prompt_windows_and_rotates; "
+                + "server/src/receive/receive_diagnostics_tests.rs::"
+                + "window_dump_rotation_keeps_the_byte_cap; "
+                + "server/src/receive/receive_diagnostics_tests.rs::"
+                + "diagnostics_http_view_and_dump_update";
+        }
     }
 }

@@ -193,7 +193,11 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-005-02'; verify 'CL-005-05'; verify 'CL-044-05'; }
         @TestedBy {
-            test = "tests/profiles.test.cjs; "
+            test = "tests/profiles.test.cjs::actual browser and server process restart; "
+                + "tests/profiles.test.cjs::"
+                + "TC-022-001: four real windows, independent edits and HTTP input boundaries; "
+                + "tests/profiles.test.cjs::"
+                + "TC-022-001 review regression: Refresh cannot reopen a pending save; "
                 + "server/src/profile/profile_tests.rs::"
                 + "exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys; "
                 + "server/src/profile/profile_tests.rs::"
@@ -208,7 +212,10 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-005-02'; verify 'CL-005-04'; verify 'CL-005-05'; }
         @TestedBy {
-            test = "tests/profiles.test.cjs; "
+            test = "tests/profiles.test.cjs::"
+                + "TC-022-002: acknowledged persistence, defaults, strict files and recovery; "
+                + "tests/profiles.test.cjs::"
+                + "TC-022-002 review regression: admit the complete worst-case response budget; "
                 + "server/src/profile/profile_tests.rs::"
                 + "storage_commit_point_and_os_ownership_survive_reopen; "
                 + "server/src/profile/profile_tests.rs::"
@@ -229,8 +236,9 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-005-01'; verify 'CL-005-04'; }
         @TestedBy {
-            test = "tests/profiles.test.cjs; "
-                + "server/src/profile/profile_tests.rs::"
+            test = "tests/profiles.test.cjs::"
+                + "TC-022-003: lifecycle, ownership aliases/copies, ports and unavailable "
+                + "resources; server/src/profile/profile_tests.rs::"
                 + "storage_commit_point_and_os_ownership_survive_reopen";
         }
     }
@@ -292,7 +300,8 @@ package WstxProfileDocument {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-005-07'; }
         @TestedBy {
-            test = "tests/profiles.test.cjs; "
+            test = "tests/profiles.test.cjs::"
+                + "TC-022-001: four real windows, independent edits and HTTP input boundaries; "
                 + "server/src/profile/profile_tests.rs::"
                 + "settings_validation_uses_utf8_bytes_and_independent_audio_control_domains";
         }

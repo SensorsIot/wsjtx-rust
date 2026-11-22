@@ -66,6 +66,18 @@ package WstxAudioDevice {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-08'; }
-        @TestedBy { test = "server/tests/audio_contract.rs"; }
+        @TestedBy {
+            test = "server/tests/audio_contract.rs::audio_overflow_and_duplicate_epoch; "
+                + "server/tests/audio_contract.rs::audio_lifecycle_retries; "
+                + "server/tests/audio_contract.rs::"
+                + "audio_capture_without_a_named_endpoint_is_refused_unavailable; "
+                + "server/tests/audio_contract.rs::audio_controller_profiles_and_stop; "
+                + "server/tests/audio_contract.rs::"
+                + "realtime_bound_audio_controller_profiles_and_stop; "
+                + "server/tests/audio_contract.rs::"
+                + "audio_failed_stop_quarantines_owner_and_apartment_without_reopen; "
+                + "server/tests/audio_contract.rs::"
+                + "audio_successful_stop_preserves_prior_outcome_without_quarantine";
+        }
     }
 }

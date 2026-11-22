@@ -192,6 +192,7 @@ fn stored(f: &Fixture) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
+// Proves: TC-009-007
 #[test]
 fn meters_are_read_only_under_the_transmit_hold_in_the_manual_frames() {
     let (f, r) = station(radio(fixed([0x01, 0x20])));
@@ -286,6 +287,7 @@ fn stalled_meter_read() -> (Fixture, std::thread::JoinHandle<Result<Meters, cat:
     (f, read)
 }
 
+// Proves: TC-009-007
 #[test]
 fn a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_connection() {
     let (f, read) = stalled_meter_read();
@@ -311,6 +313,7 @@ fn realtime_bound_a_stalled_meter_read_gives_way_to_the_release_and_keeps_the_co
     assert_eq!(read.join().unwrap(), Err(cat::Error::Cancelled));
 }
 
+// Proves: TC-009-007
 #[test]
 fn meter_scales_follow_the_manual_table() {
     assert_eq!(
@@ -1175,6 +1178,7 @@ async fn realtime_bound_a_lease_that_stays_held_refuses_busy_at_the_bound_and_ch
 }
 
 // The hold of a transmission refuses: it lasts far longer than the wait.
+// Proves: TC-009-001
 #[test]
 fn a_transmit_hold_refuses_the_lease_at_once() {
     let (f, _) = station(radio(fixed([0, 0])));

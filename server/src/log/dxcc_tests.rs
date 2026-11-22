@@ -477,7 +477,7 @@ async fn tc_011_003_receive_results_carry_the_worked_status() {
 // Every decoded sender, not only a CQ caller, carries its
 // entity and flags: a report and an R-report to other stations from new senders, and an
 // RR73 from a sender worked on this band and mode (entity, no flag).
-// Proves: TC-055-006
+// Proves: TC-055-006, TC-055-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_055_006_non_cq_senders_carry_entity_and_flags() {
     use crate::automation::tests::{at_even, publish};

@@ -315,7 +315,8 @@ package WstxListener {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-06'; }
         @TestedBy {
-            test = "server/src/web/liveness_tests.rs; "
+            test = "server/src/web/liveness_tests.rs::"
+                + "silent_peer_is_removed_at_the_next_heartbeat_after_15_s; "
                 + "server/src/web/socket_bounds_tests.rs::"
                 + "a_socket_beyond_16_is_refused_with_503_and_the_16_keep_answering; "
                 + "server/src/web/socket_bounds_tests.rs::"
@@ -333,13 +334,60 @@ package WstxListener {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-08'; }
         @TestedBy {
-            test = "tests/contact.test.cjs; tests/ui-operating.test.cjs; "
-                + "server/src/operating/qso/contact_http_tests.rs; "
-                + "server/src/receive/receive_http_tests.rs; "
+            test = "tests/contact.test.cjs::"
+                + "TC-007-005 transmit state is pushed: the event carries it, no GET /transmit; "
+                + "tests/contact.test.cjs::"
+                + "TC-007-005 contact state is pushed: only what changed, no GET /contact; "
+                + "tests/contact.test.cjs::"
+                + "TC-007-005 an own contact command reads no GET /contact, a refusal still "
+                + "shows its code; tests/contact.test.cjs::"
+                + "TC-007-005 a command right after another goes at once with the receipt "
+                + "revision; tests/contact.test.cjs::"
+                + "TC-007-005 a stale safety revision is read at once and the CQ retried; "
+                + "tests/contact.test.cjs::"
+                + "TC-007-005 Esc during a stale-revision retry aborts at once and nothing "
+                + "follows it; tests/contact.test.cjs::"
+                + "TC-007-005 Esc during a Calling me reply sends no Enable Tx after the abort; "
+                + "tests/contact.test.cjs::"
+                + "TC-007-005 CQ waits for an unanswered selection before it decides; "
+                + "tests/contact.test.cjs::"
+                + "TC-007-005 a row selection after an unanswered Clear DX decides on the "
+                + "cleared contact; tests/contact.test.cjs::"
+                + "TC-007-005 Esc during a Calling me Change contact sends no Enable Tx after "
+                + "the abort; tests/contact.test.cjs::"
+                + "TC-007-005 an older GET /contact does not replace pushed state; "
+                + "tests/contact.test.cjs::"
+                + "TC-007-005 a contact client loading after the first event has the state "
+                + "without a read; tests/contact.test.cjs::"
+                + "TC-007-005 a held read keeps the pushed changes around it; "
+                + "tests/contact.test.cjs::"
+                + "TC-007-005 the Tune countdown is paced by the display profile on the socket; "
+                + "tests/contact.test.cjs::"
+                + "operating selection is pushed: the event carries it, no timer read of GET "
+                + "/receive/selection; tests/contact.test.cjs::"
+                + "a lost selection read does not disable the controls the socket event holds; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-007-005 receive.state carries the job and the audio, only a new state, a "
+                + "refused event or a failed read reads GET /receive; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-007-005 contact.state rows arrive in order and a continuation is shown; "
+                + "server/src/operating/qso/contact_http_tests.rs::"
+                + "transmit_state_revision_follows_the_read_view_only; "
+                + "server/src/operating/qso/contact_http_tests.rs::"
+                + "contact_state_carries_only_what_the_peer_lacks; "
+                + "server/src/operating/qso/contact_http_tests.rs::"
+                + "pushed_state_paces_a_countdown_by_display_profile; "
+                + "server/src/operating/qso/contact_http_tests.rs::"
+                + "a_transmit_revision_never_carries_older_fields; "
+                + "server/src/operating/qso/contact_http_tests.rs::"
+                + "transmit_view_shows_one_sntp_snapshot; "
+                + "server/src/receive/receive_http_tests.rs::"
+                + "receive_state_of_the_largest_snapshot_fits_the_event_bound; "
+                + "server/src/receive/receive_http_tests.rs::"
+                + "receive_state_after_the_first_holds_only_what_changed; "
                 + "tests/radio-selection.test.cjs::"
-                + "a status on the same socket reads no receive snapshot "
-                + "unless the state is in doubt; "
-                + "tests/radio-selection.test.cjs::"
+                + "a status on the same socket reads no receive snapshot unless the state is in "
+                + "doubt; tests/radio-selection.test.cjs::"
                 + "actual native/CAT/TLS two-browser Thin and Off selection workload";
         }
     }
@@ -384,7 +432,18 @@ package WstxListener {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-02'; }
-        @TestedBy { test = "tests/recording.test.cjs; server/src/web/listener_tests.rs"; }
+        @TestedBy {
+            test = "tests/recording.test.cjs::"
+                + "TC-010-003 late recording asset bootstraps an already connected station once; "
+                + "tests/recording.test.cjs::"
+                + "TC-010-002 recording state and import progress are pushed on change, without "
+                + "recording.get or a timer read; tests/recording.test.cjs::"
+                + "TC-010-002 a failed read after an announcement repairs itself on the "
+                + "reconnect; tests/recording.test.cjs::"
+                + "TC-010-002 browser caps 120 rows, preserves explicit gaps and rejects "
+                + "obsolete identities; server/src/web/listener_tests.rs::"
+                + "optional_readiness_skips_without_waiting_and_retains_at_most_one_frame";
+        }
     }
     verification 'TC-010-005' {
         doc /* The detailed rows on the wire and their refusals. */
@@ -393,8 +452,28 @@ package WstxListener {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-02'; }
         @TestedBy {
-            test = "tests/recording.test.cjs; tests/ui-operating.test.cjs; "
-                + "server/src/web/listener_tests.rs";
+            test = "tests/recording.test.cjs::"
+                + "TC-010-005 HTTPS defaults to native Detailed and honors saved Thin or Off; "
+                + "tests/recording.test.cjs::"
+                + "TC-010-005 detailed native wire, fixed span, projection, palette and "
+                + "top-entry cells; tests/recording.test.cjs::"
+                + "TC-010-005 actual FT8 desktop and DPR2 mobile presentation and local level "
+                + "controls; tests/recording.test.cjs::"
+                + "TC-010-005 review pointer column boundary uses actual projected pixels; "
+                + "tests/recording.test.cjs::"
+                + "TC-010-005 review short source rejects inverted out-of-source interval; "
+                + "tests/recording.test.cjs::"
+                + "TC-010-005 review real Detailed peer cadence and control priority; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-010-005 explicit display choice survives reload and browser storage "
+                + "restoration; tests/ui-operating.test.cjs::"
+                + "TC-010-005 display preference is isolated by origin and validated profile "
+                + "UUID; tests/ui-operating.test.cjs::"
+                + "TC-010-005 denied browser storage preserves in-memory display selection; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-010-005 runtime Thin fallback preserves explicit Detailed preference; "
+                + "server/src/web/listener_tests.rs::"
+                + "detailed_late_tick_rearms_from_actual_acceptance";
         }
     }
     verification 'TC-033-001' {
@@ -403,7 +482,12 @@ package WstxListener {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-033-01'; }
-        @TestedBy { test = "server/src/web/listener_tests.rs"; }
+        @TestedBy {
+            test = "server/src/web/listener_tests.rs::"
+                + "served_page_reports_the_source_commit_of_the_build; "
+                + "server/src/web/listener_tests.rs::"
+                + "source_commit_reports_only_a_full_lower_case_commit";
+        }
     }
     verification 'TC-051-001' {
         doc /* The page and station.status carry the client's build. */
@@ -411,7 +495,12 @@ package WstxListener {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-051-01'; }
-        @TestedBy { test = "tests/communication.test.cjs; server/src/web/listener_tests.rs"; }
+        @TestedBy {
+            test = "tests/communication.test.cjs::"
+                + "TC-021-005: actual-server correlation, negative cases and size boundaries; "
+                + "server/src/web/listener_tests.rs::"
+                + "protocol_returns_specified_response_and_errors";
+        }
     }
     verification 'TC-080-001' {
         doc /* The link byte log. */
@@ -419,6 +508,11 @@ package WstxListener {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-003-05'; }
-        @TestedBy { test = "server/src/web/link_log_tests.rs"; }
+        @TestedBy {
+            test = "server/src/web/link_log_tests.rs::"
+                + "link_byte_log_counts_each_client_per_period; server/src/web/link_log_tests.rs::"
+                + "link_byte_log_on_a_plaintext_profile; server/src/web/link_log_tests.rs::"
+                + "link_byte_log_bounds_the_request_methods";
+        }
     }
 }

@@ -274,6 +274,7 @@ fn req(operation: Operation) -> Request {
 
 // Independent addressed replies and fixed
 // sequence expectations distinguish each completed query from the cache.
+// Proves: TC-009-006
 #[test]
 fn query_provenance_does_not_freshen_unqueried_facts_and_partial_setup_stales_targets() {
     // CL-044-09: each setter reads first. Mode differs (FIL2 to FIL1): read, set (ACK),
@@ -990,7 +991,7 @@ fn auto_baud_is_bounded_connection_discovery_and_does_not_rewrite_intent() {
     assert_eq!(executor.snapshot().unwrap().effective_baud, Some(19200));
 }
 
-// Proves: TC-009-001, TC-009-003
+// Proves: TC-009-001, TC-009-003, TC-009-006
 #[test]
 fn partial_writes_and_failed_close_keep_truthful_connection_state() {
     let (executor, state) = service(vec![Action::Partial]);

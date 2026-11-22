@@ -467,6 +467,7 @@ fn a_ready_session_starts_its_packet_counters_and_measurements_over() {
     assert_eq!((s.jitter_mean_ms, s.jitter_max_ms), (None, None));
 }
 
+// Proves: TC-023-002
 #[test]
 fn intent_domains() {
     let valid = Intent {

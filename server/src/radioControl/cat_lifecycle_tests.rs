@@ -480,7 +480,7 @@ impl Drop for Station {
 const FAILED: fn(Option<cat::State>) -> bool = |s| s == Some(cat::State::Unavailable);
 const READY: fn(Option<cat::State>) -> bool = |s| s == Some(cat::State::Ready);
 
-// Proves: TC-022-009
+// Proves: TC-022-009, TC-009-006
 #[test]
 fn station_absent_then_returns_then_cable_removed_and_returns_with_query_bytes_only() {
     let s = Station::new(Device::Absent);
@@ -730,7 +730,7 @@ fn status_for_unobserved_key_is_waiting_not_previous_ready() {
 // holds COM3, then releases it: the status names the held port, the automatic retry
 // reconnects, and the confirmed dial becomes the selection without any band choice by
 // hand, setter byte, receive restart or operating revision advance.
-// Proves: TC-022-009
+// Proves: TC-022-009, TC-009-008
 #[test]
 fn station_port_released_by_other_program_reconnects_and_restores_selection() {
     let s = Station::new(Device::Busy);

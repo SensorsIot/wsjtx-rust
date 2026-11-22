@@ -88,7 +88,9 @@ package WstxLowerPanel {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-01'; }
         @TestedBy {
-            test = "tests/ui-operating.test.cjs; "
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-037-001 the Control panel sits below the QSO pane at its width with DX "
+                + "call, report, Auto Seq, Call 1st, Hold Tx and Tx period always visible; "
                 + "tests/contact.test.cjs::"
                 + "manual DX entry and Log QSO log the contact at once without hiding Halt Tx";
         }
@@ -99,7 +101,15 @@ package WstxLowerPanel {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-02'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "exception chips appear only for an exception and start, stop and explain "
+                + "receive; tests/ui-operating.test.cjs::"
+                + "TC-037-002 the error field lists only current problems with their time and "
+                + "clears them by itself; tests/ui-operating.test.cjs::"
+                + "TC-037-002 a long problem scrolls inside the error field on screen and the "
+                + "Control panel stays";
+        }
     }
     verification 'TC-044-018' {
         doc /* The audio drive's warnings in the error field. */
@@ -107,7 +117,7 @@ package WstxLowerPanel {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-02'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "tests/ui-operating.test.cjs::Tx level in Settings > Radio > Audio"; }
     }
     verification 'TC-092-005' {
         doc /* The clock's entries in the error field. */
@@ -115,6 +125,9 @@ package WstxLowerPanel {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-02'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-092-005 clock entries in the error field and the clock status line";
+        }
     }
 }

@@ -324,7 +324,20 @@ package WstxBandActivityPane {
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-010-09'; }
         @TestedBy {
-            test = "tests/ui-operating.test.cjs; server/src/receive/live_receive_tests.rs";
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-007-006 latest period spans pages, signed DT and obsolete pages cannot "
+                + "restore old stations; tests/ui-operating.test.cjs::"
+                + "TC-007-006 a page-announced period refetches its prefix instead of skipping "
+                + "it; tests/ui-operating.test.cjs::"
+                + "TC-007-006 selectable ordering is numeric, unknown-last and persists across "
+                + "periods and modes; server/src/receive/live_receive_tests.rs::"
+                + "latest_decode_relative_station_timing_uses_mode_origin_and_source_clock; "
+                + "server/src/receive/live_receive_tests.rs::"
+                + "latest_decode_replaces_period_atomically_including_empty_and_all_retained_rows; "
+                + "server/src/receive/live_receive_tests.rs::"
+                + "latest_decode_actual_overrun_stays_partial_then_completes_the_next_period; "
+                + "server/src/receive/live_receive_tests.rs::"
+                + "latest_decode_cancel_and_failure_preserve_published_period_without_new_identity";
         }
     }
     verification 'TC-024-004' {
@@ -333,7 +346,10 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-09'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-024-004 Tx5 free text and <MYCALL> rows in the operating screen";
+        }
     }
     verification 'TC-055-004' {
         doc /* The DXCC column and the distance. */
@@ -341,7 +357,11 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-09'; }
-        @TestedBy { test = "tests/contact.test.cjs"; }
+        @TestedBy {
+            test = "tests/contact.test.cjs::"
+                + "TC-055-004 RR73 sent as a grid square is no grid for the distance, in either "
+                + "order";
+        }
     }
     verification 'TC-057-004' {
         doc /* Only the latest even and odd periods. */
@@ -349,7 +369,10 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-057-03'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-057-004 three consecutive periods leave only the latest even and odd period";
+        }
     }
     verification 'TC-057-001' {
         doc /* A busy period reaches Band Activity at once. */
@@ -358,8 +381,10 @@ package WstxBandActivityPane {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-057-01'; }
         @TestedBy {
-            test = "server/src/receive/receive_http_tests.rs; "
-                + "tests/frontend/receive-latency.test.cjs; "
+            test = "server/src/receive/receive_http_tests.rs::"
+                + "live_native_busy_period_rows_promptly; "
+                + "tests/frontend/receive-latency.test.cjs::"
+                + "TC-057-001 busy live period painted in Band Activity (Detailed) timeline; "
                 + "tests/ui-operating.test.cjs::"
                 + "a correlated period view extended in place adds the late starter without an "
                 + "error or a reload";
@@ -371,7 +396,11 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-061-03'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-061-004 a Tx period shows the station Tx marker, no empty block, and keeps "
+                + "the receive periods";
+        }
     }
     verification 'TC-061-001' {
         doc /* A loss of audio keeps the waterfall and Band Activity. */
@@ -379,7 +408,11 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-061-01'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-061-001 an audio loss epoch keeps the waterfall and Band Activity, a "
+                + "Stop/Start clears them";
+        }
     }
     verification 'TC-055-006' {
         doc /* The colours, the tips and the value order for every sender. */
@@ -387,7 +420,12 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-055-04'; }
-        @TestedBy { test = "server/src/log/dxcc_tests.rs; tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "server/src/log/dxcc_tests.rs::"
+                + "tc_055_006_non_cq_senders_carry_entity_and_flags; tests/ui-operating.test.cjs::"
+                + "TC-055-006 Band Activity colours every sender, names each reason on hover and "
+                + "sorts by value";
+        }
     }
     verification 'TC-050-002' {
         doc /* WSJT-X's highlight colours and the station's differences. */
@@ -395,7 +433,13 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-02'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "Band Activity shows the worked_status of each record with no query; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-050-002 a CQ from a station worked on this band and mode has no colour, My "
+                + "call still applies";
+        }
     }
     verification 'TC-050-008' {
         doc /* The marks: the partner first, a call to the station, the tip. */
@@ -404,8 +448,15 @@ package WstxBandActivityPane {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-08'; }
         @TestedBy {
-            test = "tests/ui-operating.test.cjs; tests/frontend/receive-page.test.cjs; "
-                + "server/src/receive/receive_http_tests.rs";
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-050-008 a kept row keeps its worked-before status in the tip; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-050-008 Band Activity marks: partner first with the stripe, calls me, CQ "
+                + "of interest, sender-only colour, one-line reason tip; "
+                + "tests/frontend/receive-page.test.cjs::"
+                + "TC-050-008 a page kept across a restart and periods shows no accident and "
+                + "keeps its row tips; server/src/receive/receive_http_tests.rs::"
+                + "live_native_page_kept_across_restart";
         }
     }
     verification 'TC-055-007' {
@@ -415,7 +466,8 @@ package WstxBandActivityPane {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-055-05'; }
         @TestedBy {
-            test = "tests/ui-operating.test.cjs; "
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-055-007 Band Activity rows are dense and keep the font size; "
                 + "tests/receive-integration.test.cjs::"
                 + "real native audio reaches Rust manager HTTP and literal browser callsign";
         }
@@ -427,16 +479,15 @@ package WstxBandActivityPane {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-05'; }
         @TestedBy {
-            test = "tests/ui-operating.test.cjs; "
-                + "tests/contact.test.cjs::"
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-037-004 a contact change is offered only for a row that can start a "
+                + "contact for me; tests/contact.test.cjs::"
                 + "double-click starts transmission, partner report advances to Tx3, Esc aborts "
-                + "the QSO (no halt) with a panel open; "
-                + "tests/contact.test.cjs::"
+                + "the QSO (no halt) with a panel open; tests/contact.test.cjs::"
                 + "a double-click on a CQ not for me warns and only the confirmation selects it; "
                 + "tests/contact.test.cjs::"
                 + "mid-QSO: a double-click switches mid-QSO with Tx kept on, the new QSO "
-                + "completes, and CQ right after it calls; "
-                + "tests/contact.test.cjs::"
+                + "completes, and CQ right after it calls; tests/contact.test.cjs::"
                 + "from-CQ: a double-click from my CQ switches with Tx kept on, the new QSO "
                 + "completes, and a double-click after it replies";
         }
@@ -458,7 +509,19 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-04'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-039-006 Selecting only marks, marks and value order from the verdicts, a "
+                + "column click overrides, the editor holds the settings; "
+                + "tests/ui-operating.test.cjs::"
+                + "Auto and PSK follow only the push, one POST per click, their disabled states "
+                + "and the strategy status; tests/ui-operating.test.cjs::"
+                + "TC-039-006 Settings > General continent saves to the station strategy store; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-039-006 Settings > General Most Wanted: one button beside the date, a "
+                + "failure says why; tests/ui-operating.test.cjs::"
+                + "TC-039-006 Rows arriving during an evaluation are evaluated when it ends";
+        }
     }
     verification 'TC-063-008' {
         doc /* The callable list of a contest and Show all. */
@@ -466,6 +529,10 @@ package WstxBandActivityPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-063-08'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-063-008 The contest prompt, Auto off marks only, the callable list and "
+                + "Show all";
+        }
     }
 }

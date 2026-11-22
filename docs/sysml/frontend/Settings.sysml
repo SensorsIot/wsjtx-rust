@@ -331,7 +331,11 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-073-01'; }
-        @TestedBy { test = "tests/profiles.test.cjs"; }
+        @TestedBy {
+            test = "tests/profiles.test.cjs::"
+                + "TC-073-001: Apply of a CAT change on a selected HTTPS profile reports the "
+                + "committed save";
+        }
     }
     verification 'TC-073-002' {
         doc /* Answers that arrive are known, lost ones stay unknown. */
@@ -339,7 +343,12 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-073-01'; }
-        @TestedBy { test = "tests/profiles.test.cjs"; }
+        @TestedBy {
+            test = "tests/profiles.test.cjs::"
+                + "TC-073-002: received save replies are known, missing replies stay unknown; "
+                + "tests/profiles.test.cjs::"
+                + "TC-022-001 review regression: Refresh cannot reopen a pending save";
+        }
     }
     verification 'TC-044-005' {
         doc /* The Detect radio panel. */
@@ -347,7 +356,13 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-06'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-044-005 Detect radio confirms keying inhibit, shows the proposal and fills "
+                + "the Radio section; tests/ui-operating.test.cjs::"
+                + "TC-044-005 radio settings writes wait for the confirmation dialog and a known "
+                + "disarmed transmitter";
+        }
     }
     verification 'TC-044-022' {
         doc /* The line on the keying confirmation. */
@@ -355,7 +370,7 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-06'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy { test = "tests/ui-operating.test.cjs::Tx level in Settings > Radio > Audio"; }
     }
     verification 'TC-044-007' {
         doc /* The audio section shows names, not ids. */
@@ -363,7 +378,11 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-08'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-044-007 the Audio section shows endpoint names, keeps IDs in hover and "
+                + "Expert, and saves the radio audio";
+        }
     }
     verification 'TC-044-010' {
         doc /* The AGC choice and its line. */
@@ -371,7 +390,10 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-227-01'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-044-010 AGC field and read-back in Settings > Radio";
+        }
     }
     verification 'TC-039-021' {
         doc /* The PSK Reporter line in Destinations. */
@@ -379,7 +401,10 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-227-01'; }
-        @TestedBy { test = "tests/station-settings.test.cjs"; }
+        @TestedBy {
+            test = "tests/station-settings.test.cjs::"
+                + "TC-039-021 Settings shows the PSK Reporter status, pushed, and saves the switch";
+        }
     }
     verification 'TC-043-003' {
         doc /* The clock in words. */
@@ -388,7 +413,14 @@ package WstxSettings {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-227-01'; }
         @TestedBy {
-            test = "server/src/clock/clock_http_tests.rs; tests/ui-operating.test.cjs";
+            test = "server/src/clock/clock_http_tests.rs::"
+                + "clock_view_wire_with_and_without_a_43_file; "
+                + "server/src/clock/clock_http_tests.rs::"
+                + "transmit_owner_admits_and_times_by_the_air_clock; "
+                + "server/src/clock/clock_http_tests.rs::get_clock_shows_one_age; "
+                + "tests/ui-operating.test.cjs::transmit status shows the SNTP clock measurement; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-043-003 the clock view in Settings and the clock entries from clock.state";
         }
     }
     verification 'TC-110-005' {
@@ -397,7 +429,13 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-227-01'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-110-005 Call 1st unticked in the browser stays unticked after a station "
+                + "restart; tests/ui-operating.test.cjs::"
+                + "TC-110-005 (d) a refused Auto Seq change leaves the box showing the station "
+                + "value";
+        }
     }
     verification 'TC-227-002' {
         doc /* The drawer: saves, unsaved changes, the question before a restart, its closing. */
@@ -448,7 +486,10 @@ package WstxSettings {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-042-07'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-042-007 Alert history, sound and browser notification";
+        }
     }
     verification 'TC-227-001' {
         doc /* The radio line. */

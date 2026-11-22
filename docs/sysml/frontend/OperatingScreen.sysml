@@ -305,8 +305,12 @@ package WstxOperatingScreen {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::partial; }
         objective { verify 'CL-010-14'; }
-        @TestedBy { test = "server/src/operating/qso/contact_http_tests.rs; "
-            + "tests/contact.test.cjs"; }
+        @TestedBy {
+            test = "server/src/operating/qso/contact_http_tests.rs::"
+                + "rx_level_is_round_10_log10_mean_square_in_16_bit_units; "
+                + "tests/contact.test.cjs::"
+                + "TC-010-009 UTC clock, Tx progress and Rx level from station.tick";
+        }
     }
     verification 'TC-021-007' {
         doc /* A lost link, the bounded retries and the fresh reads. */
@@ -391,7 +395,11 @@ package WstxOperatingScreen {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-051-02'; verify 'CL-051-03'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-051-002 mid-QSO the update shows a reload chip, a rejected snapshot shows "
+                + "an error chip instead of a frozen screen";
+        }
     }
     verification 'TC-051-004' {
         doc /* A page takes up a new client of its station. */

@@ -205,7 +205,17 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-04'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "the PSK Reporter lines in the QSO pane, their age formats, no polling and the "
+                + "fixed pane; tests/ui-operating.test.cjs::"
+                + "TC-007-002 the transmit controls and badge follow the pushed transmit "
+                + "capability; tests/ui-operating.test.cjs::"
+                + "no arming path sends enable_tx while the transmit capability is unavailable; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-037-003 the QSO pane has a fixed height with a QSO section and a Calling "
+                + "me section, and Band Activity has compact rows at 360 px";
+        }
     }
     verification 'TC-037-005' {
         doc /* The Calling me section: its marks and colours. */
@@ -225,8 +235,12 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-037-04'; }
-        @TestedBy { test = "server/src/operating/qso/contact_http_tests.rs; "
-            + "tests/contact.test.cjs"; }
+        @TestedBy {
+            test = "server/src/operating/qso/contact_http_tests.rs::"
+                + "selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms; "
+                + "tests/contact.test.cjs::"
+                + "TC-007-003 QSO pane candidates selection without transmit";
+        }
     }
     verification 'TC-060-001' {
         doc /* The dialogue table. */
@@ -234,7 +248,11 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-060-01'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-060-001 the QSO pane table shows UTC, Direction with the arrow to the "
+                + "recipient, Exchange, Rep, Rx SNR and Tx SNR";
+        }
     }
     verification 'TC-050-005' {
         doc /* The pane while calling CQ and transmitting. */
@@ -242,7 +260,17 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-05'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs; tests/contact.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "the compact QSO pane shows only the running QSO and clears when it ends; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-050-005 calling CQ shows Calling CQ, TX now while keyed and next "
+                + "otherwise, and nobody calling; tests/contact.test.cjs::"
+                + "TC-007-003 QSO pane candidates selection without transmit; "
+                + "tests/contact.test.cjs::"
+                + "double-click starts transmission, partner report advances to Tx3, Esc aborts "
+                + "the QSO (no halt) with a panel open";
+        }
     }
     verification 'TC-085-005' {
         doc /* What the operator sees of a repeat the log refuses. */
@@ -250,8 +278,12 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-05'; }
-        @TestedBy { test = "tests/contact.test.cjs; "
-            + "server/src/operating/qso/contact_http_tests.rs"; }
+        @TestedBy {
+            test = "tests/contact.test.cjs::"
+                + "TC-085-005 the QSO pane says that a QSO with the station logged last was not "
+                + "logged; server/src/operating/qso/contact_http_tests.rs::"
+                + "tc_085_001_the_same_station_in_a_row_is_not_logged";
+        }
     }
     verification 'TC-050-009' {
         doc /* The message lines: Auto Seq off, the next message, the log, PSK Reporter's lines. */
@@ -275,7 +307,11 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-03'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-050-003 the period bar follows the station clock and is red in my Tx "
+                + "periods and green otherwise";
+        }
     }
     verification 'TC-081-006' {
         doc /* Auto's toggle says what off does. */
@@ -283,7 +319,12 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-31'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "Auto and PSK follow only the push, one POST per click, their disabled states "
+                + "and the strategy status; tests/ui-operating.test.cjs::"
+                + "TC-081-006 the Auto button says that Auto off finishes a QSO already started";
+        }
     }
     verification 'TC-024-006' {
         doc /* The activity choice in the fold-out. */
@@ -291,7 +332,10 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-09'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-024-006 the Activity choice in the QSO fold-out";
+        }
     }
     verification 'TC-024-009' {
         doc /* Field Day and RTTY Roundup with their exchange. */
@@ -299,7 +343,10 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-09'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-024-009 the contest choice and its Exchange entry";
+        }
     }
     verification 'TC-024-013' {
         doc /* The Hound in the fold-out. */
@@ -307,7 +354,9 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-09'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::TC-024-013 the Hound choice in the QSO fold-out";
+        }
     }
     verification 'TC-099-003' {
         doc /* EU VHF in the fold-out. */
@@ -315,6 +364,8 @@ package WstxQsoPane {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-111-09'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::TC-099-003 the EU VHF choice in the QSO fold-out";
+        }
     }
 }

@@ -69,6 +69,7 @@ fn windows(mode: Mode, frames: u64, partitions: &[usize]) -> Vec<(u64, Vec<f32>)
 }
 
 // Integer sample clock fixes window edges.
+// Proves: TC-007-012
 // Timing: signal
 #[test]
 fn receive_windows_follow_mode_boundaries_independent_of_packet_partition() {
@@ -89,6 +90,7 @@ fn receive_windows_follow_mode_boundaries_independent_of_packet_partition() {
 }
 
 // A known gap never becomes decoder padding.
+// Proves: TC-007-012
 // Timing: signal
 #[test]
 fn receive_known_gap_resets_support_preserving_global_positions() {

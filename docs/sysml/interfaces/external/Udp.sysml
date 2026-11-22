@@ -372,7 +372,11 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-01'; verify 'CL-040-03'; verify 'CL-040-04'; }
-        @TestedBy { test = "server/tests/udp_vectors.rs; server/src/udp/udp_tests.rs"; }
+        @TestedBy {
+            test = "server/tests/udp_vectors.rs::tc_012_001_wire_vectors; "
+                + "server/tests/udp_vectors.rs::tc_012_001_parser_never_panics_and_bounds_input; "
+                + "server/src/udp/udp_tests.rs::tc_012_001_decode_text_uses_the_wsjtx_report_form";
+        }
     }
 
     verification 'TC-012-002' {
@@ -381,7 +385,11 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-01'; verify 'CL-040-04'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy {
+            test = "server/src/udp/udp_tests.rs::tc_012_002_outbound_messages_to_several_targets; "
+                + "server/src/udp/udp_tests.rs::"
+                + "tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_target";
+        }
     }
 
     verification 'TC-012-003' {
@@ -390,7 +398,9 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-03'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy {
+            test = "server/src/udp/udp_tests.rs::tc_012_003_no_inbound_message_acts_on_the_station";
+        }
     }
 
     verification 'TC-012-006' {
@@ -399,7 +409,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-06'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs::tc_012_006_ipv6_multicast_targets"; }
     }
 
     verification 'TC-012-007' {
@@ -409,7 +419,10 @@ package WstxUdp {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-07'; }
         @TestedBy {
-            test = "server/src/udp/udp_tests.rs; server/src/receive/live_receive_tests.rs";
+            test = "server/src/udp/udp_tests.rs::"
+                + "tc_012_007_status_follows_each_decode_window_and_the_pulse; "
+                + "server/src/receive/live_receive_tests.rs::"
+                + "live_worker_marks_decoding_for_each_window_and_clears_it_after";
         }
     }
 
@@ -419,7 +432,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-02'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs::tc_112_002_status_dial_and_report"; }
     }
 
     verification 'TC-112-003' {
@@ -428,7 +441,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-03'; verify 'CL-040-04'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs::tc_112_003_decode_delta_time"; }
     }
 
     verification 'TC-012-009' {
@@ -448,7 +461,10 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-04'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy {
+            test = "server/src/udp/udp_tests.rs::tc_112_004_clear_on_a_band_change_only; "
+                + "server/src/udp/udp_tests.rs::played_recording_sends_no_decode_and_no_clear";
+        }
     }
 
     verification 'TC-112-005' {
@@ -457,7 +473,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-05'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs::tc_112_005_qso_logged_exchanges"; }
     }
 
     verification 'TC-112-006' {
@@ -466,6 +482,6 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-06'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs::tc_112_006_close_at_shutdown"; }
     }
 }

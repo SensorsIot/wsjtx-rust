@@ -253,6 +253,13 @@ package WstxLiveReceive {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-061-04'; }
-        @TestedBy { test = "server/src/receive/recording_tx_tests.rs"; }
+        @TestedBy {
+            test = "server/src/receive/recording_tx_tests.rs::"
+                + "tx_period_has_no_decode_attempt_and_publishes_a_transmitted_view; "
+                + "server/src/receive/recording_tx_tests.rs::"
+                + "tx_period_measures_no_level_and_marks_its_waterfall_rows; "
+                + "server/src/receive/recording_tx_tests.rs::"
+                + "transmit_owner_on_the_air_records_the_tx_period_and_suspends_the_level";
+        }
     }
 }

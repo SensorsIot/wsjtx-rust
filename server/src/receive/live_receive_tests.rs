@@ -17,7 +17,7 @@ fn live_clock_filetime_mapping_handles_epoch_leap_and_range() {
 }
 
 // Independent hand-calculated UTC/frame vectors.
-// Proves: TC-007-006
+// Proves: TC-007-006, TC-007-012
 // Timing: signal
 #[test]
 fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
@@ -127,7 +127,7 @@ fn latest_decode_relative_station_timing_uses_mode_origin_and_source_clock() {
 }
 
 // Actual numerical silence completes; result inputs are explicit manager fixtures.
-// Proves: TC-007-006
+// Proves: TC-007-006, TC-007-012
 // Timing: signal
 #[test]
 fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_rows() {
@@ -188,7 +188,7 @@ fn latest_decode_replaces_period_atomically_including_empty_and_all_retained_row
 }
 
 // Actual cooperative numerical/manager overrun, not a pre-labelled wire response.
-// Proves: TC-007-006
+// Proves: TC-007-006, TC-007-012
 // Timing: signal
 #[test]
 fn latest_decode_actual_overrun_stays_partial_then_completes_the_next_period() {
@@ -377,7 +377,7 @@ fn live_worker_marks_decoding_for_each_window_and_clears_it_after() {
 }
 
 // Real terminal owner path preserves last view, never an invented completion.
-// Proves: TC-007-006
+// Proves: TC-007-006, TC-007-012
 #[test]
 fn latest_decode_cancel_and_failure_preserve_published_period_without_new_identity() {
     for cancelled in [false, true] {
@@ -459,6 +459,7 @@ fn live_window_schedule_follows_the_utc_period_grid() {
 }
 
 // Hand-calculated FT8 period starts for the SNR measurement
+// Proves: TC-007-012
 // Timing: signal
 #[test]
 fn ft8_snr_period_start_follows_the_utc_period_grid() {
@@ -506,6 +507,7 @@ fn ft8_snr_period_start_follows_the_utc_period_grid() {
 
 // Re-anchoring keeps ordinary frames in the prompt window
 // through more than 1 s of cumulative capture-clock drift and a clock step.
+// Proves: TC-007-011
 // Timing: signal
 #[test]
 fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
@@ -544,6 +546,7 @@ fn drifting_capture_clock_keeps_prompt_windows_on_the_utc_period() {
 // clock 2 s ahead, prompt windows complete at +13.8 s of corrected UTC through 300 ppm of
 // drift, none is lost or repeated, and the estimator is fed DT against the uncorrected
 // system clock whatever correction is applied (no feedback loop).
+// Proves: TC-004-004, TC-007-012
 // Timing: clock
 #[test]
 fn air_correction_composes_with_capture_drift_and_never_feeds_its_own_estimate() {
@@ -835,6 +838,7 @@ fn live_ft8_snr_measures_from_the_utc_period_start() {
 // correction), the same timing the published records use. The system clock here is 2 s
 // slow (anchor 11:59:58 at frame 0) and the correction +2 s puts station UTC 12:00:00 there,
 // so the expected values are those of the uncorrected test above.
+// Proves: TC-004-004
 // Timing: signal
 #[test]
 fn live_ft8_period_start_and_window_diagnostics_follow_the_air_clock_correction() {

@@ -290,6 +290,7 @@ fn parser_preserves_non_eof_os_read_errors() {
 }
 
 // An absent manifest never authorizes guessing which UUID original to delete.
+// Proves: TC-018-002
 #[test]
 fn absent_manifest_artifacts_are_unavailable_and_retained_until_valid_commit() {
     let f = Fixture::new();

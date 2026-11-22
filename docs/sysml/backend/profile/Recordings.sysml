@@ -109,7 +109,12 @@ package WstxRecordings {
         @TestedBy {
             test = "server/src/profile/recording_tests.rs::"
                 + "original_bytes_samples_blocks_and_restart_identity; "
-                + "tests/profile/recording-fixtures.test.cjs; tests/recording.test.cjs";
+                + "tests/profile/recording-fixtures.test.cjs::"
+                + "TC-018-001 all 22 FT8 and 3 FT4 originals match provenance and fit the PCM "
+                + "capability; tests/recording.test.cjs::"
+                + "TC-018-001/003 import preserves source, jobs change, cancel releases and "
+                + "restart recovers; tests/recording.test.cjs::"
+                + "TC-018-001 one real FT8 and one real FT4 original import unchanged";
         }
     }
 
@@ -211,7 +216,8 @@ package WstxRecordings {
         @TestedBy {
             test = "server/src/profile/recording_tests.rs::"
                 + "byte_level_riff_limits_and_rejection_table; "
-                + "server/src/profile/recording_tests.rs::parser_preserves_non_eof_os_read_errors; "
+                + "server/src/profile/recording_tests.rs::"
+                + "parser_preserves_non_eof_os_read_errors; "
                 + "server/src/profile/recording_tests.rs::"
                 + "import_failures_keep_old_source_and_quarantine_until_real_release; "
                 + "server/src/profile/recording_tests.rs::"
@@ -226,7 +232,13 @@ package WstxRecordings {
                 + "a_cancelled_import_keeps_the_stored_recording; "
                 + "server/src/profile/recording_tests.rs::"
                 + "import_commands_it_does_not_carry_out_are_refused_and_change_nothing; "
-                + "tests/recording.test.cjs";
+                + "tests/recording.test.cjs::"
+                + "TC-018-002/003 HTTP admission, malformed chunks, busy and partial "
+                + "cancellation; tests/recording.test.cjs::"
+                + "TC-018-002 aborted partial upload cancels its reservation without publishing "
+                + "source; tests/recording.test.cjs::"
+                + "review: cancel pending reservation response deletes returned reservation "
+                + "without PUT";
         }
     }
 }

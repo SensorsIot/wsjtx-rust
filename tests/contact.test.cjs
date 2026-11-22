@@ -448,7 +448,7 @@ test('TC-007-005 contact state is pushed: only what changed, no GET /contact',{t
 // the reply shows accepted or the refusal, contact.state carries the result, and two commands in a row
 // both pass (the second waits for the first one's revision). Expected values: the command semantics.
 // Proves: TC-007-005
-test('TC-007-005 an own contact command reads no GET /contact; a refusal still shows its code',{timeout:60000},async()=>{
+test('TC-007-005 an own contact command reads no GET /contact, a refusal still shows its code',{timeout:60000},async()=>{
   await page.waitForFunction(()=>!!window.wstxContact.snapshot());await new Promise(r=>setTimeout(r,1500));
   const from=performance.now(),gets=()=>requests.filter(r=>r.method==='GET'&&r.path==='/contact'&&r.at>=from).length;
   const hold=await page.evaluate(()=>window.wstxContact.snapshot().settings.hold_tx);

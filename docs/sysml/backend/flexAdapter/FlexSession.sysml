@@ -470,16 +470,35 @@ package WstxFlexSession {
             verify 'CL-013-06'; verify 'CL-013-07';
         }
         @TestedBy {
-            test = "tests/flexAdapter/native-flex.test.cjs; "
+            test = "tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 four direct native stations route control, status and samples only "
+                + "to their own slice; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 another model on the admitted API connects, with its announced "
+                + "facts shown; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 a saved address reaches a radio no announcement crosses, and the "
+                + "keep-alive holds its stream; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 a stall above 200 ms with packets missing opens a new epoch; "
+                + "tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 an outage above 200 ms starts the count over, so no good packet "
+                + "reads as late; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 a selection is read back on a slow path from a radio that "
+                + "volunteers no tune status; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 packets delayed within the depth are put back in order, not "
+                + "counted lost; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 packets delayed past the depth count lost once and are dropped as "
+                + "late; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 lost packets keep the timeline and are counted, and a stall shows "
+                + "as jitter; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 the VITA measurement is reported and belongs to its session; "
+                + "tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-001 stations racing for one DAX channel end on different channels; "
                 + "server/src/flexAdapter/session_tests.rs::"
                 + "reorder_restores_the_order_and_counts_nothing_lost; "
-                + "server/src/flexAdapter/session_tests.rs::"
-                + "reorder_gives_up_a_turn_at_its_depth; "
+                + "server/src/flexAdapter/session_tests.rs::reorder_gives_up_a_turn_at_its_depth; "
                 + "server/src/flexAdapter/session_tests.rs::"
                 + "reorder_counts_a_burst_of_lost_packets_up_to_half_the_count; "
                 + "server/src/flexAdapter/session_tests.rs::reorder_drops_duplicates; "
-                + "server/src/flexAdapter/session_tests.rs::"
-                + "reorder_starts_over_after_a_stall; "
+                + "server/src/flexAdapter/session_tests.rs::reorder_starts_over_after_a_stall; "
                 + "server/src/flexAdapter/session_tests.rs::"
                 + "a_confirmed_tune_is_published_before_the_caller_hears_of_it; "
                 + "server/src/flexAdapter/session_tests.rs::"
@@ -490,10 +509,8 @@ package WstxFlexSession {
                 + "no_free_dax_channel_removes_the_own_slice_only_capacity_dax; "
                 + "server/src/flexAdapter/session_tests.rs::"
                 + "a_tune_outside_ready_or_withdrawn_sends_nothing_and_confirms_nothing; "
-                + "server/src/flexAdapter/wire_tests.rs::"
-                + "dax_packet_of_a_real_radio_decodes; "
-                + "server/src/flexAdapter/wire_tests.rs::"
-                + "independent_negative_vectors_are_refused";
+                + "server/src/flexAdapter/wire_tests.rs::dax_packet_of_a_real_radio_decodes; "
+                + "server/src/flexAdapter/wire_tests.rs::independent_negative_vectors_are_refused";
         }
     }
 
@@ -506,10 +523,15 @@ package WstxFlexSession {
             verify 'CL-013-01'; verify 'CL-013-03'; verify 'CL-013-04'; verify 'CL-013-07';
         }
         @TestedBy {
-            test = "tests/flexAdapter/native-flex.test.cjs; "
-                + "server/src/flexAdapter/session_tests.rs::intent_domains; "
+            test = "tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-002 persisted intent reconciles restarted radios, changed handles and "
+                + "occupied or ambiguous resources; tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-002 a new session goes back to the selected frequency; "
+                + "tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-002 a native station reaches no radio without a grant and leaves it "
+                + "when the grant goes; server/src/flexAdapter/session_tests.rs::intent_domains; "
                 + "server/src/flexAdapter/session_tests.rs::"
-                + "a_slice_created_under_another_handle_is_left_alone_slice_ownership;"
+                + "a_slice_created_under_another_handle_is_left_alone_slice_ownership; "
                 + "server/src/flexAdapter/session_tests.rs::"
                 + "a_created_slice_with_another_antenna_is_removed_antenna_unavailable";
         }
@@ -523,6 +545,12 @@ package WstxFlexSession {
         objective {
             verify 'CL-013-01'; verify 'CL-013-02'; verify 'CL-013-03'; verify 'CL-013-04';
         }
-        @TestedBy { test = "tests/flexAdapter/native-flex.test.cjs"; }
+        @TestedBy {
+            test = "tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-003 a full radio on a saved address is refused visibly; "
+                + "tests/flexAdapter/native-flex.test.cjs::"
+                + "TC-023-003 capacity, incompatible API and mixed standard/native profiles "
+                + "through the same browser";
+        }
     }
 }
