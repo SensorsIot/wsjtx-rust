@@ -1602,7 +1602,7 @@ fn apply_without_a_ready_connection_is_radio_unavailable() {
 // A native profile, and an endpoint RadioConnection does not take, open no port at start.
 // Proves: TC-044-020
 #[test]
-fn discovery_opens_nothing_on_a_native_profile_or_an_endpoint_radio_control_does_not_take() {
+fn discovery_opens_nothing_on_a_native_profile_or_an_endpoint_not_taken() {
     let radio = || {
         double(
             vec![port(3, "USB\\HUB\\IC7300")],

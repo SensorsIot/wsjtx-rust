@@ -712,6 +712,7 @@ fn tc_063_007_a_selection_is_parsed_exactly() {
 // The confirmation goes with Auto on (POST /strategy/auto,
 // strategy_tests.rs); a selection asks nothing, and colouring and automation_confirmed are
 // refused on PUT with their field.
+// Proves: TC-063-007
 // Timing: timer
 #[test]
 fn tc_063_009_a_selection_asks_nothing_and_refuses_colouring_and_the_confirmation() {

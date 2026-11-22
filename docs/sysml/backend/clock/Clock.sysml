@@ -5,6 +5,7 @@ package WstxClockPart {
     private import WstxStationTime::StationsHeardPort;
     private import WstxTimeSource::TimeSourcePort;
     private import WstxModelBindings::ImplementedIn;
+    private import WstxModelBindings::DetailTests;
     private import WstxModelNotes::CodeDiffers;
 
     part def ClockService {
@@ -18,6 +19,10 @@ package WstxClockPart {
         @CodeDiffers {
             what = "Its code stands in server/src/main.rs, outside server/src/clock/ and "
                 + "client/src/clock/.";
+        }
+        @DetailTests {
+            tests = "server/tests/transmit/transmit_clock.rs";
+            covers = "the reading of the PC's clocks and a wait of at least its duration";
         }
         port time : StationTimePort;
         port status : ClockStatusPort;

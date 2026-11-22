@@ -4,9 +4,8 @@ root with model and code files.
 The accepted fixture covers each value one way: V3 (only target clauses reach it), V4 (its
 `@CodeDiffers`, the code differing), V1 (its constant `D::F`, `d::F` or module `F`, a
 JavaScript `D.F`; a literal, wire name, command field or variable found) or V2: a test
-bound to a case of a clause reaching it (the test `symbol` of a `path::symbol` binding, or
-a test of a bound file that names the case by its `Proves:` tag or title) holds in its own
-code, outside comments, its qualified name, or its definition's qualified name and the
+bound to a case of a clause reaching it (the test `symbol` of its `path::symbol` binding)
+holds in its own code, outside comments, its qualified name, or its definition's qualified name and the
 feature's name. Its own code is its body and the bodies of the functions of its file it
 calls, directly or through each other. A comment is a Rust `//`, `///`, `//!` or block
 comment, a Node `//` or block comment, or a Python `#` comment or docstring. Another test,
@@ -183,7 +182,7 @@ pub fn beacon(now: u64) -> serde_json::Value {
 });
 """,
     SHARED: "pub fn unused() {}\n",
-    "tests/clock.cjs": """// Proves: TC-043-002
+    "tests/clock.cjs": """// Proves: TC-043-001, TC-043-002
 test("the step rule restarts the correction", () => {
   const restart = modelValue("WstxStationClock::StepRule::restartMs");
 });
@@ -197,9 +196,9 @@ ENTRIES = {
     "CL-044-01": {"kind": "requirement", "state": "target", "file": "interfaces/internal/StationTime.sysml", "line": 2,
                   "own": [], "frs": ["FR-006"], "cases": []},
     "TC-043-001": {"kind": "verification", "state": "implemented", "file": "backend/clock/StationClock.sysml", "line": 0,
-                   "bindings": ["tests/clock.cjs"], "refs": ["CL-043-01"]},
+                   "bindings": ["tests/clock.cjs::the step rule restarts the correction"], "refs": ["CL-043-01"]},
     "TC-043-002": {"kind": "verification", "state": "implemented", "file": "backend/clock/StationClock.sysml", "line": 0,
-                   "bindings": ["tests/clock.cjs"], "refs": ["CL-043-02"]},
+                   "bindings": ["tests/clock.cjs::the step rule restarts the correction"], "refs": ["CL-043-02"]},
 }
 KEY = "backend/clock/StationClock.sysml"
 
@@ -333,18 +332,20 @@ def python_test(body: str) -> str:
     return "import unittest\n\n\nclass RuleTest(unittest.TestCase):\n    def test_restart(self):\n" + body
 
 
-SYMBOL = {RUST: RUST + "::restart_holds", PYTHON: PYTHON + "::RuleTest.test_restart", NODE: NODE}
+SYMBOL = {RUST: RUST + "::restart_holds", PYTHON: PYTHON + "::RuleTest.test_restart",
+          NODE: NODE + "::TC-043-002 the correction restarts"}
 
 
 class BoundTestCodeTest(unittest.TestCase):
     """V2 judged on the code of one bound test: `restartMs` of the clause CL-043-02, whose case
-    TC-043-002 each test binds to its own file, the fixture's tests/clock.cjs emptied."""
+    TC-043-002 each test binds by default as the test of its file by its symbol or, in Node,
+    by its title, the fixture's tests/clock.cjs emptied."""
 
     faults = ValuesTest.faults
 
     def judged(self, path: str, text, binding: str | None = None, bindings=None, edits=()) -> list[str]:
         """The fault lines with `text` at `path` and TC-043-002 bound by `binding` (by default
-        the test of the file by its symbol, a Node file whole)."""
+        the test of the file by its symbol or, in Node, by its title)."""
         bound = {"TC-043-002": [binding or SYMBOL[path]]}
         bound.update(bindings or {})
         return self.faults(edits, added={"tests/clock.cjs": "", path: text}, bindings=bound)
@@ -360,16 +361,16 @@ class BoundTestCodeTest(unittest.TestCase):
         self.verdicts({"symbol": (RUST, rust_test(f'    assert_eq!(model_value("{QUALIFIED}"), 3000);\n'))}, [])
 
     def test_node_test_named_by_its_title_is_accepted(self):
-        """TV-216 (TR-16): in a bound Node file, the test that names the case by its title and holds
-        the qualified name in its callback verifies the value."""
+        """TV-216 (TR-16): a Node test bound by its title, which names the case, holding the
+        qualified name in its callback verifies the value."""
         self.verdicts({"title": (NODE, node_test(f'  assert.equal(modelValue("{QUALIFIED}"), 3000);\n'))}, [])
 
     def test_rust_test_named_by_proves_with_definition_and_feature_is_accepted(self):
-        """TV-217 (TR-16): in a bound Rust file, the test its `Proves:` tag names, holding the
+        """TV-217 (TR-16): a Rust test bound by name and tagged with `Proves:`, holding the
         definition's qualified name and the feature's name in its body's code, verifies the
         value."""
         body = f'    let rule = model_part("{DEFINITION}");\n    assert_eq!(rule.value("restartMs"), 3000);\n'
-        self.verdicts({"Proves": (RUST, rust_test(body, "// Proves: TC-043-002\n"), RUST)}, [])
+        self.verdicts({"Proves": (RUST, rust_test(body, "// Proves: TC-043-002\n"))}, [])
 
     def test_name_in_a_helper_two_calls_away_is_accepted(self):
         """TV-218 (TR-16): the qualified name in a function of the file that the bound test calls
@@ -385,14 +386,14 @@ class BoundTestCodeTest(unittest.TestCase):
         self.verdicts({"arrow": (NODE, node_test('  assert.equal(rule("restartMs"), 3000);\n', helper))}, [])
 
     def test_python_test_method_is_accepted(self):
-        """TV-220 (TR-16): a Python test method bound by `path::Class.test_x` or named by its
+        """TV-220 (TR-16): a Python test method bound by `path::Class.test_x`, with or without its
         `Proves:` tag, holding the qualified name, verifies the value, also after line separators
         in an earlier string."""
         body = f'        self.assertEqual(model_value("{QUALIFIED}"), 3000)\n'
         tagged = python_test(body).replace("    def test_", "    # Proves: TC-043-002\n    def test_")
         separated = python_test(body).replace("    def test_", '    def helper(self):\n        return "a b\fc d"\n\n'
                                                                  "    def test_")
-        self.verdicts({"symbol": (PYTHON, python_test(body)), "Proves": (PYTHON, tagged, PYTHON),
+        self.verdicts({"symbol": (PYTHON, python_test(body)), "Proves": (PYTHON, tagged),
                        "line separators in an earlier string": (PYTHON, separated)}, [])
 
     def test_helpers_calling_each_other_end_and_are_accepted(self):
@@ -445,7 +446,7 @@ class BoundTestCodeTest(unittest.TestCase):
         case verifies nothing."""
         text = (rust_test("    assert_eq!(restart(), 3000);\n", "// Proves: TC-043-002\n")
                 + f'\n// Proves: TC-043-001\n#[test]\nfn rule_is_read() {{\n    assert_eq!(model_value("{QUALIFIED}"), 3000);\n}}\n')
-        self.assertEqual(self.judged(RUST, text, RUST, {"TC-043-001": [RUST]}), NOT_VERIFIED)
+        self.assertEqual(self.judged(RUST, text, None, {"TC-043-001": [RUST + "::rule_is_read"]}), NOT_VERIFIED)
 
     def test_name_at_the_top_level_is_refused(self):
         """TV-227 (TR-16): the qualified name only at the file's top level, as a Rust `const` or
@@ -461,8 +462,8 @@ class BoundTestCodeTest(unittest.TestCase):
         test verifies nothing."""
         body = "    assert_eq!(restart(), 3000);\n"
         self.verdicts({
-            "line comment": (RUST, rust_test(body, f"// Proves: TC-043-002\n// reads {QUALIFIED}\n"), RUST),
-            "doc comment": (RUST, rust_test(body, f"// Proves: TC-043-002\n/// reads {QUALIFIED}\n"), RUST),
+            "line comment": (RUST, rust_test(body, f"// Proves: TC-043-002\n// reads {QUALIFIED}\n")),
+            "doc comment": (RUST, rust_test(body, f"// Proves: TC-043-002\n/// reads {QUALIFIED}\n")),
         }, NOT_VERIFIED)
 
     def test_helper_only_another_test_calls_is_refused(self):
@@ -480,21 +481,21 @@ class BoundTestCodeTest(unittest.TestCase):
                 + f'\n#[test]\nfn rule_is_read() {{\n    let rule = model_part("{DEFINITION}");\n}}\n')
         self.verdicts({"split over two tests": (RUST, text)}, NOT_VERIFIED)
 
-    def test_whole_file_name_in_a_test_not_naming_the_case_is_refused(self):
-        """TV-231 (TR-16): in a bound file, the qualified name in a test that does not name the case,
-        while the test that names it does not hold it, verifies nothing."""
+    def test_name_in_an_untagged_test_beside_the_bound_test_is_refused(self):
+        """TV-231 (TR-16): the qualified name in an untagged test of the file, while the test bound
+        by name (tagged in Rust, named by its title in Node) does not hold it, verifies nothing."""
         self.verdicts({
             "Rust": (RUST, rust_test("    assert_eq!(restart(), 3000);\n", "// Proves: TC-043-002\n")
-                     + f'\n#[test]\nfn rule_is_read() {{\n    assert_eq!(model_value("{QUALIFIED}"), 3000);\n}}\n', RUST),
+                     + f'\n#[test]\nfn rule_is_read() {{\n    assert_eq!(model_value("{QUALIFIED}"), 3000);\n}}\n'),
             "Node": (NODE, node_test("  assert.equal(restart(), 3000);\n")
                      + f'\ntest("the rule is read", () => {{\n  assert.equal(modelValue("{QUALIFIED}"), 3000);\n}});\n'),
         }, NOT_VERIFIED)
 
-    def test_whole_file_without_a_test_naming_the_case_is_refused(self):
-        """TV-232 (TR-16): a bound file in which no test names the case verifies nothing, though it
-        holds the qualified name."""
+    def test_binding_naming_no_test_of_the_file_is_refused(self):
+        """TV-232 (TR-16): a name binding that names no test of its file verifies nothing, though
+        another test of the file holds the qualified name."""
         text = f'#[test]\nfn rule_is_read() {{\n    assert_eq!(model_value("{QUALIFIED}"), 3000);\n}}\n'
-        self.verdicts({"no naming test": (RUST, text, RUST)}, NOT_VERIFIED)
+        self.verdicts({"no test of the name": (RUST, text)}, NOT_VERIFIED)
 
     def test_unreadable_bound_file_is_not_verified(self):
         """TV-233 (TR-16): a bound file that is no UTF-8, or holds a raw string without its end,
@@ -502,7 +503,7 @@ class BoundTestCodeTest(unittest.TestCase):
         name = f'    assert_eq!(model_value("{QUALIFIED}"), 3000);\n'
         self.verdicts({
             "not UTF-8 by symbol": (RUST, rust_test("    // \xff\n" + name).encode("latin-1")),
-            "not UTF-8 whole": (RUST, rust_test("    // \xff\n" + name, "// Proves: TC-043-002\n").encode("latin-1"), RUST),
+            "not UTF-8, tagged": (RUST, rust_test("    // \xff\n" + name, "// Proves: TC-043-002\n").encode("latin-1")),
             "raw string without its end": (RUST, rust_test(name + '    let open = r#"never closed;\n')),
         }, NOT_VERIFIED)
 
@@ -578,59 +579,6 @@ class BoundTestCodeTest(unittest.TestCase):
                          f'    assert_eq!(model_value("{QUALIFIED}"), 3000);\n')
         edits = [(CLOCK, "(StepRule)", "(StepRule, TimeServerCheck)"), (CHECK, '"WSTX_SNTP_SERVERS"', '"WSTX_TIME_SERVERS"')]
         self.assertEqual(self.judged(RUST, text, edits=edits), [f"Value not verified: WSTX_SNTP_SERVERS: {KEY}:39"])
-
-
-class PythonNamingTest(unittest.TestCase):
-    def test_python_tests_named_by_proves_are_bound(self):
-        """TV-244 (TR-23): in a bound Python file, a test method or a module-level test whose
-        attached `Proves:` tag names the case is a bound test, named as `python_tests` lists it,
-        `<Class>.<name>` or `<name>`, also after a string whose lines start at column 0 and after a
-        form feed or line separator in a comment or string; a
-        `def test_…` inside a function, a test of a class inside a function and a test the tag
-        does not name are not."""
-        cases = {
-            "method, module test, nested def, other case": (
-                "import unittest\n\n\n"
-                "class RuleTest(unittest.TestCase):\n"
-                "    def helper(self):\n        pass\n\n"
-                "    # Proves: TC-043-002\n    @unittest.skipIf(False, 'kept')\n    def test_restart(self):\n        pass\n\n"
-                "    # Proves: TC-043-001\n    def test_other(self):\n        pass\n\n\n"
-                "def outer():\n    # Proves: TC-043-002\n    def test_inner():\n        pass\n\n\n"
-                "# Proves: TC-043-002\ndef test_module():\n    pass\n",
-                ["python RuleTest.test_restart", "python test_module"]),
-            "string at column 0 in an earlier method": (
-                "import unittest\n\n\n"
-                "class RuleTest(unittest.TestCase):\n"
-                '    def test_a(self):\n        text = """\nx\n"""\n\n'
-                "    # Proves: TC-043-002\n    def test_b(self):\n        pass\n",
-                ["python RuleTest.test_b"]),
-            "form feed in an earlier comment": (
-                "import unittest\n\n\n"
-                "class RuleTest(unittest.TestCase):\n"
-                "    # one page\f the next\n    def test_a(self):\n        pass\n\n"
-                "    # Proves: TC-043-002\n    def test_b(self):\n        pass\n",
-                ["python RuleTest.test_b"]),
-            "line separator in an earlier string": (
-                "import unittest\n\n\n"
-                "class RuleTest(unittest.TestCase):\n"
-                '    def test_a(self):\n        text = "one two three\x1cfour\x85five\vsix"\n\n'
-                "    # Proves: TC-043-002\n    def test_b(self):\n        pass\n",
-                ["python RuleTest.test_b"]),
-            "class inside a function": (
-                "import unittest\n\n\n"
-                "def build():\n    class RuleTest(unittest.TestCase):\n"
-                "        # Proves: TC-043-002\n        def test_inner(self):\n            pass\n\n"
-                "    return RuleTest\n",
-                []),
-        }
-        for name, (source, expected) in cases.items():
-            with self.subTest(name), tempfile.TemporaryDirectory() as folder:
-                (Path(folder) / PYTHON).parent.mkdir(parents=True)
-                (Path(folder) / PYTHON).write_text(source, encoding="utf-8", newline="\n")
-                bound = tool.bound_tests("TC-043-002", [PYTHON], Path(folder))
-                self.assertEqual(bound, expected)
-                listed = {"python " + test for test in tool.python_tests(PYTHON, source)}
-                self.assertLessEqual(set(bound), listed)
 
 
 if __name__ == "__main__":

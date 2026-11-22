@@ -122,9 +122,18 @@ package WstxMessagePayload {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-01'; }
         @TestedBy {
-            test = "server/src/modes/decoder/hashes_test.rs; "
-                + "server/tests/transmit_service.rs; "
-                + "server/src/auth_tests.rs::profile_save_sets_my_call_for_the_hash_table";
+            test = "server/src/modes/decoder/hashes_test.rs::"
+                + "hashed_calls_fill_in_from_heard_calls_and_stay_unknown_otherwise; "
+                + "server/src/modes/decoder/hashes_test.rs::"
+                + "my_call_fills_the_to_slot_even_after_the_list_has_dropped_it; "
+                + "server/src/modes/decoder/hashes_test.rs::"
+                + "the_later_of_two_calls_with_one_hash_wins; "
+                + "server/src/modes/decoder/hashes_test.rs::sent_messages_teach_their_calls; "
+                + "server/src/modes/decoder/hashes_test.rs::"
+                + "the_dx_call_rule_prefers_my_call_over_a_colliding_call; "
+                + "server/tests/transmit_service.rs::"
+                + "accepted_requests_teach_the_station_hash_table; server/src/auth_tests.rs::"
+                + "profile_save_sets_my_call_for_the_hash_table";
         }
     }
 
@@ -134,7 +143,10 @@ package WstxMessagePayload {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-01'; }
-        @TestedBy { test = "server/src/receive/live_receive_tests.rs"; }
+        @TestedBy {
+            test = "server/src/receive/live_receive_tests.rs::"
+                + "live_publication_fills_in_hashed_calls";
+        }
     }
 
     verification 'TC-024-010' {
@@ -143,6 +155,9 @@ package WstxMessagePayload {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-024-01'; }
-        @TestedBy { test = "server/src/modes/decoder/hashes_test.rs"; }
+        @TestedBy {
+            test = "server/src/modes/decoder/hashes_test.rs::"
+                + "a_dxpedition_hash_of_the_dx_call_shows_the_dx_call";
+        }
     }
 }

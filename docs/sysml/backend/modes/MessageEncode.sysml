@@ -110,7 +110,20 @@ package WstxMessageEncode {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-009-01'; }
-        @TestedBy { test = "server/tests/transmit_vectors.rs"; }
+        @TestedBy {
+            test = "server/tests/transmit_vectors.rs::"
+                + "tc_005_001_ft8code_bits_crc_parity_and_tones_match_exactly; "
+                + "server/tests/transmit_vectors.rs::tc_005_001_families_and_explicit_refusals; "
+                + "server/tests/transmit_vectors.rs::"
+                + "tc_024_007_field_day_and_rtty_roundup_pack_exactly; "
+                + "server/tests/transmit_vectors.rs::tc_099_001_eu_vhf_packs_exactly_as_ft8code; "
+                + "server/tests/transmit_vectors.rs::"
+                + "tc_005_001_waveform_matches_zero_noise_ft8sim_within_tolerance; "
+                + "server/tests/transmit_vectors.rs::tc_005_001_48k_waveform_and_ramps; "
+                + "server/tests/transmit_vectors.rs::tc_005_001_waveform_refusals; "
+                + "server/tests/transmit_vectors.rs::"
+                + "tc_005_001_receive_decoder_recovers_generated_waveforms";
+        }
     }
 
     verification 'TC-005-002' {
@@ -119,6 +132,20 @@ package WstxMessageEncode {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-011-01'; }
-        @TestedBy { test = "server/tests/transmit_ft4_vectors.rs"; }
+        @TestedBy {
+            test = "server/tests/transmit_ft4_vectors.rs::"
+                + "tc_005_002_ft4sim_bits_codeword_and_tones_match_exactly; "
+                + "server/tests/transmit_ft4_vectors.rs::"
+                + "tc_005_002_message_refusals_are_those_of_ft8; "
+                + "server/tests/transmit_ft4_vectors.rs::"
+                + "tc_005_002_waveform_matches_zero_noise_ft4sim_within_tolerance; "
+                + "server/tests/transmit_ft4_vectors.rs::tc_005_002_48k_waveform_and_ramps; "
+                + "server/tests/transmit_ft4_vectors.rs::tc_005_002_waveform_refusals; "
+                + "server/tests/transmit_ft4_vectors.rs::"
+                + "tc_005_002_receive_decoder_recovers_generated_waveforms; "
+                + "server/tests/transmit_ft4_vectors.rs::tc_099_001_ft4_eu_vhf_matches_ft4sim; "
+                + "server/tests/transmit_ft4_vectors.rs::"
+                + "tc_024_007_ft4_field_day_and_rtty_roundup_match_ft4sim";
+        }
     }
 }

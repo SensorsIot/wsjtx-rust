@@ -349,7 +349,7 @@ const LOG4OM_SSB: &str = "<CALL:5>W1XYZ <BAND:3>40m <MODE:3>SSB <SUBMODE:3>LSB <
 // Update logbook from a Log4OM-shaped export: byte order
 // mark, banner, UTF-8 personal fields not stored, only the log's fields kept, the source
 // marked, MFSK/FT4 and FT4 one mode, and the added records feed worked-before.
-// Proves: TC-011-002
+// Proves: TC-011-002, TC-011-003
 #[test]
 fn update_reads_a_log4om_shaped_export_keeps_only_log_fields_and_marks_the_source() {
     let dir = Dir::new();

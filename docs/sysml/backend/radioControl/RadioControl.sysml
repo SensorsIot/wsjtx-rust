@@ -32,11 +32,14 @@ package WstxRadioControlPart {
         @DetailTests {
             tests = "server/tests/radioControl/radio_control.rs; "
                 + "server/src/radioControl/setup_tests.rs; "
-                + "server/src/radioControl/radio_connection_tests.rs";
+                + "server/src/radioControl/radio_connection_tests.rs; "
+                + "server/src/radioControl/radio_setup_tests.rs";
             covers = "the making of the native port values inside the exchange thread; "
                 + "the refusal of an incomplete connection identity before a port is "
                 + "opened; the text form of a menu value and its coding; the built-in "
-                + "list of the commands the station has for a model";
+                + "list of the commands the station has for a model; a station without "
+                + "the port to its hardware, which lists and opens nothing; the profile's "
+                + "discovery at start switched off, which keeps its radio and opens nothing";
         }
         attribute config : RadioConfig {
             doc /* Its configuration, as the last ControlAssignment gave it. */ }

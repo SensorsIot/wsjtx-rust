@@ -178,6 +178,7 @@ fn selection_unknown_band_and_safe_counter_refuse_without_effects() {
 
 // The Start revision guard. A loaded saved
 // revision is independent station state; later edits invalidate a captured old input.
+// Proves: TC-006-004
 #[test]
 fn selection_start_checks_independent_loaded_profile_revision_after_unlock() {
     let fixture = Fixture::new();
@@ -382,6 +383,7 @@ async fn selection_profile_success_publishes_cancellation_before_new_reader() {
 // A real atomic-store
 // refusal cannot invalidate the old operation. This uses only a disposable fixture,
 // no ACL changes or production fault switch.
+// Proves: TC-009-005
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn selection_profile_save_failure_preserves_existing_token() {
     let (fixture, r, app, settings, cancelled) = selection_profile_fixture();

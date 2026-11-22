@@ -371,6 +371,7 @@ fn hold_tx_is_on_by_default_and_a_selection_keeps_tx() {
     assert_eq!(s.engine.settings.tx_hz, 1235, "explicitly off: Tx follows");
 }
 
+// Proves: TC-007-001
 #[test]
 fn selecting_a_cq_row_prepares_the_independent_message_set_without_any_request() {
     let mut s = station();
@@ -425,6 +426,7 @@ fn selecting_a_cq_row_prepares_the_independent_message_set_without_any_request()
     assert_eq!(report_from_snr(-70.0), -50);
 }
 
+// Proves: TC-007-001
 // Timing: timer
 #[test]
 fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73() {
@@ -482,6 +484,7 @@ fn responder_progresses_tx1_tx3_tx5_and_completes_once_after_the_transmitted_73(
     );
 }
 
+// Proves: TC-007-001
 // Timing: timer
 #[test]
 fn caller_cq_then_selected_reply_reaches_rogers_and_completes_on_73_or_sent_rr73() {
@@ -597,6 +600,7 @@ fn repeats_resend_and_a_report_from_rogers_returns_to_tx3() {
     assert_eq!(s.state(), (State::RogerReport, Slot::Tx3));
 }
 
+// Proves: TC-007-001
 #[test]
 fn other_stations_wrong_period_and_previous_partner_rows_change_nothing() {
     let mut s = station();
@@ -660,6 +664,7 @@ fn choose_next_without_a_contact_or_for_a_slot_without_text_is_refused() {
     assert_eq!(s.state(), (State::Replying, Slot::Tx1));
 }
 
+// Proves: TC-007-001
 #[test]
 fn tx1_skip_report_override_and_manual_entry_follow_the_domains() {
     let mut s = station();
@@ -1315,6 +1320,7 @@ fn a_second_request_replaces_the_pending_one_and_one_message_is_sent() {
     assert_eq!(s.sent, [(period(1), text)]);
 }
 
+// Proves: TC-007-004
 #[test]
 fn auto_seq_off_cancel_halt_and_watchdog_while_calling() {
     let mut s = station();
@@ -1477,6 +1483,7 @@ fn tc_008_001_the_watchdog_stops_at_n_repetitions_whatever_the_partner_or_browse
 // and has no Tx watchdog count: tx_remaining_calls is null while armed for it (never the
 // leave count, never the limit minus the Rep); the same contact without the exemption stops at N,
 // and another contact's exemption does not help it.
+// Proves: TC-039-054
 // Timing: timer
 #[test]
 fn tc_039_022_only_the_runs_own_contact_sends_past_the_limit() {
@@ -2160,6 +2167,7 @@ fn cq_keeps_calling_armed_when_the_device_reports_each_end_900_ms_late() {
     assert_eq!(s.engine.transmit_problem, None);
 }
 
+// Proves: TC-007-004
 #[test]
 fn a_non_disarming_refusal_is_not_resubmitted_every_step() {
     let mut s = station();
@@ -2277,6 +2285,7 @@ fn ft4_station() -> Station {
     s
 }
 
+// Proves: TC-007-008
 // Timing: timer
 #[test]
 fn ft4_responder_transmits_in_odd_7_5_s_periods_and_completes_with_an_ft4_log_offer() {
@@ -2341,6 +2350,7 @@ fn ft4_responder_transmits_in_odd_7_5_s_periods_and_completes_with_an_ft4_log_of
     );
 }
 
+// Proves: TC-007-008
 // Timing: timer
 #[test]
 fn ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz() {
@@ -2398,6 +2408,7 @@ fn ft4_caller_keeps_rr73_completes_on_the_sent_rr73_and_bounds_tx_at_2916_hz() {
     assert_eq!(fields.mode, Mode::Ft4);
 }
 
+// Proves: TC-007-008
 // Timing: timer
 #[test]
 fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
@@ -2502,6 +2513,7 @@ fn rows_of_the_other_mode_never_count_and_a_mode_change_disarms_and_cancels() {
 
 // WstxTransmitState::Admission (staleRequest): the owner alone (no
 // contact step after the switch) never keys a request of another station mode.
+// Proves: TC-008-003
 #[test]
 fn the_owner_never_keys_a_request_of_another_station_mode_without_a_contact_step() {
     use wstx_rust::transmit::service::{OutcomeKind, Request, TransmitRefusal};
@@ -2648,6 +2660,7 @@ fn assert_replay(mode: Mode, r: &Replay, expected: &[(i64, &str)]) {
         "{label}"
     );
 }
+// Proves: TC-007-008
 #[test]
 fn ft4_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once() {
     // RR73 counted just before my next period (+6.7..7.3 s): 73 replaces the pending
@@ -2688,6 +2701,7 @@ fn ft4_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once() {
 }
 // Only a decoded row of the same partner keeps the known grid; a manual
 // entry sets exactly the grid entered (none clears it).
+// Proves: TC-007-001
 #[test]
 fn a_manual_entry_of_the_same_partner_sets_exactly_the_grid_entered() {
     let mut s = station();
@@ -2705,6 +2719,7 @@ fn a_manual_entry_of_the_same_partner_sets_exactly_the_grid_entered() {
 // The live 13:44-13:46 record with Auto Seq off: the partner's +10 and RR73s are
 // counted (report and TIME_OFF) but change nothing, so Tx3 repeats as observed; the
 // engine offers Tx5 instead of dropping the RR73, and choosing it sends 73 once.
+// Proves: TC-007-001
 #[test]
 fn auto_seq_off_offers_tx5_after_the_partners_rr73_and_choosing_it_completes() {
     let mut s = station();
@@ -2771,6 +2786,7 @@ fn auto_seq_off_offers_tx5_after_the_partners_rr73_and_choosing_it_completes() {
     assert_eq!(s.state(), (State::Completed, Slot::Tx6));
     assert_eq!(one_entry(&mut s).0, LogKind::Completion);
 }
+// Proves: TC-007-001
 #[test]
 fn ft8_rrr_or_rr73_after_my_roger_report_sends_73_once_completes_and_logs_once() {
     let at_once = [
@@ -3131,6 +3147,7 @@ fn a_parity_switch_in_the_keyed_window_keeps_enable_tx_and_queues_the_new_period
 // starts the audio, and its lead already lies past the period's start window, the next
 // own period's request is queued behind the keyed one; Enable Tx stays on (the debug-load
 // failure of selected_row_prepares_without_transmit_and_only_an_explicit_enable_arms).
+// Proves: TC-111-003
 // Timing: timer
 #[test]
 fn a_late_start_keyed_before_audio_queues_the_next_own_period_without_disarming() {
@@ -5110,6 +5127,7 @@ fn a_hound_ignores_rr73_of_other_stations_and_replies_nothing_while_tuning() {
 
 // The reply timeout (11 T/R) and the Hound watchdog (300 s
 // of Tx1) turn Enable Tx off; the station's Tx watchdog returns a Hound to Tx1.
+// Proves: TC-111-016
 #[test]
 fn hound_reply_timeout_hound_watchdog_and_tx_watchdog() {
     // Reply timeout: 165 s after the Fox's report.

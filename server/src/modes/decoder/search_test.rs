@@ -388,6 +388,7 @@ fn partial_interferer_window() -> (Vec<f32>, Vec<u8>, Vec<u8>) {
 
 // A frame that runs past the
 // window start is found and subtracted but never published; the weak frame under it decodes.
+// Proves: TC-004-002
 #[test]
 fn partial_frame_interferer_is_subtracted_not_published() {
     let channel = Channel::new();
@@ -453,6 +454,7 @@ fn decoded_tones(d: &Decode) -> Vec<u8> {
 
 // A strong frame that
 // runs 0.64 s past the window end is subtracted, not published; the weak frame under it decodes.
+// Proves: TC-004-002
 #[test]
 fn frame_past_the_window_end_is_subtracted_not_published() {
     let (strong, weak) = (ft8_word(91), ft8_word(37));
@@ -479,6 +481,7 @@ fn frame_past_the_window_end_is_subtracted_not_published() {
 // A frame starting up
 // to half a symbol (960 frames) before the window is published at start 0; one starting
 // further before is not.
+// Proves: TC-004-002
 #[test]
 fn half_symbol_publication_boundary() {
     let tones = ft8_word(53);
@@ -505,6 +508,7 @@ fn half_symbol_publication_boundary() {
 // The same word on carriers 100 Hz
 // apart is published once, and both copies are subtracted: a weak frame 3 Hz from the second
 // copy decodes.
+// Proves: TC-004-002
 #[test]
 fn duplicate_on_a_distant_carrier_is_subtracted_and_published_once() {
     let (word, weak) = (ft8_word(91), ft8_word(37));
@@ -715,6 +719,7 @@ fn weak_assisted_window(
 // Weak FT8 QSO messages
 // below the unassisted limit decode only through the a-priori pass with the right MyCall,
 // DxCall, QSO state and Rx/Tx frequency, and the published record carries the AP type.
+// Proves: TC-004-002
 #[test]
 fn weak_qso_words_decode_only_with_the_right_calls() {
     use QsoProgress::*;
@@ -784,6 +789,7 @@ fn weak_qso_words_decode_only_with_the_right_calls() {
 // Under a wrong DxCall, in every QSO state, and in pure
 // noise under the right one, the a-priori passes never yield a word other than the one on
 // the air, at any level from buried to strong, in FT8 and FT4.
+// Proves: TC-004-002
 #[test]
 fn wrong_dx_call_never_yields_a_false_word() {
     use QsoProgress::*;
@@ -826,6 +832,7 @@ fn wrong_dx_call_never_yields_a_false_word() {
 // FT4 a-priori: a weak CQ below the unassisted limit
 // decodes through type 1 without any QSO context, and a weak HB9BLA K1ABC RR73 through type 6
 // with the right calls only.
+// Proves: TC-004-001
 #[test]
 fn ft4_a_priori_recovers_weak_cq_and_qso_words() {
     use QsoProgress::*;

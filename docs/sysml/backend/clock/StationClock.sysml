@@ -149,7 +149,17 @@ package WstxStationClock {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-043-02'; }
-        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
+        @TestedBy {
+            test = "server/tests/transmit_air_clock.rs::"
+                + "votes_median_and_sides_of_known_dt_distributions; "
+                + "server/tests/transmit_air_clock.rs::"
+                + "observations_exclude_own_echo_weak_and_implausible_decodes; "
+                + "server/tests/transmit_air_clock.rs::"
+                + "crowds_move_the_correction_to_the_middle_and_keep_it; "
+                + "server/tests/transmit_air_clock.rs::"
+                + "system_clock_steps_keep_station_utc_continuous; "
+                + "server/tests/transmit_air_clock.rs::sntp_is_never_applied_and_only_warns";
+        }
     }
 
     verification 'TC-092-001' {
@@ -159,7 +169,9 @@ package WstxStationClock {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-043-01'; verify 'CL-043-03'; }
         @TestedBy {
-            test = "server/tests/transmit_air_clock.rs; "
+            test = "server/tests/transmit_air_clock.rs::"
+                + "votes_median_and_sides_of_known_dt_distributions; "
+                + "server/tests/transmit_air_clock.rs::evidence_rule_of_the_clock_from_the_air; "
                 + "server/src/clock/clock_http_tests.rs::no_clock_source_setting";
         }
     }
@@ -170,7 +182,21 @@ package WstxStationClock {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-009-05'; }
-        @TestedBy { test = "server/tests/transmit/transmit_clock.rs"; }
+        @TestedBy {
+            test = "server/tests/transmit/transmit_clock.rs::"
+                + "offset_and_round_trip_follow_the_rfc_formula; "
+                + "server/tests/transmit/transmit_clock.rs::invalid_replies_are_refused; "
+                + "server/tests/transmit/transmit_clock.rs::"
+                + "servers_are_tried_in_order_until_one_answers; "
+                + "server/tests/transmit/transmit_clock.rs::"
+                + "a_clock_step_during_the_exchange_does_not_distort_the_offset; "
+                + "server/tests/transmit/transmit_clock.rs::"
+                + "clock_state_rule_and_transmit_admission; "
+                + "server/tests/transmit/transmit_clock.rs::"
+                + "monitor_measures_off_the_reading_thread_and_keeps_the_last_answer; "
+                + "server/tests/transmit/transmit_clock.rs::"
+                + "server_override_list_is_comma_separated_and_may_be_empty";
+        }
     }
 
     verification 'TC-092-003' {
@@ -180,7 +206,14 @@ package WstxStationClock {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-043-03'; verify 'CL-009-05'; }
         @TestedBy {
-            test = "server/tests/transmit_air_clock.rs; "
+            test = "server/tests/transmit_air_clock.rs::"
+                + "three_situations_correction_state_and_warnings; "
+                + "server/tests/transmit_air_clock.rs::"
+                + "windows_time_service_state_is_read_without_administrator_rights; "
+                + "server/tests/transmit_air_clock.rs::rounds_record_whether_a_server_was_asked; "
+                + "server/tests/transmit_air_clock.rs::a_view_judges_the_measurement_it_shows; "
+                + "server/tests/transmit_air_clock.rs::a_completed_round_is_read_whole; "
+                + "server/tests/transmit_air_clock.rs::a_view_takes_its_age_once; "
                 + "server/src/clock/clock_http_tests.rs::"
                 + "warnings_windows_time_capture_and_revision; "
                 + "server/src/transmit/transmit_http_tests.rs::"
@@ -194,7 +227,10 @@ package WstxStationClock {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-043-03'; }
-        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
+        @TestedBy {
+            test = "server/tests/transmit_air_clock.rs::"
+                + "applied_correction_converges_without_oscillation";
+        }
     }
 
     verification 'TC-092-002' {
@@ -203,6 +239,8 @@ package WstxStationClock {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-043-03'; verify 'CL-009-05'; }
-        @TestedBy { test = "server/tests/transmit_air_clock.rs"; }
+        @TestedBy {
+            test = "server/tests/transmit_air_clock.rs::replay_of_the_ft4_refusals_of_2026_11_09";
+        }
     }
 }

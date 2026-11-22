@@ -205,6 +205,7 @@ fn live_manager_rotates_unknown_epoch_before_ack_and_rejects_old_stop_results() 
 // Through the real queue, converter and live worker:
 // a WASAPI engine glitch on a continuous device/QPC timeline keeps job, generation and
 // spectrum/decode window; a real unknown loss rotates once and GET /receive names it.
+// Proves: TC-009-004
 #[test]
 fn live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs() {
     let fixture = Fixture::new();
@@ -265,6 +266,7 @@ fn live_worker_keeps_its_job_through_engine_glitches_and_reports_loss_epochs() {
 }
 
 // Resource release precedes terminal publication.
+// Proves: TC-018-003
 #[test]
 fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
     let fixture = Fixture::new();
@@ -296,6 +298,7 @@ fn live_terminal_is_unobservable_until_actual_input_drop_releases() {
 }
 
 // A refused OS worker cannot strand station admission.
+// Proves: TC-018-003
 #[test]
 fn live_worker_spawn_failure_releases_admission_without_reusing_generation() {
     let fixture = Fixture::new();
@@ -319,6 +322,7 @@ fn live_worker_spawn_failure_releases_admission_without_reusing_generation() {
 }
 
 // A failed fresh source identity cannot orphan the old owner.
+// Proves: TC-018-003
 #[test]
 fn live_second_epoch_source_uuid_failure_releases_original_admission() {
     let fixture = Fixture::new();

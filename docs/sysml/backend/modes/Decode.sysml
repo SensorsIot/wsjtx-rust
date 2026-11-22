@@ -72,7 +72,7 @@ package WstxDecode {
                 + "server/tests/modes/decoder_live.rs; "
                 + "server/tests/decoder_signal.rs; "
                 + "server/tests/decoder_vectors.rs; "
-                + "server/src/modes/decoder/history.rs";
+                + "server/src/modes/decoder/history_test.rs";
             covers = "the band limit, the baseband and symbol transforms, the bit metrics, "
                 + "the coarse FT4 search, the subtraction of decoded frames, channel "
                 + "decoding, the SNR measurement, the refinement of a candidate, the retry "
@@ -379,7 +379,9 @@ package WstxDecode {
         @TestedBy {
             test = "server/tests/decoder_signal.rs::"
                 + "busy_period_decode_is_identical_and_faster_on_more_threads; "
-                + "server/src/modes/decoder/parallel_test.rs";
+                + "server/src/modes/decoder/parallel_test.rs::"
+                + "map_keeps_input_order_on_any_thread_count; "
+                + "server/src/modes/decoder/parallel_test.rs::map_stops_when_cancelled";
         }
     }
 }

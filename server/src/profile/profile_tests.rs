@@ -277,7 +277,7 @@ fn exact_nullable_schema_rejects_omission_duplicates_and_unknown_keys() {
     }
 }
 
-// Proves: TC-022-001
+// Proves: TC-022-001, TC-022-011
 #[test]
 fn settings_validation_uses_utf8_bytes_and_independent_audio_control_domains() {
     let mut settings = independent_document().settings();

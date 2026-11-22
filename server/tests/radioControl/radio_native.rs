@@ -55,6 +55,7 @@ fn identity_lease_child_probe() {
         ));
     }
 }
+// Proves: TC-009-003
 #[test]
 fn physical_identity_lease_conflicts_across_processes_and_case_aliases() {
     if std::env::var_os("WSTX_TEST_CAT_LOCK_ROOT").is_some() {

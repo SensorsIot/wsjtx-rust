@@ -657,7 +657,7 @@ fn next_ping(log: &mpsc::Receiver<(u8, Vec<u8>)>) -> (u8, Vec<u8>) {
 // The whole session against a local peer: only the handshake, the
 // two filters and pings on the wire; a target change replaces its subscription; spots reach the
 // model only by their payload; status from connecting through connected to off.
-// Proves: TC-039-020
+// Proves: TC-039-020, TC-039-052
 #[test]
 fn session_against_a_local_peer() {
     let dir = Dir::new();

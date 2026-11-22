@@ -41,7 +41,12 @@ package WstxUdpSender {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-02'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy {
+            test = "server/src/udp/udp_tests.rs::"
+                + "tc_012_004_a_file_saved_with_accept_commands_keeps_loading; "
+                + "server/src/udp/udp_tests.rs::tc_012_004_refusal_order_and_a_failed_write; "
+                + "server/src/udp/udp_tests.rs::tc_012_004_target_configuration_and_persistence";
+        }
     }
 
     requirement 'CL-112-01' {
@@ -67,6 +72,6 @@ package WstxUdpSender {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-01'; }
-        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs::tc_112_001_instance_name"; }
     }
 }

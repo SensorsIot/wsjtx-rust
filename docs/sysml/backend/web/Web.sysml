@@ -23,10 +23,13 @@ package WstxWebPart {
             what = "The start reads the variables of its ListenRule in server/src/main.rs.";
         }
         @DetailTests {
-            tests = "server/src/web/content_coding_tests.rs; tests/radio-selection.test.cjs";
+            tests = "server/src/web/content_coding_tests.rs; tests/radio-selection.test.cjs; "
+                + "server/src/web/liveness_tests.rs";
             covers = "the negotiation of the views' coding against the vectors of RFC 9110, "
                 + "the size bounds of the view answers and the one run of their handler; "
-                + "the 49 Accept-Encoding vectors through the router, their 406 answers among them";
+                + "the 49 Accept-Encoding vectors through the router, their 406 answers among "
+                + "them; the record of each socket the station ends, its heartbeats and its close, "
+                + "on the driven clock";
         }
         item context : WebContext {
             doc /* Its context, as the supervisor last gave it. */ }

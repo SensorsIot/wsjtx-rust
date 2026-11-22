@@ -316,7 +316,7 @@ LOGBOOK = "\n".join([
     "        doc /* The log holds a contact. */",
     "        objective { verify 'CL-001-02'; }",
     "        @Automation { run = AutomationState::implemented; }",
-    '        @TestedBy { test = "tests/clock.test.cjs"; }',
+    '        @TestedBy { test = "tests/clock.test.cjs::first; tests/clock.test.cjs::second TC-001-002"; }',
     "    }",
     "    verification 'TC-002-001' {",
     "        doc /* The operator reads the time. */",
@@ -327,7 +327,8 @@ LOGBOOK = "\n".join([
     "}",
 ]) + "\n"
 CLOCK_PART = ("package WstxClockPart {\n    part def Clock {\n        @ImplementedIn { module = \"server/src/clock/mod.rs; "
-              "server/src/clock/time.rs; server/src/clock/tick.rs\"; }\n    }\n}\n")
+              "server/src/clock/time.rs; server/src/clock/tick.rs\"; }\n"
+              "        @DetailTests { tests = \"tests/clock.test.cjs\"; covers = \"the third tick\"; }\n    }\n}\n")
 LOG_PART = "package WstxLogPart {\n    part def Log {\n        @ImplementedIn { module = \"server/src/log/mod.rs\"; }\n    }\n}\n"
 NODE_CLOCK = "\n".join([
     "const test = require('node:test');",
@@ -351,7 +352,7 @@ TRACED = {
     "server/src/clock/time.rs": "pub fn now() -> u64 {\n    0\n}\n",
     "server/src/clock/tick.rs": "pub fn tick() {}\n",
     "server/src/log/mod.rs": "pub fn log() {}\n",
-    "server/tests/clock.rs": "#[test]\nfn ticks() {}\n",
+    "server/tests/clock.rs": "// Proves: TC-001-001\n#[test]\nfn ticks() {}\n",
     "tests/clock.test.cjs": NODE_CLOCK,
 }
 LISTING = [
@@ -374,7 +375,8 @@ CHANGES = {
     "a bound test renamed": (edit(edit(TRACED, "server/tests/clock.rs", "fn ticks()", "fn ticks_on()"),
                                   CLOCK_KEY, "clock.rs::ticks", "clock.rs::ticks_on"),
                              "TC-001-001 implemented automated verifies CL-001-01 tests rust ticks"),
-    "a Proves tag removed": (edit(TRACED, "tests/clock.test.cjs", "// Proves: TC-001-002\n", ""),
+    "a Proves tag removed": (edit(edit(TRACED, "tests/clock.test.cjs", "// Proves: TC-001-002\n", ""),
+                                  LOG_KEY, "tests/clock.test.cjs::first; ", ""),
                              "TC-001-002 implemented automated verifies CL-001-02 tests node first; node second TC-001-002"),
     "an own link to another file name": (edit(TRACED, CLOCK_KEY, "server/src/clock/time.rs;", "server/src/clock/mod.rs;"),
                                          "CL-001-01 implemented from FR-001 cases TC-001-001 link own tick.rs,time.rs"),
@@ -390,8 +392,9 @@ CHANGES = {
 }
 TR13 = (edit(TRACED, CLOCK_KEY, "ImplementationState::target", "ImplementationState::implemented"),
         "CL-002-01 is delivered and has no code link: backend/clock/StationClock.sysml:7")
-TR14 = ({**TRACED, "server/tests/clock.rs": "#[test]\nfn ticks() {}\n\n// Proves: TC-009-009\n#[test]\nfn other() {}\n"},
-        "Proves tag names an undeclared case: TC-009-009: server/tests/clock.rs:4")
+TR14 = ({**TRACED, "server/tests/clock.rs": "// Proves: TC-001-001\n#[test]\nfn ticks() {}\n\n"
+                                             "// Proves: TC-009-009\n#[test]\nfn other() {}\n"},
+        "Proves tag names an undeclared case: TC-009-009: server/tests/clock.rs:5")
 
 
 class TraceListingTests(unittest.TestCase):
@@ -415,25 +418,30 @@ class TraceListingTests(unittest.TestCase):
         return lines
 
     def test_tv183_trace_listing(self):
-        """TV-183 (TR-23): two FRs, an own link to two modules, a link through a part definition,
-        none on a target clause, a `path::symbol` binding, a whole-file binding named by tag and
-        title and a manual case print exactly their eight lines."""
+        """TV-183 (TR-23): two FRs, three clauses (own link, link through a part definition, none)
+        and three cases (a Rust test bound by name with its tag, two Node tests bound by name and
+        named by tag and by title, manual) print exactly their eight lines; a detail test beside
+        them prints none."""
         self.assertEqual(self.traces(self.base), LISTING)
 
     def test_tv184_move_keeps_the_listing(self):
-        """TV-184 (TR-23): a linked module, a bound test file and a bound test moved, the model's
-        paths updated: the listing is the same."""
+        """TV-184 (TR-23): a linked module, a file of bound tests and a bound test moved, the
+        model's paths updated: the listing is the same."""
         files = moved(TRACED, "server/src/clock/time.rs", "server/src/clock/inner/time.rs")
         files = edit(files, "docs/sysml/backend/clock/Clock.sysml", "server/src/clock/time.rs", "server/src/clock/inner/time.rs")
         files = edit(files, CLOCK_KEY, "server/src/clock/time.rs", "server/src/clock/inner/time.rs")
-        files = edit(moved(files, "tests/clock.test.cjs", "tests/clock/clock.test.cjs"), LOG_KEY,
-                     '"tests/clock.test.cjs"', '"tests/clock/clock.test.cjs"')
+        files = moved(files, "tests/clock.test.cjs", "tests/clock/clock.test.cjs")
+        files = edit(files, LOG_KEY, '"tests/clock.test.cjs::first; tests/clock.test.cjs::second TC-001-002"',
+                     '"tests/clock/clock.test.cjs::first; tests/clock/clock.test.cjs::second TC-001-002"')
+        files = edit(files, "docs/sysml/backend/clock/Clock.sysml", '"tests/clock.test.cjs"', '"tests/clock/clock.test.cjs"')
         files = moved(files, "server/tests/clock.rs", "server/tests/ticks.rs")
         files = edit(files, CLOCK_KEY, "server/tests/clock.rs::ticks", "server/tests/ticks.rs::ticks")
         self.assertEqual(self.traces(self.repository.commit(files, "move")), LISTING)
 
     def test_tv185_each_change_differs(self):
-        """TV-185 (TR-23): each change of a trace, its own commit, leaves a base line out."""
+        """TV-185 (TR-23): each change of a trace (state, verified clause, test name, a `Proves:` tag
+        with its name binding, own link file, part link, FR clauses, automated or manual), its own
+        commit, leaves a base line out."""
         for name, (files, line) in CHANGES.items():
             with self.subTest(name):
                 listing = self.traces(self.repository.commit(files, name))
@@ -506,7 +514,7 @@ class ThisRepositoryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         runs = {"tests HEAD": ("tests", "HEAD"), "traces HEAD": ("traces", "HEAD"), "tests HEAD^": ("tests", "HEAD^"),
-                "traces HEAD^": ("traces", "HEAD^"), "traces": ("traces",)}
+                "traces": ("traces",)}
         with ThreadPoolExecutor(max_workers=3) as pool:
             futures = {name: pool.submit(run, ROOT, *argv) for name, argv in runs.items()}
             cls.results = {name: future.result() for name, future in futures.items()}
@@ -519,7 +527,7 @@ class ThisRepositoryTests(unittest.TestCase):
     def test_tv189_this_repository(self):
         """TV-189 (TR-23): `tests HEAD` lists one `rust` line per test attribute of the source roots
         and `node` lines of every `tests/*.test.cjs`; `traces HEAD` lists every FR, CL and TC of
-        the catalog; both pass at HEAD^."""
+        the catalog; `tests` passes at HEAD^."""
         lines = self.passed("tests HEAD")
         with tempfile.TemporaryDirectory(prefix="sysml-proof-test-") as folder:
             tree = Path(folder)
@@ -544,7 +552,6 @@ class ThisRepositoryTests(unittest.TestCase):
         self.assertEqual([line.split(" ", 1)[0] for line in listing],
                          sorted(entries, key=lambda name: (("FR", "CL", "TC").index(name[:2]), name)))
         self.passed("tests HEAD^")
-        self.passed("traces HEAD^")
 
     def test_tv190_traces_without_a_revision(self):
         """TV-190 (TR-23): `traces` without a revision prints its summary line on this repository."""

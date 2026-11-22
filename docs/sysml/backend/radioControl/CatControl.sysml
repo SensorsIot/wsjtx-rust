@@ -65,7 +65,18 @@ package WstxCatControl {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-04'; }
         @TestedBy {
-            test = "server/tests/radioControl/radio_control.rs; "
+            test = "server/tests/radioControl/radio_control.rs::"
+                + "actor_has_one_io_owner_no_pending_operation_and_bounded_close; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "realtime_bound_actor_has_one_io_owner_no_pending_operation_and_bounded_close; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "actor_constructs_non_send_native_values_inside_its_io_thread; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "civ_frames_match_independently_recorded_icom_bytes; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "setters_need_ack_and_independent_readback_and_preserve_actual_mismatch; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "partial_writes_and_failed_close_keep_truthful_connection_state; "
                 + "server/tests/radioControl/radio_native.rs::"
                 + "physical_identity_lease_conflicts_across_processes_and_case_aliases";
         }
@@ -77,7 +88,16 @@ package WstxCatControl {
         @TestLevel { cost = 4; location = TestLocation::station; }
         @Automation { run = AutomationState::partial; method = "automated"; }
         objective { verify 'CL-008-04'; }
-        @TestedBy { test = "server/tests/radioControl/radio_hardware.rs"; }
+        @TestedBy {
+            test = "server/tests/radioControl/radio_hardware.rs::"
+                + "authorized_ic7300_frequency_query_evidence; "
+                + "server/tests/radioControl/radio_hardware.rs::"
+                + "authorized_ic7300_readonly_inventory_evidence; "
+                + "server/tests/radioControl/radio_hardware.rs::"
+                + "authorized_ic7300_prepare_usb_data; "
+                + "server/tests/radioControl/radio_hardware.rs::"
+                + "authorized_ic7300_restore_lsb_data_off";
+        }
     }
 
     requirement 'CL-008-06' {
@@ -132,10 +152,36 @@ package WstxCatControl {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-008-06'; }
         @TestedBy {
-            test = "server/tests/radioControl/radio_control.rs; "
+            test = "server/tests/radioControl/radio_control.rs::"
+                + "actor_has_one_io_owner_no_pending_operation_and_bounded_close; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "actor_constructs_non_send_native_values_inside_its_io_thread; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "transition_lease_excludes_other_operations_and_polling_until_released; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "actor_rejects_invalid_authority_before_native_factory; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "receive_setup_reads_every_setter_and_checks_final_measured_state; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "configuration_and_catalogue_cannot_admit_raw_or_transmit_operations; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "civ_frames_match_independently_recorded_icom_bytes; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "fragmented_parser_preserves_exact_frame_byte_and_count_limits; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "setters_need_ack_and_independent_readback_and_preserve_actual_mismatch; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "admission_and_cancel_never_publish_stale_data_or_retry_writes; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "auto_baud_is_bounded_connection_discovery_and_does_not_rewrite_intent; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "partial_writes_and_failed_close_keep_truthful_connection_state; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "polling_has_one_cycle_per_second_and_fragmentation_never_renews_deadline; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "an_operation_the_radio_has_not_is_unsupported_and_sends_nothing; "
                 + "server/src/transmit/radio_level_tests.rs::"
-                + "a_transmit_hold_refuses_the_lease_at_once; "
-                + "server/tests/transmit_service.rs::"
+                + "a_transmit_hold_refuses_the_lease_at_once; server/tests/transmit_service.rs::"
                 + "a_keyed_radio_takes_no_exchange_and_a_late_key_sends_nothing; "
                 + "server/src/transmit/radio_level_tests.rs::"
                 + "realtime_bound_a_transmit_hold_refuses_the_lease_at_once";
@@ -181,8 +227,18 @@ package WstxCatControl {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-09'; }
         @TestedBy {
-            test = "server/tests/radioControl/radio_control.rs; "
-                + "server/src/radioControl/executor_tests.rs; "
+            test = "server/tests/radioControl/radio_control.rs::"
+                + "receive_setup_reads_every_setter_and_checks_final_measured_state; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "setters_read_first_and_send_no_write_when_the_value_fits; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "setter_with_a_refused_read_sends_no_write; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "menu_write_reads_first_and_skips_a_fitting_value; "
+                + "server/tests/radioControl/radio_control.rs::"
+                + "a_menu_write_while_the_radio_transmits_is_busy_and_writes_nothing; "
+                + "server/src/radioControl/executor_tests.rs::"
+                + "setter_fact_stays_unconfirmed_from_the_write_until_its_read_back; "
                 + "server/tests/radioControl/radio_hardware.rs::"
                 + "usb_data_prepare_and_restore_have_independent_icom_bytes_and_readbacks";
         }
@@ -194,7 +250,12 @@ package WstxCatControl {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-09'; }
-        @TestedBy { test = "server/src/radioControl/radio_agc_tests.rs"; }
+        @TestedBy {
+            test = "server/src/radioControl/radio_agc_tests.rs::"
+                + "agc_frames_and_replies_follow_the_ic7300_command_table; "
+                + "server/src/radioControl/radio_agc_tests.rs::"
+                + "ensure_agc_reads_first_and_writes_only_a_differing_value_with_readback";
+        }
     }
 
     requirement 'CL-008-09' {

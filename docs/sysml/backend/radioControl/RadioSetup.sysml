@@ -123,8 +123,18 @@ package WstxRadioSetup {
             verify 'CL-044-03';
         }
         @TestedBy {
-            test = "server/src/radioControl/setup_tests.rs; "
-                + "server/src/radioControl/radio_setup_tests.rs";
+            test = "server/src/radioControl/setup_tests.rs::"
+                + "ic7300_answers_broadcast_at_19200_with_echo; "
+                + "server/src/radioControl/setup_tests.rs::"
+                + "ic705_answers_only_addressed_read_at_115200; "
+                + "server/src/radioControl/setup_tests.rs::"
+                + "collisions_and_garbage_before_reply_are_not_replies; "
+                + "server/src/radioControl/setup_tests.rs::"
+                + "silent_and_timing_out_ports_report_no_reply_after_all_rates; "
+                + "server/src/radioControl/setup_tests.rs::unknown_id_is_reported_with_its_id; "
+                + "server/src/radioControl/setup_tests.rs::ic7300_menu_read_and_guidance; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "detection_never_opens_station_port_and_proposes_the_station_radio";
         }
     }
 
@@ -138,8 +148,22 @@ package WstxRadioSetup {
             verify 'CL-044-02';
         }
         @TestedBy {
-            test = "server/src/radioControl/setup_tests.rs; "
-                + "server/src/radioControl/radio_setup_tests.rs";
+            test = "server/src/radioControl/setup_tests.rs::"
+                + "audio_endpoints_match_by_shared_usb_parent; "
+                + "server/src/radioControl/setup_tests.rs::"
+                + "endpoint_id_syntax_and_friendly_name_migration; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "detection_never_opens_station_port_and_proposes_the_station_radio; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "detection_of_an_unconfigured_ic7300_probes_it_and_proposes_it; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "http_detect_and_settings_routes_refuse_like_operating_mutations; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "profile_put_refuses_friendly_names_and_accepts_endpoint_ids; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "startup_migration_replaces_unique_friendly_names_only; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "detect_without_the_keying_confirmation_opens_no_port";
         }
     }
 
@@ -179,7 +203,16 @@ package WstxRadioSetup {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-04'; }
-        @TestedBy { test = "server/src/radioControl/radio_setup_tests.rs"; }
+        @TestedBy {
+            test = "server/src/radioControl/radio_setup_tests.rs::"
+                + "apply_writes_recommended_items_with_undo_record_then_undo_restores; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "apply_refusals_and_failures_stop_without_keying; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "http_detect_and_settings_routes_refuse_like_operating_mutations; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "apply_without_a_ready_connection_is_radio_unavailable";
+        }
     }
 
     requirement 'CL-044-19' {
@@ -283,8 +316,20 @@ package WstxRadioSetup {
             verify 'CL-044-11';
         }
         @TestedBy {
-            test = "server/src/radioControl/radio_agc_tests.rs; "
-                + "server/src/radioControl/radio_setup_tests.rs";
+            test = "server/src/radioControl/radio_agc_tests.rs::"
+                + "connect_applies_the_saved_agc_once_and_pushes_the_read_back; "
+                + "server/src/radioControl/radio_agc_tests.rs::"
+                + "connect_apply_never_writes_while_transmitting_or_armed; "
+                + "server/src/radioControl/radio_agc_tests.rs::"
+                + "ft8_and_ft4_selections_apply_the_agc_inside_the_selection; "
+                + "server/src/radioControl/radio_agc_tests.rs::"
+                + "profile_radio_settings_default_and_validate; "
+                + "server/src/radioControl/radio_agc_tests.rs::"
+                + "profile_put_keeps_saves_and_refuses_radio_settings; "
+                + "server/src/radioControl/radio_agc_tests.rs::"
+                + "without_a_wanted_agc_nothing_is_read_or_set; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "detection_never_opens_station_port_and_proposes_the_station_radio";
         }
     }
 
@@ -333,7 +378,24 @@ package WstxRadioSetup {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-15'; }
         @TestedBy {
-            test = "server/src/radioControl/radio_setup_tests.rs";
+            test = "server/src/radioControl/radio_setup_tests.rs::"
+                + "discovery_keeps_a_saved_radio_that_answers; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "discovery_takes_the_next_free_radio_with_its_audio_when_the_saved_one_is_held; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "discovery_changes_nothing_without_a_free_radio_or_against_a_saved_disabled; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "discovery_sets_up_a_profile_never_saved; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "a_second_station_passes_over_a_radio_the_first_reserved; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "discovery_opens_nothing_until_detect_radio_stored_the_confirmation; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "silent_ports_stay_within_the_budget; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "the_reservation_lock_stays_held_and_is_per_port; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "discovery_opens_nothing_on_a_native_profile_or_an_endpoint_not_taken";
         }
     }
 }

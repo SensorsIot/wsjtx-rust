@@ -149,8 +149,8 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   (`Canonical clause lacks requirement ownership: <CL>`). A clause states `@Status { build }`
   (target, partial, implemented), a case `@Automation { run }` (planned, partial,
   implemented) with an optional `method` (`manual`, `automated`), `@TestedBy { test }` and
-  `verify` of declared clauses. A delivered case names its tests; each test file of a case
-  that is not manual tags or names the case. A value joined by `+` is one value.
+  `verify` of declared clauses. A delivered case names each of its tests as `<file>::<test>`
+  (TR-14). A value joined by `+` is one value.
 - **TR-11 Clauses and cases (M6.1, M6.2, M6.3, M6.5, M6.9, M6.11, M7.1).** Every clause
   and case names its subject; a clause stands in a function file of its part, its subject
   that part's definition, or in an interface file, its subject a definition of that file;
@@ -170,8 +170,20 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   a delivered clause without a code link.
 - **TR-14 Tags (M6.7).** A tag is `// Proves: TC-ddd-ddd`, several joined by `, `, on a
   test (`#[test]`, `#[tokio::test]`, `test(`); anything else is `Invalid Proves tag:
-  <path>:<line>`. It names declared cases only, and each case's binding holds the test, as
-  its file or as `<file>::<test name>` (`Proves tag outside the verification binding: ...`).
+  <path>:<line>`. It names declared cases only, and each case's binding holds the test as
+  `<file>::<test name>` (`Proves tag outside the verification binding: ...`, one message
+  after the other faults). Every test below the source roots (each `#[test]`,
+  `#[tokio::test…]` or JavaScript `test(` line of a `.rs`, `.js` or `.cjs` file) is one of
+  two kinds: a contract test carries the tag of each case it proves (an attached tag, or
+  for a JavaScript test its title naming the case), and each of those cases names it in its
+  `@TestedBy` as `<file>::<test>` (`<test>` the Rust function name or the JavaScript title);
+  a detail test carries no tag, and its file is named in the `@DetailTests` of a part. A
+  file may hold both kinds. Refused, one line each, sorted with the tag faults:
+  `TestedBy binds a whole file: <case>: <path>` (a case of either method);
+  `Bound test lacks the Proves tag of its case: <case>: <path>:<line> <test>`;
+  `Test neither tagged nor a detail test: <path>:<line> <test>`, for a test no case binds.
+  `<line>` is the line of the test's `#[test]`, `#[tokio::test…]` or `test(`. A test whose
+  tag names only undeclared cases gives the tag's line and none of these.
 - **TR-15 Identity history (M6.12).** The main branch is `master`, its history that of
   `git merge-base HEAD master`. An identity whose declaration that history added and which
   the merge base does not declare is not declared again: `Identity declared again: <ID>:
@@ -192,10 +204,9 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
   name's unit, a Real compared at the model's decimals, an enumeration value as its wire
   name), its name is found as an identifier or a word of a string literal in the model's,
   the snake_case or the UpperCamelCase form (a command field by its key), its variable is a
-  string literal; V2, a test bound to a case of a clause reaching it (the test `symbol` of a
-  `path::symbol` binding, or a test of a bound file that names the case by its `Proves:` tag
-  or title) holds in its own code, outside comments, its qualified name, or its definition's
-  qualified name and the feature's name. Its own code is its body and the bodies of the
+  string literal; V2, a test bound to a case of a clause reaching it (the test `symbol` of
+  its `path::symbol` binding) holds in its own code, outside comments, its qualified name,
+  or its definition's qualified name and the feature's name. Its own code is its body and the bodies of the
   functions of its file it calls, directly or through each other. A comment is a Rust `//`,
   `///`, `//!` or block comment, a Node `//` or block comment, or a Python `#` comment or
   docstring. Another test, the file's top level, a comment before the test and a comment
@@ -316,9 +327,7 @@ A command that cannot run exits 2 with `SysML check failed: <message>`.
     the clause's own `@ImplementedIn` modules), `part <part definition name>` or `none`;
     `TC-nnn-nnn <state> <automated|manual> verifies <CL,…> tests <T>`, `<T>` the sorted,
     `; `-joined inventory lines of the tests bound to the case (for `path::symbol` the test
-    `symbol`, for a whole file each of its tests that names the case by its `Proves:` tag
-    or its title) or `-`. On a fault it prints the fault lines and exits 2, with no
-    listing.
+    `symbol`) or `-`. On a fault it prints the fault lines and exits 2, with no listing.
   - They read the revision with git into a temporary folder that is gone when the command
     ends, never a working-tree file, staged or untracked, and write nothing into the
     repository: no checkout, no index change. Without a revision, `check` and `traces`
@@ -446,8 +455,8 @@ run them are those of `harness/project/suites/`.
 | TV-030 | TR-06 | `test_architecture_structure.py` AgentCommandTests.test_agent_entry_command_on_udp_targets_is_refused | AgentCollection admitting udpTargets, which AgentRefusal names, is refused. |
 | TV-031 | TR-06 | `test_architecture_structure.py` AgentCommandTests.test_agent_collection_lacking_wanted_list_is_refused | AgentCollection lacking wantedList, which AgentRefusal does not name, is refused. |
 | TV-032 | TR-06 | `test_architecture_structure.py` AgentCommandTests.test_agent_entry_command_on_every_collection_is_refused | an agent's entry command whose collection is not AgentCollection is refused. |
-| TV-033 | TR-14 | `test_binding_agreement.py` BindingAgreementTests.test_tagged_tests_in_their_bindings_are_accepted | tests in a bound file, tests bound by name, and a manual case's untagged file are accepted. |
-| TV-034 | TR-14 | `test_binding_agreement.py` BindingAgreementTests.test_each_test_or_file_outside_the_binding_is_refused | a tagged test its case's binding lacks, a bound file without a test that names the case, a tag on no test and a bound test name that no test has are each refused. |
+| TV-033 | TR-14 | `test_binding_agreement.py` BindingAgreementTests.test_tagged_tests_in_their_bindings_are_accepted | a test bound by name with its case's tag, a tag of two cases bound by both, a `#[tokio::test(...)]` bound by name with its tag, a JavaScript test bound by its title that names the case, an untagged test in a `@DetailTests` file, and a `@DetailTests` file that also holds a tagged test bound by name are accepted. |
+| TV-034 | TR-14 | `test_binding_agreement.py` BindingAgreementTests.test_each_test_or_file_outside_the_binding_is_refused | a tagged test its case's binding lacks, a tagged test in a file no case binds and a bound test name that no test has are each refused. |
 | TV-035 | TR-01 | `test_canonical_authority.py` AuthorityTests.test_marker_and_no_fsd_make_sysml_the_authority | the marker on the first line of Requirements.sysml and no FSD make SysML the authority. |
 | TV-036 | TR-01 | `test_canonical_authority.py` AuthorityTests.test_each_fault_of_the_authority_is_refused | no marker, two markers, and an FSD with or without the marker are each refused. |
 | TV-037 | TR-01 | `test_canonical_authority.py` AuthorityTests.test_model_file_naming_the_fsd_is_refused | a model file that names the FSD as a source is refused with its key. |
@@ -573,6 +582,9 @@ run them are those of `harness/project/suites/`.
 | TV-157 | TR-20 | `tools/test/rust/tests/model_values.rs` model_values_refuses_every_fixture_fault_naming_name_and_reason | the Rust reader refuses every fault of the fixture list, naming the name and the reason. |
 | TV-158 | TR-20 | `tools/test/node/model-values.test.cjs` model values: every fixture value is read, in LF and CRLF | the JavaScript reader accepts every value of the fixture list. |
 | TV-159 | TR-20 | `tools/test/node/model-values.test.cjs` model values: every fixture fault is refused naming the name and the reason | the JavaScript reader refuses every fault of the fixture list. |
+| TV-160 | TR-14 | `test_binding_agreement.py` BindingAgreementTests.test_bound_test_without_the_tag_of_its_case_is_refused | a test a case binds by name without the case's tag is refused with its one line: a `#[test]` without a tag, a `#[test]` tagged with another case only, a `#[tokio::test(flavor = "current_thread")]` without a tag, a JavaScript test bound by its title without a tag and without the case in its title. |
+| TV-161 | TR-14 | `test_binding_agreement.py` BindingAgreementTests.test_test_neither_tagged_nor_a_detail_test_is_refused | a test no case binds, untagged and outside the `@DetailTests` files, is refused with its one line: an untagged `#[test]`, an untagged JavaScript `test(`, an untagged `#[test]` in a `#[cfg(test)]` module of a product source file, an untagged test beside a tagged test bound by name. |
+| TV-162 | TR-14 | `test_binding_agreement.py` BindingAgreementTests.test_file_binding_is_refused | a `@TestedBy` naming a whole file is refused with its line: a case binding one file, a file and a test name in one value, a manual case binding a file, a bound file whose tests name no case, a bound file whose tag stands on no test (with that tag's line). |
 | TV-163 | TR-22 | `test_comments.py` CommentRuleTest.test_this_repository | `traces` on this repository passes and every exception entry is used. |
 | TV-164 | TR-22 | `test_comments.py` CommentRuleTest.test_accepted | one fixture per syntax with present-tense comments, tags, identities, a licence header, a WSJT-X reference, a URL, `#[test]`, a raw string, a regular expression, a CSS colour, callsigns, a timed test name, strings of product code, a third-party file, a harness workflow and one exception entry of each kind gives no fault. |
 | TV-165 | TR-22 | `test_comments.py` CommentRuleTest.test_pointer_in_each_comment_syntax | `#N` in a comment of each syntax is refused at its line. |
@@ -593,13 +605,13 @@ run them are those of `harness/project/suites/`.
 | TV-180 | TR-23 | `test_code_proof.py` InventoryTests.test_tv180_python_lines | module-level and class-body Python tests give their lines; a nested def, a helper, the model tool's tests, a harness path, a file not named `test_*.py` and an untracked file give none. |
 | TV-181 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv181_working_tree_is_not_read; `test_revision_check.py` RevisionCheckTests.test_tv181_check_does_not_read_the_working_tree | after tests are added and removed, a clause's state edited and an untracked test and model file added, `tests`, `traces` and `check` at the revision print what they printed; the status, the stash list and the temporary folder are unchanged. |
 | TV-182 | TR-23 | `test_code_proof.py` InventoryTests.test_tv182_move_keeps_the_inventory | moving a Rust, a Node and a Python test to other files keeps the inventory; a rename drops the base line, a removal leaves a base line out, a duplicate adds one. |
-| TV-183 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv183_trace_listing | two FRs, three clauses (own link, link through a part definition, none) and three cases (`path::symbol`, whole file by tag and title, manual) print exactly their eight lines. |
-| TV-184 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv184_move_keeps_the_listing | a linked module, a bound test file and a bound test moved, the model's paths updated: the listing is the same. |
-| TV-185 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv185_each_change_differs | each change of a trace (state, verified clause, test name, `Proves:` tag, own link file, part link, FR clauses, automated or manual) leaves a base line out. |
+| TV-183 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv183_trace_listing | two FRs, three clauses (own link, link through a part definition, none) and three cases (a Rust test bound by name with its tag, two Node tests bound by name and named by tag and by title, manual) print exactly their eight lines; a detail test beside them prints none. |
+| TV-184 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv184_move_keeps_the_listing | a linked module, a file of bound tests and a bound test moved, the model's paths updated: the listing is the same. |
+| TV-185 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv185_each_change_differs | each change of a trace (state, verified clause, test name, a `Proves:` tag with its name binding, own link file, part link, FR clauses, automated or manual) leaves a base line out. |
 | TV-186 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv186_trace_faults_at_a_revision | a TR-13 or TR-14 fault at the revision prints its fault line and no listing while the working tree passes; a clean revision passes while the working tree holds the fault. |
 | TV-187 | TR-23 | `test_revision_check.py` RevisionCheckTests.test_tv187_model_check_at_a_revision | `check <rev>` passes on a clean revision while the working tree has a writing-rule fault, fails on the revision with it, and judges an identity declared again against `merge-base <rev> master`. |
 | TV-188 | TR-23 | `test_code_proof.py` TraceListingTests.test_tv188_refusals | an unknown revision is refused by `tests`, `check` and `traces`, `tests` without a revision is refused, and a raw string without its end is a source `tests` cannot read. |
-| TV-189 | TR-23 | `test_code_proof.py` ThisRepositoryTests.test_tv189_this_repository; `test_revision_check.py` RevisionCheckTests.test_tv189_check_head | on this repository `tests HEAD` lists every test attribute and every `tests/*.test.cjs`, `traces HEAD` every FR, CL and TC; both pass at `HEAD^`; `check HEAD` passes. |
+| TV-189 | TR-23 | `test_code_proof.py` ThisRepositoryTests.test_tv189_this_repository; `test_revision_check.py` RevisionCheckTests.test_tv189_check_head | on this repository `tests HEAD` lists every test attribute and every `tests/*.test.cjs`, `traces HEAD` every FR, CL and TC; `tests` passes at `HEAD^`; `check HEAD` passes. |
 | TV-190 | TR-23 | `test_code_proof.py` ThisRepositoryTests.test_tv190_traces_without_a_revision; `test_real_model_structure.py` RealModelStructureTests.test_check_on_this_tree_passes_every_model_rule (TV-113) | `traces` and `check` without a revision print their summary lines on this repository. |
 | TV-191 | TR-02 | `test_sysml.py` ValidatorRunTests.test_limit_is_600_seconds | the Pilot run is started with a time limit of 600 s. |
 | TV-192 | TR-02 | `test_sysml.py` ValidatorRunTests.test_command_line_and_pass_unchanged | the Pilot's command line is unchanged, and stdout and the exit code are the process's pass. |
@@ -626,11 +638,11 @@ run them are those of `harness/project/suites/`.
 | TV-213 | TR-21 | `test_equivalence.py` SyntheticEquivalenceTests.test_n6_whole_name_not_joined | N6: a literal that is a whole qualified name is not joined to a prefix. |
 | TV-214 | TR-21 | `test_equivalence.py` ReaderRecognitionTests.test_r_lookup_readers_of_this_repository | R-lookup: the composed names of the profile tests are lookup citations that resolve on HEAD by declaration, and HEAD against itself has no stale citation. |
 | TV-215 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_test_by_symbol_holding_the_name_in_a_string_is_accepted | a test bound by `path::symbol` whose Rust body holds the qualified name in a string literal verifies the value. |
-| TV-216 | TR-16 | `test_values.py` BoundTestCodeTest.test_node_test_named_by_its_title_is_accepted | in a bound Node file, the test that names the case by its title and holds the qualified name in its callback verifies the value. |
-| TV-217 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_test_named_by_proves_with_definition_and_feature_is_accepted | in a bound Rust file, the test its `Proves:` tag names, holding the definition's qualified name and the feature's name in its body's code, verifies the value. |
+| TV-216 | TR-16 | `test_values.py` BoundTestCodeTest.test_node_test_named_by_its_title_is_accepted | a Node test bound by its title, which names the case, holding the qualified name in its callback verifies the value. |
+| TV-217 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_test_named_by_proves_with_definition_and_feature_is_accepted | a Rust test bound by name and tagged with `Proves:`, holding the definition's qualified name and the feature's name in its body's code, verifies the value. |
 | TV-218 | TR-16 | `test_values.py` BoundTestCodeTest.test_name_in_a_helper_two_calls_away_is_accepted | the qualified name in a function of the file that the bound test calls through a second function verifies the value. |
 | TV-219 | TR-16 | `test_values.py` BoundTestCodeTest.test_definition_in_a_node_arrow_helper_and_feature_in_the_test_is_accepted | the definition's qualified name in a Node arrow function the bound test calls and the feature's name in the test's callback verify the value. |
-| TV-220 | TR-16 | `test_values.py` BoundTestCodeTest.test_python_test_method_is_accepted | a Python test method bound by `path::Class.test_x` or named by its `Proves:` tag, holding the qualified name, verifies the value, also after line separators in an earlier string. |
+| TV-220 | TR-16 | `test_values.py` BoundTestCodeTest.test_python_test_method_is_accepted | a Python test method bound by `path::Class.test_x`, with or without its `Proves:` tag, holding the qualified name, verifies the value, also after line separators in an earlier string. |
 | TV-221 | TR-16 | `test_values.py` BoundTestCodeTest.test_helpers_calling_each_other_end_and_are_accepted | two functions that call each other, one called by the bound test: the check ends and the qualified name in either verifies the value. |
 | TV-222 | TR-16 | `test_values.py` BoundTestCodeTest.test_comment_marks_inside_a_string_are_code | the qualified name in a string literal holding `//` or `/*` before it, in Rust, Node and Python, verifies the value. |
 | TV-223 | TR-16 | `test_values.py` BoundTestCodeTest.test_raw_and_template_strings_are_code | the qualified name in a Rust raw string and in a Node template literal verifies the value. |
@@ -641,8 +653,8 @@ run them are those of `harness/project/suites/`.
 | TV-228 | TR-16 | `test_values.py` BoundTestCodeTest.test_name_in_a_comment_before_the_test_is_refused | the qualified name only in a comment between the `Proves:` tag and the test verifies nothing. |
 | TV-229 | TR-16 | `test_values.py` BoundTestCodeTest.test_helper_only_another_test_calls_is_refused | the qualified name in a function that only an unbound test calls verifies nothing. |
 | TV-230 | TR-16 | `test_values.py` BoundTestCodeTest.test_two_parts_in_two_tests_are_refused | the definition's qualified name in another test and the feature's name in the bound test verify nothing. |
-| TV-231 | TR-16 | `test_values.py` BoundTestCodeTest.test_whole_file_name_in_a_test_not_naming_the_case_is_refused | in a bound file, the qualified name in a test that does not name the case, while the test that names it does not hold it, verifies nothing. |
-| TV-232 | TR-16 | `test_values.py` BoundTestCodeTest.test_whole_file_without_a_test_naming_the_case_is_refused | a bound file in which no test names the case verifies nothing, though it holds the qualified name. |
+| TV-231 | TR-16 | `test_values.py` BoundTestCodeTest.test_name_in_an_untagged_test_beside_the_bound_test_is_refused | the qualified name in an untagged test of the file, while the test bound by name (tagged in Rust, named by its title in Node) does not hold it, verifies nothing. |
+| TV-232 | TR-16 | `test_values.py` BoundTestCodeTest.test_binding_naming_no_test_of_the_file_is_refused | a name binding that names no test of its file verifies nothing, though another test of the file holds the qualified name. |
 | TV-233 | TR-16 | `test_values.py` BoundTestCodeTest.test_unreadable_bound_file_is_not_verified | a bound file that is no UTF-8, or holds a raw string without its end, verifies nothing and raises no exception. |
 | TV-234 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_line_comment_in_the_test_is_refused | the qualified name only in a Rust `//` comment in the bound test verifies nothing. |
 | TV-235 | TR-16 | `test_values.py` BoundTestCodeTest.test_rust_doc_comment_in_the_test_is_refused | the qualified name only in a Rust `///` or `//!` comment in the bound test verifies nothing. |
@@ -654,7 +666,6 @@ run them are those of `harness/project/suites/`.
 | TV-241 | TR-16 | `test_values.py` BoundTestCodeTest.test_comment_in_a_called_helper_is_refused | the qualified name only in a comment of a function the bound test calls, in Rust and in a Node arrow function, verifies nothing. |
 | TV-242 | TR-16 | `test_values.py` BoundTestCodeTest.test_second_form_with_one_part_in_a_comment_is_refused | the definition's qualified name in code and the feature's name only in a comment, or the other way round, verify nothing. |
 | TV-243 | TR-16 | `test_values.py` BoundTestCodeTest.test_variable_in_the_bound_test_is_still_not_verified | a `WSTX_*` variable whose name stands only in the code of a bound test of a clause reaching it is not verified. |
-| TV-244 | TR-23 | `test_values.py` PythonNamingTest.test_python_tests_named_by_proves_are_bound | in a bound Python file, a test method or a module-level test whose attached `Proves:` tag names the case is a bound test, named as `python_tests` lists it, `<Class>.<name>` or `<name>`, also after a string whose lines start at column 0 and after a form feed or line separator in a comment or string; a `def test_…` inside a function, a test of a class inside a function and a test the tag does not name are not. |
 | TV-245 | TR-24 | `test_product_knows_no_test.py` AcceptedTests.test_tv245_accepted_forms | test-file declarations, forms in comments and strings, product variables, `debug_assert!`, forms in test, tool and fixture files and client globals and members read in another client file print nothing, with and without `--lines`, exit 0. |
 | TV-246 | TR-24 | `test_product_knows_no_test.py` TestPredicateTests.test_tv246_test_predicates | each test predicate added to a passing product file lists exactly that file; a test file declared without a test predicate is `test file declared`. |
 | TV-247 | TR-24 | `test_product_knows_no_test.py` BuildProfileTests.test_tv247_build_profile_branches | each predicate naming `debug_assertions` is listed alone. |

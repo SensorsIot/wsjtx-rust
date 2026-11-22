@@ -65,8 +65,26 @@ package WstxEndpoints {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-07'; }
         @TestedBy {
-            test = "server/src/radioControl/setup_tests.rs; "
-                + "server/src/radioControl/radio_setup_tests.rs";
+            test = "server/src/radioControl/setup_tests.rs::"
+                + "endpoint_choices_show_names_suffixes_radio_and_missing; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "audio_endpoints_list_names_remember_saved_names_and_name_the_receive_input; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "a_list_longer_than_max_endpoints_is_refused_device_limit; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "an_empty_endpoint_id_is_refused_device_limit; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "an_empty_endpoint_name_is_refused_device_limit; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "an_endpoint_id_longer_than_max_text_bytes_is_refused_device_limit; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "an_endpoint_name_longer_than_max_text_bytes_is_refused_device_limit; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "both_flows_at_max_endpoints_are_listed; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "endpoint_text_limits_count_utf8_bytes; "
+                + "server/src/radioControl/radio_setup_tests.rs::"
+                + "the_name_limit_holds_the_folded_name";
         }
     }
 }

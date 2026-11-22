@@ -802,7 +802,7 @@ async fn put(f: &Mcp, revision: Value, configuration: Value) -> crate::mcp_tests
     .await
 }
 
-// Proves: TC-039-003
+// Proves: TC-039-003, TC-063-007
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_003_store_routes_and_evaluate() {
     let f = station(true).await;
@@ -988,7 +988,7 @@ async fn tc_039_003_store_routes_and_evaluate() {
 }
 
 // The expected table is written here from the contract.
-// Proves: TC-039-032
+// Proves: TC-039-032, TC-097-001
 #[test]
 fn tc_039_032_the_builtin_table_and_what_a_configuration_may_say() {
     // The table itself is TC-097-003; this case holds the refusal, read-only and copy steps.
@@ -1022,7 +1022,7 @@ fn tc_039_032_the_builtin_table_and_what_a_configuration_may_say() {
     assert!(with(Value::Null, json!([strategy_json("New DXCC copy")])).is_ok());
 }
 
-// Proves: TC-039-032
+// Proves: TC-039-032, TC-097-002
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_032_a_builtin_is_selected_like_any_strategy_and_never_stored() {
     let f = station(true).await;
@@ -2496,6 +2496,7 @@ async fn tc_039_004_a_double_click_is_a_manual_intervention_and_the_strategy_res
     assert_eq!(contact(&f).await.0, json!("G4ABC"));
 }
 
+// Proves: TC-039-053
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_039_002_a_selection_of_a_cq_not_for_me_is_a_warning_only_the_browser_confirms() {
     let f = station(true).await;
@@ -4391,6 +4392,7 @@ fn tc_063_004_the_directive_table_in_a_contest_activity() {
     assert_eq!((contest[0].rank, contest[0].grey), (Some(0), false));
 }
 
+// Proves: TC-039-053
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_063_004_a_selection_of_the_activitys_cq_needs_no_confirmation() {
     let f = station(true).await;
@@ -4446,6 +4448,7 @@ async fn a_reply_to_a_cq_not_for_the_station_needs_the_confirmation() {
 
 // In eu_vhf a CQ TEST is the activity's own word: the
 // operator's selection needs no directive_confirmed.
+// Proves: TC-039-053
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_099_002_cq_test_needs_no_confirmation_in_eu_vhf() {
     let f = station(true).await;
@@ -4501,7 +4504,7 @@ async fn tc_063_003_the_contests_route() {
     );
 }
 
-// Proves: TC-063-007
+// Proves: TC-063-007, TC-063-006
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tc_063_007_a_contest_selection_store_and_evaluation() {
     let f = station(true).await;

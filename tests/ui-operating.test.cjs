@@ -1390,7 +1390,7 @@ async function waterfallMappingPass(page,commands,settings,label){
   {const b=(await brackets())[0],n=commands.length;await page.mouse.click((b.left+b.right)/2,b.top+b.height/2);const c=await wait(n+1);
     assert.equal(c.rx_hz,null);assert.ok(Math.abs(c.tx_hz-(b.hz+25))<=Math.max(2,3000/wf.width),`${label}: click in the Rx bracket sent Tx ${c.tx_hz}`);await confirm(settings.rx_hz,c.tx_hz);}
 }
-test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency mapping; the brackets follow the mode',{timeout:150000},async t=>{
+test('TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency mapping, the brackets follow the mode',{timeout:150000},async t=>{
   for(const scale of [1,2]){
     const commands=[],settings={rx_hz:1500,tx_hz:1200,hold_tx:false};
     const {page,errors}=await fixture(t,{width:1366,height:768},{deviceScaleFactor:scale,beforeNavigate:async(p,app)=>{
@@ -1584,7 +1584,7 @@ test('TC-082-004 open slot marks always on the waterfall',{timeout:180000},async
 
 // QSO pane, double-click to call, Band Activity history and menu.
 // Proves: TC-050-001
-test('QSO pane buttons and a double-click start transmission; Band Activity keeps period history',{timeout:45000},async t=>{
+test('QSO pane buttons and a double-click start transmission, Band Activity keeps period history',{timeout:45000},async t=>{
   let state,contact=null,records=[];const commands=[],period=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
   const standard=(from,to='CQ')=>({type:'standard',to:{kind:to==='CQ'?'token':'call',text:to,hash_bits:null,hash_value:null},from:{kind:'call',text:from,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}});
   const record=(sequence,text,from,hz,p,to='CQ')=>({sequence,start_frame:6000,frequency_hz:hz,snr_db:-10,dt_seconds:0.1,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields:standard(from,to),period_start_utc:p});
@@ -2462,7 +2462,7 @@ test('TC-055-007 Band Activity rows are dense and keep the font size',{timeout:3
 // receive pages (with the flags and the worked_status a station derives from its log,
 // CL-055-04) are routed fixtures; the colours are the served client's CSS.
 // Proves: TC-050-002
-test('TC-050-002 a CQ from a station worked on this band and mode has no colour; My call still applies',{timeout:30000},async t=>{
+test('TC-050-002 a CQ from a station worked on this band and mode has no colour, My call still applies',{timeout:30000},async t=>{
  let state;const queries=[];
  const period='2026-10-27T12:00:15.0000000Z';
  const statuses={K1AA:'worked_this_band_and_mode',K2BB:'worked_other_band_or_mode',K3CC:'not_worked'};
@@ -2494,7 +2494,7 @@ test('TC-050-002 a CQ from a station worked on this band and mode has no colour;
 // Browser subset. The receive snapshot, its result pages and
 // the receive.state events are fixtures; what the browser holds and which reads it makes are the served client's.
 // Proves: TC-007-005
-test('TC-007-005 receive.state carries the job and the audio; only a new state, a refused event or a failed read reads GET /receive',{timeout:40000},async t=>{
+test('TC-007-005 receive.state carries the job and the audio, only a new state, a refused event or a failed read reads GET /receive',{timeout:40000},async t=>{
   const period='2026-11-06T10:55:30.0000000Z',decode=n=>({id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:false});
   const record=(sequence,call)=>({sequence,start_frame:1000+sequence,frequency_hz:1000+sequence*100,snr_db:-5,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text:`CQ ${call} FN42`,fields:{type:'standard',to:{kind:'token',text:'CQ',hash_bits:null,hash_value:null},from:{kind:'call',text:call,hash_bits:null,hash_value:null},ack:false,exchange:{kind:'grid',value:'FN42'}},period_start_utc:period,dt_seconds:0.1});
   const records=[record(0,'K1ABC'),record(1,'W1XYZ')];
@@ -4239,7 +4239,7 @@ test('an open page reloads after the station restarts with another client build 
 });
 // An update held by a QSO, a rejected snapshot and the reload chip.
 // Proves: TC-051-002
-test('TC-051-002 mid-QSO the update shows a reload chip; a rejected snapshot shows an error chip instead of a frozen screen',{timeout:60000},async t=>{
+test('TC-051-002 mid-QSO the update shows a reload chip, a rejected snapshot shows an error chip instead of a frozen screen',{timeout:60000},async t=>{
   let contact=partner('calling'),reject=false,receiving,booted=Promise.resolve();const bad={selection:false,results:false};
   // Every station read of the test is bounded below the page's 10 s and fails the test by name.
   const failed=deferred(),readFailed=failed.promise.then(e=>{throw e;}),checked=p=>Promise.race([p,readFailed]);readFailed.catch(()=>{});
@@ -4363,7 +4363,7 @@ test('TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten
 });
 // The browser part: only real gaps are grey.
 // Proves: TC-054-001
-test('TC-054-001 one or two live Thin rows the station paced out are held; only a longer run is a gap',{timeout:60000},async t=>{
+test('TC-054-001 one or two live Thin rows the station paced out are held, only a longer run is a gap',{timeout:60000},async t=>{
   const {page,errors}=await liveDisplayFixture(t);
   await chooseDisplay(page,'thin');
   const row=q=>Array.from({length:128},()=>q);
@@ -4560,7 +4560,7 @@ test('TC-099-003 the EU VHF choice in the QSO fold-out',{timeout:40000},async t=
 
 // Scripted receive identities, periods and waterfall rows (presentation fixtures, never modem truth).
 // Proves: TC-061-001
-test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity; a Stop/Start clears them',{timeout:45000},async t=>{
+test('TC-061-001 an audio loss epoch keeps the waterfall and Band Activity, a Stop/Start clears them',{timeout:45000},async t=>{
   let state,records=[];const reads=[];
   const periods=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z','2026-10-27T12:00:30.0000000Z'];
   const makeRecord=(sequence,period)=>({sequence,start_frame:186000+sequence,frequency_hz:1000+sequence,snr_db:-12,payload77:'0'.repeat(77),i3:0,n3:0,status:'decoded',text:`EPOCH FIXTURE ${sequence}`,fields:{},period_start_utc:period,dt_seconds:0.1});

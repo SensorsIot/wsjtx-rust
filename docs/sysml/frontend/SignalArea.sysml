@@ -198,8 +198,13 @@ package WstxSignalArea {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-08'; }
         @TestedBy {
-            test = "tests/recording.test.cjs; "
-                + "tests/ui-operating.test.cjs::"
+            test = "tests/recording.test.cjs::"
+                + "TC-010-003 late recording asset bootstraps an already connected station once; "
+                + "tests/recording.test.cjs::"
+                + "TC-010-003 calibrated real spectrum, source rows and accessible splitter; "
+                + "tests/recording.test.cjs::"
+                + "TC-010-002 a failed read after an announcement repairs itself on the "
+                + "reconnect; tests/ui-operating.test.cjs::"
                 + "pointer resize and stale link preserve read-only authority";
         }
     }
@@ -209,7 +214,10 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-006-08'; }
-        @TestedBy { test = "tests/recording.test.cjs"; }
+        @TestedBy {
+            test = "tests/recording.test.cjs::"
+                + "TC-010-007 waterfall moves at fixed source-time speed and exits the bottom";
+        }
     }
     verification 'TC-010-006' {
         doc /* The colours of known levels under each Sensitivity, Range and Speed. */
@@ -217,7 +225,15 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-054-02'; }
-        @TestedBy { test = "tests/recording.test.cjs"; }
+        @TestedBy {
+            test = "tests/recording.test.cjs::"
+                + "TC-010-006 exact strong red and no-signal navy palette; "
+                + "tests/recording.test.cjs::"
+                + "TC-010-006 complete canvas, speed projection, gaps and geometry; "
+                + "tests/recording.test.cjs::"
+                + "TC-010-006 live sensitivity and speed sliders preserve original data and "
+                + "reset semantics";
+        }
     }
     verification 'TC-054-002' {
         doc /* The fixed mapping, Zero and Gain, Flatten and the spectrum line. */
@@ -225,7 +241,11 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-054-02'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-054-002 fixed dBFS colours, Sensitivity as Zero, Range as Gain, Flatten "
+                + "and the spectrum line option";
+        }
     }
     verification 'TC-054-001' {
         doc /* Detailed rows in order after a stall; gaps only for real gaps. */
@@ -233,7 +253,14 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-054-01'; }
-        @TestedBy { test = "server/src/web/listener_tests.rs; tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "server/src/web/listener_tests.rs::"
+                + "detailed_rows_after_a_stall_are_sent_in_order_with_bounded_catch_up; "
+                + "server/src/web/listener_tests.rs::"
+                + "thin_sends_are_anchored_to_the_previous_deadline; tests/ui-operating.test.cjs::"
+                + "TC-054-001 one or two live Thin rows the station paced out are held, only a "
+                + "longer run is a gap";
+        }
     }
     verification 'TC-061-008' {
         doc /* A transmitted period is a thin band, and the ruler stays true. */
@@ -241,7 +268,11 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-061-05'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-061-008 a Tx period is a thin band, the time axis stays exact and nothing "
+                + "turns pale";
+        }
     }
     verification 'TC-061-006' {
         doc /* Transmitted rows, and the level warnings of receive periods only. */
@@ -249,7 +280,11 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-061-05'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-061-006 Tx rows are painted as Tx and level warnings show for receive "
+                + "periods only";
+        }
     }
     verification 'TC-050-001' {
         doc /* The pointer, the lines and a double-click on a row. */
@@ -257,7 +292,15 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-01'; }
-        @TestedBy { test = "tests/contact.test.cjs; tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/contact.test.cjs::"
+                + "TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx, 3 "
+                + "px lines and numeric inputs; tests/ui-operating.test.cjs::"
+                + "agreed workspace has the top bar, waterfall with Rx/Tx strip, Band Activity "
+                + "and the QSO pane with truthful state; tests/ui-operating.test.cjs::"
+                + "QSO pane buttons and a double-click start transmission, Band Activity keeps "
+                + "period history";
+        }
     }
     verification 'TC-010-008' {
         doc /* The pointer in the waterfall and the offsets of the strip. */
@@ -265,7 +308,11 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-01'; }
-        @TestedBy { test = "tests/contact.test.cjs"; }
+        @TestedBy {
+            test = "tests/contact.test.cjs::"
+                + "TC-010-008 TC-050-001 waterfall click sets Tx, double-click sets Rx and Tx, 3 "
+                + "px lines and numeric inputs";
+        }
     }
     verification 'TC-050-007' {
         doc /* The pointer, the lines and the ruler on one scale; the brackets. */
@@ -273,7 +320,11 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-050-07'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-050-007 the waterfall pointer, Rx/Tx lines and axis share one frequency "
+                + "mapping, the brackets follow the mode";
+        }
     }
     verification 'TC-068-001' {
         doc /* The SWR at the end of the strip. */
@@ -281,7 +332,9 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-068-01'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::TC-068-001 SWR at the end of the Rx/Tx strip";
+        }
     }
     verification 'TC-082-004' {
         doc /* The open slot marks always above the waterfall. */
@@ -289,6 +342,9 @@ package WstxSignalArea {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-065-02'; }
-        @TestedBy { test = "tests/ui-operating.test.cjs"; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-082-004 open slot marks always on the waterfall";
+        }
     }
 }

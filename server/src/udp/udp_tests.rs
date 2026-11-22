@@ -2222,7 +2222,7 @@ async fn tc_112_005_qso_logged_exchanges() {
 
 // The exit guard: the transmit release first within its bound,
 // then one Close under the instance name to each active target that selects close.
-// Proves: TC-112-006
+// Proves: TC-112-006, TC-008-005
 // Timing: display
 #[tokio::test(flavor = "multi_thread")]
 async fn tc_112_006_close_at_shutdown() {

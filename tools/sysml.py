@@ -231,17 +231,13 @@ def source_binding(identifier: str, binding: str, root: Path, manual: bool = Fal
         raise ValueError(f"Missing or out-of-scope implementation/test binding: {identifier}: {binding}")
     if path.parts[0] not in SOURCE_BINDING_ROOTS:
         raise ValueError(f"Binding outside declared source inputs: {identifier}: {binding}; update HOW input coverage before admitting a new root")
-    if not identifier.startswith("TC-") or (manual and not separator):
+    if not identifier.startswith("TC-") or not separator:
         return True
     source = resolved.read_text(encoding="utf-8")
     # The symbol of a `path::symbol` binding must exist, for a manual case too.
-    if separator:
-        if not symbol or not re.search(r"\bfn\s+" + re.escape(symbol) + r"\s*\(|\btest\s*\(\s*['\"]" + re.escape(symbol) + r"['\"]", source):
-            raise ValueError(f"Missing executable test symbol: {identifier}: {binding}")
-        return True
-    else:
-        named = re.search(r"\btest\s*\(\s*['\"][^'\"\r\n]*\b" + re.escape(identifier) + r"\b", source)
-        return identifier in source_proves(" ".join(attached_proves(source))) or bool(named)
+    if not symbol or not re.search(r"\bfn\s+" + re.escape(symbol) + r"\s*\(|\btest\s*\(\s*['\"]" + re.escape(symbol) + r"['\"]", source):
+        raise ValueError(f"Missing executable test symbol: {identifier}: {binding}")
+    return True
 
 
 PROVES_TAG = re.compile(r"^\s*(?://|#)\s*Proves:([^\r\n]+)")
@@ -252,57 +248,94 @@ ATTACHED_TEST = re.compile(r"\s*(?:#\[(?:tokio::)?test\b|test\s*\(|(?:async\s+)?
 SKIPPED_LINE = re.compile(r"\s*(?://|#(?!\[)|#\[(?!(?:tokio::)?test\b)|@)")
 
 
-def attached_proves(source: str) -> list[str]:
-    lines = source.splitlines()
-    tags = []
-    for index, line in enumerate(lines):
-        if not (tag := PROVES_TAG.match(line)):
-            continue
-        following = (code for code in lines[index + 1:] if not SKIPPED_LINE.match(code))
-        if ATTACHED_TEST.match(next(following, "")):
-            tags.append(tag[1])
-    return tags
-
-
 RUST_TEST_FN = re.compile(r"\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)")
 JS_TEST_NAME = re.compile(r"\s*test\s*\(\s*(['\"])((?:\\.|(?!\1)[^\r\n])*)\1")
 
-
-PYTHON_TEST_DEF = re.compile(r"\s*(?:async\s+)?def\s+test_\w+")
+# A test of the two kinds of TR-14: a Rust `#[test]` or `#[tokio::test…]`, or a JavaScript `test(`.
+RUST_OR_JS_TEST = re.compile(r"\s*(?:#\[(?:tokio::)?test\b|test\s*\()")
 
 
 def naming_tests(source: str) -> list[tuple[str, set[str]]]:
     """(test name, case identities) of every test of `source` that names a case: by the
-    `Proves:` tag attached to it (as `attached_proves` reads it, shorthand expanded) or, for
-    a JavaScript test, by its name. A Rust test is named by its function, a Python test as
-    `python_tests` names it. Lines are counted at newlines only, as the ast counts them."""
+    `Proves:` tag attached to it (shorthand expanded) or, for a JavaScript test, by its
+    name. A Rust test is named by its function. Lines are counted at newlines only."""
+    return [(name, cases) for _line, name, tagged, cases in source_tests(source) if name is not None and cases]
+
+
+def source_tests(source: str) -> list[tuple[int, str | None, bool, set[str]]]:
+    """(line, name, tagged, case identities) of every test of `source`, in source order: each
+    line `ATTACHED_TEST` matches as a Rust `#[test]` or `#[tokio::test…]` or a JavaScript
+    `test(`, its 1-based line counted at newlines. A Rust test is named by its function, a
+    JavaScript test by its title (None when neither is read). `tagged` holds when a `Proves:`
+    tag is attached to it or, a JavaScript test, its title names a case; the cases are the
+    `TC-` identities of its tags (shorthand expanded) and of a JavaScript title."""
     lines = source.split("\n")
-    named = {}
+    tags = {}
     for index, line in enumerate(lines):
         if tag := PROVES_TAG.match(line):
             following = ((number, code) for number, code in enumerate(lines[index + 1:], index + 1)
                          if not SKIPPED_LINE.match(code))
             test, code = next(following, (None, ""))
             if ATTACHED_TEST.match(code):
-                named.setdefault(test, set()).update(ref for ref in source_proves(tag[1]) if ref.startswith("TC-"))
-        elif script := JS_TEST_NAME.match(line):
-            named.setdefault(index, set()).update(re.findall(r"\bTC-\d{3}-\d{3}\b", script[2]))
-    found, python = [], None
-    for test, cases in sorted(named.items()):
-        if script := JS_TEST_NAME.match(lines[test]):
+                tags.setdefault(test, set()).update(ref for ref in source_proves(tag[1]) if ref.startswith("TC-"))
+    found = []
+    for index, line in enumerate(lines):
+        if not RUST_OR_JS_TEST.match(line):
+            continue
+        cases = set(tags.get(index, ()))
+        if script := JS_TEST_NAME.match(line):
             name = re.sub(r"\\(.)", r"\1", script[2])
-        elif PYTHON_TEST_DEF.match(lines[test]):
-            if python is None:
-                try:
-                    python = python_test_lines(ast.parse(source))
-                except (SyntaxError, ValueError):
-                    python = {}
-            name = python.get(test + 1)
+            titled = set(re.findall(r"\bTC-\d{3}-\d{3}\b", script[2]))
+            cases |= titled
         else:
-            name = next((function[1] for code in lines[test:test + 12] if (function := RUST_TEST_FN.match(code))), None)
-        if name is not None and cases:
-            found.append((name, cases))
+            titled = set()
+            name = None
+            if not line.lstrip().startswith("test"):
+                name = next((function[1] for code in lines[index:index + 12] if (function := RUST_TEST_FN.match(code))), None)
+        found.append((index + 1, name, index in tags or bool(titled), cases))
     return found
+
+
+def detail_files(directory: Path) -> set[str]:
+    """The files the `@DetailTests` of the model below `directory` name, by repository path."""
+    named = set()
+    for path in model_files(directory).values():
+        clean = without_comments(path.read_text(encoding="utf-8"))
+        for _offset, pairs in annotations(clean, blanked(clean), "DetailTests"):
+            for feature, value in pairs:
+                if feature == "tests" and (text := string_literal(value)):
+                    named.update(binding.strip() for binding in text.split(";") if binding.strip())
+    return named
+
+
+def contract_faults(entries: dict[str, dict], directory: Path, root: Path) -> list[str]:
+    """TR-14: every test below the source roots is a contract test, tagged with each case that
+    binds it by `path::test`, or an untagged detail test in a file a `@DetailTests` names; a
+    `@TestedBy` names tests only. One line per fault, sorted. A test whose tag names only
+    undeclared cases gives the TR-14 tag line of `tag_faults` and none of these."""
+    faults, bound = [], {}
+    for case, entry in entries.items():
+        if entry["kind"] != "verification":
+            continue
+        for binding in entry["bindings"]:
+            path, separator, symbol = binding.partition("::")
+            if not binding:
+                continue
+            if not separator:
+                faults.append(f"TestedBy binds a whole file: {case}: {path}")
+            else:
+                bound.setdefault((path, symbol), set()).add(case)
+    detail = detail_files(directory)
+    for key, path in source_files(root):
+        for line, name, tagged, cases in source_tests(path.read_text(encoding="utf-8")):
+            if cases and not any(entries.get(ref, {}).get("kind") == "verification" for ref in cases):
+                continue
+            binding = bound.get((key, name), set())
+            for case in sorted(binding - cases):
+                faults.append(f"Bound test lacks the Proves tag of its case: {case}: {key}:{line} {name}")
+            if not binding and not tagged and key not in detail:
+                faults.append(f"Test neither tagged nor a detail test: {key}:{line} {name}")
+    return sorted(faults)
 
 
 def binding_agreement(entries: dict[str, dict], root: Path) -> None:
@@ -504,9 +537,8 @@ def canonical_catalog(directory: Path, root: Path) -> dict[str, dict]:
             if kind == "verification":
                 if states[0] in {"partial", "implemented"} and not any(paths):
                     raise ValueError("Delivered declaration lacks implementation/test binding: " + identifier)
-                matched = [source_binding(identifier, binding, root, manual=methods == ["manual"]) for binding in paths]
-                if unbound := [binding for binding, bound in zip(paths, matched) if not bound]:
-                    raise ValueError(f"No Proves tag or named-test identity for {identifier}: {'; '.join(unbound)}")
+                for binding in paths:
+                    source_binding(identifier, binding, root, manual=methods == ["manual"])
             else:
                 for binding in paths:
                     source_binding(identifier, binding, root, manual=True)
@@ -4375,12 +4407,12 @@ def revision_tree(revision: str | None):
 
 
 def checked_entries(tree: Tree | None = None) -> dict:
-    """The authority, the catalog, the tags and the tag bindings, as `traces` and `check`
-    begin; on the working tree without `tree`."""
+    """The authority, the catalog, the tags with the kinds of the tests, and the tag
+    bindings, as `traces` and `check` begin; on the working tree without `tree`."""
     tree = tree or Tree(ROOT, MODELS, FSD, ORACLE, None)
     authority(tree.models, tree.fsd)
     entries = canonical_catalog(tree.models, tree.root)
-    refuse(tag_faults(entries, tree.root))
+    refuse(sorted(tag_faults(entries, tree.root) + contract_faults(entries, tree.models, tree.root)))
     binding_agreement(entries, tree.root)
     return entries
 
@@ -4505,20 +4537,12 @@ def inventory_lines(tree: Tree) -> list[str]:
 
 def bound_tests(identity: str, bindings: list[str], root: Path) -> list[str]:
     """The inventory lines of the tests bound to a case: for `path::symbol` the test
-    `symbol`, for a whole file each of its tests that names the case by its `Proves:` tag or
-    its title."""
+    `symbol`. A binding of a whole file names no test (`check` refuses it, TR-14)."""
     found = set()
     for binding in bindings:
         path, separator, symbol = binding.partition("::")
-        kind = TEST_KINDS.get(posixpath.splitext(path)[1], "node")
         if separator:
-            found.add(f"{kind} {symbol}")
-            continue
-        source = source_text(path, root / path)
-        found.update(f"{kind} {name}" for name, cases in naming_tests(source) if identity in cases)
-        if kind == "node" and NODE_TEST_FILE.fullmatch(posixpath.basename(path)):
-            found.update("node " + title for title in node_tests(path, source)
-                         if re.search(r"\b" + re.escape(identity) + r"\b", title))
+            found.add(f"{TEST_KINDS.get(posixpath.splitext(path)[1], 'node')} {symbol}")
     return sorted(found)
 
 
