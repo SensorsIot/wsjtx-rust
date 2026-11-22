@@ -67,7 +67,8 @@ package WstxBandActivityPane {
              neither kept nor read again; after the page is loaded only the latest period
              shows until the next comes. A new receive (a start, a stop, a new band, mode or
              input, a new start of the station) begins an empty Band Activity. Each period is
-             sorted by Ordering. */
+             sorted by Ordering, or by StrategyOrdering while a strategy other than Default
+             is active. */
     }
 
     requirement 'CL-057-01' {
@@ -132,15 +133,34 @@ package WstxBandActivityPane {
 
     attribute def Ordering {
         doc /* By default (FrontendConfig::sortField value) each period is ordered by the
-             value of its rows, best first: 1 calling the station's call; 2 a rank of the
-             strategy, in the order of the ranking (WstxRankingControl::RankedList); 3 a new
-             DXCC or continent; 4 a new DXCC or continent on the band; 5 a new CQ or ITU zone,
-             also on the band; 6 a new grid, also on the band; 7 a new call, also on the band;
-             8 none of these. Equal values follow the SNR, strongest first, then the order of
-             decoding. A click on the header of Freq, dB, DT or Message orders by that column,
+             value; while Default is active that is the value of its rows, best first: 1
+             calling the station's call; 2 a new DXCC or continent; 3 a new DXCC or continent
+             on the band; 4 a new CQ or ITU zone, also on the band; 5 a new grid, also on the
+             band; 6 a new call, also on the band; 7 none of these. Equal values follow the
+             SNR, strongest first, then the order of decoding. Under another strategy
+             StrategyOrdering gives the value order, and no flag level orders Band Activity.
+             A click on the header of Freq, dB, DT or Message orders by that column,
              a second click turns the direction; the header of DXCC returns to the value. An
              unknown value goes last in either direction. The choice is kept for this browser
              (FrontendConfig::sortField, sortDescending). */
+    }
+
+    requirement 'CL-107-02' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST order Band Activity under a strategy other than Default
+             as StrategyOrdering says. */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-107-02'; }
+
+    attribute def StrategyOrdering {
+        doc /* Under the value sort, while a strategy other than Default is active, each
+             period block stands in this order: the partner rows (RowMarks); the rows with a
+             verdict, in the order of the verdicts (WstxRankingControl::RankedList); the rows
+             without a verdict (no decoded payload, or a sender that is not a call), in
+             publication sequence.
+             A row to the station's call has no place of its own: it stands where its verdict
+             stands. */
     }
 
     requirement 'CL-050-02' {
@@ -200,6 +220,15 @@ package WstxBandActivityPane {
         }
         enum plain;
     }
+
+    requirement 'CL-107-03' {
+        subject browser : BrowserClient;
+        doc /* The browser client MUST name the reasons of a row's tip in the order the active
+             strategy gives them (RowMarks). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-010'; end #derive ::> 'CL-107-03'; }
+
     attribute def RowMarks {
         doc /* partner: from the contact's preparation until it is completed or cancelled,
              the partner's rows stand at the top of Band Activity, newest period first, above
@@ -217,7 +246,17 @@ package WstxBandActivityPane {
              on <band>", "New call" or "New on <band>"; then the strategy's verdict
              ("Strategy <name>: #<rank>", or for a CQ not for the station "Directed CQ, not
              calling us"); joined by " · ". The country, the continent, the
-             distance and a call to the station are not in the tip; their columns show them. */
+             distance and a call to the station are not in the tip; their columns show them.
+             The kinds stand in this order (continent, DXCC, zone, grid, call). While a
+             strategy of class strategy is active, a kind stands instead at the place of the
+             first criterion of that kind in WstxRankingControl::RankingKeys::order:
+             continent newContinent;
+             DXCC newDxcc, newDxccBand, newDxccBandMode; zone newCqZone, newItuZone; grid
+             newGrid, newGridBand; call newCall, newCallBand. The kinds the order does not
+             name follow in the order (continent, DXCC, zone, grid, call). Under Default and
+             under a strategy of class contest that order holds. The verdict text follows
+             the reasons, so a row coloured for one reason and ranked for another shows
+             both. */
     }
 
     requirement 'CL-055-05' {
@@ -276,13 +315,17 @@ package WstxBandActivityPane {
         doc /* Above Band Activity, in one line: the strategy selector (Default, then the names,
              grouped Strategy and Contest; a choice gives SelectStrategy,
              WstxStrategies); edit, which opens the editor (WstxSettings::StrategyEditor);
-             Value, which returns the order to the value (Ordering); with a contest in force
-             Show all; the ignore field (IgnoreField); and Auto's line
-             (WstxQsoPane::AutoControls). While a strategy other than Default is active, Band
-             Activity lists only the rows the strategy ranks (the view ranked), the messages to the
-             station's call and the partner's rows; a row the strategy filters out is not shown.
-             Show all, off by default and kept in the page only, shows every row. The rows are drawn
-             after each new period. A selection restarts no receive. */
+             Value, which returns the order to the value (Ordering); while a strategy other
+             than Default is active Show all; the ignore field (IgnoreField); and Auto's line
+             (WstxQsoPane::AutoControls). While a strategy other than Default is active and
+             Show all is off, Band Activity lists only the rows the strategy ranks (the view
+             ranked), the messages to the station's call and the partner's rows; a row the
+             strategy filters out is not shown, and until the verdicts of a view have arrived
+             only the partner's rows and those to the station's call are listed. The filter
+             holds in every sort. Show all, off by default and kept in the page only, shows
+             every row in the order of StrategyOrdering. Under Default every row is shown and
+             Show all is not offered. The rows are drawn after each new period. A selection
+             restarts no receive. */
     }
 
     requirement 'CL-063-08' {
@@ -533,6 +576,43 @@ package WstxBandActivityPane {
             test = "tests/ui-operating.test.cjs::"
                 + "TC-063-008 The contest prompt, Auto off marks only, the callable list and "
                 + "Show all";
+        }
+    }
+    verification 'TC-107-002' {
+        doc /* Band Activity in the strategy's order. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-107-02'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-107-002 Band Activity in the strategy order: partner, the verdicts, the "
+                + "rest in publication sequence, per period";
+        }
+    }
+    verification 'TC-107-003' {
+        doc /* The tip in the strategy's order. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-107-03'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-107-003 the tip names the reasons in the strategy order, then the verdict; "
+                + "tests/ui-operating.test.cjs::"
+                + "TC-107-003 under a contest strategy the tip keeps RowMarks order, then the "
+                + "contest text";
+        }
+    }
+    verification 'TC-107-004' {
+        doc /* The filter and Show all under every strategy. */
+        subject browser : BrowserClient;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-039-04'; }
+        @TestedBy {
+            test = "tests/ui-operating.test.cjs::"
+                + "TC-107-004 the filter and Show all under every strategy other than Default";
         }
     }
 }

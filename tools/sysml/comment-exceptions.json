@@ -37,7 +37,6 @@
   {"path": "tests/ui-operating.test.cjs", "text": "'#1','CQ DL1XYZ JO62'", "kind": "S"},
   {"path": "tests/ui-operating.test.cjs", "text": "'#2','CQ K1ABC FN42'", "kind": "S"},
   {"path": "tests/ui-operating.test.cjs", "text": "Most Wanted #3", "kind": "S"},
-  {"path": "tests/ui-operating.test.cjs", "text": "Strategy Hover test: #1", "kind": "S"},
   {"path": "tests/ui-operating.test.cjs", "text": "headset+' #1'", "kind": "S"},
   {"path": "tests/ui-operating.test.cjs", "text": "headset+' #2'", "kind": "S"},
   {"path": "tools/deploy/tests/test_deploy_flow.py", "text": "Change (#23)", "kind": "S"},

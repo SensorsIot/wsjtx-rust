@@ -1700,6 +1700,17 @@ fn value_key(s: &Strategy, v: &Verdict, st: &Station) -> Vec<(u8, f64)> {
     key.push(st.criterion_key(s, Criterion::Snr, &v.facts));
     key
 }
+/// The order of a record without a rank (CL-107-01): the strategy's criteria in its order, then
+/// the hidden SNR, without the callers' group. The exact tie follows (exact_tie).
+fn rest_key(s: &Strategy, v: &Verdict, st: &Station) -> Vec<(u8, f64)> {
+    let mut key: Vec<(u8, f64)> = s
+        .order
+        .iter()
+        .map(|c| st.criterion_key(s, *c, &v.facts))
+        .collect();
+    key.push(st.criterion_key(s, Criterion::Snr, &v.facts));
+    key
+}
 fn key_cmp(a: &[(u8, f64)], b: &[(u8, f64)]) -> std::cmp::Ordering {
     a.iter()
         .zip(b)
@@ -1708,8 +1719,8 @@ fn key_cmp(a: &[(u8, f64)], b: &[(u8, f64)]) -> std::cmp::Ordering {
         .unwrap_or(std::cmp::Ordering::Equal)
 }
 /// WstxValueOrder::VerdictRule: one per decoded standard record with a resolved sender, in display
-/// order: rank (the position in ValueOrder) ascending, then the records without a rank in
-/// their order.
+/// order: rank (the position in ValueOrder) ascending, then the records without a rank by the
+/// same criteria (CL-107-01).
 pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Verdict> {
     let states = message_states(records);
     let mut list: Vec<Verdict> = records
@@ -1743,7 +1754,10 @@ pub(crate) fn evaluate(s: &Strategy, records: &[Value], st: &Station) -> Vec<Ver
         }
         out.push(v);
     }
-    out.extend(rest);
+    let mut rest: Vec<(Vec<(u8, f64)>, Verdict)> =
+        rest.into_iter().map(|v| (rest_key(s, &v, st), v)).collect();
+    rest.sort_by(|(a, va), (b, vb)| key_cmp(a, b).then_with(|| exact_tie(&va.facts, &vb.facts)));
+    out.extend(rest.into_iter().map(|(_, v)| v));
     out
 }
 /// A contest strategy's verdicts: the contest's (WstxContestRanking::ContestVerdictRule, the contest's
@@ -1785,7 +1799,8 @@ pub(crate) fn evaluate_contest(
     for (i, v) in ranked.iter_mut().enumerate() {
         v.rank = Some(i);
     }
-    rest.sort_by_key(|v| v.facts.sequence);
+    // CL-107-01: the rest by ContestValueOrder's criteria without its groups.
+    rest.sort_by(|a, b| crate::contest::order_by(a, b, false));
     ranked.extend(rest);
     ranked
 }
@@ -2739,12 +2754,10 @@ impl Owner {
         if let Some(selection) = contest {
             let st = station(state, &config, Window::All);
             let log = self.contest_log_now(state, &selection, st.my_locator.as_deref());
+            // EvaluateReply::verdicts: every verdict, in display order.
             let verdicts: Vec<Value> =
                 evaluate_contest(&chosen, &selection, &records, &st, log.as_deref())
                     .iter()
-                    .filter(|v| {
-                        explain || v.rank.is_some() || v.grey || v.contest.is_some_and(|c| c.dupe)
-                    })
                     .map(|v| v.json(explain))
                     .collect();
             return Ok(
@@ -2755,10 +2768,9 @@ impl Owner {
         };
         worked_build(state, chosen.window);
         let st = station(state, &config, chosen.window);
-        // In display order: by rank, then the rest.
+        // EvaluateReply::verdicts: every verdict, in display order (by rank, then the rest).
         let verdicts: Vec<Value> = evaluate(&chosen, &records, &st)
             .iter()
-            .filter(|v| explain || v.rank.is_some() || v.grey)
             .map(|v| v.json(explain))
             .collect();
         Ok(

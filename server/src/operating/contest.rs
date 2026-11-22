@@ -900,7 +900,7 @@ pub(crate) fn evaluate(
     st: &Station,
     log: Option<&Log>,
 ) -> Vec<Verdict> {
-    let (mut ranked, rest): (Vec<Verdict>, Vec<Verdict>) = records
+    let (mut ranked, mut rest): (Vec<Verdict>, Vec<Verdict>) = records
         .iter()
         .filter_map(record_facts)
         .map(|f| {
@@ -920,6 +920,8 @@ pub(crate) fn evaluate(
         .iter_mut()
         .enumerate()
         .for_each(|(i, v)| v.rank = Some(i));
+    // The verdicts without a rank by the same criteria, without the groups.
+    rest.sort_by(|a, b| order_by(a, b, false));
     ranked.extend(rest);
     ranked
 }

@@ -426,6 +426,8 @@ package WstxUseCases {
             doc /* The operator chooses or edits a strategy; Band Activity shows only what it
                  ranks. */
             requirement :> WstxBandActivityPane::'CL-039-04';
+            requirement :> WstxBandActivityPane::'CL-107-02';
+            requirement :> WstxBandActivityPane::'CL-107-03';
             requirement :> WstxStrategySelection::'CL-063-03';
             requirement :> WstxStrategySelection::'CL-039-11';
             requirement :> WstxStrategySelection::'CL-097-10';
@@ -439,6 +441,7 @@ package WstxUseCases {
             requirement :> WstxValueOrder::'CL-039-02';
             requirement :> WstxValueOrder::'CL-097-02';
             requirement :> WstxValueOrder::'CL-097-03';
+            requirement :> WstxValueOrder::'CL-107-01';
             requirement :> WstxMostWanted::'CL-039-10';
             requirement :> WstxSettings::'CL-039-25';
             requirement :> WstxProfileDocument::'CL-039-30';
