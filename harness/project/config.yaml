@@ -181,7 +181,7 @@ meter:
 
 # Alex, the coordinator's state machine (harness core/docs/Alex.md, "The numbers").
 alex:
-  machines: {define: 1, check: 1, implement: 2, review: 1, coordinate: 1, test: 2}
+  machines: {define: 2, check: 1, implement: 2, review: 1, coordinate: 1, test: 2}
   limits: {ready: 3, queued_landed: 2}
   buffer_per_coder: 2
   fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60, test: 120}
