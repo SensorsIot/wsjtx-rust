@@ -155,7 +155,7 @@ package WstxContestRanking {
              callersFirst is off, with "not answered". For a caller the last two are
              written after "calls my call · ".
              The records that keep a rank are ordered by ContestValueOrder; the
-             others follow in the order of their numbers. */
+             others follow as WstxValueOrder::RestOrder says. */
     }
 
     attribute def ContestValueOrder {

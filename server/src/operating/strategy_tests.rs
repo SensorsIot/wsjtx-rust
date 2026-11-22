@@ -206,12 +206,13 @@ fn tc_039_002_verdicts_grey_reasons_and_treat_73() {
             (3, Some(2), false), // -8
             (0, Some(3), false), // -12
             (5, Some(4), false), // -15
-            (2, None, true),
-            (4, None, true),
-            (6, None, false), // an RR73 without Treat 73 as CQ
-            (8, None, true),
+            // The rest by the order (no Most Wanted list: a tie), then the SNR.
+            (4, None, true),  // -1
+            (8, None, true),  // -2
+            (2, None, true),  // -5
+            (6, None, false), // -6: an RR73 without Treat 73 as CQ
         ],
-        "display order: by rank, then the rest in their order"
+        "display order: by rank, then the rest by the same criteria"
     );
     let why: HashMap<u64, String> = list
         .iter()
@@ -228,7 +229,7 @@ fn tc_039_002_verdicts_grey_reasons_and_treat_73() {
     );
     assert_eq!(
         list[5].json(false),
-        json!({"sequence":2,"rank":null,"grey":true})
+        json!({"sequence":4,"rank":null,"grey":true})
     );
     // Treat 73 as CQ: K1ABC's RR73 is a candidate; a message to me is never cq-like.
     let treat = Strategy {
@@ -984,6 +985,179 @@ async fn tc_039_003_store_routes_and_evaluate() {
         (r.status.as_u16(), r.json["error"]["field"].clone()),
         (400, json!("next_sequence"))
     );
+    assert_eq!(f.keys(), 0, "evaluation never keys");
+}
+
+/// The hand-worked table of TC-107-001: order [new_dxcc, new_call], new [dxcc, call] ever,
+/// not worked, Calling stations are answered off; the log holds DL1XYZ and K1ABC (so Germany and
+/// the U.S.A.) and VK2ABC is ignored. The keys per record (new DXCC, new call; 0 holds):
+/// 0 JA1XYZ (0,0) -15 candidate; 1 DL2ABC (1,0) -3 candidate; 2 K1ABC (1,1) -1 worked;
+/// 3 W1AW (1,0) -5 greyed CQ NA; 4 VK2ABC (0,0) -20 ignored; 5 HB9BLA (0,0) 0 my own message;
+/// 6 OH1AA (0,0) -8 a caller not answered; 7 DL1XYZ (1,1) -2 worked; 8 free text and 9 a hashed
+/// sender have no verdict.
+fn tc_107_table() -> (Strategy, Vec<Value>, Station) {
+    let s = Strategy {
+        new: vec![NewWhat::Dxcc, NewWhat::Call],
+        order: vec![Criterion::NewDxcc, Criterion::NewCall],
+        callers_first: false,
+        ..award(&[Goal::Dxcc, Goal::NewCall])
+    };
+    let mut records = rows(&[
+        ("CQ JA1XYZ PM95", Some(-15.0)),
+        ("CQ DL2ABC JO62", Some(-3.0)),
+        ("CQ K1ABC FN42", Some(-1.0)),
+        ("CQ NA W1AW FN31", Some(-5.0)),
+        ("CQ VK2ABC QF56", Some(-20.0)),
+        ("CQ HB9BLA JN47", Some(0.0)),
+        ("HB9BLA OH1AA KP20", Some(-8.0)),
+        ("CQ DL1XYZ JO62", Some(-2.0)),
+        ("TNX BOB 73 GL", Some(-4.0)),
+        ("CQ PJ4ABC FK52", Some(-6.0)),
+    ]);
+    records[9]["fields"]["from"]["kind"] = json!("hash");
+    let mut st = me();
+    st.worked = Some(worked(&[
+        ("DL1XYZ", Some("40m"), Some("FT8"), Some("JO62"), false),
+        ("K1ABC", Some("40m"), Some("FT8"), Some("FN42"), false),
+    ]));
+    st.ignored.insert("VK2ABC".into(), Tier::Permanent);
+    (s, records, st)
+}
+
+// CL-107-01: the verdicts without a rank follow the ranked ones by the same criteria, then the
+// SNR, the lower audio frequency and the call; the ranks stay; free text and a hashed sender have
+// none. Expected orders are the table of tc_107_table, worked by hand.
+// Proves: TC-107-001
+#[test]
+fn tc_107_001_the_rest_follows_by_the_strategy_criteria() {
+    let (s, records, st) = tc_107_table();
+    let list = evaluate(&s, &records, &st);
+    let order: Vec<(u64, Option<usize>, bool)> = list
+        .iter()
+        .map(|v| (v.facts.sequence, v.rank, v.grey))
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            (0, Some(0), false), // ranked: the new DXCC first
+            (1, Some(1), false),
+            (5, None, false), // (0,0) 0 dB: my own message
+            (6, None, false), // (0,0) -8: a caller without a rank has no group of its own
+            (4, None, false), // (0,0) -20: ignored
+            (3, None, true),  // (1,0) -5: greyed
+            (2, None, false), // (1,1) -1: worked
+            (7, None, false), // (1,1) -2: worked
+        ],
+        "ranked by rank, then the rest by new DXCC, new call, SNR"
+    );
+    let why = |seq: u64| {
+        list.iter()
+            .find(|v| v.facts.sequence == seq)
+            .unwrap()
+            .why
+            .clone()
+    };
+    assert_eq!(
+        [why(4), why(5), why(6), why(2)],
+        [
+            ignore_why("VK2ABC", Tier::Permanent, "VK2ABC"),
+            "my own message".to_owned(),
+            "calls my call \u{b7} not answered".to_owned(),
+            "not new".to_owned()
+        ]
+    );
+    // An exact tie of the criteria and the SNR: the lower audio frequency, then the call; decode
+    // order never.
+    // Two worked senders (1,1) at -7 dB: K1ABC at 1000 Hz, DL1XYZ at 1100 Hz.
+    let mut tie = rows(&[
+        ("CQ K1ABC FN42", Some(-7.0)),
+        ("CQ DL1XYZ JO62", Some(-7.0)),
+    ]);
+    let seqs = |l: Vec<Verdict>| l.into_iter().map(|v| v.facts.sequence).collect::<Vec<_>>();
+    assert_eq!(
+        seqs(evaluate(&s, &tie, &st)),
+        vec![0, 1],
+        "the lower frequency"
+    );
+    tie[1]["frequency_hz"] = json!(1000.0);
+    assert_eq!(
+        seqs(evaluate(&s, &tie, &st)),
+        vec![1, 0],
+        "then the call, not decode order"
+    );
+    // Off the strategy's bands no record has a rank, and all stand by the criteria.
+    let off = Strategy {
+        bands: Some(vec!["20m".into()]),
+        ..s.clone()
+    };
+    let list = evaluate(&off, &records, &st);
+    assert!(list.iter().all(|v| v.rank.is_none()));
+    assert_eq!(
+        list.iter().map(|v| v.facts.sequence).collect::<Vec<_>>(),
+        vec![5, 6, 0, 4, 1, 3, 2, 7],
+        "(0,0) 0, -8, -15, -20; (1,0) -3, -5; (1,1) -1, -2"
+    );
+}
+
+// CL-107-01 at the evaluate route: explain false gives every verdict in display order without
+// why; explain true the same order with why. The draft: new [call], order [new_dxcc, new_call],
+// Calling stations are answered off, an empty log (every entity and call new): the rest by SNR.
+// Proves: TC-107-001
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_107_001_the_evaluate_reply_holds_every_verdict_in_order() {
+    let f = station(true).await;
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(-12.0)),
+            ("CQ NA W1AW FN31", 900.0, Some(-3.0)),
+            ("HB9BLA G4ABC IO91", 700.0, Some(1.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-1.0)),
+            ("CQ HB9BLA JN47", 1100.0, Some(-5.0)),
+        ],
+    );
+    let mut draft = strategy_json("Draft");
+    draft["order"] = json!(["new_dxcc", "new_call"]);
+    draft["callers_first"] = json!(false);
+    let body = |explain: bool| {
+        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
+        "generation":generation,"first_sequence":0,"next_sequence":5,"strategy":draft,"explain":explain})
+    };
+    let plain = f
+        .browser("POST", "/strategy/evaluate", Some(body(false)))
+        .await;
+    assert_eq!(plain.status, StatusCode::OK, "{}", plain.json);
+    assert_eq!(
+        plain.json["verdicts"],
+        json!([
+            {"sequence":3,"rank":0,"grey":false},
+            {"sequence":0,"rank":1,"grey":false},
+            {"sequence":2,"rank":null,"grey":false},
+            {"sequence":1,"rank":null,"grey":true},
+            {"sequence":4,"rank":null,"grey":false},
+        ]),
+        "every verdict: ranked, then the rest by SNR (+1, -3, -5)"
+    );
+    let explained = f
+        .browser("POST", "/strategy/evaluate", Some(body(true)))
+        .await;
+    let seqs = |v: &Value| {
+        v["verdicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| (x["sequence"].clone(), x["why"].is_string()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        seqs(&explained.json),
+        [3, 0, 2, 1, 4].map(|s| (json!(s), true)).to_vec(),
+        "the same order with why"
+    );
+    assert!(seqs(&plain.json).iter().all(|(_, why)| !why));
     assert_eq!(f.keys(), 0, "evaluation never keys");
 }
 

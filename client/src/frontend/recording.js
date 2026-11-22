@@ -639,7 +639,10 @@ function activityOrdering(records=resultRows){
   for(const th of document.querySelectorAll('#band-activity th[data-sort]'))th.setAttribute('aria-sort',th.dataset.sort===activitySortField?(activitySortDirection==='asc'?'ascending':'descending'):'none');
   const key=r=>activitySortField==='frequency'?r.frequency_hz:activitySortField==='signal'?r.snr_db:activitySortField==='dt'?r.dt_seconds:r.text?.toUpperCase()??null;
   const missing=v=>v===null||v===undefined||v==='';
-  return [...records].sort((a,b)=>{if(activitySortField==='value')return activityValue(a)-activityValue(b)||(missing(a.snr_db)!==missing(b.snr_db)?(missing(a.snr_db)?1:-1):missing(a.snr_db)?0:b.snr_db-a.snr_db)||a.sequence-b.sequence;// CL-055-04: value, strongest SNR (unavailable last), decode order
+  // WstxBandActivityPane::StrategyOrdering: under a strategy other than Default no flag level orders the
+  // rows; the strategy element puts them in the station's order (publication sequence until then).
+  const strategy=activitySortField==='value'&&window.wstxStrategyOrdering?.()===true;
+  return [...records].sort((a,b)=>{if(strategy)return a.sequence-b.sequence;if(activitySortField==='value')return activityValue(a)-activityValue(b)||(missing(a.snr_db)!==missing(b.snr_db)?(missing(a.snr_db)?1:-1):missing(a.snr_db)?0:b.snr_db-a.snr_db)||a.sequence-b.sequence;// CL-055-04: value, strongest SNR (unavailable last), decode order
     const left=key(a),right=key(b);
     if(missing(left)!==missing(right))return missing(left)?1:-1;
     const compared=missing(left)?0:typeof left==='number'?left-right:left<right?-1:left>right?1:0;
@@ -1423,9 +1426,17 @@ function activityHover(r){
 const HOVER_KINDS=[['new_continent','new_continent_band'],['new_dxcc','new_dxcc_band'],['new_cq_zone','new_itu_zone','new_cq_zone_band','new_itu_zone_band'],['new_grid','new_grid_band'],['new_call','new_call_band']];
 // One line, " · " between reasons (operator: "line them up horizontally"), then the strategy verdict. A row without such a reason has no tip. Shown in
 // the compact Band Activity tip (data-tip) and as aria-description; no native title, which wraps.
+// CL-107-03: the kind of each order criterion (continent, DXCC, zone, grid, call); a kind stands at
+// the place of its first criterion in the active strategy's order, the others follow in RowMarks' order.
+const CRITERION_KIND={new_continent:0,new_dxcc:1,new_dxcc_band:1,new_dxcc_band_mode:1,new_cq_zone:2,new_itu_zone:2,new_grid:3,new_grid_band:3,new_call:4,new_call_band:4};
+function hoverKinds(){
+  const order=window.wstxStrategyOrder?.();if(!Array.isArray(order))return HOVER_KINDS;
+  const first=[...new Set(order.map(c=>CRITERION_KIND[c]).filter(k=>k!==undefined))];
+  return [...first,...[...HOVER_KINDS.keys()].filter(k=>!first.includes(k))].map(k=>HOVER_KINDS[k]);
+}
 function hoverReasons(reasons,worked){
   const on=new Set((document.querySelector('#band-activity')?.dataset.hlOn??'').split(' '));
-  return HOVER_KINDS.map(kind=>{const k=kind.find(k=>reasons[k]&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${reasons[k]} (worked ${worked})`:reasons[k];}).filter(Boolean);
+  return hoverKinds().map(kind=>{const k=kind.find(k=>reasons[k]&&on.has(k));return !k?'':k==='new_call_band'&&worked?`${reasons[k]} (worked ${worked})`:reasons[k];}).filter(Boolean);
 }
 function activityWhy(row){
   let reasons={};try{reasons=JSON.parse(row.dataset.reasons??'{}')??{};}catch{}

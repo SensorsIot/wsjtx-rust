@@ -1270,7 +1270,8 @@ function show(){
   if(contest&&!contestsAsked)loadContests();
   contestButton.disabled=!c;contestButton.title=c?'Choose a contest strategy and its period':'Contest strategies unavailable';
   if(window.wstxContestOn!==!!contest){window.wstxContestOn=!!contest;if(typeof bandColoursApply==='function')bandColoursApply();}
-  showAllButton.hidden=!contest;showAllButton.setAttribute('aria-pressed',String(showAll));
+  // WstxBandActivityPane::StrategyElement: Show all under every strategy other than Default.
+  showAllButton.hidden=!(active()||contest);showAllButton.setAttribute('aria-pressed',String(showAll));
   nameSelect.disabled=!c;nameSelect.title=c?'Selecting a strategy marks its candidates; it transmits only while Auto is on. None turns Auto off':(view?.configuration_error?`Saved strategies unreadable (${view.configuration_error}); the editor's Save replaces them`:'Strategies unavailable');
   editButton.disabled=!view;editButton.title='Edit strategies (the station keeps receiving)';
   showContinent();showIgnore();showPounce();showMostWanted();showRun();showAuto();
@@ -1309,6 +1310,11 @@ autoButton?.addEventListener('click',async()=>{
 const tbody=document.querySelector('#band-activity tbody');
 const identity=()=>typeof live!=='undefined'&&live?.job?liveIdentity(live):'';
 function marksOn(){return (!!active()||!!selection())&&!!identity();}
+// WstxBandActivityPane::RowMarks: the active strategy's order criteria while it is of class
+// strategy and no contest is in force; null under Default and under a contest.
+window.wstxStrategyOrder=()=>{const s=active();return s?.class==='strategy'&&!selection()?s.order??[]:null;};
+// WstxBandActivityPane::StrategyOrdering applies (not Ordering's value levels).
+window.wstxStrategyOrdering=()=>marksOn();
 const valueSort=()=>typeof activitySortField!=='undefined'&&activitySortField==='value';
 let reordering=false;
 function decorate(){
@@ -1319,25 +1325,34 @@ function decorate(){
     const v=on?verdicts.get(tr.dataset.resultId):null;
     const ranked=v?.rank!==null&&v?.rank!==undefined;
     tr.classList.toggle('ba-strategy',ranked);tr.classList.toggle('ba-grey',!!v?.grey);
-    // WstxBandActivityPane::ContestFilter: only what can be called, unless Show all; the partner and rows to me stay.
     tr.classList.toggle('ba-contest-mult',!!v?.new_multiplier);tr.classList.toggle('ba-dupe',!!v?.dupe);
-    tr.classList.toggle('ba-hidden',on&&!!selection()&&!showAll&&!ranked&&!tr.classList.contains('ba-tome')&&!tr.classList.contains('ba-partner'));
+    // WstxBandActivityPane::StrategyElement: under every strategy other than Default only what it ranks,
+    // unless Show all; the partner and rows to me stay. Until the verdicts arrive the rest is hidden.
+    tr.classList.toggle('ba-hidden',on&&!showAll&&!ranked&&!tr.classList.contains('ba-tome')&&!tr.classList.contains('ba-partner'));
     if(v&&v.rank!==null)tr.dataset.rank=String(v.rank+1);else delete tr.dataset.rank;
     // BandActivityHover: the verdict joins the row's other reasons.
     if(v?.grey)tr.dataset.whyStrategy='Directed CQ, not calling us: the strategy skips it, a double-click warns';else if(v?.dupe)tr.dataset.whyStrategy='Dupe in the contest period';else if(selection()&&v&&v.rank!==null)tr.dataset.whyStrategy=[`Contest ${selectedProfile()?.name??selection().profile}: #${v.rank+1}`,v.new_multiplier?'new multiplier':'',v.points!==null&&v.points!==undefined?`${v.points} points`:''].filter(Boolean).join(' · ');else if(v&&v.rank!==null)tr.dataset.whyStrategy=`Strategy ${config().active}: #${v.rank+1}`;else delete tr.dataset.whyStrategy;window.wstxActivityWhy?.(tr);
   }
-  // WstxBandActivityPane::Ordering: in the value sort the ranked rows go up in the station's order; a
-  // column click sorts by the column until Value is chosen again (the marks stay).
+  // WstxBandActivityPane::StrategyOrdering: in the value sort each period block stands as the partner
+  // rows, then the rows with a verdict in the station's order, then the rows without one in
+  // publication sequence; a row to my call stands where its verdict stands, except under a contest
+  // strategy, where the rows to my call stand first after the partner rows. A column click sorts by
+  // the column until Value is chosen again (the marks and the filter stay).
   if(!on||!valueSort())return;
   reordering=true;
   let block=[];
   const flush=()=>{
-    const ranked=block.filter(tr=>tr.classList.contains('ba-strategy')).sort((a,b)=>verdicts.get(a.dataset.resultId).rank-verdicts.get(b.dataset.resultId).rank);
-    if(!ranked.length)return;
-    const anchor=block.at(-1).nextSibling;
-    // BandActivityValue: rows calling me stay above the candidates (value 1), also when ignored.
-    const first=block.filter(r=>r.classList.contains('ba-tome')),order=[...ranked.filter(r=>first.includes(r)),...first.filter(r=>!ranked.includes(r)),...ranked.filter(r=>!first.includes(r))];
-    for(const tr of [...order,...block.filter(r=>!order.includes(r))])tbody.insertBefore(tr,anchor);
+    if(!block.length)return;
+    const anchor=block.at(-1).nextSibling,verdictOf=tr=>verdicts.get(tr.dataset.resultId);
+    const partners=block.filter(tr=>tr.classList.contains('ba-partner')),rest=block.filter(tr=>!partners.includes(tr));
+    const judged=rest.filter(tr=>verdictOf(tr)).sort((a,b)=>verdictOf(a).index-verdictOf(b).index);
+    const unjudged=rest.filter(tr=>!verdictOf(tr)).sort((a,b)=>Number(a.dataset.sequence)-Number(b.dataset.sequence));
+    // Under a contest strategy the rows to my call stay on top, below the partner rows.
+    const tome=selection()?[...judged,...unjudged].filter(tr=>tr.classList.contains('ba-tome')):[];
+    const order=[...partners,...tome,...judged.filter(tr=>!tome.includes(tr)),...unjudged.filter(tr=>!tome.includes(tr))];
+    // Rows already in place are not moved (a moved row loses the keyboard focus).
+    if(order.every((tr,i)=>tr===block[i]))return;
+    for(const tr of order)tbody.insertBefore(tr,anchor);
   };
   for(const tr of [...tbody.children]){if(tr.classList.contains('ba-divider')){flush();block=[];}else if(tr.dataset.sequence)block.push(tr);}
   flush();observer.takeRecords();reordering=false;
@@ -1364,7 +1379,8 @@ async function evaluateShown(){
     const response=await stationFetch('/strategy/evaluate',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:1,profile_id:view.profile_id,boot_id:view.boot_id,source_id,job_id,generation:Number(generation),first_sequence:w.first,next_sequence:w.next,strategy:null,explain:false}),signal:AbortSignal.timeout(10000)});
     const data=await response.json().catch(()=>null);
     if(response.ok&&data?.v===1&&w.id===identity()){
-      const map=new Map();data.verdicts.forEach(v=>map.set(`${w.id}/${v.sequence}`,{rank:v.rank,grey:v.grey,dupe:v.dupe,new_multiplier:v.new_multiplier,points:v.points}));
+      // Every verdict, with its place in the reply (WstxRankingControl::EvaluateReply::verdicts).
+      const map=new Map();data.verdicts.forEach((v,index)=>map.set(`${w.id}/${v.sequence}`,{index,rank:v.rank,grey:v.grey,dupe:v.dupe,new_multiplier:v.new_multiplier,points:v.points}));
       verdicts=map;evaluatedKey=key;decorate();
       contestSummary=data.contest??null;showRun();
     }
