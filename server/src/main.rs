@@ -11,7 +11,7 @@ mod cat_lifecycle;
 #[cfg(test)]
 #[path = "radioControl/cat_lifecycle_tests.rs"]
 mod cat_lifecycle_tests;
-#[path = "transmit/clock_http.rs"]
+#[path = "clock/clock_http.rs"]
 mod clock_http;
 mod contact;
 mod contact_http;

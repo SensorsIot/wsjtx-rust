@@ -90,8 +90,8 @@ package WstxStationTime {
         attribute timeState : StationTimeState {
             doc /* As StationTime::timeState. */
             @CodeDiffers {
-                what = "The code names it state (View in server/src/transmit/air.rs and the "
-                    + "clock.state event of server/src/transmit/clock_http.rs).";
+                what = "The code names it state (View in server/src/clock/air.rs and the "
+                    + "clock.state event of server/src/clock/clock_http.rs).";
             }
         }
         attribute correctionMs : Integer {
@@ -100,14 +100,14 @@ package WstxStationTime {
         attribute timeServerState : ClockState {
             doc /* The PC clock against the time server; unknown without a reading. */
             @CodeDiffers {
-                what = "The code names it ntp_state in View of server/src/transmit/air.rs, "
+                what = "The code names it ntp_state in View of server/src/clock/air.rs, "
                     + "and state of ntp in the clock.state event.";
             }
         }
         attribute timeServer : TimeServerReading[0..1] {
             doc /* Absent before the first valid answer. */
             @CodeDiffers {
-                what = "The code names it ntp in View of server/src/transmit/air.rs, and "
+                what = "The code names it ntp in View of server/src/clock/air.rs, and "
                     + "measurement of ntp in the clock.state event.";
             }
         }
@@ -118,7 +118,7 @@ package WstxStationTime {
         out item quality : ClockQuality {
             @CodeDiffers {
                 what = "The code names it clock in the clock.state event "
-                    + "(server/src/transmit/clock_http.rs).";
+                    + "(server/src/clock/clock_http.rs).";
             }
         }
     }

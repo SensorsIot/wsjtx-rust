@@ -10,7 +10,11 @@
   paths: [server/, fixtures/transmit/, tools/test/rust/, docs/sysml/, Cargo.toml, Cargo.lock, rust-toolchain.toml]
   timing: true
   timing_inputs:
-  - server/src/transmit/
+  - server/src/clock/
+  - server/src/transmit/recording_tx_tests.rs
+  - server/src/transmit/schedule.rs
+  - server/src/transmit/service.rs
+  - server/src/transmit/transmit_http_tests.rs
   - server/src/modes/transmit/mod.rs
   - server/src/modes/transmit/pack.rs
   - server/src/modes/playback/

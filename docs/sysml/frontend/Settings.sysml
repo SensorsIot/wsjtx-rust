@@ -388,7 +388,7 @@ package WstxSettings {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-227-01'; }
         @TestedBy {
-            test = "server/src/transmit/clock_http_tests.rs; tests/ui-operating.test.cjs";
+            test = "server/src/clock/clock_http_tests.rs; tests/ui-operating.test.cjs";
         }
     }
     verification 'TC-110-005' {
