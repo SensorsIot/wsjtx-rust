@@ -6,18 +6,13 @@ package WstxUdpPart {
     private import WstxOperatingChain::LoggedContactPort;
     private import WstxUdp::UdpPort;
     private import WstxModelBindings::ImplementedIn;
-    private import WstxModelNotes::CodeDiffers;
 
     part def UdpService {
         doc /* Tells other programs what the station does, in the messages of the WSJT-X
              UDP protocol: its state, its decodes and its logged contacts, to every target
              the operator configures. It takes no command from them. */
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
-        }
-        @CodeDiffers {
-            what = "Its code stands in server/src/network_message.rs, "
-                + "server/src/operating/qso/udp.rs, outside server/src/udp/ and client/src/udp/.";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
         port control : ~UdpControlPort {
             doc /* The supervisor: the configuration and the station's state in,

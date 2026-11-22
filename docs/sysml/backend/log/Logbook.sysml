@@ -145,7 +145,7 @@ package WstxLogbook {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-010-04'; verify 'CL-010-19'; }
         @TestedBy {
-            test = "server/src/log/udp_tests.rs::"
+            test = "server/src/udp/udp_tests.rs::"
                 + "tc_011_001_a_completed_contact_logs_itself_once_and_reaches_the_udp_target; "
                 + "server/src/operating/qso/contact_http_tests.rs::"
                 + "direct_log_record_fields_from_the_confirmed_dial; "
@@ -451,7 +451,7 @@ package WstxLogbook {
          + "update_of_twenty_seven_thousand_qsos_is_consolidated_and_worked_before_uses_the_index; "
                 + "server/src/log/logbook_tests.rs::"
                 + "export_streams_the_log_in_bounded_chunks_from_a_snapshot_without_the_lock; "
-                + "server/src/log/udp_tests.rs::"
+                + "server/src/udp/udp_tests.rs::"
                 + "tc_011_002_update_logbook_adds_records_without_any_udp_datagram; "
                 + "server/src/log/logbook_tests.rs::"
                 + "history_pages_have_stable_indexes_and_stay_within_the_byte_bound; "

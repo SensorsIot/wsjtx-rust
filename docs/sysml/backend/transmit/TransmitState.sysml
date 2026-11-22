@@ -356,7 +356,7 @@ package WstxTransmitState {
                 + "abort_stops_tune_without_a_halt; "
                 + "server/tests/transmit_service.rs::"
                 + "a_failed_transmission_drops_the_next_request_unkeyed; "
-                + "server/src/log/udp_tests.rs::tc_112_006_close_at_shutdown; "
+                + "server/src/udp/udp_tests.rs::tc_112_006_close_at_shutdown; "
                 + "server/tests/transmit_service.rs::"
             + "realtime_bound_service_halt_is_confirmed_within_the_bound_while_the_owner_is_busy; "
                 + "server/tests/transmit_service.rs::"

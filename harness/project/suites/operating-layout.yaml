@@ -35,7 +35,7 @@
   - server/src/strategy.rs
   - server/src/contest.rs
   - server/src/operating/qso/freeslot.rs
-  - server/src/operating/qso/udp.rs
+  - server/src/udp/udp.rs
   - server/src/transmit/transmit_http.rs
   - client/src/frontend/app.js
   - client/src/frontend/index.html

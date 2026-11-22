@@ -52,7 +52,7 @@ package WstxUdp {
              UdpWire). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-01'; }
@@ -94,7 +94,7 @@ package WstxUdp {
              (Ipv6Multicast). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-06'; }
@@ -119,7 +119,7 @@ package WstxUdp {
              (InboundRules). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-03'; }
@@ -158,7 +158,7 @@ package WstxUdp {
              (StatusCadence). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-07'; }
@@ -186,7 +186,7 @@ package WstxUdp {
              meaning WSJT-X gives each field (StatusFields). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-02'; }
@@ -224,7 +224,7 @@ package WstxUdp {
              the text form WSJT-X gives it (DecodeFields). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-040-04'; }
@@ -258,7 +258,7 @@ package WstxUdp {
              value WSJT-X sends (DeltaTime). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-03'; }
@@ -279,7 +279,7 @@ package WstxUdp {
              band, and only then (ClearRule). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-04'; }
@@ -305,7 +305,7 @@ package WstxUdp {
              exchanges WSJT-X sends for the record's activity (LoggedFields). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-05'; }
@@ -352,7 +352,7 @@ package WstxUdp {
              (CloseRule). */
         @Status { build = ImplementationState::implemented; }
         @ImplementedIn {
-            module = "server/src/operating/qso/udp.rs; server/src/network_message.rs";
+            module = "server/src/udp/udp.rs; server/src/udp/network_message.rs";
         }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-112-06'; }
@@ -372,7 +372,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-01'; verify 'CL-040-03'; verify 'CL-040-04'; }
-        @TestedBy { test = "server/tests/udp_vectors.rs; server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/tests/udp_vectors.rs; server/src/udp/udp_tests.rs"; }
     }
 
     verification 'TC-012-002' {
@@ -381,7 +381,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-01'; verify 'CL-040-04'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 
     verification 'TC-012-003' {
@@ -390,7 +390,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-03'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 
     verification 'TC-012-006' {
@@ -399,7 +399,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-06'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 
     verification 'TC-012-007' {
@@ -408,7 +408,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-07'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs; server/src/receive/recording_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs; server/src/receive/recording_tests.rs"; }
     }
 
     verification 'TC-112-002' {
@@ -417,7 +417,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-02'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 
     verification 'TC-112-003' {
@@ -426,7 +426,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-03'; verify 'CL-040-04'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 
     verification 'TC-012-009' {
@@ -436,7 +436,7 @@ package WstxUdp {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-040-04'; }
         @TestedBy {
-            test = "server/src/log/udp_tests.rs::played_recording_sends_no_decode_and_no_clear";
+            test = "server/src/udp/udp_tests.rs::played_recording_sends_no_decode_and_no_clear";
         }
     }
 
@@ -446,7 +446,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-04'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 
     verification 'TC-112-005' {
@@ -455,7 +455,7 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-05'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 
     verification 'TC-112-006' {
@@ -464,6 +464,6 @@ package WstxUdp {
         @TestLevel { cost = 2; location = TestLocation::developmentPc; }
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-112-06'; }
-        @TestedBy { test = "server/src/log/udp_tests.rs"; }
+        @TestedBy { test = "server/src/udp/udp_tests.rs"; }
     }
 }

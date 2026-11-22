@@ -94,7 +94,7 @@ mod spectrum;
 mod strategy;
 #[path = "transmit/transmit_http.rs"]
 mod transmit_http;
-#[path = "operating/qso/udp.rs"]
+#[path = "udp/udp.rs"]
 mod udp;
 use axum::{Json, body::Bytes};
 use axum::{

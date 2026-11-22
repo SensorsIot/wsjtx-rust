@@ -33,8 +33,8 @@
   - server/src/modes/transmit/
   - server/src/spots/pskr.rs
   - server/src/spots/pskr_tests.rs
-  - server/src/operating/qso/udp.rs
-  - server/src/log/udp_tests.rs
+  - server/src/udp/udp.rs
+  - server/src/udp/udp_tests.rs
   - client/src/frontend/contact.js
   - client/src/frontend/logbook.js
   - client/src/frontend/recording.js
