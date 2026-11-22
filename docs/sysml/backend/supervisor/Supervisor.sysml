@@ -41,7 +41,7 @@ package WstxSupervisorPart {
                 + "client/src/supervisor/.";
         }
         @DetailTests {
-            tests = "server/src/mcp_tests.rs; tests/mcp/mcp.test.cjs; "
+            tests = "server/src/mcp/endpoint_tests.rs; tests/mcp/mcp.test.cjs; "
                 + "server/src/auth_tests.rs; server/src/frontend/authorization_tests.rs; "
                 + "server/src/selection_http_tests.rs";
             covers = "the MCP client token: its creation, listing, hashed record, audit and "

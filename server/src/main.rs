@@ -32,8 +32,10 @@ mod link_log_tests;
 mod liveness_tests;
 mod logbook;
 mod logbook_http;
+#[path = "mcp/endpoint.rs"]
 mod mcp;
 #[cfg(test)]
+#[path = "mcp/endpoint_tests.rs"]
 mod mcp_tests;
 mod profile;
 #[cfg(test)]
