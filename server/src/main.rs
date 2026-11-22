@@ -52,6 +52,7 @@ mod radio_http;
 #[cfg(test)]
 #[path = "radioControl/radio_http_tests.rs"]
 mod radio_http_tests;
+#[path = "transmit/radio_level.rs"]
 mod radio_level;
 #[path = "radioControl/radio_setup.rs"]
 mod radio_setup;
@@ -84,6 +85,7 @@ mod most_wanted;
 #[path = "receive/spectrum.rs"]
 mod spectrum;
 mod strategy;
+#[path = "transmit/transmit_http.rs"]
 mod transmit_http;
 #[path = "operating/qso/udp.rs"]
 mod udp;

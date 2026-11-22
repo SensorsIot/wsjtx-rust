@@ -87,7 +87,7 @@ package WstxTxLevel {
         attribute swrFaultX10 : Integer = 30 {
             @CodeDiffers {
                 what = "The code compares the raw SWR meter count of the IC-7300 with 120 "
-                    + "(SWR_FAULT_RAW in server/src/radio_level.rs), which swr_x10 reads "
+                    + "(SWR_FAULT_RAW in server/src/transmit/radio_level.rs), which swr_x10 reads "
                     + "as 30.";
             }
         }
@@ -112,20 +112,21 @@ package WstxTxLevel {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-12'; }
         @TestedBy {
-            test = "server/src/radio_level_tests.rs::"
+            test = "server/src/transmit/radio_level_tests.rs::"
                 + "assistant_decides_from_alc_power_limit_and_swr; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "set_level_steps_up_backs_off_one_step_stores_and_stops_tune; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "set_level_pushes_the_level_it_is_playing_at_every_step; "
-                + "server/src/radio_level_tests.rs::halt_aborts_set_level_without_storing; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
+                + "halt_aborts_set_level_without_storing; "
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "a_radio_without_alc_stops_the_assistant_and_opens_the_manual_level; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "stored_level_is_loaded_at_startup_and_bad_files_are_ignored; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "set_level_that_cannot_be_stored_leaves_the_prior_level; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "tune_meters_are_read_once_a_second_and_pushed_as_one_event";
         }
     }
@@ -176,13 +177,15 @@ package WstxTxLevel {
                  (WstxRadioProperties::MeterReadings::alc), as alcHigh. */
             @CodeDiffers {
                 what = "The code compares the raw ALC meter count of the IC-7300, whose "
-                    + "zone ends at 120, with 10 (ALC_LIMIT_RAW in server/src/radio_level.rs).";
+                    + "zone ends at 120, with 10 (ALC_LIMIT_RAW in "
+                    + "server/src/transmit/radio_level.rs).";
             }
         }
         attribute alcHigh : Integer = 50 {
             @CodeDiffers {
                 what = "The code compares the raw ALC meter count of the IC-7300, whose "
-                    + "zone ends at 120, with 60 (ALC_HIGH_RAW in server/src/radio_level.rs).";
+                    + "zone ends at 120, with 60 (ALC_HIGH_RAW in "
+                    + "server/src/transmit/radio_level.rs).";
             }
         }
         attribute stepUpBelowPct : Integer = 80;
@@ -190,7 +193,7 @@ package WstxTxLevel {
         attribute swrHighX10 : Integer = 20 {
             @CodeDiffers {
                 what = "The code compares the raw SWR meter count of the IC-7300 with 80 "
-                    + "(SWR_HIGH_RAW in server/src/radio_level.rs), which swr_x10 reads "
+                    + "(SWR_HIGH_RAW in server/src/transmit/radio_level.rs), which swr_x10 reads "
                     + "as 20.";
             }
         }
@@ -204,33 +207,35 @@ package WstxTxLevel {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-044-14'; }
         @TestedBy {
-            test = "server/src/radio_level_tests.rs::"
+            test = "server/src/transmit/radio_level_tests.rs::"
                 + "monitor_decides_one_bounded_step_and_warns_only_when_persistent; "
                 + "server/tests/transmit_service.rs::"
                 + "the_meter_read_is_due_once_in_the_middle_of_each_transmission; "
                 + "server/tests/transmit_service.rs::"
                 + "a_late_start_with_under_two_seconds_of_audio_has_no_meter_read; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "one_burst_corrects_for_the_next_transmission_only_and_warns_when_persistent; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "a_clear_swr_fault_stops_transmitting_and_keeps_automation_off; "
-                + "server/src/radio_level_tests.rs::a_reading_without_swr_keeps_the_fault_entry; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
+                + "a_reading_without_swr_keeps_the_fault_entry; "
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "nothing_is_read_for_a_transmission_while_set_level_runs; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "startup_connects_the_meter_call_to_one_burst; "
                 + "server/src/transmit/transmit_http_tests.rs::"
                 + "the_meter_call_of_the_transmit_step_reaches_the_sink; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "a_correction_that_cannot_be_stored_leaves_the_level; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "alc_zero_and_above_the_limit_on_neighbouring_levels_settle_on_the_lower; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "a_lowering_without_a_step_up_before_it_keeps_the_step_up; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "the_live_alc_comes_down_to_the_limit_without_a_warning_and_stays; "
-                + "server/src/radio_level_tests.rs::set_levels_stop_and_the_correction_agree; "
-                + "server/src/radio_level_tests.rs::"
+                + "server/src/transmit/radio_level_tests.rs::"
+                + "set_levels_stop_and_the_correction_agree; "
+                + "server/src/transmit/radio_level_tests.rs::"
                 + "the_ceiling_ends_with_a_changed_profile_power_and_a_stored_set_level";
         }
     }

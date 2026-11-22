@@ -24,7 +24,7 @@ package WstxTransmitControl {
                 what = "The code has no level mode: it corrects the level whenever the "
                     + "profile names a radio the station manages and the radio reports its "
                     + "ALC, and offers a manual level only without an ALC reading "
-                    + "(server/src/radio_level.rs).";
+                    + "(server/src/transmit/radio_level.rs).";
             }
         }
         attribute levels : BandLevel[0..*] {
@@ -284,7 +284,7 @@ package WstxTransmitControl {
             doc /* True when the radio of the profile is one the station manages. */
             @CodeDiffers {
                 what = "The code calls it managed: true when the profile names a radio the "
-                    + "station manages (server/src/radio_level.rs).";
+                    + "station manages (server/src/transmit/radio_level.rs).";
             }
         }
         attribute powerPct : Integer[0..1] {
@@ -292,7 +292,7 @@ package WstxTransmitControl {
                  (WstxRadioControl::RadioConfig::powers); absent without one. */
             @CodeDiffers {
                 what = "The code takes power_limit_pct of the profile's radio and keeps it "
-                    + "as power_limit (server/src/radio_level.rs).";
+                    + "as power_limit (server/src/transmit/radio_level.rs).";
             }
         }
     }
@@ -420,7 +420,7 @@ package WstxTransmitControl {
             doc /* TransmitProfile::powerPct. */
             @CodeDiffers {
                 what = "The code names it power_limit_pct in the radio.tx_level event "
-                    + "(server/src/radio_level.rs).";
+                    + "(server/src/transmit/radio_level.rs).";
             }
         }
         attribute warnings : LevelWarning[0..*];
@@ -439,7 +439,7 @@ package WstxTransmitControl {
             @CodeDiffers {
                 what = "The code gives transmit no ProcessEnds: the exit path of "
                     + "server/src/main.rs calls emergency_release in "
-                    + "server/src/transmit_http.rs.";
+                    + "server/src/transmit/transmit_http.rs.";
             }
         }
         in item receipt : HaltReceipt;
@@ -450,7 +450,7 @@ package WstxTransmitControl {
             @CodeDiffers {
                 what = "The code has no LevelFound: the level code of transmit writes the "
                     + "level it finds to tx-level.json itself (store_level in "
-                    + "server/src/radio_level.rs).";
+                    + "server/src/transmit/radio_level.rs).";
             }
         }
     }

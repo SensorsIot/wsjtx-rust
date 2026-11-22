@@ -15,7 +15,7 @@ use wstx_rust::transmit::service::{
     PttError, Service, View,
 };
 #[cfg(test)]
-#[path = "transmit/transmit_http_tests.rs"]
+#[path = "transmit_http_tests.rs"]
 mod tests;
 
 /// WstxTransmitState::Failures: how long transmit waits for radio control to confirm a key or

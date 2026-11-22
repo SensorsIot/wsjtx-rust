@@ -9,7 +9,6 @@ package WstxTransmitPart {
     private import WstxKeying::Keying;
     private import WstxModelBindings::ImplementedIn;
     private import WstxModelBindings::DetailTests;
-    private import WstxModelNotes::CodeDiffers;
 
     part def TransmitService {
         doc /* The transmit function of the station. It holds the transmit state, takes
@@ -20,14 +19,10 @@ package WstxTransmitPart {
              audio. It knows neither the radio type nor the output device. */
         @ImplementedIn {
             module = "server/src/transmit/service.rs; server/src/transmit/schedule.rs; "
-                + "server/src/transmit_http.rs; server/src/radio_level.rs";
-        }
-        @CodeDiffers {
-            what = "Its code stands in server/src/radio_level.rs, server/src/transmit_http.rs, "
-                + "outside server/src/transmit/ and client/src/transmit/.";
+                + "server/src/transmit/transmit_http.rs; server/src/transmit/radio_level.rs";
         }
         @DetailTests {
-            tests = "server/src/radio_level_tests.rs";
+            tests = "server/src/transmit/radio_level_tests.rs";
             covers = "the bound of one meter reading and the seam that lengthens it in a "
                 + "test";
         }

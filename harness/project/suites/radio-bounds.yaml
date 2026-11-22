@@ -25,8 +25,8 @@
   - server/src/radioControl/setup_tests.rs
   - server/src/radioControl/cat_lifecycle.rs
   - server/src/radioControl/windows.rs
-  - server/src/radio_level.rs
-  - server/src/radio_level_tests.rs
+  - server/src/transmit/radio_level.rs
+  - server/src/transmit/radio_level_tests.rs
   - server/src/supervisor/selection.rs
   - server/src/supervisor/selection_http.rs
   - server/src/receive/recording.rs
