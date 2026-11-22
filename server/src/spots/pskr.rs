@@ -28,7 +28,7 @@ const TLS_PORT: u16 = 1884;
 /// Trust anchors of the broker's Let's Encrypt chain: the self-signed ISRG Root X1 and X2.
 /// Compiled in, because webpki-roots is outside deny.toml and the Windows store only holds
 /// a root once something asked for it. A broker on another CA shows an error in Settings.
-const ISRG_ROOTS: &[u8] = include_bytes!("../../pskr_isrg_roots.pem");
+const ISRG_ROOTS: &[u8] = include_bytes!("../pskr_isrg_roots.pem");
 /// How long a spot still counts, for "hears us" and for the frequencies the target decodes.
 /// Reporters upload in batches up to about 5 minutes late, so a spot can only be expected
 /// within that delay plus one more upload; an older one does not describe this path.

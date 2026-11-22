@@ -28,7 +28,7 @@ package WstxHearing {
             doc /* The audio offset: the frequency of the spot less the confirmed dial. */
             @CodeDiffers {
                 what = "The code holds the offset as the first of a pair of offset and parity "
-                    + "(Hearing::decoded in server/src/operating/qso/pskr.rs).";
+                    + "(Hearing::decoded in server/src/spots/pskr.rs).";
             }
         }
         attribute parity : PeriodParity {
@@ -40,7 +40,7 @@ package WstxHearing {
         attribute offsets : DecodedOffset[0..32] ordered {
             @CodeDiffers {
                 what = "The code gives the list by Feed::decoded_offsets and "
-                    + "Feed::decoded_of_parity in server/src/operating/qso/pskr.rs.";
+                    + "Feed::decoded_of_parity in server/src/spots/pskr.rs.";
             }
         }
     }
@@ -53,7 +53,7 @@ package WstxHearing {
                  seconds of UTC since 1970. Present in the state heard. */
             @CodeDiffers {
                 what = "The code names it spot_utc_s (HearingState::json in "
-                    + "server/src/operating/qso/pskr.rs).";
+                    + "server/src/spots/pskr.rs).";
             }
         }
         attribute snrDb : Integer[0..1] {
@@ -137,7 +137,7 @@ package WstxHearing {
                  admitted. */
             @CodeDiffers {
                 what = "The broker is fixed: HOST mqtt.pskreporter.info and TLS_PORT 1884 "
-                    + "in server/src/operating/qso/pskr.rs; no setting names it.";
+                    + "in server/src/spots/pskr.rs; no setting names it.";
             }
         }
         attribute report : Boolean = false {
@@ -166,7 +166,7 @@ package WstxHearing {
                  Absent until one arrives after the feed was switched on. */
             @CodeDiffers {
                 what = "The code names it last_spot_utc_s (the state of Feed in "
-                    + "server/src/operating/qso/pskr.rs).";
+                    + "server/src/spots/pskr.rs).";
             }
         }
     }

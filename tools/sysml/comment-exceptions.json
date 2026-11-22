@@ -19,7 +19,7 @@
   {"path": "server/src/mcp/endpoint_tests.rs", "text": "legacy", "kind": "M"},
   {"path": "server/src/operating/ranking/most_wanted_tests.rs", "text": "2026-11-06", "kind": "D2"},
   {"path": "server/src/network_message.rs", "text": "1970-01-01", "kind": "D1"},
-  {"path": "server/src/operating/qso/pskr_tests.rs", "text": "2026-11-06", "kind": "D3"},
+  {"path": "server/src/spots/pskr_tests.rs", "text": "2026-11-06", "kind": "D3"},
   {"path": "server/src/operating/qso/udp.rs", "text": "1970-01-01", "kind": "D1"},
   {"path": "server/src/radioControl/setup_tests.rs", "text": "Headset Microphone (Sennheiser Communication Audio) #1", "kind": "S"},
   {"path": "server/src/radioControl/setup_tests.rs", "text": "Headset Microphone (Sennheiser Communication Audio) #2", "kind": "S"},

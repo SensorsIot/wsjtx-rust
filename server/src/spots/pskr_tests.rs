@@ -1005,7 +1005,7 @@ fn the_setting_defaults_on_and_survives() {
 
 fn chain() -> Vec<CertificateDer<'static>> {
     CertificateDer::pem_slice_iter(include_bytes!(
-        "../../../../fixtures/pskr/broker-chain-20261106.pem"
+        "../../../fixtures/pskr/broker-chain-20261106.pem"
     ))
     .map(Result::unwrap)
     .collect()

@@ -82,7 +82,7 @@ package WstxPskReporter {
              spots of its own call and of the target it follows, and wait longer after
              each ended session before it connects again (FeedSession). */
         @Status { build = ImplementationState::implemented; }
-        @ImplementedIn { module = "server/src/operating/qso/pskr.rs"; }
+        @ImplementedIn { module = "server/src/spots/pskr.rs"; }
     }
     #derivation connection { end #original ::> 'FR-012'; end #derive ::> 'CL-039-27'; }
 
@@ -135,22 +135,22 @@ package WstxPskReporter {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-27'; }
         @TestedBy {
-            test = "server/src/operating/qso/pskr_tests.rs::"
+            test = "server/src/spots/pskr_tests.rs::"
                 + "filters_are_exact_and_no_call_makes_a_wildcard; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::"
                 + "client_id_carries_the_call_and_stays_legal; "
-                + "server/src/operating/qso/pskr_tests.rs::packets_match_the_specification; "
-                + "server/src/operating/qso/pskr_tests.rs::next_packet_parses_and_bounds; "
-                + "server/src/operating/qso/pskr_tests.rs::backoff_doubles_to_the_bound; "
-                + "server/src/operating/qso/pskr_tests.rs::session_against_a_local_peer; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::packets_match_the_specification; "
+                + "server/src/spots/pskr_tests.rs::next_packet_parses_and_bounds; "
+                + "server/src/spots/pskr_tests.rs::backoff_doubles_to_the_bound; "
+                + "server/src/spots/pskr_tests.rs::session_against_a_local_peer; "
+                + "server/src/spots/pskr_tests.rs::"
                 + "reconnect_backs_off_against_a_failing_peer_and_recovers; "
-                + "server/src/operating/qso/pskr_tests.rs::the_status_follows_the_switch; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::the_status_follows_the_switch; "
+                + "server/src/spots/pskr_tests.rs::"
                 + "a_refusing_or_broken_peer_is_a_named_error; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::"
                 + "the_compiled_roots_validate_the_captured_broker_chain; "
-                + "server/src/operating/qso/pskr_tests.rs::a_peer_without_tls_is_refused";
+                + "server/src/spots/pskr_tests.rs::a_peer_without_tls_is_refused";
         }
     }
 

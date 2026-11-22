@@ -31,8 +31,8 @@
   - server/src/audio/playback.rs
   - server/src/radioControl/codec.rs
   - server/src/modes/transmit/
-  - server/src/operating/qso/pskr.rs
-  - server/src/operating/qso/pskr_tests.rs
+  - server/src/spots/pskr.rs
+  - server/src/spots/pskr_tests.rs
   - server/src/operating/qso/udp.rs
   - server/src/log/udp_tests.rs
   - client/src/frontend/contact.js

@@ -89,17 +89,17 @@ package WstxHearingFeed {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-20'; verify 'CL-039-26'; }
         @TestedBy {
-            test = "server/src/operating/qso/pskr_tests.rs::"
+            test = "server/src/spots/pskr_tests.rs::"
                 + "parse_spot_reads_the_schema_and_refuses_the_rest; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::"
                 + "hears_us_expires_and_ignores_other_band_and_mode; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::"
                 + "reports_counts_up_to_600_s_and_no_longer; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::"
                 + "decoded_offsets_come_from_the_dial_of_this_band_and_mode; "
-                + "server/src/operating/qso/pskr_tests.rs::the_model_is_bounded; "
-                + "server/src/operating/qso/pskr_tests.rs::session_against_a_local_peer; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::the_model_is_bounded; "
+                + "server/src/spots/pskr_tests.rs::session_against_a_local_peer; "
+                + "server/src/spots/pskr_tests.rs::"
                 + "the_setting_defaults_on_and_survives";
         }
     }
@@ -111,13 +111,13 @@ package WstxHearingFeed {
         @Automation { run = AutomationState::implemented; }
         objective { verify 'CL-039-20'; verify 'CL-039-26'; }
         @TestedBy {
-            test = "server/src/operating/qso/pskr_tests.rs::"
+            test = "server/src/spots/pskr_tests.rs::"
                 + "tc_039_048_rp_is_read_as_the_reported_snr; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::"
                 + "tc_039_048_decoded_offsets_are_kept_per_parity; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::"
                 + "tc_039_048_use_drives_the_target_subscription_and_the_hearing_state; "
-                + "server/src/operating/qso/pskr_tests.rs::"
+                + "server/src/spots/pskr_tests.rs::"
                 + "tc_039_048_the_run_reads_the_target_on_the_station_band_honouring_use";
         }
     }

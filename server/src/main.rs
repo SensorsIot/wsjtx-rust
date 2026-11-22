@@ -49,7 +49,7 @@ mod mcp;
 #[path = "mcp/endpoint_tests.rs"]
 mod mcp_tests;
 mod profile;
-#[path = "operating/qso/pskr.rs"]
+#[path = "spots/pskr.rs"]
 mod pskr;
 #[path = "radioControl/radio_agc.rs"]
 mod radio_agc;
