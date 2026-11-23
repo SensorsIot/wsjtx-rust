@@ -202,31 +202,39 @@ impl Actor {
                 let mut executor = match connected {
                     Ok(value) => value,
                     Err(error) => {
-                        if let Ok(mut state) = shared.lock() {
-                            state.state = if error == Error::FailedClose {
-                                State::Closing
-                            } else if stop.load(Ordering::Acquire) {
-                                State::Closed
-                            } else {
-                                State::Unavailable
-                            };
-                            state.last_error = Some(error);
-                            state.facts.stale();
-                            let _ = state.publish();
+                        // The connect's lease ends under the snapshot lock, before its end
+                        // (unavailable, closed or closing) becomes visible.
+                        match shared.lock() {
+                            Ok(mut state) => {
+                                busy.store(0, Ordering::Release);
+                                state.state = if error == Error::FailedClose {
+                                    State::Closing
+                                } else if stop.load(Ordering::Acquire) {
+                                    State::Closed
+                                } else {
+                                    State::Unavailable
+                                };
+                                state.last_error = Some(error);
+                                state.facts.stale();
+                                let _ = state.publish();
+                            }
+                            Err(_) => busy.store(0, Ordering::Release),
                         }
                         watch.failure_published();
-                        busy.store(0, Ordering::Release);
                         watch.lease_released();
                         return;
                     }
                 };
+                // The connect's lease ends before ready is published. Until then the state
+                // is connecting, so an operation or a menu exchange is unavailable and takes
+                // no lease; a reservation taken meanwhile is carried out on the ready
+                // connection.
+                busy.store(0, Ordering::Release);
                 if executor.attach_snapshot(shared.clone()).is_err() {
                     let _ = executor.close();
-                    busy.store(0, Ordering::Release);
                     return;
                 }
                 watch.ready_published();
-                busy.store(0, Ordering::Release);
                 let mut last_poll = Instant::now();
                 while !stop.load(Ordering::Acquire) {
                     // Transmit-switch exchanges of the transmit hold come first; while the
@@ -420,6 +428,7 @@ impl Actor {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
+        self.require_ready()?;
         let (expected, occupied) = if reservation.is_some() {
             (2, 3)
         } else {
@@ -432,6 +441,8 @@ impl Actor {
             .compare_exchange(expected, occupied, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
+            // The holder may have ended the connection meanwhile; then it is unavailable.
+            self.require_ready()?;
             if Instant::now() >= deadline || self.shutdown.load(Ordering::Acquire) {
                 return Err(Error::Busy);
             }
@@ -454,7 +465,10 @@ impl Actor {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match result.recv_timeout(remaining.max(Duration::from_millis(50))) {
                 Ok(value) => return value,
-                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(Error::Unavailable),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    self.give_back(occupied, expected);
+                    return Err(Error::Unavailable);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if Instant::now() >= deadline + Duration::from_secs(2) {
                         return Err(Error::Timeout);
@@ -490,6 +504,24 @@ impl Actor {
     /// True after a key request until a release is confirmed by readback.
     pub fn ptt_indeterminate(&self) -> bool {
         self.keyed.load(Ordering::Acquire)
+    }
+    /// WstxCatControl::ControlExchange: a state other than ready is unavailable, whatever
+    /// still holds radio control; this answer comes before busy and sends nothing.
+    fn require_ready(&self) -> Result<()> {
+        match self.snapshot.lock().map(|s| s.state) {
+            Ok(State::Ready) => Ok(()),
+            _ => Err(Error::Unavailable),
+        }
+    }
+    /// Gives back a lease this request took for a command radio control never carried
+    /// out: its response channel closed unanswered, so the I/O thread's `Lease` never ran.
+    /// That holds unless the I/O thread panics inside the exchange: its `Lease` drop then
+    /// frees the lease, another request may take it, and this give-back would free that
+    /// request's lease.
+    fn give_back(&self, occupied: u8, expected: u8) {
+        let _ =
+            self.lease
+                .compare_exchange(occupied, expected, Ordering::AcqRel, Ordering::Acquire);
     }
     fn release_hold(&self) {
         let _ = self
@@ -542,14 +574,21 @@ impl Actor {
         if Instant::now() >= request.deadline {
             return Err(Error::Timeout);
         }
+        self.require_ready()?;
         let (expected, occupied) = if reservation.is_some() {
             (2, 3)
         } else {
             (0, 1)
         };
-        self.lease
+        if self
+            .lease
             .compare_exchange(expected, occupied, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| Error::Busy)?;
+            .is_err()
+        {
+            // The holder may have ended the connection meanwhile; then it is unavailable.
+            self.require_ready()?;
+            return Err(Error::Busy);
+        }
         let deadline = request.deadline;
         let cancel = request.cancelled.clone();
         let (response, result) = mpsc::sync_channel(1);
@@ -579,7 +618,10 @@ impl Actor {
             }
             match result.recv_timeout(remaining.min(Duration::from_millis(50))) {
                 Ok(value) => return value,
-                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(Error::Unavailable),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    self.give_back(occupied, expected);
+                    return Err(Error::Unavailable);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
         }
