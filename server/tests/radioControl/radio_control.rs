@@ -57,6 +57,9 @@ struct Script {
     fragment: usize,
     close_error: bool,
     block: Option<(Arc<AtomicBool>, Arc<AtomicBool>)>,
+    /// A held `close`: sets the first flag when entered and returns once the second is set,
+    /// so the window between closing and the lease's release stays open.
+    close_block: Option<(Arc<AtomicBool>, Arc<AtomicBool>)>,
 }
 struct Fake(Arc<Mutex<Script>>);
 impl Transport for Fake {
@@ -124,6 +127,18 @@ impl Transport for Fake {
         Ok(())
     }
     fn close(&mut self) -> Result<()> {
+        let hold = self.0.lock().unwrap().close_block.take();
+        if let Some((entered, release)) = hold {
+            entered.store(true, Ordering::Release);
+            let start = Instant::now();
+            while !release.load(Ordering::Acquire) {
+                assert!(
+                    start.elapsed() < Duration::from_secs(10),
+                    "the held close was never released"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
         let mut s = self.0.lock().unwrap();
         s.closed += 1;
         if s.close_error {
@@ -1110,4 +1125,344 @@ fn a_menu_write_while_the_radio_transmits_is_busy_and_writes_nothing() {
         ]
     );
     assert_eq!(executor.snapshot().unwrap().state, State::Ready);
+}
+
+// Radio control's answers follow the state it shows (WstxCatControl::ControlExchange).
+type CatActor = radio_control::actor::Actor;
+/// A fixed rate, so that a connect is one frequency read with no rate search.
+const FIXED_LINE: &str = "icom7300://COM3?baud=9600&radio=94&controller=E0";
+use radio_control::actor::ConnectWatch;
+/// A point of the connect's end, as `ConnectWatch` reports it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Point {
+    ReadyPublished,
+    FailurePublished,
+    LeaseReleased,
+}
+/// A `ConnectWatch` that holds the I/O thread at `point`: it sets `entered`, then waits for
+/// `release` and fails after 10 s without it.
+struct Hold {
+    point: Point,
+    entered: Arc<AtomicBool>,
+    release: Arc<AtomicBool>,
+}
+impl Hold {
+    fn at(&self, point: Point) {
+        if point != self.point {
+            return;
+        }
+        self.entered.store(true, Ordering::Release);
+        let start = Instant::now();
+        while !self.release.load(Ordering::Acquire) {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "the held I/O thread was never released"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+}
+impl ConnectWatch for Hold {
+    fn ready_published(&mut self) {
+        self.at(Point::ReadyPublished);
+    }
+    fn failure_published(&mut self) {
+        self.at(Point::FailurePublished);
+    }
+    fn lease_released(&mut self) {
+        self.at(Point::LeaseReleased);
+    }
+}
+/// A watch that holds at `point`, and its flags (entered, release).
+fn hold_at(point: Point) -> (Hold, (Arc<AtomicBool>, Arc<AtomicBool>)) {
+    let entered = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    let hold = Hold {
+        point,
+        entered: entered.clone(),
+        release: release.clone(),
+    };
+    (hold, (entered, release))
+}
+
+fn begin_on(script: Arc<Mutex<Script>>) -> Arc<CatActor> {
+    Arc::new(
+        CatActor::begin(
+            Configuration::parse(FIXED_LINE).unwrap(),
+            authority(),
+            Catalogue::builtin().unwrap(),
+            move |_, _| Ok(Fake(script)),
+        )
+        .unwrap(),
+    )
+}
+fn script_of(actions: Vec<Action>) -> Arc<Mutex<Script>> {
+    Arc::new(Mutex::new(Script {
+        actions: actions.into(),
+        ..Script::default()
+    }))
+}
+/// A ready actor whose connect read the frequency; `actions` answer the later writes.
+fn ready_actor(actions: Vec<Action>) -> (Arc<CatActor>, Arc<Mutex<Script>>) {
+    let script = script_of(
+        std::iter::once(Action::Bytes(FREQUENCY.to_vec()))
+            .chain(actions)
+            .collect(),
+    );
+    let actor = begin_on(script.clone());
+    wait_until("the connection", Duration::from_secs(2), || {
+        actor.snapshot().unwrap().state != State::Connecting
+    });
+    assert_eq!(actor.snapshot().unwrap().state, State::Ready);
+    (actor, script)
+}
+/// An actor whose factory fails with resourceInUse, its I/O thread held at `point`; the
+/// flags are (entered, release), and the hold has been entered.
+fn failed_connect_actor_held_at(
+    point: Point,
+) -> (Arc<CatActor>, (Arc<AtomicBool>, Arc<AtomicBool>)) {
+    let (hold, (entered, release)) = hold_at(point);
+    let actor = Arc::new(
+        CatActor::begin_watched(
+            Configuration::parse(FIXED_LINE).unwrap(),
+            authority(),
+            Catalogue::builtin().unwrap(),
+            |_, _| -> Result<Fake> { Err(Error::ResourceInUse) },
+            hold,
+        )
+        .unwrap(),
+    );
+    wait_until("the held I/O thread", Duration::from_secs(5), || {
+        entered.load(Ordering::Acquire)
+    });
+    assert_eq!(actor.snapshot().unwrap().state, State::Unavailable);
+    (actor, (entered, release))
+}
+/// Holds the script's next `close`; the flags are (entered, release).
+fn hold_close(script: &Arc<Mutex<Script>>) -> (Arc<AtomicBool>, Arc<AtomicBool>) {
+    let entered = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    script.lock().unwrap().close_block = Some((entered.clone(), release.clone()));
+    (entered, release)
+}
+fn read_id(actor: &CatActor) -> Result<SetupReply> {
+    actor.setup(
+        SetupCommand::ReadId,
+        Instant::now() + Duration::from_millis(100),
+    )
+}
+/// Another caller's operation and menu exchange are answered unavailable and send nothing.
+fn assert_unavailable_and_silent(actor: &CatActor, script: &Arc<Mutex<Script>>, phase: &str) {
+    let writes = script.lock().unwrap().writes.len();
+    assert_eq!(
+        actor.execute(req(Operation::ReadMode)),
+        Err(Error::Unavailable),
+        "execute {phase}"
+    );
+    assert_eq!(read_id(actor), Err(Error::Unavailable), "setup {phase}");
+    assert_eq!(
+        script.lock().unwrap().writes.len(),
+        writes,
+        "nothing is sent {phase}"
+    );
+}
+/// With the ending exchange's `close` held: unavailable while closing, then, once `finish`
+/// has let the exchange end, unavailable again while the state shows unavailable.
+fn ending_exchange_leaves_requests_unavailable<R>(
+    actor: &CatActor,
+    script: &Arc<Mutex<Script>>,
+    (entered, release): (Arc<AtomicBool>, Arc<AtomicBool>),
+    finish: impl FnOnce() -> R,
+) -> R {
+    wait_until("the held close", Duration::from_secs(5), || {
+        entered.load(Ordering::Acquire)
+    });
+    assert_eq!(actor.snapshot().unwrap().state, State::Closing);
+    assert_unavailable_and_silent(actor, script, "while closing");
+    release.store(true, Ordering::Release);
+    let ended = finish();
+    wait_until("the closed connection", Duration::from_secs(2), || {
+        actor.snapshot().unwrap().state == State::Unavailable
+    });
+    assert_unavailable_and_silent(actor, script, "after the close");
+    ended
+}
+
+// Proves: TC-009-001
+#[test]
+fn a_request_right_after_ready_is_never_busy() {
+    let (hold, (entered, release)) = hold_at(Point::ReadyPublished);
+    let script = script_of(vec![
+        Action::Bytes(FREQUENCY.to_vec()),
+        Action::Bytes(MODE.to_vec()),
+    ]);
+    let actor = Arc::new(
+        CatActor::begin_watched(
+            Configuration::parse(FIXED_LINE).unwrap(),
+            authority(),
+            Catalogue::builtin().unwrap(),
+            move |_, _| Ok(Fake(script)),
+            hold,
+        )
+        .unwrap(),
+    );
+    wait_until("the held I/O thread", Duration::from_secs(5), || {
+        entered.load(Ordering::Acquire)
+    });
+    assert_eq!(actor.snapshot().unwrap().state, State::Ready);
+    // While ready is shown and the I/O thread is still held there, radio control is free:
+    // a reservation with a spent deadline tries the lease once and is not busy.
+    let reservation = actor.reserve_transition(Instant::now());
+    assert!(reservation.is_ok(), "{:?}", reservation.err());
+    drop(reservation);
+    // An operation taken now is carried out once the I/O thread goes on.
+    let requester = actor.clone();
+    let request = std::thread::spawn(move || requester.execute(req(Operation::ReadMode)));
+    release.store(true, Ordering::Release);
+    let answer = request.join().unwrap();
+    assert!(answer.is_ok(), "{answer:?}");
+    actor.request_close();
+}
+
+// Proves: TC-009-001
+#[test]
+fn while_connecting_a_request_is_unavailable_and_sends_nothing() {
+    let entered = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(AtomicBool::new(false));
+    let script = script_of(vec![Action::Block(
+        FREQUENCY.to_vec(),
+        entered.clone(),
+        release.clone(),
+    )]);
+    let actor = begin_on(script.clone());
+    wait_until("the connect's read", Duration::from_secs(2), || {
+        entered.load(Ordering::Acquire)
+    });
+    assert_eq!(actor.snapshot().unwrap().state, State::Connecting);
+    assert_unavailable_and_silent(&actor, &script, "while connecting");
+    assert_eq!(
+        script.lock().unwrap().writes.len(),
+        1,
+        "the connect's read only"
+    );
+    release.store(true, Ordering::Release);
+    wait_until("the connection", Duration::from_secs(2), || {
+        actor.snapshot().unwrap().state != State::Connecting
+    });
+    actor.request_close();
+}
+
+// Proves: TC-009-001
+#[test]
+fn the_first_request_after_a_failed_connect_is_unavailable() {
+    let (actor, (_, release)) = failed_connect_actor_held_at(Point::FailurePublished);
+    let answer = actor.execute(req(Operation::ReadMode));
+    release.store(true, Ordering::Release);
+    assert_eq!(answer, Err(Error::Unavailable));
+}
+
+/// The failed connect's I/O thread is held after it released the lease and before its
+/// receivers are dropped. One `request` is taken in that window; after the I/O thread is
+/// released, five more follow. Each is unavailable.
+fn requests_after_a_failed_connect_stay_unavailable(request: fn(&CatActor) -> Option<Error>) {
+    let (actor, (_, release)) = failed_connect_actor_held_at(Point::LeaseReleased);
+    let mut answers = vec![request(&actor)];
+    release.store(true, Ordering::Release);
+    answers.extend((0..5).map(|_| request(&actor)));
+    assert_eq!(answers, vec![Some(Error::Unavailable); 6]);
+}
+
+// Proves: TC-009-001
+#[test]
+fn operations_after_a_failed_connect_stay_unavailable() {
+    requests_after_a_failed_connect_stay_unavailable(|actor| {
+        let request = Request {
+            // A command never carried out answers at this deadline.
+            deadline: Instant::now() + Duration::from_millis(200),
+            ..req(Operation::ReadMode)
+        };
+        actor.execute(request).err()
+    });
+}
+
+// Proves: TC-009-001
+#[test]
+fn menu_exchanges_after_a_failed_connect_stay_unavailable() {
+    requests_after_a_failed_connect_stay_unavailable(|actor| read_id(actor).err());
+}
+
+// Proves: TC-009-001
+#[test]
+fn after_an_execute_ends_the_connection_requests_are_unavailable() {
+    let (actor, script) = ready_actor(vec![Action::Bytes(Vec::new())]);
+    let held = hold_close(&script);
+    let ending = actor.clone();
+    let worker = std::thread::spawn(move || ending.execute(req(Operation::ReadMode)));
+    let ended = ending_exchange_leaves_requests_unavailable(&actor, &script, held, || {
+        worker.join().unwrap()
+    });
+    assert_eq!(ended, Err(Error::Timeout));
+}
+
+// Proves: TC-009-001
+#[test]
+fn after_a_setup_ends_the_connection_requests_are_unavailable() {
+    let (actor, script) = ready_actor(vec![Action::Bytes(Vec::new())]);
+    let held = hold_close(&script);
+    let ending = actor.clone();
+    let worker = std::thread::spawn(move || {
+        ending.setup(
+            SetupCommand::ReadId,
+            Instant::now() + Duration::from_secs(3),
+        )
+    });
+    let ended = ending_exchange_leaves_requests_unavailable(&actor, &script, held, || {
+        worker.join().unwrap()
+    });
+    assert_eq!(ended, Err(Error::Timeout));
+}
+
+// Proves: TC-009-001
+#[test]
+fn after_a_poll_ends_the_connection_requests_are_unavailable() {
+    // No answer after the connect: the first poll (1 s) times out and ends the connection.
+    let (actor, script) = ready_actor(Vec::new());
+    let held = hold_close(&script);
+    ending_exchange_leaves_requests_unavailable(&actor, &script, held, || ());
+}
+
+// Proves: TC-009-001
+#[test]
+fn a_reservation_that_outlives_its_connection_leaves_requests_unavailable() {
+    let (actor, script) = ready_actor(vec![Action::Bytes(Vec::new())]);
+    let held = hold_close(&script);
+    let reservation = actor
+        .reserve_transition(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    let worker = std::thread::spawn(move || {
+        let ended = reservation.execute(req(Operation::ReadMode));
+        (ended, reservation)
+    });
+    // The reservation is still held during the checks after the close.
+    let (ended, reservation) =
+        ending_exchange_leaves_requests_unavailable(&actor, &script, held, || {
+            worker.join().unwrap()
+        });
+    assert_eq!(ended, Err(Error::Timeout));
+    drop(reservation);
+}
+
+// Proves: TC-009-001
+#[test]
+fn after_a_key_ends_the_connection_requests_are_unavailable() {
+    // The key is acknowledged; its readback gets no answer (indeterminate).
+    let (actor, script) = ready_actor(vec![Action::Bytes(ACK.to_vec()), Action::Bytes(Vec::new())]);
+    let held = hold_close(&script);
+    let keying = actor.clone();
+    let worker =
+        std::thread::spawn(move || keying.ptt(true, Instant::now() + Duration::from_secs(2)));
+    let ended = ending_exchange_leaves_requests_unavailable(&actor, &script, held, || {
+        worker.join().unwrap()
+    });
+    assert_eq!(ended, Err(Error::Indeterminate));
 }
