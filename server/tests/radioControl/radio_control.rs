@@ -1131,18 +1131,58 @@ fn a_menu_write_while_the_radio_transmits_is_busy_and_writes_nothing() {
 type CatActor = radio_control::actor::Actor;
 /// A fixed rate, so that a connect is one frequency read with no rate search.
 const FIXED_LINE: &str = "icom7300://COM3?baud=9600&radio=94&controller=E0";
-use radio_control::actor::pause::{self, Pause, Point};
-/// Pauses the I/O thread of the next actor this thread begins at `point`; the flags are
-/// (entered, release).
-fn pause_next_actor_at(point: Point) -> (Arc<AtomicBool>, Arc<AtomicBool>) {
+use radio_control::actor::ConnectWatch;
+/// A point of the connect's end, as `ConnectWatch` reports it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Point {
+    ReadyPublished,
+    FailurePublished,
+    LeaseReleased,
+}
+/// A `ConnectWatch` that holds the I/O thread at `point`: it sets `entered`, then waits for
+/// `release` and fails after 10 s without it.
+struct Hold {
+    point: Point,
+    entered: Arc<AtomicBool>,
+    release: Arc<AtomicBool>,
+}
+impl Hold {
+    fn at(&self, point: Point) {
+        if point != self.point {
+            return;
+        }
+        self.entered.store(true, Ordering::Release);
+        let start = Instant::now();
+        while !self.release.load(Ordering::Acquire) {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "the held I/O thread was never released"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+}
+impl ConnectWatch for Hold {
+    fn ready_published(&mut self) {
+        self.at(Point::ReadyPublished);
+    }
+    fn failure_published(&mut self) {
+        self.at(Point::FailurePublished);
+    }
+    fn lease_released(&mut self) {
+        self.at(Point::LeaseReleased);
+    }
+}
+/// A watch that holds at `point`, and its flags (entered, release).
+fn hold_at(point: Point) -> (Hold, (Arc<AtomicBool>, Arc<AtomicBool>)) {
     let entered = Arc::new(AtomicBool::new(false));
     let release = Arc::new(AtomicBool::new(false));
-    pause::next_actor(Pause {
+    let hold = Hold {
         point,
         entered: entered.clone(),
         release: release.clone(),
-    });
-    (entered, release)
+    };
+    (hold, (entered, release))
 }
 
 fn begin_on(script: Arc<Mutex<Script>>) -> Arc<CatActor> {
@@ -1176,22 +1216,23 @@ fn ready_actor(actions: Vec<Action>) -> (Arc<CatActor>, Arc<Mutex<Script>>) {
     assert_eq!(actor.snapshot().unwrap().state, State::Ready);
     (actor, script)
 }
-/// An actor whose factory fails with resourceInUse, its I/O thread paused at `point`; the
-/// flags are (entered, release), and the pause has been entered.
-fn failed_connect_actor_paused_at(
+/// An actor whose factory fails with resourceInUse, its I/O thread held at `point`; the
+/// flags are (entered, release), and the hold has been entered.
+fn failed_connect_actor_held_at(
     point: Point,
 ) -> (Arc<CatActor>, (Arc<AtomicBool>, Arc<AtomicBool>)) {
-    let (entered, release) = pause_next_actor_at(point);
+    let (hold, (entered, release)) = hold_at(point);
     let actor = Arc::new(
-        CatActor::begin(
+        CatActor::begin_watched(
             Configuration::parse(FIXED_LINE).unwrap(),
             authority(),
             Catalogue::builtin().unwrap(),
             |_, _| -> Result<Fake> { Err(Error::ResourceInUse) },
+            hold,
         )
         .unwrap(),
     );
-    wait_until("the paused I/O thread", Duration::from_secs(5), || {
+    wait_until("the held I/O thread", Duration::from_secs(5), || {
         entered.load(Ordering::Acquire)
     });
     assert_eq!(actor.snapshot().unwrap().state, State::Unavailable);
@@ -1250,22 +1291,33 @@ fn ending_exchange_leaves_requests_unavailable<R>(
 // Proves: TC-009-001
 #[test]
 fn a_request_right_after_ready_is_never_busy() {
-    let (entered, release) = pause_next_actor_at(Point::ReadyPublished);
-    let actor = begin_on(script_of(vec![
+    let (hold, (entered, release)) = hold_at(Point::ReadyPublished);
+    let script = script_of(vec![
         Action::Bytes(FREQUENCY.to_vec()),
         Action::Bytes(MODE.to_vec()),
-    ]));
-    wait_until("the paused I/O thread", Duration::from_secs(5), || {
+    ]);
+    let actor = Arc::new(
+        CatActor::begin_watched(
+            Configuration::parse(FIXED_LINE).unwrap(),
+            authority(),
+            Catalogue::builtin().unwrap(),
+            move |_, _| Ok(Fake(script)),
+            hold,
+        )
+        .unwrap(),
+    );
+    wait_until("the held I/O thread", Duration::from_secs(5), || {
         entered.load(Ordering::Acquire)
     });
     assert_eq!(actor.snapshot().unwrap().state, State::Ready);
-    let at_ready = actor.lease();
+    // While ready is shown and the I/O thread is still held there, radio control is free:
+    // a reservation with a spent deadline tries the lease once and is not busy.
+    let reservation = actor.reserve_transition(Instant::now());
+    assert!(reservation.is_ok(), "{:?}", reservation.err());
+    drop(reservation);
+    // An operation taken now is carried out once the I/O thread goes on.
     let requester = actor.clone();
     let request = std::thread::spawn(move || requester.execute(req(Operation::ReadMode)));
-    // The request has answered, or it has taken the lease and waits for the I/O thread.
-    wait_until("the request", Duration::from_secs(5), || {
-        request.is_finished() || actor.lease() != at_ready
-    });
     release.store(true, Ordering::Release);
     let answer = request.join().unwrap();
     assert!(answer.is_ok(), "{answer:?}");
@@ -1303,17 +1355,17 @@ fn while_connecting_a_request_is_unavailable_and_sends_nothing() {
 // Proves: TC-009-001
 #[test]
 fn the_first_request_after_a_failed_connect_is_unavailable() {
-    let (actor, (_, release)) = failed_connect_actor_paused_at(Point::FailurePublished);
+    let (actor, (_, release)) = failed_connect_actor_held_at(Point::FailurePublished);
     let answer = actor.execute(req(Operation::ReadMode));
     release.store(true, Ordering::Release);
     assert_eq!(answer, Err(Error::Unavailable));
 }
 
-/// The failed connect's I/O thread is paused after it released the lease and before its
+/// The failed connect's I/O thread is held after it released the lease and before its
 /// receivers are dropped. One `request` is taken in that window; after the I/O thread is
 /// released, five more follow. Each is unavailable.
 fn requests_after_a_failed_connect_stay_unavailable(request: fn(&CatActor) -> Option<Error>) {
-    let (actor, (_, release)) = failed_connect_actor_paused_at(Point::LeaseReleased);
+    let (actor, (_, release)) = failed_connect_actor_held_at(Point::LeaseReleased);
     let mut answers = vec![request(&actor)];
     release.store(true, Ordering::Release);
     answers.extend((0..5).map(|_| request(&actor)));

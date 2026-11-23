@@ -105,17 +105,46 @@ impl Drop for TransitionLease {
     }
 }
 
+/// Port: the end of a connect as the I/O thread reaches it, in the order of the methods.
+/// `Actor::begin` fills it with `NoWatch`; a test passes a watch that holds a window open.
+pub trait ConnectWatch: Send + 'static {
+    /// Ready has been published.
+    fn ready_published(&mut self) {}
+    /// A failed connect's end (unavailable, closed or closing) has been published.
+    fn failure_published(&mut self) {}
+    /// A failed connect has released its lease; its request channels still exist.
+    fn lease_released(&mut self) {}
+}
+/// The adapter of the station: it watches nothing.
+pub struct NoWatch;
+impl ConnectWatch for NoWatch {}
+
 impl Actor {
     /// The factory runs inside the I/O thread, so native handles never need an unsafe Send promise.
     pub fn begin<T, F>(
         configuration: Configuration,
-        mut authority: Authority,
+        authority: Authority,
         catalogue: Catalogue,
         factory: F,
     ) -> Result<Self>
     where
         T: Transport + 'static,
         F: FnOnce(Instant, &AtomicBool) -> Result<T> + Send + 'static,
+    {
+        Self::begin_watched(configuration, authority, catalogue, factory, NoWatch)
+    }
+    /// As `begin`, with `watch` told of the connect's end.
+    pub fn begin_watched<T, F, W>(
+        configuration: Configuration,
+        mut authority: Authority,
+        catalogue: Catalogue,
+        factory: F,
+        mut watch: W,
+    ) -> Result<Self>
+    where
+        T: Transport + 'static,
+        F: FnOnce(Instant, &AtomicBool) -> Result<T> + Send + 'static,
+        W: ConnectWatch,
     {
         configuration.validate()?;
         authority.validate()?;
@@ -150,8 +179,6 @@ impl Actor {
             current_cancel.clone(),
             keyed.clone(),
         );
-        #[cfg(test)]
-        let paused = pause::take();
         let worker = thread::Builder::new()
             .name("cat-io".into())
             .spawn(move || {
@@ -172,18 +199,10 @@ impl Actor {
                         deadline,
                     )
                 })();
-                // The connect's lease (1) ends no later than its end becomes visible. Only
-                // the connect's own lease is released: a request reads the state first and
-                // takes no ordinary lease before ready, so a later release cannot take one
-                // that is not the connect's.
-                let end_connect = || {
-                    let _ = busy.compare_exchange(1, 0, Ordering::AcqRel, Ordering::Acquire);
-                };
                 let mut executor = match connected {
                     Ok(value) => value,
                     Err(error) => {
                         if let Ok(mut state) = shared.lock() {
-                            end_connect();
                             state.state = if error == Error::FailedClose {
                                 State::Closing
                             } else if stop.load(Ordering::Acquire) {
@@ -195,24 +214,19 @@ impl Actor {
                             state.facts.stale();
                             let _ = state.publish();
                         }
-                        #[cfg(test)]
-                        pause::at(&paused, pause::Point::FailurePublished);
-                        end_connect();
-                        #[cfg(test)]
-                        pause::at(&paused, pause::Point::LeaseReleased);
+                        watch.failure_published();
+                        busy.store(0, Ordering::Release);
+                        watch.lease_released();
                         return;
                     }
                 };
-                if executor
-                    .attach_snapshot_releasing(shared.clone(), end_connect)
-                    .is_err()
-                {
+                if executor.attach_snapshot(shared.clone()).is_err() {
                     let _ = executor.close();
-                    end_connect();
+                    busy.store(0, Ordering::Release);
                     return;
                 }
-                #[cfg(test)]
-                pause::at(&paused, pause::Point::ReadyPublished);
+                watch.ready_published();
+                busy.store(0, Ordering::Release);
                 let mut last_poll = Instant::now();
                 while !stop.load(Ordering::Acquire) {
                     // Transmit-switch exchanges of the transmit hold come first; while the
@@ -406,7 +420,6 @@ impl Actor {
         if self.shutdown.load(Ordering::Acquire) {
             return Err(Error::Unavailable);
         }
-        self.require_ready()?;
         let (expected, occupied) = if reservation.is_some() {
             (2, 3)
         } else {
@@ -419,8 +432,6 @@ impl Actor {
             .compare_exchange(expected, occupied, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            // The holder may have ended the connection meanwhile; then it is unavailable.
-            self.require_ready()?;
             if Instant::now() >= deadline || self.shutdown.load(Ordering::Acquire) {
                 return Err(Error::Busy);
             }
@@ -443,10 +454,7 @@ impl Actor {
             let remaining = deadline.saturating_duration_since(Instant::now());
             match result.recv_timeout(remaining.max(Duration::from_millis(50))) {
                 Ok(value) => return value,
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    self.give_back(occupied, expected);
-                    return Err(Error::Unavailable);
-                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(Error::Unavailable),
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if Instant::now() >= deadline + Duration::from_secs(2) {
                         return Err(Error::Timeout);
@@ -483,21 +491,6 @@ impl Actor {
     pub fn ptt_indeterminate(&self) -> bool {
         self.keyed.load(Ordering::Acquire)
     }
-    /// WstxCatControl::ControlExchange: a state other than ready is unavailable, whatever
-    /// still holds radio control; this answer comes before busy and sends nothing.
-    fn require_ready(&self) -> Result<()> {
-        match self.snapshot.lock().map(|s| s.state) {
-            Ok(State::Ready) => Ok(()),
-            _ => Err(Error::Unavailable),
-        }
-    }
-    /// Gives back a lease this request took for a command radio control never carried
-    /// out (its response channel closed unanswered): the I/O thread's `Lease` never ran.
-    fn give_back(&self, occupied: u8, expected: u8) {
-        let _ =
-            self.lease
-                .compare_exchange(occupied, expected, Ordering::AcqRel, Ordering::Acquire);
-    }
     fn release_hold(&self) {
         let _ = self
             .lease
@@ -508,12 +501,6 @@ impl Actor {
             .lock()
             .map(|s| s.clone())
             .map_err(|_| Error::Unavailable)
-    }
-    /// Test-only: the lease's value (0 free, 1 ordinary, 2 and 3 reservation, 4 hold).
-    #[cfg(test)]
-    #[allow(dead_code)] // used by the radio_control integration test
-    pub fn lease(&self) -> u8 {
-        self.lease.load(Ordering::Acquire)
     }
     pub fn execute(&self, request: Request) -> Result<Observation> {
         self.execute_inner(request, None)
@@ -555,21 +542,14 @@ impl Actor {
         if Instant::now() >= request.deadline {
             return Err(Error::Timeout);
         }
-        self.require_ready()?;
         let (expected, occupied) = if reservation.is_some() {
             (2, 3)
         } else {
             (0, 1)
         };
-        if self
-            .lease
+        self.lease
             .compare_exchange(expected, occupied, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            // The holder may have ended the connection meanwhile; then it is unavailable.
-            self.require_ready()?;
-            return Err(Error::Busy);
-        }
+            .map_err(|_| Error::Busy)?;
         let deadline = request.deadline;
         let cancel = request.cancelled.clone();
         let (response, result) = mpsc::sync_channel(1);
@@ -599,10 +579,7 @@ impl Actor {
             }
             match result.recv_timeout(remaining.min(Duration::from_millis(50))) {
                 Ok(value) => return value,
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    self.give_back(occupied, expected);
-                    return Err(Error::Unavailable);
-                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Err(Error::Unavailable),
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
         }
@@ -651,52 +628,6 @@ impl Drop for Actor {
             && let Some(worker) = self.thread.take()
         {
             let _ = worker.join();
-        }
-    }
-}
-/// Test-only seam: pauses the I/O thread of the next actor this thread begins at one
-/// point of its connect's end, so that a test holds that window open without a race.
-#[cfg(test)]
-#[allow(dead_code)] // used by the radio_control integration test
-pub mod pause {
-    use std::cell::RefCell;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::time::{Duration, Instant};
-
-    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-    pub enum Point {
-        /// Right after ready is published.
-        ReadyPublished,
-        /// Right after a failed connect's end (unavailable, closed or closing) is published.
-        FailurePublished,
-        /// After a failed connect has released the lease, before the receivers are dropped.
-        LeaseReleased,
-    }
-    /// Pauses at `point`: sets `entered`, then waits for `release`, at most 10 s.
-    pub struct Pause {
-        pub point: Point,
-        pub entered: Arc<AtomicBool>,
-        pub release: Arc<AtomicBool>,
-    }
-    thread_local! {
-        static NEXT: RefCell<Option<Pause>> = const { RefCell::new(None) };
-    }
-    /// The next `Actor::begin` on this thread pauses its I/O thread as `pause` says.
-    pub fn next_actor(pause: Pause) {
-        NEXT.with(|next| *next.borrow_mut() = Some(pause));
-    }
-    pub(super) fn take() -> Option<Pause> {
-        NEXT.with(|next| next.borrow_mut().take())
-    }
-    pub(super) fn at(pause: &Option<Pause>, point: Point) {
-        let Some(pause) = pause.as_ref().filter(|p| p.point == point) else {
-            return;
-        };
-        pause.entered.store(true, Ordering::Release);
-        let start = Instant::now();
-        while !pause.release.load(Ordering::Acquire) && start.elapsed() < Duration::from_secs(10) {
-            std::thread::sleep(Duration::from_millis(1));
         }
     }
 }
