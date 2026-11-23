@@ -13,8 +13,8 @@ Filesystem path relative to this entrypoint: `../../../harness/general/core/skil
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=f94e7c5a02c46c471765703450583211629c2bee63ef15a9257d0929bab621f4 -->
-<!-- source harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests sha256=e50146b2b979540e767db7d86450406f1636d49064ed8b9feb9337a96e5f4e5c -->
+<!-- canonical-source-sha256=35802614d81e4d20075952669af577aa59b4daf96c192e1e24a10f47e0b1319c -->
+<!-- source harness/project/docs/Finished-Model.md#m6-requirements-clauses-and-tests sha256=bd7c68db495c24aa18bacb91ec51a343536689deb3d42874f2b26b32353d36f5 -->
 
 ## This project
 
@@ -35,10 +35,10 @@ If the source is missing, stop and report it; do not substitute another checkout
   belong to different parts, are shown by different tests or change for different reasons.
 - **M6.5** A test case stands beside its clause and verifies it. It is a skeleton and a
   title: its identity, a one-line title, `subject`, `verify`, `@TestLevel`, `@Automation`
-  and `@TestedBy`; the bound test is the description of the test. A test case is written
-  only when its test exists, and is bound only to tests that show what its clause promises.
-  A clause without a case stands at target or partial; built and tested is `implemented`,
-  and an implemented clause has a case. A clause that prevents something (a refusal, a
+  and `@TestedBy`; the bound test is the description of the test. A case whose test is not
+  yet written is `planned` and has no `@TestedBy`; a partial or implemented case is bound
+  only to tests that show what its clause promises. A clause without a case stands at target
+  or partial; built and tested is `implemented`, and an implemented clause has a bound case. A clause that prevents something (a refusal, a
   disabled control, a MUST NOT) has a case bound to a negative test: a test that tries it
   and sees it refused.
 - **M6.6** Status and test links are tags on the clause and on its case. The code link
@@ -69,4 +69,4 @@ If the source is missing, stop and report it; do not substitute another checkout
   enumeration literal below the clauses, by `@CodeDiffers` on the element, saying what the
   code does today. Where the code matches, there is no `@CodeDiffers`.
 
-<!-- harness-forwarder-v1 sha256=5dfd878eaca3b4a991b7f00660e6e7cd8acb74e8de9d9d6e35370d589c4e52b2 -->
+<!-- harness-forwarder-v1 sha256=4e352e6b72beb09935842e528c2765eae0e41bb3e0e7ae66bf67150c29f337f1 -->
