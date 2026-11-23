@@ -91,7 +91,8 @@ class EmulatorTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_tool(self, *args, procs=(), emulator="ready", env=None):
-        return pwsh.run(TOOL, [*args, "-Emulator", self.emulator, "-StateDir", self.state, "-ReadySeconds", "2"],
+        return pwsh.run(TOOL, [*args, "-Emulator", self.emulator, "-StateDir", self.state, "-ReadySeconds", "2",
+                               "-RunRoot", os.path.join(self.tmp.name, "live")],
                         prelude(self.log, procs, emulator), env=env)
 
     def system(self):
@@ -126,6 +127,24 @@ class EmulatorTests(unittest.TestCase):
                 with open(path, "rb") as f:
                     out.append((os.path.relpath(path, self.tmp.name), f.read()))
         return sorted(out)
+
+    def test_stop_refuses_while_a_candidate_bench_owns_the_emulator(self):
+        bench = os.path.join(self.tmp.name, "live", "7", "bench")
+        os.makedirs(bench)
+        with open(os.path.join(bench, "bench.json"), "w", encoding="utf-8") as f:
+            json.dump({"issue": 7, "emulator": True}, f)
+        self.write_record()
+        rc, out = self.run_tool("-Stop", procs=self.ours())
+        self.assertEqual(rc, 2, out)
+        self.assertIn("the candidate bench of #%d owns the emulator" % 7, out)
+        self.assertEqual(self.system(), [])                       # nothing ended
+        rc, out = self.run_tool("-Stop", "-Bench", procs=self.ours())
+        self.assertEqual(rc, 0, out)
+        self.assertIn("EMULATOR STOPPED 5000", out)
+
+    def test_bench_is_only_a_stop_of_the_bench(self):
+        rc, out = self.run_tool("-Start", "-Bench")
+        self.assertEqual(rc, 2, out)
 
     # Accepted
 

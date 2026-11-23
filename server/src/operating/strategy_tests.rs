@@ -206,12 +206,13 @@ fn tc_039_002_verdicts_grey_reasons_and_treat_73() {
             (3, Some(2), false), // -8
             (0, Some(3), false), // -12
             (5, Some(4), false), // -15
-            (2, None, true),
-            (4, None, true),
-            (6, None, false), // an RR73 without Treat 73 as CQ
-            (8, None, true),
+            // The rest by the order (no Most Wanted list: a tie), then the SNR.
+            (4, None, true),  // -1
+            (8, None, true),  // -2
+            (2, None, true),  // -5
+            (6, None, false), // -6: an RR73 without Treat 73 as CQ
         ],
-        "display order: by rank, then the rest in their order"
+        "display order: by rank, then the rest by the same criteria"
     );
     let why: HashMap<u64, String> = list
         .iter()
@@ -228,7 +229,7 @@ fn tc_039_002_verdicts_grey_reasons_and_treat_73() {
     );
     assert_eq!(
         list[5].json(false),
-        json!({"sequence":2,"rank":null,"grey":true})
+        json!({"sequence":4,"rank":null,"grey":true})
     );
     // Treat 73 as CQ: K1ABC's RR73 is a candidate; a message to me is never cq-like.
     let treat = Strategy {
@@ -984,6 +985,179 @@ async fn tc_039_003_store_routes_and_evaluate() {
         (r.status.as_u16(), r.json["error"]["field"].clone()),
         (400, json!("next_sequence"))
     );
+    assert_eq!(f.keys(), 0, "evaluation never keys");
+}
+
+/// The hand-worked table of TC-107-001: order [new_dxcc, new_call], new [dxcc, call] ever,
+/// not worked, Calling stations are answered off; the log holds DL1XYZ and K1ABC (so Germany and
+/// the U.S.A.) and VK2ABC is ignored. The keys per record (new DXCC, new call; 0 holds):
+/// 0 JA1XYZ (0,0) -15 candidate; 1 DL2ABC (1,0) -3 candidate; 2 K1ABC (1,1) -1 worked;
+/// 3 W1AW (1,0) -5 greyed CQ NA; 4 VK2ABC (0,0) -20 ignored; 5 HB9BLA (0,0) 0 my own message;
+/// 6 OH1AA (0,0) -8 a caller not answered; 7 DL1XYZ (1,1) -2 worked; 8 free text and 9 a hashed
+/// sender have no verdict.
+fn tc_107_table() -> (Strategy, Vec<Value>, Station) {
+    let s = Strategy {
+        new: vec![NewWhat::Dxcc, NewWhat::Call],
+        order: vec![Criterion::NewDxcc, Criterion::NewCall],
+        callers_first: false,
+        ..award(&[Goal::Dxcc, Goal::NewCall])
+    };
+    let mut records = rows(&[
+        ("CQ JA1XYZ PM95", Some(-15.0)),
+        ("CQ DL2ABC JO62", Some(-3.0)),
+        ("CQ K1ABC FN42", Some(-1.0)),
+        ("CQ NA W1AW FN31", Some(-5.0)),
+        ("CQ VK2ABC QF56", Some(-20.0)),
+        ("CQ HB9BLA JN47", Some(0.0)),
+        ("HB9BLA OH1AA KP20", Some(-8.0)),
+        ("CQ DL1XYZ JO62", Some(-2.0)),
+        ("TNX BOB 73 GL", Some(-4.0)),
+        ("CQ PJ4ABC FK52", Some(-6.0)),
+    ]);
+    records[9]["fields"]["from"]["kind"] = json!("hash");
+    let mut st = me();
+    st.worked = Some(worked(&[
+        ("DL1XYZ", Some("40m"), Some("FT8"), Some("JO62"), false),
+        ("K1ABC", Some("40m"), Some("FT8"), Some("FN42"), false),
+    ]));
+    st.ignored.insert("VK2ABC".into(), Tier::Permanent);
+    (s, records, st)
+}
+
+// CL-107-01: the verdicts without a rank follow the ranked ones by the same criteria, then the
+// SNR, the lower audio frequency and the call; the ranks stay; free text and a hashed sender have
+// none. Expected orders are the table of tc_107_table, worked by hand.
+// Proves: TC-107-001
+#[test]
+fn tc_107_001_the_rest_follows_by_the_strategy_criteria() {
+    let (s, records, st) = tc_107_table();
+    let list = evaluate(&s, &records, &st);
+    let order: Vec<(u64, Option<usize>, bool)> = list
+        .iter()
+        .map(|v| (v.facts.sequence, v.rank, v.grey))
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            (0, Some(0), false), // ranked: the new DXCC first
+            (1, Some(1), false),
+            (5, None, false), // (0,0) 0 dB: my own message
+            (6, None, false), // (0,0) -8: a caller without a rank has no group of its own
+            (4, None, false), // (0,0) -20: ignored
+            (3, None, true),  // (1,0) -5: greyed
+            (2, None, false), // (1,1) -1: worked
+            (7, None, false), // (1,1) -2: worked
+        ],
+        "ranked by rank, then the rest by new DXCC, new call, SNR"
+    );
+    let why = |seq: u64| {
+        list.iter()
+            .find(|v| v.facts.sequence == seq)
+            .unwrap()
+            .why
+            .clone()
+    };
+    assert_eq!(
+        [why(4), why(5), why(6), why(2)],
+        [
+            ignore_why("VK2ABC", Tier::Permanent, "VK2ABC"),
+            "my own message".to_owned(),
+            "calls my call \u{b7} not answered".to_owned(),
+            "not new".to_owned()
+        ]
+    );
+    // An exact tie of the criteria and the SNR: the lower audio frequency, then the call; decode
+    // order never.
+    // Two worked senders (1,1) at -7 dB: K1ABC at 1000 Hz, DL1XYZ at 1100 Hz.
+    let mut tie = rows(&[
+        ("CQ K1ABC FN42", Some(-7.0)),
+        ("CQ DL1XYZ JO62", Some(-7.0)),
+    ]);
+    let seqs = |l: Vec<Verdict>| l.into_iter().map(|v| v.facts.sequence).collect::<Vec<_>>();
+    assert_eq!(
+        seqs(evaluate(&s, &tie, &st)),
+        vec![0, 1],
+        "the lower frequency"
+    );
+    tie[1]["frequency_hz"] = json!(1000.0);
+    assert_eq!(
+        seqs(evaluate(&s, &tie, &st)),
+        vec![1, 0],
+        "then the call, not decode order"
+    );
+    // Off the strategy's bands no record has a rank, and all stand by the criteria.
+    let off = Strategy {
+        bands: Some(vec!["20m".into()]),
+        ..s.clone()
+    };
+    let list = evaluate(&off, &records, &st);
+    assert!(list.iter().all(|v| v.rank.is_none()));
+    assert_eq!(
+        list.iter().map(|v| v.facts.sequence).collect::<Vec<_>>(),
+        vec![5, 6, 0, 4, 1, 3, 2, 7],
+        "(0,0) 0, -8, -15, -20; (1,0) -3, -5; (1,1) -1, -2"
+    );
+}
+
+// CL-107-01 at the evaluate route: explain false gives every verdict in display order without
+// why; explain true the same order with why. The draft: new [call], order [new_dxcc, new_call],
+// Calling stations are answered off, an empty log (every entity and call new): the rest by SNR.
+// Proves: TC-107-001
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_107_001_the_evaluate_reply_holds_every_verdict_in_order() {
+    let f = station(true).await;
+    let (source, job, generation) = f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    publish(
+        &f,
+        e,
+        &[
+            ("CQ K1ABC FN42", 1500.0, Some(-12.0)),
+            ("CQ NA W1AW FN31", 900.0, Some(-3.0)),
+            ("HB9BLA G4ABC IO91", 700.0, Some(1.0)),
+            ("CQ DL1XYZ JO62", 1200.0, Some(-1.0)),
+            ("CQ HB9BLA JN47", 1100.0, Some(-5.0)),
+        ],
+    );
+    let mut draft = strategy_json("Draft");
+    draft["order"] = json!(["new_dxcc", "new_call"]);
+    draft["callers_first"] = json!(false);
+    let body = |explain: bool| {
+        json!({"v":1,"profile_id":f.id,"boot_id":f.boot,"source_id":source,"job_id":job,
+        "generation":generation,"first_sequence":0,"next_sequence":5,"strategy":draft,"explain":explain})
+    };
+    let plain = f
+        .browser("POST", "/strategy/evaluate", Some(body(false)))
+        .await;
+    assert_eq!(plain.status, StatusCode::OK, "{}", plain.json);
+    assert_eq!(
+        plain.json["verdicts"],
+        json!([
+            {"sequence":3,"rank":0,"grey":false},
+            {"sequence":0,"rank":1,"grey":false},
+            {"sequence":2,"rank":null,"grey":false},
+            {"sequence":1,"rank":null,"grey":true},
+            {"sequence":4,"rank":null,"grey":false},
+        ]),
+        "every verdict: ranked, then the rest by SNR (+1, -3, -5)"
+    );
+    let explained = f
+        .browser("POST", "/strategy/evaluate", Some(body(true)))
+        .await;
+    let seqs = |v: &Value| {
+        v["verdicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| (x["sequence"].clone(), x["why"].is_string()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        seqs(&explained.json),
+        [3, 0, 2, 1, 4].map(|s| (json!(s), true)).to_vec(),
+        "the same order with why"
+    );
+    assert!(seqs(&plain.json).iter().all(|(_, why)| !why));
     assert_eq!(f.keys(), 0, "evaluation never keys");
 }
 
@@ -8801,6 +8975,228 @@ async fn tc_082_002_a_band_change_and_a_new_live_job_count_anew_no_receive_is_nu
     assert_eq!(
         build_of(&f).await,
         listening(e + 45_000, "odd", 1, json!([[300, 2700]]))
+    );
+}
+
+// TC-105-001: the value is built when a counted period's view grows. Oracle: the open rule of
+// WstxHoldTx::OpenSlotRule worked by hand (FT8 width 50, FT4 width 90, grid 10, ranges to 2700),
+// and WstxLiveReceive::WindowSchedule (a late window that adds nothing publishes nothing).
+
+/// The UTC text of a period start `ms` with its milliseconds (FT4 starts on a half second).
+fn start_text(ms: i64) -> String {
+    let t = crate::contact::utc_text(ms);
+    format!("{}.{:03}0000Z", &t[..19], ms.rem_euclid(1000))
+}
+/// The complete view of the period starting at `period`, one station decoded at each of `hz`
+/// (a report between two other stations: never a candidate).
+fn view_of(f: &Mcp, period: i64, hz: &[f64]) {
+    let records = hz
+        .iter()
+        .map(|hz| crate::contact_http::tests::record("G4AAA W1XYZ -10", *hz, Some(-10.0)))
+        .collect();
+    f.state
+        .recording
+        .fixture_publish_period(&start_text(period), records);
+}
+/// The late window of the latest view: stations decoded at each of `hz` in its period, the view
+/// republished under the same id. Checks the descriptor: same id, next_sequence grown by them.
+fn grow(f: &Mcp, hz: &[f64]) {
+    let r = &f.state.recording;
+    let before = r.latest_publication().unwrap();
+    let records = hz
+        .iter()
+        .map(|hz| crate::contact_http::tests::record("G4BBB W2XYZ -12", *hz, Some(-12.0)))
+        .collect();
+    r.fixture_grow_latest(records);
+    let after = r.latest_publication().unwrap();
+    assert_eq!(
+        (after.0, after.2, after.3, &after.4),
+        (before.0, before.2 + hz.len() as u64, true, &before.4),
+        "same id, next_sequence + {}",
+        hz.len()
+    );
+}
+/// The manual QSO of TC-105-001 in periods of `p` ms from the even e (a multiple of 30 s), as case
+/// (c) of tc_082_002_a_manual_qso_holds_its_rx_parity_and_its_decodes_build_at_once: flat rows of
+/// 30 dB in every period, K1ABC's CQ decoded at 900 Hz in the odd period e - p, double-clicked in
+/// the even period e + 4p (my Tx even, Enable Tx off: nothing keyed). Returns P, the odd period
+/// e + 7p: from P + p on P, e + 5p, e + 3p and e + p count (4), K1ABC's e - p does not.
+async fn manual_qso(f: &Mcp, e: i64, p: i64) -> i64 {
+    for k in -4..=3 {
+        wf_row(f, e + k * p, 30, &[], false);
+    }
+    f.state.recording.fixture_publish_period(
+        &start_text(e - p),
+        vec![crate::contact_http::tests::record(
+            "CQ K1ABC FN42",
+            900.0,
+            Some(-5.0),
+        )],
+    );
+    step_at(f, e + 4 * p + 1_000);
+    browser_ok(
+        f,
+        "select_row",
+        json!({"row":live_row(f, "CQ K1ABC FN42"),"replace":true,"directive_confirmed":true}),
+    )
+    .await;
+    step_at(f, e + 4 * p + 1_000);
+    assert_eq!(contact(f).await.1, json!("replying"));
+    let v = build_of(f).await;
+    assert_eq!(
+        (&v["rx_parity"], &v["qso"]),
+        (&json!("odd"), &json!(true)),
+        "the QSO"
+    );
+    for k in 4..=7 {
+        wf_row(f, e + k * p, 30, &[], false);
+    }
+    e + 7 * p
+}
+fn in_qso(at: i64, mode: &str, open: Value) -> Value {
+    json!({"at_utc_ms":at,"mode":mode,"rx_parity":"odd","qso":true,"periods":4,"open":open})
+}
+
+// (a) FT8: P's complete view carries a decode at 1200 Hz: the build at P + 15 s has 1160..1240
+// closed. At P + 16 s the late window grows it (same id, next_sequence + 2) by 2382 and 2471 Hz:
+// the step at P + 16 s builds, 2382 closing 2340..2430 and 2471 2430..2520 (2330 and 2530 open).
+// (b) A Thin and a Detailed socket hold that build as their newest free_tx_slots.state, equal to
+// the GET value; an Off socket none. (c) A late window that adds nothing (same id, same
+// next_sequence): no build, no new value.
+// Proves: TC-105-001
+// Timing: timer
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_105_001_a_grown_counted_view_builds_at_once_and_reaches_the_sockets() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    let p = manual_qso(&f, e, 15_000).await;
+    view_of(&f, p, &[1200.0]);
+    step_at(&f, p + 15_000);
+    assert_eq!(
+        build_of(&f).await,
+        in_qso(p + 15_000, "ft8", json!([[300, 1200], [1250, 2700]])),
+        "the next even start"
+    );
+    let (address, server) = serve(&f).await;
+    let mut peers: Vec<Peer> = tokio::task::block_in_place(|| {
+        ["spectrum.thin", "spectrum.detail", "spectrum.off"]
+            .iter()
+            .map(|s| Peer::open(address, &f, s))
+            .collect()
+    });
+
+    // (a) the late window grows P's view.
+    grow(&f, &[2382.0, 2471.0]);
+    step_at(&f, p + 16_000);
+    let grown = build_of(&f).await;
+    assert_eq!(
+        grown,
+        in_qso(
+            p + 16_000,
+            "ft8",
+            json!([[300, 1200], [1250, 2380], [2530, 2700]])
+        ),
+        "(a) built at once on the growth"
+    );
+
+    // (b) the sockets.
+    let event = |v: &Value| {
+        json!({"v":1,"type":"free_tx_slots.state",
+            "data":{"profile_id":f.id,"boot_id":f.boot,"free_tx_slots":v}})
+    };
+    for (i, peer) in peers.iter_mut().enumerate() {
+        let got = peer.free_tx_slots();
+        if i == 2 {
+            assert_eq!(got, Vec::<Value>::new(), "(b) Off: none");
+        } else {
+            assert_eq!(got.last(), Some(&event(&grown)), "(b) peer {i}: the newest");
+        }
+    }
+
+    // (c) a late window that adds nothing.
+    grow(&f, &[]);
+    step_at(&f, p + 17_000);
+    assert_eq!(build_of(&f).await, grown, "(c) no build");
+    for (i, peer) in peers.iter_mut().enumerate() {
+        assert_eq!(
+            peer.free_tx_slots(),
+            Vec::<Value>::new(),
+            "(c) peer {i}: no new value"
+        );
+    }
+    server.abort();
+}
+
+// (d) Only listening, flat rows of e - 60 .. e: P = e - 15 s carries a decode at 1200 Hz. At e
+// (even judged) the build counts e - 30 and e - 60 s. The view of the ended P grows by 2382 and
+// 2471 Hz at e + 1 s, while e is in progress: P is not counted, no build. The build at e + 15 s
+// counts P and e - 45 s (2), the grown decodes closed: [[300, 1200], [1250, 2380], [2530, 2700]].
+// Proves: TC-105-001
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_105_001_a_grown_view_of_an_uncounted_period_builds_nothing() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft8");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    for back in [60_000, 45_000, 30_000, 15_000, 0] {
+        wf_row(&f, e - back, 30, &[], false);
+    }
+    let p = e - 15_000;
+    view_of(&f, p, &[1200.0]);
+    step_at(&f, e);
+    let start = listening(e, "even", 2, json!([[300, 2700]]));
+    assert_eq!(build_of(&f).await, start);
+    grow(&f, &[2382.0, 2471.0]);
+    step_at(&f, e + 1_000);
+    assert_eq!(build_of(&f).await, start, "(d) no build");
+    step_at(&f, e + 15_000);
+    assert_eq!(
+        build_of(&f).await,
+        listening(
+            e + 15_000,
+            "odd",
+            2,
+            json!([[300, 1200], [1250, 2380], [2530, 2700]])
+        ),
+        "(d) counted from the next build"
+    );
+}
+
+// (e) FT4 (width 90, periods of 7.5 s), the manual QSO of (a): P's complete view carries a decode
+// at 2000 Hz: the build at P + 7.5 s has 1920..2080 closed (1910 and 2090 open). At P + 8 s the
+// late window grows it (same id, next_sequence + 1) by 1000 Hz: the step at P + 8 s builds,
+// 920..1080 closed (910 and 1090 open).
+// Proves: TC-105-001
+// Timing: timer
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tc_105_001_a_grown_ft4_view_builds_at_once() {
+    let f = station(true).await;
+    f.state.recording.fixture_band("20m");
+    f.state.recording.fixture_live_job("ft4");
+    let e = at_even(&f);
+    let _client = f.state.recording.clients.session();
+    let p = manual_qso(&f, e, 7_500).await;
+    view_of(&f, p, &[2000.0]);
+    step_at(&f, p + 7_500);
+    assert_eq!(
+        build_of(&f).await,
+        in_qso(p + 7_500, "ft4", json!([[300, 2000], [2090, 2700]])),
+        "(e) the next even start"
+    );
+    grow(&f, &[1000.0]);
+    step_at(&f, p + 8_000);
+    assert_eq!(
+        build_of(&f).await,
+        in_qso(
+            p + 8_000,
+            "ft4",
+            json!([[300, 1000], [1090, 2000], [2090, 2700]])
+        ),
+        "(e) built at once on the growth"
     );
 }
 

@@ -21,8 +21,8 @@ interfaces/internal: StationLink, StationCommands, Strategies, RankingControl, A
     QsoControl, LogControl, ReceiveControl, TransmitControl, AudioControl, RadioControl, Keying,
     Decodes, DisplayData, StationTime, OperatingChain, Hearing, AudioStreams, ModeProcessing,
     ProfileAccess, RecordingTransfer, UdpControl, WebControl
-interfaces/external: OperatorInteraction, Mcp, Cat, RadioProperties, FlexApi, SoundDevice, Udp,
-    PskReporter, ClubLog, CountryFiles, TimeSource
+interfaces/external: ExternalPort, OperatorInteraction, Mcp, Cat, RadioProperties, FlexApi,
+    SoundDevice, Udp, PskReporter, ClubLog, CountryFiles, TimeSource
 backend/supervisor: Supervisor*, OperatingSelection, StationAuthority, Startup, SettingsCheck
 backend/web: Web*, Listener, ContentCoding
 backend/mcp: Mcp*, McpEndpoint
@@ -94,9 +94,9 @@ def catalog_error(files: dict[str, str]):
 
 class TreeTest(unittest.TestCase):
     def test_tree_is_m21(self):
-        """TV-135 (TR-03): the tool's tree is M2.1's, 116 files, each with its M7.5 package."""
+        """TV-135 (TR-03): the tool's tree is M2.1's, 117 files, each with its M7.5 package."""
         expected = expected_tree()
-        self.assertEqual(len(expected), 116)
+        self.assertEqual(len(expected), 117)
         self.assertEqual(tool.tree_files(), expected)
 
     def test_accepted_tree(self):

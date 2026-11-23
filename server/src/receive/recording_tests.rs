@@ -1082,4 +1082,33 @@ impl Recording {
         self.publication.send_modify(|n| *n = n.wrapping_add(1));
         sequences
     }
+    /// Test seam: the late window of the latest view's period, as publish_view republishes it
+    /// (WstxLiveReceive::PeriodViews): `records` appended to that period (sequence assigned here),
+    /// the view complete under the same id with next_sequence grown by them (unchanged for none),
+    /// and the publication watch signalled. Returns the assigned sequences.
+    pub(crate) fn fixture_grow_latest(&self, records: Vec<Value>) -> Vec<u64> {
+        let mut s = self.state.lock().unwrap();
+        let period = s
+            .latest_decode
+            .as_ref()
+            .and_then(|d| d.period_start_utc.clone())
+            .expect("a latest view of a period");
+        let l = s.live.as_mut().unwrap();
+        let mut sequences = Vec::new();
+        for mut record in records {
+            record["sequence"] = json!(l.next_sequence);
+            record["period_start_utc"] = json!(period);
+            sequences.push(l.next_sequence);
+            let size = serde_json::to_vec(&record).unwrap().len();
+            l.records.push_back((record, size));
+            l.record_bytes += size;
+            l.next_sequence += 1;
+        }
+        let next = l.next_sequence;
+        let latest = s.latest_decode.as_mut().unwrap();
+        latest.next_sequence = next;
+        latest.complete = true;
+        self.publication.send_modify(|n| *n = n.wrapping_add(1));
+        sequences
+    }
 }

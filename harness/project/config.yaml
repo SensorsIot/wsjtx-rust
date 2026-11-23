@@ -179,13 +179,17 @@ meter:
     claude-haiku-5-5: {input: 0.10, output: 0.50, cache_read: 0.01}
     claude-fable-5-2: {input: 8, output: 40, cache_read: 0.20}
 
+# Define writes into the model in a workspace of its own, only under these paths (harness#208).
+define:
+  scope: [docs/sysml, tools/sysml]
+  model_check: "python tools/sysml.py check {rev}"
+
 # Alex, the coordinator's state machine (harness core/docs/Alex.md, "The numbers").
 alex:
-  machines: {define: 2, check: 1, implement: 2, review: 1, coordinate: 1, test: 2}
+  machines: {define: 3, check: 1, implement: 3, review: 2, coordinate: 2, test: 2}
   limits: {ready: 3, queued_landed: 2}
   buffer_per_coder: 2
   fuse_minutes: {define: 180, check: 60, implement: 360, review: 90, gate: 90, coordinate: 60, test: 120}
-  spend_per_day_usd: 200
   # The operator's priority front; with only_first false Alex takes every open CR he may pull (After: first).
   first: [119, 129, 211, 109, 106, 107, 132]
   only_first: false

@@ -56,7 +56,7 @@ package WstxValueOrder {
              Every record that has a rank is ranked by ValueOrder; its rank is its place
              among the ranked records of the evaluation, from 0.
              A RankedList holds the verdicts of the ranked records by their rank and
-             then those of the others in the order of the records.
+             then those of the others as RestOrder says.
              Under a strategy of class contest
              WstxContestRanking::ContestVerdictRule finds the verdict. */
     }
@@ -403,6 +403,52 @@ package WstxValueOrder {
                 + "tc_097_008_snr_bucket_hears_us_and_the_new_criteria; "
                 + "server/src/operating/contest_tests.rs::"
                 + "tc_097_008_a_contest_strategy_with_callers_off_ranks_no_caller";
+        }
+    }
+
+    requirement 'CL-107-01' {
+        subject ranking : RankingService;
+        doc /* Ranking MUST give the verdicts of the records without a rank after the ranked
+             ones, in the order of the same criteria, and give every verdict in an
+             EvaluateReply (RestOrder). */
+        @Status { build = ImplementationState::implemented; }
+    }
+    #derivation connection { end #original ::> 'FR-026'; end #derive ::> 'CL-107-01'; }
+
+    attribute def RestOrder {
+        doc /* The order of the verdicts without a rank; they follow the ranked ones.
+             Under a strategy of class strategy they are ordered by the criteria of
+             RankingKeys::order as ValueOrder states them, then by the SNR, the stronger
+             first and an unknown one last, then the lower audio frequency, an unknown one
+             last, then the call in the order of its characters.
+             This holds for every record without a rank: greyed, ignored and off-filter
+             records, the profile's own messages and callers without a rank. A caller
+             without a rank has no group of its own.
+             Under a strategy of class contest they are ordered by the criteria of
+             WstxContestRanking::ContestValueOrder without its groups: a new multiplier,
+             the points, the SNR, the audio frequency, the call.
+             Off the strategy's bands no record has a rank, and all verdicts stand in this
+             order.
+             The ranks and the order of the ranked verdicts are those of ValueOrder and
+             ContestValueOrder.
+             Decode order never orders two verdicts.
+             EvaluateReply::verdicts holds every verdict in this order, with or without
+             explain; why is present only with explain. */
+    }
+
+    verification 'TC-107-001' {
+        doc /* The rest in the strategy's order, from the station. */
+        subject ranking : RankingService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-107-01'; }
+        @TestedBy {
+            test = "server/src/operating/strategy_tests.rs::"
+                + "tc_107_001_the_rest_follows_by_the_strategy_criteria; "
+                + "server/src/operating/strategy_tests.rs::"
+                + "tc_107_001_the_evaluate_reply_holds_every_verdict_in_order; "
+                + "server/src/operating/contest_tests.rs::"
+                + "tc_107_001_a_contest_rest_follows_contest_value_order";
         }
     }
 

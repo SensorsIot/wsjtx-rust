@@ -530,6 +530,63 @@ fn tc_097_008_a_contest_strategy_with_callers_off_ranks_no_caller() {
     assert_eq!(vk.why, "calls my call \u{b7} not answered");
 }
 
+// CL-107-01 for a contest strategy (WW Digi built-in, Calling stations are answered off): the
+// verdicts without a rank follow by ContestValueOrder's criteria without its groups. The rest of
+// the TC-063-006 table: VK2ABC calls me (QF a new multiplier), K1OLD a dupe caller at +9,
+// W1DUP a dupe at +3, W1AW greyed at +2, K1ZZZ not a CQ at +1; only VK2ABC has a value, the
+// others no multiplier and no points, so the SNR orders them.
+// Proves: TC-107-001
+#[test]
+fn tc_107_001_a_contest_rest_follows_contest_value_order() {
+    let s = ww();
+    let log = Log::of(
+        &s,
+        Some("JN37"),
+        &[
+            qso("W1DUP", Some("EM12"), "20m", "FT8", IN),
+            qso("K1OLD", Some("FN20"), "20m", "FT8", IN),
+        ],
+    );
+    let records = rows(&[
+        ("CQ WW K1ABC FN42", 5.0),
+        ("CQ WW JA1XYZ PM95", -18.0),
+        ("CQ WW OH1AA KP20", -3.0),
+        ("CQ WW W1DUP EM12", 3.0),
+        ("CQ NA W1AW FN31", 2.0),
+        ("DL1ABC K1ZZZ FN42", 1.0),
+        ("DL1ABC W1RRR RR73", -9.0),
+        ("HB9BLA VK2ABC QF56", -20.0),
+        ("HB9BLA K1OLD FN20", 9.0),
+    ]);
+    let off = crate::strategy::Strategy {
+        callers_first: false,
+        ..crate::strategy::contest_builtins()
+            .iter()
+            .find(|b| b.contest == Some("ww_digi"))
+            .expect("the WW Digi built-in")
+            .clone()
+    };
+    let list =
+        crate::strategy::evaluate_contest(&off, &s, &records, &contest_station("20m"), Some(&log));
+    assert_eq!(
+        list.iter()
+            .map(|v| (v.facts.sequence, v.rank))
+            .collect::<Vec<_>>(),
+        vec![
+            (1, Some(0)),
+            (2, Some(1)),
+            (0, Some(2)),
+            (6, Some(3)),
+            (7, None), // a new multiplier
+            (8, None), // +9
+            (3, None), // +3
+            (4, None), // +2
+            (5, None), // +1
+        ],
+        "the ranks of TC-063-006 without the caller; then the rest by multiplier, points, SNR"
+    );
+}
+
 // Proves: TC-063-006
 #[test]
 fn tc_063_006_verdicts_callable_by_value() {

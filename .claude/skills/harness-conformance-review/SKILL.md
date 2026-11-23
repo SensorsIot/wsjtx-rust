@@ -12,8 +12,8 @@ Filesystem path relative to this entrypoint: `../../../harness/general/core/skil
 Resolve the canonical skill's own references from its source directory, not this entrypoint.
 If the source is missing, stop and report it; do not substitute another checkout.
 
-<!-- canonical-source-sha256=64071f592eb70da19c178b0c9832280e54564a3c5978d371008fa2a34c9ba34a -->
-<!-- source harness/project/docs/Finished-Model.md sha256=e75191b61a3c478903bac2e471994199991cf5078994d694cd1f477bc7cadcd5 -->
+<!-- canonical-source-sha256=e5398b820263380613cddb4406e2d8e6842cd68e35ee07d19225d8bf5632faeb -->
+<!-- source harness/project/docs/Finished-Model.md sha256=f9e94e11792bb5d16330559cf1660001a92ccd91920ccb15d3dae8f59db2c6ca -->
 
 ## This project
 
@@ -31,8 +31,8 @@ direction.
 Where these rules differ from the general [SysML authoring skill](../../../harness/general/core/skills/sysml-authoring/SKILL.md)
 and the [SysML standard](../../../harness/general/core/docs/standards/sysml-v2.md), these rules win: the
 skill lets the project harness fix a form. The differences are named in the rules: an FR
-names no subject (M6.1); nothing satisfies a clause (M6.2); a test case is written only when
-its test exists, and a clause may have none (M6.5); a code link stands on the part (M6.6);
+names no subject (M6.1); nothing satisfies a clause (M6.2); a test case stands planned
+until its test is written, and a clause may have none (M6.5); a code link stands on the part (M6.6);
 there is no `dependency` (M7.1).
 
 ## M0. What the model is for
@@ -75,8 +75,8 @@ docs/sysml/
 │   │               RadioControl, Keying, Decodes, DisplayData, StationTime, OperatingChain,
 │   │               Hearing, AudioStreams, ModeProcessing, ProfileAccess, RecordingTransfer,
 │   │               UdpControl, WebControl
-│   └── external/   OperatorInteraction, Mcp, Cat, RadioProperties, FlexApi, SoundDevice,
-│                   Udp, PskReporter, ClubLog, CountryFiles, TimeSource
+│   └── external/   ExternalPort, OperatorInteraction, Mcp, Cat, RadioProperties, FlexApi,
+│                   SoundDevice, Udp, PskReporter, ClubLog, CountryFiles, TimeSource
 ├── backend/
 │   ├── supervisor/     Supervisor*, OperatingSelection, StationAuthority, Startup,
 │   │                   SettingsCheck
@@ -183,6 +183,10 @@ and holds the parts ranking, auto and qso.
   their browsers. An agent is a program that operates a station through its MCP. It gives
   every command the browser gives except saving the station config and saving the shack's
   settings: the station's setup is the operator's. The word "user" does not occur.
+- **M5.11** A port definition specializes `ExternalPort` only where its interface crosses a
+  process, device or network boundary and something reacts to its status. A transition guard
+  reads a status's availability, never its reason. `status` is `out` on the port definition
+  that specializes `ExternalPort`; nothing else redefines or derives it.
 
 ## M6. Requirements, clauses and tests
 
@@ -201,10 +205,10 @@ and holds the parts ranking, auto and qso.
   belong to different parts, are shown by different tests or change for different reasons.
 - **M6.5** A test case stands beside its clause and verifies it. It is a skeleton and a
   title: its identity, a one-line title, `subject`, `verify`, `@TestLevel`, `@Automation`
-  and `@TestedBy`; the bound test is the description of the test. A test case is written
-  only when its test exists, and is bound only to tests that show what its clause promises.
-  A clause without a case stands at target or partial; built and tested is `implemented`,
-  and an implemented clause has a case. A clause that prevents something (a refusal, a
+  and `@TestedBy`; the bound test is the description of the test. A case whose test is not
+  yet written is `planned` and has no `@TestedBy`; a partial or implemented case is bound
+  only to tests that show what its clause promises. A clause without a case stands at target
+  or partial; built and tested is `implemented`, and an implemented clause has a bound case. A clause that prevents something (a refusal, a
   disabled control, a MUST NOT) has a case bound to a negative test: a test that tries it
   and sees it refused.
 - **M6.6** Status and test links are tags on the clause and on its case. The code link
@@ -265,8 +269,8 @@ and holds the parts ranking, auto and qso.
 
 | Check | Covers |
 |---|---|
-| `python tools/sysml.py check`, in the gate | M1.5 (no retired identity), M2.1, M2.3, M3, M4.1 to M4.3, M4.9, M5.5, M5.8, M5.10, M6.1, M6.2, M6.4, M6.5 (form, an implemented clause has a case), M6.6, M6.7, M6.9 to M6.13, M7.1, M7.3 to M7.6 |
-| The reviewer's reading of the candidate | M0.2, M0.3, M1.1 to M1.4, M5.1 to M5.4, M5.6, M5.7, M5.9, M6.3, M6.5 (a preventing clause has a negative test), M6.8, M7.2 |
+| `python tools/sysml.py check`, in the gate | M1.5 (no retired identity), M2.1, M2.3, M3, M4.1 to M4.3, M4.9, M5.5, M5.8, M5.10, M5.11 (the guard and the status direction), M6.1, M6.2, M6.4, M6.5 (form, a bound partial or implemented case, an implemented clause has a bound case), M6.6, M6.7, M6.9 to M6.13, M7.1, M7.3 to M7.6 |
+| The reviewer's reading of the candidate | M0.2, M0.3, M1.1 to M1.4, M5.1 to M5.4, M5.6, M5.7, M5.9, M5.11 (only where something reacts), M6.3, M6.5 (a preventing clause has a negative test), M6.8, M7.2 |
 
 ## Authoring
 
@@ -300,4 +304,4 @@ How a statement gets into the model. These rules apply wherever the model is wri
 - **A9 Names.** A name that no longer says what the thing is, is renamed, and what cites it
   is changed in the same change.
 
-<!-- harness-forwarder-v1 sha256=4af624f01cd30acc24d75c54000b44e0fb3674eb5d328ac120d65efc6a007282 -->
+<!-- harness-forwarder-v1 sha256=cd6ece14deeedc88e8423d435ec0514d3f4d20ab5a2710a25a6d016017dc6dba -->

@@ -2001,8 +2001,8 @@ MODEL_TREE = {
                             "RadioControl", "Keying", "Decodes", "DisplayData", "StationTime", "OperatingChain",
                             "Hearing", "AudioStreams", "ModeProcessing", "ProfileAccess", "RecordingTransfer",
                             "UdpControl", "WebControl"),
-    "interfaces/external": ("OperatorInteraction", "Mcp", "Cat", "RadioProperties", "FlexApi", "SoundDevice", "Udp",
-                            "PskReporter", "ClubLog", "CountryFiles", "TimeSource"),
+    "interfaces/external": ("ExternalPort", "OperatorInteraction", "Mcp", "Cat", "RadioProperties", "FlexApi",
+                            "SoundDevice", "Udp", "PskReporter", "ClubLog", "CountryFiles", "TimeSource"),
     "backend/supervisor": ("Supervisor*", "OperatingSelection", "StationAuthority", "Startup", "SettingsCheck"),
     "backend/web": ("Web*", "Listener", "ContentCoding"),
     "backend/mcp": ("Mcp*", "McpEndpoint"),
@@ -2406,7 +2406,7 @@ def clause_faults(model: Model, entries: dict, served=None, ends=None) -> list[t
             if subject is None:
                 faults.append(("TR-11", key, element.line, f"{identity} names no subject"))
             if identity.startswith("TC-"):
-                case_form(key, element, identity, faults)
+                case_form(key, element, identity, faults, entries.get(identity, {}).get("state") == "planned")
                 continue
             if not (folder and not own or key.startswith("interfaces/")):
                 faults.append(("TR-11", key, element.line, f"{identity} outside a function or interface file"))
@@ -2432,26 +2432,32 @@ def clause_faults(model: Model, entries: dict, served=None, ends=None) -> list[t
             if identity not in carried and not has_annotation(element, "Debugging"):
                 faults.append(("TR-11", key, element.line, f"{identity} is carried by no use-case step"))
     for identity, entry in entries.items():
-        if identity.startswith("CL-") and entry["state"] == "implemented" and not entry["cases"]:
-            faults.append(("TR-11", entry["file"], entry["line"], f"{identity} is implemented and has no case"))
+        if identity.startswith("CL-") and entry["state"] == "implemented":
+            if not entry["cases"]:
+                faults.append(("TR-11", entry["file"], entry["line"], f"{identity} is implemented and has no case"))
+            elif all(entries[case]["state"] == "planned" for case in entry["cases"]):
+                faults.append(("TR-11", entry["file"], entry["line"], f"{identity} is implemented and has no bound case"))
     return faults
 
 
 CASE_ANNOTATIONS = {"TestLevel", "Automation", "TestedBy"}
 
 
-def case_form(key: str, element: Element, identity: str, faults: list):
+def case_form(key: str, element: Element, identity: str, faults: list, planned: bool = False):
     """M6.5: a case is its identity, a one-line title, `subject`, `verify` in its objective,
-    `@TestLevel`, `@Automation` and `@TestedBy`."""
+    `@TestLevel`, `@Automation` and `@TestedBy`; a planned case (its test not yet written) has
+    no `@TestedBy`."""
     for child in element.children:
         if child.kind == "subject" or child.kind == "@" and child.name in CASE_ANNOTATIONS:
             continue
         if child.kind == "objective" and all(grand.kind == "verify" for grand in child.children) and not child.docs:
             continue
         faults.append(("TR-11", key, child.line, f"{identity} holds {child.kind} {child.name or ''}".rstrip()))
-    for name in sorted(CASE_ANNOTATIONS):
+    for name in sorted(CASE_ANNOTATIONS - ({"TestedBy"} if planned else set())):
         if not has_annotation(element, name):
             faults.append(("TR-11", key, element.line, f"{identity} has no @{name}"))
+    if planned and has_annotation(element, "TestedBy"):
+        faults.append(("TR-11", key, element.line, f"{identity} is planned and has @TestedBy"))
     docs = [text for _offset, text, kind in element.docs if kind == "doc"]
     if len(docs) != 1 or len(element.docs) != 1:
         faults.append(("TR-11", key, element.line, f"{identity} has {len(element.docs)} titles"))
@@ -2799,6 +2805,49 @@ def served_and_ends(deployment: Deployment, model: Model) -> tuple[dict, dict]:
 
 
 ENTRY_COMMANDS = ("createEntry", "updateEntry", "deleteEntry")
+
+
+def specializations(model: Model, kind: str, root: str) -> dict[str, Element]:
+    """{name: definition} of the definitions of `kind` that specialize `root`, directly or
+    through one another."""
+    found, grew = {}, True
+    defs = [element for element in model.elements() if element.kind == kind and element.name]
+    while grew:
+        grew = False
+        for element in defs:
+            if element.name in found:
+                continue
+            parents = re.findall(r"(?::>|\bspecializes\b)\s*(?:\w+::)*(\w+)", element.head)
+            if any(parent == root or parent in found for parent in parents):
+                found[element.name], grew = element, True
+    return found
+
+
+def boundary_faults(model: Model) -> list[tuple]:
+    """TR-23 for M5.11: a transition guard reads no attribute of a status that specializes
+    InterfaceStatus other than its availability; `status` is out on a port definition that
+    specializes ExternalPort, and nothing else redefines or derives it."""
+    faults = []
+    statuses = specializations(model, "item def", "InterfaceStatus")
+    reasons = {child.name for status in statuses.values() for child in status.children
+               if child.kind == "attribute" and child.name and child.name != "availability"}
+    for element in model.elements():
+        if element.kind == "transition" and reasons:
+            guard = re.search(r"\bif\b(.*?)(?:\bdo\b|\bthen\b|$)", element.head, re.S)
+            if guard and (read := next((name for name in sorted(reasons) if re.search(r"\b" + name + r"\b", guard[1])), None)):
+                faults.append(("TR-23", element.key, element.line, f"transition guard reads {read} of a status"))
+    ports = specializations(model, "port def", "ExternalPort")
+    for element in model.elements():
+        redefined = re.search(r"(?::>>|\bredefines\b)\s*(\w+)", element.head)
+        if element.kind != "item" or "status" not in (element.name, redefined and redefined[1]):
+            continue
+        owner = element.parent
+        if owner is not None and owner.kind == "port def" and (owner.name in ports or owner.name == "ExternalPort"):
+            if not re.match(r"\s*(?:\w+\s+)*?out\b", element.head) or re.search(r"\bderived\b", element.head):
+                faults.append(("TR-23", element.key, element.line, f"status of {owner.name} is not out"))
+        elif re.search(r":>>|\bredefines\b|\bderived\b", element.head):
+            faults.append(("TR-23", element.key, element.line, "status redefined outside an ExternalPort port definition"))
+    return faults
 
 
 def agent_faults(model: Model) -> list[tuple]:
@@ -4894,7 +4943,7 @@ def model_check(tree: Tree, cache: Path) -> int:
     faults += tree_faults(tree.models, model) + layer_faults(model) + content_faults(model)
     faults += clause_faults(model, entries, served, ends) + role_faults(deployment) + agent_faults(model)
     faults += context_faults(deployment) + connection_faults(deployment) + reuse_faults(entries, used, present)
-    faults += writing_faults(model)
+    faults += writing_faults(model) + boundary_faults(model)
     refuse(fault_lines(faults))
     print(f"Model rules passed: {len(model.files)} model files.")
     return 0

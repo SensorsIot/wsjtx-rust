@@ -232,6 +232,22 @@ package WstxHoldTx {
         }
     }
 
+    verification 'TC-105-001' {
+        doc /* The value is built when a counted period's view grows. */
+        subject qso : QsoService;
+        @TestLevel { cost = 2; location = TestLocation::developmentPc; }
+        @Automation { run = AutomationState::implemented; }
+        objective { verify 'CL-065-01'; }
+        @TestedBy {
+            test = "server/src/operating/strategy_tests.rs::"
+                + "tc_105_001_a_grown_counted_view_builds_at_once_and_reaches_the_sockets; "
+                + "server/src/operating/strategy_tests.rs::"
+                + "tc_105_001_a_grown_view_of_an_uncounted_period_builds_nothing; "
+                + "server/src/operating/strategy_tests.rs::"
+                + "tc_105_001_a_grown_ft4_view_builds_at_once";
+        }
+    }
+
     requirement 'CL-039-08' {
         subject qso : QsoService;
         doc /* qso MUST keep Tx at a selection while Hold Tx is on and let Tx follow Rx while

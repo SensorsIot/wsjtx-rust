@@ -2360,8 +2360,8 @@ test('QSO pane callers show worked-before status and only interesting stations a
 });
 
 // Browser subset.
-// The result records (with dxcc and flags and the station's worked_status), the strategy verdict and the selection band
-// are presentation fixtures.
+// The result records (with dxcc and flags and the station's worked_status) and the selection band
+// are presentation fixtures; Default is active, so Ordering's value levels order the rows.
 // Proves: TC-055-006
 test('TC-055-006 Band Activity colours every sender, names each reason on hover and sorts by value',{timeout:40000},async t=>{
  const period='2026-10-27T12:00:15.0000000Z';
@@ -2385,7 +2385,8 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
  const strategy={name:'Hover test',class:'award',goals:['new_call'],needed:'not_worked',region:{kind:'all'},min_snr_db:null,value:['most_wanted'],callers_first:true,cq_when_no_target:false,repetitions:4,quiet_minutes:10,treat_73_as_cq:false,window:{kind:'all'}};
  const {page,errors}=await fixture(t,{width:1440,height:900},{beforeNavigate:async(page,app)=>{
   const profile=await(await fetch(app.origin+'/profile')).json();
-  view={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,revision:1,configuration:{continent:null,active:'Hover test',strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
+  // Default (no active strategy): Ordering's value levels (a strategy's order is TC-107-002's).
+  view={v:1,profile_id:profile.profile_id,boot_id:profile.boot_id,revision:1,configuration:{continent:null,active:null,strategies:[strategy]},configuration_error:null,my_continent:'EU',derived_continent:'EU'};
   state=liveFixture(await(await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
   state.clock={basis:'system_utc',correlated:true,utc_anchor:'2026-10-27T12:00:00.0000000Z',canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
   Object.assign(state.job,{first_sequence:0,next_sequence:n,available_count:n,latest_decode:{id:1,first_sequence:0,next_sequence:n,period_start_utc:period,complete:true}});
@@ -2393,17 +2394,14 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
   await page.route('**/receive/selection',async route=>{const s=await(await route.fetch()).json();s.snapshot_sequence=KEEP_SELECTION;s.selection={...s.selection,band:'20m',nominal_hz:14074000,origin:'manual'};await route.fulfill({json:s});});
   await page.route('**/receive/results?*',async route=>{const cursor=Number(new URL(route.request().url()).searchParams.get('cursor'));const batch=records.slice(cursor),next=cursor+batch.length;await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:n,available_count:n,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
   await page.route('**/strategy',route=>route.fulfill({json:view}));
-  // The strategy hits the 73 from W2CD (no flag): value 2, under the row to my call.
-  await page.route('**/strategy/evaluate',route=>route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'Hover test',my_continent:'EU',verdicts:[{sequence:8,rank:0,grey:false}]}}));
  }});
- await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('tr.ba-strategy'),null,{timeout:25000});
+ await page.waitForFunction(()=>document.querySelector('tr[data-sequence="0"][data-worked]')&&document.querySelector('#strategy-name')?.disabled===false,null,{timeout:25000});
  // CL-050-08: the one-line reason tip of the colour; a row in QSO with another station colours only its sender's call.
  // One page task collects and reads the rows, so a redraw cannot detach them between the two.
  const shown=()=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tr[data-sequence]')].map(r=>[r.children[4].textContent,r.dataset.tip??'',getComputedStyle(r.children[4]).backgroundColor,r.getAttribute('aria-description'),r.querySelector('.ba-from')?getComputedStyle(r.querySelector('.ba-from')).backgroundColor:null]));
  const none='rgba(0, 0, 0, 0)';
  const expected=[
   ['HB9BLA W1XYZ -12','New call','rgba(255, 102, 102, 0.32)',null],
-  ['W9AA W2CD 73','Strategy Hover test: #1',none,null],
   ['K9XX YO3ABC -07','New DXCC \u00b7 New call',none,'rgba(255, 0, 255, 0.26)'],
   ['CQ JA1AAA PM95','New CQ zone 25','rgba(255, 191, 0, 0.26)',null],
   ['CQ G4XYZ IO91','',none,null],
@@ -2411,6 +2409,7 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
   ['K9XX W2AB R-05','New call',none,'rgba(0, 255, 255, 0.24)'],
   ['FREE TEXT','',none,null],
   ['CQ K1ABC FN42','',none,null],
+  ['W9AA W2CD 73','',none,null],
  ];
  const got=await shown();
  assert.deepEqual(got.map(r=>[...r.slice(0,3),r[4]]),expected,'value order, equal values strongest first; a report from a new DXCC colours its sender call; no flag, no colour; New grid is off, so no grid reason');
@@ -2420,8 +2419,8 @@ test('TC-055-006 Band Activity colours every sender, names each reason on hover 
  await page.screenshot({path:'test-results/ui-operating/band-activity-value-1440.png'});
  // New call (on by default) and an enabled New grid colour the non-CQ senders as well (not WSJT-X).
  await page.locator('#open-server-settings').click();await page.locator('#band-colours [data-hl-slot=new_grid]').check();await page.locator('#settings-drawer .return-operate').click();
- assert.deepEqual((await shown()).map(r=>r[4]??r[2]),['rgba(255, 102, 102, 0.32)',none,'rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none]);
- assert.equal((await shown())[4][1],'New grid IO91','an enabled New grid names its reason');
+ assert.deepEqual((await shown()).map(r=>r[4]??r[2]),['rgba(255, 102, 102, 0.32)','rgba(255, 0, 255, 0.26)','rgba(255, 191, 0, 0.26)','rgba(255, 128, 0, 0.26)','rgba(0, 255, 255, 0.24)','rgba(0, 255, 255, 0.24)',none,none,none]);
+ assert.equal((await shown())[3][1],'New grid IO91','an enabled New grid names its reason');
  await page.screenshot({path:'test-results/ui-operating/band-activity-colours-all-senders-1440.png'});
  await clickSort(page,'frequency');assert.deepEqual(await sortState(page),['frequency','asc']);
  assert.deepEqual((await shown()).map(r=>r[0]),[...rows].reverse().map(r=>r[0]),'a column header still sorts by its column');
@@ -2877,7 +2876,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
     await p.route('**/strategy/auto',async route=>{switches.push(JSON.parse(route.request().postData()));await route.fulfill({json:view});});
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&document.querySelector("#strategy-name")?.disabled===false,null,{timeout:25000});
-  const message=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.className.split(' ').filter(c=>c.startsWith('ba-')&&c!=='ba-cq').join(' '),r.dataset.rank??'']));
+  const message=()=>page.locator('#band-activity tr[data-sequence]').evaluateAll(rows=>rows.map(r=>[r.children[4].textContent,r.className.split(' ').filter(c=>c.startsWith('ba-')&&c!=='ba-cq').sort().join(' '),r.dataset.rank??'']));
   const announce=(type,data)=>page.evaluate(([type,data])=>dispatchEvent(new CustomEvent('station-message',{detail:{current:socket,message:{v:1,type,data}}})),[type,data]);
   assert.deepEqual(await page.locator('#strategy-name option').allTextContents(),['None','DX first']);
   assert.equal(await page.inputValue('#strategy-name'),'');
@@ -2895,7 +2894,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   assert.deepEqual(switches,[],'selecting sends no POST /strategy/auto');
   assert.deepEqual(evaluations.map(b=>[b.source_id,b.job_id,b.generation,b.first_sequence,b.next_sequence,b.strategy,b.explain]),[[state.source.id,state.job.id,state.generation,0,3,null,false]]);
   await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence]').children[4].textContent==='CQ DL1XYZ JO62');
-  assert.deepEqual(await message(),[['CQ DL1XYZ JO62','ba-strategy','1'],['CQ K1ABC FN42','ba-strategy','2'],['CQ NA W1AW FN31','ba-grey','']],'by value in the station order; the directed CQ greyed');
+  assert.deepEqual(await message(),[['CQ DL1XYZ JO62','ba-strategy','1'],['CQ K1ABC FN42','ba-strategy','2'],['CQ NA W1AW FN31','ba-grey ba-hidden','']],'in the order of every verdict; the directed CQ greyed and, without Show all, not listed');
   // Never on a timer: no 5 s check; nothing asks while nothing is published.
   const asked=evaluations.length;await page.waitForTimeout(5500);assert.equal(evaluations.length,asked,'no time-based evaluation');
   await page.screenshot({path:'test-results/ui-operating/strategy-value-1366.png'});
@@ -2903,7 +2902,7 @@ test('TC-039-006 Selecting only marks, marks and value order from the verdicts, 
   assert.equal(await page.locator('#activity-value').getAttribute('aria-pressed'),'true');
   await page.locator('#band-activity th[data-sort=frequency]').click();
   await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence]').children[4].textContent==='CQ K1ABC FN42');
-  assert.deepEqual(await message(),[['CQ K1ABC FN42','ba-strategy','2'],['CQ NA W1AW FN31','ba-grey',''],['CQ DL1XYZ JO62','ba-strategy','1']],'sorted by the column, the marks stay');
+  assert.deepEqual(await message(),[['CQ K1ABC FN42','ba-strategy','2'],['CQ NA W1AW FN31','ba-grey ba-hidden',''],['CQ DL1XYZ JO62','ba-strategy','1']],'sorted by the column, the marks and the filter stay');
   assert.equal(await page.locator('#activity-value').getAttribute('aria-pressed'),'false');
   await page.locator('#activity-value').click();
   await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence]').children[4].textContent==='CQ DL1XYZ JO62');
@@ -3087,6 +3086,180 @@ test('TC-063-008 The contest prompt, Auto off marks only, the callable list and 
   await page.locator('#strategy-contest').scrollIntoViewIfNeeded();await page.locator('#strategy-contest').click();await page.locator('#contest-prompt[open]').waitFor();
   assert.ok(await page.locator('#contest-prompt').evaluate(d=>d.scrollWidth<=d.clientWidth+1&&d.getBoundingClientRect().width<=360));
   await page.screenshot({path:'test-results/ui-operating/contest-prompt-360.png'});
+  assert.deepEqual(errors,[]);
+});
+
+// ---------------------------------------------------------------- Band Activity under a strategy
+// Two periods of hand-written records and the station's hand-written verdicts
+// (WstxRankingControl::EvaluateReply: every verdict in display order); the expected rows, orders
+// and tips are written here from the rules of StrategyOrdering, RowMarks and StrategyElement.
+const ORDER_PERIODS=['2026-10-27T12:00:00.0000000Z','2026-10-27T12:00:15.0000000Z'];
+const ORDER_RO={name:'Romania',cont:'EU',cq:20,itu:28};
+// [text, snr, flags, dxcc]: 0..2 the kept period, 3..9 the latest; 8 is free text (no verdict).
+const ORDER_ROWS=[
+  ['CQ K7OLD FN42',-11],
+  ['HB9BLA W1AA R-03',-12],
+  ['CQ JA1QQ PM95',-5],
+  ['CQ OA4DX FH17',-5,['new_dxcc','new_dxcc_band','new_call','new_call_band']],
+  ['HB9BLA K2CM -05',-12],
+  ['CQ K1WB FN42',-9],
+  ['CQ NA W1AW FN31',-10],
+  ['K9XX YO3ABC -07',-15,['new_continent','new_continent_band','new_dxcc','new_dxcc_band','new_cq_zone','new_cq_zone_band','new_call','new_call_band'],ORDER_RO],
+  ['TNX BOB 73 GL',-20],
+  ['CQ JA1ZZ PM95',-8,['new_cq_zone','new_cq_zone_band']],
+];
+// The station's verdicts in display order: the ranked (a caller of mine among them), then the
+// rest; W1AW's directed CQ is grey. K2CM calls me without a rank.
+const ORDER_VERDICTS=[{sequence:3,rank:0,grey:false},{sequence:1,rank:1,grey:false},{sequence:9,rank:2,grey:false},{sequence:2,rank:3,grey:false},
+  {sequence:7,rank:null,grey:false},{sequence:4,rank:null,grey:false},{sequence:5,rank:null,grey:false},{sequence:0,rank:null,grey:false},{sequence:6,rank:null,grey:true}];
+function orderRecord(sequence,[text,snr,flags,dxcc]){
+  const w=text.split(' '),cq=w[0]==='CQ',call=t=>({kind:'call',text:t,hash_bits:null,hash_value:null});
+  const exchange=x=>/^[A-R]{2}\d\d$/.test(x)?{kind:'grid',value:x}:{kind:'report',value:Number(x.replace('R',''))};
+  const fields=sequence===8?{}:cq?{type:'standard',to:{kind:'token',text:w.slice(0,-2).join(' '),hash_bits:null,hash_value:null},from:call(w.at(-2)),ack:false,exchange:exchange(w.at(-1))}
+    :{type:'standard',to:call(w[0]),from:call(w[1]),ack:false,exchange:exchange(w[2])};
+  return {sequence,start_frame:186000+sequence,frequency_hz:500+sequence*100,snr_db:snr,payload77:'0'.repeat(77),i3:1,n3:null,status:'decoded',text,fields,
+    period_start_utc:ORDER_PERIODS[sequence<3?0:1],dt_seconds:0.1,...(sequence===8?{}:{worked_status:'not_worked'}),...(flags?{flags:Object.fromEntries(flags.map(f=>[f,true]))}:{}),...(dxcc?{dxcc}:{})};
+}
+// A user strategy that ranks a new call before a new DXCC, Calling stations are answered off.
+const ORDER_STRATEGY=()=>strategyOf('Order test',{filters:{new:['dxcc','call'],new_per:'ever',new_means:'not_worked'},order:['new_call','new_dxcc'],callers_first:false});
+// The routed station: both periods published, GET and PUT /strategy, POST /strategy/evaluate (held
+// while s.hold is set), the contact snapshot with s.contact.
+async function orderStation(t,viewport,{active=null,contest=null,verdicts=ORDER_VERDICTS,reply={}}={}){
+  const s={view:null,contact:null,hold:null,evaluations:[],puts:[]};let state;const records=[];
+  const publish=(id,period,list)=>{const first=records.length;records.push(...list.map((r,i)=>orderRecord(first+i,r)));Object.assign(state.job,{first_sequence:0,next_sequence:records.length,available_count:records.length,latest_decode:{id,first_sequence:first,next_sequence:records.length,period_start_utc:period,complete:true}});};
+  const {page,errors}=await fixture(t,viewport,{beforeNavigate:async(p,app)=>{
+    const base=await (await fetch(app.origin+'/profile')).json();
+    s.view={v:1,profile_id:base.profile_id,boot_id:base.boot_id,revision:4,configuration:{continent:null,active,strategies:[ORDER_STRATEGY()],ignore_calls:[],session_ignore_minutes:30,...(contest?{contest}:{})},configuration_error:null,my_continent:'EU',derived_continent:'EU',session_ignore:[],most_wanted:null,most_wanted_unreadable:false,most_wanted_attribution:'',builtin_strategies:BUILTIN_STRATEGIES,auto:false,strategy_refusal:null};
+    state=liveFixture(await (await fetch(app.origin+'/receive')).json());state.source.next_frame=720000;
+    state.clock={basis:'system_utc',correlated:true,utc_anchor:ORDER_PERIODS[0],canonical_anchor_frame:0,uncertainty_ns:500,external_accuracy:'unknown'};
+    publish(1,ORDER_PERIODS[0],ORDER_ROWS.slice(0,3));
+    await p.route('**/receive',async route=>{await p.waitForFunction(()=>snapshot&&!syncPending);await route.fulfill({json:state});});
+    await p.route('**/receive/selection',async route=>{const r=await (await route.fetch()).json();r.snapshot_sequence=KEEP_SELECTION;r.selection={...r.selection,band:'40m',nominal_hz:7074000,origin:'manual'};await route.fulfill({json:r});});
+    await p.route('**/receive/results?*',async route=>{const q=new URL(route.request().url()).searchParams,cursor=Number(q.get('cursor')),batch=records.slice(cursor),next=cursor+batch.length;
+      await route.fulfill({json:{...emptyResults(state),first_sequence:0,next_sequence:records.length,available_count:records.length,next,more:false,records:batch,latest_decode:structuredClone(state.job.latest_decode)}});});
+    await p.route('**/contact',route=>route.fulfill({json:contactSnapshot(base,{contact:s.contact})}));
+    await p.route('**/strategy',async route=>{if(route.request().method()==='PUT'){const b=JSON.parse(route.request().postData());s.puts.push(b);s.view={...s.view,revision:s.view.revision+1,configuration:b.configuration};}await route.fulfill({json:s.view});});
+    await p.route('**/strategy/contests',route=>route.fulfill({json:{v:1,profile_id:base.profile_id,boot_id:base.boot_id,profiles:CONTEST_PROFILES}}));
+    await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());s.evaluations.push(b);await s.hold?.promise;
+      await route.fulfill({json:{v:1,profile_id:s.view.profile_id,boot_id:s.view.boot_id,strategy:'Order test',my_continent:'EU',...reply,verdicts:verdicts.filter(v=>v.sequence>=b.first_sequence&&v.sequence<b.next_sequence)}});});
+  }});
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===3&&window.wstxRenderHistory&&document.querySelector('#strategy-name')?.disabled===false,null,{timeout:25000});
+  publish(2,ORDER_PERIODS[1],ORDER_ROWS.slice(3));await page.evaluate(()=>receiveSync());
+  await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest]').length===7&&document.querySelectorAll('tr[data-period=history]').length===3,null,{timeout:25000});
+  return {page,errors,s};
+}
+// The shown rows of Band Activity: the message, '|' for a period divider, 'stripe' for the partner stripe.
+const shownOrder=page=>page.evaluate(()=>[...document.querySelectorAll('#band-activity tbody tr')].filter(r=>getComputedStyle(r).display!=='none').map(r=>r.classList.contains('ba-partner-stripe')?'stripe':r.classList.contains('ba-divider')?'|':r.children[4].textContent));
+const untilShown=(page,expected)=>page.waitForFunction(e=>JSON.stringify([...document.querySelectorAll('#band-activity tbody tr')].filter(r=>getComputedStyle(r).display!=='none').map(r=>r.classList.contains('ba-partner-stripe')?'stripe':r.classList.contains('ba-divider')?'|':r.children[4].textContent))===JSON.stringify(e),expected,{timeout:5000}).catch(async()=>assert.deepEqual(await shownOrder(page),expected));
+const KEPT_ALL=['HB9BLA W1AA R-03','CQ JA1QQ PM95','CQ K7OLD FN42'];
+const STRATEGY_ALL=['CQ OA4DX FH17','CQ JA1ZZ PM95','K9XX YO3ABC -07','HB9BLA K2CM -05','CQ K1WB FN42','CQ NA W1AW FN31','TNX BOB 73 GL','|',...KEPT_ALL];
+const STRATEGY_LISTED=['CQ OA4DX FH17','CQ JA1ZZ PM95','HB9BLA K2CM -05','|','HB9BLA W1AA R-03','CQ JA1QQ PM95'];
+
+// Proves: TC-107-002
+test('TC-107-002 Band Activity in the strategy order: partner, the verdicts, the rest in publication sequence, per period',{timeout:90000},async t=>{
+  const {page,errors,s}=await orderStation(t,{width:1366,height:768});
+  // (c) Default: Ordering's flag order with my call first, no evaluate request.
+  await untilShown(page,['HB9BLA K2CM -05','CQ OA4DX FH17','K9XX YO3ABC -07','CQ JA1ZZ PM95','CQ K1WB FN42','CQ NA W1AW FN31','TNX BOB 73 GL','|','HB9BLA W1AA R-03','CQ JA1QQ PM95','CQ K7OLD FN42']);
+  await page.waitForTimeout(600);assert.deepEqual(s.evaluations,[],'Default asks for no verdict');
+  // The colour of every row: its slots, the message cell background and the sender span background.
+  const colours=()=>page.evaluate(()=>Object.fromEntries([...document.querySelectorAll('#band-activity tr[data-sequence]')].map(r=>[r.dataset.sequence,[r.dataset.hl??'',getComputedStyle(r.children[4]).backgroundColor,r.querySelector('.ba-from')?getComputedStyle(r.querySelector('.ba-from')).backgroundColor:null]])));
+  const underDefault=await colours();
+  // (g) Before the verdicts: only the rows to my call (and a partner) are listed.
+  s.hold=deferred();
+  await page.selectOption('#strategy-name','Order test');
+  for(let i=0;i<60&&!s.evaluations.length;i++)await page.waitForTimeout(50);
+  await untilShown(page,['HB9BLA K2CM -05','|','HB9BLA W1AA R-03']);
+  s.hold.resolve();s.hold=null;
+  // (b) Show all off: the ranked rows by rank, the row to my call without a rank at its verdict's place.
+  await untilShown(page,STRATEGY_LISTED);
+  // (a) Show all on: then the other verdicts in the station's order, then the row without a verdict.
+  await page.locator('#activity-show-all').click();
+  await untilShown(page,STRATEGY_ALL);
+  // (d) The same colours as under Default; the strategy mark is no background.
+  assert.deepEqual(await colours(),underDefault,'the colours do not follow the strategy');
+  await page.screenshot({path:'test-results/ui-operating/strategy-order-1366.png'});
+  // The partner rows stand on top, above the stripe, in every order.
+  s.contact=partner('replying',{dx_call:'K1WB'});await reread(page);
+  await untilShown(page,['CQ K1WB FN42','stripe',...STRATEGY_ALL.filter(r=>r!=='CQ K1WB FN42')]);
+  s.contact=null;await reread(page);
+  await untilShown(page,STRATEGY_ALL);
+  // (f) A Freq click orders by frequency and the filter stays; Value returns to the strategy order.
+  await page.locator('#activity-show-all').click();await untilShown(page,STRATEGY_LISTED);
+  await clickSort(page,'frequency');
+  await untilShown(page,['CQ OA4DX FH17','HB9BLA K2CM -05','CQ JA1ZZ PM95','|','HB9BLA W1AA R-03','CQ JA1QQ PM95']);
+  await page.locator('#activity-value').click();
+  await untilShown(page,STRATEGY_LISTED);
+  // (h) 360 px and text scale 2: no horizontal scroll.
+  await page.locator('#activity-show-all').click();
+  await page.setViewportSize({width:360,height:800});
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');await page.waitForTimeout(100);
+  assert.deepEqual(await page.evaluate(()=>{const b=document.querySelector('#band-activity');return {page:document.documentElement.scrollWidth<=innerWidth,pane:b.scrollWidth<=b.clientWidth+1};}),{page:true,pane:true});
+  await page.screenshot({path:'test-results/ui-operating/strategy-order-360-scale2.png'});
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: TC-107-003
+test('TC-107-003 the tip names the reasons in the strategy order, then the verdict',{timeout:90000},async t=>{
+  const {page,errors}=await orderStation(t,{width:1366,height:768});
+  const tip=sequence=>page.locator(`#band-activity tr[data-sequence="${sequence}"]`).evaluate(r=>r.dataset.tip??null);
+  // (c) Default: RowMarks' order (continent, DXCC, zone, grid, call), no verdict text.
+  await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence="7"]')?.dataset.tip);
+  assert.equal(await tip(3),'New DXCC · New call');
+  assert.equal(await tip(7),'New continent EU · New DXCC · New CQ zone 20 · New call');
+  // (a) Order [new_call, new_dxcc]: the call reason first, then DXCC, then the verdict.
+  await page.selectOption('#strategy-name','Order test');
+  await page.waitForFunction(()=>document.querySelector('#band-activity tr[data-sequence="3"]')?.dataset.rank==='1');
+  const rank=1;// OA4DX's place in the verdicts
+  assert.equal(await tip(3),`New call · New DXCC · Strategy Order test: #${rank}`);
+  // (b) The kinds the order does not name follow in RowMarks' order (continent, zone).
+  assert.equal(await tip(7),'New call · New DXCC · New continent EU · New CQ zone 20');
+  // Back to Default: RowMarks' order again.
+  await page.selectOption('#strategy-name','');
+  await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-strategy'));
+  assert.equal(await tip(3),'New DXCC · New call');
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: TC-107-003
+test('TC-107-003 under a contest strategy the tip keeps RowMarks order, then the contest text',{timeout:90000},async t=>{
+  const contest={profile:'ww_digi',start:'2026-08-29T12:00Z',end:'2026-08-30T12:00Z'};
+  const verdicts=[{sequence:3,rank:0,grey:false,dupe:false,new_multiplier:true,points:4},{sequence:7,rank:null,grey:false,dupe:false,new_multiplier:false,points:null}];
+  const {page,errors}=await orderStation(t,{width:1366,height:768},{active:'WW Digi',contest,verdicts,reply:{strategy:'WW Digi',contest:{qsos:0,multipliers:0,points:0,score:0}}});
+  // (d) The contest's colours are only my call's, so its tip holds the contest text alone.
+  const rank=1;// OA4DX's place in the contest verdicts
+  const expected=`Contest WW Digi: #${rank} · new multiplier · 4 points`;
+  await page.waitForFunction(e=>document.querySelector('#band-activity tr[data-sequence="3"]')?.dataset.tip===e,expected,{timeout:10000}).catch(()=>{});
+  assert.equal(await page.locator('#band-activity tr[data-sequence="3"]').evaluate(r=>r.dataset.tip),expected);
+  // Row 7 is coloured for its continent, DXCC, zone and call outside a contest; here no reason, no verdict text.
+  assert.equal(await page.locator('#band-activity tr[data-sequence="7"]').evaluate(r=>r.dataset.tip??null),null);
+  assert.deepEqual(errors,[]);
+});
+
+// Proves: TC-107-004
+test('TC-107-004 the filter and Show all under every strategy other than Default',{timeout:90000},async t=>{
+  const {page,errors}=await orderStation(t,{width:1366,height:768});
+  // (d) Default: every row, no Show all.
+  assert.equal((await shownOrder(page)).length,11);
+  assert.equal(await page.locator('#activity-show-all').isVisible(),false);
+  // (a) A strategy of class strategy, Show all off: the ranked rows, the rows to my call, the partner's.
+  await page.selectOption('#strategy-name','Order test');
+  await untilShown(page,STRATEGY_LISTED);
+  // (b) Show all is offered, off; on: every row, the grey row dimmed and struck through.
+  assert.deepEqual([await page.locator('#activity-show-all').isVisible(),await page.locator('#activity-show-all').getAttribute('aria-pressed')],[true,'false']);
+  await page.locator('#activity-show-all').click();
+  assert.equal(await page.locator('#activity-show-all').getAttribute('aria-pressed'),'true');
+  await untilShown(page,STRATEGY_ALL);
+  const grey=await page.locator('#band-activity tr.ba-grey').evaluate(r=>[r.children[4].textContent,getComputedStyle(r.children[4]).textDecorationLine,Number(getComputedStyle(r.children[4]).opacity)<1]);
+  assert.deepEqual(grey,['CQ NA W1AW FN31','line-through',true]);
+  // (c) A reload: Show all is off again (kept in the page only).
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('#strategy-name')?.value==='Order test'&&document.querySelectorAll('#band-activity tr[data-sequence]').length===7,null,{timeout:25000});
+  assert.equal(await page.locator('#activity-show-all').getAttribute('aria-pressed'),'false');
+  await untilShown(page,['CQ OA4DX FH17','CQ JA1ZZ PM95','HB9BLA K2CM -05']);
+  // Back to Default: every row again, Show all gone.
+  await page.selectOption('#strategy-name','');
+  await page.waitForFunction(()=>!document.querySelector('#band-activity tr.ba-hidden'));
+  assert.equal(await page.locator('#activity-show-all').isVisible(),false);
   assert.deepEqual(errors,[]);
 });
 
@@ -3914,7 +4087,7 @@ test('Band Activity Ignore and the Settings ignore lists',{timeout:60000},async 
       await route.fulfill({json:{...view,session_ignore:session}});});
     await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());evaluations.push(b);
       const ignored=session.some(e=>e.call==='K1ABC');
-      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',verdicts:ignored?[{sequence:1,rank:0,grey:false}]:[{sequence:0,rank:0,grey:false},{sequence:1,rank:1,grey:false}]}});});
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',verdicts:ignored?[{sequence:1,rank:0,grey:false},{sequence:0,rank:null,grey:false}]:[{sequence:0,rank:0,grey:false},{sequence:1,rank:1,grey:false}]}});});
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest].ba-strategy').length===2,null,{timeout:25000});
   const row=page.locator('#band-activity tr[data-sequence="0"]');
@@ -3928,6 +4101,8 @@ test('Band Activity Ignore and the Settings ignore lists',{timeout:60000},async 
   await page.waitForFunction(()=>!document.querySelector('#band-activity tr[data-sequence="0"]').classList.contains('ba-strategy'),null,{timeout:10000});
   assert.ok(evaluations.length>n,'the shown rows are evaluated again');
   assert.equal(commands.some(c=>c.action==='set_frequency'),false,'Ignore never sets the Rx frequency');
+  // The ignored row has no rank, so the strategy lists it only with Show all.
+  await page.locator('#activity-show-all').click();
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   assert.deepEqual(await items(),['Reply','Select','Set Rx here','Pounce K1ABC','Stop ignoring K1ABC']);
   await page.keyboard.press('Escape');
@@ -3977,7 +4152,7 @@ test('Pattern entries in the Settings ignore lists',{timeout:60000},async t=>{
       await route.fulfill({json:{...view,session_ignore:session}});});
     await p.route('**/strategy/evaluate',async route=>{const b=JSON.parse(route.request().postData());
       const byIgnored=view.configuration.ignore_calls.includes('BY*');
-      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',verdicts:byIgnored?[{sequence:1,rank:0,grey:false}]:[{sequence:0,rank:0,grey:false},{sequence:1,rank:1,grey:false}]}});});
+      await route.fulfill({json:{v:1,profile_id:view.profile_id,boot_id:view.boot_id,strategy:'CQ',my_continent:'EU',verdicts:byIgnored?[{sequence:1,rank:0,grey:false},{sequence:0,rank:null,grey:false}]:[{sequence:0,rank:0,grey:false},{sequence:1,rank:1,grey:false}]}});});
   }});
   await page.waitForFunction(()=>document.querySelectorAll('tr[data-period=latest].ba-strategy').length===2,null,{timeout:25000});
   await page.locator('#open-server-settings').click();await page.locator('#tab-general').click();
@@ -3995,6 +4170,8 @@ test('Pattern entries in the Settings ignore lists',{timeout:60000},async t=>{
   assert.equal(await page.locator('#ignore-add').inputValue(),'','the field is empty after the add');
   // A call ignored by a pattern only: the row menu offers Ignore, never Stop ignoring.
   await page.locator('#settings-drawer .return-operate').click();
+  // The ignored row has no rank, so the strategy lists it only with Show all.
+  await page.locator('#activity-show-all').click();
   const row=page.locator('#band-activity tr[data-sequence="0"]');
   await row.click({button:'right'});await page.locator('#ba-menu:not([hidden])').waitFor();
   assert.deepEqual(await page.locator('#ba-menu button:not([hidden])').evaluateAll(b=>b.map(x=>x.textContent)),['Reply','Select','Set Rx here','Pounce BY1AA','Ignore BY1AA']);

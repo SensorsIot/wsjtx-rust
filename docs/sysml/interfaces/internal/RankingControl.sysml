@@ -346,7 +346,7 @@ package WstxRankingControl {
     }
     item def RankedList {
         doc /* The verdicts of one evaluation: the ranked records by their rank, then the
-             records without a rank. */
+             records without a rank by the same criteria. */
         item periodView : PeriodView {
             doc /* The period view whose records were evaluated; it names the job and
                  says whether the period is complete. */
@@ -374,8 +374,7 @@ package WstxRankingControl {
                  contest. */ }
         attribute myContinent : Continent[0..1];
         attribute verdicts : Verdict[0..*] ordered {
-            doc /* As in RankedList. Without explain only the verdicts that have a rank,
-                 are grey or are a dupe. */ }
+            doc /* As in RankedList: every verdict, with or without explain. */ }
         attribute tally : ContestTally[0..1] {
             doc /* Present under a contest while the logbook is available. */ }
     }
